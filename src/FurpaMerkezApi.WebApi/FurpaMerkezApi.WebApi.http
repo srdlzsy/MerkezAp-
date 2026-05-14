@@ -1,0 +1,393 @@
+@ = http://localhost:5228
+
+GET {{@}}/
+Accept: application/json
+
+###
+
+POST {{@}}/api/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "admin",
+  "password": "REPLACE_WITH_PASSWORD"
+}
+
+###
+
+@token = REPLACE_WITH_BEARER_TOKEN
+
+GET {{@}}/api/auth/me
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/permissions/catalog
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/siparis-islemleri/alinan-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/siparis-islemleri/verilen-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/siparis-islemleri/verilen-depo-siparisleri
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "outWarehouseNo": 50,
+  "orderDate": "2026-04-17",
+  "deliveryDate": "2026-04-17",
+  "description": "",
+  "lines": [
+    {
+      "stockCode": "015550",
+      "quantity": 10,
+      "recommendedQuantity": 0,
+      "unitPrice": 0,
+      "unitPointer": 1
+    }
+  ]
+}
+
+###
+
+GET {{@}}/api/siparis-islemleri/alinan-firma-siparisleri?WarehouseNo=50&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/siparis-islemleri/verilen-firma-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/siparis-islemleri/verilen-firma-siparisleri
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "customerCode": "120.01.03106",
+  "orderDate": "2026-04-17",
+  "deliveryDate": "2026-04-18",
+  "description1": "",
+  "description2": "",
+  "deliverer": "Teslim Eden",
+  "receiver": "Teslim Alan",
+  "lines": [
+    {
+      "stockCode": "015550",
+      "quantity": 10,
+      "recommendedQuantity": 0,
+      "unitPrice": 0,
+      "unitPointer": 1
+    }
+  ]
+}
+
+###
+
+GET {{@}}/api/siparis-islemleri/alinan-firma-siparisleri/A/1585?warehouseNo=50
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/siparis-islemleri/verilen-firma-siparisleri/F110/2841?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/siparis-islemleri/verilen-depo-siparisleri/D110/1915?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/siparis-islemleri/verilen-depo-siparisleri/key/MTEwfEQxMTB8MTkxNQ
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/depolar-arasi-sevkler?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/depolar-arasi-sevkler/giden?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/sevk-islemleri/depolar-arasi-sevkler/giden
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "targetWarehouseNo": 50,
+  "transitWarehouseNo": 60,
+  "movementDate": "2026-04-17",
+  "documentDate": "2026-04-17",
+  "documentNo": "",
+  "description": "",
+  "lines": [
+    {
+      "stockCode": "015550",
+      "quantity": 10,
+      "unitPrice": 0,
+      "unitPointer": 1
+    }
+  ]
+}
+
+###
+
+GET {{@}}/api/sevk-islemleri/depolar-arasi-sevkler/gelen?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/depolar-arasi-sevkler/giden/F110/3694?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/depolar-arasi-sevkler/gelen/F50/185640?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/firma-sevkleri/giden?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/firma-sevkleri/giden/PS110/422?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/firma-sevkleri/gelen?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/sevk-islemleri/firma-sevkleri/gelen/BG/1665?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/stok-islemleri/etiket-belgeleri
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/stok-islemleri/etiket-belgeleri/son?warehouseNo=110&take=10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/stok-islemleri/etiket-belgeleri/tumu
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/stok-islemleri/etiket-belgeleri/1?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/stok-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/stok-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/stok-islemleri/etiket-belgeleri
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "lines": [
+    {
+      "productCode": "015550"
+    },
+    {
+      "productCode": "015551"
+    }
+  ]
+}
+
+###
+
+GET {{@}}/api/kasa-islemleri/kasa-sayimlari?dateToGet=2026-04-24
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/kasa-islemleri/kasa-sayimlari/rapor?dateToGet=2026-04-24
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/kasa-islemleri/kasa-sayimlari/KS110/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/kasa-islemleri/kasa-sayimlari/banknot-takipleri
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "banknoteTrackDate": "2026-04-24",
+  "totalAmount": 12000,
+  "deliveryTotalAmount": 11850,
+  "deliverer": "Teslim Eden",
+  "receiver": "Teslim Alan"
+}
+
+###
+
+POST {{@}}/api/kasa-islemleri/kasa-sayimlari
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "cashNo": 1,
+  "zReportNo": 125,
+  "cashierNo": 1001,
+  "managerNo": 1002,
+  "zTotalValue": 15340.5,
+  "total": 15340.5,
+  "summaryDate": "2026-04-24",
+  "giftCheckMovements": [],
+  "banknoteMovements": [
+    {
+      "banknoteType": 1,
+      "quantity": 20,
+      "total": 4000,
+      "value": 200
+    }
+  ],
+  "paymentTypes": [
+    {
+      "paymentName": "Nakit",
+      "paymentTypeNo": 1,
+      "accountCode": "",
+      "terminalId": "",
+      "slipNumber": 0,
+      "amountValue": 11340.5
+    }
+  ],
+  "storeExpenses": []
+}
+
+###
+
+GET {{@}}/api/iade-islemleri/firma-iadeleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/iade-islemleri/firma-iadeleri/F110/4651?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/iade-islemleri/firma-iadeleri/F110/4651/e-irsaliye?warehouseNo=110
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "plaque": "16 ABC 123",
+  "driverNameSurname": "Ad Soyad",
+  "driverTckn": "11111111111"
+}
+
+###
+
+GET {{@}}/api/iade-islemleri/depo-iadeleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/iade-islemleri/depo-iadeleri/giden?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/iade-islemleri/depo-iadeleri/gelen?WarehouseNo=50&StartDate=2026-04-01&EndDate=2026-04-10
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/iade-islemleri/depo-iadeleri/F110/42?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/iade-islemleri/depo-iadeleri/giden/F110/42?warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/iade-islemleri/depo-iadeleri/gelen/F110/42?warehouseNo=50
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/iade-islemleri/depo-iadeleri/F110/42/e-irsaliye?warehouseNo=110
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "plaque": "16 ABC 123",
+  "driverNameSurname": "Ad Soyad",
+  "driverTckn": "11111111111"
+}

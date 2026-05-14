@@ -1,0 +1,1748 @@
+using System.Data;
+using System.Data.Common;
+using System.Net.Http;
+using System.Text;
+using System.Xml.Linq;
+using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
+using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGonderimi;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGonderimi;
+
+public sealed class InvoiceSendingService(
+    MikroDbContext mikroDbContext,
+    MikroWriteDbContext mikroWriteDbContext,
+    IEInvoiceDocumentRenderer invoiceDocumentRenderer,
+    IHttpClientFactory httpClientFactory,
+    IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
+    IOptions<EDespatchOptions> eDespatchOptions,
+    IHostEnvironment hostEnvironment,
+    ILogger<InvoiceSendingService> logger)
+{
+    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string ServiceNamespace = "http://tempuri.org/";
+    private const string InvoiceNamespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
+    private const string AggregateNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
+    private const string BasicNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";
+    private const string SendInvoiceSoapAction = "http://tempuri.org/IBasicIntegration/SendInvoice";
+    private const short MikroUserNo = 39;
+    private const string CurrencyCode = "TRY";
+    private const string PreviewSource = "pending-send";
+
+    public async Task<InvoiceSendingListResponse> ListAsync(
+        InvoiceSendingListRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateListRequest(request);
+
+        var items = await LoadPendingInvoicesAsync(
+            request.Scenario,
+            request.StartDate.Date,
+            request.EndDate.Date,
+            null,
+            null,
+            cancellationToken);
+        items = ApplySentState(items, request.SentState);
+
+        var mappedItems = items
+            .OrderByDescending(item => item.DocumentDate)
+            .ThenByDescending(item => item.DocumentSerie, StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(item => item.DocumentOrderNo)
+            .Select(MapListItem)
+            .ToArray();
+
+        return new InvoiceSendingListResponse(mappedItems.Length, mappedItems);
+    }
+
+    public async Task<InvoiceSendingDetailDto> RenderAsync(
+        InvoiceSendingRenderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await LoadSingleInvoiceAsync(
+            request.Scenario,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
+        var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
+        var profile = request.Profile == InvoiceDocumentProfile.Auto
+            ? MapProfile(request.Scenario)
+            : request.Profile;
+        var preferEmbeddedXslt = request.PreferEmbeddedXslt ?? true;
+        var renderedDocument = await invoiceDocumentRenderer.RenderXmlAsync(
+            PreviewSource,
+            builtInvoice.InvoiceId,
+            builtInvoice.XmlContent,
+            profile,
+            preferEmbeddedXslt,
+            cancellationToken,
+            request.FallbackToDefaultXslt);
+
+        return new InvoiceSendingDetailDto(
+            MapListItem(invoice),
+            renderedDocument with { InvoiceId = builtInvoice.InvoiceId });
+    }
+
+    public async Task<SendInvoiceDocumentsResponse> SendAsync(
+        SendInvoiceDocumentsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateSendRequest(request);
+        ValidateConfiguration();
+
+        var deduplicatedDocuments = request.Documents
+            .Where(document => !string.IsNullOrWhiteSpace(document.DocumentSerie))
+            .Select(document => new SendInvoiceDocumentSelection(document.DocumentSerie.Trim(), document.DocumentOrderNo))
+            .Distinct()
+            .ToArray();
+        var results = new List<SendInvoiceDocumentResultDto>(deduplicatedDocuments.Length);
+
+        foreach (var document in deduplicatedDocuments)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var invoice = await LoadSingleInvoiceAsync(
+                    request.Scenario,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    cancellationToken);
+
+                if (invoice.IsSent)
+                {
+                    results.Add(new SendInvoiceDocumentResultDto(
+                        invoice.DocumentSerie,
+                        invoice.DocumentOrderNo,
+                        invoice.InvoiceId,
+                        invoice.CustomerCode,
+                        invoice.CustomerTitle,
+                        false,
+                        null,
+                        invoice.SentDocumentNo,
+                        "Belge zaten gonderilmis."));
+                    continue;
+                }
+
+                var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
+                var serviceResponse = await SendToUyumsoftAsync(
+                    builtInvoice,
+                    request.Scenario,
+                    cancellationToken);
+
+                await MarkAsSentAsync(
+                    invoice.DocumentSerie,
+                    invoice.DocumentOrderNo,
+                    serviceResponse.ServiceDocumentNumber,
+                    cancellationToken);
+
+                results.Add(new SendInvoiceDocumentResultDto(
+                    invoice.DocumentSerie,
+                    invoice.DocumentOrderNo,
+                    invoice.InvoiceId,
+                    invoice.CustomerCode,
+                    invoice.CustomerTitle,
+                    true,
+                    serviceResponse.ServiceDocumentId,
+                    serviceResponse.ServiceDocumentNumber,
+                    "Gonderim basarili."));
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Invoice send failed for {Scenario} {DocumentSerie}/{DocumentOrderNo}.",
+                    request.Scenario,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo);
+
+                results.Add(new SendInvoiceDocumentResultDto(
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
+                    string.Empty,
+                    string.Empty,
+                    false,
+                    null,
+                    null,
+                    exception.Message));
+            }
+        }
+
+        var succeededCount = results.Count(result => result.IsSucceeded);
+        var failedCount = results.Count - succeededCount;
+
+        return new SendInvoiceDocumentsResponse(
+            request.Scenario,
+            deduplicatedDocuments.Length,
+            succeededCount,
+            failedCount,
+            results);
+    }
+
+    private async Task<IReadOnlyCollection<PendingInvoiceRecord>> LoadPendingInvoicesAsync(
+        InvoiceSendingScenario scenario,
+        DateTime? startDate,
+        DateTime? endDate,
+        string? documentSerie,
+        int? documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            WITH Faturalar AS (
+                SELECT
+                    ch.cha_Guid AS FatGuid,
+                    ch.cha_evrakno_seri AS DocumentSerie,
+                    ch.cha_evrakno_sira AS DocumentOrderNo,
+                    ch.cha_evrak_tip AS EvrakTip,
+                    ch.cha_normal_Iade AS Iade,
+                    CAST(ch.cha_belge_tarih AS date) AS BelgeTarihi,
+                    ch.cha_aciklama AS Aciklama,
+                    ch.cha_belge_no AS BelgeNo,
+                    ISNULL(ch.cha_aratoplam, 0) AS AraToplam,
+                    ISNULL(ch.cha_vergi1, 0) AS TaxTotal,
+                    ISNULL(ch.cha_ebelge_turu, 0) AS EBelgeTuru,
+                    LTRIM(RTRIM(CONCAT(
+                        ISNULL(c.cari_unvan1, N''),
+                        CASE WHEN ISNULL(c.cari_unvan2, N'') = N'' THEN N'' ELSE N' ' + c.cari_unvan2 END))) AS MusteriAdi,
+                    c.cari_kod AS MusteriKodu,
+                    ISNULL(NULLIF(c.cari_vdaire_no, N''), ISNULL(c.cari_VergiKimlikNo, N'')) AS VDNo,
+                    c.cari_efatura_fl AS EFaturaMukellefiMi,
+                    ch.cha_cinsi AS CariHareketCins,
+                    c.cari_vdaire_adi AS VergiDairesi,
+                    adr.adr_cadde AS Cadde,
+                    adr.adr_sokak AS Sokak,
+                    adr.adr_ilce AS Ilce,
+                    adr.adr_il AS Il,
+                    adr.adr_efatura_alias AS FaturaMail,
+                    ISNULL(ch.cha_miktari, 0) AS Miktar,
+                    adr.adr_posta_kodu AS PostaKodu,
+                    c.cari_CepTel AS CariTel,
+                    c.cari_EMail AS Mail,
+                    ISNULL(ek.cha_Istisna1, N'') AS IstisnaKodu,
+                    ISNULL(ek.cha_HalRusum, 0) AS Rusum,
+                    ISNULL(ek.cha_ozel_matrah_kodu, N'') AS OzelMatrahKodu,
+                    ISNULL((SELECT TOP (1) sth_belge_no FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid), N'') AS IrsaliyeNo,
+                    (SELECT TOP (1) sth_belge_tarih FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid) AS IrsaliyeTarihi,
+                    ISNULL((
+                        SELECT TOP (1) dep.dep_adi
+                        FROM STOK_HAREKETLERI sh WITH (NOLOCK)
+                        INNER JOIN DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
+                        WHERE sh.sth_fat_uid = ch.cha_Guid
+                    ), N'') AS Depo
+                FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
+                INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
+                LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
+                INNER JOIN Furpa.dbo.FaturaSeries fatSer WITH (NOLOCK) ON ch.cha_evrakno_seri LIKE CONCAT(fatSer.seri, N'%')
+                WHERE
+                    (@startDate IS NULL OR CAST(ch.cha_belge_tarih AS date) >= CAST(@startDate AS date))
+                    AND (@endDate IS NULL OR CAST(ch.cha_belge_tarih AS date) <= CAST(@endDate AS date))
+                    AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
+                    AND (@documentOrderNo IS NULL OR ch.cha_evrakno_sira = @documentOrderNo)
+                    AND ch.cha_tip = 0
+                    AND adr.adr_adres_no = 1
+                    AND fatSer.efatura = @efatura
+                    AND c.cari_efatura_fl = @efatura
+                    AND ISNULL(ch.cha_iptal, 0) = 0
+            )
+            SELECT
+                FatGuid,
+                DocumentSerie,
+                DocumentOrderNo,
+                EvrakTip,
+                Iade,
+                BelgeTarihi,
+                Aciklama,
+                BelgeNo,
+                SUM(AraToplam) AS AraToplam,
+                SUM(TaxTotal) AS TaxTotal,
+                SUM(Rusum) AS Rusum,
+                EBelgeTuru,
+                MusteriAdi,
+                MusteriKodu,
+                VDNo,
+                EFaturaMukellefiMi,
+                CariHareketCins,
+                VergiDairesi,
+                Cadde,
+                Sokak,
+                Ilce,
+                Il,
+                FaturaMail,
+                SUM(Miktar) AS Miktar,
+                PostaKodu,
+                CariTel,
+                Mail,
+                IstisnaKodu,
+                OzelMatrahKodu,
+                IrsaliyeNo,
+                IrsaliyeTarihi,
+                Depo
+            FROM Faturalar
+            GROUP BY
+                FatGuid,
+                DocumentSerie,
+                DocumentOrderNo,
+                EvrakTip,
+                Iade,
+                BelgeTarihi,
+                Aciklama,
+                BelgeNo,
+                EBelgeTuru,
+                MusteriAdi,
+                MusteriKodu,
+                VDNo,
+                EFaturaMukellefiMi,
+                CariHareketCins,
+                VergiDairesi,
+                Cadde,
+                Sokak,
+                Ilce,
+                Il,
+                FaturaMail,
+                PostaKodu,
+                CariTel,
+                Mail,
+                IstisnaKodu,
+                OzelMatrahKodu,
+                IrsaliyeNo,
+                IrsaliyeTarihi,
+                Depo
+            ORDER BY
+                BelgeTarihi DESC,
+                DocumentSerie DESC,
+                DocumentOrderNo DESC;
+            """;
+
+        var efatura = scenario == InvoiceSendingScenario.EFatura;
+        var items = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate);
+                AddParameter(command, "@endDate", endDate);
+                AddParameter(command, "@documentSerie", string.IsNullOrWhiteSpace(documentSerie) ? null : documentSerie.Trim());
+                AddParameter(command, "@documentOrderNo", documentOrderNo);
+                AddParameter(command, "@efatura", efatura);
+            },
+            reader => MapPendingInvoice(reader, scenario),
+            cancellationToken);
+
+        return items;
+    }
+
+    private static IReadOnlyCollection<PendingInvoiceRecord> ApplySentState(
+        IReadOnlyCollection<PendingInvoiceRecord> items,
+        int sentState)
+    {
+        return sentState switch
+        {
+            0 => items.Where(item => !item.IsSent).ToArray(),
+            1 => items.Where(item => item.IsSent).ToArray(),
+            _ => items.ToArray()
+        };
+    }
+
+    private async Task<PendingInvoiceRecord> LoadSingleInvoiceAsync(
+        InvoiceSendingScenario scenario,
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(documentSerie))
+        {
+            throw new ArgumentException("Document serie is required.", nameof(documentSerie));
+        }
+
+        var items = await LoadPendingInvoicesAsync(
+            scenario,
+            null,
+            null,
+            documentSerie.Trim(),
+            documentOrderNo,
+            cancellationToken);
+
+        return items.FirstOrDefault()
+               ?? throw new KeyNotFoundException(
+                   $"Pending invoice was not found for {documentSerie}/{documentOrderNo}.");
+    }
+
+    private async Task<IReadOnlyCollection<InvoiceLineSeed>> LoadInvoiceLinesAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken)
+    {
+        return invoice.CariMovementType is 8 or 14
+            ? await LoadServiceLinesAsync(invoice, cancellationToken)
+            : await LoadStockLinesAsync(invoice, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<InvoiceLineSeed>> LoadStockLinesAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                sh.sth_stok_kod AS StockCode,
+                st.sto_isim AS StockName,
+                SUM(ISNULL(sh.sth_miktar, 0)) AS Quantity,
+                SUM(ISNULL(sh.sth_tutar, 0)) AS GrossAmount,
+                SUM(ISNULL(sh.sth_iskonto1, 0)) AS Discount1,
+                SUM(ISNULL(sh.sth_iskonto2, 0)) AS Discount2,
+                SUM(ISNULL(sh.sth_iskonto3, 0)) AS Discount3,
+                SUM(ISNULL(sh.sth_iskonto4, 0)) AS Discount4,
+                SUM(ISNULL(sh.sth_iskonto5, 0)) AS Discount5,
+                SUM(ISNULL(sh.sth_iskonto6, 0)) AS Discount6,
+                SUM(ISNULL(sh.sth_vergi, 0)) AS TaxAmount,
+                ISNULL(sh.sth_vergi_pntr, 0) AS TaxPointer,
+                st.sto_birim1_ad AS UnitName
+            FROM STOK_HAREKETLERI sh WITH (NOLOCK)
+            INNER JOIN STOKLAR st WITH (NOLOCK) ON sh.sth_stok_kod = st.sto_kod
+            INNER JOIN CARI_HESAP_HAREKETLERI ch WITH (NOLOCK) ON ch.cha_Guid = sh.sth_fat_uid
+            WHERE
+                ch.cha_evrakno_seri = @documentSerie
+                AND ch.cha_evrakno_sira = @documentOrderNo
+                AND ISNULL(ch.cha_iptal, 0) = 0
+            GROUP BY
+                sh.sth_stok_kod,
+                st.sto_isim,
+                sh.sth_vergi_pntr,
+                st.sto_birim1_ad
+            ORDER BY
+                sh.sth_stok_kod;
+            """;
+
+        var rows = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@documentSerie", invoice.DocumentSerie);
+                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo);
+            },
+            reader =>
+            {
+                var discounts = new[]
+                {
+                    ReadDecimal(reader, "Discount1"),
+                    ReadDecimal(reader, "Discount2"),
+                    ReadDecimal(reader, "Discount3"),
+                    ReadDecimal(reader, "Discount4"),
+                    ReadDecimal(reader, "Discount5"),
+                    ReadDecimal(reader, "Discount6")
+                };
+                var grossAmount = ReadDecimal(reader, "GrossAmount");
+                var discountTotal = discounts.Sum();
+                var netAmount = Math.Max(0m, grossAmount - discountTotal);
+                var taxAmount = ReadDecimal(reader, "TaxAmount");
+                var taxRate = ResolveTaxRate(
+                    netAmount,
+                    taxAmount,
+                    ReadInt32(reader, "TaxPointer"),
+                    invoice);
+
+                return new InvoiceLineSeed(
+                    ReadString(reader, "StockCode"),
+                    ReadString(reader, "StockName"),
+                    NormalizeQuantity(ReadDecimal(reader, "Quantity")),
+                    grossAmount,
+                    discounts,
+                    netAmount,
+                    taxAmount,
+                    taxRate,
+                    ResolveUnitCode(ReadString(reader, "UnitName")));
+            },
+            cancellationToken);
+
+        return rows;
+    }
+
+    private async Task<IReadOnlyCollection<InvoiceLineSeed>> LoadServiceLinesAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                ISNULL(hiz.hiz_kod, ISNULL(dm.dem_kod, N'')) AS ItemCode,
+                ISNULL(hiz.hiz_isim, ISNULL(dm.dem_isim, N'')) AS ItemName,
+                SUM(ISNULL(ch.cha_miktari, 0)) AS Quantity,
+                SUM(ISNULL(ch.cha_aratoplam, 0)) AS GrossAmount,
+                SUM(ISNULL(ch.cha_vergi1, 0)) AS TaxAmount,
+                ISNULL(ch.cha_vergipntr, 0) AS TaxPointer
+            FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+            INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
+            INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
+            LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK) ON ch.cha_kasa_hizkod = hiz.hiz_kod
+            LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK) ON ch.cha_kasa_hizkod = dm.dem_kod
+            WHERE
+                adr.adr_adres_no = 1
+                AND ch.cha_tip = 0
+                AND ch.cha_evrakno_seri = @documentSerie
+                AND ch.cha_evrakno_sira = @documentOrderNo
+                AND ISNULL(ch.cha_iptal, 0) = 0
+            GROUP BY
+                ISNULL(hiz.hiz_kod, ISNULL(dm.dem_kod, N'')),
+                ISNULL(hiz.hiz_isim, ISNULL(dm.dem_isim, N'')),
+                ISNULL(ch.cha_vergipntr, 0)
+            ORDER BY
+                ItemCode,
+                ItemName;
+            """;
+
+        var rows = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@documentSerie", invoice.DocumentSerie);
+                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo);
+            },
+            reader =>
+            {
+                var grossAmount = ReadDecimal(reader, "GrossAmount");
+                var taxAmount = ReadDecimal(reader, "TaxAmount");
+                var taxRate = ResolveTaxRate(
+                    grossAmount,
+                    taxAmount,
+                    ReadInt32(reader, "TaxPointer"),
+                    invoice);
+
+                return new InvoiceLineSeed(
+                    ReadString(reader, "ItemCode"),
+                    ReadString(reader, "ItemName"),
+                    NormalizeQuantity(ReadDecimal(reader, "Quantity")),
+                    grossAmount,
+                    [],
+                    grossAmount,
+                    taxAmount,
+                    taxRate,
+                    "NIU");
+            },
+            cancellationToken);
+
+        return rows;
+    }
+
+    private async Task<BuiltInvoiceDocument> BuildInvoiceDocumentAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken)
+    {
+        var invoiceLines = await LoadInvoiceLinesAsync(invoice, cancellationToken);
+
+        if (invoiceLines.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Fatura satirlari bulunamadi: {invoice.DocumentSerie}/{invoice.DocumentOrderNo}.");
+        }
+
+        var supplier = await LoadSupplierAsync(cancellationToken);
+        var invoiceDate = invoice.DocumentDate;
+        var createdAt = DateTime.Now;
+        var invoiceId = invoice.InvoiceId;
+        var invoiceUuid = Guid.NewGuid().ToString();
+        var profileId = ResolveProfileId(invoice);
+        var invoiceTypeCode = ResolveInvoiceTypeCode(invoice);
+        var additionalDocumentReference = await BuildXsltDocumentReferenceAsync(
+            invoice.Scenario,
+            invoiceDate,
+            cancellationToken);
+        var totalDiscount = RoundMoney(invoiceLines.Sum(line => line.Discounts.Sum()));
+        var lineExtensionTotal = RoundMoney(invoiceLines.Sum(line => line.NetAmount));
+        var taxTotal = RoundMoney(invoiceLines.Sum(line => line.TaxAmount));
+        var chargeTotal = RoundMoney(invoice.Rusum);
+        var payableTotal = RoundMoney(lineExtensionTotal + taxTotal + chargeTotal);
+        var taxSubtotals = BuildTaxSubtotals(invoice, invoiceLines);
+        var lineElements = invoiceLines
+            .Select((line, index) => BuildInvoiceLineElement(index + 1, line, invoice))
+            .ToArray();
+
+        var document = BuildInvoiceElement(
+            invoice,
+            supplier,
+            invoiceDate,
+            createdAt,
+            invoiceId,
+            invoiceUuid,
+            profileId,
+            invoiceTypeCode,
+            lineExtensionTotal,
+            totalDiscount,
+            chargeTotal,
+            taxTotal,
+            payableTotal,
+            taxSubtotals,
+            lineElements,
+            additionalDocumentReference);
+
+        var xmlContent = new XDocument(document).ToString(SaveOptions.DisableFormatting);
+
+        return new BuiltInvoiceDocument(
+            invoice.InvoiceId,
+            invoice.CustomerTaxNumber,
+            invoice.TargetAlias,
+            invoice.CustomerTitle,
+            xmlContent,
+            document,
+            profileId,
+            invoiceTypeCode);
+    }
+
+    private XElement BuildInvoiceElement(
+        PendingInvoiceRecord invoice,
+        PartyInfo supplier,
+        DateTime invoiceDate,
+        DateTime createdAt,
+        string invoiceId,
+        string invoiceUuid,
+        string profileId,
+        string invoiceTypeCode,
+        decimal lineExtensionTotal,
+        decimal allowanceTotal,
+        decimal chargeTotal,
+        decimal taxTotal,
+        decimal payableTotal,
+        IReadOnlyCollection<XElement> taxSubtotals,
+        IReadOnlyCollection<XElement> lineElements,
+        XElement? additionalDocumentReference)
+    {
+        var invoiceNamespace = XNamespace.Get(InvoiceNamespace);
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var customer = BuildCustomerPartyInfo(invoice);
+        var notes = BuildInvoiceNotes(invoice, basic);
+        var elements = new List<object>
+        {
+            new XAttribute(XNamespace.Xmlns + "cac", aggregate.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "cbc", basic.NamespaceName),
+            new XElement(basic + "UBLVersionID", "2.1"),
+            new XElement(basic + "CustomizationID", "TR1.2"),
+            new XElement(basic + "ProfileID", profileId),
+            new XElement(basic + "ID", invoiceId),
+            new XElement(basic + "CopyIndicator", "false"),
+            new XElement(basic + "UUID", invoiceUuid),
+            new XElement(basic + "IssueDate", invoiceDate.ToString("yyyy-MM-dd")),
+            new XElement(basic + "IssueTime", createdAt.ToString("HH:mm:ss")),
+            new XElement(basic + "InvoiceTypeCode", invoiceTypeCode)
+        };
+
+        elements.AddRange(notes);
+        elements.Add(new XElement(basic + "DocumentCurrencyCode", CurrencyCode));
+        elements.Add(new XElement(basic + "LineCountNumeric", lineElements.Count));
+
+        if (!string.IsNullOrWhiteSpace(invoice.ShipmentDocumentNo))
+        {
+            var despatchDocumentReference = new XElement(
+                aggregate + "DespatchDocumentReference",
+                new XElement(basic + "ID", invoice.ShipmentDocumentNo));
+
+            if (invoice.ShipmentDocumentDate.HasValue)
+            {
+                despatchDocumentReference.Add(
+                    new XElement(
+                        basic + "IssueDate",
+                        invoice.ShipmentDocumentDate.Value.ToString("yyyy-MM-dd")));
+            }
+
+            elements.Add(despatchDocumentReference);
+        }
+
+        if (additionalDocumentReference is not null)
+        {
+            elements.Add(additionalDocumentReference);
+        }
+
+        elements.Add(BuildAccountingPartyElement("AccountingSupplierParty", supplier));
+        elements.Add(BuildAccountingPartyElement("AccountingCustomerParty", customer));
+        elements.Add(
+            new XElement(
+                aggregate + "TaxTotal",
+                new XElement(
+                    basic + "TaxAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(taxTotal)),
+                taxSubtotals));
+        elements.Add(
+            new XElement(
+                aggregate + "LegalMonetaryTotal",
+                new XElement(
+                    basic + "LineExtensionAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(lineExtensionTotal)),
+                new XElement(
+                    basic + "TaxExclusiveAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(lineExtensionTotal)),
+                new XElement(
+                    basic + "TaxInclusiveAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(payableTotal)),
+                new XElement(
+                    basic + "AllowanceTotalAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(allowanceTotal)),
+                new XElement(
+                    basic + "ChargeTotalAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(chargeTotal)),
+                new XElement(
+                    basic + "PayableAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(payableTotal))));
+        elements.AddRange(lineElements);
+
+        return new XElement(invoiceNamespace + "Invoice", elements);
+    }
+
+    private static IReadOnlyCollection<object> BuildInvoiceNotes(
+        PendingInvoiceRecord invoice,
+        XNamespace basic)
+    {
+        var notes = new List<object>();
+
+        if (!string.IsNullOrWhiteSpace(invoice.Description))
+        {
+            notes.Add(new XElement(basic + "Note", invoice.Description.Trim()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(invoice.WarehouseName))
+        {
+            notes.Add(new XElement(basic + "Note", $"Depo: {invoice.WarehouseName.Trim()}"));
+        }
+
+        return notes;
+    }
+
+    private async Task<PartyInfo> LoadSupplierAsync(CancellationToken cancellationToken)
+    {
+        var supplierCustomerCode = eDesPatchOptionsValue.SupplierCustomerCode;
+        var supplier = await (
+            from customer in mikroDbContext.CARI_HESAPLARs
+            join address in mikroDbContext.CARI_HESAP_ADRESLERIs on customer.cari_kod equals address.adr_cari_kod
+            where customer.cari_kod == supplierCustomerCode && address.adr_adres_no == 1
+            select new PartyInfo(
+                customer.cari_kod ?? string.Empty,
+                BuildCustomerTitle(customer.cari_unvan1, customer.cari_unvan2),
+                ResolveTaxNumber(customer.cari_vdaire_no, customer.cari_VergiKimlikNo),
+                customer.cari_vdaire_adi ?? string.Empty,
+                address.adr_cadde ?? string.Empty,
+                address.adr_sokak ?? string.Empty,
+                address.adr_ilce ?? string.Empty,
+                address.adr_il ?? string.Empty,
+                address.adr_posta_kodu ?? string.Empty,
+                NormalizePhone(address.adr_tel_no1, address.adr_tel_no2),
+                customer.cari_EMail ?? string.Empty,
+                eDesPatchOptionsValue.CountryCode,
+                eDesPatchOptionsValue.CountryName))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return supplier ?? throw new InvalidOperationException(
+            $"Supplier customer was not found for code {supplierCustomerCode}.");
+    }
+
+    private EDespatchOptions eDesPatchOptionsValue => eDespatchOptions.Value;
+
+    private static PartyInfo BuildCustomerPartyInfo(PendingInvoiceRecord invoice) =>
+        new(
+            invoice.CustomerCode,
+            invoice.CustomerTitle,
+            invoice.CustomerTaxNumber,
+            invoice.TaxOffice,
+            invoice.AddressStreet,
+            invoice.AddressStreet2,
+            invoice.AddressDistrict,
+            invoice.AddressCity,
+            invoice.PostalCode,
+            invoice.Phone,
+            invoice.Email,
+            "TR",
+            "TURKIYE");
+
+    private static XElement BuildAccountingPartyElement(string elementName, PartyInfo partyInfo)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+
+        return new XElement(
+            aggregate + elementName,
+            new XElement(aggregate + "Party", BuildPartyChildren(partyInfo)));
+    }
+
+    private static IReadOnlyCollection<object> BuildPartyChildren(PartyInfo partyInfo)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var children = new List<object>
+        {
+            new XElement(
+                aggregate + "PartyIdentification",
+                new XElement(
+                    basic + "ID",
+                    new XAttribute("schemeID", ResolveTaxSchemeId(partyInfo.TaxNumber)),
+                    partyInfo.TaxNumber)),
+            new XElement(
+                aggregate + "PartyName",
+                new XElement(basic + "Name", partyInfo.DisplayName)),
+            BuildAddressElement("PostalAddress", partyInfo),
+            new XElement(
+                aggregate + "PartyTaxScheme",
+                new XElement(
+                    aggregate + "TaxScheme",
+                    new XElement(basic + "Name", string.IsNullOrWhiteSpace(partyInfo.TaxOffice) ? "YOK" : partyInfo.TaxOffice)))
+        };
+
+        var contact = BuildContactElement(partyInfo.Phone, partyInfo.Email);
+        if (contact is not null)
+        {
+            children.Add(contact);
+        }
+
+        return children;
+    }
+
+    private static XElement BuildAddressElement(string elementName, PartyInfo partyInfo)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+
+        return new XElement(
+            aggregate + elementName,
+            new XElement(basic + "StreetName", string.IsNullOrWhiteSpace(partyInfo.Street) ? "-" : partyInfo.Street),
+            string.IsNullOrWhiteSpace(partyInfo.Street2)
+                ? null
+                : new XElement(basic + "AdditionalStreetName", partyInfo.Street2),
+            string.IsNullOrWhiteSpace(partyInfo.District)
+                ? null
+                : new XElement(basic + "CitySubdivisionName", partyInfo.District),
+            new XElement(basic + "CityName", string.IsNullOrWhiteSpace(partyInfo.City) ? "-" : partyInfo.City),
+            string.IsNullOrWhiteSpace(partyInfo.PostalCode)
+                ? null
+                : new XElement(basic + "PostalZone", partyInfo.PostalCode),
+            new XElement(
+                aggregate + "Country",
+                new XElement(basic + "IdentificationCode", partyInfo.CountryCode),
+                new XElement(basic + "Name", partyInfo.CountryName)));
+    }
+
+    private static XElement? BuildContactElement(string phone, string email)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var children = new List<object>();
+
+        if (!string.IsNullOrWhiteSpace(phone))
+        {
+            children.Add(new XElement(basic + "Telephone", phone));
+        }
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            children.Add(new XElement(basic + "ElectronicMail", email));
+        }
+
+        return children.Count == 0
+            ? null
+            : new XElement(aggregate + "Contact", children);
+    }
+
+    private IReadOnlyCollection<XElement> BuildTaxSubtotals(
+        PendingInvoiceRecord invoice,
+        IReadOnlyCollection<InvoiceLineSeed> lines)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+
+        return lines
+            .GroupBy(
+                line => new
+                {
+                    line.TaxRate,
+                    invoice.IstisnaKodu,
+                    invoice.OzelMatrahKodu
+                })
+            .Select(group =>
+            {
+                var exemptionCode = ResolveExemptionCode(invoice);
+                var exemptionReason = ResolveExemptionReason(invoice);
+
+                return new XElement(
+                    aggregate + "TaxSubtotal",
+                    new XElement(
+                        basic + "TaxableAmount",
+                        new XAttribute("currencyID", CurrencyCode),
+                        FormatAmount(RoundMoney(group.Sum(line => line.NetAmount)))),
+                    new XElement(
+                        basic + "TaxAmount",
+                        new XAttribute("currencyID", CurrencyCode),
+                        FormatAmount(RoundMoney(group.Sum(line => line.TaxAmount)))),
+                    new XElement(basic + "Percent", FormatRate(group.Key.TaxRate)),
+                    new XElement(
+                        aggregate + "TaxCategory",
+                        string.IsNullOrWhiteSpace(exemptionCode)
+                            ? null
+                            : new XElement(basic + "TaxExemptionReasonCode", exemptionCode),
+                        string.IsNullOrWhiteSpace(exemptionReason)
+                            ? null
+                            : new XElement(basic + "TaxExemptionReason", exemptionReason),
+                        new XElement(
+                            aggregate + "TaxScheme",
+                            new XElement(basic + "Name", "KDV"),
+                            new XElement(basic + "TaxTypeCode", "0015"))));
+            })
+            .ToArray();
+    }
+
+    private XElement BuildInvoiceLineElement(
+        int lineNo,
+        InvoiceLineSeed line,
+        PendingInvoiceRecord invoice)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var unitPrice = line.Quantity <= 0m
+            ? line.GrossAmount
+            : RoundMoney(line.GrossAmount / line.Quantity);
+        var allowanceElements = BuildAllowanceChargeElements(line);
+        var exemptionCode = ResolveExemptionCode(invoice);
+        var exemptionReason = ResolveExemptionReason(invoice);
+
+        return new XElement(
+            aggregate + "InvoiceLine",
+            new XElement(basic + "ID", lineNo),
+            new XElement(
+                basic + "InvoicedQuantity",
+                new XAttribute("unitCode", line.UnitCode),
+                FormatQuantity(line.Quantity)),
+            new XElement(
+                basic + "LineExtensionAmount",
+                new XAttribute("currencyID", CurrencyCode),
+                FormatAmount(line.NetAmount)),
+            allowanceElements,
+            new XElement(
+                aggregate + "TaxTotal",
+                new XElement(
+                    basic + "TaxAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(line.TaxAmount)),
+                new XElement(
+                    aggregate + "TaxSubtotal",
+                    new XElement(
+                        basic + "TaxableAmount",
+                        new XAttribute("currencyID", CurrencyCode),
+                        FormatAmount(line.NetAmount)),
+                    new XElement(
+                        basic + "TaxAmount",
+                        new XAttribute("currencyID", CurrencyCode),
+                        FormatAmount(line.TaxAmount)),
+                    new XElement(basic + "Percent", FormatRate(line.TaxRate)),
+                    new XElement(
+                        aggregate + "TaxCategory",
+                        string.IsNullOrWhiteSpace(exemptionCode)
+                            ? null
+                            : new XElement(basic + "TaxExemptionReasonCode", exemptionCode),
+                        string.IsNullOrWhiteSpace(exemptionReason)
+                            ? null
+                            : new XElement(basic + "TaxExemptionReason", exemptionReason),
+                        new XElement(
+                            aggregate + "TaxScheme",
+                            new XElement(basic + "Name", "KDV"),
+                            new XElement(basic + "TaxTypeCode", "0015"))))),
+            new XElement(
+                aggregate + "Item",
+                new XElement(basic + "Name", string.IsNullOrWhiteSpace(line.Name) ? "-" : line.Name),
+                new XElement(
+                    aggregate + "SellersItemIdentification",
+                    new XElement(
+                        basic + "ID",
+                        string.IsNullOrWhiteSpace(line.Code) ? $"SATIR-{lineNo}" : line.Code))),
+            new XElement(
+                aggregate + "Price",
+                new XElement(
+                    basic + "PriceAmount",
+                    new XAttribute("currencyID", CurrencyCode),
+                    FormatAmount(unitPrice))));
+    }
+
+    private static IReadOnlyCollection<XElement> BuildAllowanceChargeElements(InvoiceLineSeed line)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var result = new List<XElement>();
+        var remainingBase = line.GrossAmount;
+
+        foreach (var discount in line.Discounts.Where(discount => discount > 0m))
+        {
+            if (remainingBase <= 0m)
+            {
+                break;
+            }
+
+            var ratio = discount / remainingBase * 100m;
+            result.Add(
+                new XElement(
+                    aggregate + "AllowanceCharge",
+                    new XElement(basic + "ChargeIndicator", "false"),
+                    new XElement(basic + "MultiplierFactorNumeric", FormatRate(Math.Round(ratio, 4, MidpointRounding.AwayFromZero))),
+                    new XElement(
+                        basic + "Amount",
+                        new XAttribute("currencyID", CurrencyCode),
+                        FormatAmount(discount)),
+                    new XElement(
+                        basic + "BaseAmount",
+                        new XAttribute("currencyID", CurrencyCode),
+                        FormatAmount(remainingBase))));
+            remainingBase = Math.Max(0m, remainingBase - discount);
+        }
+
+        return result;
+    }
+
+    private async Task<XElement?> BuildXsltDocumentReferenceAsync(
+        InvoiceSendingScenario scenario,
+        DateTime issueDate,
+        CancellationToken cancellationToken)
+    {
+        var fileName = scenario == InvoiceSendingScenario.EArsiv
+            ? "earsiv.xslt"
+            : "efatura.xslt";
+        var path = Path.Combine(hostEnvironment.ContentRootPath, "Assets", "Xslt", fileName);
+
+        if (!File.Exists(path))
+        {
+            logger.LogWarning("XSLT asset was not found for invoice sending preview: {Path}", path);
+            return null;
+        }
+
+        var content = await File.ReadAllTextAsync(path, cancellationToken);
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+
+        return new XElement(
+            aggregate + "AdditionalDocumentReference",
+            new XElement(basic + "ID", "XSLT"),
+            new XElement(basic + "IssueDate", issueDate.ToString("yyyy-MM-dd")),
+            new XElement(basic + "DocumentType", "XSLT"),
+            new XElement(basic + "DocumentDescription", fileName),
+            new XElement(
+                aggregate + "Attachment",
+                new XElement(
+                    basic + "EmbeddedDocumentBinaryObject",
+                    new XAttribute("characterSetCode", "UTF-8"),
+                    new XAttribute("encodingCode", "Base64"),
+                    new XAttribute("filename", fileName),
+                    new XAttribute("mimeCode", "application/xml"),
+                    encoded)));
+    }
+
+    private async Task<ServiceSendResponse> SendToUyumsoftAsync(
+        BuiltInvoiceDocument invoice,
+        InvoiceSendingScenario scenario,
+        CancellationToken cancellationToken)
+    {
+        var config = uyumsoftOptions.Value.EInvoice;
+        var envelope = BuildSendInvoiceEnvelope(config, invoice, scenario);
+        using var request = new HttpRequestMessage(HttpMethod.Post, config.EndpointUrl);
+        request.Headers.Add("SOAPAction", SendInvoiceSoapAction);
+        request.Content = new StringContent(envelope, Encoding.UTF8, "text/xml");
+
+        using var client = httpClientFactory.CreateClient(nameof(UyumsoftConnectedQueryService));
+        using var response = await client.SendAsync(request, cancellationToken);
+        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        var fault = ExtractSoapFaultOrDefault(responseContent, null);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(fault)
+                    ? $"Uyumsoft gonderim istegi HTTP {(int)response.StatusCode} ile basarisiz oldu."
+                    : fault);
+        }
+
+        if (!string.IsNullOrWhiteSpace(fault))
+        {
+            throw new InvalidOperationException(fault);
+        }
+
+        return ParseSendResponse(responseContent);
+    }
+
+    private string BuildSendInvoiceEnvelope(
+        UyumsoftServiceEndpointOptions config,
+        BuiltInvoiceDocument invoice,
+        InvoiceSendingScenario scenario)
+    {
+        var soapNamespace = XNamespace.Get(SoapEnvelopeNamespace);
+        var service = XNamespace.Get(ServiceNamespace);
+        var invoiceElement = XDocument.Parse(invoice.XmlContent).Root
+                            ?? throw new InvalidOperationException("Invoice XML could not be parsed.");
+        var wrappedInvoiceElement = new XElement(
+            service + "Invoice",
+            invoiceElement.Attributes(),
+            invoiceElement.Nodes());
+        var invoiceInfo = new XElement(
+            service + "InvoiceInfo",
+            new XAttribute("LocalDocumentId", BuildLocalDocumentId(invoice.InvoiceId, scenario)),
+            wrappedInvoiceElement,
+            new XElement(
+                service + "TargetCustomer",
+                new XAttribute("VknTckn", invoice.CustomerTaxNumber),
+                new XAttribute("Alias", invoice.TargetAlias),
+                new XAttribute("Title", invoice.CustomerTitle)),
+            new XElement(
+                service + "Scenario",
+                scenario == InvoiceSendingScenario.EArsiv ? "eArchive" : "eInvoice"),
+            new XElement(
+                service + "CreateDateUtc",
+                DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")));
+
+        if (scenario == InvoiceSendingScenario.EArsiv)
+        {
+            invoiceInfo.Add(
+                new XElement(
+                    service + "EArchiveInvoiceInfo",
+                    new XAttribute("DeliveryType", "Electronic")));
+        }
+
+        var envelope = new XDocument(
+            new XElement(
+                soapNamespace + "Envelope",
+                new XAttribute(XNamespace.Xmlns + "soapenv", soapNamespace),
+                new XAttribute(XNamespace.Xmlns + "tem", service),
+                new XElement(
+                    soapNamespace + "Body",
+                    new XElement(
+                        service + "SendInvoice",
+                        new XElement(
+                            service + "userInfo",
+                            new XAttribute("Username", config.Username),
+                            new XAttribute("Password", config.Password)),
+                        new XElement(service + "invoices", invoiceInfo)))));
+
+        return envelope.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static ServiceSendResponse ParseSendResponse(string responseContent)
+    {
+        var document = XDocument.Parse(responseContent);
+        var resultElement = document.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "SendInvoiceResult")
+            ?? throw new InvalidOperationException("Uyumsoft SendInvoice response could not be parsed.");
+        var isSucceededAttribute = resultElement.Attributes()
+            .FirstOrDefault(attribute => attribute.Name.LocalName == "IsSucceded")
+            ?.Value;
+        var message = resultElement.Attributes()
+            .FirstOrDefault(attribute => attribute.Name.LocalName == "Message")
+            ?.Value
+            ?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(isSucceededAttribute) &&
+            bool.TryParse(isSucceededAttribute, out var isSucceeded) &&
+            !isSucceeded)
+        {
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(message)
+                    ? "Uyumsoft faturayi kabul etmedi."
+                    : message);
+        }
+
+        var valueElement = resultElement.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName is "Value" or "InvoiceIdentity")
+            ?? throw new InvalidOperationException(
+                "Uyumsoft SendInvoice response does not contain a sent invoice identity.");
+        var serviceDocumentId = valueElement.Attributes()
+            .FirstOrDefault(attribute => attribute.Name.LocalName == "Id")
+            ?.Value
+            ?.Trim()
+            ?? string.Empty;
+        var serviceDocumentNumber = valueElement.Attributes()
+            .FirstOrDefault(attribute => attribute.Name.LocalName == "Number")
+            ?.Value
+            ?.Trim()
+            ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(serviceDocumentNumber))
+        {
+            throw new InvalidOperationException(
+                "Uyumsoft SendInvoice response does not contain a document number.");
+        }
+
+        return new ServiceSendResponse(serviceDocumentId, serviceDocumentNumber);
+    }
+
+    private async Task MarkAsSentAsync(
+        string documentSerie,
+        int documentOrderNo,
+        string serviceDocumentNumber,
+        CancellationToken cancellationToken)
+    {
+        var trackedRows = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .Where(row =>
+                row.cha_evrakno_seri == documentSerie &&
+                row.cha_evrakno_sira == documentOrderNo &&
+                row.cha_tip == 0 &&
+                row.cha_iptal != true)
+            .ToListAsync(cancellationToken);
+
+        if (trackedRows.Count == 0)
+        {
+            throw new KeyNotFoundException(
+                $"Mikro hareketleri bulunamadi: {documentSerie}/{documentOrderNo}.");
+        }
+
+        var now = DateTime.Now;
+
+        foreach (var row in trackedRows)
+        {
+            row.cha_belge_no = serviceDocumentNumber;
+            row.cha_kilitli = true;
+            row.cha_degisti = true;
+            row.cha_lastup_user = MikroUserNo;
+            row.cha_lastup_date = now;
+        }
+
+        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static PendingInvoiceRecord MapPendingInvoice(
+        DbDataReader reader,
+        InvoiceSendingScenario scenario)
+    {
+        var documentSerie = ReadString(reader, "DocumentSerie");
+        var documentOrderNo = ReadInt32(reader, "DocumentOrderNo");
+        var documentDate = ReadDateTime(reader, "BelgeTarihi");
+        var lineExtensionTotal = RoundMoney(ReadDecimal(reader, "AraToplam"));
+        var taxTotal = RoundMoney(ReadDecimal(reader, "TaxTotal"));
+        var chargeTotal = RoundMoney(ReadDecimal(reader, "Rusum"));
+        var payableTotal = RoundMoney(lineExtensionTotal + taxTotal + chargeTotal);
+        var customerTitle = ReadString(reader, "MusteriAdi");
+        var targetAlias = ResolveTargetAlias(
+            ReadString(reader, "FaturaMail"),
+            ReadString(reader, "Mail"));
+
+        return new PendingInvoiceRecord(
+            ReadGuid(reader, "FatGuid"),
+            documentSerie,
+            documentOrderNo,
+            BuildInvoiceId(documentSerie, documentOrderNo, documentDate.Year),
+            documentDate,
+            ReadString(reader, "BelgeNo"),
+            ReadString(reader, "MusteriKodu"),
+            customerTitle,
+            ReadString(reader, "VDNo"),
+            targetAlias,
+            ReadString(reader, "VergiDairesi"),
+            ReadString(reader, "Cadde"),
+            ReadString(reader, "Sokak"),
+            ReadString(reader, "Ilce"),
+            ReadString(reader, "Il"),
+            ReadString(reader, "PostaKodu"),
+            ReadString(reader, "CariTel"),
+            ReadString(reader, "Mail"),
+            ReadInt32(reader, "CariHareketCins"),
+            ReadInt32(reader, "EvrakTip"),
+            ReadInt32(reader, "Iade"),
+            ReadInt32(reader, "EBelgeTuru"),
+            ReadString(reader, "IstisnaKodu"),
+            ReadString(reader, "OzelMatrahKodu"),
+            lineExtensionTotal,
+            taxTotal,
+            chargeTotal,
+            payableTotal,
+            ReadString(reader, "IrsaliyeNo"),
+            ReadNullableDateTime(reader, "IrsaliyeTarihi"),
+            ReadString(reader, "Depo"),
+            ReadString(reader, "Aciklama"),
+            scenario);
+    }
+
+    private static InvoiceSendingListItemDto MapListItem(PendingInvoiceRecord invoice) =>
+        new(
+            invoice.DocumentSerie,
+            invoice.DocumentOrderNo,
+            invoice.InvoiceId,
+            invoice.DocumentDate,
+            invoice.SentDocumentNo,
+            invoice.IsSent,
+            invoice.CustomerCode,
+            invoice.CustomerTitle,
+            invoice.CustomerTaxNumber,
+            invoice.TargetAlias,
+            ResolveProfileId(invoice),
+            ResolveInvoiceTypeCode(invoice),
+            invoice.Scenario,
+            invoice.LineExtensionTotal,
+            invoice.TaxTotal,
+            invoice.Rusum,
+            invoice.PayableTotal,
+            invoice.ShipmentDocumentNo,
+            invoice.ShipmentDocumentDate,
+            invoice.WarehouseName,
+            invoice.Description);
+
+    private static void ValidateListRequest(InvoiceSendingListRequest request)
+    {
+        if (request.EndDate.Date < request.StartDate.Date)
+        {
+            throw new ArgumentException("End date can not be earlier than start date.", nameof(request.EndDate));
+        }
+
+        if (request.SentState is < -1 or > 1)
+        {
+            throw new ArgumentException("SentState must be one of -1, 0 or 1.", nameof(request.SentState));
+        }
+    }
+
+    private static void ValidateSendRequest(SendInvoiceDocumentsRequest request)
+    {
+        if (request.Documents.Count == 0)
+        {
+            throw new ArgumentException("En az bir fatura secilmelidir.", nameof(request.Documents));
+        }
+
+        if (request.Documents.Any(document =>
+                string.IsNullOrWhiteSpace(document.DocumentSerie) ||
+                document.DocumentOrderNo <= 0))
+        {
+            throw new ArgumentException(
+                "Her secim icin gecerli documentSerie ve documentOrderNo verilmelidir.",
+                nameof(request.Documents));
+        }
+    }
+
+    private void ValidateConfiguration()
+    {
+        var config = uyumsoftOptions.Value.EInvoice;
+
+        if (string.IsNullOrWhiteSpace(config.EndpointUrl))
+        {
+            throw new InvalidOperationException("EInvoice endpoint configuration is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(config.Username))
+        {
+            throw new InvalidOperationException("EInvoice username configuration is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(config.Password))
+        {
+            throw new InvalidOperationException("EInvoice password configuration is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(eDesPatchOptionsValue.SupplierCustomerCode))
+        {
+            throw new InvalidOperationException("Supplier customer code configuration is required.");
+        }
+    }
+
+    private static InvoiceDocumentProfile MapProfile(InvoiceSendingScenario scenario) =>
+        scenario == InvoiceSendingScenario.EArsiv
+            ? InvoiceDocumentProfile.EArsiv
+            : InvoiceDocumentProfile.EFatura;
+
+    private static string ResolveProfileId(PendingInvoiceRecord invoice) =>
+        invoice.Scenario == InvoiceSendingScenario.EArsiv
+            ? "EARSIVFATURA"
+            : invoice.EBelgeTuru == 0
+                ? "TICARIFATURA"
+                : "TEMELFATURA";
+
+    private static string ResolveInvoiceTypeCode(PendingInvoiceRecord invoice)
+    {
+        if (invoice.IsReturn)
+        {
+            return "IADE";
+        }
+
+        if (!string.IsNullOrWhiteSpace(invoice.IstisnaKodu))
+        {
+            return "ISTISNA";
+        }
+
+        if (!string.IsNullOrWhiteSpace(invoice.OzelMatrahKodu))
+        {
+            return "OZELMATRAH";
+        }
+
+        return "SATIS";
+    }
+
+    private static string ResolveExemptionCode(PendingInvoiceRecord invoice)
+    {
+        if (!string.IsNullOrWhiteSpace(invoice.IstisnaKodu))
+        {
+            return invoice.IstisnaKodu;
+        }
+
+        if (!string.IsNullOrWhiteSpace(invoice.OzelMatrahKodu))
+        {
+            return invoice.OzelMatrahKodu;
+        }
+
+        return string.Empty;
+    }
+
+    private static string ResolveExemptionReason(PendingInvoiceRecord invoice)
+    {
+        if (!string.IsNullOrWhiteSpace(invoice.IstisnaKodu))
+        {
+            return "Istisna";
+        }
+
+        if (!string.IsNullOrWhiteSpace(invoice.OzelMatrahKodu))
+        {
+            return "Ozel Matrah";
+        }
+
+        return string.Empty;
+    }
+
+    private static decimal ResolveTaxRate(
+        decimal taxableAmount,
+        decimal taxAmount,
+        int taxPointer,
+        PendingInvoiceRecord invoice)
+    {
+        if (!string.IsNullOrWhiteSpace(invoice.IstisnaKodu) || !string.IsNullOrWhiteSpace(invoice.OzelMatrahKodu))
+        {
+            return 0m;
+        }
+
+        if (taxableAmount > 0m && taxAmount > 0m)
+        {
+            return Math.Round(taxAmount * 100m / taxableAmount, 2, MidpointRounding.AwayFromZero);
+        }
+
+        return taxPointer switch
+        {
+            0 => 0m,
+            1 => 1m,
+            8 => 8m,
+            18 => 18m,
+            _ => 0m
+        };
+    }
+
+    private static string ResolveTargetAlias(string alias, string email)
+    {
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            return alias.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            return email.Trim();
+        }
+
+        return string.Empty;
+    }
+
+    private static string ResolveTaxNumber(string? taxNumber, string? identityNumber)
+    {
+        var resolved = string.IsNullOrWhiteSpace(taxNumber)
+            ? identityNumber ?? string.Empty
+            : taxNumber;
+
+        return resolved.Trim();
+    }
+
+    private static string ResolveTaxSchemeId(string taxNumber) =>
+        taxNumber.Length == 11 ? "TCKN" : "VKN";
+
+    private static string BuildCustomerTitle(string? title1, string? title2)
+    {
+        var first = title1?.Trim() ?? string.Empty;
+        var second = title2?.Trim() ?? string.Empty;
+
+        return string.IsNullOrWhiteSpace(second)
+            ? first
+            : $"{first} {second}".Trim();
+    }
+
+    private static string NormalizePhone(string? phone1, string? phone2)
+    {
+        var values = new[] { phone1?.Trim(), phone2?.Trim() }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return values.Length == 0 ? string.Empty : string.Join(" ", values);
+    }
+
+    private static string BuildInvoiceId(string documentSerie, int documentOrderNo, int year)
+    {
+        var prefix = (documentSerie ?? string.Empty).Trim().ToUpperInvariant();
+
+        if (prefix.Length > 3)
+        {
+            prefix = prefix[..3];
+        }
+
+        return $"{prefix}{year}{documentOrderNo:D9}";
+    }
+
+    private static string BuildLocalDocumentId(string invoiceId, InvoiceSendingScenario scenario) =>
+        $"{scenario}:{invoiceId}";
+
+    private static string ResolveUnitCode(string unitName)
+    {
+        var normalized = (unitName ?? string.Empty).Trim().ToUpperInvariant();
+
+        return normalized switch
+        {
+            "AD" or "ADET" => "C62",
+            "KG" or "KILO" or "KILOGRAM" => "KGM",
+            "GR" or "GRAM" => "GRM",
+            "LT" or "LITRE" or "LITRE." => "LTR",
+            "MT" or "METRE" => "MTR",
+            "KOLI" => "AB",
+            "KASA" => "BX",
+            "PAKET" => "NIU",
+            "SAAT" => "HUR",
+            "GUN" => "DAY",
+            _ => "NIU"
+        };
+    }
+
+    private static decimal NormalizeQuantity(decimal quantity) => quantity <= 0m ? 1m : quantity;
+
+    private static decimal RoundMoney(decimal value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static string FormatAmount(decimal value) =>
+        RoundMoney(value).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatQuantity(decimal value) =>
+        value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatRate(decimal value) =>
+        value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static async Task<List<T>> ExecuteReaderAsync<T>(
+        DbContext context,
+        string sql,
+        Action<DbCommand> configureCommand,
+        Func<DbDataReader, T> map,
+        CancellationToken cancellationToken)
+    {
+        var items = new List<T>();
+        var connection = context.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 180;
+            configureCommand(command);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                items.Add(map(reader));
+            }
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        return items;
+    }
+
+    private static void AddParameter(DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static string ReadString(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        return reader.IsDBNull(ordinal)
+            ? string.Empty
+            : reader.GetValue(ordinal)?.ToString()?.Trim() ?? string.Empty;
+    }
+
+    private static int ReadInt32(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            return 0;
+        }
+
+        return Convert.ToInt32(reader.GetValue(ordinal));
+    }
+
+    private static Guid ReadGuid(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            return Guid.Empty;
+        }
+
+        var value = reader.GetValue(ordinal);
+
+        return value is Guid guid
+            ? guid
+            : Guid.Parse(value.ToString() ?? Guid.Empty.ToString());
+    }
+
+    private static DateTime ReadDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        return reader.IsDBNull(ordinal)
+            ? DateTime.MinValue
+            : Convert.ToDateTime(reader.GetValue(ordinal));
+    }
+
+    private static DateTime? ReadNullableDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        return reader.IsDBNull(ordinal)
+            ? null
+            : Convert.ToDateTime(reader.GetValue(ordinal));
+    }
+
+    private static decimal ReadDecimal(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            return 0m;
+        }
+
+        return Convert.ToDecimal(reader.GetValue(ordinal));
+    }
+
+    private static string? ExtractSoapFaultOrDefault(string responseContent, string? fallbackMessage)
+    {
+        try
+        {
+            var document = XDocument.Parse(responseContent);
+            var faultElement = document.Descendants()
+                .FirstOrDefault(element => element.Name.LocalName == "Fault");
+
+            if (faultElement is null)
+            {
+                return fallbackMessage;
+            }
+
+            return faultElement.Descendants()
+                       .FirstOrDefault(element =>
+                           element.Name.LocalName is "faultstring" or "Reason" or "Text")
+                       ?.Value
+                       ?.Trim()
+                   ?? fallbackMessage;
+        }
+        catch
+        {
+            return fallbackMessage;
+        }
+    }
+
+    private sealed record PendingInvoiceRecord(
+        Guid InvoiceGuid,
+        string DocumentSerie,
+        int DocumentOrderNo,
+        string InvoiceId,
+        DateTime DocumentDate,
+        string SentDocumentNo,
+        string CustomerCode,
+        string CustomerTitle,
+        string CustomerTaxNumber,
+        string TargetAlias,
+        string TaxOffice,
+        string AddressStreet,
+        string AddressStreet2,
+        string AddressDistrict,
+        string AddressCity,
+        string PostalCode,
+        string Phone,
+        string Email,
+        int CariMovementType,
+        int DocumentType,
+        int ReturnFlag,
+        int EBelgeTuru,
+        string IstisnaKodu,
+        string OzelMatrahKodu,
+        decimal LineExtensionTotal,
+        decimal TaxTotal,
+        decimal Rusum,
+        decimal PayableTotal,
+        string ShipmentDocumentNo,
+        DateTime? ShipmentDocumentDate,
+        string WarehouseName,
+        string Description,
+        InvoiceSendingScenario Scenario)
+    {
+        public bool IsSent => !string.IsNullOrWhiteSpace(SentDocumentNo);
+
+        public bool IsReturn => ReturnFlag != 0;
+    }
+
+    private sealed record InvoiceLineSeed(
+        string Code,
+        string Name,
+        decimal Quantity,
+        decimal GrossAmount,
+        IReadOnlyCollection<decimal> Discounts,
+        decimal NetAmount,
+        decimal TaxAmount,
+        decimal TaxRate,
+        string UnitCode);
+
+    private sealed record PartyInfo(
+        string Code,
+        string DisplayName,
+        string TaxNumber,
+        string TaxOffice,
+        string Street,
+        string Street2,
+        string District,
+        string City,
+        string PostalCode,
+        string Phone,
+        string Email,
+        string CountryCode,
+        string CountryName);
+
+    private sealed record BuiltInvoiceDocument(
+        string InvoiceId,
+        string CustomerTaxNumber,
+        string TargetAlias,
+        string CustomerTitle,
+        string XmlContent,
+        XElement InvoiceElement,
+        string ProfileId,
+        string InvoiceTypeCode);
+
+    private sealed record ServiceSendResponse(
+        string ServiceDocumentId,
+        string ServiceDocumentNumber);
+}

@@ -1,0 +1,27 @@
+namespace FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+
+public sealed record CompanyMovementHeaderDto(
+    DateTime? DocumentDate,
+    DateTime MovementCreateDate,
+    DateTime? MovementDate,
+    string DocumentNo,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string CustomerCode,
+    string CustomerName,
+    string CustomerTitle,
+    string CustomerDisplayName,
+    string CustomerAddress,
+    int WarehouseNo,
+    string WarehouseName,
+    int InputWarehouseNo,
+    string InputWarehouseName,
+    int OutputWarehouseNo,
+    string OutputWarehouseName,
+    byte DocumentType,
+    byte MovementType,
+    byte ReturnType,
+    string Description,
+    int LineCount,
+    double TotalQuantity,
+    double TotalAmount);

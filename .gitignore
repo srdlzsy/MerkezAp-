@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+.dotnet-home/
+.dotnetcli/
+.nuget/
+.artifacts/
+artifacts/
+*.log
+*.user
+*.suo
+tmp_*
+AppDataKeys/
+src/**/AppDataKeys/
+**/appsettings.Local.json
+logs/
+src/FurpaMerkezApi.WebApi/logs/

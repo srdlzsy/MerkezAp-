@@ -1,0 +1,28 @@
+namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+
+public sealed record CompanyOrderHeaderDto(
+    string? DocumentKey,
+    DateTime DocumentDate,
+    DateTime? DeliveryDate,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string DocumentNumber,
+    int WarehouseNo,
+    string WarehouseName,
+    string CustomerCode,
+    string CustomerName,
+    string CustomerTitle,
+    string CustomerDisplayName,
+    string CustomerAddress,
+    string CustomerRepresentativeCode,
+    string Description1,
+    string Description2,
+    string Deliverer,
+    string Receiver,
+    bool CanBeCalled,
+    int LineCount,
+    double TotalQuantity,
+    double TotalDeliveredQuantity,
+    double TotalRemainingQuantity,
+    double TotalAmount,
+    bool IsClosed);
