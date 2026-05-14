@@ -1,0 +1,120 @@
+using FurpaMerkezApi.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace FurpaMerkezApi.Infrastructure.Persistence.Configurations;
+
+public sealed class UyumsoftInboxInvoiceConfiguration : IEntityTypeConfiguration<UyumsoftInboxInvoice>
+{
+    public void Configure(EntityTypeBuilder<UyumsoftInboxInvoice> builder)
+    {
+        builder.ToTable("uyumsoft_inbox_invoices");
+
+        builder.HasKey(item => item.Id);
+
+        builder.Property(item => item.Id)
+            .HasColumnName("id");
+
+        builder.Property(item => item.DocumentId)
+            .HasColumnName("document_id")
+            .HasMaxLength(150)
+            .IsRequired();
+
+        builder.Property(item => item.InvoiceId)
+            .HasColumnName("invoice_id")
+            .HasMaxLength(150)
+            .IsRequired();
+
+        builder.Property(item => item.ServiceDocumentId)
+            .HasColumnName("service_document_id")
+            .HasMaxLength(150);
+
+        builder.Property(item => item.LocalDocumentId)
+            .HasColumnName("local_document_id")
+            .HasMaxLength(250);
+
+        builder.Property(item => item.CustomerTitle)
+            .HasColumnName("customer_title")
+            .HasMaxLength(255)
+            .IsRequired();
+
+        builder.Property(item => item.CustomerTcknVkn)
+            .HasColumnName("customer_tckn_vkn")
+            .HasMaxLength(50)
+            .IsRequired();
+
+        builder.Property(item => item.CreateDate)
+            .HasColumnName("create_date")
+            .HasColumnType("timestamp without time zone");
+
+        builder.Property(item => item.InvoiceDate)
+            .HasColumnName("invoice_date")
+            .HasColumnType("timestamp without time zone");
+
+        builder.Property(item => item.InvoiceType)
+            .HasColumnName("invoice_type")
+            .HasMaxLength(80)
+            .IsRequired();
+
+        builder.Property(item => item.InvoiceTotal)
+            .HasColumnName("invoice_total")
+            .HasPrecision(18, 2)
+            .IsRequired();
+
+        builder.Property(item => item.DespatchId)
+            .HasColumnName("despatch_id")
+            .HasMaxLength(150)
+            .IsRequired();
+
+        builder.Property(item => item.IsProcessed)
+            .HasColumnName("is_processed")
+            .IsRequired();
+
+        builder.Property(item => item.IsPrinted)
+            .HasColumnName("is_printed")
+            .IsRequired();
+
+        builder.Property(item => item.IsStandard)
+            .HasColumnName("is_standard")
+            .IsRequired();
+
+        builder.Property(item => item.StatusCode)
+            .HasColumnName("status_code")
+            .HasMaxLength(80)
+            .IsRequired();
+
+        builder.Property(item => item.Status)
+            .HasColumnName("status")
+            .HasMaxLength(120)
+            .IsRequired();
+
+        builder.Property(item => item.EnvelopeStatusCode)
+            .HasColumnName("envelope_status_code")
+            .HasMaxLength(80);
+
+        builder.Property(item => item.CreatedAtUtc)
+            .HasColumnName("created_at_utc")
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+
+        builder.Property(item => item.UpdatedAtUtc)
+            .HasColumnName("updated_at_utc")
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+
+        builder.Property(item => item.LastSynchronizedAtUtc)
+            .HasColumnName("last_synchronized_at_utc")
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+
+        builder.HasIndex(item => item.DocumentId)
+            .IsUnique()
+            .HasDatabaseName("ux_uyumsoft_inbox_invoices_document_id");
+
+        builder.HasIndex(item => item.InvoiceDate)
+            .HasDatabaseName("ix_uyumsoft_inbox_invoices_invoice_date");
+
+        builder.HasIndex(item => new { item.IsProcessed, item.IsPrinted })
+            .HasDatabaseName("ix_uyumsoft_inbox_invoices_processed_printed");
+    }
+}

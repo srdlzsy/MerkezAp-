@@ -1,0 +1,25 @@
+namespace FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
+
+public sealed record BarcodeResolutionDto(
+    bool IsFound,
+    string Barcode,
+    int WarehouseNo,
+    string? ScreenCode,
+    string? ResolutionSource,
+    string? StockCode,
+    string? StockName,
+    string? MatchedBarcode,
+    string? PrimaryBarcode,
+    string? CaseBarcode,
+    double? UnitsPerCase,
+    int? MatchedUnitPointer,
+    string? MatchedUnitName,
+    double? MatchedUnitMultiplier,
+    bool IsBlocked,
+    bool IsSalesBlocked,
+    bool IsOrderBlocked,
+    bool IsGoodsAcceptanceBlocked,
+    bool IsUsableInScreen,
+    string? UsabilityReason,
+    string? DefaultSupplierCode,
+    string? DefaultSupplierName);

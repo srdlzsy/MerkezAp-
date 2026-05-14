@@ -1,0 +1,188 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
+using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
+using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace FurpaMerkezApi.WebApi.Controllers.Modules.FaturaIslemleri.FaturaGoruntuleme;
+
+[ApiController]
+[Route("api/fatura-islemleri/fatura-goruntuleme")]
+[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+public sealed class FaturaGoruntulemeController(
+    IListInvoiceViewingDocumentsUseCase listInvoiceViewingDocumentsUseCase,
+    ISynchronizeInvoiceViewingDocumentsUseCase synchronizeInvoiceViewingDocumentsUseCase,
+    IGetInvoiceViewingDocumentUseCase getInvoiceViewingDocumentUseCase,
+    IRenderInvoiceViewingDocumentUseCase renderInvoiceViewingDocumentUseCase,
+    ISetInvoiceViewingPrintedStateUseCase setInvoiceViewingPrintedStateUseCase)
+    : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
+{
+    private const string ModuleCode = "fatura-islemleri";
+    private const string ModuleName = "FaturaIslemleri";
+    private const string MenuCode = "fatura-goruntuleme";
+    private const string MenuName = "FaturaGoruntuleme";
+    private const string ListPolicy = "fatura-islemleri.fatura-goruntuleme.list";
+    private const string DetailPolicy = "fatura-islemleri.fatura-goruntuleme.detail";
+    private const string UpdatePolicy = "fatura-islemleri.fatura-goruntuleme.update";
+
+    [HttpGet]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(InvoiceViewingListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<InvoiceViewingListResponse>> List(
+        [FromQuery] InvoiceViewingListHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await listInvoiceViewingDocumentsUseCase.ExecuteAsync(
+            new InvoiceViewingListRequest(
+                request.StartDate!.Value,
+                request.EndDate!.Value,
+                MapState(request.ResolveProcessedState()),
+                MapState(request.ResolvePrintedState()),
+                request.SearchField,
+                request.SearchText,
+                request.ResolvePageNumber(),
+                request.PageSize),
+            cancellationToken));
+
+    [HttpPost("senkronize")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Synchronize(
+        [FromBody] InvoiceViewingSynchronizationHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        await synchronizeInvoiceViewingDocumentsUseCase.ExecuteAsync(
+            new InvoiceViewingSynchronizationRequest(
+                request.StartDate!.Value,
+                request.EndDate!.Value),
+            cancellationToken);
+
+        return NoContent();
+    }
+
+    [HttpGet("{documentId}")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(InvoiceViewingDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InvoiceViewingDetailDto>> Detail(
+        string documentId,
+        CancellationToken cancellationToken) =>
+        Ok(await getInvoiceViewingDocumentUseCase.ExecuteAsync(
+            new InvoiceViewingDetailRequest(documentId),
+            cancellationToken));
+
+    [HttpPost("{documentId}/render")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(InvoiceViewingDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InvoiceViewingDetailDto>> Render(
+        string documentId,
+        [FromBody] InvoiceViewingRenderHttpRequest? request,
+        CancellationToken cancellationToken) =>
+        Ok(await renderInvoiceViewingDocumentUseCase.ExecuteAsync(
+            new InvoiceViewingRenderRequest(
+                documentId,
+                request?.Profile ?? InvoiceDocumentProfile.Auto,
+                request?.PreferEmbeddedXslt,
+                request?.FallbackToDefaultXslt ?? true),
+            cancellationToken));
+
+    [HttpPatch("{documentId}/printed")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(InvoiceViewingPrintedStateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InvoiceViewingPrintedStateResponse>> SetPrintedState(
+        string documentId,
+        [FromBody] InvoiceViewingPrintedStateHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await setInvoiceViewingPrintedStateUseCase.ExecuteAsync(
+            new InvoiceViewingPrintedStateRequest(
+                documentId,
+                request.IsPrinted!.Value,
+                string.IsNullOrWhiteSpace(request.Source) ? "manual-update" : request.Source.Trim()),
+            cancellationToken));
+
+    private static bool? MapState(int state) =>
+        state switch
+        {
+            0 => false,
+            1 => true,
+            _ => null
+        };
+}
+
+public sealed class InvoiceViewingListHttpRequest
+{
+    [Required]
+    public DateTime? StartDate { get; init; }
+
+    [Required]
+    public DateTime? EndDate { get; init; }
+
+    [Range(-1, 1)]
+    public int ProcessedState { get; init; } = -1;
+
+    [FromQuery(Name = "isProcessed")]
+    [Range(-1, 1)]
+    public int? IsProcessed { get; init; }
+
+    [Range(-1, 1)]
+    public int PrintedState { get; init; } = -1;
+
+    [FromQuery(Name = "isPrinted")]
+    [Range(-1, 1)]
+    public int? IsPrinted { get; init; }
+
+    public InvoiceViewingSearchField? SearchField { get; init; }
+
+    public string? SearchText { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int PageNumber { get; init; } = 1;
+
+    [FromQuery(Name = "page")]
+    [Range(1, int.MaxValue)]
+    public int? Page { get; init; }
+
+    [Range(1, 500)]
+    public int PageSize { get; init; } = 50;
+
+    public int ResolveProcessedState() => IsProcessed ?? ProcessedState;
+
+    public int ResolvePrintedState() => IsPrinted ?? PrintedState;
+
+    public int ResolvePageNumber() => Page ?? PageNumber;
+}
+
+public sealed class InvoiceViewingPrintedStateHttpRequest
+{
+    [Required]
+    public bool? IsPrinted { get; init; }
+
+    public string? Source { get; init; }
+}
+
+public sealed class InvoiceViewingSynchronizationHttpRequest
+{
+    [Required]
+    public DateTime? StartDate { get; init; }
+
+    [Required]
+    public DateTime? EndDate { get; init; }
+}
+
+public sealed class InvoiceViewingRenderHttpRequest
+{
+    public InvoiceDocumentProfile Profile { get; init; } = InvoiceDocumentProfile.Auto;
+
+    public bool? PreferEmbeddedXslt { get; init; }
+
+    [JsonPropertyName("fallbackToGeneral")]
+    public bool FallbackToDefaultXslt { get; init; } = true;
+}
