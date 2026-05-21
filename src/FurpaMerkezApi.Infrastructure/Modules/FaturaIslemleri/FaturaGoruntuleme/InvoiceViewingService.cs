@@ -36,10 +36,11 @@ public sealed class InvoiceViewingService(
     {
         await syncService.EnsureInvoiceExistsAsync(request.DocumentId, cancellationToken);
 
-        var summary = await queryExecutor.GetByDocumentIdAsync(request.DocumentId, cancellationToken);
+        var renderContext = await queryExecutor.GetRenderContextByLookupIdAsync(request.DocumentId, cancellationToken);
+        var summary = renderContext.Summary;
         var preferEmbeddedXslt = request.PreferEmbeddedXslt ?? !summary.IsStandard;
         var renderedDocument = await invoiceDocumentRenderer.RenderInboxInvoiceAsync(
-            summary.DocumentId,
+            renderContext.LookupIds,
             request.Profile,
             preferEmbeddedXslt,
             cancellationToken: cancellationToken,

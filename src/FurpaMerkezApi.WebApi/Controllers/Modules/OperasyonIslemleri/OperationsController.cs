@@ -70,7 +70,7 @@ public sealed class OperationsController(IOperationsService operationsService)
     [HttpGet("promofile")]
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(OperationJobDto), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<OperationJobDto>> PromoFile(CancellationToken cancellationToken)
     {
         var response = await operationsService.QueuePromoFileAsync(

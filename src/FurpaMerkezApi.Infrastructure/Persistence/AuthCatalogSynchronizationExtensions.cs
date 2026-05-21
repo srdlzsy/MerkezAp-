@@ -13,13 +13,27 @@ public static class AuthCatalogSynchronizationExtensions
         var changed = false;
         var seededPermissions = AuthSeedData.Permissions
             .ToDictionary(permission => permission.Code, StringComparer.OrdinalIgnoreCase);
-        var existingPermissions = (await dbContext.Permissions.ToListAsync(cancellationToken))
+        var existingPermissionList = await dbContext.Permissions.ToListAsync(cancellationToken);
+        var existingPermissionsByCode = existingPermissionList
             .ToDictionary(permission => permission.Code, StringComparer.OrdinalIgnoreCase);
+        var existingPermissionsById = existingPermissionList
+            .ToDictionary(permission => permission.Id);
 
         foreach (var seededPermission in seededPermissions.Values)
         {
-            if (!existingPermissions.TryGetValue(seededPermission.Code, out var existingPermission))
+            if (!existingPermissionsByCode.TryGetValue(seededPermission.Code, out var existingPermission))
             {
+                if (existingPermissionsById.TryGetValue(seededPermission.Id, out var renamedPermission))
+                {
+                    renamedPermission.Update(
+                        seededPermission.Code,
+                        seededPermission.Name,
+                        seededPermission.Description,
+                        now);
+                    changed = true;
+                    continue;
+                }
+
                 dbContext.Permissions.Add(new Domain.Entities.AppPermission(
                     seededPermission.Id,
                     seededPermission.Code,

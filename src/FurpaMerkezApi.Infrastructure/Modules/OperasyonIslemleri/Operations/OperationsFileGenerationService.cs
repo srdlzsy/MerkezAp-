@@ -4,7 +4,9 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.Operations;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -14,9 +16,47 @@ internal sealed class OperationsFileGenerationService(
     MikroDbContext mikroDbContext,
     FurpaDbContext furpaDbContext,
     IOptions<OperationsExportOptions> options,
+    IConfiguration configuration,
     ILogger<OperationsFileGenerationService> logger)
 {
     private static readonly Encoding FileEncoding = Encoding.GetEncoding(1254);
+    private static readonly string[] PromotionCodeColumns =
+    [
+        "PromotionCode",
+        "PromosyonKodu",
+        "PROMOSYON_KODU",
+        "PROMOSYONKODU",
+        "ProCode",
+        "ProKod",
+        "ProKodu",
+        "subeProKod",
+        "pro_kod",
+        "pro_kodu"
+    ];
+    private static readonly string[] BranchNoColumns =
+    [
+        "BranchNo",
+        "SubeNo",
+        "MagazaNo",
+        "Sube",
+        "sube_no",
+        "magaza_no",
+        "BranchCode",
+        "branch_no",
+        "subeProSubeKod",
+        "WarehouseNo",
+        "DepoNo"
+    ];
+    private static readonly string[] ExpirationDateColumns =
+    [
+        "ExpirationDate",
+        "ExpireDate",
+        "EndDate",
+        "BitisTarihi",
+        "SonTarih",
+        "ProBitTarihi",
+        "pro_bitis_tarihi"
+    ];
 
     public async Task<OperationGenerationResult> GenerateAsync(
         OperationFileKind kind,
@@ -29,6 +69,7 @@ internal sealed class OperationsFileGenerationService(
             OperationFileKind.ScalesFile => await GenerateScalesFileAsync(warehouseNo, jobId, cancellationToken),
             OperationFileKind.ProductBarcodePluNoFile => await GenerateProductFilesAsync(warehouseNo, jobId, cancellationToken),
             OperationFileKind.CashierFile => await GenerateCashierFilesAsync(warehouseNo, jobId, cancellationToken),
+            OperationFileKind.PromoFile => await GeneratePromoFilesAsync(warehouseNo, jobId, cancellationToken),
             _ => throw new InvalidOperationException($"Unsupported operation file kind: {kind}.")
         };
     }
@@ -141,6 +182,42 @@ internal sealed class OperationsFileGenerationService(
             generatedFiles);
     }
 
+    private async Task<OperationGenerationResult> GeneratePromoFilesAsync(
+        int warehouseNo,
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        var branchDetail = await GetOptionalBranchDetailAsync(warehouseNo, cancellationToken);
+        var cashRegisters = await ListCashRegistersAsync(warehouseNo, cancellationToken);
+        var noPromoPlus = await ListNoPromoPlusAsync(cancellationToken);
+        var groupAndSpecialRows = await ListGroupAndSpecialRowsAsync(cancellationToken);
+        var promotions = await ListPromotionRowsAsync(warehouseNo, cancellationToken);
+        var gibTaxNumbers = await TryListGibTaxNumbersAsync(cancellationToken);
+
+        var exportDirectory = EnsureLocalDirectory(warehouseNo, jobId, "promofile");
+        var generatedFiles = new List<GeneratedOperationFileDto>
+        {
+            await WritePromoDatFileAsync(exportDirectory, branchDetail, promotions, cancellationToken),
+            await WritePluListFileAsync(exportDirectory, branchDetail, "NOPROMO.DAT", noPromoPlus, cancellationToken),
+            await WritePluListFileAsync(exportDirectory, branchDetail, "NOCEK.DAT", noPromoPlus, cancellationToken),
+            await WritePluListFileAsync(exportDirectory, branchDetail, "NOYEMEK.DAT", noPromoPlus, cancellationToken),
+            await WriteGroupSpecialFileAsync(exportDirectory, branchDetail, "GRUP.DAT", groupAndSpecialRows, cancellationToken),
+            await WriteGroupSpecialFileAsync(exportDirectory, branchDetail, "OZELKOD.DAT", groupAndSpecialRows, cancellationToken),
+            await WriteEInvoiceTaxNumberFileAsync(exportDirectory, branchDetail, gibTaxNumbers, cancellationToken)
+        };
+
+        generatedFiles.AddRange(await WriteMessageFilesAsync(
+            exportDirectory,
+            branchDetail,
+            cashRegisters,
+            "1140000010000000000000010000001101000000000000111",
+            cancellationToken));
+
+        return new OperationGenerationResult(
+            "PROMO.DAT ve yardimci promosyon dosyalari olusturuldu.",
+            generatedFiles);
+    }
+
     private async Task<GeneratedOperationFileDto> WriteCas16ScaleFileAsync(
         string exportDirectory,
         BranchDetailEntity branchDetail,
@@ -210,8 +287,8 @@ internal sealed class OperationsFileGenerationService(
                 await writer.WriteLineAsync(
                     "1" +
                     product.PluNo.ToString(CultureInfo.InvariantCulture).PadLeft(6, '0') +
-                    product.Barcode.PadRight(20, ' ') +
-                    NormalizeAscii(product.ProductName).PadRight(20, ' ') +
+                    FixedField(product.Barcode, 20) +
+                    FixedField(NormalizeTurkishAscii(product.ProductName), 20) +
                     product.Price.ToString("0.00", CultureInfo.InvariantCulture).PadLeft(9, '0') +
                     product.RetailSaleTaxRate.ToString(CultureInfo.InvariantCulture).PadLeft(2, '0') +
                     FormatUnitName(product.UnitName) +
@@ -277,7 +354,7 @@ internal sealed class OperationsFileGenerationService(
                 await writer.WriteLineAsync(
                     "1" +
                     cashier.CashierCode.ToString(CultureInfo.InvariantCulture).PadLeft(4, '0') +
-                    NormalizeAscii(cashierName).PadRight(20, ' ') +
+                    FixedField(NormalizeTurkishAscii(cashierName), 20) +
                     cashier.CashierPassword +
                     cashier.CashierAuthorization);
             }
@@ -298,6 +375,109 @@ internal sealed class OperationsFileGenerationService(
             await writer.WriteLineAsync(BuildAuthorizationLine("Z", authorizationFiles.Select(item => item.Z)));
             await writer.WriteLineAsync(BuildAuthorizationLine("R", authorizationFiles.Select(item => item.R)));
             await writer.WriteLineAsync(BuildAuthorizationLine("X", authorizationFiles.Select(item => item.X)));
+        }
+
+        return await BuildGeneratedFileAsync(localPath, branchDetail, branchDetail?.PosGenelFolderPath, cancellationToken);
+    }
+
+    private async Task<GeneratedOperationFileDto> WritePromoDatFileAsync(
+        string exportDirectory,
+        BranchDetailEntity? branchDetail,
+        IReadOnlyCollection<PromotionRow> promotions,
+        CancellationToken cancellationToken)
+    {
+        var localPath = Path.Combine(exportDirectory, "PROMO.DAT");
+        await using (var writer = new StreamWriter(localPath, false, FileEncoding))
+        {
+            foreach (var promotion in promotions.Where(item => item.PromotionType == "P1").OrderBy(item => item.PluNo))
+            {
+                await writer.WriteLineAsync(BuildP1Line(promotion));
+            }
+
+            foreach (var promotion in promotions.Where(item => item.PromotionType == "P2").OrderBy(item => item.ProductPluNo))
+            {
+                await writer.WriteLineAsync(BuildP2Line(promotion));
+            }
+
+            foreach (var promotion in promotions.Where(item => item.PromotionType == "P3").OrderBy(item => item.PluNo))
+            {
+                await writer.WriteLineAsync(BuildP3Line(promotion));
+            }
+
+            foreach (var promotion in promotions.Where(item => item.PromotionType == "P8").OrderBy(item => item.PluNo))
+            {
+                await writer.WriteLineAsync(BuildP8Line(promotion));
+            }
+
+            foreach (var promotion in promotions.Where(item => item.PromotionType == "P9").OrderBy(item => item.PluNo))
+            {
+                await writer.WriteLineAsync(BuildP9FirstLine(promotion));
+                await writer.WriteLineAsync(BuildP9SecondLine(promotion));
+            }
+
+            foreach (var promotion in promotions.Where(item => item.PromotionType == "PM").OrderBy(item => item.ProTotalShipping))
+            {
+                await writer.WriteLineAsync(BuildPmLine(promotion));
+            }
+        }
+
+        return await BuildGeneratedFileAsync(localPath, branchDetail, branchDetail?.PosGenelFolderPath, cancellationToken);
+    }
+
+    private async Task<GeneratedOperationFileDto> WritePluListFileAsync(
+        string exportDirectory,
+        BranchDetailEntity? branchDetail,
+        string fileName,
+        IReadOnlyCollection<int> pluNos,
+        CancellationToken cancellationToken)
+    {
+        var localPath = Path.Combine(exportDirectory, fileName);
+        await using (var writer = new StreamWriter(localPath, false, FileEncoding))
+        {
+            foreach (var pluNo in pluNos.OrderBy(item => item))
+            {
+                await writer.WriteLineAsync(pluNo.ToString(CultureInfo.InvariantCulture).PadLeft(6, '0'));
+            }
+        }
+
+        return await BuildGeneratedFileAsync(localPath, branchDetail, branchDetail?.PosGenelFolderPath, cancellationToken);
+    }
+
+    private async Task<GeneratedOperationFileDto> WriteGroupSpecialFileAsync(
+        string exportDirectory,
+        BranchDetailEntity? branchDetail,
+        string fileName,
+        IReadOnlyCollection<GroupSpecialProductRow> rows,
+        CancellationToken cancellationToken)
+    {
+        var localPath = Path.Combine(exportDirectory, fileName);
+        await using (var writer = new StreamWriter(localPath, false, FileEncoding))
+        {
+            foreach (var row in rows.OrderBy(item => item.PluNo))
+            {
+                await writer.WriteLineAsync(
+                    row.PluNo.ToString(CultureInfo.InvariantCulture).PadLeft(6, '0') +
+                    "," +
+                    FixedField(row.QualityControlCode, 4));
+            }
+        }
+
+        return await BuildGeneratedFileAsync(localPath, branchDetail, branchDetail?.PosGenelFolderPath, cancellationToken);
+    }
+
+    private async Task<GeneratedOperationFileDto> WriteEInvoiceTaxNumberFileAsync(
+        string exportDirectory,
+        BranchDetailEntity? branchDetail,
+        IReadOnlyCollection<string> taxNumbers,
+        CancellationToken cancellationToken)
+    {
+        var localPath = Path.Combine(exportDirectory, "EFATVNO.DAT");
+        await using (var writer = new StreamWriter(localPath, false, FileEncoding))
+        {
+            foreach (var taxNumber in taxNumbers.OrderBy(item => item, StringComparer.Ordinal))
+            {
+                await writer.WriteLineAsync(FixedField(taxNumber, 15));
+            }
         }
 
         return await BuildGeneratedFileAsync(localPath, branchDetail, branchDetail?.PosGenelFolderPath, cancellationToken);
@@ -391,40 +571,179 @@ internal sealed class OperationsFileGenerationService(
     {
         var rows = await (
             from stock in mikroDbContext.STOKLARs.AsNoTracking()
-            where !(stock.sto_pasif_fl ?? false) &&
-                  (stock.sto_satis_dursun ?? 0) == 0 &&
-                  (stock.sto_kasa_tarti_fl ?? false)
-            let barcode = mikroDbContext.BARKOD_TANIMLARIs
-                .AsNoTracking()
-                .Where(item => item.bar_stokkodu == stock.sto_kod)
-                .OrderByDescending(item => item.bar_master ?? false)
-                .ThenBy(item => item.bar_birimpntr ?? 0)
-                .ThenByDescending(item => item.bar_create_date)
-                .Select(item => item.bar_kodu)
-                .FirstOrDefault()
-            let price = mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs
-                .AsNoTracking()
-                .Where(item =>
-                    item.sfiyat_stokkod == stock.sto_kod &&
-                    item.sfiyat_deposirano == warehouseNo &&
-                    item.sfiyat_birim_pntr == 1)
-                .OrderBy(item => item.sfiyat_listesirano ?? int.MaxValue)
-                .ThenByDescending(item => item.sfiyat_lastup_date ?? item.sfiyat_create_date)
-                .Select(item => item.sfiyat_fiyati)
-                .FirstOrDefault()
-            where barcode != null
+            join price in mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs.AsNoTracking()
+                on stock.sto_kod equals price.sfiyat_stokkod
+            join barcode in mikroDbContext.BARKOD_TANIMLARIs.AsNoTracking()
+                on stock.sto_kod equals barcode.bar_stokkodu
+            where barcode.bar_kodu != null &&
+                  (barcode.bar_kodu.StartsWith("27") || barcode.bar_kodu.StartsWith("29")) &&
+                  barcode.bar_kodu.Length == 7 &&
+                  (barcode.bar_birimpntr ?? 0) == 1 &&
+                  price.sfiyat_deposirano == warehouseNo &&
+                  (price.sfiyat_fiyati ?? 0d) > 0d &&
+                  (price.sfiyat_listesirano ?? 0) == 1 &&
+                  !(stock.sto_pasif_fl ?? false) &&
+                  (stock.sto_satis_dursun ?? 0) == 0
             orderby stock.sto_plu_no, stock.sto_kod
             select new ScaleProductRow(
                 stock.sto_kod,
                 stock.sto_isim ?? string.Empty,
-                barcode ?? string.Empty,
-                price ?? 0d,
+                barcode.bar_kodu ?? string.Empty,
+                price.sfiyat_fiyati ?? 0d,
                 stock.sto_plu_no,
-                stock.sto_toplam_rafomru ?? 0))
+                stock.sto_RafOmru ?? stock.sto_toplam_rafomru ?? 0))
             .ToArrayAsync(cancellationToken);
 
         return rows
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<int>> ListNoPromoPlusAsync(CancellationToken cancellationToken) =>
+        await mikroDbContext.STOKLARs
+            .AsNoTracking()
+            .Where(item => (item.sto_perakende_vergi ?? 0) == 4)
+            .OrderBy(item => item.sto_plu_no)
+            .Select(item => item.sto_plu_no)
+            .ToArrayAsync(cancellationToken);
+
+    private async Task<IReadOnlyCollection<GroupSpecialProductRow>> ListGroupAndSpecialRowsAsync(
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroDbContext.STOKLARs
+            .AsNoTracking()
+            .Where(item => item.sto_mkod_artik != null && item.sto_mkod_artik != string.Empty && item.sto_mkod_artik != "0")
+            .OrderBy(item => item.sto_plu_no)
+            .Select(item => new GroupSpecialProductRow(
+                item.sto_plu_no,
+                item.sto_mkod_artik ?? string.Empty))
+            .ToArrayAsync(cancellationToken);
+
+        return rows;
+    }
+
+    private async Task<IReadOnlyCollection<PromotionRow>> ListPromotionRowsAsync(
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var connectionString = GetRequiredConnectionString(
+            "MaydayConnection",
+            "MaydayMarketConnection",
+            "MaydaYMarketConnection");
+
+        var promotionRows = await ReadSqlRowsAsync(
+            connectionString,
+            "SELECT * FROM PROMOSYON_TANIMLARI",
+            cancellationToken);
+        var branchRows = await ReadSqlRowsAsync(
+            connectionString,
+            "SELECT * FROM PROMOSYON_SUBELER",
+            cancellationToken);
+
+        if (branchRows.Count > 0 &&
+            (!RowsContainAnyColumn(branchRows, BranchNoColumns) ||
+             !RowsContainAnyColumn(branchRows, PromotionCodeColumns)))
+        {
+            throw new InvalidOperationException(
+                "PROMOSYON_SUBELER rows were found, but BranchNo/PromotionCode columns could not be mapped. " +
+                $"Available columns: {FormatAvailableColumns(branchRows)}.");
+        }
+
+        var branchPromotionCodes = branchRows
+            .Where(row => ReadInt(row, BranchNoColumns) == warehouseNo)
+            .Select(row => ReadString(row, PromotionCodeColumns))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var now = DateTime.Now;
+        var promotions = new List<PromotionRow>();
+        var filterByBranch = branchRows.Count > 0;
+
+        foreach (var row in promotionRows)
+        {
+            var promotionCode = ReadString(row, PromotionCodeColumns);
+            if (string.IsNullOrWhiteSpace(promotionCode) ||
+                (filterByBranch && !branchPromotionCodes.Contains(promotionCode)))
+            {
+                continue;
+            }
+
+            var expirationDate = ReadDate(row, ExpirationDateColumns);
+            var proPassive = ReadInt(row, "ProPassive", "proPassive", "ProPasif", "pro_pasif", "Passive", "pasif");
+            if ((expirationDate.HasValue && expirationDate.Value < now) ||
+                (proPassive.HasValue && proPassive.Value != 0))
+            {
+                continue;
+            }
+
+            promotions.Add(new PromotionRow(
+                PromotionCode: promotionCode,
+                PromotionType: ReadString(row, "PromotionType", "ProType", "ProTypeCode", "ProTip", "ProTipi", "pro_tipi", "PromosyonTipi", "PromosyonTuru", "Tip").ToUpperInvariant(),
+                ProFlag: ReadString(row, "ProFlag", "proFlag", "ProBayrak", "pro_flag"),
+                PromotionCustomerCode: ReadString(row, "PromotionCustomerCode", "CustomerCode", "MusteriKodu", "CariKodu", "PromMusteriKodu"),
+                StartDate: ReadDate(row, "StartDate", "BaslangicTarihi", "StartTime", "ProBasTarihi", "pro_baslangic_tarihi") ?? now,
+                ExpirationDate: expirationDate ?? now,
+                PluNo: ReadInt(row, "PluNo", "PLUNo", "Plu", "ProPluNo", "ProUrunPluNo", "plu_no", "sto_plu_no"),
+                ProLimitAmount: ReadDouble(row, "ProLimitAmount", "LimitAmount", "LimitTutar", "ProLimitTutar", "pro_limit_amount"),
+                DiscountRate: ReadDouble(row, "DiscountRate", "IndirimOrani", "Pro\u0130ndirimOrani", "ProOzelKodIndirimOrani", "ProUyg\u0130ndirimOrani", "discount_rate"),
+                DiscountAmount: ReadDouble(row, "DiscountAmount", "IndirimTutari", "Pro\u0130ndirimTutari", "ProUyg\u0130ndirimTutari", "discount_amount"),
+                QuantityToApplied: ReadInt(row, "QuantityToApplied", "AppliedQuantity", "UygulanacakMiktar", "ProUygulanacakAdet", "ProUygUrunAdedi"),
+                ProductPluNo: ReadInt(row, "ProductPluNo", "ProductPLUNo", "UrunPluNo", "ProUygulanacakPluNo", "ProUygUrunPluNo", "ProUrunPluNo"),
+                MaxQuantity: ReadInt(row, "MaxQuantity", "MaksimumMiktar", "ProMaxMiktar"),
+                PluNoToGiven: ReadInt(row, "PluNoToGiven", "VerilecekPluNo", "ProVerilecekUrunPluNo"),
+                QuantityToGiven: ReadInt(row, "QuantityToGiven", "VerilecekMiktar", "ProVerilecekUrunAdedi", "ProVerilecekUrunMiktari"),
+                PriceToGiven: ReadDouble(row, "PriceToGiven", "VerilecekFiyat", "ProVerilecekUrunFiyati", "ProUrunFiyati", "ProStokGenelFiyat"),
+                SpecialCodeReceived: ReadString(row, "SpecialCodeReceived", "AlinanOzelKod", "ProAlinanUrunOzelKodu"),
+                QuantityToReceived: ReadInt(row, "QuantityToReceived", "AlinanMiktar", "ProAlinacakUrunAdedi", "ProAlinacakUrunlerinAdetleri"),
+                DiscountSpecialCode: ReadString(row, "DiscountSpecialCode", "IndirimOzelKod", "Pro\u0130ndirimliUrunOzelKodu"),
+                DiscountAmountUpToPrice: ReadDouble(row, "DiscountAmountUpToPrice", "FiyataKadarIndirimTutari", "ProFiyatKadarIndirimMiktari"),
+                ProDescription: ReadString(row, "ProDescription", "Description", "Aciklama", "ProAciklama", "ProPromosyonAciklama", "ProFisMesaj1"),
+                SpecialCodeToBeTaken: ReadString(row, "SpecialCodeToBeTaken", "AlinacakOzelKod", "ProAlinacakUrunOzelKodu"),
+                QuantityToBeTaken: ReadInt(row, "QuantityToBeTaken", "AlinacakMiktar", "ProAlinacakUrunlerinAdetleri", "ProAlinacakUrunAdedi"),
+                TotalAmountToBeTaken: ReadDouble(row, "TotalAmountToBeTaken", "AlinacakToplamTutar", "ProAlinacakUrunlerinToplamTutari"),
+                DiscountAmountPriceToBeEarned: ReadDouble(row, "DiscountAmountPriceToBeEarned", "KazanilacakIndirimTutari", "ProKazanilacak\u0130ndirimTutari"),
+                ProductGroupNoReceived: ReadString(row, "ProductGroupNoReceived", "AlinanUrunGrupNo", "ProVerilekUrunGrupNo", "ProGrupNo"),
+                AmountToGiven: ReadDouble(row, "AmountToGiven", "VerilecekTutar", "ProVerilecekUrunTutari", "ProAlisverisToplami", "ProAraToplam", "ProToplamAlisveris"),
+                DiscountRateToApplied: ReadDouble(row, "DiscountRateToApplied", "UygulanacakIndirimOrani", "ProUyg\u0130ndirimOrani", "ProOzelKodIndirimOrani"),
+                ProTotalShipping: ReadDouble(row, "ProTotalShipping", "ToplamSira", "ProToplamAlisveris", "ProAlisverisToplami", "pro_total_shipping"),
+                ProName: ReadString(row, "ProName", "Name", "PromosyonAdi", "ProBaslik", "ProPromosyonAciklama"),
+                ProPMType: ReadString(row, "ProPMType", "PMType", "PmTipi", "ProPMTip")));
+        }
+
+        return promotions;
+    }
+
+    private async Task<IReadOnlyCollection<string>> TryListGibTaxNumbersAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ListGibTaxNumbersAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or SqlException)
+        {
+            logger.LogWarning(
+                exception,
+                "GIB tax numbers could not be read for EFATVNO.DAT. Continuing promo export with an empty EFATVNO.DAT file.");
+            return Array.Empty<string>();
+        }
+    }
+
+    private async Task<IReadOnlyCollection<string>> ListGibTaxNumbersAsync(CancellationToken cancellationToken)
+    {
+        var connectionString = GetRequiredConnectionString(
+            "UyumConnection",
+            "UYUMConnection",
+            "UyumDbConnection");
+
+        var rows = await ReadSqlRowsAsync(
+            connectionString,
+            "SELECT * FROM dbo.CarilerGib",
+            cancellationToken);
+
+        return rows
+            .Select(row => ReadString(row, "VergiNumarasi", "TaxNumber", "TaxNo", "VergiNo", "vkn"))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .OrderBy(value => value, StringComparer.Ordinal)
             .ToArray();
     }
 
@@ -434,39 +753,27 @@ internal sealed class OperationsFileGenerationService(
     {
         var rows = await (
             from stock in mikroDbContext.STOKLARs.AsNoTracking()
-            where !(stock.sto_pasif_fl ?? false)
-            let barcodeRow = mikroDbContext.BARKOD_TANIMLARIs
-                .AsNoTracking()
-                .Where(item => item.bar_stokkodu == stock.sto_kod)
-                .OrderByDescending(item => item.bar_master ?? false)
-                .ThenBy(item => item.bar_birimpntr ?? 0)
-                .ThenByDescending(item => item.bar_create_date)
-                .Select(item => new
-                {
-                    item.bar_kodu,
-                    item.bar_icerigi
-                })
-                .FirstOrDefault()
-            let price = mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs
-                .AsNoTracking()
-                .Where(item =>
-                    item.sfiyat_stokkod == stock.sto_kod &&
-                    item.sfiyat_deposirano == warehouseNo &&
-                    item.sfiyat_birim_pntr == 1)
-                .OrderBy(item => item.sfiyat_listesirano ?? int.MaxValue)
-                .ThenByDescending(item => item.sfiyat_lastup_date ?? item.sfiyat_create_date)
-                .Select(item => item.sfiyat_fiyati)
-                .FirstOrDefault()
-            where barcodeRow != null && barcodeRow.bar_kodu != null
+            join price in mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs.AsNoTracking()
+                on stock.sto_kod equals price.sfiyat_stokkod
+            join barcode in mikroDbContext.BARKOD_TANIMLARIs.AsNoTracking()
+                on stock.sto_kod equals barcode.bar_stokkodu
+            where barcode.bar_kodu != null &&
+                  (barcode.bar_birimpntr ?? 0) == 1 &&
+                  price.sfiyat_deposirano == warehouseNo &&
+                  (price.sfiyat_fiyati ?? 0d) > 0d &&
+                  (price.sfiyat_listesirano ?? 0) == 1 &&
+                  !(stock.sto_pasif_fl ?? false) &&
+                  (stock.sto_satis_dursun ?? 0) == 0
+            orderby stock.sto_plu_no, stock.sto_kod, barcode.bar_kodu
             select new ProductFileRow(
                 stock.sto_kod,
                 stock.sto_plu_no,
-                barcodeRow!.bar_kodu ?? string.Empty,
+                barcode.bar_kodu ?? string.Empty,
                 stock.sto_isim ?? string.Empty,
-                price ?? 0d,
-                Convert.ToByte(stock.sto_perakende_vergi ?? 0),
+                price.sfiyat_fiyati ?? 0d,
+                stock.sto_perakende_vergi ?? 0,
                 stock.sto_birim1_ad ?? string.Empty,
-                barcodeRow.bar_icerigi == 1))
+                barcode.bar_icerigi == 1))
             .ToArrayAsync(cancellationToken);
 
         return rows
@@ -474,15 +781,172 @@ internal sealed class OperationsFileGenerationService(
             .ToArray();
     }
 
+    private string GetRequiredConnectionString(params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var connectionString = configuration.GetConnectionString(name);
+            if (!string.IsNullOrWhiteSpace(connectionString))
+            {
+                return connectionString;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Required connection string was not found. Expected one of: {string.Join(", ", names)}.");
+    }
+
+    private static async Task<IReadOnlyCollection<IReadOnlyDictionary<string, object?>>> ReadSqlRowsAsync(
+        string connectionString,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 180
+        };
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < reader.FieldCount; index++)
+            {
+                row[reader.GetName(index)] = await reader.IsDBNullAsync(index, cancellationToken)
+                    ? null
+                    : reader.GetValue(index);
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    private static bool RowsContainAnyColumn(
+        IReadOnlyCollection<IReadOnlyDictionary<string, object?>> rows,
+        IReadOnlyCollection<string> names) =>
+        rows.Any(row => names.Any(row.ContainsKey));
+
+    private static string ReadString(IReadOnlyDictionary<string, object?> row, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!row.TryGetValue(name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            return Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static int? ReadInt(IReadOnlyDictionary<string, object?> row, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!row.TryGetValue(name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            if (value is int intValue)
+            {
+                return intValue;
+            }
+
+            if (int.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static double? ReadDouble(IReadOnlyDictionary<string, object?> row, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!row.TryGetValue(name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            if (value is double doubleValue)
+            {
+                return doubleValue;
+            }
+
+            if (value is decimal decimalValue)
+            {
+                return (double)decimalValue;
+            }
+
+            if (double.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static DateTime? ReadDate(IReadOnlyDictionary<string, object?> row, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!row.TryGetValue(name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            if (value is DateTime dateTime)
+            {
+                return dateTime;
+            }
+
+            if (DateTime.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), CultureInfo.CurrentCulture, DateTimeStyles.None, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FormatAvailableColumns(
+        IReadOnlyCollection<IReadOnlyDictionary<string, object?>> rows) =>
+        rows.FirstOrDefault() is { } firstRow
+            ? string.Join(", ", firstRow.Keys.OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
+            : string.Empty;
+
     private string EnsureLocalDirectory(int warehouseNo, Guid jobId, string operationFolder)
     {
-        var basePath = string.IsNullOrWhiteSpace(options.Value.BasePath)
-            ? Path.Combine(AppContext.BaseDirectory, "App_Data", "OperationsExports")
-            : options.Value.BasePath.Trim();
+        var directory = OperationsExportPathResolver.ResolveOperationDirectory(
+            options.Value,
+            warehouseNo,
+            jobId,
+            operationFolder);
 
-        var directory = Path.Combine(basePath, warehouseNo.ToString(CultureInfo.InvariantCulture), operationFolder, jobId.ToString("N"));
-        Directory.CreateDirectory(directory);
-        return directory;
+        try
+        {
+            Directory.CreateDirectory(directory);
+            return directory;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw new InvalidOperationException(
+                $"Operations export directory is not writable by the application identity: {directory}. " +
+                "Grant write/modify permission to the IIS application pool identity or configure OperationsExport:BasePath to a writable folder.",
+                exception);
+        }
     }
 
     private static string BuildAuthorizationLine(string prefix, IEnumerable<bool> flags)
@@ -504,6 +968,136 @@ internal sealed class OperationsFileGenerationService(
 
         return builder.ToString().TrimEnd(',');
     }
+
+    private static string BuildP1Line(PromotionRow info) =>
+        string.Join(
+            ",",
+            "P1",
+            FormatPromoFlag(info),
+            FormatAmount(info.ProLimitAmount),
+            FormatInt(info.DiscountRate, 2),
+            FormatAmount(info.DiscountAmount),
+            FormatCustomerCode(info),
+            "H",
+            FormatPromoDates(info),
+            FormatInt(info.PromotionCode, 5));
+
+    private static string BuildP2Line(PromotionRow info)
+    {
+        var maxQuantity = !info.MaxQuantity.HasValue || info.MaxQuantity <= 0 ? "--" : "1";
+        return string.Join(
+            ",",
+            "P2",
+            FormatPromoFlag(info),
+            FormatInt(info.QuantityToApplied, 2),
+            FormatInt(info.ProductPluNo, 6),
+            FormatInt(info.DiscountRate, 2),
+            FormatAmount(info.DiscountAmount),
+            maxQuantity,
+            FormatCustomerCode(info),
+            FormatPromoDates(info),
+            FormatInt(info.PromotionCode, 5));
+    }
+
+    private static string BuildP3Line(PromotionRow info) =>
+        string.Join(
+            ",",
+            "P3",
+            FormatPromoFlag(info),
+            FormatInt(info.PluNo, 6),
+            FormatInt(info.MaxQuantity, 2),
+            FormatInt(info.PluNoToGiven, 6),
+            FormatInt(info.QuantityToGiven, 2),
+            FormatAmount(info.PriceToGiven),
+            FormatCustomerCode(info),
+            FormatPromoDates(info),
+            FormatInt(info.PromotionCode, 5));
+
+    private static string BuildP8Line(PromotionRow info) =>
+        string.Join(
+            ",",
+            "P8",
+            FormatPromoFlag(info),
+            FixedField(info.SpecialCodeReceived, 4),
+            FormatInt(info.QuantityToReceived, 2),
+            FixedField(info.DiscountSpecialCode, 4),
+            FormatInt(info.DiscountAmountUpToPrice, 2),
+            FormatCustomerCode(info),
+            FormatPromoDates(info),
+            FormatInt(info.PromotionCode, 5));
+
+    private static string BuildP9FirstLine(PromotionRow info) =>
+        string.Join(
+            ",",
+            "P9",
+            FormatPromoFlag(info),
+            FormatInt(info.PromotionCode, 4),
+            FixedField(info.ProDescription, 25),
+            FixedField(info.SpecialCodeToBeTaken, 4),
+            FormatInt(info.QuantityToBeTaken, 2),
+            FormatAmount(info.TotalAmountToBeTaken),
+            FormatAmount(info.DiscountAmountPriceToBeEarned),
+            FormatCustomerCode(info),
+            FormatPromoDates(info));
+
+    private static string BuildP9SecondLine(PromotionRow info) =>
+        string.Join(
+            ",",
+            "P9",
+            FormatPromoFlag(info),
+            FormatInt(info.PromotionCode, 4),
+            FixedField(info.ProDescription, 25),
+            FixedField(info.ProductGroupNoReceived, 4),
+            FormatInt(info.QuantityToBeTaken, 2),
+            FormatAmount(info.AmountToGiven),
+            FormatAmount(info.DiscountRateToApplied),
+            FormatCustomerCode(info),
+            FormatPromoDates(info));
+
+    private static string BuildPmLine(PromotionRow info) =>
+        string.Join(
+            ",",
+            "PM",
+            FormatPromoFlag(info),
+            FormatAmount(info.AmountToGiven),
+            FixedField(info.ProName, 20),
+            FixedField(info.SpecialCodeReceived, 4),
+            FormatAmount(info.PriceToGiven),
+            info.ProPMType,
+            FormatCustomerCode(info),
+            FormatPromoDates(info),
+            FormatInt(info.PromotionCode, 5));
+
+    private static string FormatPromoFlag(PromotionRow info) =>
+        info.ProFlag == "0" ? "M" : "H";
+
+    private static string FormatCustomerCode(PromotionRow info) =>
+        string.IsNullOrWhiteSpace(info.PromotionCustomerCode)
+            ? string.Empty
+            : info.PromotionCustomerCode + "*";
+
+    private static string FormatPromoDates(PromotionRow info) =>
+        $"{info.StartDate:dd-MM-yyyy HH:mm:ss} {info.ExpirationDate:dd-MM-yyyy HH:mm:ss}";
+
+    private static string FormatAmount(double? value, int width = 10) =>
+        value.GetValueOrDefault()
+            .ToString("F", CultureInfo.InvariantCulture)
+            .PadLeft(width, '0');
+
+    private static string FormatInt(double? value, int width) =>
+        Convert.ToInt32(value.GetValueOrDefault(), CultureInfo.InvariantCulture)
+            .ToString(CultureInfo.InvariantCulture)
+            .PadLeft(width, '0');
+
+    private static string FormatInt(int? value, int width) =>
+        value.GetValueOrDefault()
+            .ToString(CultureInfo.InvariantCulture)
+            .PadLeft(width, '0');
+
+    private static string FormatInt(string value, int width) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed.ToString(CultureInfo.InvariantCulture).PadLeft(width, '0')
+            : FixedField(value, width);
 
     private static string FormatCashierName(string cashierName)
     {
@@ -537,9 +1131,32 @@ internal sealed class OperationsFileGenerationService(
             .Replace('ş', 's')
             .Replace('ü', 'u');
 
+    private static string NormalizeTurkishAscii(string value) =>
+        value
+            .Replace('\u00C7', 'C')
+            .Replace('\u011E', 'G')
+            .Replace('\u0130', 'I')
+            .Replace('\u00D6', 'O')
+            .Replace('\u015E', 'S')
+            .Replace('\u00DC', 'U')
+            .Replace('\u00E7', 'c')
+            .Replace('\u011F', 'g')
+            .Replace('\u0131', 'i')
+            .Replace('\u00F6', 'o')
+            .Replace('\u015F', 's')
+            .Replace('\u00FC', 'u');
+
+    private static string FixedField(string value, int width)
+    {
+        var normalized = value.Trim();
+        return normalized.Length > width
+            ? normalized[..width]
+            : normalized.PadRight(width, ' ');
+    }
+
     private static string FormatScaleName(string productName, int width)
     {
-        var normalized = NormalizeAscii(productName);
+        var normalized = NormalizeTurkishAscii(productName);
         return normalized.Length > 19
             ? normalized[..19].PadRight(width)
             : normalized.PadRight(width);
@@ -547,7 +1164,7 @@ internal sealed class OperationsFileGenerationService(
 
     private static string FormatUnitName(string unitName)
     {
-        var normalized = NormalizeAscii(unitName);
+        var normalized = NormalizeTurkishAscii(unitName);
         return normalized.Length > 4
             ? normalized[..4]
             : normalized.PadRight(4, ' ');
@@ -600,13 +1217,50 @@ internal sealed class OperationsFileGenerationService(
         int PluNo,
         short ShelfLife);
 
+    private sealed record GroupSpecialProductRow(
+        int PluNo,
+        string QualityControlCode);
+
+    private sealed record PromotionRow(
+        string PromotionCode,
+        string PromotionType,
+        string ProFlag,
+        string PromotionCustomerCode,
+        DateTime StartDate,
+        DateTime ExpirationDate,
+        int? PluNo,
+        double? ProLimitAmount,
+        double? DiscountRate,
+        double? DiscountAmount,
+        int? QuantityToApplied,
+        int? ProductPluNo,
+        int? MaxQuantity,
+        int? PluNoToGiven,
+        int? QuantityToGiven,
+        double? PriceToGiven,
+        string SpecialCodeReceived,
+        int? QuantityToReceived,
+        string DiscountSpecialCode,
+        double? DiscountAmountUpToPrice,
+        string ProDescription,
+        string SpecialCodeToBeTaken,
+        int? QuantityToBeTaken,
+        double? TotalAmountToBeTaken,
+        double? DiscountAmountPriceToBeEarned,
+        string ProductGroupNoReceived,
+        double? AmountToGiven,
+        double? DiscountRateToApplied,
+        double? ProTotalShipping,
+        string ProName,
+        string ProPMType);
+
     private sealed record ProductFileRow(
         string ProductCode,
         int PluNo,
         string Barcode,
         string ProductName,
         double Price,
-        byte RetailSaleTaxRate,
+        int RetailSaleTaxRate,
         string UnitName,
         bool BarcodeContent);
 

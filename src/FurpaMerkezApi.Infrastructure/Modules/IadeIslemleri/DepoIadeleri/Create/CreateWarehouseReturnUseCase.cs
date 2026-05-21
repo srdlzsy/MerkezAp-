@@ -1,5 +1,7 @@
 using System.Data;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +11,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.Creat
 
 public sealed class CreateWarehouseReturnUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptions<AxataSynchronizationOptions> axataOptions)
     : ICreateWarehouseReturnUseCase
 {
     private const short MovementFileId = 16;
@@ -47,11 +50,18 @@ public sealed class CreateWarehouseReturnUseCase(
             try
             {
                 var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
+                    request,
+                    lines,
+                    movementDate,
+                    now,
+                    cancellationToken);
                 var movements = new List<STOK_HAREKETLERI>(lines.Length);
+                var movementExtras = new List<STOK_HAREKETLERI_EK>();
 
                 for (var rowNo = 0; rowNo < lines.Length; rowNo++)
                 {
-                    movements.Add(CreateMovement(
+                    var movement = CreateMovement(
                         request,
                         lines[rowNo],
                         rowNo,
@@ -60,10 +70,32 @@ public sealed class CreateWarehouseReturnUseCase(
                         documentDate,
                         documentNo,
                         documentSerie,
-                        documentOrderNo));
+                        documentOrderNo);
+
+                    movements.Add(movement);
+
+                    if (automaticOrderLines.TryGetValue(rowNo, out var automaticOrderLine))
+                    {
+                        movementExtras.Add(AutomaticWarehouseOrderFactory.CreateMovementExtra(
+                            movement.sth_Guid,
+                            automaticOrderLine.ssip_Guid,
+                            now));
+                    }
+                }
+
+                if (automaticOrderLines.Count > 0)
+                {
+                    await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(
+                        automaticOrderLines.Values,
+                        cancellationToken);
                 }
 
                 await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                if (movementExtras.Count > 0)
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(movementExtras, cancellationToken);
+                }
+
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
@@ -87,6 +119,60 @@ public sealed class CreateWarehouseReturnUseCase(
                 throw;
             }
         });
+    }
+
+    private async Task<Dictionary<int, DEPOLAR_ARASI_SIPARISLER>> CreateAutomaticWarehouseOrderLinesAsync(
+        CreateWarehouseReturnRequest request,
+        IReadOnlyList<CreateWarehouseReturnLineRequest> lines,
+        DateTime movementDate,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
+        if (!automationOptions.Enabled ||
+            !automationOptions.CreateForWarehouseReturns ||
+            !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
+        {
+            return new Dictionary<int, DEPOLAR_ARASI_SIPARISLER>();
+        }
+
+        var documentSerie = $"F{request.TargetWarehouseNo}";
+        var documentOrderNo = await GetNextWarehouseOrderDocumentOrderNoAsync(documentSerie, cancellationToken);
+        var result = new Dictionary<int, DEPOLAR_ARASI_SIPARISLER>(lines.Count);
+
+        for (var rowNo = 0; rowNo < lines.Count; rowNo++)
+        {
+            var line = lines[rowNo];
+            result[rowNo] = AutomaticWarehouseOrderFactory.CreateOrderLine(
+                request.TargetWarehouseNo,
+                request.SourceWarehouseNo,
+                movementDate,
+                movementDate,
+                documentSerie,
+                documentOrderNo,
+                rowNo,
+                now,
+                line.StockCode,
+                line.Quantity,
+                line.UnitPrice,
+                line.UnitPointer,
+                line.Description ?? request.Description,
+                line.ProjectCode,
+                line.ProductResponsibilityCenter);
+        }
+
+        return result;
+    }
+
+    private async Task<int> GetNextWarehouseOrderDocumentOrderNoAsync(
+        string documentSerie,
+        CancellationToken cancellationToken)
+    {
+        var currentMax = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .Where(order => order.ssip_evrakno_seri == documentSerie)
+            .MaxAsync(order => order.ssip_evrakno_sira, cancellationToken);
+
+        return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(

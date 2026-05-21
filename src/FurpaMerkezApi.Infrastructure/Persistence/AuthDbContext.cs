@@ -21,7 +21,14 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AuthDbContext).Assembly);
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(AuthDbContext).Assembly,
+            type => type != typeof(Configurations.UyumsoftInboxInvoiceConfiguration));
+        new Configurations.UyumsoftInboxInvoiceConfiguration(IsSqlServerProvider())
+            .Configure(modelBuilder.Entity<UyumsoftInboxInvoice>());
         base.OnModelCreating(modelBuilder);
     }
+
+    private bool IsSqlServerProvider() =>
+        Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 }

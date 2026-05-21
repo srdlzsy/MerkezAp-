@@ -19,13 +19,12 @@ internal sealed class AxataSynchronizationConnectionProbeService(
     public async Task<AxataSynchronizationConnectionTestDto> ProbeAsync(CancellationToken cancellationToken)
     {
         var currentOptions = options.CurrentValue;
-        var probes = new List<AxataSynchronizationProbeDto>
-        {
-            await ProbeDatabaseAsync("Mikro SQL", mikroDbContext.Database, cancellationToken),
-            await ProbeDatabaseAsync("Furpa SQL", furpaDbContext.Database, cancellationToken),
-            await ProbeEndpointAsync("AXATA Main Endpoint", currentOptions.MainEndpointUrl, cancellationToken),
-            await ProbeEndpointAsync("AXATA EXT Endpoint", currentOptions.ExtendedEndpointUrl, cancellationToken)
-        };
+        var endpointTimeout = TimeSpan.FromSeconds(Math.Clamp(currentOptions.EndpointProbeTimeoutSeconds, 1, 60));
+        var probes = await Task.WhenAll(
+            ProbeDatabaseAsync("Mikro SQL", mikroDbContext.Database, cancellationToken),
+            ProbeDatabaseAsync("Furpa SQL", furpaDbContext.Database, cancellationToken),
+            ProbeEndpointAsync("AXATA Main Endpoint", currentOptions.MainEndpointUrl, endpointTimeout, cancellationToken),
+            ProbeEndpointAsync("AXATA EXT Endpoint", currentOptions.ExtendedEndpointUrl, endpointTimeout, cancellationToken));
 
         return new AxataSynchronizationConnectionTestDto(
             DateTime.UtcNow,
@@ -66,6 +65,7 @@ internal sealed class AxataSynchronizationConnectionProbeService(
     private async Task<AxataSynchronizationProbeDto> ProbeEndpointAsync(
         string name,
         string url,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -81,12 +81,14 @@ internal sealed class AxataSynchronizationConnectionProbeService(
 
         try
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(timeout);
             using var client = httpClientFactory.CreateClient();
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             using var response = await client.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                timeoutCts.Token);
 
             stopwatch.Stop();
 
@@ -95,6 +97,16 @@ internal sealed class AxataSynchronizationConnectionProbeService(
                 response.IsSuccessStatusCode ? "Healthy" : "Warning",
                 stopwatch.ElapsedMilliseconds,
                 $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+
+            return new AxataSynchronizationProbeDto(
+                name,
+                "Unhealthy",
+                stopwatch.ElapsedMilliseconds,
+                $"Endpoint did not respond within {timeout.TotalSeconds:0} seconds. {exception.Message}");
         }
         catch (Exception exception)
         {

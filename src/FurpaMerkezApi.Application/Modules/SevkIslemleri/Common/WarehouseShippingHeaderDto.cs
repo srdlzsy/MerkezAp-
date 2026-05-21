@@ -12,6 +12,7 @@ public sealed record WarehouseShippingHeaderDto(
     string TargetWarehouse,
     int ShippingWarehouseNo,
     byte ShippingState,
+    bool IsReturn,
     string Plaque,
     string DriverNameSurname,
     string DriverTckn,

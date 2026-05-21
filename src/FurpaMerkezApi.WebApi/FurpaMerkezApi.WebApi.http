@@ -201,43 +201,49 @@ Authorization: Bearer {{token}}
 
 ###
 
-GET {{@}}/api/stok-islemleri/etiket-belgeleri
+GET {{@}}/api/kasa-islemleri/etiket-belgeleri
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{@}}/api/stok-islemleri/etiket-belgeleri/son?warehouseNo=110&take=10
+GET {{@}}/api/kasa-islemleri/etiket-belgeleri/son?warehouseNo=110&take=10
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{@}}/api/stok-islemleri/etiket-belgeleri/tumu
+GET {{@}}/api/kasa-islemleri/etiket-belgeleri/tumu
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{@}}/api/stok-islemleri/etiket-belgeleri/1?warehouseNo=110
+GET {{@}}/api/kasa-islemleri/etiket-belgeleri/1?warehouseNo=110
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{@}}/api/stok-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24
+GET {{@}}/api/kasa-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{@}}/api/stok-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00
+GET {{@}}/api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=2026-04-24
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-POST {{@}}/api/stok-islemleri/etiket-belgeleri
+GET {{@}}/api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/kasa-islemleri/etiket-belgeleri
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
@@ -250,6 +256,32 @@ Authorization: Bearer {{token}}
       "productCode": "015551"
     }
   ]
+}
+
+###
+
+GET {{@}}/api/kasa-islemleri/banknot-takipleri?dateToGet=2026-04-24&warehouseNo=110
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+GET {{@}}/api/kasa-islemleri/banknot-takipleri/14d74fd4-1217-4056-9a0e-c45e3a25a456
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+POST {{@}}/api/kasa-islemleri/banknot-takipleri
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "banknoteTrackDate": "2026-04-24",
+  "totalAmount": 12000,
+  "deliveryTotalAmount": 11850,
+  "deliverer": "Teslim Eden",
+  "receiver": "Teslim Alan"
 }
 
 ###
@@ -269,20 +301,6 @@ Authorization: Bearer {{token}}
 GET {{@}}/api/kasa-islemleri/kasa-sayimlari/KS110/1
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-POST {{@}}/api/kasa-islemleri/kasa-sayimlari/banknot-takipleri
-Content-Type: application/json
-Authorization: Bearer {{token}}
-
-{
-  "banknoteTrackDate": "2026-04-24",
-  "totalAmount": 12000,
-  "deliveryTotalAmount": 11850,
-  "deliverer": "Teslim Eden",
-  "receiver": "Teslim Alan"
-}
 
 ###
 

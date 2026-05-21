@@ -145,7 +145,8 @@ internal enum OperationFileKind
 {
     ScalesFile = 1,
     ProductBarcodePluNoFile = 2,
-    CashierFile = 3
+    CashierFile = 3,
+    PromoFile = 4
 }
 
 internal enum OperationsJobStatus
@@ -164,6 +165,7 @@ internal static class OperationsJobMappings
             OperationFileKind.ScalesFile => "ScalesFile",
             OperationFileKind.ProductBarcodePluNoFile => "ProductBarcodePluNoFile",
             OperationFileKind.CashierFile => "CashierFile",
+            OperationFileKind.PromoFile => "PromoFile",
             _ => kind.ToString()
         };
 

@@ -15,7 +15,14 @@ public sealed record CreateCompanyReceivingResponse(
     double TotalOrderOverReceivedQuantity,
     double TotalAmount,
     string WriteConnectionName,
-    IReadOnlyCollection<CreateCompanyReceivingLineResultDto> Lines);
+    IReadOnlyCollection<CreateCompanyReceivingLineResultDto> Lines,
+    double TotalDispatchQuantity = 0d,
+    double TotalNetAcceptedQuantity = 0d,
+    double TotalReturnedQuantity = 0d,
+    int AutoCreatedReturnLineCount = 0,
+    string? AutoCreatedReturnDocumentSerie = null,
+    int? AutoCreatedReturnDocumentOrderNo = null,
+    string ReturnEDespatchStatus = "Yok");
 
 public sealed record CreateCompanyReceivingLineResultDto(
     Guid MovementGuid,
@@ -30,4 +37,12 @@ public sealed record CreateCompanyReceivingLineResultDto(
     double OrderLinkedQuantity,
     double OrderlessQuantity,
     double OrderRemainingBefore,
-    double OrderRemainingAfter);
+    double OrderRemainingAfter,
+    double DispatchQuantity = 0d,
+    double PhysicalAcceptedQuantity = 0d,
+    double ReturnQuantity = 0d,
+    string ReturnStatus = "Yok",
+    Guid? ReturnMovementGuid = null,
+    string? ReturnDocumentSerie = null,
+    int? ReturnDocumentOrderNo = null,
+    string ReturnEDespatchStatus = "Yok");

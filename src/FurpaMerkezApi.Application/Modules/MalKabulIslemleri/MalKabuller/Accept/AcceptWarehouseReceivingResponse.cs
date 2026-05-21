@@ -7,6 +7,7 @@ public sealed record AcceptWarehouseReceivingResponse(
     int SourceWarehouseNo,
     int TransitWarehouseNo,
     byte ShippingState,
+    bool IsReturn,
     int LineCount,
     double TotalShippedQuantity,
     double TotalReceivedQuantity,

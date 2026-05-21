@@ -31,8 +31,7 @@ internal sealed class OperationsService(
         int warehouseNo,
         Guid requestedByUserId,
         CancellationToken cancellationToken) =>
-        throw new InvalidOperationException(
-            "Promo export is not available yet. Promotion and GIB customer data sources are still missing in this API.");
+        Task.FromResult(Enqueue(OperationFileKind.PromoFile, warehouseNo, requestedByUserId));
 
     public Task<OperationJobDetailDto> GetJobAsync(Guid jobId, CancellationToken cancellationToken) =>
         Task.FromResult(jobQueue.Get(jobId));

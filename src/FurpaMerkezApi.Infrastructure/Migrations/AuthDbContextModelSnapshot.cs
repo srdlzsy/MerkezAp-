@@ -17,7 +17,7 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.15")
+                .HasAnnotation("ProductVersion", "9.0.16")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -86,6 +86,22 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
                             Description = "KullaniciIslemleri > Kullanicilar > Yonet yetkisi.",
                             Name = "Kullanicilar Yonet"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b02acb4-e7c8-bfba-0d52-37286ac295d0"),
+                            Code = "arama-islemleri.fiyat-gor.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AramaIslemleri > FiyatGor > Listele yetkisi.",
+                            Name = "FiyatGor Listele"
+                        },
+                        new
+                        {
+                            Id = new Guid("a59282d8-98e1-73f7-cb33-cd72cb17afb9"),
+                            Code = "arama-islemleri.cari-bul.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AramaIslemleri > CariBul > Listele yetkisi.",
+                            Name = "CariBul Listele"
                         },
                         new
                         {
@@ -345,38 +361,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("2e05f41f-3e70-647d-b2c4-0de5b71b45fb"),
-                            Code = "sevk-islemleri.sevk-planlari.list",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "SevkIslemleri > SevkPlanlari > Listele yetkisi.",
-                            Name = "SevkPlanlari Listele"
-                        },
-                        new
-                        {
-                            Id = new Guid("1c957882-c345-0563-b714-044a014b3685"),
-                            Code = "sevk-islemleri.sevk-planlari.detail",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "SevkIslemleri > SevkPlanlari > Detay yetkisi.",
-                            Name = "SevkPlanlari Detay"
-                        },
-                        new
-                        {
-                            Id = new Guid("9af7b27e-33f6-715b-d009-f3a7bf177075"),
-                            Code = "sevk-islemleri.sevk-planlari.create",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "SevkIslemleri > SevkPlanlari > Ekle yetkisi.",
-                            Name = "SevkPlanlari Ekle"
-                        },
-                        new
-                        {
-                            Id = new Guid("298fe457-a222-8a88-e870-2a812e93c8c6"),
-                            Code = "sevk-islemleri.sevk-planlari.update",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "SevkIslemleri > SevkPlanlari > Guncelle yetkisi.",
-                            Name = "SevkPlanlari Guncelle"
-                        },
-                        new
-                        {
                             Id = new Guid("494678b1-5103-be89-ccdc-973a30b7f2e1"),
                             Code = "iade-islemleri.giden-depo-iadeleri.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -489,6 +473,14 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = new Guid("31b9c4fd-80bd-7967-11b0-3fccd5adf5e5"),
+                            Code = "mal-kabul-islemleri.mal-kabul-farklari.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "MalKabulIslemleri > MalKabulFarklari > Listele yetkisi.",
+                            Name = "MalKabulFarklari Listele"
+                        },
+                        new
+                        {
                             Id = new Guid("9c0889d4-600f-089e-cecc-5fa3ccbb8c57"),
                             Code = "mal-kabul-islemleri.firma-mal-kabulleri.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -518,38 +510,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
                             Description = "MalKabulIslemleri > FirmaMalKabulleri > Guncelle yetkisi.",
                             Name = "FirmaMalKabulleri Guncelle"
-                        },
-                        new
-                        {
-                            Id = new Guid("da4d8624-84a7-c1cc-eb06-baef90f94422"),
-                            Code = "mal-kabul-islemleri.irsaliye-kabulleri.list",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "MalKabulIslemleri > IrsaliyeKabulleri > Listele yetkisi.",
-                            Name = "IrsaliyeKabulleri Listele"
-                        },
-                        new
-                        {
-                            Id = new Guid("f3a84204-122d-27e5-b6af-8dd17b328f76"),
-                            Code = "mal-kabul-islemleri.irsaliye-kabulleri.detail",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "MalKabulIslemleri > IrsaliyeKabulleri > Detay yetkisi.",
-                            Name = "IrsaliyeKabulleri Detay"
-                        },
-                        new
-                        {
-                            Id = new Guid("0e7ee02d-a676-0224-dbc6-a2f529d93a2e"),
-                            Code = "mal-kabul-islemleri.irsaliye-kabulleri.create",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "MalKabulIslemleri > IrsaliyeKabulleri > Ekle yetkisi.",
-                            Name = "IrsaliyeKabulleri Ekle"
-                        },
-                        new
-                        {
-                            Id = new Guid("30b314b2-71d4-0960-0861-b6418dbd8f79"),
-                            Code = "mal-kabul-islemleri.irsaliye-kabulleri.update",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "MalKabulIslemleri > IrsaliyeKabulleri > Guncelle yetkisi.",
-                            Name = "IrsaliyeKabulleri Guncelle"
                         },
                         new
                         {
@@ -649,38 +609,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("07f77149-c49d-0e3b-f04a-9a24698d1a05"),
-                            Code = "stok-islemleri.etiket-belgeleri.list",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > EtiketBelgeleri > Listele yetkisi.",
-                            Name = "EtiketBelgeleri Listele"
-                        },
-                        new
-                        {
-                            Id = new Guid("fbc155f3-f37d-a25e-3a0b-74628238f508"),
-                            Code = "stok-islemleri.etiket-belgeleri.detail",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > EtiketBelgeleri > Detay yetkisi.",
-                            Name = "EtiketBelgeleri Detay"
-                        },
-                        new
-                        {
-                            Id = new Guid("625b8bb0-4009-8ebe-8071-300c19ec095e"),
-                            Code = "stok-islemleri.etiket-belgeleri.create",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > EtiketBelgeleri > Ekle yetkisi.",
-                            Name = "EtiketBelgeleri Ekle"
-                        },
-                        new
-                        {
-                            Id = new Guid("ef760b73-ee59-9072-c7b3-f8d7d1efb11d"),
-                            Code = "stok-islemleri.etiket-belgeleri.update",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > EtiketBelgeleri > Guncelle yetkisi.",
-                            Name = "EtiketBelgeleri Guncelle"
-                        },
-                        new
-                        {
                             Id = new Guid("f8b6b372-4e16-eb5b-6550-d91804233ee6"),
                             Code = "stok-islemleri.virmanlar.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -710,38 +638,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
                             Description = "StokIslemleri > Virmanlar > Guncelle yetkisi.",
                             Name = "Virmanlar Guncelle"
-                        },
-                        new
-                        {
-                            Id = new Guid("f1172502-9cf7-22b2-3362-8dbcfc8f2dcc"),
-                            Code = "stok-islemleri.kunye-etiket-yazdirma.list",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > KunyeEtiketYazdirma > Listele yetkisi.",
-                            Name = "KunyeEtiketYazdirma Listele"
-                        },
-                        new
-                        {
-                            Id = new Guid("c80495b3-55cf-b620-df21-3b052d3bfdcb"),
-                            Code = "stok-islemleri.kunye-etiket-yazdirma.detail",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > KunyeEtiketYazdirma > Detay yetkisi.",
-                            Name = "KunyeEtiketYazdirma Detay"
-                        },
-                        new
-                        {
-                            Id = new Guid("f27dae0a-72af-1ecd-5327-eeb1f44ad93a"),
-                            Code = "stok-islemleri.kunye-etiket-yazdirma.create",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > KunyeEtiketYazdirma > Ekle yetkisi.",
-                            Name = "KunyeEtiketYazdirma Ekle"
-                        },
-                        new
-                        {
-                            Id = new Guid("91f4518e-007d-ca11-e8b4-03967a2b4624"),
-                            Code = "stok-islemleri.kunye-etiket-yazdirma.update",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "StokIslemleri > KunyeEtiketYazdirma > Guncelle yetkisi.",
-                            Name = "KunyeEtiketYazdirma Guncelle"
                         },
                         new
                         {
@@ -905,99 +801,51 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("381aca3b-27ca-8310-dc62-960634672984"),
-                            Code = "iade-islemleri.musteri-iadeleri.list",
+                            Id = new Guid("ec6256b1-82a1-3d0e-b592-fe8a83472d85"),
+                            Code = "fatura-islemleri.fatura-goruntuleme.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > MusteriIadeleri > Listele yetkisi.",
-                            Name = "MusteriIadeleri Listele"
+                            Description = "FaturaIslemleri > FaturaGoruntuleme > Listele yetkisi.",
+                            Name = "FaturaGoruntuleme Listele"
                         },
                         new
                         {
-                            Id = new Guid("d476adc9-a850-a787-7525-a68429fbda72"),
-                            Code = "iade-islemleri.musteri-iadeleri.detail",
+                            Id = new Guid("d6104765-ba28-c852-f07d-907c227b0f0c"),
+                            Code = "fatura-islemleri.fatura-goruntuleme.detail",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > MusteriIadeleri > Detay yetkisi.",
-                            Name = "MusteriIadeleri Detay"
+                            Description = "FaturaIslemleri > FaturaGoruntuleme > Detay yetkisi.",
+                            Name = "FaturaGoruntuleme Detay"
                         },
                         new
                         {
-                            Id = new Guid("6867eb33-82ba-f745-b9fc-b950c650b04b"),
-                            Code = "iade-islemleri.musteri-iadeleri.create",
+                            Id = new Guid("2507f0b4-0241-e3c1-9882-55e7bb6869e6"),
+                            Code = "fatura-islemleri.fatura-goruntuleme.update",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > MusteriIadeleri > Ekle yetkisi.",
-                            Name = "MusteriIadeleri Ekle"
+                            Description = "FaturaIslemleri > FaturaGoruntuleme > Guncelle yetkisi.",
+                            Name = "FaturaGoruntuleme Guncelle"
                         },
                         new
                         {
-                            Id = new Guid("66c64021-d1e2-6cce-9ee6-77806ffb8e27"),
-                            Code = "iade-islemleri.musteri-iadeleri.update",
+                            Id = new Guid("7428ce6c-f000-a466-4c1e-8f6659ea3014"),
+                            Code = "fatura-islemleri.fatura-gonderimi.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > MusteriIadeleri > Guncelle yetkisi.",
-                            Name = "MusteriIadeleri Guncelle"
+                            Description = "FaturaIslemleri > FaturaGonderimi > Listele yetkisi.",
+                            Name = "FaturaGonderimi Listele"
                         },
                         new
                         {
-                            Id = new Guid("88d9b895-3b28-f035-bc4c-d66bb274aac8"),
-                            Code = "iade-islemleri.tedarikci-iadeleri.list",
+                            Id = new Guid("b1efeaa5-e984-38ec-7bb0-cbacbe7b63dd"),
+                            Code = "fatura-islemleri.fatura-gonderimi.detail",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > TedarikciIadeleri > Listele yetkisi.",
-                            Name = "TedarikciIadeleri Listele"
+                            Description = "FaturaIslemleri > FaturaGonderimi > Detay yetkisi.",
+                            Name = "FaturaGonderimi Detay"
                         },
                         new
                         {
-                            Id = new Guid("a91159f2-6606-df6c-adff-fc380515ffa3"),
-                            Code = "iade-islemleri.tedarikci-iadeleri.detail",
+                            Id = new Guid("b7d484d7-6c4d-306b-9700-407c2b8dcc19"),
+                            Code = "fatura-islemleri.fatura-gonderimi.create",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > TedarikciIadeleri > Detay yetkisi.",
-                            Name = "TedarikciIadeleri Detay"
-                        },
-                        new
-                        {
-                            Id = new Guid("35961219-4e49-744c-f302-d4e1b627c81d"),
-                            Code = "iade-islemleri.tedarikci-iadeleri.create",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > TedarikciIadeleri > Ekle yetkisi.",
-                            Name = "TedarikciIadeleri Ekle"
-                        },
-                        new
-                        {
-                            Id = new Guid("143af022-4d7e-66eb-c558-624aad50fb7f"),
-                            Code = "iade-islemleri.tedarikci-iadeleri.update",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "IadeIslemleri > TedarikciIadeleri > Guncelle yetkisi.",
-                            Name = "TedarikciIadeleri Guncelle"
-                        },
-                        new
-                        {
-                            Id = new Guid("22cb488c-9c07-29dc-e0a0-726025b88fc1"),
-                            Code = "kasa-islemleri.kasa-hareketleri.list",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "KasaIslemleri > KasaHareketleri > Listele yetkisi.",
-                            Name = "KasaHareketleri Listele"
-                        },
-                        new
-                        {
-                            Id = new Guid("54ec0134-ed15-2ebc-b9c8-3208bd3ad0d9"),
-                            Code = "kasa-islemleri.kasa-hareketleri.detail",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "KasaIslemleri > KasaHareketleri > Detay yetkisi.",
-                            Name = "KasaHareketleri Detay"
-                        },
-                        new
-                        {
-                            Id = new Guid("22976e1d-77c4-5489-fe6d-c5db0aac96ad"),
-                            Code = "kasa-islemleri.kasa-hareketleri.create",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "KasaIslemleri > KasaHareketleri > Ekle yetkisi.",
-                            Name = "KasaHareketleri Ekle"
-                        },
-                        new
-                        {
-                            Id = new Guid("5c60c66b-7679-bc4d-af47-11208ed6bb52"),
-                            Code = "kasa-islemleri.kasa-hareketleri.update",
-                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "KasaIslemleri > KasaHareketleri > Guncelle yetkisi.",
-                            Name = "KasaHareketleri Guncelle"
+                            Description = "FaturaIslemleri > FaturaGonderimi > Ekle yetkisi.",
+                            Name = "FaturaGonderimi Ekle"
                         },
                         new
                         {
@@ -1049,51 +897,91 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("ec6256b1-82a1-3d0e-b592-fe8a83472d85"),
-                            Code = "fatura-islemleri.fatura-goruntuleme.list",
+                            Id = new Guid("07f77149-c49d-0e3b-f04a-9a24698d1a05"),
+                            Code = "kasa-islemleri.etiket-belgeleri.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "FaturaIslemleri > FaturaGoruntuleme > Listele yetkisi.",
-                            Name = "FaturaGoruntuleme Listele"
+                            Description = "KasaIslemleri > EtiketBelgeleri > Listele yetkisi.",
+                            Name = "EtiketBelgeleri Listele"
                         },
                         new
                         {
-                            Id = new Guid("d6104765-ba28-c852-f07d-907c227b0f0c"),
-                            Code = "fatura-islemleri.fatura-goruntuleme.detail",
+                            Id = new Guid("fbc155f3-f37d-a25e-3a0b-74628238f508"),
+                            Code = "kasa-islemleri.etiket-belgeleri.detail",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "FaturaIslemleri > FaturaGoruntuleme > Detay yetkisi.",
-                            Name = "FaturaGoruntuleme Detay"
+                            Description = "KasaIslemleri > EtiketBelgeleri > Detay yetkisi.",
+                            Name = "EtiketBelgeleri Detay"
                         },
                         new
                         {
-                            Id = new Guid("2507f0b4-0241-e3c1-9882-55e7bb6869e6"),
-                            Code = "fatura-islemleri.fatura-goruntuleme.update",
+                            Id = new Guid("625b8bb0-4009-8ebe-8071-300c19ec095e"),
+                            Code = "kasa-islemleri.etiket-belgeleri.create",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "FaturaIslemleri > FaturaGoruntuleme > Guncelle yetkisi.",
-                            Name = "FaturaGoruntuleme Guncelle"
+                            Description = "KasaIslemleri > EtiketBelgeleri > Ekle yetkisi.",
+                            Name = "EtiketBelgeleri Ekle"
                         },
                         new
                         {
-                            Id = new Guid("7428ce6c-f000-a466-4c1e-8f6659ea3014"),
-                            Code = "fatura-islemleri.fatura-gonderimi.list",
+                            Id = new Guid("ef760b73-ee59-9072-c7b3-f8d7d1efb11d"),
+                            Code = "kasa-islemleri.etiket-belgeleri.update",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "FaturaIslemleri > FaturaGonderimi > Listele yetkisi.",
-                            Name = "FaturaGonderimi Listele"
+                            Description = "KasaIslemleri > EtiketBelgeleri > Guncelle yetkisi.",
+                            Name = "EtiketBelgeleri Guncelle"
                         },
                         new
                         {
-                            Id = new Guid("b1efeaa5-e984-38ec-7bb0-cbacbe7b63dd"),
-                            Code = "fatura-islemleri.fatura-gonderimi.detail",
+                            Id = new Guid("f1172502-9cf7-22b2-3362-8dbcfc8f2dcc"),
+                            Code = "kasa-islemleri.kunye-etiket-yazdirma.list",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "FaturaIslemleri > FaturaGonderimi > Detay yetkisi.",
-                            Name = "FaturaGonderimi Detay"
+                            Description = "KasaIslemleri > KunyeEtiketYazdirma > Listele yetkisi.",
+                            Name = "KunyeEtiketYazdirma Listele"
                         },
                         new
                         {
-                            Id = new Guid("b7d484d7-6c4d-306b-9700-407c2b8dcc19"),
-                            Code = "fatura-islemleri.fatura-gonderimi.create",
+                            Id = new Guid("c80495b3-55cf-b620-df21-3b052d3bfdcb"),
+                            Code = "kasa-islemleri.kunye-etiket-yazdirma.detail",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "FaturaIslemleri > FaturaGonderimi > Ekle yetkisi.",
-                            Name = "FaturaGonderimi Ekle"
+                            Description = "KasaIslemleri > KunyeEtiketYazdirma > Detay yetkisi.",
+                            Name = "KunyeEtiketYazdirma Detay"
+                        },
+                        new
+                        {
+                            Id = new Guid("f27dae0a-72af-1ecd-5327-eeb1f44ad93a"),
+                            Code = "kasa-islemleri.kunye-etiket-yazdirma.create",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "KasaIslemleri > KunyeEtiketYazdirma > Ekle yetkisi.",
+                            Name = "KunyeEtiketYazdirma Ekle"
+                        },
+                        new
+                        {
+                            Id = new Guid("91f4518e-007d-ca11-e8b4-03967a2b4624"),
+                            Code = "kasa-islemleri.kunye-etiket-yazdirma.update",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "KasaIslemleri > KunyeEtiketYazdirma > Guncelle yetkisi.",
+                            Name = "KunyeEtiketYazdirma Guncelle"
+                        },
+                        new
+                        {
+                            Id = new Guid("469486f3-5c0a-8e26-077d-2d4352da56d3"),
+                            Code = "kasa-islemleri.banknot-takipleri.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "KasaIslemleri > BanknotTakipleri > Listele yetkisi.",
+                            Name = "BanknotTakipleri Listele"
+                        },
+                        new
+                        {
+                            Id = new Guid("c3c7a4ac-969f-12bd-045f-d857366605d7"),
+                            Code = "kasa-islemleri.banknot-takipleri.detail",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "KasaIslemleri > BanknotTakipleri > Detay yetkisi.",
+                            Name = "BanknotTakipleri Detay"
+                        },
+                        new
+                        {
+                            Id = new Guid("5446fd00-6840-41f4-9f9c-fa918d1dd469"),
+                            Code = "kasa-islemleri.banknot-takipleri.create",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "KasaIslemleri > BanknotTakipleri > Ekle yetkisi.",
+                            Name = "BanknotTakipleri Ekle"
                         });
                 });
 
@@ -1183,6 +1071,18 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("fdf63a66-e9b4-4ca5-8700-2a6a34231c01"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("7b02acb4-e7c8-bfba-0d52-37286ac295d0"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("a59282d8-98e1-73f7-cb33-cd72cb17afb9"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
@@ -1380,30 +1280,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("2e05f41f-3e70-647d-b2c4-0de5b71b45fb"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("1c957882-c345-0563-b714-044a014b3685"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("9af7b27e-33f6-715b-d009-f3a7bf177075"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("298fe457-a222-8a88-e870-2a812e93c8c6"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("494678b1-5103-be89-ccdc-973a30b7f2e1"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
@@ -1488,6 +1364,12 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("31b9c4fd-80bd-7967-11b0-3fccd5adf5e5"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("9c0889d4-600f-089e-cecc-5fa3ccbb8c57"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
@@ -1507,30 +1389,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("8c18bd9c-86d2-c41f-eaf1-e4eebcc93bea"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("da4d8624-84a7-c1cc-eb06-baef90f94422"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("f3a84204-122d-27e5-b6af-8dd17b328f76"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("0e7ee02d-a676-0224-dbc6-a2f529d93a2e"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("30b314b2-71d4-0960-0861-b6418dbd8f79"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
@@ -1608,30 +1466,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("07f77149-c49d-0e3b-f04a-9a24698d1a05"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("fbc155f3-f37d-a25e-3a0b-74628238f508"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("625b8bb0-4009-8ebe-8071-300c19ec095e"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("ef760b73-ee59-9072-c7b3-f8d7d1efb11d"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("f8b6b372-4e16-eb5b-6550-d91804233ee6"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
@@ -1651,30 +1485,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("5a8b68be-cf08-15f8-2cd7-9fa55a37e53b"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("f1172502-9cf7-22b2-3362-8dbcfc8f2dcc"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("c80495b3-55cf-b620-df21-3b052d3bfdcb"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("f27dae0a-72af-1ecd-5327-eeb1f44ad93a"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("91f4518e-007d-ca11-e8b4-03967a2b4624"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
@@ -1800,73 +1610,37 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("381aca3b-27ca-8310-dc62-960634672984"),
+                            PermissionId = new Guid("ec6256b1-82a1-3d0e-b592-fe8a83472d85"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("d476adc9-a850-a787-7525-a68429fbda72"),
+                            PermissionId = new Guid("d6104765-ba28-c852-f07d-907c227b0f0c"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("6867eb33-82ba-f745-b9fc-b950c650b04b"),
+                            PermissionId = new Guid("2507f0b4-0241-e3c1-9882-55e7bb6869e6"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("66c64021-d1e2-6cce-9ee6-77806ffb8e27"),
+                            PermissionId = new Guid("7428ce6c-f000-a466-4c1e-8f6659ea3014"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("88d9b895-3b28-f035-bc4c-d66bb274aac8"),
+                            PermissionId = new Guid("b1efeaa5-e984-38ec-7bb0-cbacbe7b63dd"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("a91159f2-6606-df6c-adff-fc380515ffa3"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("35961219-4e49-744c-f302-d4e1b627c81d"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("143af022-4d7e-66eb-c558-624aad50fb7f"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("22cb488c-9c07-29dc-e0a0-726025b88fc1"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("54ec0134-ed15-2ebc-b9c8-3208bd3ad0d9"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("22976e1d-77c4-5489-fe6d-c5db0aac96ad"),
-                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("5c60c66b-7679-bc4d-af47-11208ed6bb52"),
+                            PermissionId = new Guid("b7d484d7-6c4d-306b-9700-407c2b8dcc19"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
@@ -1908,37 +1682,67 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("ec6256b1-82a1-3d0e-b592-fe8a83472d85"),
+                            PermissionId = new Guid("07f77149-c49d-0e3b-f04a-9a24698d1a05"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("d6104765-ba28-c852-f07d-907c227b0f0c"),
+                            PermissionId = new Guid("fbc155f3-f37d-a25e-3a0b-74628238f508"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("2507f0b4-0241-e3c1-9882-55e7bb6869e6"),
+                            PermissionId = new Guid("625b8bb0-4009-8ebe-8071-300c19ec095e"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("7428ce6c-f000-a466-4c1e-8f6659ea3014"),
+                            PermissionId = new Guid("ef760b73-ee59-9072-c7b3-f8d7d1efb11d"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("b1efeaa5-e984-38ec-7bb0-cbacbe7b63dd"),
+                            PermissionId = new Guid("f1172502-9cf7-22b2-3362-8dbcfc8f2dcc"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
-                            PermissionId = new Guid("b7d484d7-6c4d-306b-9700-407c2b8dcc19"),
+                            PermissionId = new Guid("c80495b3-55cf-b620-df21-3b052d3bfdcb"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("f27dae0a-72af-1ecd-5327-eeb1f44ad93a"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("91f4518e-007d-ca11-e8b4-03967a2b4624"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("469486f3-5c0a-8e26-077d-2d4352da56d3"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("c3c7a4ac-969f-12bd-045f-d857366605d7"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("5446fd00-6840-41f4-9f9c-fa918d1dd469"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
                 });
@@ -2191,15 +1995,15 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("character varying(80)")
                         .HasColumnName("envelope_status_code");
 
+                    b.Property<DateTime?>("InvoiceDate")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("invoice_date");
+
                     b.Property<string>("InvoiceId")
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("invoice_id");
-
-                    b.Property<DateTime?>("InvoiceDate")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("invoice_date");
 
                     b.Property<decimal>("InvoiceTotal")
                         .HasPrecision(18, 2)

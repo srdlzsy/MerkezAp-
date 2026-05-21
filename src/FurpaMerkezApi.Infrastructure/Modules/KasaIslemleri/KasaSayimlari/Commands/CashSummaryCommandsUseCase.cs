@@ -24,52 +24,6 @@ public sealed class CashSummaryCommandsUseCase(
     private const int FirstDocumentOrderNo = 1;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
-    public async Task<CreateBanknoteTrackResponse> CreateBanknoteTrackAsync(
-        CreateBanknoteTrackRequest request,
-        CancellationToken cancellationToken)
-    {
-        Validate(request);
-
-        var trackDate = request.BanknoteTrackDate.Date;
-        var now = DateTime.Now;
-
-        var existing = await mikroWriteDbContext.BanknoteTracks
-            .FirstOrDefaultAsync(item =>
-                item.WarehouseNo == request.WarehouseNo &&
-                item.BanknoteTrackDate >= trackDate &&
-                item.BanknoteTrackDate < trackDate.AddDays(1),
-                cancellationToken);
-
-        if (existing is not null)
-        {
-            return new CreateBanknoteTrackResponse(
-                existing.Id,
-                existing.BanknoteTrackDate,
-                existing.WarehouseNo,
-                false);
-        }
-
-        var entity = new BanknoteTrackEntity
-        {
-            WarehouseNo = request.WarehouseNo,
-            BanknoteTrackDate = trackDate,
-            TotalAmount = request.TotalAmount,
-            DeliveryTotalAmount = request.DeliveryTotalAmount,
-            Deliverer = NormalizeText(request.Deliverer),
-            Receiver = NormalizeText(request.Receiver),
-            CreateDate = now
-        };
-
-        await mikroWriteDbContext.BanknoteTracks.AddAsync(entity, cancellationToken);
-        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-
-        return new CreateBanknoteTrackResponse(
-            entity.Id,
-            entity.BanknoteTrackDate,
-            entity.WarehouseNo,
-            true);
-    }
-
     public async Task<CreateCashSummaryResponse> CreateAsync(
         CreateCashSummaryRequest request,
         CancellationToken cancellationToken)
@@ -684,24 +638,6 @@ public sealed class CashSummaryCommandsUseCase(
             cha_ilave_edilecek_kdv20 = 0d,
             cha_efatura_belge_tipi = 0
         };
-
-    private static void Validate(CreateBanknoteTrackRequest request)
-    {
-        if (request.WarehouseNo <= 0)
-        {
-            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
-        }
-
-        if (request.BanknoteTrackDate == default)
-        {
-            throw new ArgumentException("Banknote track date is required.", nameof(request.BanknoteTrackDate));
-        }
-
-        if (request.TotalAmount < 0 || request.DeliveryTotalAmount < 0)
-        {
-            throw new ArgumentException("Amounts can not be negative.");
-        }
-    }
 
     private static void Validate(CreateCashSummaryRequest request)
     {

@@ -262,14 +262,14 @@ Her permission kodu icin startup asamasinda otomatik policy uretilir.
 
 Ornek permission kodlari:
 
-- `stok-islemleri.etiket-belgeleri.list`
+- `kasa-islemleri.etiket-belgeleri.list`
 - `siparis-islemleri.verilen-depo-siparisleri.detail`
 - `kullanici-islemleri.users.manage`
 
 Bir action ustunde su sekilde kullanilir:
 
 ```csharp
-[Authorize(Policy = "stok-islemleri.etiket-belgeleri.list")]
+[Authorize(Policy = "kasa-islemleri.etiket-belgeleri.list")]
 ```
 
 Bu durumda token icinde ilgili `permission` claim'i yoksa istek reddedilir.
@@ -284,13 +284,13 @@ Temel hiyerarsi soyledir:
 
 Ornek:
 
-- Module: `stok-islemleri`
+- Module: `kasa-islemleri`
 - Menu: `etiket-belgeleri`
 - Action: `list`
 
 Tam permission kodu:
 
-`stok-islemleri.etiket-belgeleri.list`
+`kasa-islemleri.etiket-belgeleri.list`
 
 ### 6.1 Permission katalogu ne yapiyor?
 
