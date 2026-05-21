@@ -264,7 +264,7 @@ public partial class MikroDbContext
         {
             entity.ToTable("BanknoteTracks");
             entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).ValueGeneratedOnAdd();
+            entity.Property(item => item.Id).ValueGeneratedNever();
             entity.Property(item => item.BanknoteTrackDate).HasColumnType("datetime");
             entity.Property(item => item.CreateDate).HasColumnType("datetime");
             entity.Property(item => item.Deliverer).HasMaxLength(100);

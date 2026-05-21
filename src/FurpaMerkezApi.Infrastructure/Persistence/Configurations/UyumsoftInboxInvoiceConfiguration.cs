@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace FurpaMerkezApi.Infrastructure.Persistence.Configurations;
 
-public sealed class UyumsoftInboxInvoiceConfiguration : IEntityTypeConfiguration<UyumsoftInboxInvoice>
+public sealed class UyumsoftInboxInvoiceConfiguration(bool useSqlServerTypes = false) : IEntityTypeConfiguration<UyumsoftInboxInvoice>
 {
     public void Configure(EntityTypeBuilder<UyumsoftInboxInvoice> builder)
     {
@@ -43,13 +43,21 @@ public sealed class UyumsoftInboxInvoiceConfiguration : IEntityTypeConfiguration
             .HasMaxLength(50)
             .IsRequired();
 
-        builder.Property(item => item.CreateDate)
-            .HasColumnName("create_date")
-            .HasColumnType("timestamp without time zone");
+        var createDate = builder.Property(item => item.CreateDate)
+            .HasColumnName("create_date");
 
-        builder.Property(item => item.InvoiceDate)
-            .HasColumnName("invoice_date")
-            .HasColumnType("timestamp without time zone");
+        if (!useSqlServerTypes)
+        {
+            createDate.HasColumnType("timestamp without time zone");
+        }
+
+        var invoiceDate = builder.Property(item => item.InvoiceDate)
+            .HasColumnName("invoice_date");
+
+        if (!useSqlServerTypes)
+        {
+            invoiceDate.HasColumnType("timestamp without time zone");
+        }
 
         builder.Property(item => item.InvoiceType)
             .HasColumnName("invoice_type")
@@ -92,20 +100,24 @@ public sealed class UyumsoftInboxInvoiceConfiguration : IEntityTypeConfiguration
             .HasColumnName("envelope_status_code")
             .HasMaxLength(80);
 
-        builder.Property(item => item.CreatedAtUtc)
+        var createdAtUtc = builder.Property(item => item.CreatedAtUtc)
             .HasColumnName("created_at_utc")
-            .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        builder.Property(item => item.UpdatedAtUtc)
+        var updatedAtUtc = builder.Property(item => item.UpdatedAtUtc)
             .HasColumnName("updated_at_utc")
-            .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        builder.Property(item => item.LastSynchronizedAtUtc)
+        var lastSynchronizedAtUtc = builder.Property(item => item.LastSynchronizedAtUtc)
             .HasColumnName("last_synchronized_at_utc")
-            .HasColumnType("timestamp with time zone")
             .IsRequired();
+
+        if (!useSqlServerTypes)
+        {
+            createdAtUtc.HasColumnType("timestamp with time zone");
+            updatedAtUtc.HasColumnType("timestamp with time zone");
+            lastSynchronizedAtUtc.HasColumnType("timestamp with time zone");
+        }
 
         builder.HasIndex(item => item.DocumentId)
             .IsUnique()

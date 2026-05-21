@@ -99,24 +99,35 @@ public sealed class FirmaMalKabulleriController(
                 request.Receiver,
                 request.Description,
                 request.AllowOrderOverReceiving,
+                request.AutoCreateReturnForPartialAcceptance,
                 request.Lines
-                    .Select(line => new CreateCompanyReceivingLineRequest(
-                        line.StockCode,
-                        line.Quantity,
-                        line.UnitPrice,
-                        line.UnitPointer,
-                        line.LastConsumingDate,
-                        line.OrderGuid,
-                        line.Description,
-                        line.PartyCode,
-                        line.LotNo,
-                        line.ProjectCode,
-                        line.CustomerResponsibilityCenter,
-                        line.ProductResponsibilityCenter))
+                    .Select(MapLine)
                     .ToArray()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);
+    }
+
+    private static CreateCompanyReceivingLineRequest MapLine(CreateCompanyReceivingLineHttpRequest line)
+    {
+        var dispatchQuantity = line.DispatchQuantity ?? line.Quantity ?? line.AcceptedQuantity ?? 0d;
+        var acceptedQuantity = line.AcceptedQuantity ?? line.Quantity ?? dispatchQuantity;
+
+        return new CreateCompanyReceivingLineRequest(
+            line.StockCode,
+            dispatchQuantity,
+            dispatchQuantity,
+            acceptedQuantity,
+            line.UnitPrice,
+            line.UnitPointer,
+            line.LastConsumingDate,
+            line.OrderGuid,
+            line.Description,
+            line.PartyCode,
+            line.LotNo,
+            line.ProjectCode,
+            line.CustomerResponsibilityCenter,
+            line.ProductResponsibilityCenter);
     }
 
     [HttpGet("offline-sync/{clientRequestId:guid}")]
@@ -166,7 +177,6 @@ public sealed class FirmaMalKabulleriController(
 public sealed class CreateCompanyReceivingHttpRequest
 {
     private const int MaxCompanyReceivingDocumentNoLength = 29;
-    private const string CompanyReceivingDocumentNoPattern = @"^(?=.{10,29}$)\S+\d{9}$";
 
     public Guid? ClientRequestId { get; init; }
 
@@ -178,14 +188,9 @@ public sealed class CreateCompanyReceivingHttpRequest
 
     public DateTime? DocumentDate { get; init; }
 
-    [Required(ErrorMessage = "DocumentNo is required.")]
     [StringLength(
         MaxCompanyReceivingDocumentNoLength,
-        MinimumLength = 10,
-        ErrorMessage = "DocumentNo must be between 10 and 29 characters.")]
-    [RegularExpression(
-        CompanyReceivingDocumentNoPattern,
-        ErrorMessage = "DocumentNo must be in 'serie + 9 digits' format without whitespace.")]
+        ErrorMessage = "DocumentNo can not be longer than 29 characters.")]
     public string? DocumentNo { get; init; }
 
     [StringLength(25)]
@@ -198,6 +203,8 @@ public sealed class CreateCompanyReceivingHttpRequest
     public string? Description { get; init; }
 
     public bool AllowOrderOverReceiving { get; init; }
+
+    public bool AutoCreateReturnForPartialAcceptance { get; init; } = true;
 
     [Required]
     [MinLength(1)]
@@ -212,7 +219,13 @@ public sealed class CreateCompanyReceivingLineHttpRequest
     public string StockCode { get; init; } = string.Empty;
 
     [Range(0.000001, double.MaxValue)]
-    public double Quantity { get; init; }
+    public double? Quantity { get; init; }
+
+    [Range(0.000001, double.MaxValue)]
+    public double? DispatchQuantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? AcceptedQuantity { get; init; }
 
     [Range(0, double.MaxValue)]
     public double UnitPrice { get; init; }

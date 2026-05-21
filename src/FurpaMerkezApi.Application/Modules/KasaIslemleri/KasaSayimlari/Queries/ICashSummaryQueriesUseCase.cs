@@ -6,14 +6,6 @@ public interface ICashSummaryQueriesUseCase
         CashSummaryDateRequest request,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyCollection<BanknoteTrackItemDto>> ListBanknoteTracksAsync(
-        CashSummaryDateRequest request,
-        CancellationToken cancellationToken);
-
-    Task<double> GetBanknoteTrackTotalAmountAsync(
-        CashSummaryDateRequest request,
-        CancellationToken cancellationToken);
-
     Task<IReadOnlyCollection<CashSummaryListItemDto>> ListAsync(
         CashSummaryDateRequest request,
         CancellationToken cancellationToken);

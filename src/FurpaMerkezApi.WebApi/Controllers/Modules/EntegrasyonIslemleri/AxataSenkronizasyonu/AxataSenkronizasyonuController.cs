@@ -534,20 +534,9 @@ public sealed class AxataSenkronizasyonuController(
             request.Receiver,
             request.Description,
             request.AllowOrderOverReceiving,
+            request.AutoCreateReturnForPartialAcceptance,
             request.Lines
-                .Select(line => new CreateCompanyReceivingLineRequest(
-                    line.StockCode,
-                    line.Quantity,
-                    line.UnitPrice,
-                    line.UnitPointer,
-                    line.LastConsumingDate,
-                    line.OrderGuid,
-                    line.Description,
-                    line.PartyCode,
-                    line.LotNo,
-                    line.ProjectCode,
-                    line.CustomerResponsibilityCenter,
-                    line.ProductResponsibilityCenter))
+                .Select(MapCompanyReceivingLine)
                 .ToArray());
 
     private static CreateInterWarehouseShipmentRequest BuildCreateInterWarehouseShipmentRequest(
@@ -592,9 +581,12 @@ public sealed class AxataSenkronizasyonuController(
             request.Description
             ?? BuildAxataInboundAtfReference(request),
             request.AllowOrderOverReceiving,
+            true,
             request.Lines
                 .Select(line => new CreateCompanyReceivingLineRequest(
                     line.StockCode,
+                    line.Quantity,
+                    line.Quantity,
                     line.Quantity,
                     line.UnitPrice,
                     line.UnitPointer,
@@ -607,6 +599,28 @@ public sealed class AxataSenkronizasyonuController(
                     line.CustomerResponsibilityCenter,
                     line.ProductResponsibilityCenter))
                 .ToArray());
+
+    private static CreateCompanyReceivingLineRequest MapCompanyReceivingLine(CreateCompanyReceivingLineHttpRequest line)
+    {
+        var dispatchQuantity = line.DispatchQuantity ?? line.Quantity ?? line.AcceptedQuantity ?? 0d;
+        var acceptedQuantity = line.AcceptedQuantity ?? line.Quantity ?? dispatchQuantity;
+
+        return new CreateCompanyReceivingLineRequest(
+            line.StockCode,
+            dispatchQuantity,
+            dispatchQuantity,
+            acceptedQuantity,
+            line.UnitPrice,
+            line.UnitPointer,
+            line.LastConsumingDate,
+            line.OrderGuid,
+            line.Description,
+            line.PartyCode,
+            line.LotNo,
+            line.ProjectCode,
+            line.CustomerResponsibilityCenter,
+            line.ProductResponsibilityCenter);
+    }
 
     private static CreateInventoryCountRequest BuildCreateInventoryCountRequest(
         int warehouseNo,

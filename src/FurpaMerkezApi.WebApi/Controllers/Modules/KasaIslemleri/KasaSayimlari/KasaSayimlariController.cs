@@ -67,42 +67,6 @@ public sealed class KasaSayimlariController(
         return Ok(response);
     }
 
-    [HttpGet("banknot-takipleri")]
-    [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(IReadOnlyCollection<BanknoteTrackItemDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<IReadOnlyCollection<BanknoteTrackItemDto>>> ListBanknoteTracks(
-        [FromQuery] CashSummaryDateHttpRequest request,
-        CancellationToken cancellationToken)
-    {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
-        var response = await cashSummaryQueriesUseCase.ListBanknoteTracksAsync(
-            new CashSummaryDateRequest(
-                request.DateToGet!.Value,
-                warehouseNo),
-            cancellationToken);
-
-        return Ok(response);
-    }
-
-    [HttpGet("banknot-takipleri/toplam")]
-    [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(double), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<double>> GetBanknoteTrackTotalAmount(
-        [FromQuery] CashSummaryDateHttpRequest request,
-        CancellationToken cancellationToken)
-    {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
-        var response = await cashSummaryQueriesUseCase.GetBanknoteTrackTotalAmountAsync(
-            new CashSummaryDateRequest(
-                request.DateToGet!.Value,
-                warehouseNo),
-            cancellationToken);
-
-        return Ok(response);
-    }
-
     [HttpGet("{documentSerie}/{documentOrderNo:int}")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashSummaryDetailItemDto>), StatusCodes.Status200OK)]
@@ -377,31 +341,6 @@ public sealed class KasaSayimlariController(
         return StatusCode(StatusCodes.Status201Created, response);
     }
 
-    [HttpPost("banknot-takipleri")]
-    [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(CreateBanknoteTrackResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(CreateBanknoteTrackResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<CreateBanknoteTrackResponse>> CreateBanknoteTrack(
-        [FromBody] CreateBanknoteTrackHttpRequest request,
-        CancellationToken cancellationToken)
-    {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo);
-        var response = await cashSummaryCommandsUseCase.CreateBanknoteTrackAsync(
-            new CreateBanknoteTrackRequest(
-                warehouseNo,
-                request.BanknoteTrackDate!.Value,
-                request.TotalAmount,
-                request.DeliveryTotalAmount,
-                request.Deliverer ?? string.Empty,
-                request.Receiver ?? string.Empty),
-            cancellationToken);
-
-        return response.Created
-            ? StatusCode(StatusCodes.Status201Created, response)
-            : Ok(response);
-    }
-
     [HttpPut("{documentSerie}/{documentOrderNo:int}/detaylar")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryDetailsResponse), StatusCodes.Status200OK)]
@@ -583,25 +522,6 @@ public sealed class ZReportValueHttpRequest
     [Required]
     [Range(1, int.MaxValue)]
     public int? CashNo { get; init; }
-}
-
-public sealed class CreateBanknoteTrackHttpRequest
-{
-    [Range(1, int.MaxValue)]
-    public int? WarehouseNo { get; init; }
-
-    [Required]
-    public DateTime? BanknoteTrackDate { get; init; }
-
-    public double TotalAmount { get; init; }
-
-    public double DeliveryTotalAmount { get; init; }
-
-    [StringLength(100)]
-    public string? Deliverer { get; init; }
-
-    [StringLength(100)]
-    public string? Receiver { get; init; }
 }
 
 public sealed class CreateCashSummaryHttpRequest

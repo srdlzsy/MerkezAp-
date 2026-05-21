@@ -1,21 +1,22 @@
 # Depo Mal Kabul Isleyis
 
-Bu dokuman depolar arasi sevklerden gelen mallarin alici depo tarafinda nasil kabul edilecegini, eksik/fazla durumlarinin nasil yorumlanacagini ve mevcut Mikro stok hareketi alanlarinin hangi anlamda kullanilacagini anlatir.
+Bu dokuman depolar arasi sevklerden ve gelen depo iadelerinden gelen mallarin alici depo tarafinda nasil kabul edilecegini, eksik/fazla durumlarinin nasil yorumlanacagini ve mevcut Mikro stok hareketi alanlarinin hangi anlamda kullanilacagini anlatir.
 
 ## Temel Kural
 
-Depolar arasi sevkte ana hareketi gonderen depo olusturur. Alici depo mal kabul yaparken yeni ana sevk hareketi olusturmaz; var olan `STOK_HAREKETLERI` satirlarini kabul durumuna getirir.
+Depolar arasi sevkte veya depo iadesinde ana hareketi gonderen depo olusturur. Alici depo mal kabul yaparken yeni ana sevk/iade hareketi olusturmaz; var olan `STOK_HAREKETLERI` satirlarini kabul durumuna getirir.
 
 En onemli ayrim:
 
 ```text
-sth_miktar        = gonderen deponun sevk ettigi / e-irsaliyeye konu olan resmi miktar
+sth_normal_iade   = 0 ise normal depo sevki, 1 ise depo iadesi
+sth_miktar        = gonderen deponun sevk/iade ettigi resmi miktar
 sth_FormulMiktar  = alici deponun mal kabulde saydigi fiili miktar
 ```
 
 `sth_miktar` mal kabul sirasinda degistirilmez. Cunku bu miktar gonderen deponun sevk ettigi ve e-irsaliye ile bildirdigi resmi miktardir.
 
-Depo stoklari `sth_miktar` uzerinden hesaplandigi icin `sth_FormulMiktar` tek basina stok miktarini degistirmez. Bu alan sayim/kabul sonucunu izlemek icin kullanilir.
+Canli Mikro pratiginde eksik/fazla kabul, resmi miktari bozmadan `sth_FormulMiktar` alaninda izlenir. Bu yuzden depo mal kabulde otomatik ayri iade/fire/duzeltme hareketi acilmaz.
 
 ## Sevk Olustugunda
 
@@ -53,16 +54,16 @@ E-irsaliye gonderimi de `sth_miktar` uzerinden yapilir.
 
 ## Bekleyen Mal Kabul Listesi
 
-Alici depo bekleyen mal kabul belgelerini su mantikla gorur:
+Alici depo bekleyen mal kabul belgelerini su mantikla gorur. Bu liste normal gelen sevkleri ve gelen depo iadelerini birlikte kapsar:
 
 ```text
 sth_evraktip = 17
-sth_normal_iade = 0
+sth_normal_iade = 0 veya 1
 sth_nakliyedeposu = kullanici deposu
 sth_nakliyedurumu != 1
 ```
 
-UI tarafinda gelen sevk detayina girildiginde satirlar `movementGuid` ile izlenmelidir.
+UI tarafinda gelen sevk/iade detayina girildiginde satirlar `movementGuid` ile izlenmelidir. Response'taki `isReturn = true` gelen depo iadesini, `isReturn = false` normal gelen depo sevkini ifade eder.
 
 Stok kodu ile eslestirme tek basina guvenli degildir. Ayni stok kodu ayni evrakta birden fazla satir olarak gelebilir; parti, lot, aciklama veya siparis baglantisi farkli olabilir.
 
@@ -134,9 +135,7 @@ sth_nakliyedeposu = 60
 sth_nakliyedurumu = 1
 ```
 
-Burada `sth_miktar` degismedigi icin stok hesabi acisindan ana hareket 110 depoya 10 adet giris yaptirir. Fiziksel gercekte ise 110 depoda 8 adet vardir.
-
-Bu nedenle eksik durumda sadece ana hareketi kabul etmek stok gercegini tam yansitmaz. Eksik 2 adet icin ayri bir fark kapatma aksiyonu gerekir.
+Burada `sth_miktar` resmi sevk/e-irsaliye miktari olarak 10 kalir. Alicinin fiili kabul ettigi miktar `sth_FormulMiktar = 8` olarak hareket uzerinde izlenir.
 
 Mantikli isleyis:
 
@@ -144,7 +143,7 @@ Mantikli isleyis:
 1. Ana sevk hareketi kabul edilir.
 2. sth_FormulMiktar alicinin saydigi miktar olarak yazilir.
 3. Eksik miktar fark olarak raporlanir.
-4. Eksik fark manuel karar veya ayrica gelistirilecek fark kapatma islemiyle kapatilir.
+4. Otomatik stok duzeltme, iade veya fire hareketi acilmaz.
 ```
 
 Eksik farkin olasi kapanis aksiyonlari:
@@ -171,10 +170,10 @@ allowDiscrepancy = false:
 
 allowDiscrepancy = true:
   Evrak kabul edilir, fark response'ta doner.
-  differenceResolutionStatus = "requires-manual-resolution"
+  differenceResolutionStatus = "recorded-on-formula-quantity"
 ```
 
-Bu ilk uygulamada eksik fark icin otomatik stok duzeltme hareketi acilmaz.
+Canli Mikro incelemesinde de eksik farklar bu sekilde `sth_FormulMiktar` ile kayit altina alinmis gorunur.
 
 ## Fazla Kabul Senaryosu
 
@@ -234,10 +233,10 @@ allowDiscrepancy = false:
 
 allowDiscrepancy = true:
   Evrak kabul edilir, fark response'ta doner.
-  differenceResolutionStatus = "requires-manual-resolution"
+  differenceResolutionStatus = "recorded-on-formula-quantity"
 ```
 
-Bu ilk uygulamada fazla fark icin otomatik stok giris hareketi acilmaz.
+Canli Mikro pratigine uygun olarak fazla fark icin de otomatik stok giris hareketi acilmaz.
 
 ## API Akisi
 
@@ -285,13 +284,14 @@ Response:
   "sourceWarehouseNo": 50,
   "transitWarehouseNo": 60,
   "shippingState": 1,
+  "isReturn": false,
   "lineCount": 1,
   "totalShippedQuantity": 10,
   "totalReceivedQuantity": 8,
   "totalMissingQuantity": 2,
   "totalExcessQuantity": 0,
   "hasDiscrepancy": true,
-  "differenceResolutionStatus": "requires-manual-resolution",
+  "differenceResolutionStatus": "recorded-on-formula-quantity",
   "writeConnectionName": "testMikroConnection",
   "lines": [
     {
@@ -306,6 +306,38 @@ Response:
   ]
 }
 ```
+
+## Mal Kabul Farklari Raporu
+
+Kabulden sonra farklari ayri bir menu altinda izlemek icin `MalKabulIslemleri > MalKabulFarklari` menu kodu kullanilir.
+
+Endpoint:
+
+```text
+GET /api/mal-kabul-islemleri/mal-kabul-farklari?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-30&scope=accepted
+```
+
+Iki gorunum vardir:
+
+```text
+scope=accepted:
+  Deponun kendi mal kabul yaptigi evraklar.
+  Filtre: sth_giris_depo_no = WarehouseNo
+
+scope=created:
+  Deponun kendi olusturdugu/gonderdigi evraklar.
+  Filtre: sth_cikis_depo_no = WarehouseNo
+```
+
+Rapor sadece kabul edilmis ve farkli satirlari dondurur:
+
+```text
+sth_evraktip       = 17
+sth_nakliyedurumu  = 1
+sth_miktar         != sth_FormulMiktar
+```
+
+Response satirlarinda `quantity` gonderilen/resmi miktar, `receivedQuantity` alicinin kabulde saydigi miktardir. `differenceQuantity = receivedQuantity - quantity` olarak hesaplanir.
 
 ## UI Davranisi
 

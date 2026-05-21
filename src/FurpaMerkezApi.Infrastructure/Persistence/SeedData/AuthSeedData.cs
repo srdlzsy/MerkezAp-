@@ -20,7 +20,15 @@ internal static class AuthSeedData
     {
         [PermissionCodes.RolesManage] = Guid.Parse("119a5e97-4947-4c87-9ffd-2d35e343ef53"),
         [PermissionCodes.PermissionsManage] = Guid.Parse("79925722-5c18-4db4-9c7d-c44d6f6fd779"),
-        [PermissionCodes.UsersManage] = Guid.Parse("fdf63a66-e9b4-4ca5-8700-2a6a34231c01")
+        [PermissionCodes.UsersManage] = Guid.Parse("fdf63a66-e9b4-4ca5-8700-2a6a34231c01"),
+        ["kasa-islemleri.etiket-belgeleri.list"] = Guid.Parse("07f77149-c49d-0e3b-f04a-9a24698d1a05"),
+        ["kasa-islemleri.etiket-belgeleri.detail"] = Guid.Parse("fbc155f3-f37d-a25e-3a0b-74628238f508"),
+        ["kasa-islemleri.etiket-belgeleri.create"] = Guid.Parse("625b8bb0-4009-8ebe-8071-300c19ec095e"),
+        ["kasa-islemleri.etiket-belgeleri.update"] = Guid.Parse("ef760b73-ee59-9072-c7b3-f8d7d1efb11d"),
+        ["kasa-islemleri.kunye-etiket-yazdirma.list"] = Guid.Parse("f1172502-9cf7-22b2-3362-8dbcfc8f2dcc"),
+        ["kasa-islemleri.kunye-etiket-yazdirma.detail"] = Guid.Parse("c80495b3-55cf-b620-df21-3b052d3bfdcb"),
+        ["kasa-islemleri.kunye-etiket-yazdirma.create"] = Guid.Parse("f27dae0a-72af-1ecd-5327-eeb1f44ad93a"),
+        ["kasa-islemleri.kunye-etiket-yazdirma.update"] = Guid.Parse("91f4518e-007d-ca11-e8b4-03967a2b4624")
     };
 
     public static IReadOnlyCollection<AppPermission> Permissions { get; } =

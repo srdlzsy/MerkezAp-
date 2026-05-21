@@ -2,10 +2,6 @@ namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Command
 
 public interface ICashSummaryCommandsUseCase
 {
-    Task<CreateBanknoteTrackResponse> CreateBanknoteTrackAsync(
-        CreateBanknoteTrackRequest request,
-        CancellationToken cancellationToken);
-
     Task<CreateCashSummaryResponse> CreateAsync(
         CreateCashSummaryRequest request,
         CancellationToken cancellationToken);

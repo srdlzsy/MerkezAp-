@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -17,7 +18,8 @@ public sealed class FaturaGoruntulemeController(
     ISynchronizeInvoiceViewingDocumentsUseCase synchronizeInvoiceViewingDocumentsUseCase,
     IGetInvoiceViewingDocumentUseCase getInvoiceViewingDocumentUseCase,
     IRenderInvoiceViewingDocumentUseCase renderInvoiceViewingDocumentUseCase,
-    ISetInvoiceViewingPrintedStateUseCase setInvoiceViewingPrintedStateUseCase)
+    ISetInvoiceViewingPrintedStateUseCase setInvoiceViewingPrintedStateUseCase,
+    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "fatura-islemleri";
@@ -65,6 +67,22 @@ public sealed class FaturaGoruntulemeController(
     }
 
     [HttpGet("{documentId}")]
+    [HttpGet("{documentId}/pdf")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<UyumsoftOperationResponseDto>> GetPdf(
+        string documentId,
+        CancellationToken cancellationToken) =>
+        Ok(await uyumsoftConnectedQueryService.InvokeGetOperationAsync(
+            UyumsoftConnectedServiceKind.EInvoice,
+            new UyumsoftOperationInvocationRequest(
+                "GetInboxInvoicePdf",
+                null,
+                [new UyumsoftOperationParameterRequest("invoiceId", documentId)]),
+            cancellationToken));
+
+    [HttpGet("{documentId}/detail")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(InvoiceViewingDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

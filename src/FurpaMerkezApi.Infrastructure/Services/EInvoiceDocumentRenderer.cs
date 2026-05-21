@@ -24,24 +24,56 @@ public sealed class EInvoiceDocumentRenderer(
         bool preferEmbeddedXslt,
         CancellationToken cancellationToken = default,
         bool fallbackToDefaultXslt = true)
-    {
-        var response = await queryService.InvokeGetOperationAsync(
-            UyumsoftConnectedServiceKind.EInvoice,
-            new UyumsoftOperationInvocationRequest(
-                "GetInboxInvoice",
-                null,
-                [new UyumsoftOperationParameterRequest("invoiceId", invoiceLookupId)]),
-            cancellationToken);
-        var invoiceXml = ExtractInvoiceXml(response);
-
-        return await RenderXmlAsync(
-            InboxSource,
-            invoiceLookupId,
-            invoiceXml,
+        => await RenderInboxInvoiceAsync(
+            new[] { invoiceLookupId },
             profile,
             preferEmbeddedXslt,
             cancellationToken,
             fallbackToDefaultXslt);
+
+    public async Task<InvoiceRenderedDocumentDto> RenderInboxInvoiceAsync(
+        IReadOnlyCollection<string> invoiceLookupIds,
+        InvoiceDocumentProfile profile,
+        bool preferEmbeddedXslt,
+        CancellationToken cancellationToken = default,
+        bool fallbackToDefaultXslt = true)
+    {
+        var normalizedLookupIds = NormalizeLookupIds(invoiceLookupIds);
+        List<string>? failures = null;
+
+        if (normalizedLookupIds.Count == 0)
+        {
+            throw new ArgumentException("Invoice lookup id is required.", nameof(invoiceLookupIds));
+        }
+
+        foreach (var invoiceLookupId in normalizedLookupIds)
+        {
+            string invoiceXml;
+
+            try
+            {
+                invoiceXml = await FetchInvoiceXmlAsync("GetInboxInvoice", invoiceLookupId, cancellationToken);
+            }
+            catch (InvalidOperationException exception)
+            {
+                failures ??= [];
+                failures.Add($"{invoiceLookupId}: {exception.Message}");
+                continue;
+            }
+
+            return await RenderXmlAsync(
+                InboxSource,
+                invoiceLookupId,
+                invoiceXml,
+                profile,
+                preferEmbeddedXslt,
+                cancellationToken,
+                fallbackToDefaultXslt);
+        }
+
+        throw new InvalidOperationException(
+            "Uyumsoft GetInboxInvoice could not resolve invoice with any known lookup id. " +
+            $"Attempts: {string.Join(" | ", failures ?? normalizedLookupIds)}");
     }
 
     public async Task<InvoiceRenderedDocumentDto> RenderOutboxInvoiceAsync(
@@ -51,14 +83,7 @@ public sealed class EInvoiceDocumentRenderer(
         CancellationToken cancellationToken = default,
         bool fallbackToDefaultXslt = true)
     {
-        var response = await queryService.InvokeGetOperationAsync(
-            UyumsoftConnectedServiceKind.EInvoice,
-            new UyumsoftOperationInvocationRequest(
-                "GetOutboxInvoice",
-                null,
-                [new UyumsoftOperationParameterRequest("invoiceId", invoiceLookupId)]),
-            cancellationToken);
-        var invoiceXml = ExtractInvoiceXml(response);
+        var invoiceXml = await FetchInvoiceXmlAsync("GetOutboxInvoice", invoiceLookupId, cancellationToken);
 
         return await RenderXmlAsync(
             OutboxSource,
@@ -108,6 +133,30 @@ public sealed class EInvoiceDocumentRenderer(
             invoiceDocument.ToString(SaveOptions.DisableFormatting),
             htmlContent);
     }
+
+    private async Task<string> FetchInvoiceXmlAsync(
+        string operationName,
+        string invoiceLookupId,
+        CancellationToken cancellationToken)
+    {
+        var response = await queryService.InvokeGetOperationAsync(
+            UyumsoftConnectedServiceKind.EInvoice,
+            new UyumsoftOperationInvocationRequest(
+                operationName,
+                null,
+                [new UyumsoftOperationParameterRequest("invoiceId", invoiceLookupId)]),
+            cancellationToken);
+
+        return ExtractInvoiceXml(response);
+    }
+
+    private static IReadOnlyCollection<string> NormalizeLookupIds(
+        IEnumerable<string?> invoiceLookupIds) =>
+        invoiceLookupIds
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static string ExtractInvoiceXml(UyumsoftOperationResponseDto response)
     {

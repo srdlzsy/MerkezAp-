@@ -1,13 +1,5 @@
 namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 
-public sealed record CreateBanknoteTrackRequest(
-    int WarehouseNo,
-    DateTime BanknoteTrackDate,
-    double TotalAmount,
-    double DeliveryTotalAmount,
-    string Deliverer,
-    string Receiver);
-
 public sealed record CreateCashSummaryRequest(
     int WarehouseNo,
     int CashNo,
@@ -78,12 +70,6 @@ public sealed record DeleteCashSummaryRequest(
     int WarehouseNo,
     string DocumentSerie,
     int DocumentOrderNo);
-
-public sealed record CreateBanknoteTrackResponse(
-    int BanknoteTrackId,
-    DateTime BanknoteTrackDate,
-    int WarehouseNo,
-    bool Created);
 
 public sealed record CreateCashSummaryResponse(
     string DocumentSerie,

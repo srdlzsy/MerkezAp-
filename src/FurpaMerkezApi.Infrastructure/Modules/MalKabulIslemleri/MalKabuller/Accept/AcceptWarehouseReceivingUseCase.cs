@@ -13,6 +13,7 @@ public sealed class AcceptWarehouseReceivingUseCase(
     : IAcceptWarehouseReceivingUseCase
 {
     private const byte InterWarehouseShipmentDocumentType = 17;
+    private const byte ReturnMovement = 1;
     private const byte DeliveredToTargetWarehouseState = 1;
     private const short FallbackMikroUserNo = 39;
     private const double QuantityTolerance = 0.000001d;
@@ -68,13 +69,14 @@ public sealed class AcceptWarehouseReceivingUseCase(
                     firstMovement.sth_cikis_depo_no ?? 0,
                     transitWarehouseNo,
                     DeliveredToTargetWarehouseState,
+                    firstMovement.sth_normal_iade == ReturnMovement,
                     lineResults.Count,
                     lineResults.Sum(line => line.ShippedQuantity),
                     lineResults.Sum(line => line.ReceivedQuantity),
                     lineResults.Where(line => line.DifferenceQuantity < -QuantityTolerance).Sum(line => Math.Abs(line.DifferenceQuantity)),
                     lineResults.Where(line => line.DifferenceQuantity > QuantityTolerance).Sum(line => line.DifferenceQuantity),
                     hasDiscrepancy,
-                    hasDiscrepancy ? "requires-manual-resolution" : "not-required",
+                    hasDiscrepancy ? "recorded-on-formula-quantity" : "not-required",
                     options.ConnectionStringName,
                     lineResults);
             }

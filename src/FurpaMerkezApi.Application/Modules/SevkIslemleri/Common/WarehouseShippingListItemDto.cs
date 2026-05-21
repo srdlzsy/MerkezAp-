@@ -12,6 +12,7 @@ public sealed record WarehouseShippingListItemDto(
     string TargetWarehouse,
     int ShippingWarehouseNo,
     byte ShippingState,
+    bool IsReturn,
     string Plaque,
     string DriverNameSurname,
     string DriverTckn,

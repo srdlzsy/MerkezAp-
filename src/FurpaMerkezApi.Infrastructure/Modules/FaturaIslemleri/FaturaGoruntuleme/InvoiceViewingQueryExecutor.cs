@@ -86,6 +86,39 @@ public sealed class InvoiceViewingQueryExecutor(
                ?? throw new KeyNotFoundException($"Invoice viewing document was not found for documentId {documentId}.");
     }
 
+    public async Task<InvoiceViewingRenderContext> GetRenderContextByLookupIdAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            throw new ArgumentException("Document id is required.", nameof(documentId));
+        }
+
+        var normalizedDocumentId = documentId.Trim();
+        var entities = await authDbContext.UyumsoftInboxInvoices
+            .AsNoTracking()
+            .Where(invoice =>
+                invoice.DocumentId == normalizedDocumentId ||
+                invoice.InvoiceId == normalizedDocumentId ||
+                invoice.ServiceDocumentId == normalizedDocumentId ||
+                invoice.LocalDocumentId == normalizedDocumentId)
+            .Take(5)
+            .ToListAsync(cancellationToken);
+        var entity = entities
+            .OrderByDescending(invoice => string.Equals(invoice.DocumentId, normalizedDocumentId, StringComparison.Ordinal))
+            .ThenByDescending(invoice => string.Equals(invoice.InvoiceId, normalizedDocumentId, StringComparison.Ordinal))
+            .ThenByDescending(invoice => string.Equals(invoice.ServiceDocumentId, normalizedDocumentId, StringComparison.Ordinal))
+            .ThenByDescending(invoice => string.Equals(invoice.LocalDocumentId, normalizedDocumentId, StringComparison.Ordinal))
+            .FirstOrDefault();
+
+        return entity is null
+            ? throw new KeyNotFoundException($"Invoice viewing document was not found for documentId {documentId}.")
+            : new InvoiceViewingRenderContext(
+                MapItem(entity),
+                BuildLookupCandidates(normalizedDocumentId, entity));
+    }
+
     public async Task<InvoiceViewingListItemDto> UpdatePrintedStateAsync(
         string documentId,
         bool isPrinted,
@@ -127,6 +160,22 @@ public sealed class InvoiceViewingQueryExecutor(
             item.IsStandard,
             item.StatusCode,
             string.IsNullOrWhiteSpace(item.Status) ? MapStatus(item.StatusCode) : item.Status);
+
+    private static IReadOnlyCollection<string> BuildLookupCandidates(
+        string requestedDocumentId,
+        UyumsoftInboxInvoice item) =>
+        new[]
+            {
+                item.DocumentId,
+                item.ServiceDocumentId,
+                item.LocalDocumentId,
+                item.InvoiceId,
+                requestedDocumentId
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static void ValidateListRequest(InvoiceViewingListRequest request)
     {
@@ -267,3 +316,7 @@ public sealed class InvoiceViewingQueryExecutor(
             CultureInfo.InvariantCulture,
             out parsedDecimal);
 }
+
+public sealed record InvoiceViewingRenderContext(
+    InvoiceViewingListItemDto Summary,
+    IReadOnlyCollection<string> LookupIds);

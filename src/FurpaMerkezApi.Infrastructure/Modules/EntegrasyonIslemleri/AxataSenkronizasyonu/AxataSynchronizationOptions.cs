@@ -20,10 +20,25 @@ public sealed class AxataSynchronizationOptions
 
     public int PreviewDefaultTake { get; init; } = 10;
 
+    public int EndpointProbeTimeoutSeconds { get; init; } = 5;
+
     public string OutboxBasePath { get; init; } = string.Empty;
+
+    public AxataWarehouseOrderAutomationOptions WarehouseOrderAutomation { get; init; } = new();
 
     public Dictionary<string, AxataSynchronizationTaskOptions> Tasks { get; init; } =
         new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class AxataWarehouseOrderAutomationOptions
+{
+    public bool Enabled { get; init; }
+
+    public int[] WarehouseNos { get; init; } = Array.Empty<int>();
+
+    public bool CreateForInterWarehouseShipments { get; init; } = true;
+
+    public bool CreateForWarehouseReturns { get; init; } = true;
 }
 
 public sealed class AxataSynchronizationTaskOptions

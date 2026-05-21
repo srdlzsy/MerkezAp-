@@ -40,6 +40,10 @@ builder.Services.AddHealthChecks()
     .AddCheck<CoreDependenciesHealthCheck>(
         "core_dependencies",
         failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready"])
+    .AddCheck<OperationsExportWritableHealthCheck>(
+        "operations_export_path",
+        failureStatus: HealthStatus.Unhealthy,
         tags: ["ready"]);
 
 builder.Services.AddRouting(options =>
@@ -289,7 +293,9 @@ static Task WriteHealthCheckResponseAsync(HttpContext httpContext, HealthReport 
             entry => new
             {
                 status = entry.Value.Status.ToString(),
-                durationMilliseconds = Math.Round(entry.Value.Duration.TotalMilliseconds, 2)
+                durationMilliseconds = Math.Round(entry.Value.Duration.TotalMilliseconds, 2),
+                description = entry.Value.Description,
+                data = entry.Value.Data
             })
     };
 

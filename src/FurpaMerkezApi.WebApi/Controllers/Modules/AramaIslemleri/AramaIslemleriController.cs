@@ -21,6 +21,9 @@ public sealed class AramaIslemleriController(
     IResolveBarcodeUseCase resolveBarcodeUseCase,
     IGetProductCustomerSuggestionsUseCase getProductCustomerSuggestionsUseCase) : ControllerBase
 {
+    private const string PriceLookupPolicy = "arama-islemleri.fiyat-gor.list";
+    private const string BarcodeCustomerLookupPolicy = "arama-islemleri.cari-bul.list";
+
     [HttpGet("urunler")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProductLookupItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -37,6 +40,53 @@ public sealed class AramaIslemleriController(
                 request.StockCode,
                 request.StockName,
                 request.CompanyCode ?? request.SupplierCode,
+                request.Take),
+            cancellationToken));
+    }
+
+    [HttpGet("fiyat-gor")]
+    [Authorize(Policy = PriceLookupPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProductLookupItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyCollection<ProductLookupItemDto>>> GetProductPrices(
+        [FromQuery] ProductSearchHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+
+        return Ok(await searchProductsUseCase.ExecuteAsync(
+            new ProductSearchRequest(
+                warehouseNo,
+                request.Barcode,
+                request.StockCode,
+                request.StockName,
+                request.CompanyCode ?? request.SupplierCode,
+                request.Take),
+            cancellationToken));
+    }
+
+    [HttpGet("barkodlar/{barcode}/fiyat")]
+    [Authorize(Policy = PriceLookupPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProductLookupItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyCollection<ProductLookupItemDto>>> GetProductPricesByBarcode(
+        string barcode,
+        [FromQuery] ProductBarcodePriceLookupHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalizedBarcode = NormalizeOrNull(barcode)
+            ?? throw new ArgumentException("Barcode is required.", nameof(barcode));
+        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+
+        return Ok(await searchProductsUseCase.ExecuteAsync(
+            new ProductSearchRequest(
+                warehouseNo,
+                normalizedBarcode,
+                null,
+                null,
+                null,
                 request.Take),
             cancellationToken));
     }
@@ -84,6 +134,47 @@ public sealed class AramaIslemleriController(
             cancellationToken));
     }
 
+    [HttpGet("cari-bul")]
+    [Authorize(Policy = BarcodeCustomerLookupPolicy)]
+    [ProducesResponseType(typeof(BarcodeCustomerSuggestionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BarcodeCustomerSuggestionResponse>> FindCustomersByBarcode(
+        [FromQuery] BarcodeCustomerLookupHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var barcode = NormalizeOrNull(request.Barcode)
+            ?? throw new ArgumentException("Barcode is required.", nameof(request.Barcode));
+        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+
+        return Ok(await FindCustomersByBarcodeAsync(
+            warehouseNo,
+            barcode,
+            request.Take,
+            cancellationToken));
+    }
+
+    [HttpGet("barkodlar/{barcode}/cariler")]
+    [Authorize(Policy = BarcodeCustomerLookupPolicy)]
+    [ProducesResponseType(typeof(BarcodeCustomerSuggestionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<BarcodeCustomerSuggestionResponse>> FindCustomersByBarcodePath(
+        string barcode,
+        [FromQuery] BarcodeCustomerLookupByPathHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalizedBarcode = NormalizeOrNull(barcode)
+            ?? throw new ArgumentException("Barcode is required.", nameof(barcode));
+        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+
+        return Ok(await FindCustomersByBarcodeAsync(
+            warehouseNo,
+            normalizedBarcode,
+            request.Take,
+            cancellationToken));
+    }
+
     [HttpGet("urunler/{stockCode}/cari-onerileri")]
     [ProducesResponseType(typeof(ProductCustomerSuggestionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -96,6 +187,63 @@ public sealed class AramaIslemleriController(
                 stockCode,
                 request.Take),
             cancellationToken));
+
+    private async Task<BarcodeCustomerSuggestionResponse> FindCustomersByBarcodeAsync(
+        int warehouseNo,
+        string barcode,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var resolved = await resolveBarcodeUseCase.ExecuteAsync(
+            new BarcodeResolutionRequest(
+                warehouseNo,
+                barcode,
+                "cari-bul"),
+            cancellationToken);
+
+        if (!resolved.IsFound || string.IsNullOrWhiteSpace(resolved.StockCode))
+        {
+            return new BarcodeCustomerSuggestionResponse(
+                false,
+                resolved.Barcode,
+                resolved.WarehouseNo,
+                resolved.ResolutionSource,
+                resolved.StockCode,
+                resolved.StockName,
+                resolved.MatchedBarcode,
+                resolved.PrimaryBarcode,
+                resolved.CaseBarcode,
+                resolved.UnitsPerCase,
+                resolved.DefaultSupplierCode,
+                resolved.DefaultSupplierName,
+                Array.Empty<ProductCustomerSuggestionDto>());
+        }
+
+        var suggestions = await getProductCustomerSuggestionsUseCase.ExecuteAsync(
+            new ProductCustomerSuggestionRequest(resolved.StockCode, take),
+            cancellationToken);
+
+        return new BarcodeCustomerSuggestionResponse(
+            suggestions.IsProductFound,
+            resolved.Barcode,
+            resolved.WarehouseNo,
+            resolved.ResolutionSource,
+            resolved.StockCode,
+            suggestions.StockName ?? resolved.StockName,
+            resolved.MatchedBarcode,
+            resolved.PrimaryBarcode,
+            resolved.CaseBarcode,
+            resolved.UnitsPerCase,
+            suggestions.DefaultSupplierCode ?? resolved.DefaultSupplierCode,
+            suggestions.DefaultSupplierName ?? resolved.DefaultSupplierName,
+            suggestions.Suggestions);
+    }
+
+    private static string? NormalizeOrNull(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
 }
 
 public sealed class ProductSearchHttpRequest
@@ -138,6 +286,15 @@ public sealed class WarehouseSearchHttpRequest
     public int Take { get; init; } = 100;
 }
 
+public sealed class ProductBarcodePriceLookupHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, 100)]
+    public int Take { get; init; } = 20;
+}
+
 public sealed class BarcodeResolutionHttpRequest
 {
     [Range(1, int.MaxValue)]
@@ -145,6 +302,28 @@ public sealed class BarcodeResolutionHttpRequest
 
     [StringLength(64)]
     public string? ScreenCode { get; init; }
+}
+
+public sealed class BarcodeCustomerLookupHttpRequest
+{
+    [Required(AllowEmptyStrings = false)]
+    [StringLength(128)]
+    public string Barcode { get; init; } = string.Empty;
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, 25)]
+    public int Take { get; init; } = 10;
+}
+
+public sealed class BarcodeCustomerLookupByPathHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, 25)]
+    public int Take { get; init; } = 10;
 }
 
 public sealed class ProductCustomerSuggestionHttpRequest

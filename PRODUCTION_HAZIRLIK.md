@@ -13,6 +13,7 @@
 - Gerekliyse `EInvoice__Username`, `EInvoice__Password`
 - Gerekliyse `AxataSynchronization__Username`, `AxataSynchronization__Password`
 - Gerekliyse `AxataSynchronization__MainEndpointUrl`, `AxataSynchronization__ExtendedEndpointUrl`
+- Gerekliyse `AxataSynchronization__EndpointProbeTimeoutSeconds=5`
 
 ## Production davranisi
 
@@ -43,6 +44,16 @@
 - Kalici key klasoru tanimla:
 - `DataProtection__KeysPath=D:\\Furpa\\DataProtectionKeys`
 - Birden fazla instance varsa ortak ve kalici klasor kullan
+
+## Operasyon export klasoru
+
+- Terazi/urun/kasiyer dosyalari icin yazilabilir bir klasor tanimla:
+- `OperationsExport__BasePath=D:\\Furpa\\OperationsExports`
+- Klasoru olusturup IIS AppPool kimligine Modify izni ver:
+- `New-Item -ItemType Directory -Path "D:\\Furpa\\OperationsExports" -Force`
+- `icacls "D:\\Furpa\\OperationsExports" /grant "IIS AppPool\\FurpaMerkezApi(Serdal):(OI)(CI)M"`
+- AppPool adi farkliysa komuttaki `FurpaMerkezApi(Serdal)` kismini IIS'teki gercek Application Pool adiyla degistir.
+- `OperationsExport__BasePath` bos birakilirsa varsayilan yol publish klasoru altindaki `App_Data\\OperationsExports` olur; bu klasor de ayni sekilde yazma izni ister.
 
 ## Reverse proxy
 

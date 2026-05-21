@@ -102,6 +102,7 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
                 TargetWarehouseName = targetWarehouse.dep_adi,
                 movement.sth_nakliyedeposu,
                 movement.sth_nakliyedurumu,
+                movement.sth_normal_iade,
                 movement.sth_HareketGrupKodu1,
                 movement.sth_HareketGrupKodu3,
                 movement.sth_ismerkezi_kodu,
@@ -145,7 +146,8 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
                 row.sth_cikis_depo_no,
                 row.sth_giris_depo_no,
                 row.sth_nakliyedeposu,
-                row.sth_nakliyedurumu
+                row.sth_nakliyedurumu,
+                row.sth_normal_iade
             })
             .Distinct()
             .Count();
@@ -162,6 +164,7 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
         var sourceWarehouseNo = firstRow.sth_cikis_depo_no ?? 0;
         var targetWarehouseNo = firstRow.sth_giris_depo_no ?? 0;
         var shippingWarehouseNo = firstRow.sth_nakliyedeposu ?? 0;
+        var isReturn = firstRow.sth_normal_iade == ReturnMovement;
         var normalizedDocumentSerie = firstRow.sth_evrakno_seri ?? documentSerie;
         var normalizedDocumentOrderNo = firstRow.sth_evrakno_sira ?? request.DocumentOrderNo;
         var warehouseOrderNos = rows
@@ -207,6 +210,7 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
             firstRow.TargetWarehouseName ?? string.Empty,
             shippingWarehouseNo,
             firstRow.sth_nakliyedurumu ?? 0,
+            isReturn,
             firstRow.sth_HareketGrupKodu1 ?? string.Empty,
             firstRow.sth_HareketGrupKodu3 ?? string.Empty,
             firstRow.sth_ismerkezi_kodu ?? string.Empty,

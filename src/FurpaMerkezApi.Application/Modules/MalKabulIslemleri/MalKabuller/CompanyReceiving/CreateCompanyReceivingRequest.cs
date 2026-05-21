@@ -12,11 +12,14 @@ public sealed record CreateCompanyReceivingRequest(
     string? Receiver,
     string? Description,
     bool AllowOrderOverReceiving,
+    bool AutoCreateReturnForPartialAcceptance,
     IReadOnlyCollection<CreateCompanyReceivingLineRequest> Lines);
 
 public sealed record CreateCompanyReceivingLineRequest(
     string StockCode,
     double Quantity,
+    double? DispatchQuantity = null,
+    double? AcceptedQuantity = null,
     double UnitPrice = 0d,
     int UnitPointer = 1,
     DateTime? LastConsumingDate = null,

@@ -63,17 +63,6 @@ public sealed record BanknoteMovementItemDto(
     int Quantity,
     double Total);
 
-public sealed record BanknoteTrackItemDto(
-    int WarehouseNo,
-    string WarehouseName,
-    DateTime BanknoteTrackDate,
-    double TotalAmount,
-    double DeliveryTotalAmount,
-    double DifferenceAmount,
-    string Deliverer,
-    string Receiver,
-    DateTime CreateDate);
-
 public sealed record BanknoteTypeItemDto(
     double Value,
     double Quantity,

@@ -1,5 +1,7 @@
 using System.Data;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
+using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +11,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkle
 
 public sealed class CreateInterWarehouseShipmentUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptions<AxataSynchronizationOptions> axataOptions)
     : ICreateInterWarehouseShipmentUseCase
 {
     private const short MovementFileId = 16;
@@ -49,6 +52,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             {
                 var linkedOrderLines = await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
                 var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
+                    request,
+                    lines,
+                    movementDate,
+                    now,
+                    cancellationToken);
                 var movements = new List<STOK_HAREKETLERI>(lines.Length);
                 var movementExtras = new List<STOK_HAREKETLERI_EK>();
 
@@ -68,13 +77,27 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
                     movements.Add(movement);
 
-                    if (line.WarehouseOrderLineGuid.HasValue)
+                    var warehouseOrderLineGuid = line.WarehouseOrderLineGuid;
+                    if (!warehouseOrderLineGuid.HasValue &&
+                        automaticOrderLines.TryGetValue(rowNo, out var automaticOrderLine))
                     {
-                        movementExtras.Add(CreateMovementExtra(
+                        warehouseOrderLineGuid = automaticOrderLine.ssip_Guid;
+                    }
+
+                    if (warehouseOrderLineGuid.HasValue)
+                    {
+                        movementExtras.Add(AutomaticWarehouseOrderFactory.CreateMovementExtra(
                             movement.sth_Guid,
-                            line.WarehouseOrderLineGuid.Value,
+                            warehouseOrderLineGuid.Value,
                             now));
                     }
+                }
+
+                if (automaticOrderLines.Count > 0)
+                {
+                    await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(
+                        automaticOrderLines.Values,
+                        cancellationToken);
                 }
 
                 await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
@@ -97,7 +120,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     request.TargetWarehouseNo,
                     request.TransitWarehouseNo,
                     movements.Count,
-                    linkedOrderLines.Count,
+                    linkedOrderLines.Count + automaticOrderLines.Count,
                     movements.Sum(movement => movement.sth_miktar ?? 0d),
                     movements.Sum(movement => movement.sth_tutar ?? 0d),
                     options.ConnectionStringName);
@@ -108,6 +131,59 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 throw;
             }
         });
+    }
+
+    private async Task<Dictionary<int, DEPOLAR_ARASI_SIPARISLER>> CreateAutomaticWarehouseOrderLinesAsync(
+        CreateInterWarehouseShipmentRequest request,
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines,
+        DateTime movementDate,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
+        if (!automationOptions.Enabled ||
+            !automationOptions.CreateForInterWarehouseShipments ||
+            !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
+        {
+            return new Dictionary<int, DEPOLAR_ARASI_SIPARISLER>();
+        }
+
+        var unlinkedRows = lines
+            .Select((line, rowNo) => new { line, rowNo })
+            .Where(item => !item.line.WarehouseOrderLineGuid.HasValue)
+            .ToArray();
+
+        if (unlinkedRows.Length == 0)
+        {
+            return new Dictionary<int, DEPOLAR_ARASI_SIPARISLER>();
+        }
+
+        var documentSerie = $"F{request.TargetWarehouseNo}";
+        var documentOrderNo = await GetNextWarehouseOrderDocumentOrderNoAsync(documentSerie, cancellationToken);
+        var result = new Dictionary<int, DEPOLAR_ARASI_SIPARISLER>(unlinkedRows.Length);
+
+        for (var orderRowNo = 0; orderRowNo < unlinkedRows.Length; orderRowNo++)
+        {
+            var item = unlinkedRows[orderRowNo];
+            result[item.rowNo] = AutomaticWarehouseOrderFactory.CreateOrderLine(
+                request.TargetWarehouseNo,
+                request.SourceWarehouseNo,
+                movementDate,
+                movementDate,
+                documentSerie,
+                documentOrderNo,
+                orderRowNo,
+                now,
+                item.line.StockCode,
+                item.line.Quantity,
+                item.line.UnitPrice,
+                item.line.UnitPointer,
+                item.line.Description ?? request.Description,
+                item.line.ProjectCode,
+                item.line.ProductResponsibilityCenter);
+        }
+
+        return result;
     }
 
     private async Task<Dictionary<Guid, DEPOLAR_ARASI_SIPARISLER>> GetAndValidateLinkedOrderLinesAsync(
@@ -176,6 +252,17 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
 
         return orderLines;
+    }
+
+    private async Task<int> GetNextWarehouseOrderDocumentOrderNoAsync(
+        string documentSerie,
+        CancellationToken cancellationToken)
+    {
+        var currentMax = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .Where(order => order.ssip_evrakno_seri == documentSerie)
+            .MaxAsync(order => order.ssip_evrakno_sira, cancellationToken);
+
+        return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(

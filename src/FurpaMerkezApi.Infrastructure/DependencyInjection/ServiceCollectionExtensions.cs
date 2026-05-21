@@ -19,10 +19,14 @@ using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.DepoMalKabulleri.Deta
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.DepoMalKabulleri.List;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.FirmaMalKabulleri.Detail;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.FirmaMalKabulleri.List;
+using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabulFarklari;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLookup;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.Offline;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Create;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Detail;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.List;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCirolari.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCirolari.List;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCirolari.Overview;
@@ -46,11 +50,11 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisler
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.List;
-using FurpaMerkezApi.Application.Modules.StokIslemleri.EtiketBelgeleri.Create;
-using FurpaMerkezApi.Application.Modules.StokIslemleri.EtiketBelgeleri.Detail;
-using FurpaMerkezApi.Application.Modules.StokIslemleri.EtiketBelgeleri.List;
-using FurpaMerkezApi.Application.Modules.StokIslemleri.EtiketBelgeleri.Products;
-using FurpaMerkezApi.Application.Modules.StokIslemleri.EtiketBelgeleri.Tags;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Create;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Detail;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.List;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Products;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.List;
@@ -81,6 +85,10 @@ using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.FirmaIadeleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.FirmaIadeleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.FirmaIadeleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.BanknotTakipleri;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.BanknotTakipleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.BanknotTakipleri.Detail;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.BanknotTakipleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaCirolari;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaCirolari.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaCirolari.List;
@@ -94,6 +102,7 @@ using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.DepoMalKabulleri.D
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.DepoMalKabulleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.FirmaMalKabulleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.FirmaMalKabulleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabulFarklari;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.Accept;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.Offline;
@@ -115,12 +124,12 @@ using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparis
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.List;
-using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.EtiketBelgeleri;
-using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.EtiketBelgeleri.Create;
-using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.EtiketBelgeleri.Detail;
-using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.EtiketBelgeleri.List;
-using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.EtiketBelgeleri.Products;
-using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.EtiketBelgeleri.Tags;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Detail;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Products;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.List;
@@ -234,7 +243,22 @@ public static class ServiceCollectionExtensions
             configuration["OperationsExport:BasePath"] ?? string.Empty)));
 
         services.AddDbContext<AuthDbContext>(options =>
-            options.UseNpgsql(authConnection, npgsql => npgsql.MigrationsAssembly(typeof(AuthDbContext).Assembly.FullName)));
+        {
+            if (IsSqlServerConnectionString(authConnection))
+            {
+                options.UseSqlServer(
+                    authConnection,
+                    sqlServer =>
+                    {
+                        sqlServer.EnableRetryOnFailure();
+                        sqlServer.CommandTimeout(180);
+                    });
+
+                return;
+            }
+
+            options.UseNpgsql(authConnection, npgsql => npgsql.MigrationsAssembly(typeof(AuthDbContext).Assembly.FullName));
+        });
 
         services.AddDbContext<MikroDbContext>(options =>
             options.UseSqlServer(
@@ -315,6 +339,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<LabelDocumentWriteService>();
         services.AddScoped<LabelProductQueryExecutor>();
         services.AddScoped<LabelTagQueryExecutor>();
+        services.AddScoped<BanknoteTrackQueryExecutor>();
+        services.AddScoped<BanknoteTrackWriteService>();
         services.AddScoped<WarehouseShippingDetailQueryExecutor>();
         services.AddScoped<WarehouseShippingListQueryExecutor>();
         services.AddScoped<IListReceivedCompanyOrdersUseCase, ListReceivedCompanyOrdersUseCase>();
@@ -345,6 +371,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetCompanyReceivingDocumentDetailUseCase, GetCompanyReceivingDocumentDetailUseCase>();
         services.AddScoped<IGetInboundDespatchLookupUseCase, GetInboundDespatchLookupUseCase>();
         services.AddScoped<IAcceptWarehouseReceivingUseCase, AcceptWarehouseReceivingUseCase>();
+        services.AddScoped<IListWarehouseReceivingDifferencesUseCase, ListWarehouseReceivingDifferencesUseCase>();
         services.AddScoped<CreateCompanyReceivingUseCase>();
         services.AddScoped<ICreateCompanyReceivingUseCase>(serviceProvider =>
             serviceProvider.GetRequiredService<CreateCompanyReceivingUseCase>());
@@ -376,6 +403,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICashSummaryLookupsUseCase, CashSummaryLookupsUseCase>();
         services.AddScoped<ICashSummaryCommandsUseCase, CashSummaryCommandsUseCase>();
         services.AddScoped<IGetCashSummaryZReportTotalUseCase, GetCashSummaryZReportTotalUseCase>();
+        services.AddScoped<IListBanknoteTracksUseCase, ListBanknoteTracksUseCase>();
+        services.AddScoped<IGetBanknoteTrackDetailUseCase, GetBanknoteTrackDetailUseCase>();
+        services.AddScoped<ICreateBanknoteTrackUseCase, CreateBanknoteTrackUseCase>();
         services.AddScoped<IListLabelDocumentsUseCase, ListLabelDocumentsUseCase>();
         services.AddScoped<IGetLabelDocumentProductsUseCase, GetLabelDocumentProductsUseCase>();
         services.AddScoped<ICreateLabelDocumentUseCase, CreateLabelDocumentUseCase>();
@@ -433,4 +463,8 @@ public static class ServiceCollectionExtensions
         throw new InvalidOperationException(
             "Configuration value 'MikroDatabase:Profile' must be one of: Split, Test, Live.");
     }
+
+    private static bool IsSqlServerConnectionString(string connectionString) =>
+        connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) ||
+        connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
 }

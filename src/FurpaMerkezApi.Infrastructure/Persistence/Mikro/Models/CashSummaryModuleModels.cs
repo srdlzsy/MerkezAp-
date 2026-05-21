@@ -89,7 +89,7 @@ public sealed class GiftCheckMovementEntity
 
 public sealed class BanknoteTrackEntity
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
 
     public int WarehouseNo { get; set; }
 

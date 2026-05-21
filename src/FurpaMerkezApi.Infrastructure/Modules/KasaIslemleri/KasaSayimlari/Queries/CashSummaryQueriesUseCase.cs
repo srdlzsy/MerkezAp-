@@ -111,92 +111,6 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
             cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<BanknoteTrackItemDto>> ListBanknoteTracksAsync(
-        CashSummaryDateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var (date, nextDate) = NormalizeDateRange(request);
-
-        const string sql = """
-            SELECT
-                t.WarehouseNo,
-                COALESCE(w.dep_adi, '') AS WarehouseName,
-                t.BanknoteTrackDate,
-                t.TotalAmount,
-                t.DeliveryTotalAmount,
-                t.Deliverer,
-                t.Receiver,
-                t.CreateDate
-            FROM BanknoteTracks t
-            LEFT JOIN DEPOLAR w ON t.WarehouseNo = w.dep_no
-            WHERE t.BanknoteTrackDate >= @date
-              AND t.BanknoteTrackDate < @nextDate
-              AND (@warehouseNo IS NULL OR t.WarehouseNo = @warehouseNo)
-            ORDER BY
-                t.BanknoteTrackDate,
-                t.WarehouseNo,
-                t.CreateDate;
-            """;
-
-        return await ExecuteReaderAsync(
-            sql,
-            command =>
-            {
-                AddParameter(command, "@date", date);
-                AddParameter(command, "@nextDate", nextDate);
-                AddParameter(command, "@warehouseNo", request.WarehouseNo);
-            },
-            reader =>
-            {
-                var totalAmount = Round(ReadDouble(reader, "TotalAmount"));
-                var deliveryTotalAmount = Round(ReadDouble(reader, "DeliveryTotalAmount"));
-
-                return new BanknoteTrackItemDto(
-                    ReadInt(reader, "WarehouseNo"),
-                    ReadString(reader, "WarehouseName"),
-                    ReadDateTime(reader, "BanknoteTrackDate"),
-                    totalAmount,
-                    deliveryTotalAmount,
-                    Round(totalAmount - deliveryTotalAmount),
-                    ReadString(reader, "Deliverer"),
-                    ReadString(reader, "Receiver"),
-                    ReadDateTime(reader, "CreateDate"));
-            },
-            cancellationToken);
-    }
-
-    public async Task<double> GetBanknoteTrackTotalAmountAsync(
-        CashSummaryDateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var (date, nextDate) = NormalizeDateRange(request);
-
-        const string sql = """
-            SELECT SUM(bm.Total)
-            FROM BanknoteMovements bm
-            WHERE (@warehouseNo IS NULL OR bm.BranchNo = @warehouseNo)
-              AND EXISTS (
-                  SELECT 1
-                  FROM Summaries s
-                  WHERE s.BranchNo = bm.BranchNo
-                    AND s.DocumentSerie = bm.DocumentSerie
-                    AND s.DocumentOrderNo = bm.DocumentOrderNo
-                    AND s.SummaryDate >= @date
-                    AND s.SummaryDate < @nextDate
-              );
-            """;
-
-        return Round(await ExecuteScalarDoubleAsync(
-            sql,
-            command =>
-            {
-                AddParameter(command, "@date", date);
-                AddParameter(command, "@nextDate", nextDate);
-                AddParameter(command, "@warehouseNo", request.WarehouseNo);
-            },
-            cancellationToken));
-    }
-
     public async Task<IReadOnlyCollection<CashSummaryListItemDto>> ListAsync(
         CashSummaryDateRequest request,
         CancellationToken cancellationToken)
@@ -432,39 +346,6 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
         }
 
         return items;
-    }
-
-    private async Task<double> ExecuteScalarDoubleAsync(
-        string sql,
-        Action<DbCommand> configureCommand,
-        CancellationToken cancellationToken)
-    {
-        var connection = mikroDbContext.Database.GetDbConnection();
-        var closeConnection = connection.State == ConnectionState.Closed;
-
-        if (closeConnection)
-        {
-            await connection.OpenAsync(cancellationToken);
-        }
-
-        try
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
-            configureCommand(command);
-
-            var result = await command.ExecuteScalarAsync(cancellationToken);
-            return result is null or DBNull ? 0d : Convert.ToDouble(result);
-        }
-        finally
-        {
-            if (closeConnection)
-            {
-                await connection.CloseAsync();
-            }
-        }
     }
 
     private static (DateTime Date, DateTime NextDate) NormalizeDateRange(CashSummaryDateRequest request)

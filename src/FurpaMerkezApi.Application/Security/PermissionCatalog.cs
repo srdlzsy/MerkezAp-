@@ -16,6 +16,11 @@ public static class PermissionCatalog
         new("detail", "Detay")
     ];
 
+    private static readonly PermissionActionDefinition[] ListActions =
+    [
+        new("list", "Listele")
+    ];
+
     private static readonly PermissionActionDefinition[] ReadCreateActions =
     [
         new("list", "Listele"),
@@ -63,6 +68,9 @@ public static class PermissionCatalog
             "manage",
             "Yonet"),
 
+        ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "fiyat-gor", "FiyatGor", ListActions),
+        ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
+
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-firma-siparisleri", "AlinanFirmaSiparisleri"),
@@ -72,20 +80,17 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "gelen-depolar-arasi-sevkler", "GelenDepolarArasiSevkler"),
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "giden-firma-sevkleri", "GidenFirmaSevkleri"),
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "gelen-firma-sevkleri", "GelenFirmaSevkleri"),
-        ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "sevk-planlari", "SevkPlanlari"),
 
         ..CreateMenuPermissions("iade-islemleri", "IadeIslemleri", "giden-depo-iadeleri", "GidenDepoIadeleri"),
         ..CreateMenuPermissions("iade-islemleri", "IadeIslemleri", "gelen-depo-iadeleri", "GelenDepoIadeleri", ReadActions),
         ..CreateMenuPermissions("iade-islemleri", "IadeIslemleri", "firma-iadeleri", "FirmaIadeleri"),
         ..CreateMenuPermissions("mal-kabul-islemleri", "MalKabulIslemleri", "depo-mal-kabulleri", "DepoMalKabulleri"),
+        ..CreateMenuPermissions("mal-kabul-islemleri", "MalKabulIslemleri", "mal-kabul-farklari", "MalKabulFarklari", ListActions),
         ..CreateMenuPermissions("mal-kabul-islemleri", "MalKabulIslemleri", "firma-mal-kabulleri", "FirmaMalKabulleri"),
-        ..CreateMenuPermissions("mal-kabul-islemleri", "MalKabulIslemleri", "irsaliye-kabulleri", "IrsaliyeKabulleri"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "zayiat-fisleri", "ZayiatFisleri"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "masraf-fisleri", "MasrafFisleri"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "sayim-sonuclari", "SayimSonuclari"),
-        ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "etiket-belgeleri", "EtiketBelgeleri"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "virmanlar", "Virmanlar"),
-         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "kunye-etiket-yazdirma", "KunyeEtiketYazdirma"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "axata-senkronizasyonu", "AxataSenkronizasyonu"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "pos-muhasebe-aktarimi", "PosMuhasebeAktarimi"),
@@ -94,12 +99,11 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("fatura-islemleri", "FaturaIslemleri", "fatura-goruntuleme", "FaturaGoruntuleme", ReadUpdateActions),
         ..CreateMenuPermissions("fatura-islemleri", "FaturaIslemleri", "fatura-gonderimi", "FaturaGonderimi", ReadCreateActions),
 
-        ..CreateMenuPermissions("iade-islemleri", "IadeIslemleri", "musteri-iadeleri", "MusteriIadeleri"),
-        ..CreateMenuPermissions("iade-islemleri", "IadeIslemleri", "tedarikci-iadeleri", "TedarikciIadeleri"),
-
-        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-hareketleri", "KasaHareketleri"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-sayimlari", "KasaSayimlari"),
-        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-cirolari", "KasaCirolari", ReadActions)
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-cirolari", "KasaCirolari", ReadActions),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-belgeleri", "EtiketBelgeleri"),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kunye-etiket-yazdirma", "KunyeEtiketYazdirma"),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "banknot-takipleri", "BanknotTakipleri", ReadCreateActions)
     ];
 
     public static IReadOnlyCollection<string> Codes { get; } =
