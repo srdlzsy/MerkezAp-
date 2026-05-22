@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchCustomers;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
@@ -19,7 +20,8 @@ public sealed class AramaIslemleriController(
     ISearchCustomersUseCase searchCustomersUseCase,
     ISearchWarehousesUseCase searchWarehousesUseCase,
     IResolveBarcodeUseCase resolveBarcodeUseCase,
-    IGetProductCustomerSuggestionsUseCase getProductCustomerSuggestionsUseCase) : ControllerBase
+    IGetProductCustomerSuggestionsUseCase getProductCustomerSuggestionsUseCase,
+    IGetProductLatestTagUseCase getProductLatestTagUseCase) : ControllerBase
 {
     private const string PriceLookupPolicy = "arama-islemleri.fiyat-gor.list";
     private const string BarcodeCustomerLookupPolicy = "arama-islemleri.cari-bul.list";
@@ -88,6 +90,26 @@ public sealed class AramaIslemleriController(
                 null,
                 null,
                 request.Take),
+            cancellationToken));
+    }
+
+    [HttpGet("urunler/{stockCode}/son-kunye")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ProductLatestTagDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ProductLatestTagDto?>> GetProductLatestTag(
+        string stockCode,
+        [FromQuery] ProductLatestTagHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStockCode = NormalizeOrNull(stockCode)
+            ?? throw new ArgumentException("Stock code is required.", nameof(stockCode));
+        var warehouseNo = ResolveWarehouseNo(request.WarehouseNo);
+
+        return Ok(await getProductLatestTagUseCase.ExecuteAsync(
+            new ProductLatestTagRequest(
+                warehouseNo,
+                normalizedStockCode),
             cancellationToken));
     }
 
@@ -239,6 +261,21 @@ public sealed class AramaIslemleriController(
             suggestions.Suggestions);
     }
 
+    private int ResolveWarehouseNo(int? warehouseNo)
+    {
+        if (warehouseNo.HasValue)
+        {
+            return warehouseNo.Value;
+        }
+
+        if (User.Identity?.IsAuthenticated == true)
+        {
+            return User.GetRequiredWarehouseNo();
+        }
+
+        throw new ArgumentException("Warehouse no is required.", nameof(ProductLatestTagHttpRequest.WarehouseNo));
+    }
+
     private static string? NormalizeOrNull(string? value)
     {
         var normalized = value?.Trim();
@@ -293,6 +330,12 @@ public sealed class ProductBarcodePriceLookupHttpRequest
 
     [Range(1, 100)]
     public int Take { get; init; } = 20;
+}
+
+public sealed class ProductLatestTagHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
 }
 
 public sealed class BarcodeResolutionHttpRequest
