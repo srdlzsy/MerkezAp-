@@ -56,6 +56,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.List;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Products;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.KunyeEtiketYazdirma;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.List;
@@ -132,6 +133,7 @@ using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Detail
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Products;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KunyeEtiketYazdirma;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.List;
@@ -414,6 +416,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICreateLabelDocumentUseCase, CreateLabelDocumentUseCase>();
         services.AddScoped<IListLabelPriceChangedProductsUseCase, ListLabelPriceChangedProductsUseCase>();
         services.AddScoped<IListLabelTagsUseCase, ListLabelTagsUseCase>();
+        services.AddScoped<IListKunyeLabelTagsUseCase, ListKunyeLabelTagsUseCase>();
         services.AddScoped<IListVirmansUseCase, ListVirmansUseCase>();
         services.AddScoped<IGetVirmanDetailUseCase, GetVirmanDetailUseCase>();
         services.AddScoped<ICreateVirmanUseCase, CreateVirmanUseCase>();

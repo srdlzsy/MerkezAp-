@@ -237,6 +237,12 @@ Authorization: Bearer {{token}}
 
 ###
 
+GET {{@}}/api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
 GET {{@}}/api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00
 Accept: application/json
 Authorization: Bearer {{token}}

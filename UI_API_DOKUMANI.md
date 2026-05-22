@@ -3191,6 +3191,55 @@ Response:
 ]
 ```
 
+### Kunye Etiket Yazdirma Detayli Liste
+
+Belirli bir depo ve tarih icin kunye etiket kayitlarini stok kodu, stok adi, satis fiyati ve urun birimi bilgileriyle getirir. Mevcut `GET /api/kasa-islemleri/kunye-etiket-yazdirma` endpointi degismeden kalir; bu endpoint zengin response gereken ekranlar icindir.
+
+`GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24`
+
+Yetki:
+
+- `kasa-islemleri.kunye-etiket-yazdirma.list`
+
+Query:
+
+- `warehouseNo` zorunlu, 1 veya daha buyuk depo numarasi
+- `dateToGet` zorunlu, sorgulanacak sevk tarihi
+
+Not:
+
+- response modeli `KunyeLabelTagDto` doner
+- veri `[Furpa].[dbo].[VwKunyeNet]`, `[KUNYENET].[dbo].[FaturaIslem]`, `[KUNYENET].[dbo].[MuhStok]` ve Mikro `dbo.STOKLAR` joinlerinden okunur
+- `salesPrice` alani Mikro `dbo.fn_StokSatisFiyati(stockCode, '1', branchNo, '1')` fonksiyonundan gelir
+- tarih filtresi secilen gunun tamamini kapsar
+
+Response:
+
+```json
+[
+  {
+    "branchNo": 110,
+    "branchName": "KESTEL 1",
+    "productionCity": "BURSA",
+    "stockCode": "STK-001",
+    "stockName": "DANA KIYMA",
+    "salesPrice": 599.9,
+    "productionDistrict": "KESTEL",
+    "productName": "DANA KIYMA",
+    "goodsType": "ET",
+    "goodsGenus": "BUYUKBAS",
+    "quantity": 12.5,
+    "takenTag": "TAG-20260424-001",
+    "buyer": "FURPA",
+    "productionDate": "2026-04-24T00:00:00",
+    "buyingPrice": 450,
+    "shippingDate": "2026-04-24T00:00:00",
+    "manufacturer": "TEDARIKCI A",
+    "productUnit": "KG"
+  }
+]
+```
+
 ### Fiyati Degisen Etiket Urunleri
 
 Belirli bir zaman bilgisinden sonra fiyati degisen ve etikete uygun urunleri getirir.
@@ -4712,6 +4761,8 @@ Kasa Islemleri / Etiket Belgeleri
 Kasa Islemleri / Kunye Etiket Yazdirma
   -> tarih bazli kunye etiket kayitlari icin GET /api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=...
   -> liste satirlarini LabelTagDto ile goster
+  -> depo ve tarih bazli zengin response icin GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=...&dateToGet=...
+  -> zengin liste satirlarini KunyeLabelTagDto ile goster
   -> yetki kodu kasa-islemleri.kunye-etiket-yazdirma.list
 
 Stok Islemleri / Virmanlar
