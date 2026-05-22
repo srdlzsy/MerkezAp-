@@ -239,7 +239,6 @@ Authorization: Bearer {{token}}
 
 GET {{@}}/api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24
 Accept: application/json
-Authorization: Bearer {{token}}
 
 ###
 

@@ -43,7 +43,7 @@ public sealed class KunyeEtiketYazdirmaController(
     }
 
     [HttpGet("detayli-etiketler")]
-    [Authorize(Policy = ListPolicy)]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(IReadOnlyCollection<KunyeLabelTagDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<KunyeLabelTagDto>>> ListDetailed(
