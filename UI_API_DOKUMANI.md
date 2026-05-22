@@ -3159,7 +3159,7 @@ Belirli bir tarih icin kullanicinin deposuna ait kunye etiket kayitlarini Kasa I
 
 Yetki:
 
-- `kasa-islemleri.kunye-etiket-yazdirma.list`
+- yok; token gerekmez, herkese aciktir
 
 Not:
 
@@ -4763,6 +4763,7 @@ Kasa Islemleri / Kunye Etiket Yazdirma
   -> liste satirlarini LabelTagDto ile goster
   -> depo ve tarih bazli zengin response icin GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=...&dateToGet=...
   -> zengin liste satirlarini KunyeLabelTagDto ile goster
+  -> detayli-etiketler endpointi token istemez
   -> yetki kodu kasa-islemleri.kunye-etiket-yazdirma.list
 
 Stok Islemleri / Virmanlar
