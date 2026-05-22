@@ -1,6 +1,7 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchCustomers;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
@@ -71,6 +72,7 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.List;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductCustomerSuggestions;
+using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchCustomers;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
@@ -315,6 +317,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISearchWarehousesUseCase, SearchWarehousesUseCase>();
         services.AddScoped<IResolveBarcodeUseCase, ResolveBarcodeUseCase>();
         services.AddScoped<IGetProductCustomerSuggestionsUseCase, GetProductCustomerSuggestionsUseCase>();
+        services.AddScoped<IGetProductLatestTagUseCase, GetProductLatestTagUseCase>();
         services.AddScoped<CompanyOrderDetailQueryExecutor>();
         services.AddScoped<CompanyOrderListQueryExecutor>();
         services.AddScoped<WarehouseOrderListQueryExecutor>();

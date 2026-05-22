@@ -182,54 +182,33 @@ public sealed class CashTurnoverQueryExecutor(
         var (startDate, endDateExclusive) = NormalizeDateRange(request.WarehouseNo, request.StartDate, request.EndDate);
 
         const string sql = """
-            WITH LegacySummary AS (
+            WITH LegacyTotals AS (
                 SELECT
-                    CAST(s.SummaryDate AS date) AS BusinessDate,
-                    s.BranchNo AS WarehouseNo,
-                    s.CashNo AS ShiftNo,
-                    CAST(s.CashierNo AS nvarchar(25)) AS CashierCode,
-                    SUM(CASE WHEN s.PaymentTypeID < 100 OR s.PaymentTypeID = 500 THEN s.Amount ELSE 0 END) AS TotalAmount,
-                    SUM(CASE WHEN s.PaymentTypeID < 100 OR s.PaymentTypeID = 500 THEN s.SlipNumber ELSE 0 END) AS PaymentLineCount
-                FROM Summaries s
-                WHERE s.SummaryDate >= @startDate
-                  AND s.SummaryDate < @endDateExclusive
-                  AND s.BranchNo = @warehouseNo
+                    CAST(tt.TurnoverDate AS date) AS BusinessDate,
+                    tt.BranchNo AS WarehouseNo,
+                    SUM(tt.CustomerCount) AS CustomerCount,
+                    SUM(tt.TurnoverOverallTotal) AS TotalAmount
+                FROM TurnoverTotals tt
+                WHERE tt.TurnoverDate >= @startDate
+                  AND tt.TurnoverDate < @endDateExclusive
+                  AND tt.BranchNo = @warehouseNo
                 GROUP BY
-                    CAST(s.SummaryDate AS date),
-                    s.BranchNo,
-                    s.CashNo,
-                    CAST(s.CashierNo AS nvarchar(25))
+                    CAST(tt.TurnoverDate AS date),
+                    tt.BranchNo
             )
             SELECT
-                ls.BusinessDate,
-                ls.WarehouseNo,
+                lt.BusinessDate,
+                lt.WarehouseNo,
                 COALESCE(w.dep_adi, '') AS WarehouseName,
-                ls.ShiftNo,
-                ls.CashierCode,
-                COALESCE(p.cari_per_adi, '') AS CashierFirstName,
-                COALESCE(p.cari_per_soyadi, '') AS CashierLastName,
-                ls.TotalAmount,
-                ls.PaymentLineCount
-            FROM LegacySummary ls
+                lt.CustomerCount,
+                lt.TotalAmount
+            FROM LegacyTotals lt
             LEFT JOIN DEPOLAR w
-                ON ls.WarehouseNo = w.dep_no
-            OUTER APPLY (
-                SELECT TOP 1
-                    person.cari_per_adi,
-                    person.cari_per_soyadi
-                FROM CARI_PERSONEL_TANIMLARI person
-                WHERE person.cari_per_kod = ls.CashierCode
-                   OR person.cari_per_kasiyerkodu = ls.CashierCode
-                ORDER BY
-                    CASE WHEN person.cari_per_kod = ls.CashierCode THEN 0 ELSE 1 END,
-                    person.cari_per_kod
-            ) p
-            WHERE ls.TotalAmount <> 0
+                ON lt.WarehouseNo = w.dep_no
+            WHERE lt.TotalAmount <> 0
             ORDER BY
-                ls.BusinessDate,
-                ls.WarehouseNo,
-                ls.ShiftNo,
-                ls.CashierCode;
+                lt.BusinessDate,
+                lt.WarehouseNo;
             """;
 
         return await ExecuteLegacyReaderAsync(
@@ -248,15 +227,13 @@ public sealed class CashTurnoverQueryExecutor(
                     ReadDateTime(reader, "BusinessDate"),
                     ReadInt(reader, "WarehouseNo"),
                     ReadString(reader, "WarehouseName"),
-                    ReadInt(reader, "ShiftNo"),
-                    ReadString(reader, "CashierCode"),
-                    CombineName(
-                        ReadString(reader, "CashierFirstName"),
-                        ReadString(reader, "CashierLastName")),
+                    0,
+                    string.Empty,
+                    string.Empty,
                     0,
                     0d,
                     totalAmount,
-                    ReadInt(reader, "PaymentLineCount"),
+                    ReadInt(reader, "CustomerCount"),
                     totalAmount,
                     0d,
                     totalAmount,
@@ -318,108 +295,14 @@ public sealed class CashTurnoverQueryExecutor(
                 .ToArray());
     }
 
-    private async Task<CashTurnoverDetailDto?> TryGetOldDetailAsync(
+    private Task<CashTurnoverDetailDto?> TryGetOldDetailAsync(
         CashTurnoverDetailRequest request,
         CancellationToken cancellationToken)
     {
-        var listRows = await ListOldAsync(
-            new CashTurnoverListRequest(
-                request.WarehouseNo,
-                request.BusinessDate,
-                request.BusinessDate,
-                CashTurnoverSource.Old),
-            cancellationToken);
-        var headerRow = listRows.FirstOrDefault(item =>
-            item.BusinessDate.Date == request.BusinessDate.Date &&
-            item.WarehouseNo == request.WarehouseNo &&
-            item.ShiftNo == request.ShiftNo &&
-            NormalizeCode(item.CashierCode) == NormalizeCode(request.CashierCode));
+        _ = request;
+        _ = cancellationToken;
 
-        if (headerRow is null)
-        {
-            return null;
-        }
-
-        const string sql = """
-            SELECT
-                s.PaymentTypeID AS PaymentTypeNo,
-                CASE
-                    WHEN s.PaymentTypeID = 500 THEN N'Nakit'
-                    ELSE COALESCE(pt.PaymentName, '')
-                END AS PaymentTypeName,
-                COALESCE(pt.AccountCode, '') AS CashBankCode,
-                COALESCE(pt.AccountCode, '') AS CashBankName,
-                SUM(s.SlipNumber) AS PaymentLineCount,
-                SUM(s.Amount) AS Amount
-            FROM Summaries s
-            LEFT JOIN PaymentTypes pt
-                ON s.PaymentTypeID = pt.PaymentTypeNo
-            WHERE s.SummaryDate >= @date
-              AND s.SummaryDate < @nextDate
-              AND s.BranchNo = @warehouseNo
-              AND s.CashNo = @shiftNo
-              AND s.CashierNo = @cashierNo
-              AND (s.PaymentTypeID < 100 OR s.PaymentTypeID = 500)
-            GROUP BY
-                s.PaymentTypeID,
-                CASE
-                    WHEN s.PaymentTypeID = 500 THEN N'Nakit'
-                    ELSE COALESCE(pt.PaymentName, '')
-                END,
-                COALESCE(pt.AccountCode, '')
-            HAVING SUM(s.Amount) <> 0
-            ORDER BY
-                s.PaymentTypeID,
-                CASE
-                    WHEN s.PaymentTypeID = 500 THEN N'Nakit'
-                    ELSE COALESCE(pt.PaymentName, '')
-                END;
-            """;
-
-        var paymentRows = await ExecuteLegacyReaderAsync(
-            sql,
-            command =>
-            {
-                AddParameter(command, "@date", request.BusinessDate.Date);
-                AddParameter(command, "@nextDate", request.BusinessDate.Date.AddDays(1));
-                AddParameter(command, "@warehouseNo", request.WarehouseNo);
-                AddParameter(command, "@shiftNo", request.ShiftNo);
-                AddParameter(command, "@cashierNo", ParseInt(request.CashierCode));
-            },
-            reader =>
-            {
-                var amount = Round(ReadDouble(reader, "Amount"));
-
-                return new CashTurnoverPaymentDetailItemDto(
-                    ReadInt(reader, "PaymentTypeNo"),
-                    ReadString(reader, "PaymentTypeName"),
-                    ReadString(reader, "CashBankCode"),
-                    ReadString(reader, "CashBankName"),
-                    ReadInt(reader, "PaymentLineCount"),
-                    amount,
-                    0d,
-                    amount,
-                    CashTurnoverSource.Old.ToApiValue());
-            },
-            cancellationToken);
-
-        return new CashTurnoverDetailDto(
-            new CashTurnoverHeaderDto(
-                headerRow.BusinessDate,
-                headerRow.WarehouseNo,
-                headerRow.WarehouseName,
-                headerRow.ShiftNo,
-                headerRow.CashierCode,
-                headerRow.CashierName,
-                headerRow.ProductLineCount,
-                headerRow.TotalSalesQuantity,
-                headerRow.TotalSalesAmount,
-                headerRow.PaymentLineCount,
-                headerRow.TotalCollectionAmount,
-                headerRow.TotalCustomerCommission,
-                headerRow.NetCollectionAmount,
-                CashTurnoverSource.Old.ToApiValue()),
-            paymentRows);
+        return Task.FromResult<CashTurnoverDetailDto?>(null);
     }
 
     private async Task<IReadOnlyCollection<BranchOverviewRow>> GetOldOverviewItemsAsync(
