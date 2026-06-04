@@ -524,6 +524,117 @@ Response modeli:
 - `roles` koleksiyonu yeni haliyle response icinde gelir.
 - `200` basarili atama, `400` validation, `404` user veya role kaydi bulunamadi doner.
 
+## GreenGrocer / Manav Yesillik Raporlari
+
+Bu modul eski `Furpa.GreenGrocerWebUI` icindeki manav/yesillik raporlarini yeni API'ye tasir.
+
+Yetki:
+
+- `green-grocer.reports.list`: raporlari goruntuleme
+- `green-grocer.reports.update`: manav siparisi silme
+
+Tarih query alani:
+
+- `date` onerilir.
+- Geriye uyum icin `dateToGet` de kabul edilir.
+
+### Genel Manav Raporu
+
+`GET /api/green-grocer/reports/summary?date=2026-06-04`
+
+Alias:
+
+`GET /api/green-grocer/reports?date=2026-06-04`
+
+Amac:
+
+- `DEPOLAR_ARASI_SIPARISLER` kayitlarini `STOKLAR.sto_model_kodu in ('10','11','12')` filtresiyle urun/tip bazinda toplar.
+
+Response item:
+
+```json
+{
+  "typeCode": "10",
+  "productCode": "016201",
+  "productName": "ELMA",
+  "quantity": 42.5
+}
+```
+
+### Sube/Evrak Bazli Manav Raporu
+
+`GET /api/green-grocer/reports/by-branch?date=2026-06-04`
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "orderDate": "2026-06-04T00:00:00",
+      "branchNo": 110,
+      "branchName": "KESTEL 1",
+      "documentSerie": "F110",
+      "documentOrderNo": 1234,
+      "typeCode": "10",
+      "productCode": "016201",
+      "productName": "ELMA",
+      "quantity": 12
+    }
+  ],
+  "lazyBranches": [
+    {
+      "branchNo": 120,
+      "branchName": "ORNEK SUBE",
+      "regionCode": "1"
+    }
+  ]
+}
+```
+
+### Urun Bazli Manav Raporu
+
+`GET /api/green-grocer/reports/by-product?date=2026-06-04`
+
+Amac:
+
+- Urunleri toplam miktar ve sube/evrak kirilimiyle dondurur.
+
+### Yesillik Raporu
+
+`GET /api/green-grocer/reports/greens?date=2026-06-04`
+
+Amac:
+
+- Yalnizca `STOKLAR.sto_model_kodu = '12'` olan satirlari sube ve evrak bilgisiyle listeler.
+
+### Manav Siparisi Sil
+
+`DELETE /api/green-grocer/orders?documentSerie=F110&documentOrderNo=1234`
+
+Opsiyonel sube filtresi:
+
+`DELETE /api/green-grocer/orders?documentSerie=F110&documentOrderNo=1234&warehouseNo=110`
+
+Kural:
+
+- Sadece son 24 saat icinde olusturulan evraklar silinebilir.
+- Eski WebUI'deki `TimeSpan.Hours` davranisi yerine `TotalHours` kullanilir.
+- Kayit yoksa `404`, 24 saat penceresi gecmisse `409 Conflict` doner.
+
+Response:
+
+```json
+{
+  "documentSerie": "F110",
+  "documentOrderNo": 1234,
+  "warehouseNo": 110,
+  "deletedLineCount": 8,
+  "latestCreateDate": "2026-06-04T09:15:10",
+  "deletedAt": "2026-06-04T10:01:22"
+}
+```
+
 ## Ortak Arama Islemleri
 
 Bu endpointler siparis, mal kabul, sevk, iade gibi formlarda ortak secim/arama icin kullanilir.
