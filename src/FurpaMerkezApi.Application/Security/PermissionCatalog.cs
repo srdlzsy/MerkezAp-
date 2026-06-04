@@ -71,6 +71,8 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "fiyat-gor", "FiyatGor", ListActions),
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
+        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
+
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-firma-siparisleri", "AlinanFirmaSiparisleri"),
