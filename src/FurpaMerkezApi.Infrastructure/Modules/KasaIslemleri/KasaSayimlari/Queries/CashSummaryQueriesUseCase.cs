@@ -206,6 +206,7 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
             WHERE s.BranchNo = @warehouseNo
               AND s.DocumentSerie = @documentSerie
               AND s.DocumentOrderNo = @documentOrderNo
+              AND s.PaymentTypeID <> 500
             ORDER BY
                 s.PaymentTypeID,
                 s.SlipNumber,
