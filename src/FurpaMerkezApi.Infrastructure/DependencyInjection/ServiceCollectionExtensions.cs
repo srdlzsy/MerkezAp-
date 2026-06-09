@@ -26,6 +26,9 @@ using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLooku
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.Offline;
+using FurpaMerkezApi.Application.Modules.MobileSync.CustomerCatalog;
+using FurpaMerkezApi.Application.Modules.MobileSync.ProductPriceCatalog;
+using FurpaMerkezApi.Application.Modules.MobileSync.WarehouseCatalog;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Create;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.List;
@@ -111,6 +114,9 @@ using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabulFarklari;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.Accept;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.Offline;
+using FurpaMerkezApi.Infrastructure.Modules.MobileSync.CustomerCatalog;
+using FurpaMerkezApi.Infrastructure.Modules.MobileSync.ProductPriceCatalog;
+using FurpaMerkezApi.Infrastructure.Modules.MobileSync.WarehouseCatalog;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
@@ -322,6 +328,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IResolveBarcodeUseCase, ResolveBarcodeUseCase>();
         services.AddScoped<IGetProductCustomerSuggestionsUseCase, GetProductCustomerSuggestionsUseCase>();
         services.AddScoped<IGetProductLatestTagUseCase, GetProductLatestTagUseCase>();
+        services.AddScoped<IGetMobileProductPriceCatalogUseCase, GetMobileProductPriceCatalogUseCase>();
+        services.AddScoped<IGetMobileCustomerCatalogUseCase, GetMobileCustomerCatalogUseCase>();
+        services.AddScoped<IGetMobileWarehouseCatalogUseCase, GetMobileWarehouseCatalogUseCase>();
         services.AddScoped<IGreenGrocerReportsUseCase, GreenGrocerReportsUseCase>();
         services.AddScoped<IDeleteGreenGrocerOrderUseCase, DeleteGreenGrocerOrderUseCase>();
         services.AddScoped<CompanyOrderDetailQueryExecutor>();
@@ -429,8 +438,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AxataSynchronizationManualDocumentService>();
         services.AddScoped<AxataSynchronizationOutboxWriter>();
         services.AddScoped<AxataSynchronizationLiveTransportService>();
+        services.AddScoped<AxataOutboundDeliveryImportService>();
+        services.AddScoped<IAxataOutboundDeliveryImportService>(serviceProvider =>
+            serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
+        services.AddScoped<IAxataIntegrationAuditService>(serviceProvider =>
+            serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
         services.AddScoped<AxataSynchronizationConnectionProbeService>();
         services.AddScoped<IAxataSynchronizationService, AxataSynchronizationService>();
+        services.AddScoped<IAxataOutboundDeliveryImportService, AxataOutboundDeliveryImportService>();
         services.AddScoped<IAxataSynchronizationTaskHandler, FirmMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, ProductMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, IssuedWarehouseOrderSyncTaskHandler>();

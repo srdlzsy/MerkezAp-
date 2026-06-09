@@ -23,6 +23,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.AxataSe
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class AxataSenkronizasyonuController(
     IAxataSynchronizationService synchronizationService,
+    IAxataOutboundDeliveryImportService outboundDeliveryImportService,
+    IAxataIntegrationAuditService integrationAuditService,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
     ICreateInterWarehouseShipmentUseCase createInterWarehouseShipmentUseCase,
     ICreateInventoryCountUseCase createInventoryCountUseCase,
@@ -59,6 +61,21 @@ public sealed class AxataSenkronizasyonuController(
     public async Task<ActionResult<AxataSynchronizationFetchProfilesOverviewDto>> GetFetchProfiles(
         CancellationToken cancellationToken) =>
         Ok(await synchronizationService.GetFetchProfilesAsync(cancellationToken));
+
+    [HttpGet("live/audit/overview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataIntegrationAuditDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataIntegrationAuditDto>> GetLiveAuditOverview(
+        [FromQuery] AxataIntegrationAuditHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await integrationAuditService.GetOverviewAsync(
+            new AxataIntegrationAuditRequest(
+                request.StartDate,
+                request.EndDate,
+                request.WarehouseNo,
+                request.Take),
+            cancellationToken));
 
     [HttpGet("tasks/{taskCode}/preview")]
     [Authorize(Policy = DetailPolicy)]
@@ -262,6 +279,32 @@ public sealed class AxataSenkronizasyonuController(
                 MapManualDocumentItems(request.Documents),
                 request.ContinueOnError),
             User.GetRequiredWarehouseNo(),
+            cancellationToken));
+
+    [HttpGet("live/axata/outbound-deliveries/c01/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewC01OutboundDeliveryImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewC01Async(
+            new AxataOutboundDeliveryImportPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/outbound-deliveries/c01/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteC01OutboundDeliveryImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteC01Async(
+            new AxataOutboundDeliveryImportExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
             cancellationToken));
 
     [HttpPost("manual/axata/outbound-deliveries/inter-warehouse-shipments")]
@@ -786,6 +829,35 @@ public sealed class AxataSynchronizationManualDocumentCandidatesHttpRequest
 
     [Range(1, 100)]
     public int? Take { get; init; }
+}
+
+public sealed class AxataIntegrationAuditHttpRequest
+{
+    public DateTime? StartDate { get; init; }
+
+    public DateTime? EndDate { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, 200)]
+    public int? Take { get; init; }
+}
+
+public sealed class AxataOutboundDeliveryImportPreviewHttpRequest
+{
+    [Range(1, 200)]
+    public int? Take { get; init; }
+}
+
+public sealed class AxataOutboundDeliveryImportExecuteHttpRequest
+{
+    [Range(1, 200)]
+    public int? Take { get; init; }
+
+    public bool ContinueOnError { get; init; } = true;
+
+    public bool Acknowledge { get; init; } = true;
 }
 
 public class AxataSynchronizationManualDocumentHttpRequest
