@@ -19,6 +19,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<UyumsoftInboxInvoice> UyumsoftInboxInvoices => Set<UyumsoftInboxInvoice>();
 
+    public DbSet<FeedbackItem> FeedbackItems => Set<FeedbackItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(

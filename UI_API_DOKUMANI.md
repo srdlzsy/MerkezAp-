@@ -12,6 +12,284 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; `WarehouseNo` verilmezse JWT icindeki depo kullanilir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
 
+## Home / Ortak Sikayet Oneri
+
+Bu modul home sayfasinda kucuk bir "Sikayet / Oneri" kutusu acmak ve yonetim tarafinda gelen kayitlari rol/yetkiye gore izlemek icin eklendi.
+
+Veri Auth DB tarafinda tutulur:
+
+- MSSQL tablo: `feedback_items`
+- Migration: `20260609134038_AddFeedbackItems`
+- Kullanici iliskileri: `created_by_user_id`, `read_by_user_id`, `status_changed_by_user_id` alanlari `app_users.id` alanina baglidir
+- Admin role icin migration ile varsayilan yetkiler eklenir
+
+Temel kural:
+
+- Home endpointleri icin sadece login olmak yeterlidir.
+- Kullanici kendi sikayet/onerisini olusturur, kendi gecmisini ve ozetini gorur.
+- Yonetim endpointleri icin `Administrator` rolu veya ilgili permission gerekir.
+- `Administrator` rolu tum kayitlari gorur ve tum yonetim aksiyonlarini kullanir.
+- `ortak-islemler.sikayet-oneri.list-all` yetkisi olan kullanici tum depolari gorur.
+- `list-all` yoksa yonetim listesi kullanicinin JWT deposu ile sinirlanir.
+
+Yetki kodlari:
+
+- `ortak-islemler.sikayet-oneri.list`
+- `ortak-islemler.sikayet-oneri.detail`
+- `ortak-islemler.sikayet-oneri.update`
+- `ortak-islemler.sikayet-oneri.list-all`
+
+Deger kataloglari:
+
+```text
+type:
+  Complaint   Sikayet
+  Suggestion  Oneri
+
+priority:
+  Low     Dusuk
+  Normal  Normal
+  High    Yuksek
+
+status:
+  New         Yeni
+  Read        Okundu
+  InProgress  Islemde
+  Resolved    Cozuldu
+  Closed      Kapali
+  Rejected    Reddedildi
+```
+
+Request tarafinda backend su alias'lari da kabul eder:
+
+- type: `sikayet`, `oneri`
+- priority: `dusuk`, `normal`, `yuksek`
+- status: `yeni`, `okundu`, `islemde`, `cozuldu`, `kapali`, `reddedildi`
+
+UI icin onerilen kullanim:
+
+- Home kutusunda once `GET /api/home/sikayet-oneri/ozet` cagrilir.
+- Kutuda acik kayit sayisi, cozulen/kapali kayit sayisi ve son kaydin durumu gosterilir.
+- "Sikayet / Oneri Gonder" butonu modal acar.
+- Modalda `type`, `title`, `message`, `priority` alanlari bulunur.
+- Kullanici bilgisi, depo no ve depo adi body'den alinmaz; JWT claim'lerinden backend tarafinda doldurulur.
+- "Gecmisim" veya detay paneli icin `GET /api/home/sikayet-oneri/benim` kullanilir.
+- Yonetim ekrani menu olarak `OrtakIslemler > SikayetOneri` altinda acilabilir.
+- Yonetim gridinde tip, durum, oncelik, depo, olusturan kullanici, tarih ve admin notu kolonlari yeterlidir.
+- Durum degisiminde `PATCH /durum`, sadece okunduya alma icin `PATCH /okundu` kullanilmalidir.
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `POST /api/home/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
+| `GET /api/home/sikayet-oneri/benim` | - | - | `FeedbackItemDto[]` | login |
+| `GET /api/home/sikayet-oneri/ozet` | - | - | `FeedbackSummaryDto` | login |
+| `GET /api/yonetim/sikayet-oneri` | query | `FeedbackManagementListHttpRequest` | `FeedbackItemDto[]` | `list` veya `list-all` veya `Administrator` |
+| `GET /api/yonetim/sikayet-oneri/{id}` | path | `id: guid` | `FeedbackItemDto` | `detail` veya `Administrator` |
+| `PATCH /api/yonetim/sikayet-oneri/{id}/okundu` | path | `id: guid` | `FeedbackItemDto` | `update` veya `Administrator` |
+| `PATCH /api/yonetim/sikayet-oneri/{id}/durum` | body | `ChangeFeedbackStatusHttpRequest` | `FeedbackItemDto` | `update` veya `Administrator` |
+
+Yonetim endpointleri icin alias route:
+
+```text
+/api/ortak-islemler/sikayet-oneri
+/api/ortak-islemler/sikayet-oneri/{id}
+/api/ortak-islemler/sikayet-oneri/{id}/okundu
+/api/ortak-islemler/sikayet-oneri/{id}/durum
+```
+
+### Sikayet Oneri Olustur
+
+`POST /api/home/sikayet-oneri`
+
+Body:
+
+```json
+{
+  "type": "Complaint",
+  "title": "Kasada bekleme",
+  "message": "Aksam saatlerinde kasa kuyrugu cok uzuyor.",
+  "priority": "Normal"
+}
+```
+
+Validasyon:
+
+```text
+type      zorunlu, max 30; Complaint/Suggestion veya sikayet/oneri
+title     zorunlu, max 120
+message   zorunlu, max 2000
+priority  opsiyonel, max 30; bos ise Normal
+```
+
+Response `201 Created`:
+
+```json
+{
+  "id": "8a9b1d5d-f2c8-4be4-a6f4-9b6e5c08e730",
+  "type": "Complaint",
+  "typeName": "Sikayet",
+  "title": "Kasada bekleme",
+  "message": "Aksam saatlerinde kasa kuyrugu cok uzuyor.",
+  "status": "New",
+  "statusName": "Yeni",
+  "priority": "Normal",
+  "priorityName": "Normal",
+  "createdByUserId": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
+  "createdByUsername": "sube.kullanici",
+  "createdByFullName": "Sube Kullanici",
+  "warehouseNo": 110,
+  "warehouseName": "KESTEL 1",
+  "adminNote": null,
+  "readAtUtc": null,
+  "readByUserId": null,
+  "statusChangedAtUtc": null,
+  "statusChangedByUserId": null,
+  "createdAtUtc": "2026-06-09T12:30:00Z",
+  "updatedAtUtc": null,
+  "closedAtUtc": null
+}
+```
+
+### Benim Sikayet Onerilerim
+
+`GET /api/home/sikayet-oneri/benim`
+
+Kullanicinin kendi actigi son 100 kaydi doner. Liste yeni kayit once gelecek sekilde `createdAtUtc desc` siralanir.
+
+Response:
+
+```json
+[
+  {
+    "id": "8a9b1d5d-f2c8-4be4-a6f4-9b6e5c08e730",
+    "type": "Complaint",
+    "typeName": "Sikayet",
+    "title": "Kasada bekleme",
+    "message": "Aksam saatlerinde kasa kuyrugu cok uzuyor.",
+    "status": "InProgress",
+    "statusName": "Islemde",
+    "priority": "Normal",
+    "priorityName": "Normal",
+    "createdByUserId": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
+    "createdByUsername": "sube.kullanici",
+    "createdByFullName": "Sube Kullanici",
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "adminNote": "Bolge sorumlusuna iletildi.",
+    "readAtUtc": "2026-06-09T12:45:00Z",
+    "readByUserId": "2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a",
+    "statusChangedAtUtc": "2026-06-09T13:00:00Z",
+    "statusChangedByUserId": "2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a",
+    "createdAtUtc": "2026-06-09T12:30:00Z",
+    "updatedAtUtc": "2026-06-09T13:00:00Z",
+    "closedAtUtc": null
+  }
+]
+```
+
+### Home Ozet
+
+`GET /api/home/sikayet-oneri/ozet`
+
+Response:
+
+```json
+{
+  "myOpenCount": 2,
+  "myResolvedCount": 5,
+  "latestStatus": "InProgress",
+  "latestCreatedAtUtc": "2026-06-09T12:30:00Z"
+}
+```
+
+Not:
+
+- `myOpenCount`: `Resolved`, `Closed`, `Rejected` disindaki kayit sayisidir.
+- `myResolvedCount`: `Resolved` ve `Closed` durumundaki kayit sayisidir.
+- `latestStatus` son kaydin status kodudur; kayit yoksa null gelir.
+
+### Yonetim Liste
+
+`GET /api/yonetim/sikayet-oneri`
+
+Alias:
+
+`GET /api/ortak-islemler/sikayet-oneri`
+
+Ornek:
+
+`GET /api/yonetim/sikayet-oneri?status=New&type=Complaint&warehouseNo=110&startDate=2026-06-01&endDate=2026-06-09&take=100`
+
+Query:
+
+```text
+status       opsiyonel; New/Read/InProgress/Resolved/Closed/Rejected
+type         opsiyonel; Complaint/Suggestion
+warehouseNo  opsiyonel; sadece canViewAll kullanicilarda tum depo filtreleme anlamlidir
+startDate    opsiyonel; createdAtUtc baslangic tarihi
+endDate      opsiyonel; createdAtUtc bitis tarihi, gun sonu dahil kabul edilir
+take         opsiyonel; default 100, max 500
+```
+
+Kapsam:
+
+- `Administrator` veya `list-all`: tum kayitlar uzerinden filtreleme yapar.
+- Sadece `list`: backend otomatik olarak kullanicinin JWT deposuna filtreler.
+- `warehouseNo` verilse bile `list-all` yoksa kullanicinin kendi depo kapsami disina cikilamaz.
+
+### Yonetim Detay
+
+`GET /api/yonetim/sikayet-oneri/{id}`
+
+Alias:
+
+`GET /api/ortak-islemler/sikayet-oneri/{id}`
+
+Response `FeedbackItemDto` doner.
+
+### Okundu Isaretle
+
+`PATCH /api/yonetim/sikayet-oneri/{id}/okundu`
+
+Alias:
+
+`PATCH /api/ortak-islemler/sikayet-oneri/{id}/okundu`
+
+Body yoktur. Kayit `New` durumundaysa status `Read` olur; daha once farkli duruma alinmissa sadece okundu bilgisi korunarak response doner.
+
+### Durum Degistir
+
+`PATCH /api/yonetim/sikayet-oneri/{id}/durum`
+
+Alias:
+
+`PATCH /api/ortak-islemler/sikayet-oneri/{id}/durum`
+
+Body:
+
+```json
+{
+  "status": "InProgress",
+  "adminNote": "Bolge sorumlusuna iletildi."
+}
+```
+
+Validasyon:
+
+```text
+status     zorunlu, max 30
+adminNote  opsiyonel, max 1000
+```
+
+Not:
+
+- Status `Resolved`, `Closed` veya `Rejected` olursa `closedAtUtc` dolar.
+- Status tekrar final olmayan bir degere cekilirse `closedAtUtc` null olur.
+- `adminNote` bos gonderilirse not temizlenir.
+- Status degisimi kaydi daha once okunmadiysa `readAtUtc` ve `readByUserId` de doldurulur.
+
 ## Mobil Offline Pilot Kurallari
 
 Bu bolum mobil uygulamanin offline iken olusturdugu fisleri internet geldiginde guvenli sekilde backend'e gondermesi icin create retry kurallarini anlatir.
@@ -5212,6 +5490,21 @@ Ana Layout
   -> me.modules ile sol menu ciz
   -> me.permissions ile buton yetkilerini belirle
 
+Home / Sikayet Oneri Kutusu
+  -> kutu ozet bilgisi icin GET /api/home/sikayet-oneri/ozet
+  -> yeni kayit icin POST /api/home/sikayet-oneri
+  -> kullanicinin gecmisi icin GET /api/home/sikayet-oneri/benim
+  -> body'ye kullanici/depo bilgisi koyma; backend JWT claim'lerinden doldurur
+
+Ortak Islemler / Sikayet Oneri Yonetimi
+  -> menu permission'i: ortak-islemler.sikayet-oneri.list veya list-all
+  -> Administrator rolu tum kayitlari ve aksiyonlari gorur
+  -> list-all yoksa liste/detay/guncelleme kullanicinin JWT deposuyla sinirlanir
+  -> liste icin GET /api/yonetim/sikayet-oneri veya /api/ortak-islemler/sikayet-oneri
+  -> satir detay icin GET /api/yonetim/sikayet-oneri/{id}
+  -> okundu isareti icin PATCH /api/yonetim/sikayet-oneri/{id}/okundu
+  -> durum/not guncelleme icin PATCH /api/yonetim/sikayet-oneri/{id}/durum
+
 Arama Islemleri / Fiyat Gor
   -> barkod, stok kodu veya stok adi ile GET /api/arama-islemleri/fiyat-gor
   -> barkod okutma kisayolu icin GET /api/arama-islemleri/barkodlar/{barcode}/fiyat
@@ -7775,6 +8068,36 @@ public sealed record ModuleActionScaffoldResponse(
     bool IsImplemented,
     string Message);
 
+public sealed record FeedbackItemDto(
+    Guid Id,
+    string Type,
+    string TypeName,
+    string Title,
+    string Message,
+    string Status,
+    string StatusName,
+    string Priority,
+    string PriorityName,
+    Guid CreatedByUserId,
+    string CreatedByUsername,
+    string CreatedByFullName,
+    int WarehouseNo,
+    string WarehouseName,
+    string? AdminNote,
+    DateTime? ReadAtUtc,
+    Guid? ReadByUserId,
+    DateTime? StatusChangedAtUtc,
+    Guid? StatusChangedByUserId,
+    DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc,
+    DateTime? ClosedAtUtc);
+
+public sealed record FeedbackSummaryDto(
+    int MyOpenCount,
+    int MyResolvedCount,
+    string? LatestStatus,
+    DateTime? LatestCreatedAtUtc);
+
 public enum EDespatchDocumentType
 {
     OutgoingCompanyShipment = 1,
@@ -9459,6 +9782,9 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `WarehouseOrderDateRangeHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`
 - `SendEDespatchHttpRequest`: `Plaque`, `DriverNameSurname`, `DriverTckn`
 - `ModuleActionRequest`: `Fields`
+- `CreateFeedbackItemHttpRequest`: `Type`, `Title`, `Message`, `Priority`
+- `FeedbackManagementListHttpRequest`: `Status`, `Type`, `WarehouseNo`, `StartDate`, `EndDate`, `Take`
+- `ChangeFeedbackStatusHttpRequest`: `Status`, `AdminNote`
 - `CreateCompanyMovementHttpRequest`: `CustomerCode`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateCompanyMovementLineHttpRequest`: `StockCode`, `Quantity`, `UnitPrice`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
 - `CreateStockReceiptHttpRequest`: `Creator`, `Acceptor`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`

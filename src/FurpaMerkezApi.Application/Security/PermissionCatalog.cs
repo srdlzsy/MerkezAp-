@@ -35,6 +35,14 @@ public static class PermissionCatalog
         new("update", "Guncelle")
     ];
 
+    private static readonly PermissionActionDefinition[] FeedbackActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("update", "Guncelle"),
+        new("list-all", "Tumunu Listele")
+    ];
+
     public static IReadOnlyCollection<PermissionDefinition> Definitions { get; } =
     [
         new(
@@ -72,6 +80,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
+        ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
