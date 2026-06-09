@@ -107,6 +107,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(movementExtras, cancellationToken);
                 }
 
+                if (request.UpdateLinkedOrderDeliveredQuantities)
+                {
+                    ApplyLinkedOrderDeliveredQuantities(lines, linkedOrderLines, now);
+                }
+
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
@@ -252,6 +257,31 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
 
         return orderLines;
+    }
+
+    private static void ApplyLinkedOrderDeliveredQuantities(
+        IReadOnlyCollection<CreateInterWarehouseShipmentLineRequest> lines,
+        IReadOnlyDictionary<Guid, DEPOLAR_ARASI_SIPARISLER> linkedOrderLines,
+        DateTime now)
+    {
+        foreach (var group in lines
+                     .Where(line => line.WarehouseOrderLineGuid.HasValue)
+                     .GroupBy(line => line.WarehouseOrderLineGuid!.Value))
+        {
+            if (!linkedOrderLines.TryGetValue(group.Key, out var orderLine))
+            {
+                continue;
+            }
+
+            var deliveredQuantity = (orderLine.ssip_teslim_miktar ?? 0d) + group.Sum(line => line.Quantity);
+            var totalQuantity = orderLine.ssip_miktar ?? 0d;
+
+            orderLine.ssip_teslim_miktar = totalQuantity > 0d
+                ? Math.Min(deliveredQuantity, totalQuantity)
+                : deliveredQuantity;
+            orderLine.ssip_lastup_user = MikroUserNo;
+            orderLine.ssip_lastup_date = now;
+        }
     }
 
     private async Task<int> GetNextWarehouseOrderDocumentOrderNoAsync(

@@ -17,9 +17,9 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "C01",
             "0",
-            "ManualAxataNativeImport",
-            "/api/integrations/axata-sync/manual/axata/outbound-deliveries/inter-warehouse-shipments",
-            false),
+            "LiveAuditIntervention",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import",
+            true),
         new(
             "c02-outbound-delivery",
             "C02 Musteri Cikis Teslimati",

@@ -1,0 +1,25 @@
+namespace FurpaMerkezApi.Application.Modules.MobileSync.ProductPriceCatalog;
+
+public sealed record MobileProductPriceCatalogItemDto(
+    int WarehouseNo,
+    string Barcode,
+    string LookupSource,
+    string StockCode,
+    string StockName,
+    double Price,
+    int PriceTypeCode,
+    int UnitPointer,
+    string UnitName,
+    double UnitMultiplier,
+    string SecondaryUnitName,
+    double SecondaryUnitMultiplier,
+    int? SalesBlockCode,
+    int? OrderBlockCode,
+    int? GoodsAcceptanceBlockCode,
+    bool IsSalesBlocked,
+    bool IsOrderBlocked,
+    bool IsGoodsAcceptanceBlocked,
+    bool IsPassive,
+    bool IsDeleted,
+    string ProductManagerCode,
+    DateTime UpdatedAt);

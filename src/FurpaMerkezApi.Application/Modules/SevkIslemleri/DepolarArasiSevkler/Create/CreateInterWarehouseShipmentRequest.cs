@@ -8,7 +8,8 @@ public sealed record CreateInterWarehouseShipmentRequest(
     DateTime? DocumentDate,
     string? DocumentNo,
     string? Description,
-    IReadOnlyCollection<CreateInterWarehouseShipmentLineRequest> Lines);
+    IReadOnlyCollection<CreateInterWarehouseShipmentLineRequest> Lines,
+    bool UpdateLinkedOrderDeliveredQuantities = false);
 
 public sealed record CreateInterWarehouseShipmentLineRequest(
     string StockCode,

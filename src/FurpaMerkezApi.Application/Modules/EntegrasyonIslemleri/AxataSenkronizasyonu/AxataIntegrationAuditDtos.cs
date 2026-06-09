@@ -1,0 +1,85 @@
+namespace FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+
+public interface IAxataIntegrationAuditService
+{
+    Task<AxataIntegrationAuditDto> GetOverviewAsync(
+        AxataIntegrationAuditRequest request,
+        CancellationToken cancellationToken);
+}
+
+public sealed record AxataIntegrationAuditRequest(
+    DateTime? StartDate,
+    DateTime? EndDate,
+    int? WarehouseNo,
+    int? Take);
+
+public sealed record AxataIntegrationAuditDto(
+    bool IsInSync,
+    DateTime GeneratedAtUtc,
+    DateTime StartDate,
+    DateTime EndDate,
+    int? WarehouseNo,
+    AxataIntegrationAuditSummaryDto Summary,
+    IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
+    IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
+    IReadOnlyCollection<AxataPendingOutboundDeliveryDto> PendingOutboundDeliveries,
+    IReadOnlyCollection<AxataPendingOutboundDeliveryDto> InterventionCandidates,
+    IReadOnlyCollection<string> Notes);
+
+public sealed record AxataIntegrationAuditSummaryDto(
+    int MikroWarehouseOrderDocumentCount,
+    int SentWarehouseOrderDocumentCount,
+    int PartiallySentWarehouseOrderDocumentCount,
+    int UnsentWarehouseOrderDocumentCount,
+    int PendingOutboundDeliveryDocumentCount,
+    int PendingOutboundDeliveryLineCount,
+    double PendingOutboundDeliveryQuantity,
+    int C01PendingDocumentCount,
+    int C01MissingInMikroDocumentCount,
+    int C01MikroExistsPendingAckDocumentCount);
+
+public sealed record AxataOutboundDeliveryMovementSummaryDto(
+    string MovementType,
+    string PendingStatus,
+    int PendingDocumentCount,
+    int PendingLineCount,
+    double PendingQuantity,
+    int MikroMissingDocumentCount,
+    int MikroExistsPendingAckDocumentCount,
+    string CheckLevel);
+
+public sealed record AxataUnsyncedWarehouseOrderDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    DateTime DocumentDate,
+    int InWarehouseNo,
+    int OutWarehouseNo,
+    int LineCount,
+    int SentLineCount,
+    int UnsentLineCount,
+    double TotalQuantity,
+    double SentQuantity,
+    double UnsentQuantity,
+    string State,
+    DateTime? LastUpdateDate,
+    string Warning);
+
+public sealed record AxataPendingOutboundDeliveryDto(
+    string MovementType,
+    string Status,
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    string DocumentSerie,
+    int? DocumentOrderNo,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    DateTime? AxataDate,
+    int LineCount,
+    double Quantity,
+    int MikroOrderLineCount,
+    double MikroOrderQuantity,
+    double MikroDeliveredQuantity,
+    int ExistingLinkedMovementLineCount,
+    string MikroCheckState,
+    bool CanIntervene,
+    string? Warning);
