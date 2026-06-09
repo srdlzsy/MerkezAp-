@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,8 +10,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.PosMuha
 [Route("api/entegrasyon-islemleri/pos-muhasebe-aktarimi")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
-public sealed class PosMuhasebeAktarimiController
-    : ModuleMenuControllerBase
+public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService service)
+    : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "entegrasyon-islemleri";
     private const string ModuleName = "EntegrasyonIslemleri";
@@ -21,156 +22,273 @@ public sealed class PosMuhasebeAktarimiController
     private const string CreatePolicy = "entegrasyon-islemleri.pos-muhasebe-aktarimi.create";
     private const string UpdatePolicy = "entegrasyon-islemleri.pos-muhasebe-aktarimi.update";
 
-    public PosMuhasebeAktarimiController()
-        : base(ModuleCode, ModuleName, MenuCode, MenuName)
-    {
-    }
-
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> Overview() =>
-        ListNotImplemented(ListPolicy);
+    [ProducesResponseType(typeof(PosAccountingOverviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingOverviewDto>> Overview(
+        [FromQuery] PosAccountingDateRangeHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetOverviewAsync(request.ToApplicationRequest(), cancellationToken));
 
     [HttpGet("z-raporlari")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ListZReports(
-        [FromQuery] PosAccountingDateRangeHttpRequest request) =>
-        ListNotImplemented(ListPolicy);
+    [ProducesResponseType(typeof(IReadOnlyCollection<ZReportListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<ZReportListItemDto>>> ListZReports(
+        [FromQuery] PosAccountingDateRangeHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ListZReportsAsync(request.ToApplicationRequest(), cancellationToken));
 
-    [HttpGet("z-raporlari/{reportId:guid}")]
+    [HttpGet("z-raporlari/{totalId:int}")]
     [Authorize(Policy = DetailPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> GetZReportDetail(Guid reportId) =>
-        DetailNotImplemented(DetailPolicy, reportId.ToString());
+    [ProducesResponseType(typeof(ZReportDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ZReportDetailDto>> GetZReportDetail(
+        int totalId,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetZReportDetailAsync(totalId, cancellationToken));
 
     [HttpPost("z-raporlari/ice-aktar")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ImportZReports(
-        [FromBody] ImportZReportsHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(PosAccountingImportResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingImportResultDto>> ImportZReports(
+        [FromBody] ImportZReportsHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ImportZReportsAsync(
+            new ImportZReportsRequest(
+                request.WarehouseNo,
+                request.BusinessDate,
+                request.ReportPath,
+                request.ImportMode,
+                request.SourceCode,
+                request.OverwriteExisting),
+            cancellationToken));
 
     [HttpPost("z-raporlari/erpye-gonder")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> SendZReportsToErp(
-        [FromBody] PosAccountingTransferHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(PosAccountingBatchResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingBatchResultDto>> SendZReportsToErp(
+        [FromBody] PosAccountingTransferHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.SendZReportsToErpAsync(
+            new PosAccountingTransferRequest(request.DocumentIds, request.ContinueOnError),
+            cancellationToken));
 
     [HttpDelete("z-raporlari")]
     [Authorize(Policy = UpdatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> DeleteZReports(
-        [FromBody] PosAccountingDeleteHttpRequest request) =>
-        UpdateNotImplemented(UpdatePolicy, "z-raporlari");
+    [ProducesResponseType(typeof(PosAccountingBatchResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingBatchResultDto>> DeleteZReports(
+        [FromBody] PosAccountingDeleteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteZReportsAsync(
+            new PosAccountingDeleteRequest(request.DocumentIds),
+            cancellationToken));
 
     [HttpGet("pos-faturalar")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ListPosInvoices(
-        [FromQuery] PosAccountingDateRangeHttpRequest request) =>
-        ListNotImplemented(ListPolicy);
+    [ProducesResponseType(typeof(IReadOnlyCollection<BranchInvoiceListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<BranchInvoiceListItemDto>>> ListPosInvoices(
+        [FromQuery] PosAccountingDateRangeHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ListPosInvoicesAsync(request.ToApplicationRequest(), cancellationToken));
 
-    [HttpGet("pos-faturalar/{invoiceId:guid}")]
+    [HttpGet("pos-faturalar/{invoiceId:int}")]
     [Authorize(Policy = DetailPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> GetPosInvoiceDetail(Guid invoiceId) =>
-        DetailNotImplemented(DetailPolicy, invoiceId.ToString());
+    [ProducesResponseType(typeof(BranchInvoiceDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BranchInvoiceDetailDto>> GetPosInvoiceDetail(
+        int invoiceId,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetPosInvoiceDetailAsync(invoiceId, cancellationToken));
 
     [HttpPost("pos-faturalar/ice-aktar")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ImportPosInvoices(
-        [FromBody] ImportPosDocumentsHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(PosAccountingImportResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingImportResultDto>> ImportPosInvoices(
+        [FromBody] ImportPosDocumentsHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ImportPosInvoicesAsync(
+            new ImportPosDocumentsRequest(
+                request.WarehouseNo,
+                request.BusinessDate!.Value,
+                request.IncludePreviouslyImported,
+                request.OverwriteExisting),
+            cancellationToken));
 
     [HttpPost("pos-faturalar/erpye-gonder")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> SendPosInvoicesToErp(
-        [FromBody] PosAccountingTransferHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(PosAccountingBatchResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingBatchResultDto>> SendPosInvoicesToErp(
+        [FromBody] PosAccountingTransferHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.SendPosInvoicesToErpAsync(
+            new PosAccountingTransferRequest(request.DocumentIds, request.ContinueOnError),
+            cancellationToken));
 
-    [HttpPut("pos-faturalar/{invoiceId:guid}")]
+    [HttpPut("pos-faturalar/{invoiceId:int}")]
     [Authorize(Policy = UpdatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> UpdatePosInvoice(
-        Guid invoiceId,
-        [FromBody] UpdatePosAccountingDocumentHttpRequest request) =>
-        UpdateNotImplemented(UpdatePolicy, invoiceId.ToString());
+    [ProducesResponseType(typeof(BranchInvoiceDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BranchInvoiceDetailDto>> UpdatePosInvoice(
+        int invoiceId,
+        [FromBody] UpdatePosAccountingDocumentHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdatePosInvoiceAsync(
+            new UpdatePosInvoiceRequest(
+                invoiceId,
+                ParseOptionalInt(request.DocumentNo, nameof(request.DocumentNo)),
+                request.CustomerTaxNo,
+                request.PaymentType),
+            cancellationToken));
 
     [HttpDelete("pos-faturalar")]
     [Authorize(Policy = UpdatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> DeletePosInvoices(
-        [FromBody] PosAccountingDeleteHttpRequest request) =>
-        UpdateNotImplemented(UpdatePolicy, "pos-faturalar");
+    [ProducesResponseType(typeof(PosAccountingBatchResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingBatchResultDto>> DeletePosInvoices(
+        [FromBody] PosAccountingDeleteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeletePosInvoicesAsync(
+            new PosAccountingDeleteRequest(request.DocumentIds),
+            cancellationToken));
 
     [HttpGet("gider-pusulalari")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ListExpenseNotes(
-        [FromQuery] PosAccountingDateRangeHttpRequest request) =>
-        ListNotImplemented(ListPolicy);
+    [ProducesResponseType(typeof(IReadOnlyCollection<ExpenseNoteListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<ExpenseNoteListItemDto>>> ListExpenseNotes(
+        [FromQuery] PosAccountingDateRangeHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ListExpenseNotesAsync(request.ToApplicationRequest(), cancellationToken));
 
-    [HttpGet("gider-pusulalari/{expenseId:guid}")]
+    [HttpGet("gider-pusulalari/{expenseId:int}")]
     [Authorize(Policy = DetailPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> GetExpenseNoteDetail(Guid expenseId) =>
-        DetailNotImplemented(DetailPolicy, expenseId.ToString());
+    [ProducesResponseType(typeof(ExpenseNoteDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ExpenseNoteDetailDto>> GetExpenseNoteDetail(
+        int expenseId,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetExpenseNoteDetailAsync(expenseId, cancellationToken));
 
     [HttpPost("gider-pusulalari/ice-aktar")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ImportExpenseNotes(
-        [FromBody] ImportPosDocumentsHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(PosAccountingImportResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingImportResultDto>> ImportExpenseNotes(
+        [FromBody] ImportPosDocumentsHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ImportExpenseNotesAsync(
+            new ImportPosDocumentsRequest(
+                request.WarehouseNo,
+                request.BusinessDate!.Value,
+                request.IncludePreviouslyImported,
+                request.OverwriteExisting),
+            cancellationToken));
 
     [HttpPost("gider-pusulalari/erpye-gonder")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> SendExpenseNotesToErp(
-        [FromBody] PosAccountingTransferHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(PosAccountingBatchResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingBatchResultDto>> SendExpenseNotesToErp(
+        [FromBody] PosAccountingTransferHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.SendExpenseNotesToErpAsync(
+            new PosAccountingTransferRequest(request.DocumentIds, request.ContinueOnError),
+            cancellationToken));
 
-    [HttpPut("gider-pusulalari/{expenseId:guid}")]
+    [HttpPut("gider-pusulalari/{expenseId:int}")]
     [Authorize(Policy = UpdatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> UpdateExpenseNote(
-        Guid expenseId,
-        [FromBody] UpdatePosAccountingDocumentHttpRequest request) =>
-        UpdateNotImplemented(UpdatePolicy, expenseId.ToString());
+    [ProducesResponseType(typeof(ExpenseNoteDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ExpenseNoteDetailDto>> UpdateExpenseNote(
+        int expenseId,
+        [FromBody] UpdatePosAccountingDocumentHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdateExpenseNoteAsync(
+            new UpdateExpenseNoteRequest(
+                expenseId,
+                request.BranchNo,
+                request.DocumentNo,
+                request.PaymentType),
+            cancellationToken));
 
     [HttpDelete("gider-pusulalari")]
     [Authorize(Policy = UpdatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> DeleteExpenseNotes(
-        [FromBody] PosAccountingDeleteHttpRequest request) =>
-        UpdateNotImplemented(UpdatePolicy, "gider-pusulalari");
+    [ProducesResponseType(typeof(PosAccountingBatchResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PosAccountingBatchResultDto>> DeleteExpenseNotes(
+        [FromBody] PosAccountingDeleteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteExpenseNotesAsync(
+            new PosAccountingDeleteRequest(request.DocumentIds),
+            cancellationToken));
 
     [HttpGet("kasa-eslemeleri")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> ListCashRegisterMappings(
-        [FromQuery] CashRegisterBranchMappingListHttpRequest request) =>
-        ListNotImplemented(ListPolicy);
+    [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterBranchMappingDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CashRegisterBranchMappingDto>>> ListCashRegisterMappings(
+        [FromQuery] CashRegisterBranchMappingListHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ListCashRegisterMappingsAsync(
+            new CashRegisterBranchMappingFilterRequest(request.BranchNo, request.CashRegisterNo),
+            cancellationToken));
 
     [HttpPost("kasa-eslemeleri")]
     [Authorize(Policy = CreatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> CreateCashRegisterMapping(
-        [FromBody] CashRegisterBranchMappingHttpRequest request) =>
-        CreateNotImplemented(CreatePolicy);
+    [ProducesResponseType(typeof(CashRegisterBranchMappingDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CashRegisterBranchMappingDto>> CreateCashRegisterMapping(
+        [FromBody] CashRegisterBranchMappingHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.CreateCashRegisterMappingAsync(
+            new UpsertCashRegisterBranchMappingRequest(
+                null,
+                request.CashRegisterNo,
+                request.BranchNo!.Value),
+            cancellationToken));
 
-    [HttpPut("kasa-eslemeleri/{mappingId:guid}")]
+    [HttpPut("kasa-eslemeleri/{mappingId:int}")]
     [Authorize(Policy = UpdatePolicy)]
-    [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> UpdateCashRegisterMapping(
-        Guid mappingId,
-        [FromBody] CashRegisterBranchMappingHttpRequest request) =>
-        UpdateNotImplemented(UpdatePolicy, mappingId.ToString());
+    [ProducesResponseType(typeof(CashRegisterBranchMappingDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CashRegisterBranchMappingDto>> UpdateCashRegisterMapping(
+        int mappingId,
+        [FromBody] CashRegisterBranchMappingHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdateCashRegisterMappingAsync(
+            new UpsertCashRegisterBranchMappingRequest(
+                mappingId,
+                request.CashRegisterNo,
+                request.BranchNo!.Value),
+            cancellationToken));
+
+    private static int? ParseOptionalInt(string? value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (int.TryParse(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new ArgumentException($"{parameterName} must be a valid integer.", parameterName);
+    }
 }
 
 public sealed class PosAccountingDateRangeHttpRequest
@@ -183,6 +301,9 @@ public sealed class PosAccountingDateRangeHttpRequest
     public int? WarehouseNo { get; init; }
 
     public bool OnlyPending { get; init; } = true;
+
+    public PosAccountingFilterRequest ToApplicationRequest() =>
+        new(StartDate, EndDate, WarehouseNo, OnlyPending);
 }
 
 public sealed class ImportZReportsHttpRequest
@@ -191,6 +312,9 @@ public sealed class ImportZReportsHttpRequest
     public int? WarehouseNo { get; init; }
 
     public DateTime? BusinessDate { get; init; }
+
+    [StringLength(400)]
+    public string? ReportPath { get; init; }
 
     [StringLength(50)]
     public string? ImportMode { get; init; }
@@ -221,7 +345,7 @@ public sealed class PosAccountingTransferHttpRequest
 
     [Required]
     [MinLength(1)]
-    public IReadOnlyCollection<Guid> DocumentIds { get; init; } = Array.Empty<Guid>();
+    public IReadOnlyCollection<int> DocumentIds { get; init; } = Array.Empty<int>();
 
     public bool ContinueOnError { get; init; } = true;
 }
@@ -233,7 +357,7 @@ public sealed class PosAccountingDeleteHttpRequest
 
     [Required]
     [MinLength(1)]
-    public IReadOnlyCollection<Guid> DocumentIds { get; init; } = Array.Empty<Guid>();
+    public IReadOnlyCollection<int> DocumentIds { get; init; } = Array.Empty<int>();
 }
 
 public sealed class UpdatePosAccountingDocumentHttpRequest

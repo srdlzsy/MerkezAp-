@@ -31,6 +31,22 @@ public partial class MikroDbContext
 
     public virtual DbSet<CashRegisterDetailEntity> CashRegisterDetails { get; set; }
 
+    public virtual DbSet<ZReportTotalEntity> ZReportTotals { get; set; }
+
+    public virtual DbSet<ZReportDetailEntity> ZReportDetails { get; set; }
+
+    public virtual DbSet<ZReportBankDetailEntity> ZReportBankDetails { get; set; }
+
+    public virtual DbSet<CashRegisterBranchEntity> CashRegisterBranches { get; set; }
+
+    public virtual DbSet<BranchInvoiceEntity> Invoices { get; set; }
+
+    public virtual DbSet<BranchInvoiceLineEntity> InvoiceLines { get; set; }
+
+    public virtual DbSet<ExpenseNoteEntity> ExpenseNotes { get; set; }
+
+    public virtual DbSet<ExpenseNoteLineEntity> ExpenseNoteLines { get; set; }
+
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CARI_HESAP_YETKILILERI>(entity =>
@@ -302,6 +318,78 @@ public partial class MikroDbContext
             entity.Property(item => item.Bank).HasMaxLength(100);
             entity.Property(item => item.TerminalId).HasMaxLength(40);
             entity.Property(item => item.MerchantNo).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<ZReportTotalEntity>(entity =>
+        {
+            entity.ToTable("ZReportTotals");
+            entity.HasKey(item => item.TotalId);
+            entity.Property(item => item.TotalId).ValueGeneratedOnAdd();
+            entity.Property(item => item.CashRegisterNo).HasMaxLength(40);
+            entity.Property(item => item.Date).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<ZReportDetailEntity>(entity =>
+        {
+            entity.ToTable("ZReportDetails");
+            entity.HasKey(item => item.DetailId);
+            entity.Property(item => item.DetailId).ValueGeneratedOnAdd();
+        });
+
+        modelBuilder.Entity<ZReportBankDetailEntity>(entity =>
+        {
+            entity.ToTable("ZReportBankDetails");
+            entity.HasKey(item => item.BankDetailId);
+            entity.Property(item => item.BankDetailId).ValueGeneratedOnAdd();
+            entity.Property(item => item.Bank).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<CashRegisterBranchEntity>(entity =>
+        {
+            entity.ToTable("CashRegisterBranches");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).ValueGeneratedOnAdd();
+            entity.Property(item => item.CashRegisterNo).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<BranchInvoiceEntity>(entity =>
+        {
+            entity.ToTable("Invoices");
+            entity.HasKey(item => item.InvoiceId);
+            entity.Property(item => item.InvoiceId).ValueGeneratedOnAdd();
+            entity.Property(item => item.CustomerTaxNo).HasMaxLength(50);
+            entity.Property(item => item.PaymentType).HasMaxLength(30);
+            entity.Property(item => item.InvoiceDate).HasColumnType("datetime");
+            entity.Property(item => item.InvoiceTotal).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<BranchInvoiceLineEntity>(entity =>
+        {
+            entity.ToTable("InvoiceLines");
+            entity.HasKey(item => item.LineId);
+            entity.Property(item => item.LineId).ValueGeneratedOnAdd();
+            entity.Property(item => item.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(item => item.TaxAmount).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<ExpenseNoteEntity>(entity =>
+        {
+            entity.ToTable("ExpenseNotes");
+            entity.HasKey(item => item.ExpenseId);
+            entity.Property(item => item.ExpenseId).ValueGeneratedOnAdd();
+            entity.Property(item => item.DocumentNo).HasMaxLength(50);
+            entity.Property(item => item.PaymentType).HasMaxLength(30);
+            entity.Property(item => item.ExpenseDate).HasColumnType("datetime");
+            entity.Property(item => item.ExpenseTotal).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<ExpenseNoteLineEntity>(entity =>
+        {
+            entity.ToTable("ExpenseNoteLines");
+            entity.HasKey(item => item.LineId);
+            entity.Property(item => item.LineId).ValueGeneratedOnAdd();
+            entity.Property(item => item.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(item => item.TaxAmount).HasColumnType("decimal(18,2)");
         });
     }
 }
