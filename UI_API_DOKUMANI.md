@@ -4434,6 +4434,207 @@ Response:
 }
 ```
 
+### Kasa Hareket Aktarimi
+
+Eski kasa hareket dosyalarini HR/IP formatindan staging tablolara alir, staging hareketlerini Mikro stok hareketlerine aktarir veya aktarimi geri siler.
+
+Temel route:
+
+- `api/kasa-islemleri/kasa-hareket-aktarimi`
+
+Yetki kodlari:
+
+- `kasa-islemleri.kasa-hareket-aktarimi.list`
+- `kasa-islemleri.kasa-hareket-aktarimi.detail`
+- `kasa-islemleri.kasa-hareket-aktarimi.create`
+- `kasa-islemleri.kasa-hareket-aktarimi.update`
+
+Mevcut backend durumu:
+
+- route ailesi aktiftir
+- sube/kasa lookup, HR hareket import, IP iptal import, zamanli import, staging silme, Mikro'ya aktar/sil/aralik aktar ve rapor endpointleri calisir
+- import dosya kaynagi `KasaHareketAktarimi:FileRootPath` konfigurasyonundan okunur; default deger `\\10.0.0.55\kasa\`
+- zamanli importta `Date` verilmezse `KasaHareketAktarimi:ScheduledAddDay` kullanilir; default `-1`, yani dunun dosyalarini okur
+- dosya yolu `{root}\{subeNo}\HRddMMyy.*` ve `{root}\{subeNo}\IPddMMyy.*` desenindedir
+- `cashRegisters` filtresi verilirse dosya adi `{prefix}{ddMMyy}.{kasaNo:000}` olarak aranir
+- `skipExisting=true` iken duplicate kontrolu `Sube + KasaNo + FisNo + BelgeTuru + Tarih` alanlariyla yapilir
+- `dryRun=true` import dosyalarini parse eder, barkod lookup ve hata/uyari listesi uretir, staging'e yazmaz
+- barkod lookup Mikro barkod tanimlarindan urun kodu bulmaya calisir; bulunamayan barkodlar response `warnings` icinde doner
+- HR import normal kasa hareketlerini, IP import iptal belgelerini staging'e alir
+- Mikro aktar/sil endpointleri stored procedure calistirir; response sadece procedure adi, mesaj ve filtre bilgisini doner
+
+Endpoint'ler:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler` | - | - | `KasaHareketBranchDto[]` | `list` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler/{branchNo}/kasalar` | path | `branchNo: int` | `KasaHareketCashRegisterDto[]` | `list` |
+| `POST /api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar` | body | `KasaHareketImportHttpRequest` | `KasaHareketImportResultDto` | `create` |
+| `POST /api/kasa-islemleri/kasa-hareket-aktarimi/iptal-belgeleri/aktar` | body | `KasaHareketImportHttpRequest` | `KasaHareketImportResultDto` | `create` |
+| `POST /api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir` | body | `KasaHareketScheduledImportHttpRequest` | `KasaHareketImportResultDto` | `create` |
+| `DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/staging` | body | `KasaHareketDeleteStagingHttpRequest` | `KasaHareketProcedureResultDto` | `update` |
+| `POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar` | body | `KasaHareketMikroTransferHttpRequest` | `KasaHareketProcedureResultDto` | `create` |
+| `DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/mikro` | body | `KasaHareketMikroTransferHttpRequest` | `KasaHareketProcedureResultDto` | `update` |
+| `POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar` | body | `KasaHareketMikroTransferRangeHttpRequest` | `KasaHareketProcedureResultDto` | `create` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor` | query | `KasaHareketReportHttpRequest` | `KasaHareketReportRowDto[]` | `detail` |
+
+Import request:
+
+```json
+{
+  "startDate": "2026-06-08",
+  "endDate": "2026-06-09",
+  "branches": [110, 115],
+  "cashRegisters": [1, 2],
+  "fileRootPath": "\\\\10.0.0.55\\kasa\\",
+  "skipExisting": true,
+  "dryRun": false
+}
+```
+
+Import response:
+
+```json
+{
+  "runId": "normal-20260608-153000",
+  "importType": "normal",
+  "status": "Completed",
+  "processedFiles": 4,
+  "processedInvoices": 128,
+  "skippedExistingInvoices": 3,
+  "insertedLines": 642,
+  "insertedPayments": 146,
+  "insertedPromotions": 12,
+  "warnings": [
+    {
+      "branchNo": 110,
+      "cashRegisterNo": 1,
+      "file": "HR080626.001",
+      "receiptNo": "3456",
+      "lineNo": 24,
+      "message": "Sistemde olmayan barkod: 8690000000000"
+    }
+  ],
+  "errors": []
+}
+```
+
+Zamanli import:
+
+`POST /api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir`
+
+```json
+{
+  "date": "2026-06-09",
+  "addDay": null,
+  "fileRootPath": null,
+  "skipExisting": true,
+  "dryRun": true
+}
+```
+
+Not:
+
+- zamanli import ayni tarih icin HR ve IP importlarini birlikte calistirir
+- `date` bos gonderilirse `DateTime.Today + addDay/configured ScheduledAddDay` hesaplanir
+- response `importType = scheduled` olarak doner ve HR/IP sonuc adetlerini toplar
+
+Staging silme:
+
+`DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/staging`
+
+```json
+{
+  "date": "2026-06-09",
+  "branchNo": 110,
+  "cashRegisterNo": 1
+}
+```
+
+Bu endpoint `HareketSil` procedure'unu calistirir. `branchNo` ve `cashRegisterNo` opsiyoneldir; UI'da staging temizleme aksiyonu olarak sunulmalidir, Mikro evragi silme aksiyonu gibi adlandirilmamalidir.
+
+Mikro'ya aktar:
+
+`POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar`
+
+```json
+{
+  "date": "2026-06-09",
+  "branchNo": 110
+}
+```
+
+Bu endpoint `StokHareketYaz` procedure'unu calistirir. `branchNo` opsiyoneldir.
+
+Mikro'dan sil:
+
+`DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/mikro`
+
+```json
+{
+  "date": "2026-06-09",
+  "branchNo": 110
+}
+```
+
+Bu endpoint `StokHareketSil` procedure'unu calistirir.
+
+Tarih araligi Mikro aktarimi:
+
+`POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar`
+
+```json
+{
+  "startDate": "2026-06-01",
+  "endDate": "2026-06-09"
+}
+```
+
+Bu endpoint `StokHareketYaz2` procedure'unu calistirir ve sube filtresi almaz.
+
+Procedure response:
+
+```json
+{
+  "procedure": "StokHareketYaz",
+  "message": "StokHareketYaz calisti.",
+  "date": "2026-06-09T00:00:00",
+  "branchNo": 110,
+  "cashRegisterNo": null
+}
+```
+
+Rapor:
+
+`GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor?date=2026-06-09&branchNo=110&cashRegisterNo=1`
+
+Response:
+
+```json
+[
+  {
+    "date": "2026-06-09T00:00:00",
+    "branchNo": 110,
+    "branchName": "KESTEL 1",
+    "cashRegisterNo": 1,
+    "netAmount": 24500.75,
+    "expense": 350.25,
+    "checkAmount": 1250,
+    "difference": 22900.5
+  }
+]
+```
+
+UI beklentisi:
+
+- ekran tek menu olarak acilabilir; `Import`, `Rapor`, `Mikro Aktarim` sekmeleri yeterlidir
+- ekran acilisinda `subeler`, sube secilince `subeler/{branchNo}/kasalar` cagrilmalidir
+- import dialogunda tarih araligi zorunlu, sube/kasa filtreleri opsiyonel olmalidir
+- `dryRun` bir onizleme modu gibi sunulmalidir; sonuc adetleri ve `warnings/errors` satir bazli gosterilmelidir
+- `skipExisting=true` varsayilani korunmalidir; tekrar import gereken durumlarda kullanici bilincli olarak kapatmalidir
+- `staging sil`, `Mikro'ya aktar`, `Mikro'dan sil` ve `aralik aktar` aksiyonlari ayri butonlar olmalidir
+- procedure response'unda adet bilgisi yoktur; UI mesaj alanini ve calistirilan filtreleri gostermelidir
+
 ### Kasa Sayimlari Liste
 
 Belirli bir gune ait kasa sayim belgelerini getirir.
@@ -4979,7 +5180,7 @@ Bu endpoint iskelet olarak acildi. Is kurali ve Mikro veritabani entegrasyonu so
 
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi`
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{reportId}`
+- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}`
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar`
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/erpye-gonder`
 - `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`
@@ -5226,6 +5427,19 @@ Kasa Islemleri / Kasa Cirolari
   -> kullanici satira tiklar
   -> GET /api/kasa-islemleri/kasa-cirolari/detay?businessDate=...&shiftNo=...&cashierCode=...
   -> detay ekraninda header ozetini ust kartta, odeme kirilimini alttaki gridde goster
+
+Kasa Islemleri / Kasa Hareket Aktarimi
+  -> ekran acilisinda sube filtresi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler
+  -> kullanici sube secince kasa filtresi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler/{branchNo}/kasalar
+  -> HR hareket dosyalarini staging'e almak icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar
+  -> IP iptal dosyalarini staging'e almak icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/iptal-belgeleri/aktar
+  -> zamanli/gunluk toplu calistirma icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir
+  -> import oncesi dryRun=true ile parse/lookup sonucu gosterilebilir
+  -> rapor gridini doldurmak icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor?date=...
+  -> staging temizleme icin DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/staging
+  -> staging hareketlerini Mikro'ya yazmak icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar
+  -> Mikro'ya yazilmis hareketleri silmek icin DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/mikro
+  -> tarih araligi toplu aktarim icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar
 ```
 
 ## Fatura Islemleri
@@ -6562,10 +6776,11 @@ Yetki kodlari:
 Mevcut backend durumu:
 
 - route ailesi aciktir
-- controller ve request contract'lari tanimlidir
-- tum endpoint'ler su an `501 Not Implemented` doner
-- response modeli `ModuleActionScaffoldResponse`'dur
-- yani UI ekrani cizilebilir, fakat business veri beklenmemelidir
+- controller, request contract'lari ve business DTO response'lari tanimlidir
+- overview, liste, detay, POS fatura import, gider pusulasi import, header guncelleme, staging silme ve kasa esleme bakimi aktif endpoint olarak calisir
+- Z raporu dosya parser'i henuz API tarafinda uygulanmamistir; `z-raporlari/ice-aktar` basarisiz import sonucu doner
+- ERP muhasebe fisi yazma henuz uygulanmamistir; `erpye-gonder` endpoint'leri secili kayitlar icin batch sonuc doner ama `IsSent=true` yapmaz
+- liste endpoint'leri varsayilan olarak yalniz `IsSent = false` bekleyen kayitlari dondurur; bunun icin `OnlyPending=true` default gelir
 
 UI bu menuyu tek sayfa icinde 4 tab olarak kurgulamalidir:
 
@@ -6584,10 +6799,10 @@ Bu tab'in hedefi gelecekte su akisi yurutmektir:
 - secilen raporlar ERP muhasebe fisine donusturulur
 - hatali veya tekrarli importlar loglanir
 
-Scaffold endpoint'ler:
+Endpoint'ler:
 
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{reportId}`
+- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}`
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar`
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/erpye-gonder`
 - `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`
@@ -6602,9 +6817,9 @@ UI beklentisi:
 
 #### POS Faturalar Tab'i
 
-Bu tab'in hedefi gelecekte POS kaynakli satis faturalarini once staging'e alip sonra ERP'ye aktarmaktir.
+Bu tab'in hedefi POS kaynakli satis faturalarini once staging'e alip sonra ERP'ye aktarmaktir.
 
-Scaffold endpoint'ler:
+Endpoint'ler:
 
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar`
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}`
@@ -6616,15 +6831,22 @@ Scaffold endpoint'ler:
 UI beklentisi:
 
 - liste ekraninda tarih bazli veri cekme aksiyonu vardir
-- detay ekraninda `documentNo`, `customerTaxNo`, `paymentType`, `branchNo`, `description` duzenleme alanlari dusunulmelidir
+- detay ekraninda `documentNo`, `customerTaxNo`, `paymentType` duzenleme alanlari dusunulmelidir
 - satir duzeyi guncelleme bu surumde contract'ta yoktur; ekran agirlikla ust belge duzenleme mantigiyla tasarlanmalidir
 - kullanici daha sonra ERP gonderimi icin birden fazla fatura secebilecekmis gibi secim modeli hazir tutulmalidir
+
+Kaynak veri davranisi:
+
+- POS fatura importu iki kaynagi birlestirir: Furpa/Mayday kaynakli `Furpa.dbo.PosFaturas` ve opsiyonel `Vera.dbo.FATURA`
+- Furpa/Mayday tarafinda yalniz `BelgeTuru = 2` alinir; `BelgeTipi` kaynak kolon gibi filtrelenmez, `BelgeTuru AS BelgeTipi` olarak uretilir
+- Vera tarafi yalniz `VeraConnection` tanimliysa okunur; `BELGE_TIPI = 'FATURA'` ve `BELGE_TURU = 'FATURA'` filtresi kullanilir
+- yeni staging kayitlari `Invoices` ve `InvoiceLines` tablolarina `IsSent = false` olarak yazilir
 
 #### Gider Pusulalari Tab'i
 
 Bu tab, POS gider pusulasi staging ve ERP'ye aktarim akisinin web karsiligidir.
 
-Scaffold endpoint'ler:
+Endpoint'ler:
 
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari`
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}`
@@ -6639,11 +6861,18 @@ UI beklentisi:
 - ayrim yalnizca is anlami ve kolon isimlerinde olmalidir
 - detay formunda belge satirlari okunur, ama guncellenen alanlar header agirlikli olacakmis gibi dusunulmelidir
 
+Kaynak veri davranisi:
+
+- gider pusulasi importu aktif WinUI davranisina uygun olarak Furpa kaynaklidir
+- kaynak tablo `Furpa.dbo.PosFaturas`, satir hesap kaynagi `Furpa.dbo.PosFaturaSatirs` + Mikro `STOKLAR` eslesmesidir
+- yalniz `BelgeTuru = 4` kayitlari alinir
+- yeni staging kayitlari `ExpenseNotes` ve `ExpenseNoteLines` tablolarina `IsSent = false` olarak yazilir
+
 #### Kasa Eslemeleri Tab'i
 
 Bu tab'in amaci yazar kasa / cihaz no ile sube arasindaki eslemeyi yonetmektir.
 
-Scaffold endpoint'ler:
+Endpoint'ler:
 
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri`
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri`
@@ -6657,16 +6886,17 @@ UI beklentisi:
 
 #### UI Durum Yonetimi
 
-Bu menu scaffold oldugu icin UI tarafinda su davranis onerilir:
+Bu menu kismi implementasyon durumunda oldugu icin UI tarafinda su davranis onerilir:
 
-- route acik olsa da ilk cagrida `501` gelirse ekran "hazir ama backend baglanmadi" uyarisina dussun
-- `ModuleActionScaffoldResponse.message` kullaniciya dogrudan gosterilebilir
-- tab'ler simdiden cizilebilir, ama kayit listeleri yerine placeholder / empty-state kartlari kullanilmalidir
-- aksiyon butonlari gorunsun fakat tiklandiginda backend `501` cevabi kullaniciya net anlatilsin
+- liste, detay, import, guncelleme ve silme aksiyonlari normal DTO response'lariyla calisir
+- Z raporu importu ve ERP'ye gonderme aksiyonlari simdilik `success=false` sonuc satirlari dondurebilir; UI bunu hata/uyari olarak gostermelidir
+- toplu islemlerde response icindeki `results[]` satir bazli okunmali, tek bir hata tum batch basarisiz gibi gosterilmemelidir
+- `OnlyPending=true` varsayilani nedeniyle liste ekranlari ERP'ye gonderilmemis staging kayitlarini gosterir; arsiv/tum kayit gorunumu icin `OnlyPending=false` gonderilmelidir
+- `sil` aksiyonu staging kaydini temizler; ERP'de olusmus muhasebe fisi silme aksiyonu gibi sunulmamalidir
 
-#### Gelecek Faz Icin Ekran Beklentisi
+#### Ekran Omurgasi
 
-Bu menu ileride gercek implementasyona gectiginde UI'nin tekrar buyuk refactor istememesi icin su omurga korunmalidir:
+UI'nin tekrar buyuk refactor istememesi icin su omurga korunmalidir:
 
 - tek menu, cok tab
 - liste / detay / toplu islem ayrimi
@@ -6682,56 +6912,40 @@ Bu nedenle frontend tarafinda bugunden su dil benimsenmelidir:
 
 Not:
 
-- bu bolumde anlatilan is akislarinin buyuk kismi hedef tasarimdir
-- bugun dogrulanabilen durum, yalnizca route + yetki + HTTP contract + scaffold response varligidir
-- gercek veri modeli ve business response DTO'lari backend implementasyon fazinda netlesecektir
+- POS fatura ve gider pusulasi importlari staging tablolarina yazar; ERP muhasebe fisi yazma bu API projesinde henuz tamamlanmamistir
+- Z raporu liste/detay/silme mevcut staging tablolarini kullanir; dosyadan Z raporu parser'i henuz uygulanmamistir
+- ID alanlari `int` tipindedir: `totalId`, `invoiceId`, `expenseId`, `mappingId`
+- toplu gonderme ve silme isteklerinde `DocumentIds` GUID degil `int` koleksiyonudur
 
 #### Mevcut Request / Response Kontratlari
 
-Bu menu su an scaffold oldugu icin `liste`, `detay`, `import`, `gonder`, `sil` ve `guncelle` endpoint'lerinin tumu response olarak ayni modeli doner:
-
-- `ModuleActionScaffoldResponse`
-
-Yani bugunku backend durumunda:
-
-- ozel `ZReportListItemDto`
-- ozel `PosInvoiceDetailDto`
-- ozel `ExpenseNoteDetailDto`
-- ozel `CashRegisterBranchMappingDto`
-
-gibi business response DTO'lari henuz yoktur.
-
-UI tarafi bu fazda response'u su mantikla ele almalidir:
-
-- `isImplemented = false`
-- `message = backend iskelet endpoint aciklamasi`
-- `moduleCode`, `menuCode`, `actionCode` alanlari ile ekran aksiyonu eslenebilir
+Bu menu artik scaffold response degil, belge tipine gore business DTO dondurur.
 
 Endpoint bazli request / response ozet tablosu:
 
 | Endpoint | Request kaynagi | Request modeli | Mevcut response |
 |---|---|---|---|
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi` | body yok | body yok | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari` | query | `PosAccountingDateRangeHttpRequest` | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{reportId}` | path | `reportId: Guid` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar` | body | `ImportZReportsHttpRequest` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/erpye-gonder` | body | `PosAccountingTransferHttpRequest` | `ModuleActionScaffoldResponse` |
-| `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari` | body | `PosAccountingDeleteHttpRequest` | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar` | query | `PosAccountingDateRangeHttpRequest` | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}` | path | `invoiceId: Guid` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/ice-aktar` | body | `ImportPosDocumentsHttpRequest` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/erpye-gonder` | body | `PosAccountingTransferHttpRequest` | `ModuleActionScaffoldResponse` |
-| `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}` | body | `UpdatePosAccountingDocumentHttpRequest` | `ModuleActionScaffoldResponse` |
-| `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar` | body | `PosAccountingDeleteHttpRequest` | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari` | query | `PosAccountingDateRangeHttpRequest` | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}` | path | `expenseId: Guid` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/ice-aktar` | body | `ImportPosDocumentsHttpRequest` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/erpye-gonder` | body | `PosAccountingTransferHttpRequest` | `ModuleActionScaffoldResponse` |
-| `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}` | body | `UpdatePosAccountingDocumentHttpRequest` | `ModuleActionScaffoldResponse` |
-| `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari` | body | `PosAccountingDeleteHttpRequest` | `ModuleActionScaffoldResponse` |
-| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` | query | `CashRegisterBranchMappingListHttpRequest` | `ModuleActionScaffoldResponse` |
-| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` | body | `CashRegisterBranchMappingHttpRequest` | `ModuleActionScaffoldResponse` |
-| `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri/{mappingId}` | body | `CashRegisterBranchMappingHttpRequest` | `ModuleActionScaffoldResponse` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi` | query | `PosAccountingDateRangeHttpRequest` | `PosAccountingOverviewDto` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari` | query | `PosAccountingDateRangeHttpRequest` | `ZReportListItemDto[]` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}` | path | `totalId: int` | `ZReportDetailDto` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar` | body | `ImportZReportsHttpRequest` | `PosAccountingImportResultDto` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/erpye-gonder` | body | `PosAccountingTransferHttpRequest` | `PosAccountingBatchResultDto` |
+| `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari` | body | `PosAccountingDeleteHttpRequest` | `PosAccountingBatchResultDto` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar` | query | `PosAccountingDateRangeHttpRequest` | `BranchInvoiceListItemDto[]` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}` | path | `invoiceId: int` | `BranchInvoiceDetailDto` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/ice-aktar` | body | `ImportPosDocumentsHttpRequest` | `PosAccountingImportResultDto` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/erpye-gonder` | body | `PosAccountingTransferHttpRequest` | `PosAccountingBatchResultDto` |
+| `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}` | body | `UpdatePosAccountingDocumentHttpRequest` | `BranchInvoiceDetailDto` |
+| `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar` | body | `PosAccountingDeleteHttpRequest` | `PosAccountingBatchResultDto` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari` | query | `PosAccountingDateRangeHttpRequest` | `ExpenseNoteListItemDto[]` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}` | path | `expenseId: int` | `ExpenseNoteDetailDto` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/ice-aktar` | body | `ImportPosDocumentsHttpRequest` | `PosAccountingImportResultDto` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/erpye-gonder` | body | `PosAccountingTransferHttpRequest` | `PosAccountingBatchResultDto` |
+| `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}` | body | `UpdatePosAccountingDocumentHttpRequest` | `ExpenseNoteDetailDto` |
+| `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari` | body | `PosAccountingDeleteHttpRequest` | `PosAccountingBatchResultDto` |
+| `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` | query | `CashRegisterBranchMappingListHttpRequest` | `CashRegisterBranchMappingDto[]` |
+| `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` | body | `CashRegisterBranchMappingHttpRequest` | `CashRegisterBranchMappingDto` |
+| `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri/{mappingId}` | body | `CashRegisterBranchMappingHttpRequest` | `CashRegisterBranchMappingDto` |
 
 Request modellerinin alanlari:
 
@@ -6748,6 +6962,7 @@ public sealed class ImportZReportsHttpRequest
 {
     public int? WarehouseNo { get; init; }
     public DateTime? BusinessDate { get; init; }
+    public string? ReportPath { get; init; }
     public string? ImportMode { get; init; }
     public string? SourceCode { get; init; }
     public bool OverwriteExisting { get; init; }
@@ -6764,14 +6979,14 @@ public sealed class ImportPosDocumentsHttpRequest
 public sealed class PosAccountingTransferHttpRequest
 {
     public int? WarehouseNo { get; init; }
-    public IReadOnlyCollection<Guid> DocumentIds { get; init; }
+    public IReadOnlyCollection<int> DocumentIds { get; init; }
     public bool ContinueOnError { get; init; } = true;
 }
 
 public sealed class PosAccountingDeleteHttpRequest
 {
     public int? WarehouseNo { get; init; }
-    public IReadOnlyCollection<Guid> DocumentIds { get; init; }
+    public IReadOnlyCollection<int> DocumentIds { get; init; }
 }
 
 public sealed class UpdatePosAccountingDocumentHttpRequest
@@ -6798,42 +7013,61 @@ public sealed class CashRegisterBranchMappingHttpRequest
 }
 ```
 
-Mevcut response modeli:
+Ortak import / batch response modelleri:
 
 ```csharp
-public sealed record ModuleActionScaffoldResponse(
-    string ModuleCode,
-    string ModuleName,
-    string MenuCode,
-    string MenuName,
-    string ActionCode,
-    string ActionName,
-    string HttpMethod,
-    string PermissionCode,
-    string Route,
-    string? ResourceId,
-    bool IsImplemented,
+public sealed record PosAccountingImportResultDto(
+    string DocumentKind,
+    DateTime BusinessDate,
+    int ImportedCount,
+    int SkippedCount,
+    int ErrorCount,
+    IReadOnlyCollection<PosAccountingOperationResultDto> Results);
+
+public sealed record PosAccountingBatchResultDto(
+    string DocumentKind,
+    int RequestedCount,
+    int SuccessCount,
+    int ErrorCount,
+    IReadOnlyCollection<PosAccountingOperationResultDto> Results);
+
+public sealed record PosAccountingOperationResultDto(
+    int? DocumentId,
+    Guid? SourceGuid,
+    bool Success,
     string Message);
 ```
 
-Ornek scaffold response:
+Ornek import response:
 
 ```json
 {
-  "moduleCode": "entegrasyon-islemleri",
-  "moduleName": "EntegrasyonIslemleri",
-  "menuCode": "pos-muhasebe-aktarimi",
-  "menuName": "PosMuhasebeAktarimi",
-  "actionCode": "list",
-  "actionName": "Listele",
-  "httpMethod": "GET",
-  "permissionCode": "entegrasyon-islemleri.pos-muhasebe-aktarimi.list",
-  "route": "/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar",
-  "resourceId": null,
-  "isImplemented": false,
-  "message": "Bu endpoint iskelet olarak acildi. Is kurali ve Mikro veritabani entegrasyonu sonraki adimda baglanacak."
+  "documentKind": "Invoice",
+  "businessDate": "2026-06-09T00:00:00",
+  "importedCount": 12,
+  "skippedCount": 1,
+  "errorCount": 0,
+  "results": [
+    {
+      "documentId": 125,
+      "sourceGuid": "4b7127f1-f7f7-4769-8641-8d1c6ff84d6f",
+      "success": true,
+      "message": "POS invoice was imported."
+    }
+  ]
 }
 ```
+
+Liste ve detay response'lari:
+
+- `PosAccountingOverviewDto`: bekleyen Z raporu, fatura, gider pusulasi adet/tutar ozetleri ve kasa esleme adedi
+- `ZReportListItemDto`: `totalId`, `billNo`, `zNo`, `cashRegisterNo`, `branchName`, `date`, `cashPaymentTotal`, `creditCardPaymentTotal`, `greatTotal`, `isSent`
+- `ZReportDetailDto`: `header`, `details[]`, `bankDetails[]`
+- `BranchInvoiceListItemDto`: `invoiceId`, `invoiceGuid`, `branchNo`, `branchName`, `documentNo`, `customerTaxNo`, `customerName`, `invoiceDate`, `paymentType`, `invoiceTotal`, `isSent`
+- `BranchInvoiceDetailDto`: `header`, `lines[]`
+- `ExpenseNoteListItemDto`: `expenseId`, `expenseGuid`, `documentNo`, `branchNo`, `branchName`, `expenseDate`, `paymentType`, `expenseTotal`, `isSent`
+- `ExpenseNoteDetailDto`: `header`, `lines[]`
+- `CashRegisterBranchMappingDto`: `id`, `cashRegisterNo`, `branchNo`, `branchName`
 
 ## Uyumsoft Entegrasyonu
 
@@ -8658,6 +8892,54 @@ public sealed record CashTurnoverBranchOverviewItemDto(
     int FuturesSalesCount,
     double AverageBasketAmount);
 
+public sealed record KasaHareketBranchDto(
+    int BranchNo,
+    string BranchName,
+    string Region);
+
+public sealed record KasaHareketCashRegisterDto(
+    int BranchNo,
+    int CashRegisterNo,
+    byte CashRegisterType);
+
+public sealed record KasaHareketImportResultDto(
+    string RunId,
+    string ImportType,
+    string Status,
+    int ProcessedFiles,
+    int ProcessedInvoices,
+    int SkippedExistingInvoices,
+    int InsertedLines,
+    int InsertedPayments,
+    int InsertedPromotions,
+    IReadOnlyCollection<KasaHareketImportIssueDto> Warnings,
+    IReadOnlyCollection<KasaHareketImportIssueDto> Errors);
+
+public sealed record KasaHareketImportIssueDto(
+    int? BranchNo,
+    int? CashRegisterNo,
+    string? File,
+    string? ReceiptNo,
+    int? LineNo,
+    string Message);
+
+public sealed record KasaHareketProcedureResultDto(
+    string Procedure,
+    string Message,
+    DateTime Date,
+    int? BranchNo,
+    int? CashRegisterNo);
+
+public sealed record KasaHareketReportRowDto(
+    DateTime Date,
+    int BranchNo,
+    string BranchName,
+    int CashRegisterNo,
+    decimal NetAmount,
+    decimal Expense,
+    decimal CheckAmount,
+    decimal Difference);
+
 public sealed record CreateBanknoteTrackResponse(
     Guid BanknoteTrackId,
     DateTime BanknoteTrackDate,
@@ -9244,6 +9526,12 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UpdateCashSummaryDetailLineHttpRequest`: `TypeName`, `PaymentTypeId`, `AccountCode`, `SlipNumber`, `Amount`, `TerminalId`, `Description`
 - `UpdateCashSummaryBanknotesHttpRequest`: `WarehouseNo`, `BanknoteMovements`
 - `UpdateCashSummaryBanknoteLineHttpRequest`: `Value`, `BanknoteType`, `Quantity`, `Total`
+- `KasaHareketImportHttpRequest`: `StartDate`, `EndDate`, `Branches`, `CashRegisters`, `FileRootPath`, `SkipExisting`, `DryRun`
+- `KasaHareketScheduledImportHttpRequest`: `Date`, `AddDay`, `FileRootPath`, `SkipExisting`, `DryRun`
+- `KasaHareketDeleteStagingHttpRequest`: `Date`, `BranchNo`, `CashRegisterNo`
+- `KasaHareketMikroTransferHttpRequest`: `Date`, `BranchNo`
+- `KasaHareketMikroTransferRangeHttpRequest`: `StartDate`, `EndDate`
+- `KasaHareketReportHttpRequest`: `Date`, `BranchNo`, `CashRegisterNo`
 
 ### Fatura Request Modelleri
 
@@ -9299,7 +9587,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `AxataManualIncomingWarehouseReceivingBatchHttpRequest`: `ContinueOnError`, `Items`
 - `AxataManualIncomingWarehouseReceivingBatchItemHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `AllowDiscrepancy`, `Lines`
 - `PosAccountingDateRangeHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `OnlyPending`
-- `ImportZReportsHttpRequest`: `WarehouseNo`, `BusinessDate`, `ImportMode`, `SourceCode`, `OverwriteExisting`
+- `ImportZReportsHttpRequest`: `WarehouseNo`, `BusinessDate`, `ReportPath`, `ImportMode`, `SourceCode`, `OverwriteExisting`
 - `ImportPosDocumentsHttpRequest`: `WarehouseNo`, `BusinessDate`, `IncludePreviouslyImported`, `OverwriteExisting`
 - `PosAccountingTransferHttpRequest`: `WarehouseNo`, `DocumentIds`, `ContinueOnError`
 - `PosAccountingDeleteHttpRequest`: `WarehouseNo`, `DocumentIds`
@@ -9321,7 +9609,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`, `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar` ve `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari` endpoint'leri query'de `PosAccountingDateRangeHttpRequest` kullanir
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar` body'de `ImportZReportsHttpRequest` alir
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/ice-aktar` ve `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/ice-aktar` body'de `ImportPosDocumentsHttpRequest` alir
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*/erpye-gonder` ve `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*` endpoint'leri secili belge listesi bekler; `DocumentIds[]` GUID koleksiyonudur
+- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*/erpye-gonder` ve `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*` endpoint'leri secili belge listesi bekler; `DocumentIds[]` int koleksiyonudur
 - `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}` ve `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}` body'de `UpdatePosAccountingDocumentHttpRequest` alir
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` query'de `CashRegisterBranchMappingListHttpRequest` kullanir
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` ve `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri/{mappingId}` body'de `CashRegisterBranchMappingHttpRequest` alir
