@@ -36,7 +36,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     private const string ExtContractName = "IAxataServicePoolEXT";
     private const string FetchOperationName = "getOutBoundDeliveryList";
     private const string AckOperationName = "updIntegrationTable";
-    private const int DefaultWarehouseOrderTargetWarehouseNo = 50;
+    private const int DefaultWarehouseOrderSourceWarehouseNo = 50;
     private const double QuantityTolerance = 0.000001d;
 
     private static readonly IReadOnlyCollection<string> AuditMovementTypes =
@@ -53,11 +53,11 @@ internal sealed class AxataOutboundDeliveryImportService(
     {
         var (startDate, endDate) = ResolveDateRange(request.StartDate, request.EndDate);
         var take = NormalizeTake(request.Take);
-        var warehouseOrderTargetWarehouseNos = ResolveWarehouseOrderTargetWarehouseNos(request.WarehouseNo);
+        var warehouseOrderSourceWarehouseNos = ResolveWarehouseOrderSourceWarehouseNos(request.WarehouseNo);
         var warehouseAudit = await GetWarehouseOrderAuditAsync(
             startDate,
             endDate,
-            warehouseOrderTargetWarehouseNos,
+            warehouseOrderSourceWarehouseNos,
             take,
             cancellationToken);
 
@@ -159,7 +159,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                        summary.PendingOutboundDeliveryDocumentCount == 0;
         var notes = new List<string>
         {
-            $"Siparis kontrolu sadece AXATA hedef depo(lar)i ({FormatWarehouseNos(warehouseOrderTargetWarehouseNos)}) icin ssip_girdepo uzerinden yapilir.",
+            $"Siparis kontrolu sadece AXATA kaynak/cikis depo(lar)i ({FormatWarehouseNos(warehouseOrderSourceWarehouseNos)}) icin ssip_cikdepo uzerinden yapilir.",
             "Mikro depolar arasi siparislerdeki ssip_special1 worker basari bayragi kontrol edilir.",
             "Sevk kontrolu AXATA getOutBoundDeliveryListAsync status 0 kuyrugundan okunur.",
             "C01 icin Mikro siparis satiri ve STOK_HAREKETLERI_EK linki kontrol edilir; diger hareket tipleri bu raporda kuyruk seviyesinde izlenir.",
@@ -317,7 +317,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             ]);
     }
 
-    private int[] ResolveWarehouseOrderTargetWarehouseNos(int? requestedWarehouseNo)
+    private int[] ResolveWarehouseOrderSourceWarehouseNos(int? requestedWarehouseNo)
     {
         var configuredWarehouseNos = options.CurrentValue.WarehouseOrderAutomation.WarehouseNos
             .Where(warehouseNo => warehouseNo > 0)
@@ -327,7 +327,7 @@ internal sealed class AxataOutboundDeliveryImportService(
 
         if (configuredWarehouseNos.Length == 0)
         {
-            configuredWarehouseNos = [DefaultWarehouseOrderTargetWarehouseNo];
+            configuredWarehouseNos = [DefaultWarehouseOrderSourceWarehouseNo];
         }
 
         if (requestedWarehouseNo is > 0)
@@ -343,17 +343,17 @@ internal sealed class AxataOutboundDeliveryImportService(
     private async Task<WarehouseOrderAuditResult> GetWarehouseOrderAuditAsync(
         DateTime startDate,
         DateTime endDate,
-        IReadOnlyCollection<int> targetWarehouseNos,
+        IReadOnlyCollection<int> sourceWarehouseNos,
         int take,
         CancellationToken cancellationToken)
     {
         var endDateExclusive = endDate.Date.AddDays(1);
-        var targetWarehouseNoArray = targetWarehouseNos
+        var sourceWarehouseNoArray = sourceWarehouseNos
             .Where(warehouseNo => warehouseNo > 0)
             .Distinct()
             .ToArray();
 
-        if (targetWarehouseNoArray.Length == 0)
+        if (sourceWarehouseNoArray.Length == 0)
         {
             return new WarehouseOrderAuditResult(
                 0,
@@ -372,7 +372,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 order.ssip_tarih.Value < endDateExclusive &&
                 order.ssip_evrakno_seri != null &&
                 order.ssip_evrakno_sira.HasValue &&
-                targetWarehouseNoArray.Contains(order.ssip_girdepo ?? 0));
+                sourceWarehouseNoArray.Contains(order.ssip_cikdepo ?? 0));
 
         var rows = await query
             .Select(order => new WarehouseOrderAuditRow(
@@ -447,7 +447,7 @@ internal sealed class AxataOutboundDeliveryImportService(
 
     private static string FormatWarehouseNos(IReadOnlyCollection<int> warehouseNos) =>
         warehouseNos.Count == 0
-            ? "AXATA hedef depo yok"
+            ? "AXATA kaynak/cikis depo yok"
             : string.Join(", ", warehouseNos.OrderBy(warehouseNo => warehouseNo));
 
     private async Task<IReadOnlyCollection<C01DeliveryAnalysis>> AnalyzeC01DocumentsAsync(

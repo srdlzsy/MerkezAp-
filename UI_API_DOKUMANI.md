@@ -4712,6 +4712,219 @@ Response:
 }
 ```
 
+## Rapor Islemleri
+
+### Satis Analizleri
+
+Eski `Furpa.SalesMvcCoreUI` dashboard tarafindaki ciro disi raporlar bu API modulunde toplandi. Tum endpointler `GET` calisir, query tarafinda ortak `WarehouseOrderDateRangeHttpRequest` modelini kullanir.
+
+Temel route:
+
+- `api/rapor-islemleri/satis-analizleri`
+
+Yetki kodu:
+
+- `rapor-islemleri.satis-analizleri.list`
+
+Request query alanlari:
+
+```text
+startDate    zorunlu, ISO tarih
+endDate      zorunlu, ISO tarih
+warehouseNo  opsiyonel
+```
+
+Not:
+
+- `warehouseNo` verilirse tek sube filtrelenir.
+- `warehouseNo` verilmezse tum subeler icin rapor doner.
+- Tarih filtresi gun bazinda calisir; backend `endDate` degerini dahil kabul edip sorguda ertesi gunun basina kadar okur.
+- Tum tutar alanlari backend tarafinda 2 ondaliga yuvarlanir.
+- Indirim karti raporu kullanim adedini Mikro `TurnoverDiscountCardDetails` kaynagindan, kullanim tutarini Furpa `PosFaturas` kaynagindan eslestirir.
+- MarketYo satis raporlari `STOK_HAREKETLERI` icinde `sth_evrakno_seri = 'MYO'` filtresiyle calisir.
+
+Endpoint'ler:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/rapor-islemleri/satis-analizleri/banka-hareketleri` | query | `WarehouseOrderDateRangeHttpRequest` | `BankMovementAnalysisItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/banka-hareketleri/sube` | query | `WarehouseOrderDateRangeHttpRequest` | `BranchBankMovementSummaryItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/banka` | query | `WarehouseOrderDateRangeHttpRequest` | `BankPaymentSummaryReportDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/merchant` | query | `WarehouseOrderDateRangeHttpRequest` | `MerchantPaymentSummaryReportDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/valor` | query | `WarehouseOrderDateRangeHttpRequest` | `ValorPaymentSummaryReportDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri` | query | `WarehouseOrderDateRangeHttpRequest` | `FoodCheckReportDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/toplamlar` | query | `WarehouseOrderDateRangeHttpRequest` | `FoodCheckTotalsDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/metropol-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/multinet-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/setcard-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/sodexo-kupon-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/sodexo-pos-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/ticket-kupon-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/ticket-pos-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri/genel-toplam` | query | `WarehouseOrderDateRangeHttpRequest` | `SalesAnalysisAmountDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/marketyo-satislari` | query | `WarehouseOrderDateRangeHttpRequest` | `MyoSalesReportDto` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/marketyo-satislari/sube` | query | `WarehouseOrderDateRangeHttpRequest` | `MyoSalesByBranchItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/z-rapor-banka-analizi` | query | `WarehouseOrderDateRangeHttpRequest` | `ZReportBankAnalysisItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/indirim-kartlari` | query | `WarehouseOrderDateRangeHttpRequest` | `DiscountCardDetailItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/satis-analizleri/eksik-cirolar` | query | `WarehouseOrderDateRangeHttpRequest` | `MissingTurnoverBranchItemDto[]` | `list` |
+
+#### Banka Hareketleri
+
+`GET /api/rapor-islemleri/satis-analizleri/banka-hareketleri?startDate=2026-06-01&endDate=2026-06-10&warehouseNo=110`
+
+Summary kayitlarindaki banka odemelerini Z no, sube, kasa, banka ve terminal bazinda listeler. `PaymentTypeID` 1..10 arasi banka odemeleri kabul edilir.
+
+Response:
+
+```json
+[
+  {
+    "branchNo": 110,
+    "branchName": "KESTEL 1",
+    "zNo": 128,
+    "date": "2026-06-10T00:00:00",
+    "cashRegisterNo": "UB11001",
+    "bank": "AKBANK",
+    "bankAmount": 15420.75,
+    "bankingNumber": 42,
+    "terminalId": "TERM001"
+  }
+]
+```
+
+`GET /api/rapor-islemleri/satis-analizleri/banka-hareketleri/sube` ayni kaynaklari sube + banka bazinda toplar.
+
+#### Banka Odeme Ozetleri
+
+Uc ozet endpoint vardir:
+
+- `/banka-odeme-ozetleri/banka`: banka adina gore toplam tutar ve slip sayisi
+- `/banka-odeme-ozetleri/merchant`: banka + uye isyeri no bazinda toplam
+- `/banka-odeme-ozetleri/valor`: banka + valor gunu bazinda yatacak tutar
+
+Response ornegi:
+
+```json
+{
+  "items": [
+    {
+      "bank": "AKBANK",
+      "amount": 184250.35,
+      "slipNumber": 421
+    }
+  ],
+  "totalAmount": 184250.35,
+  "totalSlipNumber": 421
+}
+```
+
+Merchant response satirinda ek olarak `merchantNo`, valor response satirinda ek olarak `valorDay` alani bulunur.
+
+#### Yemek Cekleri
+
+`GET /api/rapor-islemleri/satis-analizleri/yemek-cekleri?startDate=2026-06-01&endDate=2026-06-10`
+
+`Summaries` kaynaginda `PaymentTypeID` 50..60 arasi yemek ceki tutarlarini sube bazinda toplar.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "branchNo": 110,
+      "branchName": "KESTEL 1",
+      "metropol": 1200,
+      "multinet": 875.5,
+      "setcard": 450,
+      "sodexoKupon": 0,
+      "sodexoPos": 320,
+      "ticketKupon": 0,
+      "ticketPos": 640,
+      "total": 3485.5
+    }
+  ],
+  "totals": {
+    "metropol": 1200,
+    "multinet": 875.5,
+    "setcard": 450,
+    "sodexoKupon": 0,
+    "sodexoPos": 320,
+    "ticketKupon": 0,
+    "ticketPos": 640,
+    "total": 3485.5
+  }
+}
+```
+
+Tekil toplam endpointleri `SalesAnalysisAmountDto` doner:
+
+```json
+{
+  "code": "Metropol",
+  "name": "Metropol",
+  "amount": 1200
+}
+```
+
+#### MarketYo Satislari
+
+`GET /api/rapor-islemleri/satis-analizleri/marketyo-satislari?startDate=2026-06-01&endDate=2026-06-10`
+
+`MYO` seri evraklarini stok hareketleri, cari hareketleri ve evrak aciklamalariyla birlestirir.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "documentDate": "2026-06-10T00:00:00",
+      "branchNo": 110,
+      "branchName": "KESTEL 1",
+      "documentSerie": "MYO",
+      "documentOrderNo": 1254,
+      "invoiceGuid": "25d3d19e-0e93-4e32-8a86-3e2b4f858612",
+      "customerCode": "120.01.001",
+      "documentNo": "MYO000001254",
+      "description1": "",
+      "description2": "",
+      "paymentDescription": "Kapida Kredi Karti ile Odeme",
+      "subTotal": 910,
+      "discountTotal": 10,
+      "netAmount": 900,
+      "totalTax": 90,
+      "amount": 990
+    }
+  ],
+  "netAmountTotal": 900,
+  "totalTaxTotal": 90,
+  "amountTotal": 990,
+  "doorCashTotal": 0,
+  "doorCreditCardTotal": 990
+}
+```
+
+`GET /api/rapor-islemleri/satis-analizleri/marketyo-satislari/sube` ayni kaynagi sube + tarih bazinda `amount` toplamiyla doner.
+
+#### Z Rapor Banka Analizi
+
+`GET /api/rapor-islemleri/satis-analizleri/z-rapor-banka-analizi?startDate=2026-06-01&endDate=2026-06-10`
+
+`ZReportTotals`, `ZReportBankDetails`, `CashRegisterBranches`, `CashRegisterDetails` ve `DEPOLAR` kaynaklarini eslestirir. `cashRegisterNo` degeri `UB` ile baslayan Z rapor kasalari listelenir.
+
+#### Indirim Kartlari
+
+`GET /api/rapor-islemleri/satis-analizleri/indirim-kartlari?startDate=2026-06-01&endDate=2026-06-10`
+
+Kart numarasi + sube bazinda kullanim adedi ve POS fatura toplam tutarini doner.
+
+#### Eksik Cirolar
+
+`GET /api/rapor-islemleri/satis-analizleri/eksik-cirolar?startDate=2026-06-01&endDate=2026-06-10`
+
+`DEPOLAR` icinde aktif sube olup secilen tarih araliginda `TurnoverTotals` kaydi olmayan subeleri listeler.
+
 ### Kasa Hareket Aktarimi
 
 Eski kasa hareket dosyalarini HR/IP formatindan staging tablolara alir, staging hareketlerini Mikro stok hareketlerine aktarir veya aktarimi geri siler.
@@ -6819,6 +7032,7 @@ Bu cagri veri yazmaz. Amaci eski worker calisirken durumu anlamaktir:
 
 - `isInSync=true` ise secili tarih araliginda Mikro siparis bayraklari tamam ve AXATA pending sevk kuyrugu bos demektir
 - `unsyncedWarehouseOrders` Mikro'da olup worker basari bayragi tum satirlarda `1` olmayan depolar arasi siparisleri gosterir
+- Mikro siparis kontrolu merkezden cikan depo sevk akisi icin `ssip_cikdepo` uzerinden yapilir; `warehouseNo=50` merkezden cikacak depo siparislerini denetler
 - `pendingOutboundDeliveries` AXATA'da `Status=0` bekleyen sevkleri gosterir
 - `interventionCandidates` C01 icin guvenli mudahale adaylarini gosterir
 - `MikroShipmentExistsPendingAck` ise Mikro fis/link zaten vardir; duplicate fis acmadan sadece AXATA ack gerekebilir
@@ -8996,6 +9210,147 @@ public sealed record VirmanLineItemDto(
 public sealed record VirmanDetailDto(
     VirmanHeaderDto Header,
     IReadOnlyCollection<VirmanLineItemDto> Items);
+```
+
+### Rapor Modelleri
+
+```csharp
+public sealed record SalesAnalysisAmountDto(
+    string Code,
+    string Name,
+    double Amount);
+
+public sealed record BankMovementAnalysisItemDto(
+    int BranchNo,
+    string BranchName,
+    int ZNo,
+    DateTime Date,
+    string CashRegisterNo,
+    string Bank,
+    double BankAmount,
+    int BankingNumber,
+    string TerminalId);
+
+public sealed record BranchBankMovementSummaryItemDto(
+    int BranchNo,
+    string BranchName,
+    string Bank,
+    double BankAmount,
+    int BankingNumber);
+
+public sealed record BankPaymentSummaryItemDto(
+    string Bank,
+    double Amount,
+    int SlipNumber);
+
+public sealed record BankPaymentSummaryReportDto(
+    IReadOnlyCollection<BankPaymentSummaryItemDto> Items,
+    double TotalAmount,
+    int TotalSlipNumber);
+
+public sealed record MerchantPaymentSummaryItemDto(
+    string Bank,
+    string MerchantNo,
+    double Amount,
+    int SlipNumber);
+
+public sealed record MerchantPaymentSummaryReportDto(
+    IReadOnlyCollection<MerchantPaymentSummaryItemDto> Items,
+    double TotalAmount,
+    int TotalSlipNumber);
+
+public sealed record ValorPaymentSummaryItemDto(
+    string Bank,
+    int ValorDay,
+    double Amount,
+    int SlipNumber);
+
+public sealed record ValorPaymentSummaryReportDto(
+    IReadOnlyCollection<ValorPaymentSummaryItemDto> Items,
+    double TotalAmount,
+    int TotalSlipNumber);
+
+public sealed record FoodCheckReportItemDto(
+    int BranchNo,
+    string BranchName,
+    double Metropol,
+    double Multinet,
+    double Setcard,
+    double SodexoKupon,
+    double SodexoPos,
+    double TicketKupon,
+    double TicketPos,
+    double Total);
+
+public sealed record FoodCheckTotalsDto(
+    double Metropol,
+    double Multinet,
+    double Setcard,
+    double SodexoKupon,
+    double SodexoPos,
+    double TicketKupon,
+    double TicketPos,
+    double Total);
+
+public sealed record FoodCheckReportDto(
+    IReadOnlyCollection<FoodCheckReportItemDto> Items,
+    FoodCheckTotalsDto Totals);
+
+public sealed record MyoSalesReportItemDto(
+    DateTime DocumentDate,
+    int BranchNo,
+    string BranchName,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    Guid? InvoiceGuid,
+    string CustomerCode,
+    string DocumentNo,
+    string Description1,
+    string Description2,
+    string PaymentDescription,
+    double SubTotal,
+    double DiscountTotal,
+    double NetAmount,
+    double TotalTax,
+    double Amount);
+
+public sealed record MyoSalesReportDto(
+    IReadOnlyCollection<MyoSalesReportItemDto> Items,
+    double NetAmountTotal,
+    double TotalTaxTotal,
+    double AmountTotal,
+    double DoorCashTotal,
+    double DoorCreditCardTotal);
+
+public sealed record MyoSalesByBranchItemDto(
+    DateTime DocumentDate,
+    int BranchNo,
+    string BranchName,
+    double Amount);
+
+public sealed record ZReportBankAnalysisItemDto(
+    string BranchName,
+    int BranchNo,
+    DateTime Date,
+    int ZNo,
+    string CashRegisterNo,
+    string Bank,
+    double BankAmount,
+    int BankingNumber,
+    string TerminalId,
+    string MerchantNo);
+
+public sealed record DiscountCardDetailItemDto(
+    string CardNumber,
+    int BranchNo,
+    string BranchName,
+    int UsageCount,
+    double UsageTotal);
+
+public sealed record MissingTurnoverBranchItemDto(
+    int BranchNo,
+    string BranchName,
+    string Region);
 ```
 
 ### Kasa Modelleri
