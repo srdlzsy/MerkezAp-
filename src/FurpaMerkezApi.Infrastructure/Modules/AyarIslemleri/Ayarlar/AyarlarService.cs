@@ -54,16 +54,25 @@ public sealed class AyarlarService(
                 furpaDbContext.DeviceTypes.AsNoTracking(),
                 device => device.DeviceTypeId,
                 deviceType => deviceType.Id,
-                (device, deviceType) => new DeviceDto(
+                (device, deviceType) => new
+                {
                     device.Id,
                     device.BranchNo,
                     device.DeviceTypeId,
-                    deviceType.DeviceName,
+                    DeviceTypeName = deviceType.DeviceName,
                     device.IpAddress,
-                    device.Description))
+                    device.Description
+                })
             .OrderBy(item => item.BranchNo)
             .ThenBy(item => item.DeviceTypeName)
             .ThenBy(item => item.IpAddress)
+            .Select(item => new DeviceDto(
+                item.Id,
+                item.BranchNo,
+                item.DeviceTypeId,
+                item.DeviceTypeName,
+                item.IpAddress,
+                item.Description))
             .ToArrayAsync(cancellationToken);
     }
 
