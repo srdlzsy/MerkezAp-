@@ -82,6 +82,11 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
 
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "cihazlar", "Cihazlar"),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "sube-ayarlari", "SubeAyarlari"),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasa-pos-terminalleri", "KasaPosTerminalleri"),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasiyerler", "Kasiyerler"),
+
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-firma-siparisleri", "AlinanFirmaSiparisleri"),
