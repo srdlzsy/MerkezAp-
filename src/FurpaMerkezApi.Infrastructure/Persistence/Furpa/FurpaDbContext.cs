@@ -11,6 +11,10 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
 
     public DbSet<TagViewRow> Tags => Set<TagViewRow>();
 
+    public DbSet<DeviceDetailEntity> DeviceDetails => Set<DeviceDetailEntity>();
+
+    public DbSet<DeviceTypeEntity> DeviceTypes => Set<DeviceTypeEntity>();
+
     public DbSet<CashierEntity> Cashiers => Set<CashierEntity>();
 
     public DbSet<CashRegistryDetailEntity> CashRegistryDetails => Set<CashRegistryDetailEntity>();
@@ -45,6 +49,24 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
         {
             entity.HasNoKey();
             entity.ToView("VwKunyeNet");
+        });
+
+        modelBuilder.Entity<DeviceDetailEntity>(entity =>
+        {
+            entity.ToTable("DeviceDetails");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).ValueGeneratedOnAdd();
+            entity.Property(item => item.IpAddress).HasMaxLength(100);
+            entity.Property(item => item.Description).HasMaxLength(255);
+            entity.HasIndex(item => new { item.BranchNo, item.DeviceTypeId, item.IpAddress });
+        });
+
+        modelBuilder.Entity<DeviceTypeEntity>(entity =>
+        {
+            entity.ToTable("DeviceTypes");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).ValueGeneratedOnAdd();
+            entity.Property(item => item.DeviceName).HasMaxLength(100);
         });
 
         modelBuilder.Entity<CashierEntity>(entity =>

@@ -1077,6 +1077,400 @@ Response modeli:
 - `roles` koleksiyonu yeni haliyle response icinde gelir.
 - `200` basarili atama, `400` validation, `404` user veya role kaydi bulunamadi doner.
 
+## Ayar Islemleri
+
+Bu modul eski `SettingsController` islevlerini yeni API mimarisine uygun olarak 4 ayri menu altinda toplar:
+
+- `AyarIslemleri > Cihazlar`
+- `AyarIslemleri > SubeAyarlari`
+- `AyarIslemleri > KasaPosTerminalleri`
+- `AyarIslemleri > Kasiyerler`
+
+Veri kaynaklari:
+
+- Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `Cashiers`
+- Mikro write DB: `CashRegisterDetails`, `CashRegisterBranches`
+
+Onemli alan ayrimi:
+
+- `cashNo`: integer kasa no, eski `CashRegistryDetail.CashRegisterNo` karsiligi
+- `terminalNo`: string POS terminal no, eski `CashRegisterDetail.CashRegisterNo` karsiligi
+- `branchNo`: sube/depo no
+
+Kasiyer listelerinde sifre donmez. Yeni kasiyer olusturma ve sifre sifirlama response'lari uretilen sifreyi tek seferlik `generatedPassword` alaninda dondurur.
+
+Yetki kodlari:
+
+```text
+ayar-islemleri.cihazlar.list
+ayar-islemleri.cihazlar.detail
+ayar-islemleri.cihazlar.create
+ayar-islemleri.cihazlar.update
+
+ayar-islemleri.sube-ayarlari.list
+ayar-islemleri.sube-ayarlari.detail
+ayar-islemleri.sube-ayarlari.create
+ayar-islemleri.sube-ayarlari.update
+
+ayar-islemleri.kasa-pos-terminalleri.list
+ayar-islemleri.kasa-pos-terminalleri.detail
+ayar-islemleri.kasa-pos-terminalleri.create
+ayar-islemleri.kasa-pos-terminalleri.update
+
+ayar-islemleri.kasiyerler.list
+ayar-islemleri.kasiyerler.detail
+ayar-islemleri.kasiyerler.create
+ayar-islemleri.kasiyerler.update
+```
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/ayar-islemleri/cihazlar/tipler` | - | - | `DeviceTypeDto[]` | `cihazlar.list` |
+| `GET /api/ayar-islemleri/cihazlar?branchNo=110` | query | `branchNo?: int` | `DeviceDto[]` | `cihazlar.list` |
+| `GET /api/ayar-islemleri/cihazlar/durum?branchNo=110` | query | `branchNo?: int` | `DeviceStatusDto[]` | `cihazlar.list` |
+| `GET /api/ayar-islemleri/cihazlar/subeler/{branchNo}/durum` | path | `branchNo: int` | `DeviceStatusDto[]` | `cihazlar.list` |
+| `POST /api/ayar-islemleri/cihazlar` | body | `CreateDeviceHttpRequest` | `DeviceDto` | `cihazlar.create` |
+| `DELETE /api/ayar-islemleri/cihazlar/{id}` | path | `id: int` | - | `cihazlar.update` |
+| `GET /api/ayar-islemleri/sube-ayarlari` | - | - | `BranchDetailDto[]` | `sube-ayarlari.list` |
+| `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}` | path | `branchNo: int` | `BranchDetailDto` | `sube-ayarlari.detail` |
+| `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` | path | `branchNo: int` | `CashRegistryDto[]` | `sube-ayarlari.detail` |
+| `POST /api/ayar-islemleri/sube-ayarlari` | body | `CreateBranchSettingsHttpRequest` | `BranchDetailDto` | `sube-ayarlari.create` |
+| `PUT /api/ayar-islemleri/sube-ayarlari/{branchNo}` | body + path | `UpdateBranchSettingsHttpRequest` | `BranchDetailDto` | `sube-ayarlari.update` |
+| `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` | path | `cashNo: int` | `CashRegisterTerminalDto[]` | `kasa-pos-terminalleri.list` |
+| `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT | - | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
+| `GET /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | path | `branchNo: int` | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
+| `POST /api/ayar-islemleri/kasa-pos-terminalleri` | body | `CreateCashRegisterHttpRequest` | `CashRegisterResponse` | `kasa-pos-terminalleri.create` |
+| `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | path | `branchNo`, `cashNo` | - | `kasa-pos-terminalleri.update` |
+| `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}` | path | `branchNo`, `terminalNo` | - | `kasa-pos-terminalleri.update` |
+| `GET /api/ayar-islemleri/kasiyerler` | - | - | `CashierDto[]` | `kasiyerler.list` |
+| `POST /api/ayar-islemleri/kasiyerler` | body | `CreateCashierHttpRequest` | `CashierPasswordMutationDto` | `kasiyerler.create` |
+| `PUT /api/ayar-islemleri/kasiyerler/{cashierCode}` | body + path | `UpdateCashierHttpRequest` | `CashierDto` | `kasiyerler.update` |
+| `POST /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre-sifirla` | path | `cashierCode: int` | `CashierPasswordMutationDto` | `kasiyerler.update` |
+
+### Cihazlar
+
+`GET /api/ayar-islemleri/cihazlar/tipler`
+
+Cihaz ekleme dropdown kaynagidir.
+
+Response:
+
+```json
+[
+  {
+    "id": 1,
+    "deviceName": "Terazi"
+  }
+]
+```
+
+`GET /api/ayar-islemleri/cihazlar?branchNo=110`
+
+`branchNo` opsiyoneldir. Verilmezse tum cihaz kayitlari listelenir. Liste `branchNo`, cihaz tipi ve IP adresine gore siralanir.
+
+Response:
+
+```json
+[
+  {
+    "id": 12,
+    "branchNo": 110,
+    "deviceTypeId": 1,
+    "deviceTypeName": "Terazi",
+    "ipAddress": "192.168.1.10",
+    "description": "Manav terazisi"
+  }
+]
+```
+
+`POST /api/ayar-islemleri/cihazlar`
+
+Body:
+
+```json
+{
+  "branchNo": 110,
+  "deviceTypeId": 1,
+  "ipAddress": "192.168.1.10",
+  "description": "Manav terazisi"
+}
+```
+
+Validasyon:
+
+- `branchNo` pozitif integer
+- `deviceTypeId` pozitif integer ve mevcut cihaz tipi olmali
+- `ipAddress` zorunlu ve IP formatinda olmali
+- Ayni `branchNo + deviceTypeId + ipAddress` tekrar eklenirse `409 Conflict` doner
+
+Response `201 Created`: `DeviceDto`
+
+`DELETE /api/ayar-islemleri/cihazlar/{id}`
+
+Basarili silme `204 No Content` doner. Kayit yoksa `404 Not Found` doner.
+
+`GET /api/ayar-islemleri/cihazlar/durum?branchNo=110`
+
+`branchNo` verilmezse JWT icindeki `warehouse_no` kullanilir. Backend her cihaz IP adresine 1000 ms timeout ile ping atar. Bir cihazdaki ping hatasi tum response'u bozmaz; ilgili satir `online=false` ve `error` ile doner.
+
+Response:
+
+```json
+[
+  {
+    "branchNo": 110,
+    "deviceTypeId": 1,
+    "deviceTypeName": "Terazi",
+    "ipAddress": "192.168.1.10",
+    "description": "Manav terazisi",
+    "online": true,
+    "latencyMs": 12,
+    "error": null
+  }
+]
+```
+
+### Sube Ayarlari
+
+`GET /api/ayar-islemleri/sube-ayarlari`
+
+Sube ayarlari listesidir. `branchNo asc` siralanir.
+
+Response:
+
+```json
+[
+  {
+    "branchNo": 110,
+    "branchIpAddress": "192.168.1.5",
+    "branchScalesFolderPath": "TERAZI",
+    "scalesType": 1,
+    "poskonFolderPath": "POSKON",
+    "posGenelFolderPath": "POSGENEL"
+  }
+]
+```
+
+`GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar`
+
+Subeye bagli kasa tanimlarini doner.
+
+Response:
+
+```json
+[
+  {
+    "detailId": 1,
+    "branchNo": 110,
+    "cashNo": 1,
+    "cashType": 1
+  }
+]
+```
+
+`POST /api/ayar-islemleri/sube-ayarlari`
+
+Body:
+
+```json
+{
+  "branchNo": 110,
+  "branchIpAddress": "192.168.1.5",
+  "branchScalesFolderPath": "TERAZI",
+  "scalesType": 1,
+  "poskonFolderPath": "POSKON",
+  "posGenelFolderPath": "POSGENEL",
+  "cashRegisters": [
+    {
+      "cashNo": 1,
+      "cashType": 1
+    }
+  ]
+}
+```
+
+Notlar:
+
+- Duplicate `branchNo` `409 Conflict` doner.
+- `cashRegisters` bos olabilir.
+- Kasa satirlarinda duplicate `cashNo` varsa `409 Conflict` doner.
+
+`PUT /api/ayar-islemleri/sube-ayarlari/{branchNo}`
+
+Body `CreateBranchSettingsHttpRequest` ile ayni sube alanlarini alir; `cashRegisters` almaz.
+
+```json
+{
+  "branchIpAddress": "192.168.1.5",
+  "branchScalesFolderPath": "TERAZI",
+  "scalesType": 1,
+  "poskonFolderPath": "POSKON",
+  "posGenelFolderPath": "POSGENEL"
+}
+```
+
+### Kasa / POS Terminalleri
+
+`POST /api/ayar-islemleri/kasa-pos-terminalleri`
+
+Yeni kasa tanimi, Furpa tarafinda kasa kaydi ve Mikro tarafinda terminal kayitlarini olusturur.
+
+Body:
+
+```json
+{
+  "branchNo": 110,
+  "cashNo": 1,
+  "cashType": 1,
+  "terminals": [
+    {
+      "terminalNo": "POS001",
+      "bank": "Akbank",
+      "terminalId": "T123456",
+      "merchantNo": "M123456"
+    }
+  ]
+}
+```
+
+Response `201 Created`:
+
+```json
+{
+  "branchNo": 110,
+  "cashNo": 1,
+  "cashType": 1,
+  "terminals": [
+    {
+      "id": 15,
+      "terminalNo": "POS001",
+      "bank": "Akbank",
+      "terminalId": "T123456",
+      "merchantNo": "M123456",
+      "cashNo": 1
+    }
+  ]
+}
+```
+
+Notlar:
+
+- `branchNo + cashNo` duplicate ise `409 Conflict` doner.
+- Terminal no daha once Mikro `CashRegisterDetails` veya `CashRegisterBranches` icinde varsa `409 Conflict` doner.
+- Silme islemleri mutlaka branch-scoped endpointlerle yapilir.
+
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller`
+
+Kasa no'ya bagli terminal detaylarini listeler.
+
+`DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}`
+
+Sube kapsaminda kasa kaydini siler. Furpa `CashRegistryDetails` kaydi silinir. Mikro tarafinda ilgili terminal detaylari ve branch mappingleri de temizlenir.
+
+`DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}`
+
+Tek terminal mapping ve terminal detay kaydini siler.
+
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari`
+
+JWT icindeki sube icin POSKON `MESAJ.xxx` dosyalarini okur.
+
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari`
+
+Belirli sube icin POSKON `MESAJ.xxx` dosyalarini okur.
+
+Response:
+
+```json
+[
+  {
+    "branchNo": 110,
+    "cashNo": 1,
+    "cashType": 1,
+    "state": 0,
+    "filePath": "\\\\192.168.1.5\\POSKON\\MESAJ.001",
+    "error": null
+  }
+]
+```
+
+Durum hesabi:
+
+- Dosyanin ilk satiri `1071` icerirse `state = 0`
+- Diger durumlarda `state = 1`
+- Dosya yoksa veya yetki/path hatasi varsa satir `state = null`, `error = hata mesaji` ile doner
+
+### Kasiyerler
+
+`GET /api/ayar-islemleri/kasiyerler`
+
+Kasiyerleri sifresiz listeler.
+
+Response:
+
+```json
+[
+  {
+    "cashierCode": 1001,
+    "cashierName": "ALI VELI",
+    "cashierAuthorization": "A",
+    "cashierState": true
+  }
+]
+```
+
+`POST /api/ayar-islemleri/kasiyerler`
+
+Body:
+
+```json
+{
+  "cashierName": "Ali Veli",
+  "cashierAuthorization": "A"
+}
+```
+
+Response `201 Created`:
+
+```json
+{
+  "cashierCode": 1002,
+  "generatedPassword": "482901",
+  "cashier": {
+    "cashierCode": 1002,
+    "cashierName": "ALI VELI",
+    "cashierAuthorization": "A",
+    "cashierState": true
+  }
+}
+```
+
+Notlar:
+
+- `cashierName` backend tarafinda buyuk harfe cevrilir.
+- Yeni sifre 6 haneli numeric uretilir.
+- `createUser` ve `updateUser` JWT icindeki `warehouse_no` degerinden set edilir.
+
+`PUT /api/ayar-islemleri/kasiyerler/{cashierCode}`
+
+Kasiyer bilgisini gunceller, sifreyi degistirmez.
+
+Body:
+
+```json
+{
+  "cashierName": "Ali Veli",
+  "cashierAuthorization": "A",
+  "cashierState": true
+}
+```
+
+`POST /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre-sifirla`
+
+Kasiyere yeni 6 haneli numeric sifre uretir. Response `CashierPasswordMutationDto` modelidir.
+
 ## GreenGrocer / Manav Yesillik Raporlari
 
 Bu modul eski `Furpa.GreenGrocerWebUI` icindeki manav/yesillik raporlarini yeni API'ye tasir.
@@ -9458,6 +9852,79 @@ public sealed record MissingTurnoverBranchItemDto(
     string Region);
 ```
 
+### Ayar Modelleri
+
+```csharp
+public sealed record DeviceTypeDto(
+    int Id,
+    string DeviceName);
+
+public sealed record DeviceDto(
+    int Id,
+    int BranchNo,
+    int DeviceTypeId,
+    string DeviceTypeName,
+    string IpAddress,
+    string Description);
+
+public sealed record DeviceStatusDto(
+    int BranchNo,
+    int DeviceTypeId,
+    string DeviceTypeName,
+    string IpAddress,
+    string Description,
+    bool Online,
+    long? LatencyMs,
+    string? Error);
+
+public sealed record BranchDetailDto(
+    int BranchNo,
+    string BranchIpAddress,
+    string BranchScalesFolderPath,
+    byte ScalesType,
+    string PoskonFolderPath,
+    string PosGenelFolderPath);
+
+public sealed record CashRegistryDto(
+    int DetailId,
+    int BranchNo,
+    int CashNo,
+    byte CashType);
+
+public sealed record CashRegisterResponse(
+    int BranchNo,
+    int CashNo,
+    byte CashType,
+    IReadOnlyCollection<CashRegisterTerminalDto> Terminals);
+
+public sealed record CashRegisterTerminalDto(
+    int Id,
+    string TerminalNo,
+    string Bank,
+    string TerminalId,
+    string MerchantNo,
+    int? CashNo);
+
+public sealed record CashRegisterMessageStatusDto(
+    int BranchNo,
+    int CashNo,
+    byte CashType,
+    int? State,
+    string FilePath,
+    string? Error);
+
+public sealed record CashierDto(
+    int CashierCode,
+    string CashierName,
+    string CashierAuthorization,
+    bool CashierState);
+
+public sealed record CashierPasswordMutationDto(
+    int CashierCode,
+    string GeneratedPassword,
+    CashierDto Cashier);
+```
+
 ### Kasa Modelleri
 
 ```csharp
@@ -10321,6 +10788,17 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `LabelPriceChangedProductListHttpRequest`: `DateTimeFilter`
 - `CreateLabelDocumentHttpRequest`: `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`
+
+### Ayar Request Modelleri
+
+- `CreateDeviceHttpRequest`: `BranchNo`, `DeviceTypeId`, `IpAddress`, `Description`
+- `CreateBranchSettingsHttpRequest`: `BranchNo`, `BranchIpAddress`, `BranchScalesFolderPath`, `ScalesType`, `PoskonFolderPath`, `PosGenelFolderPath`, `CashRegisters`
+- `UpdateBranchSettingsHttpRequest`: `BranchIpAddress`, `BranchScalesFolderPath`, `ScalesType`, `PoskonFolderPath`, `PosGenelFolderPath`
+- `CreateCashRegistryHttpRequest`: `CashNo`, `CashType`
+- `CreateCashRegisterHttpRequest`: `BranchNo`, `CashNo`, `CashType`, `Terminals`
+- `CreateCashRegisterTerminalHttpRequest`: `TerminalNo`, `Bank`, `TerminalId`, `MerchantNo`
+- `CreateCashierHttpRequest`: `CashierName`, `CashierAuthorization`
+- `UpdateCashierHttpRequest`: `CashierName`, `CashierAuthorization`, `CashierState`
 
 ### Kasa Request Modelleri
 
