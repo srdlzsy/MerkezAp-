@@ -4925,6 +4925,105 @@ Kart numarasi + sube bazinda kullanim adedi ve POS fatura toplam tutarini doner.
 
 `DEPOLAR` icinde aktif sube olup secilen tarih araliginda `TurnoverTotals` kaydi olmayan subeleri listeler.
 
+### Kasa Ciro Aktarimi
+
+`TransferConsole` akisindaki eski kasa ciro okuma mantigini API icine tasir. `HRddMMyy.*` dosyalarini okur, sube/kasa bazli ciro ozetlerini hesaplar ve eski ciro tablolarina add/update yapar.
+
+Bu modul `Kasa Hareket Aktarimi` ile ayni dosya kokunu kullanabilir ama hedefi farklidir:
+
+- `Kasa Hareket Aktarimi`: HR/IP hareket dosyalarini staging ve Mikro stok hareketi surecine alir.
+- `Kasa Ciro Aktarimi`: HR dosyalarindan `TurnoverTotals`, `TurnoverDetails`, `TurnoverDiscountCardDetails` tablolarini doldurur.
+
+Temel route:
+
+- `api/kasa-islemleri/kasa-ciro-aktarimi`
+
+Yetki kodlari:
+
+- `kasa-islemleri.kasa-ciro-aktarimi.list`
+- `kasa-islemleri.kasa-ciro-aktarimi.detail`
+- `kasa-islemleri.kasa-ciro-aktarimi.create`
+
+Mevcut backend durumu:
+
+- route ailesi aktiftir
+- sube lookup ve metin dosyasindan ciro import endpointleri calisir
+- dosya kok yolu `KasaCiroAktarimi:MovementFilePath` konfigurasyonundan okunur; body'de `movementRootPath` verilirse o deger kullanilir
+- geriye uyumluluk icin `MovementFileSetting:MovementFilePath`, `KasaHareketAktarimi:FileRootPath` ve default `\\10.0.0.55\kasa\` fallback olarak desteklenir
+- `branches` verilmezse `101..300` araligindaki sube klasorleri taranir
+- dosya deseni `{root}\{subeNo}\HRddMMyy.*` seklindedir
+- kasa no dosya uzantisindan okunur; ornek `HR090626.001` -> `cashRegisterNo = 1`
+- `FIS/FAT/IRS/GPS/BAS/TOP/TAR/SON/KRD/SDX/NAK` satir kurallari eski console davranisina gore yorumlanir
+- genel toplam kosulu eski akistaki gibi `Cash + Credit + GiftCard + FuturesSales >= 0.001` degeridir; yalniz gider pusulasi olan sube/gun kaydi yazilmaz
+- mevcut kayit varsa total/detail/card satirlari update edilir; eski importta olup yeni dosyada gelmeyen detail/card satirlari silinmez
+- `dryRun=true` dosyalari parse eder ve insert/update adetlerini hesaplar; DB'ye yazmaz
+
+Endpoint'ler:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/kasa-islemleri/kasa-ciro-aktarimi/subeler` | - | - | `KasaCiroBranchDto[]` | `list` |
+| `POST /api/kasa-islemleri/kasa-ciro-aktarimi/metin/aktar` | body | `KasaCiroImportHttpRequest` | `KasaCiroImportResultDto` | `create` |
+
+Import request:
+
+```json
+{
+  "startDate": "2026-06-01",
+  "endDate": "2026-06-09",
+  "branches": [101, 102, 110],
+  "movementRootPath": "\\\\10.0.0.55\\kasa\\",
+  "dryRun": false
+}
+```
+
+Not:
+
+- `startDate` ve `endDate` zorunludur.
+- `branches` opsiyoneldir; bos/null gonderilirse `101..300` araligi taranir.
+- `movementRootPath` normal UI'da bos birakilabilir; sadece admin/teknik override ihtiyacinda gosterilmelidir.
+- Bu modul kasa filtresi almaz; secilen subelerin ilgili tarihteki tum `HRddMMyy.*` kasa dosyalarini okur.
+
+Import response:
+
+```json
+{
+  "runId": "kasa-ciro-20260601-153000",
+  "status": "Completed",
+  "startDate": "2026-06-01T00:00:00",
+  "endDate": "2026-06-09T00:00:00",
+  "processedDays": 9,
+  "processedBranches": 12,
+  "processedFiles": 84,
+  "skippedEmptyBranches": 3,
+  "insertedTotals": 10,
+  "updatedTotals": 2,
+  "insertedDetails": 70,
+  "updatedDetails": 14,
+  "insertedDiscountCards": 120,
+  "updatedDiscountCards": 35,
+  "warnings": [
+    {
+      "date": "2026-06-09T00:00:00",
+      "branchNo": 110,
+      "cashRegisterNo": null,
+      "file": "\\\\10.0.0.55\\kasa\\110\\HR090626.*",
+      "lineNo": null,
+      "message": "Ciro hareket dosyasi bulunamadi."
+    }
+  ],
+  "errors": []
+}
+```
+
+UI beklentisi:
+
+- ekran acilisinda `GET /subeler` ile sube filtresi doldurulabilir
+- aktarim dialogunda tarih araligi zorunlu, sube listesi opsiyonel olmalidir
+- ilk calistirma veya supheli tekrar importlarda `dryRun=true` onizleme olarak sunulmalidir
+- sonuc ekraninda adetler ust kartlarda, `warnings/errors` satirlari gridde gosterilmelidir
+- basarili importtan sonra eski ciro verisi `Kasa Cirolari` ekraninda `eski` veya `toplam` kaynaklariyla gorunur
+
 ### Kasa Hareket Aktarimi
 
 Eski kasa hareket dosyalarini HR/IP formatindan staging tablolara alir, staging hareketlerini Mikro stok hareketlerine aktarir veya aktarimi geri siler.
@@ -5933,6 +6032,12 @@ Kasa Islemleri / Kasa Cirolari
   -> kullanici satira tiklar
   -> GET /api/kasa-islemleri/kasa-cirolari/detay?businessDate=...&shiftNo=...&cashierCode=...
   -> detay ekraninda header ozetini ust kartta, odeme kirilimini alttaki gridde goster
+
+Kasa Islemleri / Kasa Ciro Aktarimi
+  -> eski TransferConsole ciro aktarimi icin GET /api/kasa-islemleri/kasa-ciro-aktarimi/subeler
+  -> HRddMMyy.* dosyalarindan Turnover tablolarina yazmak icin POST /api/kasa-islemleri/kasa-ciro-aktarimi/metin/aktar
+  -> import oncesi dryRun=true ile dosya parse sonucu ve insert/update adetleri gosterilebilir
+  -> basarili importtan sonra sonuc Kasa Cirolari ekraninda eski/toplam kaynaklariyla izlenir
 
 Kasa Islemleri / Kasa Hareket Aktarimi
   -> ekran acilisinda sube filtresi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler
@@ -9570,6 +9675,37 @@ public sealed record CashTurnoverBranchOverviewItemDto(
     int FuturesSalesCount,
     double AverageBasketAmount);
 
+public sealed record KasaCiroBranchDto(
+    int BranchNo,
+    string BranchName,
+    string Region);
+
+public sealed record KasaCiroImportResultDto(
+    string RunId,
+    string Status,
+    DateTime StartDate,
+    DateTime EndDate,
+    int ProcessedDays,
+    int ProcessedBranches,
+    int ProcessedFiles,
+    int SkippedEmptyBranches,
+    int InsertedTotals,
+    int UpdatedTotals,
+    int InsertedDetails,
+    int UpdatedDetails,
+    int InsertedDiscountCards,
+    int UpdatedDiscountCards,
+    IReadOnlyCollection<KasaCiroImportIssueDto> Warnings,
+    IReadOnlyCollection<KasaCiroImportIssueDto> Errors);
+
+public sealed record KasaCiroImportIssueDto(
+    DateTime? Date,
+    int? BranchNo,
+    int? CashRegisterNo,
+    string? File,
+    int? LineNo,
+    string Message);
+
 public sealed record KasaHareketBranchDto(
     int BranchNo,
     string BranchName,
@@ -10207,6 +10343,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UpdateCashSummaryDetailLineHttpRequest`: `TypeName`, `PaymentTypeId`, `AccountCode`, `SlipNumber`, `Amount`, `TerminalId`, `Description`
 - `UpdateCashSummaryBanknotesHttpRequest`: `WarehouseNo`, `BanknoteMovements`
 - `UpdateCashSummaryBanknoteLineHttpRequest`: `Value`, `BanknoteType`, `Quantity`, `Total`
+- `KasaCiroImportHttpRequest`: `StartDate`, `EndDate`, `Branches`, `MovementRootPath`, `DryRun`
 - `KasaHareketImportHttpRequest`: `StartDate`, `EndDate`, `Branches`, `CashRegisters`, `FileRootPath`, `SkipExisting`, `DryRun`
 - `KasaHareketScheduledImportHttpRequest`: `Date`, `AddDay`, `FileRootPath`, `SkipExisting`, `DryRun`
 - `KasaHareketDeleteStagingHttpRequest`: `Date`, `BranchNo`, `CashRegisterNo`
