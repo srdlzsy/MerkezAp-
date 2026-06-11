@@ -231,6 +231,7 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromMinutes(5);
         });
         services.Configure<MikroApiOptions>(configuration.GetSection(MikroApiOptions.SectionName));
+        services.Configure<MikroWriteRoutingOptions>(configuration.GetSection(MikroWriteRoutingOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
         {

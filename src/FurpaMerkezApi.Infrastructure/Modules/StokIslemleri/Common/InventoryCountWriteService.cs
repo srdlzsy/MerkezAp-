@@ -1,10 +1,13 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
@@ -12,11 +15,17 @@ namespace FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 public sealed class InventoryCountWriteService(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
-    MobileOfflineSyncService mobileOfflineSyncService)
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    MobileOfflineSyncService mobileOfflineSyncService,
+    ILogger<InventoryCountWriteService> logger)
 {
     private const short CensusFileId = 28;
     private const short MikroUserNo = 39;
     private const string OfflineOperationCode = "stok-islemleri.sayim-sonuclari.create";
+    private const string SayimSonuclariKaydetPath = "/Api/apiMethods/SayimSonuclariKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
 
     public async Task<CreateInventoryCountResponse> ExecuteAsync(
         CreateInventoryCountRequest request,
@@ -50,61 +59,16 @@ public sealed class InventoryCountWriteService(
             }
         }
 
-        var options = mikroWriteOptions.Value;
-        var now = DateTime.Now;
-        var documentDate = (request.DocumentDate ?? DateTime.Today).Date;
-        var name = NormalizeText(request.Name, 25);
-        var lines = request.Lines.ToArray();
-        var barcodeLookup = await BuildBarcodeLookupAsync(lines, cancellationToken);
-        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
-        var offlineTraceKey = request.ClientRequestId.HasValue
-            ? MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value)
-            : string.Empty;
-
         try
         {
-            var response = await executionStrategy.ExecuteAsync(async () =>
+            var response = mikroWriteRoutingOptions.CurrentValue.InventoryCount switch
             {
-                mikroWriteDbContext.ChangeTracker.Clear();
-                await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                    IsolationLevel.Serializable,
-                    cancellationToken);
-
-                try
-                {
-                    var documentNo = await GetNextDocumentNoAsync(request.WarehouseNo, cancellationToken);
-                    var results = lines
-                        .Select((line, rowNo) => CreateResult(
-                            request.WarehouseNo,
-                            documentNo,
-                            documentDate,
-                            name,
-                            line,
-                            barcodeLookup,
-                            rowNo,
-                            now,
-                            offlineTraceKey))
-                        .ToArray();
-
-                    await mikroWriteDbContext.SAYIM_SONUCLARIs.AddRangeAsync(results, cancellationToken);
-                    await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-
-                    return new CreateInventoryCountResponse(
-                        documentNo,
-                        documentDate,
-                        request.WarehouseNo,
-                        name,
-                        results.Length,
-                        results.Sum(item => item.sym_miktar1 ?? 0d),
-                        options.ConnectionStringName);
-                }
-                catch
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
+                MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
+                MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
+                MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+                var mode => throw new InvalidOperationException(
+                    $"Unsupported MikroWriteRouting:InventoryCount mode '{mode}'.")
+            };
 
             if (request.ClientRequestId.HasValue)
             {
@@ -131,6 +95,130 @@ public sealed class InventoryCountWriteService(
 
             throw;
         }
+    }
+
+    private async Task<CreateInventoryCountResponse> ExecuteDatabaseAsync(
+        CreateInventoryCountRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var now = DateTime.Now;
+        var documentDate = (request.DocumentDate ?? DateTime.Today).Date;
+        var name = NormalizeText(request.Name, 25);
+        var lines = request.Lines.ToArray();
+        var barcodeLookup = await BuildBarcodeLookupAsync(lines, cancellationToken);
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+        var offlineTraceKey = request.ClientRequestId.HasValue
+            ? MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value)
+            : string.Empty;
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            try
+            {
+                var documentNo = await GetNextDocumentNoAsync(request.WarehouseNo, cancellationToken);
+                var results = lines
+                    .Select((line, rowNo) => CreateResult(
+                        request.WarehouseNo,
+                        documentNo,
+                        documentDate,
+                        name,
+                        line,
+                        barcodeLookup,
+                        rowNo,
+                        now,
+                        offlineTraceKey))
+                    .ToArray();
+
+                await mikroWriteDbContext.SAYIM_SONUCLARIs.AddRangeAsync(results, cancellationToken);
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new CreateInventoryCountResponse(
+                    documentNo,
+                    documentDate,
+                    request.WarehouseNo,
+                    name,
+                    results.Length,
+                    results.Sum(item => item.sym_miktar1 ?? 0d),
+                    options.ConnectionStringName);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    private async Task<CreateInventoryCountResponse> ExecuteMikroApiAsync(
+        CreateInventoryCountRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var documentDate = (request.DocumentDate ?? DateTime.Today).Date;
+        var name = NormalizeText(request.Name, 25);
+        var lines = request.Lines.ToArray();
+        var barcodeLookup = await BuildBarcodeLookupAsync(lines, cancellationToken);
+        var traceKey = CreateMikroApiTraceKey(request.ClientRequestId);
+
+        var existingResponse = await TryRecoverInventoryCountResponseByTraceAsync(
+            request.WarehouseNo,
+            traceKey,
+            options.ConnectionStringName,
+            cancellationToken);
+
+        if (existingResponse is not null)
+        {
+            return existingResponse;
+        }
+
+        var payload = InventoryCountMikroApiPayloadFactory.Create(
+            request.WarehouseNo,
+            documentDate,
+            name,
+            lines,
+            barcodeLookup,
+            traceKey);
+
+        logger.LogInformation(
+            "Inventory count create is routed to Mikro API {Path}. WarehouseNo={WarehouseNo}, LineCount={LineCount}, TraceKey={TraceKey}",
+            SayimSonuclariKaydetPath,
+            request.WarehouseNo,
+            lines.Length,
+            traceKey);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            SayimSonuclariKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API inventory count create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            request.WarehouseNo,
+            traceKey,
+            options.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateInventoryCountResponse> ExecuteDualShadowAsync(
+        CreateInventoryCountRequest request,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:InventoryCount is DualShadow. SayimSonuclariKaydetV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, cancellationToken);
     }
 
     public Task<OfflineSyncStatusDto<CreateInventoryCountResponse>> GetOfflineSyncStatusAsync(
@@ -252,6 +340,55 @@ public sealed class InventoryCountWriteService(
         CancellationToken cancellationToken)
     {
         var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
+        return await TryRecoverInventoryCountResponseByTraceAsync(
+            warehouseNo,
+            traceKey,
+            mikroWriteOptions.Value.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateInventoryCountResponse> RecoverMikroApiCreateResponseAsync(
+        int warehouseNo,
+        string traceKey,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverInventoryCountResponseByTraceAsync(
+                warehouseNo,
+                traceKey,
+                writeConnectionName,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API inventory count create succeeded, but created SAYIM_SONUCLARI rows could not be read back.");
+    }
+
+    private async Task<CreateInventoryCountResponse?> TryRecoverInventoryCountResponseByTraceAsync(
+        int warehouseNo,
+        string traceKey,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(traceKey))
+        {
+            return null;
+        }
+
         var rows = await mikroWriteDbContext.SAYIM_SONUCLARIs
             .AsNoTracking()
             .Where(item =>
@@ -299,8 +436,13 @@ public sealed class InventoryCountWriteService(
             firstRow.sym_parti_kodu ?? string.Empty,
             rows.Count,
             rows.Sum(item => item.sym_miktar1 ?? 0d),
-            mikroWriteOptions.Value.ConnectionStringName);
+            writeConnectionName);
     }
+
+    private static string CreateMikroApiTraceKey(Guid? clientRequestId) =>
+        clientRequestId.HasValue
+            ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value)
+            : $"api-{Guid.NewGuid():N}";
 
     private static string ResolveBarcode(
         CreateInventoryCountLineRequest line,
