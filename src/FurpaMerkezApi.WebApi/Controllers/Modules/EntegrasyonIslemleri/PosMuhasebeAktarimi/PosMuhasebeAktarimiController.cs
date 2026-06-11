@@ -74,7 +74,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         [FromBody] PosAccountingTransferHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.SendZReportsToErpAsync(
-            new PosAccountingTransferRequest(request.DocumentIds, request.ContinueOnError),
+            new PosAccountingTransferRequest(request.ResolveDocumentIds(request.TotalIds), request.ContinueOnError),
             cancellationToken));
 
     [HttpDelete("z-raporlari")]
@@ -85,7 +85,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         [FromBody] PosAccountingDeleteHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.DeleteZReportsAsync(
-            new PosAccountingDeleteRequest(request.DocumentIds),
+            new PosAccountingDeleteRequest(request.ResolveDocumentIds(request.TotalIds)),
             cancellationToken));
 
     [HttpGet("pos-faturalar")]
@@ -116,7 +116,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         Ok(await service.ImportPosInvoicesAsync(
             new ImportPosDocumentsRequest(
                 request.WarehouseNo,
-                request.BusinessDate!.Value,
+                request.GetBusinessDate(),
                 request.IncludePreviouslyImported,
                 request.OverwriteExisting),
             cancellationToken));
@@ -129,7 +129,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         [FromBody] PosAccountingTransferHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.SendPosInvoicesToErpAsync(
-            new PosAccountingTransferRequest(request.DocumentIds, request.ContinueOnError),
+            new PosAccountingTransferRequest(request.ResolveDocumentIds(request.InvoiceIds), request.ContinueOnError),
             cancellationToken));
 
     [HttpPut("pos-faturalar/{invoiceId:int}")]
@@ -157,7 +157,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         [FromBody] PosAccountingDeleteHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.DeletePosInvoicesAsync(
-            new PosAccountingDeleteRequest(request.DocumentIds),
+            new PosAccountingDeleteRequest(request.ResolveDocumentIds(request.InvoiceIds)),
             cancellationToken));
 
     [HttpGet("gider-pusulalari")]
@@ -188,7 +188,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         Ok(await service.ImportExpenseNotesAsync(
             new ImportPosDocumentsRequest(
                 request.WarehouseNo,
-                request.BusinessDate!.Value,
+                request.GetBusinessDate(),
                 request.IncludePreviouslyImported,
                 request.OverwriteExisting),
             cancellationToken));
@@ -201,7 +201,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         [FromBody] PosAccountingTransferHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.SendExpenseNotesToErpAsync(
-            new PosAccountingTransferRequest(request.DocumentIds, request.ContinueOnError),
+            new PosAccountingTransferRequest(request.ResolveDocumentIds(request.ExpenseIds), request.ContinueOnError),
             cancellationToken));
 
     [HttpPut("gider-pusulalari/{expenseId:int}")]
@@ -229,7 +229,7 @@ public sealed class PosMuhasebeAktarimiController(IPosMuhasebeAktarimiService se
         [FromBody] PosAccountingDeleteHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.DeleteExpenseNotesAsync(
-            new PosAccountingDeleteRequest(request.DocumentIds),
+            new PosAccountingDeleteRequest(request.ResolveDocumentIds(request.ExpenseIds)),
             cancellationToken));
 
     [HttpGet("kasa-eslemeleri")]
@@ -330,12 +330,17 @@ public sealed class ImportPosDocumentsHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Required]
     public DateTime? BusinessDate { get; init; }
+
+    public DateTime? DateToGet { get; init; }
 
     public bool IncludePreviouslyImported { get; init; }
 
     public bool OverwriteExisting { get; init; }
+
+    public DateTime GetBusinessDate() =>
+        (BusinessDate ?? DateToGet)?.Date
+        ?? throw new ArgumentException("BusinessDate or DateToGet is required.", nameof(BusinessDate));
 }
 
 public sealed class PosAccountingTransferHttpRequest
@@ -343,11 +348,30 @@ public sealed class PosAccountingTransferHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Required]
     [MinLength(1)]
-    public IReadOnlyCollection<int> DocumentIds { get; init; } = Array.Empty<int>();
+    public IReadOnlyCollection<int>? DocumentIds { get; init; }
+
+    [MinLength(1)]
+    public IReadOnlyCollection<int>? TotalIds { get; init; }
+
+    [MinLength(1)]
+    public IReadOnlyCollection<int>? InvoiceIds { get; init; }
+
+    [MinLength(1)]
+    public IReadOnlyCollection<int>? ExpenseIds { get; init; }
 
     public bool ContinueOnError { get; init; } = true;
+
+    public IReadOnlyCollection<int> ResolveDocumentIds(IReadOnlyCollection<int>? preferredIds)
+    {
+        var ids = preferredIds is { Count: > 0 }
+            ? preferredIds
+            : DocumentIds;
+
+        return ids is { Count: > 0 }
+            ? ids
+            : throw new ArgumentException("At least one document id is required.", nameof(DocumentIds));
+    }
 }
 
 public sealed class PosAccountingDeleteHttpRequest
@@ -355,9 +379,28 @@ public sealed class PosAccountingDeleteHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Required]
     [MinLength(1)]
-    public IReadOnlyCollection<int> DocumentIds { get; init; } = Array.Empty<int>();
+    public IReadOnlyCollection<int>? DocumentIds { get; init; }
+
+    [MinLength(1)]
+    public IReadOnlyCollection<int>? TotalIds { get; init; }
+
+    [MinLength(1)]
+    public IReadOnlyCollection<int>? InvoiceIds { get; init; }
+
+    [MinLength(1)]
+    public IReadOnlyCollection<int>? ExpenseIds { get; init; }
+
+    public IReadOnlyCollection<int> ResolveDocumentIds(IReadOnlyCollection<int>? preferredIds)
+    {
+        var ids = preferredIds is { Count: > 0 }
+            ? preferredIds
+            : DocumentIds;
+
+        return ids is { Count: > 0 }
+            ? ids
+            : throw new ArgumentException("At least one document id is required.", nameof(DocumentIds));
+    }
 }
 
 public sealed class UpdatePosAccountingDocumentHttpRequest
