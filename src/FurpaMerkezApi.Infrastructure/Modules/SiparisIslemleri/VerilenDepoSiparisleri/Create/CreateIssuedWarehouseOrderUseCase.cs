@@ -1,20 +1,29 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 
 public sealed class CreateIssuedWarehouseOrderUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<CreateIssuedWarehouseOrderUseCase> logger)
     : ICreateIssuedWarehouseOrderUseCase
 {
     private const short FileId = 86;
     private const short MikroUserNo = 39;
     private const int FirstDocumentOrderNo = 0;
+    private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1900, 1, 1);
 
     public async Task<CreateIssuedWarehouseOrderResponse> ExecuteAsync(
@@ -23,6 +32,20 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
+        };
+    }
+
+    private async Task<CreateIssuedWarehouseOrderResponse> ExecuteDatabaseAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var orderDate = (request.OrderDate ?? DateTime.Today).Date;
@@ -74,6 +97,166 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 throw;
             }
         });
+    }
+
+    private async Task<CreateIssuedWarehouseOrderResponse> ExecuteMikroApiAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var orderDate = (request.OrderDate ?? DateTime.Today).Date;
+        var deliveryDate = (request.DeliveryDate ?? orderDate).Date;
+        var documentSerie = $"F{request.InWarehouseNo}";
+        var lines = request.Lines.ToArray();
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+        var payload = IssuedWarehouseOrderMikroApiPayloadFactory.Create(
+            request,
+            lines,
+            orderDate,
+            deliveryDate,
+            documentSerie,
+            documentOrderNo);
+
+        logger.LogInformation(
+            "Issued warehouse order create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}",
+            DepolarArasiSiparisKaydetPath,
+            documentSerie,
+            documentOrderNo,
+            request.InWarehouseNo,
+            request.OutWarehouseNo,
+            lines.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DepolarArasiSiparisKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API issued warehouse order create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            documentOrderNo,
+            request,
+            orderDate,
+            deliveryDate,
+            options.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateIssuedWarehouseOrderResponse> ExecuteDualShadowAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:IssuedWarehouseOrder is DualShadow. DepolarArasiSiparisKaydetV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, cancellationToken);
+    }
+
+    private async Task<CreateIssuedWarehouseOrderResponse> RecoverMikroApiCreateResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest request,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverWarehouseOrderResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                orderDate,
+                deliveryDate,
+                writeConnectionName,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API issued warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+    }
+
+    private async Task<CreateIssuedWarehouseOrderResponse?> TryRecoverWarehouseOrderResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest request,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_evrakno_seri == documentSerie &&
+                order.ssip_evrakno_sira == documentOrderNo &&
+                order.ssip_girdepo == request.InWarehouseNo &&
+                order.ssip_cikdepo == request.OutWarehouseNo)
+            .Select(order => new
+            {
+                order.ssip_tarih,
+                order.ssip_teslim_tarih,
+                order.ssip_evrakno_seri,
+                order.ssip_evrakno_sira,
+                order.ssip_girdepo,
+                order.ssip_cikdepo,
+                order.ssip_miktar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.ssip_tarih,
+                row.ssip_evrakno_seri,
+                row.ssip_evrakno_sira,
+                row.ssip_girdepo,
+                row.ssip_cikdepo
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one issued warehouse order document matched the same serie and order number.");
+        }
+
+        var firstRow = rows[0];
+
+        return new CreateIssuedWarehouseOrderResponse(
+            firstRow.ssip_evrakno_seri ?? documentSerie,
+            firstRow.ssip_evrakno_sira ?? documentOrderNo,
+            firstRow.ssip_tarih?.Date ?? orderDate,
+            rows.Max(row => row.ssip_teslim_tarih)?.Date ?? deliveryDate,
+            firstRow.ssip_girdepo ?? request.InWarehouseNo,
+            firstRow.ssip_cikdepo ?? request.OutWarehouseNo,
+            rows.Count,
+            rows.Sum(row => row.ssip_miktar ?? 0d),
+            writeConnectionName);
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(
