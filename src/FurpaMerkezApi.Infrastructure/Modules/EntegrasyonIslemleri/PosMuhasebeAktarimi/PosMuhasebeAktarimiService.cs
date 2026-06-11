@@ -7,6 +7,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
@@ -23,6 +24,15 @@ public sealed class PosMuhasebeAktarimiService(
     private const string ZReportKind = "ZReport";
     private const string InvoiceKind = "Invoice";
     private const string ExpenseKind = "ExpenseNote";
+    private const string CashAccountCode = "100.01.02";
+    private const string CreditAccountCode = "108.01.02";
+    private const string ZReportDescription = "Z RAPORU";
+    private const byte CommercialAccountingType = 2;
+    private const byte CommercialDocumentType = 63;
+    private const byte AccountingLineType = 0;
+    private const short AccountingCategory = 1;
+    private const byte ZReportOffsetType = 11;
+    private const byte DefaultOffsetType = 0;
 
     public async Task<PosAccountingOverviewDto> GetOverviewAsync(
         PosAccountingFilterRequest request,
@@ -157,13 +167,13 @@ public sealed class PosMuhasebeAktarimiService(
 
         foreach (var totalId in request.DocumentIds.Distinct())
         {
-            var exists = await mikroDbContext.ZReportTotals
-                .AsNoTracking()
-                .AnyAsync(item => item.TotalId == totalId, cancellationToken);
+            var result = await ExecuteAccountingTransferAsync(
+                totalId,
+                documentId => SendZReportToErpAsync(documentId, cancellationToken));
 
-            results.Add(CreateAccountingWriterMissingResult(totalId, exists, "Z raporu"));
+            results.Add(result);
 
-            if (!request.ContinueOnError)
+            if (!result.Success && !request.ContinueOnError)
             {
                 break;
             }
@@ -310,13 +320,13 @@ public sealed class PosMuhasebeAktarimiService(
 
         foreach (var invoiceId in request.DocumentIds.Distinct())
         {
-            var exists = await mikroDbContext.Invoices
-                .AsNoTracking()
-                .AnyAsync(item => item.InvoiceId == invoiceId, cancellationToken);
+            var result = await ExecuteAccountingTransferAsync(
+                invoiceId,
+                documentId => SendPosInvoiceToErpAsync(documentId, cancellationToken));
 
-            results.Add(CreateAccountingWriterMissingResult(invoiceId, exists, "POS faturasi"));
+            results.Add(result);
 
-            if (!request.ContinueOnError)
+            if (!result.Success && !request.ContinueOnError)
             {
                 break;
             }
@@ -487,13 +497,13 @@ public sealed class PosMuhasebeAktarimiService(
 
         foreach (var expenseId in request.DocumentIds.Distinct())
         {
-            var exists = await mikroDbContext.ExpenseNotes
-                .AsNoTracking()
-                .AnyAsync(item => item.ExpenseId == expenseId, cancellationToken);
+            var result = await ExecuteAccountingTransferAsync(
+                expenseId,
+                documentId => SendExpenseNoteToErpAsync(documentId, cancellationToken));
 
-            results.Add(CreateAccountingWriterMissingResult(expenseId, exists, "gider pusulasi"));
+            results.Add(result);
 
-            if (!request.ContinueOnError)
+            if (!result.Success && !request.ContinueOnError)
             {
                 break;
             }
@@ -662,6 +672,572 @@ public sealed class PosMuhasebeAktarimiService(
         });
 
         return await GetCashRegisterMappingAsync(request.Id.Value, cancellationToken);
+    }
+
+    private async Task<PosAccountingOperationResultDto> ExecuteAccountingTransferAsync(
+        int documentId,
+        Func<int, Task<PosAccountingOperationResultDto>> transfer)
+    {
+        try
+        {
+            return await ExecuteWriteTransactionAsync(() => transfer(documentId));
+        }
+        catch (Exception exception)
+        {
+            return new PosAccountingOperationResultDto(documentId, null, false, exception.Message);
+        }
+    }
+
+    private async Task<PosAccountingOperationResultDto> SendZReportToErpAsync(
+        int totalId,
+        CancellationToken cancellationToken)
+    {
+        var report = await mikroWriteDbContext.ZReportTotals
+            .FirstOrDefaultAsync(item => item.TotalId == totalId, cancellationToken);
+
+        if (report is null)
+        {
+            return new PosAccountingOperationResultDto(totalId, null, false, "Z report was not found.");
+        }
+
+        if (report.IsSent)
+        {
+            return new PosAccountingOperationResultDto(totalId, null, false, "Z report was already sent to ERP.");
+        }
+
+        var details = await mikroWriteDbContext.ZReportDetails
+            .Where(item => item.TotalId == totalId)
+            .OrderBy(item => item.TaxRate)
+            .ToArrayAsync(cancellationToken);
+
+        if (details.Length == 0)
+        {
+            return new PosAccountingOperationResultDto(totalId, null, false, "Z report has no detail lines.");
+        }
+
+        var mapping = await mikroWriteDbContext.CashRegisterBranches
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.CashRegisterNo == report.CashRegisterNo, cancellationToken);
+
+        if (mapping is null)
+        {
+            return new PosAccountingOperationResultDto(
+                totalId,
+                null,
+                false,
+                $"Cash register mapping was not found for '{report.CashRegisterNo}'.");
+        }
+
+        var accountingDocument = CreateZReportAccountingDocument(report, details, mapping.BranchNo);
+        var identity = await WriteAccountingSlipAsync(accountingDocument, cancellationToken);
+
+        report.IsSent = true;
+        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+
+        return new PosAccountingOperationResultDto(
+            totalId,
+            null,
+            true,
+            $"Z report was sent to ERP. SlipNo={identity.SlipNo}, JournalNo={identity.JournalNo}.");
+    }
+
+    private async Task<PosAccountingOperationResultDto> SendPosInvoiceToErpAsync(
+        int invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await mikroWriteDbContext.Invoices
+            .FirstOrDefaultAsync(item => item.InvoiceId == invoiceId, cancellationToken);
+
+        if (invoice is null)
+        {
+            return new PosAccountingOperationResultDto(invoiceId, null, false, "POS invoice was not found.");
+        }
+
+        if (invoice.IsSent)
+        {
+            return new PosAccountingOperationResultDto(
+                invoiceId,
+                invoice.InvoiceGuid,
+                false,
+                "POS invoice was already sent to ERP.");
+        }
+
+        var lines = await mikroWriteDbContext.InvoiceLines
+            .Where(item => item.InvoiceId == invoiceId)
+            .OrderBy(item => item.TaxRate)
+            .ToArrayAsync(cancellationToken);
+
+        if (lines.Length == 0)
+        {
+            return new PosAccountingOperationResultDto(
+                invoiceId,
+                invoice.InvoiceGuid,
+                false,
+                "POS invoice has no detail lines.");
+        }
+
+        var customer = await GetCustomerAccountingInfoAsync(invoice.CustomerTaxNo, cancellationToken);
+        var accountingDocument = CreatePosInvoiceAccountingDocument(invoice, lines, customer);
+        var identity = await WriteAccountingSlipAsync(accountingDocument, cancellationToken);
+
+        invoice.IsSent = true;
+        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+
+        return new PosAccountingOperationResultDto(
+            invoiceId,
+            invoice.InvoiceGuid,
+            true,
+            $"POS invoice was sent to ERP. SlipNo={identity.SlipNo}, JournalNo={identity.JournalNo}.");
+    }
+
+    private async Task<PosAccountingOperationResultDto> SendExpenseNoteToErpAsync(
+        int expenseId,
+        CancellationToken cancellationToken)
+    {
+        var expense = await mikroWriteDbContext.ExpenseNotes
+            .FirstOrDefaultAsync(item => item.ExpenseId == expenseId, cancellationToken);
+
+        if (expense is null)
+        {
+            return new PosAccountingOperationResultDto(expenseId, null, false, "Expense note was not found.");
+        }
+
+        if (expense.IsSent)
+        {
+            return new PosAccountingOperationResultDto(
+                expenseId,
+                expense.ExpenseGuid,
+                false,
+                "Expense note was already sent to ERP.");
+        }
+
+        var lines = await mikroWriteDbContext.ExpenseNoteLines
+            .Where(item => item.ExpenseNoteId == expenseId)
+            .OrderBy(item => item.TaxRate)
+            .ToArrayAsync(cancellationToken);
+
+        if (lines.Length == 0)
+        {
+            return new PosAccountingOperationResultDto(
+                expenseId,
+                expense.ExpenseGuid,
+                false,
+                "Expense note has no detail lines.");
+        }
+
+        var accountingDocument = CreateExpenseNoteAccountingDocument(expense, lines);
+        var identity = await WriteAccountingSlipAsync(accountingDocument, cancellationToken);
+
+        expense.IsSent = true;
+        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+
+        return new PosAccountingOperationResultDto(
+            expenseId,
+            expense.ExpenseGuid,
+            true,
+            $"Expense note was sent to ERP. SlipNo={identity.SlipNo}, JournalNo={identity.JournalNo}.");
+    }
+
+    private static AccountingSlipDocument CreateZReportAccountingDocument(
+        ZReportTotalEntity report,
+        IReadOnlyCollection<ZReportDetailEntity> details,
+        int branchNo)
+    {
+        var lines = new List<AccountingSlipLine>();
+        AddAccountingLine(lines, CashAccountCode, ToMoney(report.CashPaymentTotal));
+        AddAccountingLine(lines, CreditAccountCode, ToMoney(report.CreditCardPaymentTotal));
+
+        foreach (var detail in details)
+        {
+            var taxRate = Convert.ToInt32(detail.TaxRate, CultureInfo.InvariantCulture);
+            var taxAmount = ToMoney(detail.BillTaxTotal);
+            var amountExcludingTax = ToMoney(detail.BillTotal - detail.BillTaxTotal);
+
+            AddAccountingLine(lines, CreateSalesRevenueAccountCode(taxRate), -amountExcludingTax);
+            AddAccountingLine(lines, CreateSalesTaxAccountCode(taxRate), -taxAmount, -amountExcludingTax);
+        }
+
+        var balancedLines = BalanceAccountingLines(lines);
+        var documentNumber = report.BillNo > 0 ? report.BillNo : report.ZNo;
+
+        return new AccountingSlipDocument(
+            report.Date.Date,
+            ZReportDescription,
+            branchNo.ToString(CultureInfo.InvariantCulture),
+            null,
+            string.Empty,
+            documentNumber,
+            report.ZNo.ToString(CultureInfo.InvariantCulture),
+            ToMoney(report.CashPaymentTotal + report.CreditCardPaymentTotal),
+            details.Sum(item => ToMoney(item.BillTaxTotal)),
+            CustomerAccountingInfo.Empty,
+            5,
+            0,
+            0,
+            ZReportOffsetType,
+            balancedLines);
+    }
+
+    private static AccountingSlipDocument CreatePosInvoiceAccountingDocument(
+        BranchInvoiceEntity invoice,
+        IReadOnlyCollection<BranchInvoiceLineEntity> invoiceLines,
+        CustomerAccountingInfo customer)
+    {
+        var lines = new List<AccountingSlipLine>
+        {
+            new(ResolvePaymentAccountCode(invoice.PaymentType), ToMoney(invoice.InvoiceTotal))
+        };
+
+        foreach (var invoiceLine in invoiceLines)
+        {
+            var taxRate = Convert.ToInt32(invoiceLine.TaxRate, CultureInfo.InvariantCulture);
+            var amount = ToMoney(invoiceLine.Amount);
+            var taxAmount = ToMoney(invoiceLine.TaxAmount);
+
+            AddAccountingLine(lines, CreateSalesRevenueAccountCode(taxRate), -amount);
+            AddAccountingLine(lines, CreateSalesTaxAccountCode(taxRate), -taxAmount, -amount);
+        }
+
+        var documentNo = invoice.DocumentNo > 0
+            ? invoice.DocumentNo.ToString(CultureInfo.InvariantCulture)
+            : invoice.InvoiceId.ToString(CultureInfo.InvariantCulture);
+
+        return new AccountingSlipDocument(
+            invoice.InvoiceDate.Date,
+            "POS FATURASI",
+            invoice.BranchNo.ToString(CultureInfo.InvariantCulture),
+            invoice.InvoiceGuid,
+            string.Empty,
+            invoice.DocumentNo,
+            documentNo,
+            ToMoney(invoice.InvoiceTotal),
+            invoiceLines.Sum(item => ToMoney(item.TaxAmount)),
+            customer,
+            1,
+            0,
+            0,
+            DefaultOffsetType,
+            BalanceAccountingLines(lines));
+    }
+
+    private static AccountingSlipDocument CreateExpenseNoteAccountingDocument(
+        ExpenseNoteEntity expense,
+        IReadOnlyCollection<ExpenseNoteLineEntity> expenseLines)
+    {
+        var lines = new List<AccountingSlipLine>
+        {
+            new(ResolvePaymentAccountCode(expense.PaymentType), -ToMoney(expense.ExpenseTotal))
+        };
+
+        foreach (var expenseLine in expenseLines)
+        {
+            var taxRate = Convert.ToInt32(expenseLine.TaxRate, CultureInfo.InvariantCulture);
+            var amount = ToMoney(expenseLine.Amount);
+            var taxAmount = ToMoney(expenseLine.TaxAmount);
+
+            AddAccountingLine(lines, CreateExpenseRevenueAccountCode(taxRate), amount);
+            AddAccountingLine(lines, CreateExpenseTaxAccountCode(taxRate), taxAmount, amount);
+        }
+
+        var documentNumber = ParseDocumentNo(expense.DocumentNo);
+        var documentNo = string.IsNullOrWhiteSpace(expense.DocumentNo)
+            ? expense.ExpenseId.ToString(CultureInfo.InvariantCulture)
+            : expense.DocumentNo;
+
+        return new AccountingSlipDocument(
+            expense.ExpenseDate.Date,
+            "GIDER PUSULASI",
+            expense.BranchNo.ToString(CultureInfo.InvariantCulture),
+            expense.ExpenseGuid,
+            string.Empty,
+            documentNumber,
+            documentNo,
+            ToMoney(expense.ExpenseTotal),
+            expenseLines.Sum(item => ToMoney(item.TaxAmount)),
+            CustomerAccountingInfo.Empty,
+            2,
+            0,
+            0,
+            DefaultOffsetType,
+            BalanceAccountingLines(lines));
+    }
+
+    private async Task<AccountingSlipIdentity> WriteAccountingSlipAsync(
+        AccountingSlipDocument document,
+        CancellationToken cancellationToken)
+    {
+        if (document.Lines.Count == 0)
+        {
+            throw new InvalidOperationException("Accounting slip has no lines.");
+        }
+
+        var slipNo = await GetNextAccountingSlipNoAsync(document.DocumentDate, cancellationToken);
+        var journalNo = await GetNextAccountingJournalNoAsync(cancellationToken);
+
+        await InsertAccountingSlipDetailAsync(document, cancellationToken);
+
+        var lineNo = 0;
+        foreach (var line in document.Lines)
+        {
+            await InsertAccountingSlipLineAsync(document, line, slipNo, journalNo, lineNo, cancellationToken);
+            lineNo++;
+        }
+
+        return new AccountingSlipIdentity(slipNo, journalNo);
+    }
+
+    private async Task<int> GetNextAccountingSlipNoAsync(
+        DateTime documentDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT ISNULL(MAX(fis_sira_no), 0) + 1
+            FROM dbo.MUHASEBE_FISLERI WITH (UPDLOCK, HOLDLOCK)
+            WHERE fis_tarih >= @date AND fis_tarih < @dateEnd
+            """;
+
+        return await ExecuteScalarOnMikroWriteAsync<int>(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", documentDate.Date);
+                AddParameter(command, "@dateEnd", documentDate.Date.AddDays(1));
+            },
+            cancellationToken);
+    }
+
+    private async Task<int> GetNextAccountingJournalNoAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT ISNULL(MAX(fis_yevmiye_no), 0) + 1
+            FROM dbo.MUHASEBE_FISLERI WITH (UPDLOCK, HOLDLOCK)
+            """;
+
+        return await ExecuteScalarOnMikroWriteAsync<int>(sql, _ => { }, cancellationToken);
+    }
+
+    private Task InsertAccountingSlipDetailAsync(
+        AccountingSlipDocument document,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            INSERT INTO dbo.MUHASEBE_FIS_DETAYLARI (
+                mfd_ticari_tip,
+                mfd_evraktip,
+                mfd_evrak_seri,
+                mfd_evrak_sira,
+                mfd_cariunvan,
+                mfd_carivergidaireadi,
+                mfd_carivergidaireno,
+                mfd_belgetarihi,
+                mfd_tutarnereden,
+                mfd_caritipi,
+                mfd_carikodu,
+                mfd_carimuhkodu,
+                mfd_belgeno,
+                mfd_kdvid,
+                mfd_kdvtutar,
+                mfd_caritutar,
+                mfd_aciklama,
+                mfd_kisaevraktipi,
+                mfd_satistipi,
+                mfd_alistipi,
+                mfd_tahtedtipi,
+                mfd_evraktur,
+                mfd_e_belgemi)
+            VALUES (
+                @commercialType,
+                @documentType,
+                @documentSeries,
+                @documentNumber,
+                @customerName,
+                @customerTaxOffice,
+                @customerTaxNo,
+                @documentDate,
+                @amountSource,
+                @customerType,
+                @customerCode,
+                @customerAccountingCode,
+                @externalDocumentNo,
+                @taxId,
+                @taxAmount,
+                @totalAmount,
+                @description,
+                @shortDocumentType,
+                @salesType,
+                @purchaseType,
+                @commitmentType,
+                @documentKind,
+                @isElectronic)
+            """;
+
+        return ExecuteNonQueryOnMikroWriteAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@commercialType", CommercialAccountingType);
+                AddParameter(command, "@documentType", CommercialDocumentType);
+                AddParameter(command, "@documentSeries", LimitText(document.DocumentSeries, 20));
+                AddParameter(command, "@documentNumber", document.DocumentNumber);
+                AddParameter(command, "@customerName", LimitText(document.Customer.Name, 127));
+                AddParameter(command, "@customerTaxOffice", LimitText(document.Customer.TaxOffice, 50));
+                AddParameter(command, "@customerTaxNo", LimitText(document.Customer.TaxNo, 15));
+                AddParameter(command, "@documentDate", document.DocumentDate);
+                AddParameter(command, "@amountSource", string.IsNullOrWhiteSpace(document.Customer.Code) ? 0 : 5);
+                AddParameter(command, "@customerType", string.IsNullOrWhiteSpace(document.Customer.Code) ? 0 : 2);
+                AddParameter(command, "@customerCode", LimitText(document.Customer.Code, 25));
+                AddParameter(command, "@customerAccountingCode", LimitText(document.Customer.AccountingCode, 25));
+                AddParameter(command, "@externalDocumentNo", LimitText(document.ExternalDocumentNo, 50));
+                AddParameter(command, "@taxId", 0);
+                AddParameter(command, "@taxAmount", ToDouble(document.TaxAmount));
+                AddParameter(command, "@totalAmount", ToDouble(document.TotalAmount));
+                AddParameter(command, "@description", LimitText(document.Description, 127));
+                AddParameter(command, "@shortDocumentType", document.ShortDocumentType);
+                AddParameter(command, "@salesType", document.SalesType);
+                AddParameter(command, "@purchaseType", document.PurchaseType);
+                AddParameter(command, "@commitmentType", 0);
+                AddParameter(command, "@documentKind", 0);
+                AddParameter(command, "@isElectronic", false);
+            },
+            cancellationToken);
+    }
+
+    private Task InsertAccountingSlipLineAsync(
+        AccountingSlipDocument document,
+        AccountingSlipLine line,
+        int slipNo,
+        int journalNo,
+        int lineNo,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            INSERT INTO dbo.MUHASEBE_FISLERI (
+                fis_firmano,
+                fis_subeno,
+                fis_maliyil,
+                fis_tarih,
+                fis_sira_no,
+                fis_tur,
+                fis_hesap_kod,
+                fis_satir_no,
+                fis_aciklama1,
+                fis_meblag0,
+                fis_meblag1,
+                fis_meblag2,
+                fis_meblag3,
+                fis_meblag4,
+                fis_meblag5,
+                fis_meblag6,
+                fis_sorumluluk_kodu,
+                fis_ticari_tip,
+                fis_ticari_uid,
+                fis_kurfarkifl,
+                fis_ticari_evraktip,
+                fis_tic_evrak_seri,
+                fis_tic_evrak_sira,
+                fis_tic_belgeno,
+                fis_tic_belgetarihi,
+                fis_yevmiye_no,
+                fis_katagori,
+                fis_fmahsup_tipi,
+                fis_aktif_pasif)
+            VALUES (
+                @companyNo,
+                @branchNo,
+                @fiscalYear,
+                @documentDate,
+                @slipNo,
+                @lineType,
+                @accountCode,
+                @lineNo,
+                @description,
+                @amount,
+                @alternateAmount,
+                @amount,
+                @quantity,
+                @taxBase,
+                @measure1,
+                @measure2,
+                @responsibilityCode,
+                @commercialType,
+                @sourceGuid,
+                @isExchangeDifference,
+                @documentType,
+                @documentSeries,
+                @documentNumber,
+                @externalDocumentNo,
+                @documentDate,
+                @journalNo,
+                @category,
+                @offsetType,
+                @activePassive)
+            """;
+
+        return ExecuteNonQueryOnMikroWriteAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@companyNo", 0);
+                AddParameter(command, "@branchNo", 0);
+                AddParameter(command, "@fiscalYear", document.DocumentDate.Year);
+                AddParameter(command, "@documentDate", document.DocumentDate);
+                AddParameter(command, "@slipNo", slipNo);
+                AddParameter(command, "@lineType", AccountingLineType);
+                AddParameter(command, "@accountCode", LimitText(line.AccountCode, 25));
+                AddParameter(command, "@lineNo", lineNo);
+                AddParameter(command, "@description", LimitText(document.Description, 127));
+                AddParameter(command, "@amount", ToDouble(line.Amount));
+                AddParameter(command, "@alternateAmount", 0d);
+                AddParameter(command, "@quantity", 0d);
+                AddParameter(command, "@taxBase", ToDouble(line.TaxBase));
+                AddParameter(command, "@measure1", 0d);
+                AddParameter(command, "@measure2", 0d);
+                AddParameter(command, "@responsibilityCode", LimitText(document.ResponsibilityCode, 25));
+                AddParameter(command, "@commercialType", CommercialAccountingType);
+                AddParameter(command, "@sourceGuid", document.SourceGuid ?? Guid.Empty);
+                AddParameter(command, "@isExchangeDifference", false);
+                AddParameter(command, "@documentType", CommercialDocumentType);
+                AddParameter(command, "@documentSeries", LimitText(document.DocumentSeries, 20));
+                AddParameter(command, "@documentNumber", document.DocumentNumber);
+                AddParameter(command, "@externalDocumentNo", LimitText(document.ExternalDocumentNo, 50));
+                AddParameter(command, "@journalNo", journalNo);
+                AddParameter(command, "@category", AccountingCategory);
+                AddParameter(command, "@offsetType", document.OffsetType);
+                AddParameter(command, "@activePassive", 0);
+            },
+            cancellationToken);
+    }
+
+    private async Task<CustomerAccountingInfo> GetCustomerAccountingInfoAsync(
+        string taxNo,
+        CancellationToken cancellationToken)
+    {
+        var normalizedTaxNo = NormalizeText(taxNo);
+        if (string.IsNullOrWhiteSpace(normalizedTaxNo))
+        {
+            return CustomerAccountingInfo.Empty;
+        }
+
+        var customer = await mikroWriteDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .Where(item =>
+                item.cari_vdaire_no == normalizedTaxNo ||
+                item.cari_VergiKimlikNo == normalizedTaxNo ||
+                item.cari_kod == normalizedTaxNo)
+            .Select(item => new CustomerAccountingInfo(
+                ((item.cari_unvan1 ?? string.Empty) + " " + (item.cari_unvan2 ?? string.Empty)).Trim(),
+                item.cari_vdaire_adi ?? string.Empty,
+                item.cari_vdaire_no ?? normalizedTaxNo,
+                item.cari_kod ?? normalizedTaxNo,
+                item.cari_muh_kod ?? string.Empty))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return customer ?? new CustomerAccountingInfo(
+            string.Empty,
+            string.Empty,
+            normalizedTaxNo,
+            normalizedTaxNo,
+            string.Empty);
     }
 
     private async Task<PosAccountingOperationResultDto> ImportPosInvoiceAsync(
@@ -1070,6 +1646,78 @@ public sealed class PosMuhasebeAktarimiService(
         });
     }
 
+    private async Task<T> ExecuteScalarOnMikroWriteAsync<T>(
+        string sql,
+        Action<DbCommand> configureCommand,
+        CancellationToken cancellationToken)
+    {
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 180;
+            command.Transaction = mikroWriteDbContext.Database.CurrentTransaction?.GetDbTransaction();
+            configureCommand(command);
+
+            var value = await command.ExecuteScalarAsync(cancellationToken);
+            if (value is null or DBNull)
+            {
+                throw new InvalidOperationException("SQL scalar command returned null.");
+            }
+
+            return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture)!;
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private async Task ExecuteNonQueryOnMikroWriteAsync(
+        string sql,
+        Action<DbCommand> configureCommand,
+        CancellationToken cancellationToken)
+    {
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 180;
+            command.Transaction = mikroWriteDbContext.Database.CurrentTransaction?.GetDbTransaction();
+            configureCommand(command);
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
     private static IQueryable<ZReportTotalEntity> ApplyZReportFilter(
         IQueryable<ZReportTotalEntity> query,
         PosAccountingFilterRequest request)
@@ -1278,22 +1926,6 @@ public sealed class PosMuhasebeAktarimiService(
             results.Count(item => !item.Success),
             results.ToArray());
 
-    private static PosAccountingOperationResultDto CreateAccountingWriterMissingResult(
-        int documentId,
-        bool exists,
-        string documentLabel) =>
-        exists
-            ? new PosAccountingOperationResultDto(
-                documentId,
-                null,
-                false,
-                $"{documentLabel} icin muhasebe fisi yazma implementasyonu bu API projesinde henuz bulunmadigi icin kayit IsSent=true yapilmadi.")
-            : new PosAccountingOperationResultDto(
-                documentId,
-                null,
-                false,
-                $"{documentLabel} was not found.");
-
     private static void ValidateImportRequest(ImportPosDocumentsRequest request)
     {
         if (request.BusinessDate == default)
@@ -1370,6 +2002,97 @@ public sealed class PosMuhasebeAktarimiService(
             1 => Math.Round(lineTotal / 1.01m, 2, MidpointRounding.AwayFromZero),
             _ => lineTotal
         };
+
+    private static void AddAccountingLine(
+        ICollection<AccountingSlipLine> lines,
+        string accountCode,
+        decimal amount,
+        decimal taxBase = 0m)
+    {
+        amount = ToMoney(amount);
+        if (amount == 0m)
+        {
+            return;
+        }
+
+        lines.Add(new AccountingSlipLine(accountCode, amount, ToMoney(taxBase)));
+    }
+
+    private static IReadOnlyCollection<AccountingSlipLine> BalanceAccountingLines(
+        List<AccountingSlipLine> lines)
+    {
+        if (lines.Count == 0)
+        {
+            return lines;
+        }
+
+        var difference = ToMoney(lines.Sum(item => item.Amount));
+        if (difference == 0m)
+        {
+            return lines;
+        }
+
+        if (Math.Abs(difference) > 0.05m)
+        {
+            throw new InvalidOperationException(
+                $"Accounting slip lines are not balanced. Difference={difference.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        var index = lines.FindLastIndex(item => item.Amount < 0m);
+        if (index < 0)
+        {
+            index = lines.Count - 1;
+        }
+
+        var line = lines[index];
+        lines[index] = line with { Amount = ToMoney(line.Amount - difference) };
+
+        return lines;
+    }
+
+    private static string ResolvePaymentAccountCode(string paymentType) =>
+        string.Equals(NormalizePaymentType(paymentType), CreditPaymentType, StringComparison.OrdinalIgnoreCase)
+            ? CreditAccountCode
+            : CashAccountCode;
+
+    private static string CreateSalesRevenueAccountCode(int taxRate) =>
+        taxRate switch
+        {
+            0 => "600.00",
+            1 => "600.01",
+            8 => "600.08",
+            10 => "600.010",
+            18 => "600.18",
+            20 => "600.20",
+            > 0 and < 10 => $"600.0{taxRate.ToString(CultureInfo.InvariantCulture)}",
+            _ => $"600.{taxRate.ToString(CultureInfo.InvariantCulture)}"
+        };
+
+    private static string CreateSalesTaxAccountCode(int taxRate) =>
+        $"391.01.{Math.Max(taxRate, 0).ToString("000", CultureInfo.InvariantCulture)}";
+
+    private static string CreateExpenseRevenueAccountCode(int taxRate) =>
+        $"610.01.{Math.Max(taxRate, 0).ToString("00", CultureInfo.InvariantCulture)}";
+
+    private static string CreateExpenseTaxAccountCode(int taxRate) =>
+        $"191.{Math.Max(taxRate, 0).ToString("00", CultureInfo.InvariantCulture)}";
+
+    private static decimal ToMoney(double value) =>
+        ToMoney((decimal)value);
+
+    private static decimal ToMoney(decimal value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static double ToDouble(decimal value) =>
+        Convert.ToDouble(value);
+
+    private static string LimitText(string? value, int maxLength)
+    {
+        var normalized = NormalizeText(value);
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
+    }
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
@@ -1448,6 +2171,47 @@ public sealed class PosMuhasebeAktarimiService(
         }
 
         return 0m;
+    }
+
+    private sealed record AccountingSlipDocument(
+        DateTime DocumentDate,
+        string Description,
+        string ResponsibilityCode,
+        Guid? SourceGuid,
+        string DocumentSeries,
+        int DocumentNumber,
+        string ExternalDocumentNo,
+        decimal TotalAmount,
+        decimal TaxAmount,
+        CustomerAccountingInfo Customer,
+        byte ShortDocumentType,
+        byte SalesType,
+        byte PurchaseType,
+        byte OffsetType,
+        IReadOnlyCollection<AccountingSlipLine> Lines);
+
+    private sealed record AccountingSlipLine(
+        string AccountCode,
+        decimal Amount,
+        decimal TaxBase = 0m);
+
+    private sealed record AccountingSlipIdentity(
+        int SlipNo,
+        int JournalNo);
+
+    private sealed record CustomerAccountingInfo(
+        string Name,
+        string TaxOffice,
+        string TaxNo,
+        string Code,
+        string AccountingCode)
+    {
+        public static CustomerAccountingInfo Empty { get; } = new(
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty);
     }
 
     private sealed record SourcePosDocumentRow(

@@ -7783,9 +7783,10 @@ Mevcut backend durumu:
 
 - route ailesi aciktir
 - controller, request contract'lari ve business DTO response'lari tanimlidir
-- overview, liste, detay, POS fatura import, gider pusulasi import, header guncelleme, staging silme ve kasa esleme bakimi aktif endpoint olarak calisir
+- overview, liste, detay, POS fatura import, gider pusulasi import, header guncelleme, staging silme, kasa esleme bakimi ve ERP'ye gonderme endpoint'leri aktif olarak calisir
 - Z raporu dosya parser'i henuz API tarafinda uygulanmamistir; `z-raporlari/ice-aktar` basarisiz import sonucu doner
-- ERP muhasebe fisi yazma henuz uygulanmamistir; `erpye-gonder` endpoint'leri secili kayitlar icin batch sonuc doner ama `IsSent=true` yapmaz
+- `erpye-gonder` endpoint'leri secili kayitlar icin Mikro tarafinda `MUHASEBE_FIS_DETAYLARI` ve `MUHASEBE_FISLERI` kayitlarini olusturur
+- basarili ERP gonderiminde ilgili staging header kaydi `IsSent = true` yapilir; hata alan kayitlar batch response icinde satir bazli `success=false` doner
 - liste endpoint'leri varsayilan olarak yalniz `IsSent = false` bekleyen kayitlari dondurur; bunun icin `OnlyPending=true` default gelir
 
 UI bu menuyu tek sayfa icinde 4 tab olarak kurgulamalidir:
@@ -7797,13 +7798,16 @@ UI bu menuyu tek sayfa icinde 4 tab olarak kurgulamalidir:
 
 #### Z Raporlari Tab'i
 
-Bu tab'in hedefi gelecekte su akisi yurutmektir:
+Bu tab mevcut staging Z raporlarini listeleme, detay izleme, staging silme ve ERP'ye gonderme akisini tasir. Dosyadan Z raporu iceri aktarma parser'i henuz API tarafinda aktif degildir.
 
-- kullanici tarih ve depo baglamini secer
-- secili import kaynagina gore Z raporlari staging alana okunur
-- belge baslik, KDV satiri ve odeme satiri bazinda incelenir
+Mevcut akis:
+
+- kullanici tarih ve depo baglamina gore staging Z raporlarini listeler
+- belge baslik, KDV satiri ve odeme satiri bazinda detay inceler
 - secilen raporlar ERP muhasebe fisine donusturulur
-- hatali veya tekrarli importlar loglanir
+- ERP gonderimi icin `CashRegisterNo` degerinin `CashRegisterBranches` tablosunda sube ile eslenmis olmasi gerekir
+- basarili gonderimde ilgili Z raporu staging header kaydi `IsSent = true` yapilir
+- dosyadan `ice aktar` aksiyonu bugunku durumda basarisiz import sonuc satiri dondurur
 
 Endpoint'ler:
 
@@ -7817,13 +7821,16 @@ UI beklentisi:
 
 - liste ekraninda durum, tarih, Z no, kasa no, sube ve toplam kolonlari hazir dusunulmelidir
 - detay ekraninda header + KDV satirlari + odeme satirlari alt panelli dusunulmelidir
-- `ice aktar` butonu ayrik bir dialog ile acilmalidir
+- `ice aktar` butonu ayrik bir dialog ile acilmalidir; parser aktif olana kadar UI bu aksiyonu uyariyla sunabilir
 - `ERP'ye gonder` aksiyonu coklu secim ile calisacakmis gibi tasarlanmalidir
+- ERP gonderim sonucundaki satir mesajlari fis no / yevmiye no bilgisi tasiyabilir; UI bu mesaji satir bazli gostermelidir
 - `sil` aksiyonu staging kaydi temizleme semantigiyle ele alinmalidir; ERP'de olusmus fis silme butonu gibi sunulmamalidir
 
 #### POS Faturalar Tab'i
 
 Bu tab'in hedefi POS kaynakli satis faturalarini once staging'e alip sonra ERP'ye aktarmaktir.
+
+ERP'ye gonder aksiyonu secili faturalar icin Mikro tarafinda muhasebe fis detay ve fis header kayitlari olusturur. Basarili kayitlarda staging fatura header'i `IsSent = true` yapilir; hata alan kayitlar batch response icinde satir bazli doner.
 
 Endpoint'ler:
 
@@ -7840,6 +7847,7 @@ UI beklentisi:
 - detay ekraninda `documentNo`, `customerTaxNo`, `paymentType` duzenleme alanlari dusunulmelidir
 - satir duzeyi guncelleme bu surumde contract'ta yoktur; ekran agirlikla ust belge duzenleme mantigiyla tasarlanmalidir
 - kullanici daha sonra ERP gonderimi icin birden fazla fatura secebilecekmis gibi secim modeli hazir tutulmalidir
+- ERP gonderim sonucundaki `results[]` satirlari tek tek okunmali; basarili satir mesajlari fis no / yevmiye no bilgisi icerebilir
 
 Kaynak veri davranisi:
 
@@ -7847,10 +7855,13 @@ Kaynak veri davranisi:
 - Furpa/Mayday tarafinda yalniz `BelgeTuru = 2` alinir; `BelgeTipi` kaynak kolon gibi filtrelenmez, `BelgeTuru AS BelgeTipi` olarak uretilir
 - Vera tarafi yalniz `VeraConnection` tanimliysa okunur; `BELGE_TIPI = 'FATURA'` ve `BELGE_TURU = 'FATURA'` filtresi kullanilir
 - yeni staging kayitlari `Invoices` ve `InvoiceLines` tablolarina `IsSent = false` olarak yazilir
+- ERP gonderiminde odeme tipine gore nakit / kredi karti mahsup hesabi, satis ve KDV satirlari muhasebe fisine yazilir
 
 #### Gider Pusulalari Tab'i
 
 Bu tab, POS gider pusulasi staging ve ERP'ye aktarim akisinin web karsiligidir.
+
+ERP'ye gonder aksiyonu secili gider pusulalari icin Mikro tarafinda muhasebe fis detay ve fis header kayitlari olusturur. Basarili kayitlarda staging gider pusulasi header'i `IsSent = true` yapilir.
 
 Endpoint'ler:
 
@@ -7866,6 +7877,7 @@ UI beklentisi:
 - POS faturalar tab'ina paralel bir liste + detay kurgusu kullanilmalidir
 - ayrim yalnizca is anlami ve kolon isimlerinde olmalidir
 - detay formunda belge satirlari okunur, ama guncellenen alanlar header agirlikli olacakmis gibi dusunulmelidir
+- ERP gonderim sonucundaki `results[]` satirlari tek tek okunmali; basarili satir mesajlari fis no / yevmiye no bilgisi icerebilir
 
 Kaynak veri davranisi:
 
@@ -7873,6 +7885,7 @@ Kaynak veri davranisi:
 - kaynak tablo `Furpa.dbo.PosFaturas`, satir hesap kaynagi `Furpa.dbo.PosFaturaSatirs` + Mikro `STOKLAR` eslesmesidir
 - yalniz `BelgeTuru = 4` kayitlari alinir
 - yeni staging kayitlari `ExpenseNotes` ve `ExpenseNoteLines` tablolarina `IsSent = false` olarak yazilir
+- ERP gonderiminde odeme hesabi, gider hesabi ve indirilecek KDV satirlari muhasebe fisine yazilir
 
 #### Kasa Eslemeleri Tab'i
 
@@ -7892,11 +7905,13 @@ UI beklentisi:
 
 #### UI Durum Yonetimi
 
-Bu menu kismi implementasyon durumunda oldugu icin UI tarafinda su davranis onerilir:
+Bu menu Z raporu dosya importu haric aktif backend akislariyla calisir. UI tarafinda su davranis onerilir:
 
 - liste, detay, import, guncelleme ve silme aksiyonlari normal DTO response'lariyla calisir
-- Z raporu importu ve ERP'ye gonderme aksiyonlari simdilik `success=false` sonuc satirlari dondurebilir; UI bunu hata/uyari olarak gostermelidir
+- Z raporu dosya importu parser aktif olmadigi icin `success=false` sonuc satiri dondurur; UI bunu hata/uyari olarak gostermelidir
+- ERP'ye gonderme aksiyonlari kayit bazli calisir; eksik kasa eslemesi, veri tutarsizligi veya muhasebe denge hatasi ilgili satirda `success=false` olarak doner
 - toplu islemlerde response icindeki `results[]` satir bazli okunmali, tek bir hata tum batch basarisiz gibi gosterilmemelidir
+- basarili ERP gonderim satirlari mesaj icinde fis no / yevmiye no bilgisi tasiyabilir
 - `OnlyPending=true` varsayilani nedeniyle liste ekranlari ERP'ye gonderilmemis staging kayitlarini gosterir; arsiv/tum kayit gorunumu icin `OnlyPending=false` gonderilmelidir
 - `sil` aksiyonu staging kaydini temizler; ERP'de olusmus muhasebe fisi silme aksiyonu gibi sunulmamalidir
 
@@ -7918,10 +7933,10 @@ Bu nedenle frontend tarafinda bugunden su dil benimsenmelidir:
 
 Not:
 
-- POS fatura ve gider pusulasi importlari staging tablolarina yazar; ERP muhasebe fisi yazma bu API projesinde henuz tamamlanmamistir
+- POS fatura, gider pusulasi ve mevcut staging Z raporlari icin ERP'ye gonderme aksiyonu Mikro muhasebe fis kayitlarini olusturur ve basarili staging header'lari `IsSent = true` yapar
 - Z raporu liste/detay/silme mevcut staging tablolarini kullanir; dosyadan Z raporu parser'i henuz uygulanmamistir
 - ID alanlari `int` tipindedir: `totalId`, `invoiceId`, `expenseId`, `mappingId`
-- toplu gonderme ve silme isteklerinde `DocumentIds` GUID degil `int` koleksiyonudur
+- toplu gonderme ve silme isteklerinde belge tipine gore `TotalIds`, `InvoiceIds` veya `ExpenseIds` gonderilmelidir; geriye uyumluluk icin `DocumentIds` de `int` koleksiyonu olarak kabul edilir
 
 #### Mevcut Request / Response Kontratlari
 
@@ -7978,6 +7993,7 @@ public sealed class ImportPosDocumentsHttpRequest
 {
     public int? WarehouseNo { get; init; }
     public DateTime? BusinessDate { get; init; }
+    public DateTime? DateToGet { get; init; }
     public bool IncludePreviouslyImported { get; init; }
     public bool OverwriteExisting { get; init; }
 }
@@ -7985,14 +8001,20 @@ public sealed class ImportPosDocumentsHttpRequest
 public sealed class PosAccountingTransferHttpRequest
 {
     public int? WarehouseNo { get; init; }
-    public IReadOnlyCollection<int> DocumentIds { get; init; }
+    public IReadOnlyCollection<int>? DocumentIds { get; init; }
+    public IReadOnlyCollection<int>? TotalIds { get; init; }
+    public IReadOnlyCollection<int>? InvoiceIds { get; init; }
+    public IReadOnlyCollection<int>? ExpenseIds { get; init; }
     public bool ContinueOnError { get; init; } = true;
 }
 
 public sealed class PosAccountingDeleteHttpRequest
 {
     public int? WarehouseNo { get; init; }
-    public IReadOnlyCollection<int> DocumentIds { get; init; }
+    public IReadOnlyCollection<int>? DocumentIds { get; init; }
+    public IReadOnlyCollection<int>? TotalIds { get; init; }
+    public IReadOnlyCollection<int>? InvoiceIds { get; init; }
+    public IReadOnlyCollection<int>? ExpenseIds { get; init; }
 }
 
 public sealed class UpdatePosAccountingDocumentHttpRequest
@@ -8016,6 +8038,35 @@ public sealed class CashRegisterBranchMappingHttpRequest
     public int? BranchNo { get; init; }
     public string? BranchName { get; init; }
     public string? Description { get; init; }
+}
+```
+
+Alan notlari:
+
+- `ImportPosDocumentsHttpRequest.DateToGet`, POS ekranlari icin `BusinessDate` alias'idir; iki alan da gelirse backend `BusinessDate` degerini kullanir
+- `erpye-gonder` ve toplu `DELETE` body'lerinde belge tipine gore `TotalIds`, `InvoiceIds` veya `ExpenseIds` tercih edilmelidir
+- `DocumentIds`, eski UI contract'lari icin geriye uyumlu yedek alandir
+
+Toplu gonderme / silme body ornekleri:
+
+```json
+{
+  "totalIds": [101, 102],
+  "continueOnError": true
+}
+```
+
+```json
+{
+  "invoiceIds": [125],
+  "continueOnError": true
+}
+```
+
+```json
+{
+  "expenseIds": [88],
+  "continueOnError": true
 }
 ```
 
@@ -10884,9 +10935,9 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `AxataManualIncomingWarehouseReceivingBatchItemHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `AllowDiscrepancy`, `Lines`
 - `PosAccountingDateRangeHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `OnlyPending`
 - `ImportZReportsHttpRequest`: `WarehouseNo`, `BusinessDate`, `ReportPath`, `ImportMode`, `SourceCode`, `OverwriteExisting`
-- `ImportPosDocumentsHttpRequest`: `WarehouseNo`, `BusinessDate`, `IncludePreviouslyImported`, `OverwriteExisting`
-- `PosAccountingTransferHttpRequest`: `WarehouseNo`, `DocumentIds`, `ContinueOnError`
-- `PosAccountingDeleteHttpRequest`: `WarehouseNo`, `DocumentIds`
+- `ImportPosDocumentsHttpRequest`: `WarehouseNo`, `BusinessDate`, `DateToGet`, `IncludePreviouslyImported`, `OverwriteExisting`
+- `PosAccountingTransferHttpRequest`: `WarehouseNo`, `DocumentIds`, `TotalIds`, `InvoiceIds`, `ExpenseIds`, `ContinueOnError`
+- `PosAccountingDeleteHttpRequest`: `WarehouseNo`, `DocumentIds`, `TotalIds`, `InvoiceIds`, `ExpenseIds`
 - `UpdatePosAccountingDocumentHttpRequest`: `DocumentNo`, `CustomerTaxNo`, `PaymentType`, `BranchNo`, `Description`
 - `CashRegisterBranchMappingListHttpRequest`: `BranchNo`, `CashRegisterNo`
 - `CashRegisterBranchMappingHttpRequest`: `CashRegisterNo`, `BranchNo`, `BranchName`, `Description`
@@ -10905,7 +10956,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`, `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar` ve `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari` endpoint'leri query'de `PosAccountingDateRangeHttpRequest` kullanir
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar` body'de `ImportZReportsHttpRequest` alir
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/ice-aktar` ve `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/ice-aktar` body'de `ImportPosDocumentsHttpRequest` alir
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*/erpye-gonder` ve `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*` endpoint'leri secili belge listesi bekler; `DocumentIds[]` int koleksiyonudur
+- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*/erpye-gonder` ve `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/*` endpoint'leri secili belge listesi bekler; belge tipine gore `TotalIds[]`, `InvoiceIds[]` veya `ExpenseIds[]` tercih edilir, geriye uyumluluk icin `DocumentIds[]` int koleksiyonu da kabul edilir
 - `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}` ve `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}` body'de `UpdatePosAccountingDocumentHttpRequest` alir
 - `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` query'de `CashRegisterBranchMappingListHttpRequest` kullanir
 - `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri` ve `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri/{mappingId}` body'de `CashRegisterBranchMappingHttpRequest` alir
