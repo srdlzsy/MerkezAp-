@@ -175,6 +175,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Shopigo;
 using FurpaMerkezApi.Infrastructure.Services;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -228,6 +229,20 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient(nameof(UyumsoftConnectedQueryService), client =>
         {
             client.Timeout = TimeSpan.FromMinutes(5);
+        });
+        services.Configure<MikroApiOptions>(configuration.GetSection(MikroApiOptions.SectionName));
+        services.AddSingleton<MikroApiAuthBlockFactory>();
+        services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
+        {
+            var mikroApiOptions = serviceProvider.GetRequiredService<IOptionsMonitor<MikroApiOptions>>().CurrentValue;
+
+            if (Uri.TryCreate(mikroApiOptions.BaseUrl, UriKind.Absolute, out var baseUri) &&
+                (baseUri.Scheme == Uri.UriSchemeHttp || baseUri.Scheme == Uri.UriSchemeHttps))
+            {
+                client.BaseAddress = baseUri;
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(mikroApiOptions.TimeoutSeconds, 1, 600));
         });
         services.Configure<AxataSynchronizationOptions>(configuration.GetSection("AxataSynchronization"));
         services.AddSingleton(Options.Create(jwtOptions));

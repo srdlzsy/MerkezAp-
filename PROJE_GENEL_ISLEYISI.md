@@ -34,13 +34,20 @@ Kisaca:
 
 ## 1.1 Secret ve Repo Kurali
 
-Bu proje icinde secret yonetimi icin net kural sunlardir:
+Bu proje icinde secret yonetimi icin ideal kural sunlardir:
 
-- `appsettings.json` ve `appsettings.Production.json` repoda kalir ama secret tasimaz
+- `appsettings.json` ve `appsettings.Production.json` repoda kalir ama normalde secret tasimaz
 - gercek sifreler, connection string'ler ve JWT secret'lari GitHub'a gonderilmez
 - lokal calisma icin `src/FurpaMerkezApi.WebApi/appsettings.Local.json` kullanilir
 - bu dosya `.gitignore` icinde oldugu icin repoya gitmez
 - production secret'lari server ortaminda tutulur
+
+Guncel durum notu:
+
+- `MikroApi` section'i artik `appsettings.json`, `appsettings.Local.json` veya `appsettings.Production.json` uzerinden okunabilir
+- `MikroApi` icindeki `SifreAnahtari` ve `ApiKey` hassas degerdir
+- bu degerler track edilen dosyalarda tutulursa ilgili dosya operasyonel olarak secret tasiyor kabul edilmelidir
+- public repo veya dis ortam paylasimi yapilacaksa bu degerler temizlenmeli ve gerekirse Mikro API secret'lari rotate edilmelidir
 
 Cok onemli:
 
@@ -179,7 +186,93 @@ Projede okuma ve yazma icin farkli Mikro baglantisi kullanilabilecek bir yapi va
 
 Bu yapi sayesinde kritik yazma operasyonlari kontrollu yonetilebilir.
 
-### 3.4 FurpaConnection
+### 3.4 Mikro REST API / MikroApiClient
+
+Projede Mikro REST API icin yeni bir altyapi vardir.
+
+Bu altyapi su an mevcut DB okuma/yazma akislarini degistirmez. Yani:
+
+- `MikroDbContext` okuma tarafinda calismaya devam eder
+- `MikroWriteDbContext` mevcut write servislerinde calismaya devam eder
+- `MikroApiClient` henuz operasyonel modullere baglanmamistir
+- client sadece hazir bekleyen bir entegrasyon altyapisidir
+
+Ilgili dosyalar:
+
+- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi/MikroApiOptions.cs`
+- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi/MikroApiClient.cs`
+- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi/MikroApiAuthBlockFactory.cs`
+- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi/MikroApiResult.cs`
+- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi/MikroApiException.cs`
+
+Config kaynagi:
+
+```json
+"MikroApi": {
+  "BaseUrl": "http://10.0.0.207:8084",
+  "FirmaKodu": "SOPHIGET",
+  "CalismaYili": 2026,
+  "KullaniciKodu": "API",
+  "SifreAnahtari": "<secret>",
+  "FirmaNo": 0,
+  "SubeNo": 0,
+  "ApiKey": "<secret>"
+}
+```
+
+Bu section su kaynaklardan merge edilerek okunur:
+
+1. `appsettings.json`
+2. environment dosyasi, ornek `appsettings.Production.json`
+3. default host configuration icindeki environment variable / command-line override'lari
+4. `appsettings.Local.json`
+
+`Program.cs`, `appsettings.Local.json` dosyasini opsiyonel olarak sonradan ekler. Bu yuzden local dosya ayni key'leri iceriyorsa onceki config degerlerini override eder. Deployment tarafinda daha sonra eklenen ozel bir provider yoksa son soz local dosyadadir.
+
+Mikro REST auth mantigi:
+
+- Mikro API sabit sifre istemez
+- her istekte gunluk MD5 hash uretilir
+- formul: `MD5("yyyy-MM-dd <SifreAnahtari>")`
+- hash tarihi icin `HashDateUtcOffsetHours` kullanilir
+- varsayilan offset `3` saattir, Turkiye saatine gore gun donumu riskini azaltmak icin kullanilir
+
+Client'in sagladigi temel metotlar:
+
+- `GetAsync<TResponse>(path)`
+- `PostAsync<TResponse>(path, payload)`
+- `PostWithMikroEnvelopeAsync<TResponse>(path, payload)`
+- `PostWithMikroPayloadAsync<TResponse>(path, mikroPayload)`
+- `PostLoginAsync<TResponse>()`
+
+Iki farkli payload modeli vardir:
+
+- `PostWithMikroEnvelopeAsync`: body icinde top-level `Mikro` nesnesi ve yaninda diger alanlar olur
+- `PostWithMikroPayloadAsync`: gonderilen alanlar dogrudan `Mikro` nesnesinin icine eklenir
+
+Bunun sebebi Postman collection icinde Mikro endpointlerinin tek tip body istememesidir. Bazi endpointler `Mikro` blogunu top-level ister, bazi kaydet/sil endpointleri is alanlarini `Mikro` blogunun icinde bekler.
+
+Client response davranisi:
+
+- HTTP status okunur
+- raw response saklanir
+- body icindeki `IsError`, `StatusCode`, `ErrorMessage`, `Message`, `HataMesaji` gibi alanlar normalize edilmeye calisilir
+- sonuc `MikroApiResult<TResponse>` olarak doner
+- timeout ve retry altyapisi vardir
+- varsayilan olarak retry sadece guvenli HTTP metotlari icin uygulanir
+- POST gibi write metotlarinda retry varsayilan olarak kapali tutulur
+
+Loglama:
+
+- HTTP status ve response body loglanir
+- log body uzunlugu `MaxLoggedBodyLength` ile sinirlanir
+- `Sifre`, `ApiKey`, `Token`, `Password` gibi alan adlari logda redacted edilmeye calisilir
+
+Onemli:
+
+Bu altyapi eklenmis olsa da is kurali henuz Mikro REST API'ye tasinmadi. Bir modul acikca `MikroApiClient` enjekte edip kullanmadikca sistem davranisi degismez.
+
+### 3.5 FurpaConnection
 
 Bu veritabani API'ye ozel yardimci tablolari ve gorunumleri barindirir.
 
@@ -194,18 +287,40 @@ Ornek:
 
 Yani bu kisim, "Mikro'nun ham tablolarindan ayri olarak API'nin kendi ihtiyaclari icin kullandigi alan" gibi dusunulebilir.
 
+### 3.6 Hangi Context / Client Ne Icin Kullanilir?
+
+Projede birden fazla veri erisim yolu oldugu icin karar tablosu su sekildedir:
+
+| Bilesen | Kaynak | Ana kullanim | Not |
+|---|---|---|---|
+| `AuthDbContext` | `AuthConnection` | kullanici, rol, permission | EF migration ile yonetilir |
+| `FurpaDbContext` | `FurpaConnection` | API'ye ozel tablolar, gorunumler | EF migration gerekebilir |
+| `MikroDbContext` | `MikroConnection` | Mikro okuma path'i | operasyonel liste/detay/rapor sorgulari |
+| `MikroWriteDbContext` | `MikroWriteConnection` veya `testMikroConnection` | Mikro DB'ye direkt yazma | mevcut write servislerinin ana yolu |
+| `ShopigoCiroDbContext` | `ShopigoCiroConnection` | Shopigo ciro verileri | connection varsa kaydedilir |
+| `MikroApiClient` | `MikroApi:BaseUrl` | Mikro REST API cagrilari | henuz modullere bagli degil |
+
+Genel karar:
+
+- Liste, arama, detay, rapor gibi islerde bugun agirlikli olarak `MikroDbContext` veya raw SQL kullanilir
+- Mevcut create/update/delete islerinde bugun agirlikli olarak `MikroWriteDbContext` kullanilir
+- Mikro REST API'ye gecis, moduller bazinda tek tek ve kontrollu yapilmalidir
+- `MikroApiClient` kullanildiginda bile okuma/dogrulama icin DB'den geri kontrol gerekebilir
+
 ## 4. Uygulama Acildiginda Ne Olur?
 
 Uygulama calistiginda genel akis su sekildedir:
 
 1. `Program.cs` icinde uygulama ayaga kalkar.
-2. `Controllers`, `Routing`, `CORS`, `DataProtection` ve diger servisler kaydedilir.
-3. `AddCleanArchitecture(...)` cagrisi ile hem `WebApi` hem `Infrastructure` servisleri DI container'a eklenir.
-4. Uygulama build edildikten sonra `InitializeDatabaseAsync()` cagrilir.
-5. Bu adimda auth veritabani migration'lari uygulanir.
-6. Ardindan permission katalogu veritabaniyla senkronize edilir.
-7. Swagger, CORS, exception middleware, authentication ve authorization pipeline'a baglanir.
-8. Son olarak controller endpoint'leri map edilir.
+2. `appsettings.Local.json` varsa configuration'a eklenir ve onceki config degerlerini override edebilir.
+3. `Controllers`, `Routing`, `CORS`, `DataProtection` ve diger servisler kaydedilir.
+4. `AddCleanArchitecture(...)` cagrisi ile hem `WebApi` hem `Infrastructure` servisleri DI container'a eklenir.
+5. `MikroApiOptions`, `MikroApiAuthBlockFactory` ve typed `MikroApiClient` DI container'a eklenir.
+6. Uygulama build edildikten sonra `InitializeDatabaseAsync()` cagrilir.
+7. Bu adimda auth veritabani migration'lari uygulanir.
+8. Ardindan permission katalogu veritabaniyla senkronize edilir.
+9. Swagger, CORS, exception middleware, authentication ve authorization pipeline'a baglanir.
+10. Son olarak controller endpoint'leri map edilir.
 
 Bu tasarim sayesinde uygulama ayaga kalkarken:
 
@@ -216,7 +331,7 @@ Bu tasarim sayesinde uygulama ayaga kalkarken:
 Production notu:
 
 - `StartupTasks` ayarlari production'da kontrollu acilmalidir
-- `appsettings.Production.json` repo icinde template olarak kalmali, gercek degerler server tarafinda doldurulmalidir
+- `appsettings.Production.json` tercihen template olarak kalmali, gercek degerler server tarafinda veya local override ile doldurulmalidir
 
 ## 5. Authentication ve Authorization Mantigi
 
@@ -347,6 +462,15 @@ En sade sekilde bir endpoint'in yolculugu su sekildedir:
 8. sonuc dto olarak doner
 9. controller bunu `200`, `201` gibi uygun HTTP response'a cevirir
 
+Bir endpoint ileride Mikro REST API kullanacaksa akisa su adimlar eklenir:
+
+1. ilgili use case veya write service `MikroApiClient` enjekte eder
+2. request DTO, Mikro API'nin bekledigi payload modeline map edilir
+3. `MikroApiClient` ortak auth blogunu body'ye ekler
+4. Mikro API response'u `MikroApiResult<T>` olarak normalize edilir
+5. gerekirse basarili response sonrasi Mikro DB'den geri okuma yapilir
+6. FurpaMerkezApi kendi response modelini doner
+
 ## 8. Gercek Ornek: Kunye / Etiket Akisi
 
 `EtiketBelgeleriController` icindeki `etiketler` endpoint'i bu akisin guzel bir ornegidir.
@@ -414,6 +538,68 @@ Bu ayrim kodu daha okunur yapar:
 - controller HTTP bilir
 - use case is adini bilir
 - executor/service ise veritabani detayini bilir
+
+### 9.4 Mikro REST API Client Deseni
+
+Mikro REST API client altyapisi, mevcut write service desenine alternatif veya yardimci olarak eklendi.
+
+Bugunku durum:
+
+- `Create...UseCase` siniflari ve `...WriteService` siniflari henuz DB write ile calisir
+- `MikroApiClient` henuz hicbir create/update/delete isine baglanmadi
+- bu yuzden mevcut endpoint davranislari degismedi
+
+Gelecekte bir modulu Mikro REST'e baglamak icin genel yol:
+
+1. Once ilgili modul icin Mikro REST endpoint'i netlestirilir
+2. Request DTO -> Mikro API payload mapper yazilir
+3. Mevcut write service icine `MikroApiClient` enjekte edilir veya ayri bir `...MikroApiWriter` sinifi acilir
+4. Config ile DB write mi Mikro API write mi secilecegi belirlenir
+5. Mikro API response'u ham olarak loglanir
+6. Basari/hata sonucu `MikroApiResult<T>` uzerinden normalize edilir
+7. Belge GUID/seri/sira gibi kritik bilgiler response'ta yoksa DB'den geri okunur
+8. Modulu tamamen tasimadan once pilot ortamda test edilir
+
+Ornek kullanim fikri:
+
+```csharp
+var result = await mikroApiClient.PostWithMikroPayloadAsync<MyMikroResponse>(
+    "/Api/apiMethods/SayimSonuclariKaydetV2",
+    mikroPayload,
+    cancellationToken);
+
+if (result.IsError)
+{
+    throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API islemi basarisiz oldu.");
+}
+```
+
+Burada dikkat edilmesi gereken nokta:
+
+- `MikroApiClient` controller'a dogrudan baglanmamali
+- controller yine use case'i cagirmali
+- use case veya write service, Mikro API detayini saklamali
+- Mikro API payload modeli frontend request modeline sizdirilmamali
+
+### 9.5 DB Write ve Mikro API Write Arasindaki Fark
+
+DB write:
+
+- `MikroWriteDbContext` kullanir
+- tablo kolonlari bizim kod tarafindan doldurulur
+- seri/sira/GUID uretimi bugun buyuk olcude backend kontrolundedir
+- transaction kontrolu EF Core uzerindedir
+- mevcut sistemin calisan yolu budur
+
+Mikro API write:
+
+- `MikroApiClient` kullanir
+- Mikro'nun resmi REST endpoint'lerine gider
+- Mikro kendi is kurallarini uygulayabilir
+- response semasi endpoint bazinda test edilmelidir
+- seri/sira/GUID bilgisinin nasil dondugu netlesmeden moduller tamamen tasinmamalidir
+
+Bu yuzden Mikro REST gecisi tek hamlede yapilmamali. Her modul icin once pilot baglanti, sonra shadow/test, sonra kontrollu canli gecis daha guvenlidir.
 
 ## 10. Exception ve Hata Yonetimi
 
@@ -522,6 +708,16 @@ Projede yeni bir is gelistirirken genelde su adimlar izlenir:
 7. ilgili servis DI'a kaydedilir
 8. frontend bu yeni route ve permission yapisini kullanir
 
+Eger yeni is Mikro REST API kullanacaksa ek adimlar:
+
+1. Mikro API endpoint path'i Postman collection veya Mikro dokumanindan aynen alinmalidir
+2. path casing degistirilmemelidir; collection icinde `/Api/APIMethods`, `/Api/apiMethods`, `/API/APIMethods` gibi farkli casing'ler vardir
+3. request mapper, FurpaMerkezApi DTO'sunu Mikro API payload'ina cevirmelidir
+4. ortak `Mikro` auth blogu controller'dan degil `MikroApiAuthBlockFactory` tarafindan uretilmelidir
+5. API response ham olarak loglanmali ve normalize edilmelidir
+6. kritik belgelerde duplicate riskine karsi seri/sira/GUID davranisi test edilmelidir
+7. DB fallback veya geri okuma ihtiyaci modulle birlikte kararlastirilmalidir
+
 ## 15. Migration Ne Zaman Gerekir?
 
 Bu konu projede en cok karistirilan basliklardan biridir.
@@ -563,6 +759,8 @@ Projeyi ilk kez okuyacak biri icin en iyi baslangic sirasi su olur:
 7. ilgini ceken bir modul controller'i
 8. o controller'in kullandigi use case implementasyonu
 9. ilgili query executor veya write service
+10. Mikro REST gecisiyle ilgileniyorsan `src/FurpaMerkezApi.Infrastructure/Services/MikroApi` klasoru
+11. Mikro REST endpoint kararlari icin `MIKRO_REST_API_GECIS_ANALIZI.md`
 
 Bu sirayla gidersen:
 
@@ -585,6 +783,10 @@ Projeyi akilda tutmanin en kolay yolu su modeldir:
 Bir istegin hayati:
 
 `Frontend -> Controller -> UseCase -> Query/Write Service -> Db/Integration -> DTO -> HTTP Response`
+
+Mikro REST'e baglanan bir yazma isteginin hayati:
+
+`Frontend -> Controller -> UseCase -> Write Service -> MikroApiClient -> Mikro REST API -> Normalize Result -> DTO -> HTTP Response`
 
 Bir kullanicinin hayati:
 
@@ -616,6 +818,8 @@ Projeyi buyuturken en saglam yaklasim su olur:
 Repo icinde senaryo bazli ek dokumanlar da bulunuyor:
 
 - `UI_API_DOKUMANI.md`
+- `MIKRO_REST_API_GECIS_ANALIZI.md`
+- `MIKRO_API_POSTMAN_DOKUMANI.md`
 - `AXATA_ENTEGRASYON_ALTYAPISI.md`
 - `UYUMSOFT_ENTEGRASYON_DOKUMANI.md`
 - `DEPO_MAL_KABUL_ISLEYIS.md`
