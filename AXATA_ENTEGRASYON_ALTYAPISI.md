@@ -533,6 +533,13 @@ Temel alanlar:
 - `Tasks.{taskCode}.DefaultWarehouseNo`
 - `Tasks.{taskCode}.LiveOperationName`
 
+Davranis:
+
+- `Enabled=false` ise `execute`, `dispatch`, live import ve worker kuyrugu gibi yazma/operasyon endpointleri 409 doner.
+- Manuel operasyon kullanilip otomatik worker istenmiyorsa production icin onerilen kombinasyon `Enabled=true`, `WorkerEnabled=false`, `SchedulerEnabled=false` olur.
+- `WorkerEnabled=false` sadece arka plan kuyruk isleyicisini kapatir; manuel `execute` ve `dispatch` icin ana `Enabled=true` olmalidir.
+- `Tasks.{taskCode}.Enabled=false` ise sadece ilgili task kapali sayilir.
+
 Canli dispatch icin zorunlular:
 
 - `MainEndpointUrl`

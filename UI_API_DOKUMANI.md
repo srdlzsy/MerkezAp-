@@ -7558,6 +7558,7 @@ Kullaniciya onerilen metinler:
 
 - `Outbox`: "Payload dosyalandi. Bu islem AXATA'ya gonderim yapmaz."
 - `Dispatch`: "Secili evrak AXATA servislerine canli gonderilecek."
+- `AXATA synchronization is disabled in configuration.`: "AXATA entegrasyonu sunucu ayarlarinda kapali. Manuel gonderim icin sistem ayari acilmali."
 - `C01 import`: "AXATA'daki C01 teslimat Mikro'da sevk fisine cevrilecek. Basarili olursa AXATA status guncellenebilir."
 - `C02/C03/C4 preview`: "Bu hareket tipi icin simdilik sadece AXATA kuyrugu goruntulenir; Mikro'ya yazma yapilmaz."
 - `manual/axata body`: "Bu ekranda AXATA'dan veri cekilmez; girilen body Mikro belgesine cevrilir."
