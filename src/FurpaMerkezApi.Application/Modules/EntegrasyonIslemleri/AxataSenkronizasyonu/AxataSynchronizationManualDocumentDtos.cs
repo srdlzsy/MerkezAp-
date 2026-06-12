@@ -13,6 +13,7 @@ public sealed record AxataSynchronizationManualDocumentCandidatesRequest(
     int? WarehouseNo,
     DateTime? StartDate,
     DateTime? EndDate,
+    int? Skip,
     int? Take);
 
 public sealed record AxataSynchronizationManualDocumentExecuteRequest(
@@ -64,6 +65,7 @@ public sealed record AxataSynchronizationManualDocumentCandidatesDto(
     DateTime StartDate,
     DateTime EndDate,
     int TotalRecordCount,
+    int SkippedRecordCount,
     int ReturnedRecordCount,
     DateTime GeneratedAtUtc,
     IReadOnlyCollection<AxataSynchronizationManualDocumentCandidateItemDto> Items,

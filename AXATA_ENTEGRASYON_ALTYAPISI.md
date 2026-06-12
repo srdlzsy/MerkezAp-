@@ -259,6 +259,8 @@ Destekleyen task'lar:
 
 - Query'deki `warehouseNo`, AXATA kaynak/cikis depodur.
 - Mikro filtresi `ssip_cikdepo = warehouseNo` olur.
+- Aday listesi `skip/take` ile sayfalanir; `take` en fazla 100'dur.
+- 150 aday varsa once `skip=0&take=100`, sonra `skip=100&take=100` cagrilir.
 - Response item icinde `documentSerie`, `documentOrderNo`, `lineCount`, `totalQuantity` dogrudan preview/execute body'lerine tasinabilir.
 
 ### Canli Mikro -> AXATA Dispatch

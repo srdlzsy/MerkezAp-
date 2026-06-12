@@ -153,6 +153,7 @@ internal sealed class AxataSynchronizationService(
     {
         var definition = GetEnabledDefinition(request.TaskCode);
         var warehouseNo = ResolveWarehouseNo(definition, request.WarehouseNo, defaultWarehouseNo);
+        var skip = NormalizeSkip(request.Skip);
         var take = NormalizeTake(request.Take, options.CurrentValue.PreviewDefaultTake);
         var dateRange = ResolveDateRange(
             request.StartDate,
@@ -171,6 +172,7 @@ internal sealed class AxataSynchronizationService(
             new AxataSynchronizationManualDocumentCandidateCriteria(
                 dateRange.StartDate,
                 dateRange.EndDate,
+                skip,
                 take),
             cancellationToken);
     }
@@ -394,6 +396,9 @@ internal sealed class AxataSynchronizationService(
         var take = requestedTake.GetValueOrDefault(configuredDefaultTake);
         return take <= 0 ? Math.Max(1, configuredDefaultTake) : Math.Min(take, 100);
     }
+
+    private static int NormalizeSkip(int? requestedSkip) =>
+        requestedSkip is > 0 ? requestedSkip.Value : 0;
 
     private static IReadOnlyCollection<AxataSynchronizationManualDocumentInput> MapBatchInputs(
         IReadOnlyCollection<AxataSynchronizationManualDocumentRequestItem> documents)

@@ -7409,9 +7409,11 @@ Mevcut endpointler:
   - tek evrak icin anlik `DryRun` veya `Outbox` calistirir
   - response `AxataSynchronizationManualDocumentDto`
   - worker disabled olsa bile, genel entegrasyon acik oldugu surece operasyonel kurtarma amacli kullanilabilir
-- `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates?warehouseNo=50&startDate=2026-04-23&endDate=2026-04-29&take=25`
+- `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates?warehouseNo=50&startDate=2026-04-23&endDate=2026-04-29&skip=0&take=25`
   - manuel kurtarma icin uygun evrak adaylarini listeler
   - response `AxataSynchronizationManualDocumentCandidatesDto`
+  - `take` 1-100 araligindadir; 100'den fazla kayit icin `skip/take` ile sayfalama yapilir
+  - 150 kayit ornegi: once `skip=0&take=100`, sonra `skip=100&take=100` cagrilir; ikinci response 50 item doner
   - `issued-warehouse-order-sync` icin `warehouseNo`, hedef depo degil AXATA kaynak/cikis depodur; backend Mikro `ssip_cikdepo = warehouseNo` filtresiyle aday listeler
   - bu nedenle audit `unsyncedWarehouseOrders` icinde `outWarehouseNo=50` gelen evrak, candidates endpoint'inde `warehouseNo=50` ile aranmalidir
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/preview-batch`
@@ -10633,6 +10635,7 @@ public sealed record AxataSynchronizationManualDocumentCandidatesDto(
     DateTime StartDate,
     DateTime EndDate,
     int TotalRecordCount,
+    int SkippedRecordCount,
     int ReturnedRecordCount,
     DateTime GeneratedAtUtc,
     IReadOnlyCollection<AxataSynchronizationManualDocumentCandidateItemDto> Items,
@@ -11050,7 +11053,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UyumsoftOperationParameterHttpRequest`: `Name`, `Value`
 - `AxataSynchronizationExecuteHttpRequest`: `TaskCode`, `ExecutionMode`, `WarehouseNo`
 - `AxataSynchronizationExecuteTaskHttpRequest`: `ExecutionMode`, `WarehouseNo`
-- `AxataSynchronizationManualDocumentCandidatesHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `Take`
+- `AxataSynchronizationManualDocumentCandidatesHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `Skip`, `Take`
 - `AxataIntegrationAuditHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `Take`
 - `AxataOutboundDeliveryQueuePreviewHttpRequest`: `MovementType`, `Take`
 - `AxataOutboundDeliveryImportPreviewHttpRequest`: `Take`
@@ -11079,7 +11082,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CashRegisterBranchMappingListHttpRequest`: `BranchNo`, `CashRegisterNo`
 - `CashRegisterBranchMappingHttpRequest`: `CashRegisterNo`, `BranchNo`, `BranchName`, `Description`
 - `GET /api/integrations/axata-sync/tasks/{taskCode}/preview` endpoint'i body almaz; `warehouseNo` ve `take` query parametresi kullanir
-- `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates` endpoint'i body almaz; `warehouseNo`, `startDate`, `endDate`, `take` query parametresi kullanir
+- `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates` endpoint'i body almaz; `warehouseNo`, `startDate`, `endDate`, `skip`, `take` query parametresi kullanir
 - `issued-warehouse-order-sync` task'inda `warehouseNo` hedef depo degil AXATA kaynak/cikis depodur; Mikro filtre `ssip_cikdepo = warehouseNo` olur
 - `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` endpoint'i body almaz; query'de `movementType` ve `take` kullanir; `movementType` bos ise `C01` kabul edilir, `C04` alias'i `C4` olarak sorgulanir
 - `ExecutionMode` su an yalnizca `DryRun` veya `Outbox` olabilir
