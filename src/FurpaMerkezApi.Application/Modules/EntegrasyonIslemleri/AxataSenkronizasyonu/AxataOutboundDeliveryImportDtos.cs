@@ -2,6 +2,10 @@ namespace FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkroniz
 
 public interface IAxataOutboundDeliveryImportService
 {
+    Task<AxataOutboundDeliveryQueuePreviewDto> PreviewOutboundDeliveriesAsync(
+        AxataOutboundDeliveryQueuePreviewRequest request,
+        CancellationToken cancellationToken);
+
     Task<AxataOutboundDeliveryImportPreviewDto> PreviewC01Async(
         AxataOutboundDeliveryImportPreviewRequest request,
         CancellationToken cancellationToken);
@@ -12,6 +16,10 @@ public interface IAxataOutboundDeliveryImportService
         CancellationToken cancellationToken);
 }
 
+public sealed record AxataOutboundDeliveryQueuePreviewRequest(
+    string? MovementType,
+    int? Take);
+
 public sealed record AxataOutboundDeliveryImportPreviewRequest(
     int? Take);
 
@@ -19,6 +27,33 @@ public sealed record AxataOutboundDeliveryImportExecuteRequest(
     int? Take,
     bool ContinueOnError,
     bool Acknowledge);
+
+public sealed record AxataOutboundDeliveryQueuePreviewDto(
+    string MovementType,
+    string PendingStatus,
+    DateTime GeneratedAtUtc,
+    int TotalFetchedDocumentCount,
+    int ReturnedDocumentCount,
+    int TotalLineCount,
+    double TotalQuantity,
+    IReadOnlyCollection<AxataOutboundDeliveryQueueDocumentDto> Documents,
+    IReadOnlyCollection<string> Notes);
+
+public sealed record AxataOutboundDeliveryQueueDocumentDto(
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    string DocumentSerie,
+    int? DocumentOrderNo,
+    string MovementType,
+    string Status,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    DateTime? AxataDate,
+    int LineCount,
+    double Quantity,
+    bool HasLiveImport,
+    string CurrentHandling,
+    string? Warning);
 
 public sealed record AxataOutboundDeliveryImportPreviewDto(
     string MovementType,

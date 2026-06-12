@@ -47,6 +47,38 @@ internal sealed class AxataOutboundDeliveryImportService(
         C04LegacyMovementType
     ];
 
+    public async Task<AxataOutboundDeliveryQueuePreviewDto> PreviewOutboundDeliveriesAsync(
+        AxataOutboundDeliveryQueuePreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        var movementType = ResolveOutboundDeliveryMovementType(request.MovementType);
+        var take = NormalizeTake(request.Take);
+        var documents = await FetchPendingOutboundDeliveriesAsync(movementType, cancellationToken);
+        var selectedDocuments = documents
+            .Take(take)
+            .ToArray();
+        var hasLiveImport = movementType.Equals(C01MovementType, StringComparison.OrdinalIgnoreCase);
+
+        return new AxataOutboundDeliveryQueuePreviewDto(
+            movementType,
+            PendingStatus,
+            DateTime.UtcNow,
+            documents.Count,
+            selectedDocuments.Length,
+            selectedDocuments.Sum(document => document.Lines.Count),
+            selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
+            selectedDocuments.Select(document => ToQueuePreviewDocumentDto(document, hasLiveImport)).ToArray(),
+            hasLiveImport
+                ? [
+                    "AXATA outbound delivery kuyrugu canli servisten okundu.",
+                    "C01 icin detayli Mikro eslesme ve import kontrolu live/axata/outbound-deliveries/c01/preview endpoint'inde yapilir."
+                ]
+                : [
+                    "AXATA outbound delivery kuyrugu canli servisten okundu.",
+                    "Bu hareket tipi icin su an sadece kuyruk preview vardir; Mikro'ya yazma ve AXATA ack akisi acik degildir."
+                ]);
+    }
+
     public async Task<AxataIntegrationAuditDto> GetOverviewAsync(
         AxataIntegrationAuditRequest request,
         CancellationToken cancellationToken)
@@ -738,6 +770,29 @@ internal sealed class AxataOutboundDeliveryImportService(
             false,
             "Bu hareket tipi icin Mikro fis eslesmesi bu endpointte kontrol edilmiyor; AXATA status 0 oldugu icin worker tamamlamamis kabul edilir.");
 
+    private static AxataOutboundDeliveryQueueDocumentDto ToQueuePreviewDocumentDto(
+        AxataOutboundDeliveryDocument document,
+        bool hasLiveImport) =>
+        new(
+            document.AxataSequenceNo,
+            document.AxataDeliveryNo,
+            document.DocumentSerie,
+            document.DocumentOrderNo,
+            document.MovementType,
+            document.Status,
+            document.SourceWarehouseNo,
+            document.TargetWarehouseNo,
+            document.AxataDate,
+            document.Lines.Count,
+            document.Lines.Sum(line => line.Quantity),
+            hasLiveImport,
+            hasLiveImport
+                ? "LiveImportAvailableViaC01Endpoint"
+                : "LiveQueuePreviewOnly",
+            hasLiveImport
+                ? "Detayli import uygunlugu icin C01 preview endpoint'i kullanilmalidir."
+                : "Bu hareket tipi icin Mikro import/ack endpoint'i henuz acik degildir.");
+
     private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(C01DeliveryAnalysis analysis) =>
         new(
             analysis.Document.SourceWarehouseNo,
@@ -1102,6 +1157,24 @@ internal sealed class AxataOutboundDeliveryImportService(
 
     private static int NormalizeTake(int? take) =>
         take is > 0 ? Math.Min(take.Value, MaxTake) : DefaultTake;
+
+    private static string ResolveOutboundDeliveryMovementType(string? movementType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(movementType)
+            ? C01MovementType
+            : movementType.Trim().ToUpperInvariant();
+
+        if (normalized == "C04")
+        {
+            normalized = C04LegacyMovementType;
+        }
+
+        return AuditMovementTypes.Any(item => item.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            ? normalized
+            : throw new ArgumentException(
+                "Movement type must be one of C01, C02, C03, C4 or C04.",
+                nameof(movementType));
+    }
 
     private static bool IsInsideDateRange(DateTime? value, DateTime startDate, DateTime endDate) =>
         !value.HasValue || (value.Value.Date >= startDate.Date && value.Value.Date <= endDate.Date);
