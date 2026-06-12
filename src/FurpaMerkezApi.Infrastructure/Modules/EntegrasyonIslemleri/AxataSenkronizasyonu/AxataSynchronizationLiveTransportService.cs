@@ -21,6 +21,8 @@ internal sealed class AxataSynchronizationLiveTransportService(
     private const string DefaultAddressCode = "01";
     private const string DefaultOutboundOperationName = "addOutboundOrder";
     private const string DefaultInboundOperationName = "addInboundOrder";
+    private const string DefaultOutboundMovementCode = "C01";
+    private const string DefaultInboundMovementCode = "G01";
 
     public async Task<AxataLiveDispatchResult> DispatchWarehouseOrderAsync(
         AxataSynchronizationTaskExecutionContext context,
@@ -113,7 +115,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
     private static AxataLegacyOutboundOrderPayload BuildOutboundOrderPayload(WarehouseOrderDetailDto detail)
     {
         var documentNumber = BuildDocumentNumber(detail.Header.DocumentSerie, detail.Header.DocumentOrderNo);
-        var movementCode = BuildWarehouseMovementCode('C', detail.Header.WarehouseNo);
+        var movementCode = DefaultOutboundMovementCode;
         var depotCode = detail.Header.OutWarehouseNo.ToString(CultureInfo.InvariantCulture);
 
         return new AxataLegacyOutboundOrderPayload(
@@ -145,7 +147,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
     private static AxataLegacyInboundOrderPayload BuildInboundOrderPayload(CompanyMovementDetailDto detail)
     {
         var documentNumber = BuildDocumentNumber(detail.Header.DocumentSerie, detail.Header.DocumentOrderNo);
-        var movementCode = BuildWarehouseMovementCode('G', detail.Header.WarehouseNo);
+        var movementCode = DefaultInboundMovementCode;
         var orderDate = (detail.Header.DocumentDate ?? detail.Header.MovementCreateDate).Date;
         var deliveryDate = (detail.Header.MovementDate ?? detail.Header.DocumentDate ?? detail.Header.MovementCreateDate).Date;
 
@@ -316,9 +318,6 @@ internal sealed class AxataSynchronizationLiveTransportService(
         value.GetType()
             .GetProperties()
             .Select(property => new XElement(elementNamespace + property.Name, property.GetValue(value) ?? string.Empty));
-
-    private static string BuildWarehouseMovementCode(char prefix, int warehouseNo) =>
-        $"{prefix}{warehouseNo.ToString("00", CultureInfo.InvariantCulture)}";
 
     private static string BuildDocumentNumber(string documentSerie, int documentOrderNo) =>
         $"{documentSerie.Trim()}.{documentOrderNo.ToString(CultureInfo.InvariantCulture)}";

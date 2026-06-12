@@ -281,6 +281,17 @@ public sealed class AxataSenkronizasyonuController(
             User.GetRequiredWarehouseNo(),
             cancellationToken));
 
+    [HttpGet("live/axata/outbound-deliveries/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryQueuePreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryQueuePreviewDto>> PreviewOutboundDeliveryQueue(
+        [FromQuery] AxataOutboundDeliveryQueuePreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewOutboundDeliveriesAsync(
+            new AxataOutboundDeliveryQueuePreviewRequest(request.MovementType, request.Take),
+            cancellationToken));
+
     [HttpGet("live/axata/outbound-deliveries/c01/preview")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
@@ -839,6 +850,15 @@ public sealed class AxataIntegrationAuditHttpRequest
 
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
+
+    [Range(1, 200)]
+    public int? Take { get; init; }
+}
+
+public sealed class AxataOutboundDeliveryQueuePreviewHttpRequest
+{
+    [StringLength(10)]
+    public string? MovementType { get; init; }
 
     [Range(1, 200)]
     public int? Take { get; init; }

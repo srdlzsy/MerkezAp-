@@ -7375,12 +7375,18 @@ Mevcut endpointler:
   - eski worker parity icin planlanan AXATA fetch/import profillerini listeler
   - her profil icin bugunku fallback route ve implementasyon durumu gorulebilir
   - response `AxataSynchronizationFetchProfilesOverviewDto`
-- `GET /api/integrations/axata-sync/live/audit/overview?startDate=2026-06-08&endDate=2026-06-08&warehouseNo=110&take=50`
+- `GET /api/integrations/axata-sync/live/audit/overview?startDate=2026-06-08&endDate=2026-06-08&warehouseNo=50&take=50`
   - eski worker calisirken Mikro ve AXATA arasindaki farklari kontrol eder; veri yazmaz
   - Mikro -> AXATA siparis tarafinda `ssip_special1` worker basari bayragini raporlar
   - AXATA -> Mikro sevk tarafinda `getOutBoundDeliveryListAsync` ile `C01/C02/C03/C4`, `Status=0` kuyrugunu okur
   - C01 icin Mikro siparis satiri ve sevk fisi linkini de kontrol eder
   - response `AxataIntegrationAuditDto`
+- `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview?movementType=C02&take=20`
+  - AXATA `AxataServicePool.svc/getOutBoundDeliveryListAsync` uzerinden secili `MovementType` ve `Status=0` kuyrugunu canli okur
+  - desteklenen hareket tipleri: `C01`, `C02`, `C03`, `C4`; `C04` alias olarak `C4` kabul edilir
+  - Mikro'ya veri yazmaz ve AXATA ack/status guncellemez
+  - C02/C03/C4 icin UI'nin kuyruk kontrol ekraninda kullanacagi guvenli preview endpoint'idir
+  - response `AxataOutboundDeliveryQueuePreviewDto`
 - `GET /api/integrations/axata-sync/tasks/{taskCode}/preview?warehouseNo=1&take=10`
   - secili task icin canli veriden preview payload dondurur
   - response `AxataSynchronizationPreviewDto`
@@ -7403,9 +7409,11 @@ Mevcut endpointler:
   - tek evrak icin anlik `DryRun` veya `Outbox` calistirir
   - response `AxataSynchronizationManualDocumentDto`
   - worker disabled olsa bile, genel entegrasyon acik oldugu surece operasyonel kurtarma amacli kullanilabilir
-- `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates?warehouseNo=1&startDate=2026-04-23&endDate=2026-04-29&take=25`
+- `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates?warehouseNo=50&startDate=2026-04-23&endDate=2026-04-29&take=25`
   - manuel kurtarma icin uygun evrak adaylarini listeler
   - response `AxataSynchronizationManualDocumentCandidatesDto`
+  - `issued-warehouse-order-sync` icin `warehouseNo`, hedef depo degil AXATA kaynak/cikis depodur; backend Mikro `ssip_cikdepo = warehouseNo` filtresiyle aday listeler
+  - bu nedenle audit `unsyncedWarehouseOrders` icinde `outWarehouseNo=50` gelen evrak, candidates endpoint'inde `warehouseNo=50` ile aranmalidir
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/preview-batch`
   - secilen birden fazla evrak icin toplu payload preview doner
   - response `AxataSynchronizationManualDocumentBatchDto`
@@ -7417,6 +7425,8 @@ Mevcut endpointler:
   - secilen tek evraki eski AXATA worker kontratina uygun SOAP envelope ile canli gonderir
   - response `AxataSynchronizationManualDispatchDto`
   - su an `issued-warehouse-order-sync` ve `company-receiving-sync` icin tanimlidir
+  - `issued-warehouse-order-sync` worker parity icin `C01` hareket kodu ile `addOutboundOrder*` operasyonunu kullanir
+  - `company-receiving-sync` worker parity icin `G01` hareket kodu ile `addInboundOrder*` operasyonunu kullanir
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/dispatch-batch`
   - secilen birden fazla evraki canli SOAP dispatch ile toplu gonderir
   - response `AxataSynchronizationManualDispatchBatchDto`
@@ -7472,6 +7482,84 @@ Mevcut endpointler:
   - birden fazla bekleyen depo mal kabulunu toplu kabul eder
   - response `AxataManualIncomingWarehouseReceivingBatchResponse`
 
+UI icin endpoint davranis rehberi:
+
+| UI bolumu | Endpoint | Ne yapar | Veri yazar mi? | UI aksiyonu |
+|---|---|---|---|---|
+| Genel Durum | `GET /api/integrations/axata-sync` | Task listesini, aktif/pasif durumlari, worker/scheduler bilgisini ve son job'lari getirir | Hayir | Sayfa acilisinda cagir |
+| Genel Durum | `GET /api/integrations/axata-sync/health` | Mikro SQL, Furpa SQL, AXATA Main ve EXT endpoint erisimini kontrol eder | Hayir | "Baglanti testi" veya otomatik durum karti |
+| Profil Katalogu | `GET /api/integrations/axata-sync/fetch-profiles` | AXATA servislerinden hangi profillerin okunabilecegini ve backendde hangi seviyede desteklendigini listeler | Hayir | UI butonlarini capability'ye gore ac/kapat |
+| Fark Analizi | `GET /api/integrations/axata-sync/live/audit/overview` | Mikro siparis bayragi ile AXATA pending sevk kuyrugunu birlikte kontrol eder | Hayir | "Kontrol et" butonu |
+| AXATA Kuyruk | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` | C01/C02/C03/C4 pending outbound delivery kuyrugunu canli okur | Hayir | "AXATA kuyrugunu goster" butonu |
+| C01 Import | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview` | C01 pending teslimatlari Mikro siparis satirlariyla eslestirir | Hayir | "C01 import onizle" butonu |
+| C01 Import | `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import` | Uygun C01 teslimatini Mikro depolar arasi sevk fisine cevirir; istenirse AXATA ack atar | Evet | "C01'i Mikro'ya isle" butonu |
+| Mikro -> AXATA Manuel | `GET /manual/tasks/{taskCode}/documents/candidates` | Manuel kurtarma icin Mikro evrak adaylarini listeler | Hayir | "Evraklari getir" |
+| Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/preview` | Secili Mikro evrakindan AXATA payload preview uretir | Hayir | "Payload onizle" |
+| Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/execute` | Secili evrak icin `DryRun` veya `Outbox` calistirir | Outbox modunda dosya yazar | "Outbox'a hazirla" |
+| Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/dispatch` | Secili evraki AXATA Main servise canli SOAP ile gonderir | AXATA'ya yazar | "AXATA'ya gonder" |
+| AXATA Body Manuel | `POST /manual/axata/outbound-deliveries/inter-warehouse-shipments` | Hazir AXATA outbound delivery body bilgisinden Mikro sevk fisi olusturur | Evet | "Body'den sevk olustur" |
+| AXATA Body Manuel | `POST /manual/axata/inbound-atf/company-receivings` | Hazir AXATA inbound ATF body bilgisinden Mikro firma mal kabul olusturur | Evet | "ATF'den mal kabul olustur" |
+| Serbest Incoming | `POST /manual/incoming/company-receivings` | Serbest body ile Mikro firma mal kabul olusturur | Evet | "Manuel mal kabul olustur" |
+| Serbest Incoming | `POST /manual/incoming/inventory-counts` | Serbest body ile Mikro sayim sonucu olusturur | Evet | "Manuel sayim olustur" |
+| Bekleyen Kabul | `GET /manual/incoming/warehouse-receivings` | Mikro'ya dusmus ama kabulde bekleyen depo mal kabullerini listeler | Hayir | "Bekleyenleri getir" |
+| Bekleyen Kabul | `POST /manual/incoming/warehouse-receivings/{documentSerie}/{documentOrderNo}/accept` | Bekleyen depo mal kabulunu kabul eder | Evet | "Kabul et" |
+
+UI'da asil karistirilmamasi gereken farklar:
+
+| Kavram | Anlami | UI uyarisi |
+|---|---|---|
+| `preview` | Canli veriyi okur ve sonucu gosterir | Veri yazmaz |
+| `execute` | `DryRun` veya `Outbox` calistirir | `Outbox` AXATA'ya gonderim degil, dosya hazirlama isidir |
+| `dispatch` | Mikro evrakini AXATA Main servisine canli gonderir | AXATA tarafina yazar |
+| `live/audit/overview` | Mikro ve AXATA durumunu karsilastirir | Mudahale yapmaz |
+| `outbound-deliveries/preview` | AXATA C01/C02/C03/C4 pending kuyrugunu okur | Mikro'ya yazmaz, ack atmaz |
+| `c01/import` | AXATA C01 teslimatini Mikro sevke cevirir | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
+| `manual/axata/*` | AXATA verisi body olarak UI/operasyon tarafindan saglanir | AXATA'dan canli fetch yapmaz |
+| `manual/incoming/*` | Mikro'ya manuel belge yazar | AXATA status guncellemez |
+
+Task bazli UI buton kurali:
+
+| Task/profil | Liste | Preview | Outbox execute | Live dispatch | Live queue preview | Live import/ack |
+|---|---|---|---|---|---|---|
+| `firm-master-sync` | Yok | Var | Var | Yok | Yok | Yok |
+| `product-master-sync` | Yok | Var | Var | Yok | Yok | Yok |
+| `issued-warehouse-order-sync` | Var | Var | Var | Var | Yok | Yok |
+| `company-receiving-sync` | Var | Var | Var | Var | Yok | Yok |
+| `inventory-count-sync` | Var | Var | Var | Yok | Yok | Yok |
+| `C01 outbound delivery` | AXATA kuyrugu | Var | Yok | Yok | Var | Var |
+| `C02 outbound delivery` | AXATA kuyrugu | Kuyruk preview | Yok | Yok | Var | Yok |
+| `C03 outbound delivery` | AXATA kuyrugu | Kuyruk preview | Yok | Yok | Var | Yok |
+| `C4 outbound delivery` | AXATA kuyrugu | Kuyruk preview | Yok | Yok | Var | Yok |
+| `G01 inbound ATF` | Yok | Yok | Yok | Yok | Yok | Yok, sadece body/manual import |
+| `G02 inbound delivery` | Yok | Yok | Yok | Yok | Yok | Yok |
+
+Ekranda gosterilecek durum alanlari:
+
+| Response alani | Nerede gelir | UI yorumu |
+|---|---|---|
+| `isInSync` | audit overview | Tum kontrol basliklari temizse true |
+| `summary.unsentWarehouseOrderDocumentCount` | audit overview | Mikro'da AXATA'ya gitmemis depo siparisi sayisi |
+| `summary.pendingOutboundDeliveryDocumentCount` | audit overview | AXATA'da Status=0 bekleyen sevk sayisi |
+| `unsyncedWarehouseOrders` | audit overview | Mikro -> AXATA tarafinda tekrar gonderim adayi |
+| `pendingOutboundDeliveries` | audit overview | AXATA -> Mikro tarafinda bekleyen kuyruk |
+| `interventionCandidates` | audit overview | C01 icin backendin guvenli mudahale adayi gordugu kayitlar |
+| `currentHandling` | queue preview | Profilin sadece preview mu, import destekli mi oldugunu gosterir |
+| `hasLiveImport` | queue preview | True ise ilgili profil icin canli import yolu vardir |
+| `canImport` | C01 import preview | True ise C01 import endpoint'i ile Mikro'ya yazilabilir |
+| `existingLinkedMovementLineCount` | C01 import preview/audit | Mikro sevk linki zaten varsa duplicate fis acilmamali |
+| `acknowledged` | C01 import result | AXATA EXT status guncellemesi yapildi mi |
+| `failures` | batch response'lar | Hatali evraklar kullaniciya satir bazinda gosterilmeli |
+| `artifacts` | execute/outbox response | Uretilen JSON dosya bilgisi |
+| `serviceState`, `serviceMessage` | dispatch response | AXATA servisinin dondugu sonuc |
+
+Kullaniciya onerilen metinler:
+
+- `Outbox`: "Payload dosyalandi. Bu islem AXATA'ya gonderim yapmaz."
+- `Dispatch`: "Secili evrak AXATA servislerine canli gonderilecek."
+- `C01 import`: "AXATA'daki C01 teslimat Mikro'da sevk fisine cevrilecek. Basarili olursa AXATA status guncellenebilir."
+- `C02/C03/C4 preview`: "Bu hareket tipi icin simdilik sadece AXATA kuyrugu goruntulenir; Mikro'ya yazma yapilmaz."
+- `manual/axata body`: "Bu ekranda AXATA'dan veri cekilmez; girilen body Mikro belgesine cevrilir."
+
 UI akis onerisi:
 
 - kullanici once `GET /api/integrations/axata-sync` ile task listesini acar
@@ -7501,7 +7589,7 @@ Content-Type: application/json
 {
   "taskCode": "issued-warehouse-order-sync",
   "executionMode": "Outbox",
-  "warehouseNo": 1
+  "warehouseNo": 50
 }
 ```
 
@@ -7536,6 +7624,15 @@ Bu cagri veri yazmaz. Amaci eski worker calisirken durumu anlamaktir:
 - `interventionCandidates` C01 icin guvenli mudahale adaylarini gosterir
 - `MikroShipmentExistsPendingAck` ise Mikro fis/link zaten vardir; duplicate fis acmadan sadece AXATA ack gerekebilir
 - `ReadyForImport` ise Mikro siparis satiri eslesmistir ama sevk fisi yoktur; C01 import ile mudahale edilebilir
+
+Ornek outbound delivery kuyruk preview:
+
+```http
+GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview?movementType=C02&take=20
+Authorization: Bearer {token}
+```
+
+Bu cagri AXATA'da bekleyen secili hareket tipini kuyruk seviyesinde gosterir. C02/C03/C4 icin veri yazma, Mikro eslesme ve AXATA ack yoktur; UI bu endpoint sonucunu "bekleyen AXATA teslimatlari" olarak gostermelidir.
 
 Ornek C01 AXATA'dan cekme preview:
 
@@ -7582,11 +7679,13 @@ Content-Type: application/json
 
 ```json
 {
-  "warehouseNo": 1,
-  "documentSerie": "SFR",
-  "documentOrderNo": 2451
+  "warehouseNo": 50,
+  "documentSerie": "O150",
+  "documentOrderNo": 5219
 }
 ```
+
+`issued-warehouse-order-sync` icin bu body'deki `warehouseNo=50`, Mikro `ssip_cikdepo=50` anlamina gelir. Evrak hedef/giris deposu 150 olsa bile manuel preview/dispatch bu kaynak depo numarasi ile cagirilmalidir.
 
 Ornek manuel evrak execute:
 
@@ -7618,13 +7717,14 @@ Manuel kurtarma akis onerisi:
 - Senaryo `AXATA -> Mikro`:
   - AXATA C01 depo sevkleri bekliyorsa once `live/axata/outbound-deliveries/c01/preview` ile kontrol et
   - eslesmeler dogruysa `live/axata/outbound-deliveries/c01/import` ile Mikro sevki yaz ve AXATA ack at
+  - AXATA C02/C03/C4 teslimatlari bekliyorsa `live/axata/outbound-deliveries/preview?movementType=C02|C03|C4` ile sadece kuyruk durumunu goster
   - AXATA outbound delivery verisi eldeyse `manual/axata/outbound-deliveries/inter-warehouse-shipments` ile dogrudan Mikro sevki yaz
   - AXATA inbound ATF verisi eldeyse `manual/axata/inbound-atf/company-receivings` ile dogrudan Mikro firma mal kabule cevir
   - AXATA ham verisi operasyon tarafinda toparlanmis ise `manual/incoming/company-receivings` veya `manual/incoming/inventory-counts` kullan
   - coklu belge geliyorsa `.../company-receivings/batch` veya `.../inventory-counts/batch` ile tek cagrida islenebilir
   - depo sevki zaten bekleyen belge olarak Mikro'ya dusmus ama kabulde takildiysa once `manual/incoming/warehouse-receivings` ile listele, gerekirse detay endpoint'i ile satirlari kontrol et, sonra `.../accept` veya `.../accept-batch` kullan
 - Not:
-  - C01 icin backend AXATA'dan canli SOAP fetch yapar; C02/C03/C04/G01/G02 fetch-import akislari ayri fazdir
+  - C01 icin backend AXATA'dan canli SOAP fetch/import yapar; C02/C03/C04 icin canli kuyruk preview vardir ama import/ack ayri fazdir; G01/G02 fetch-import akislari ayri fazdir
   - `dispatch` endpoint'leri AXATA'ya canli yazim yapar; `execute` endpoint'leri ise sadece `DryRun/Outbox` icindir
   - eski worker operasyon isimleri kullanildigi icin canli AXATA dispatch sahada endpoint/credential ile dogrulanmalidir
 
@@ -7634,17 +7734,19 @@ Entegrasyon modulu notlari:
 - scheduler config ile kapali acilabilir; UI bunu overview ekraninda gostermelidir
 - `preview` endpoint'i canli veriyi okur, test/mock veri kullanmaz
 - `issued-warehouse-order-sync`, `company-receiving-sync` ve `inventory-count-sync` task'larinda `warehouseNo` gerekir
+- `issued-warehouse-order-sync` icin `warehouseNo` AXATA kaynak/cikis depodur; aday liste, task preview, execute ve dispatch ayni `ssip_cikdepo` evrenine bakar
 - `firm-master-sync` ve `product-master-sync` depo bagimsiz task'lardir
 - `manual/tasks/{taskCode}/documents/*` endpoint'leri yalnizca evrak bazli task'larda kullanilmalidir
 - `manual/tasks/{taskCode}/documents/dispatch*` endpoint'leri yalnizca AXATA'ya canli gonderim icindir; `Outbox` yerine kullanilir
 - `manual/incoming/*` endpoint'leri worker'dan bagimsiz operasyonel kurtarma katmanidir
 - `manual/axata/*` endpoint'leri AXATA-native request body'sini minimum donusumle Mikro write use-case'lerine baglar
 - `live/audit/overview` endpoint'i eski worker calisirken kontrol/durum tespiti icindir; Mikro veya AXATA verisi yazmaz
+- `live/axata/outbound-deliveries/preview` endpoint'i C01/C02/C03/C4 AXATA pending kuyrugunu canli okur; Mikro veya AXATA verisi yazmaz
 - `live/axata/outbound-deliveries/c01/*` endpoint'leri AXATA'dan canli C01 cekip Mikro'ya yazar; AXATA ack sadece Mikro kaydi basarili olursa atilir
 - `live/axata/outbound-deliveries/c01/import` gerekiyorsa mudahale icindir; mevcut worker'in yerine otomatik calisan yeni worker olarak dusunulmemelidir
 - toplu endpoint'lerde `ContinueOnError = true` ise HTTP 200 donup basarisiz item'lari `Failures` listesinde raporlar
 - `Outbox` modu su an gercek SOAP dispatch degil, payload uretim ve dosyalama asamasidir
-- canli AXATA belge fetch/ack adapter'i su an C01 depo sevki icin aktiftir; diger hareket tipleri planli profildir
+- canli AXATA import/ack adapter'i su an C01 depo sevki icin aktiftir; C02/C03/C4 icin kuyruk preview vardir, import yoktur
 - `GET /api/integrations/axata-sync` icindeki her task artik `supportsManualDocuments`, `supportsLiveDispatch` ve varsa `liveOperationName` alanlarini da dondurur
 - `GET /api/integrations/axata-sync/fetch-profiles` ile UI eski worker parity icin hedeflenen `C01/C02/C03/C04(query C4)/G01/G02` ve benzeri fetch profillerini okuyabilir
 
@@ -7683,6 +7785,11 @@ UI manuel aktarim senaryolari:
 - AXATA C01 depo sevkleri AXATA'da bekliyorsa:
   - `live/axata/outbound-deliveries/c01/preview`
   - `live/axata/outbound-deliveries/c01/import`
+- AXATA C02/C03/C4 teslimatlari AXATA'da bekliyorsa:
+  - `live/axata/outbound-deliveries/preview?movementType=C02`
+  - `live/axata/outbound-deliveries/preview?movementType=C03`
+  - `live/axata/outbound-deliveries/preview?movementType=C4`
+  - bu profiller icin UI import/ack butonu gostermemelidir
 - AXATA inbound ATF verisi operasyon ekibinin elindeyse ve Mikro'da firma mal kabul yaratilacaksa:
   - `manual/axata/inbound-atf/company-receivings`
 - Sevk zaten Mikro'ya dusmus ama kabulde takilmissa:
@@ -7693,7 +7800,8 @@ UI manuel aktarim senaryolari:
 UI'nin kullaniciya acik soylemesi gereken kritik sinirlar:
 
 - C01 depo sevki icin AXATA'dan canli SOAP fetch/import vardir
-- C02/C03/C04/G01/G02 icin "AXATA'dan cek ve Mikro'ya yaz" akisi henuz yoktur
+- C02/C03/C04 icin "AXATA'dan cek ve kuyrukta goster" akisi vardir; "Mikro'ya yaz ve ack at" akisi henuz yoktur
+- G01/G02 icin "AXATA'dan cek ve Mikro'ya yaz" akisi henuz yoktur
 - `dispatch*` endpoint'leri sadece `issued-warehouse-order-sync` ve `company-receiving-sync` icin aktiflenmelidir
 - `depolar-arasi-sevk` belge detayi icin ayrica AXATA dispatch butonu acilmamalidir
 - `firm-master-sync` ve `product-master-sync` icin UI sadece preview/job/outbox deneyimi sunmalidir
@@ -7737,7 +7845,8 @@ UI'da sonraki faz icin acilabilecek ekranlar:
 - `AXATA'dan Cek ve Islet` sekmesi
   - amac: operasyon ekibi AXATA body toplamak zorunda kalmadan tanimli profile gore fetch baslatsin
   - aktif profil: `C01`
-  - planli profiller: `C02`, `C03`, `C04(query C4)`, `G01`, `G02`
+  - kuyruk preview profilleri: `C02`, `C03`, `C04(query C4)`
+  - planli import profilleri: `C02`, `C03`, `C04(query C4)`, `G01`, `G02`
   - beklenen akis:
     - profil sec
     - preview al
@@ -10659,6 +10768,33 @@ public sealed record AxataPendingOutboundDeliveryDto(
     bool CanIntervene,
     string? Warning);
 
+public sealed record AxataOutboundDeliveryQueuePreviewDto(
+    string MovementType,
+    string PendingStatus,
+    DateTime GeneratedAtUtc,
+    int TotalFetchedDocumentCount,
+    int ReturnedDocumentCount,
+    int TotalLineCount,
+    double TotalQuantity,
+    IReadOnlyCollection<AxataOutboundDeliveryQueueDocumentDto> Documents,
+    IReadOnlyCollection<string> Notes);
+
+public sealed record AxataOutboundDeliveryQueueDocumentDto(
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    string DocumentSerie,
+    int? DocumentOrderNo,
+    string MovementType,
+    string Status,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    DateTime? AxataDate,
+    int LineCount,
+    double Quantity,
+    bool HasLiveImport,
+    string CurrentHandling,
+    string? Warning);
+
 public sealed record AxataOutboundDeliveryImportPreviewDto(
     string MovementType,
     string PendingStatus,
@@ -10916,6 +11052,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `AxataSynchronizationExecuteTaskHttpRequest`: `ExecutionMode`, `WarehouseNo`
 - `AxataSynchronizationManualDocumentCandidatesHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `Take`
 - `AxataIntegrationAuditHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `Take`
+- `AxataOutboundDeliveryQueuePreviewHttpRequest`: `MovementType`, `Take`
 - `AxataOutboundDeliveryImportPreviewHttpRequest`: `Take`
 - `AxataOutboundDeliveryImportExecuteHttpRequest`: `Take`, `ContinueOnError`, `Acknowledge`
 - `AxataSynchronizationManualDocumentHttpRequest`: `WarehouseNo`, `DocumentSerie`, `DocumentOrderNo`, `DocumentNo`, `DocumentDate`
@@ -10943,8 +11080,11 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CashRegisterBranchMappingHttpRequest`: `CashRegisterNo`, `BranchNo`, `BranchName`, `Description`
 - `GET /api/integrations/axata-sync/tasks/{taskCode}/preview` endpoint'i body almaz; `warehouseNo` ve `take` query parametresi kullanir
 - `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates` endpoint'i body almaz; `warehouseNo`, `startDate`, `endDate`, `take` query parametresi kullanir
+- `issued-warehouse-order-sync` task'inda `warehouseNo` hedef depo degil AXATA kaynak/cikis depodur; Mikro filtre `ssip_cikdepo = warehouseNo` olur
+- `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` endpoint'i body almaz; query'de `movementType` ve `take` kullanir; `movementType` bos ise `C01` kabul edilir, `C04` alias'i `C4` olarak sorgulanir
 - `ExecutionMode` su an yalnizca `DryRun` veya `Outbox` olabilir
 - `dispatch` ve `dispatch-batch` endpoint'leri `ExecutionMode` almaz; bunlar dogrudan canli AXATA SOAP gonderimidir
+- `issued-warehouse-order-sync` dispatch payload'i worker parity icin `C01`, `company-receiving-sync` dispatch payload'i `G01` hareket kodu ile gonderilir
 - `manual/tasks/{taskCode}/documents/preview` ve `manual/tasks/{taskCode}/documents/execute` request body alanlari task'a gore kullanilir:
   - `issued-warehouse-order-sync`: `DocumentSerie` + `DocumentOrderNo`
   - `company-receiving-sync`: `DocumentSerie` + `DocumentOrderNo`

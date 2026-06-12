@@ -19,6 +19,8 @@ internal sealed class AxataSynchronizationManualDocumentService(
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService)
 {
+    private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
+
     public Task<AxataSynchronizationManualDocumentCandidatesDto> ListCandidatesAsync(
         AxataSynchronizationTaskExecutionContext context,
         AxataSynchronizationManualDocumentCandidateCriteria criteria,
@@ -84,7 +86,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
             {
                 var documents = await warehouseOrderListQueryExecutor.ExecuteAsync(
                     new WarehouseOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
-                    WarehouseOrderListDirection.Issued,
+                    AxataWarehouseOrderDirection,
                     cancellationToken);
                 totalRecordCount = documents.Count;
                 items = documents
@@ -100,7 +102,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                         document.LineCount,
                         document.TotalQuantity))
                     .ToArray();
-                notes.Add("Verilen depo siparisleri Mikro listesinden okundu.");
+                notes.Add("AXATA C01 kaynak/cikis depo siparisleri Mikro listesinden okundu.");
                 break;
             }
             case "company-receiving-sync":
@@ -325,12 +327,12 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 var detailRequest = CreateWarehouseOrderRequest(input, warehouseNo);
                 var detail = await warehouseOrderDetailQueryExecutor.ExecuteAsync(
                     detailRequest,
-                    WarehouseOrderListDirection.Issued,
+                    AxataWarehouseOrderDirection,
                     cancellationToken);
 
                 payload = AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail);
                 documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
-                notes.Add("Verilen depo siparisi Mikro'dan okunup AXATA payload formatina hazirlandi.");
+                notes.Add("AXATA C01 kaynak/cikis depo siparisi Mikro'dan okunup payload formatina hazirlandi.");
                 break;
             }
             case "company-receiving-sync":
@@ -409,7 +411,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 var detailRequest = CreateWarehouseOrderRequest(input, warehouseNo);
                 var detail = await warehouseOrderDetailQueryExecutor.ExecuteAsync(
                     detailRequest,
-                    WarehouseOrderListDirection.Issued,
+                    AxataWarehouseOrderDirection,
                     cancellationToken);
 
                 documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
@@ -417,7 +419,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     context,
                     detail,
                     cancellationToken);
-                notes.Add("Verilen depo siparisi task bazli AXATA canli dispatch akisi ile gonderildi.");
+                notes.Add("AXATA C01 kaynak/cikis depo siparisi task bazli canli dispatch akisi ile gonderildi.");
                 break;
             }
             case "company-receiving-sync":

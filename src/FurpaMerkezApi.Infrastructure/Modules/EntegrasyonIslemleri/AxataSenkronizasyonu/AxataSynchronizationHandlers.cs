@@ -207,6 +207,8 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
     AxataSynchronizationOutboxWriter outboxWriter)
     : IAxataSynchronizationTaskHandler
 {
+    private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
+
     public string Code => "issued-warehouse-order-sync";
 
     public async Task<AxataSynchronizationPreviewDto> PreviewAsync(
@@ -218,7 +220,7 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
         var request = CreateWarehouseOrderListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
         var documents = await listQueryExecutor.ExecuteAsync(
             request,
-            WarehouseOrderListDirection.Issued,
+            AxataWarehouseOrderDirection,
             cancellationToken);
 
         var selected = documents.Take(take).ToArray();
@@ -228,7 +230,7 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
         {
             var detail = await detailQueryExecutor.ExecuteAsync(
                 new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
-                WarehouseOrderListDirection.Issued,
+                AxataWarehouseOrderDirection,
                 cancellationToken);
 
             var payload = AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail);
@@ -246,7 +248,7 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
             previewItems.Count,
             DateTime.UtcNow,
             previewItems,
-            [$"Son {Math.Max(1, options.CurrentValue.DefaultLookbackDays)} gun icindeki belgeler tarandi."]);
+            [$"Son {Math.Max(1, options.CurrentValue.DefaultLookbackDays)} gun icindeki AXATA kaynak/cikis depo siparisleri tarandi."]);
     }
 
     public async Task<AxataSynchronizationTaskExecutionResult> ExecuteAsync(
@@ -257,7 +259,7 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
         var request = CreateWarehouseOrderListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
         var documents = await listQueryExecutor.ExecuteAsync(
             request,
-            WarehouseOrderListDirection.Issued,
+            AxataWarehouseOrderDirection,
             cancellationToken);
 
         var payloadDocuments = new List<object>(documents.Count);
@@ -266,7 +268,7 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
         {
             var detail = await detailQueryExecutor.ExecuteAsync(
                 new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
-                WarehouseOrderListDirection.Issued,
+                AxataWarehouseOrderDirection,
                 cancellationToken);
 
             payloadDocuments.Add(AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail));
