@@ -12,9 +12,17 @@ public sealed class MikroWriteRoutingOptions
 
     public MikroWriteMode StockReceipt { get; init; } = MikroWriteMode.Database;
 
+    public MikroWriteMode Virman { get; init; } = MikroWriteMode.Database;
+
     public MikroWriteMode InterWarehouseShipment { get; init; } = MikroWriteMode.Database;
 
+    public MikroWriteMode WarehouseReturn { get; init; } = MikroWriteMode.Database;
+
     public MikroWriteMode CompanyMovement { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode CompanyReceiving { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode WarehouseReceivingAcceptance { get; init; } = MikroWriteMode.Database;
 }
 
 public enum MikroWriteMode

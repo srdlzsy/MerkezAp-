@@ -1,15 +1,21 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 
 public sealed class CompanyMovementWriteService(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<CompanyMovementWriteService> logger)
 {
     private const short MovementFileId = 16;
     private const short MikroUserNo = 39;
@@ -19,6 +25,9 @@ public sealed class CompanyMovementWriteService(
     private const byte NormalMovement = 0;
     private const byte ReturnMovement = 1;
     private const int FirstDocumentOrderNo = 0;
+    private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCompanyMovementResponse> ExecuteAsync(
@@ -28,6 +37,21 @@ public sealed class CompanyMovementWriteService(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.CompanyMovement switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, kind, cancellationToken),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, kind, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, kind, cancellationToken),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:CompanyMovement mode '{mode}'.")
+        };
+    }
+
+    private async Task<CreateCompanyMovementResponse> ExecuteDatabaseAsync(
+        CreateCompanyMovementRequest request,
+        CompanyMovementKind kind,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
@@ -90,6 +114,200 @@ public sealed class CompanyMovementWriteService(
                 throw;
             }
         });
+    }
+
+    private async Task<CreateCompanyMovementResponse> ExecuteMikroApiAsync(
+        CreateCompanyMovementRequest request,
+        CompanyMovementKind kind,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+        var customerCode = request.CustomerCode.Trim();
+        var documentSerie = $"F{request.WarehouseNo}";
+        var documentNo = NormalizeText(request.DocumentNo);
+        var description = NormalizeText(request.Description);
+        var lines = request.Lines.ToArray();
+        var returnType = ResolveReturnType(kind);
+        var customer = await GetCustomerAsync(customerCode, cancellationToken);
+        var customerAddressNo = ResolveCustomerAddressNo(customer);
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);
+        var payload = CompanyMovementIrsaliyeMikroApiPayloadFactory.Create(
+            request,
+            lines,
+            customerCode,
+            customerAddressNo,
+            returnType,
+            movementDate,
+            documentDate,
+            documentNo,
+            documentSerie,
+            documentOrderNo,
+            description);
+
+        logger.LogInformation(
+            "Company movement create is routed to Mikro API {Path}. Kind={Kind}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, ReturnType={ReturnType}, LineCount={LineCount}",
+            IrsaliyeKaydetPath,
+            kind,
+            documentSerie,
+            documentOrderNo,
+            request.WarehouseNo,
+            customerCode,
+            returnType,
+            lines.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            IrsaliyeKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API company movement create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            documentOrderNo,
+            request,
+            customerCode,
+            returnType,
+            movementDate,
+            documentDate,
+            documentNo,
+            options.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateCompanyMovementResponse> ExecuteDualShadowAsync(
+        CreateCompanyMovementRequest request,
+        CompanyMovementKind kind,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:CompanyMovement is DualShadow. IrsaliyeKaydetV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, kind, cancellationToken);
+    }
+
+    private async Task<CreateCompanyMovementResponse> RecoverMikroApiCreateResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateCompanyMovementRequest request,
+        string customerCode,
+        byte returnType,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverCompanyMovementResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                customerCode,
+                returnType,
+                movementDate,
+                documentDate,
+                documentNo,
+                writeConnectionName,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API company movement create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private async Task<CreateCompanyMovementResponse?> TryRecoverCompanyMovementResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateCompanyMovementRequest request,
+        string customerCode,
+        byte returnType,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == returnType &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira == documentOrderNo &&
+                movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_cari_kodu == customerCode)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_cari_kodu,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no,
+                row.sth_cari_kodu
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one company movement document matched the same serie and order number.");
+        }
+
+        var firstRow = rows[0];
+
+        return new CreateCompanyMovementResponse(
+            firstRow.sth_evrakno_seri ?? documentSerie,
+            firstRow.sth_evrakno_sira ?? documentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? documentNo,
+            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
+            firstRow.sth_cari_kodu ?? customerCode,
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            writeConnectionName);
     }
 
     private async Task<CARI_HESAPLAR> GetCustomerAsync(

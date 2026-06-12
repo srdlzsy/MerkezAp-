@@ -1,15 +1,21 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.Accept;
 
 public sealed class AcceptWarehouseReceivingUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<AcceptWarehouseReceivingUseCase> logger)
     : IAcceptWarehouseReceivingUseCase
 {
     private const byte InterWarehouseShipmentDocumentType = 17;
@@ -17,6 +23,9 @@ public sealed class AcceptWarehouseReceivingUseCase(
     private const byte DeliveredToTargetWarehouseState = 1;
     private const short FallbackMikroUserNo = 39;
     private const double QuantityTolerance = 0.000001d;
+    private const string DahiliStokHareketDuzeltPath = "/Api/apiMethods/DahiliStokHareketDuzeltV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
 
     public async Task<AcceptWarehouseReceivingResponse> ExecuteAsync(
         AcceptWarehouseReceivingRequest request,
@@ -24,6 +33,20 @@ public sealed class AcceptWarehouseReceivingUseCase(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.WarehouseReceivingAcceptance switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:WarehouseReceivingAcceptance mode '{mode}'.")
+        };
+    }
+
+    private async Task<AcceptWarehouseReceivingResponse> ExecuteDatabaseAsync(
+        AcceptWarehouseReceivingRequest request,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var documentSerie = request.DocumentSerie.Trim();
         var receivedQuantitiesByMovementGuid = request.Lines.ToDictionary(
@@ -86,6 +109,171 @@ public sealed class AcceptWarehouseReceivingUseCase(
                 throw;
             }
         });
+    }
+
+    private async Task<AcceptWarehouseReceivingResponse> ExecuteMikroApiAsync(
+        AcceptWarehouseReceivingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var documentSerie = request.DocumentSerie.Trim();
+        var receivedQuantitiesByMovementGuid = request.Lines.ToDictionary(
+            line => line.MovementGuid,
+            line => line.ReceivedQuantity);
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+
+        var movements = await LoadMovementsAsync(
+            request.WarehouseNo,
+            documentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
+        var lineResults = BuildLineResults(movements, receivedQuantitiesByMovementGuid);
+        var hasDiscrepancy = lineResults.Any(line => line.DifferenceType != "none");
+
+        if (hasDiscrepancy && !request.AllowDiscrepancy)
+        {
+            throw new InvalidOperationException(
+                "Warehouse receiving contains missing or excess quantities. Send allowDiscrepancy=true to accept with open difference resolution.");
+        }
+
+        var firstMovement = movements[0];
+        var sourceWarehouseNo = firstMovement.sth_cikis_depo_no ?? 0;
+        var transitWarehouseNo = firstMovement.sth_giris_depo_no ?? 0;
+        var isReturn = firstMovement.sth_normal_iade == ReturnMovement;
+        var payload = WarehouseReceivingAcceptanceMikroApiPayloadFactory.Create(
+            request.WarehouseNo,
+            movements,
+            receivedQuantitiesByMovementGuid);
+
+        logger.LogInformation(
+            "Warehouse receiving acceptance is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, LineCount={LineCount}",
+            DahiliStokHareketDuzeltPath,
+            documentSerie,
+            request.DocumentOrderNo,
+            request.WarehouseNo,
+            movements.Count);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DahiliStokHareketDuzeltPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API warehouse receiving acceptance failed.");
+        }
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+
+        await RecoverMikroApiAcceptanceAsync(
+            request,
+            receivedQuantitiesByMovementGuid,
+            transitWarehouseNo,
+            cancellationToken);
+
+        return new AcceptWarehouseReceivingResponse(
+            documentSerie,
+            request.DocumentOrderNo,
+            request.WarehouseNo,
+            sourceWarehouseNo,
+            transitWarehouseNo,
+            DeliveredToTargetWarehouseState,
+            isReturn,
+            lineResults.Count,
+            lineResults.Sum(line => line.ShippedQuantity),
+            lineResults.Sum(line => line.ReceivedQuantity),
+            lineResults.Where(line => line.DifferenceQuantity < -QuantityTolerance).Sum(line => Math.Abs(line.DifferenceQuantity)),
+            lineResults.Where(line => line.DifferenceQuantity > QuantityTolerance).Sum(line => line.DifferenceQuantity),
+            hasDiscrepancy,
+            hasDiscrepancy ? "recorded-on-formula-quantity" : "not-required",
+            options.ConnectionStringName,
+            lineResults);
+    }
+
+    private async Task<AcceptWarehouseReceivingResponse> ExecuteDualShadowAsync(
+        AcceptWarehouseReceivingRequest request,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:WarehouseReceivingAcceptance is DualShadow. DahiliStokHareketDuzeltV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, cancellationToken);
+    }
+
+    private async Task RecoverMikroApiAcceptanceAsync(
+        AcceptWarehouseReceivingRequest request,
+        IReadOnlyDictionary<Guid, double> receivedQuantitiesByMovementGuid,
+        int transitWarehouseNo,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            if (await TryRecoverMikroApiAcceptanceAsync(
+                    request,
+                    receivedQuantitiesByMovementGuid,
+                    transitWarehouseNo,
+                    cancellationToken))
+            {
+                return;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API warehouse receiving acceptance succeeded, but accepted STOK_HAREKETLERI rows could not be verified.");
+    }
+
+    private async Task<bool> TryRecoverMikroApiAcceptanceAsync(
+        AcceptWarehouseReceivingRequest request,
+        IReadOnlyDictionary<Guid, double> receivedQuantitiesByMovementGuid,
+        int transitWarehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var movementGuids = receivedQuantitiesByMovementGuid.Keys.ToArray();
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movementGuids.Contains(movement.sth_Guid) &&
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_evrakno_seri == request.DocumentSerie.Trim() &&
+                movement.sth_evrakno_sira == request.DocumentOrderNo)
+            .Select(movement => new
+            {
+                movement.sth_Guid,
+                movement.sth_FormulMiktar,
+                movement.sth_giris_depo_no,
+                movement.sth_nakliyedeposu,
+                movement.sth_nakliyedurumu
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count != receivedQuantitiesByMovementGuid.Count)
+        {
+            return false;
+        }
+
+        foreach (var row in rows)
+        {
+            var expectedReceivedQuantity = receivedQuantitiesByMovementGuid[row.sth_Guid];
+
+            if (Math.Abs((row.sth_FormulMiktar ?? 0d) - expectedReceivedQuantity) > QuantityTolerance ||
+                row.sth_giris_depo_no != request.WarehouseNo ||
+                row.sth_nakliyedeposu != transitWarehouseNo ||
+                row.sth_nakliyedurumu != DeliveredToTargetWarehouseState)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<List<STOK_HAREKETLERI>> LoadMovementsAsync(

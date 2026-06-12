@@ -1,15 +1,22 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
+using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Virmanlar;
 
 public sealed class VirmanWriteService(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<VirmanWriteService> logger)
 {
     private const short MovementFileId = 16;
     private const short MikroUserNo = 39;
@@ -17,6 +24,9 @@ public sealed class VirmanWriteService(
     private const byte VirmanMovementGenre = 3;
     private const byte NormalMovement = 0;
     private const int FirstDocumentOrderNo = 0;
+    private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
     private static readonly DateTime LegacyDeliveryDate = new(1900, 1, 1);
 
@@ -26,6 +36,20 @@ public sealed class VirmanWriteService(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.Virman switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:Virman mode '{mode}'.")
+        };
+    }
+
+    private async Task<CreateVirmanResponse> ExecuteDatabaseAsync(
+        CreateVirmanRequest request,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
@@ -87,6 +111,181 @@ public sealed class VirmanWriteService(
                 throw;
             }
         });
+    }
+
+    private async Task<CreateVirmanResponse> ExecuteMikroApiAsync(
+        CreateVirmanRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+        var documentSerie = $"F{request.WarehouseNo}";
+        var documentNo = NormalizeText(request.DocumentNo, 50);
+        var description = NormalizeText(request.Description, 50);
+        var lines = request.Lines.ToArray();
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+        var payload = StockMovementMikroApiPayloadFactory.CreateVirman(
+            request,
+            lines,
+            movementDate,
+            documentDate,
+            documentNo,
+            documentSerie,
+            documentOrderNo,
+            description);
+
+        logger.LogInformation(
+            "Virman create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, LineCount={LineCount}",
+            DahiliStokHareketKaydetPath,
+            documentSerie,
+            documentOrderNo,
+            request.WarehouseNo,
+            lines.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DahiliStokHareketKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API virman create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            documentOrderNo,
+            request,
+            movementDate,
+            documentDate,
+            documentNo,
+            options.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateVirmanResponse> ExecuteDualShadowAsync(
+        CreateVirmanRequest request,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:Virman is DualShadow. DahiliStokHareketKaydetV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, cancellationToken);
+    }
+
+    private async Task<CreateVirmanResponse> RecoverMikroApiCreateResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateVirmanRequest request,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverVirmanResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                movementDate,
+                documentDate,
+                documentNo,
+                writeConnectionName,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API virman create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private async Task<CreateVirmanResponse?> TryRecoverVirmanResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateVirmanRequest request,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == VirmanDocumentType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cins == VirmanMovementGenre &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira == documentOrderNo &&
+                movement.sth_cikis_depo_no == request.WarehouseNo)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_tip,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one virman document matched the same serie and order number.");
+        }
+
+        var firstRow = rows[0];
+
+        return new CreateVirmanResponse(
+            firstRow.sth_evrakno_seri ?? documentSerie,
+            firstRow.sth_evrakno_sira ?? documentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? documentNo,
+            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
+            rows
+                .Select(row => row.sth_tip ?? 0)
+                .Distinct()
+                .OrderBy(movementType => movementType)
+                .ToArray(),
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            writeConnectionName);
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(
