@@ -927,8 +927,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 new XAttribute(XNamespace.Xmlns + "tem", service),
                 new XElement(
                     soap + "Body",
-                    new XElement(service + "username", configuration.Username),
-                    new XElement(service + "password", configuration.Password),
+                    new XElement(service + "UserName", configuration.Username),
+                    new XElement(service + "Password", configuration.Password),
                     new XElement(
                         "OutboundDeliveryQuery",
                         new XElement("CompanyCode", CompanyCode),
@@ -957,8 +957,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 new XAttribute(XNamespace.Xmlns + "tem", service),
                 new XElement(
                     soap + "Body",
-                    new XElement(service + "username", configuration.Username),
-                    new XElement(service + "password", configuration.Password),
+                    new XElement(service + "UserName", configuration.Username),
+                    new XElement(service + "Password", configuration.Password),
                     new XElement(
                         axataWms + "Table",
                         new XElement("TableName", "ENT006"),

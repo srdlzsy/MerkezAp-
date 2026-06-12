@@ -47,7 +47,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
             serviceResponse.State,
             serviceResponse.Message,
             AxataSynchronizationPayloadFactory.Serialize(payload),
-            envelope,
+            RedactSensitiveXml(envelope),
             responseXml,
             [
                 $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` ile SOAP envelope gonderildi.",
@@ -78,7 +78,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
             serviceResponse.State,
             serviceResponse.Message,
             AxataSynchronizationPayloadFactory.Serialize(payload),
-            envelope,
+            RedactSensitiveXml(envelope),
             responseXml,
             [
                 $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` ile SOAP envelope gonderildi.",
@@ -220,8 +220,8 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     soap + "Body",
                     new XElement(
                         service + operationName,
-                        new XElement(service + "username", configuration.Username),
-                        new XElement(service + "password", configuration.Password),
+                        new XElement(service + "UserName", configuration.Username),
+                        new XElement(service + "Password", configuration.Password),
                         payloadElements))));
 
         return document.ToString(SaveOptions.DisableFormatting);
@@ -311,6 +311,29 @@ internal sealed class AxataSynchronizationLiveTransportService(
         catch
         {
             return fallbackMessage ?? string.Empty;
+        }
+    }
+
+    private static string RedactSensitiveXml(string xml)
+    {
+        try
+        {
+            var document = XDocument.Parse(xml);
+            foreach (var element in document
+                         .Descendants()
+                         .Where(element => string.Equals(
+                             element.Name.LocalName,
+                             "Password",
+                             StringComparison.OrdinalIgnoreCase)))
+            {
+                element.Value = "***";
+            }
+
+            return document.ToString(SaveOptions.DisableFormatting);
+        }
+        catch
+        {
+            return xml;
         }
     }
 
