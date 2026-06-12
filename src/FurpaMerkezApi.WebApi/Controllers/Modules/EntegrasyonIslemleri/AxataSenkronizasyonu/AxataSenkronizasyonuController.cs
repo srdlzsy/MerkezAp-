@@ -155,6 +155,7 @@ public sealed class AxataSenkronizasyonuController(
                 request.WarehouseNo,
                 request.StartDate,
                 request.EndDate,
+                request.Skip,
                 request.Take),
             User.GetRequiredWarehouseNo(),
             cancellationToken));
@@ -837,6 +838,9 @@ public sealed class AxataSynchronizationManualDocumentCandidatesHttpRequest
     public DateTime? StartDate { get; init; }
 
     public DateTime? EndDate { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? Skip { get; init; }
 
     [Range(1, 100)]
     public int? Take { get; init; }

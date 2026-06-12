@@ -90,6 +90,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     cancellationToken);
                 totalRecordCount = documents.Count;
                 items = documents
+                    .Skip(criteria.Skip)
                     .Take(criteria.Take)
                     .Select(document => new AxataSynchronizationManualDocumentCandidateItemDto(
                         $"{document.DocumentSerie}.{document.DocumentOrderNo}",
@@ -113,6 +114,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     cancellationToken);
                 totalRecordCount = documents.Count;
                 items = documents
+                    .Skip(criteria.Skip)
                     .Take(criteria.Take)
                     .Select(document => new AxataSynchronizationManualDocumentCandidateItemDto(
                         $"{document.DocumentSerie}.{document.DocumentOrderNo}",
@@ -135,6 +137,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     cancellationToken);
                 totalRecordCount = documents.Count;
                 items = documents
+                    .Skip(criteria.Skip)
                     .Take(criteria.Take)
                     .Select(document => new AxataSynchronizationManualDocumentCandidateItemDto(
                         $"{document.DocumentNo} / {(document.DocumentDate ?? document.CreatedAt):yyyy-MM-dd}",
@@ -166,6 +169,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
             criteria.StartDate,
             criteria.EndDate,
             totalRecordCount,
+            Math.Min(criteria.Skip, totalRecordCount),
             items.Count,
             DateTime.UtcNow,
             items,
@@ -561,4 +565,5 @@ internal sealed record AxataSynchronizationManualDocumentInput(
 internal sealed record AxataSynchronizationManualDocumentCandidateCriteria(
     DateTime StartDate,
     DateTime EndDate,
+    int Skip,
     int Take);
