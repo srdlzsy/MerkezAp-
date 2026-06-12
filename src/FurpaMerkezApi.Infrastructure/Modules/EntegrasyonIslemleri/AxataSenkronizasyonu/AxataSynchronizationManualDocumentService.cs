@@ -6,6 +6,8 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
@@ -17,9 +19,12 @@ internal sealed class AxataSynchronizationManualDocumentService(
     InventoryCountListQueryExecutor inventoryCountListQueryExecutor,
     InventoryCountDetailQueryExecutor inventoryCountDetailQueryExecutor,
     AxataSynchronizationOutboxWriter outboxWriter,
-    AxataSynchronizationLiveTransportService liveTransportService)
+    AxataSynchronizationLiveTransportService liveTransportService,
+    MikroWriteDbContext mikroWriteDbContext)
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
+    private const short MikroUserNo = 39;
+    private const string CompletedStatus = "1";
 
     public Task<AxataSynchronizationManualDocumentCandidatesDto> ListCandidatesAsync(
         AxataSynchronizationTaskExecutionContext context,
@@ -424,6 +429,15 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     detail,
                     cancellationToken);
                 notes.Add("AXATA C01 kaynak/cikis depo siparisi task bazli canli dispatch akisi ile gonderildi.");
+
+                if (dispatchResult.IsSuccess)
+                {
+                    var markedLineCount = await MarkWarehouseOrderAsSentAsync(detailRequest, cancellationToken);
+                    notes.Add(markedLineCount > 0
+                        ? $"{markedLineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi."
+                        : "UYARI: AXATA Success dondu ancak Mikro ssip_special1 bayragi icin eslesen satir bulunamadi.");
+                }
+
                 break;
             }
             case "company-receiving-sync":
@@ -468,6 +482,26 @@ internal sealed class AxataSynchronizationManualDocumentService(
             dispatchResult.RequestXml,
             dispatchResult.ResponseXml,
             notes);
+    }
+
+    private async Task<int> MarkWarehouseOrderAsSentAsync(
+        WarehouseOrderDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = request.DocumentSerie.Trim();
+        var now = DateTime.Now;
+
+        return await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .Where(order =>
+                order.ssip_iptal != true &&
+                order.ssip_evrakno_seri == documentSerie &&
+                order.ssip_evrakno_sira == request.DocumentOrderNo &&
+                order.ssip_cikdepo == request.WarehouseNo)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(order => order.ssip_special1, CompletedStatus)
+                .SetProperty(order => order.ssip_lastup_user, MikroUserNo)
+                .SetProperty(order => order.ssip_lastup_date, now),
+                cancellationToken);
     }
 
     private static string BuildDocumentReference(AxataSynchronizationManualDocumentInput input)

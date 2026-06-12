@@ -13,6 +13,8 @@ internal sealed class AxataSynchronizationLiveTransportService(
 {
     private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string ServiceNamespace = "http://tempuri.org/";
+    private const string AxataWmsNamespace = "http://axatawms";
+    private const string OutboundDataContractNamespace = "http://schemas.datacontract.org/2004/07/WMSServiceCore.Models.Outbound";
     private const string ServiceContractName = "IAxataServicePool";
     private const string DefaultBranchCode = "01";
     private const string DefaultExternalChannel = "01";
@@ -125,13 +127,13 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 DefaultBranchCode,
                 documentNumber,
                 DefaultExternalChannel,
-                detail.Header.InWarehouseNo.ToString(CultureInfo.InvariantCulture),
                 detail.Header.OutWarehouseNo.ToString(CultureInfo.InvariantCulture),
-                DefaultFormType,
-                movementCode,
-                movementCode,
+                detail.Header.InWarehouseNo.ToString(CultureInfo.InvariantCulture),
                 DefaultAddressCode,
-                depotCode),
+                DefaultFormType,
+                depotCode,
+                movementCode,
+                movementCode),
             detail.Items
                 .OrderBy(item => item.LineNo)
                 .Select(item => new AxataLegacyOutboundOrderLine(
@@ -184,10 +186,18 @@ internal sealed class AxataSynchronizationLiveTransportService(
         string operationName) =>
         BuildSoapEnvelope(operationName, configuration, service =>
         [
-            new XElement(service + "ENT000List",
-                new XElement(service + "ENT000", CreateElements(payload.Master, service))),
-            new XElement(service + "ENT001List",
-                payload.Lines.Select(line => new XElement(service + "ENT001", CreateElements(line, service))))
+            new XElement(
+                XNamespace.Get(AxataWmsNamespace) + "OutboundOrderList",
+                new XElement(
+                    XNamespace.Get(OutboundDataContractNamespace) + "OutboundOrderV1",
+                    new XElement(
+                        XNamespace.Get(OutboundDataContractNamespace) + "ENT000",
+                        CreateElements(payload.Master, XNamespace.None)),
+                    new XElement(
+                        XNamespace.Get(OutboundDataContractNamespace) + "ENT001_List",
+                        payload.Lines.Select(line => new XElement(
+                            XNamespace.None + "ENT001",
+                            CreateElements(line, XNamespace.None))))))
         ]);
 
     private static string BuildInboundOrderEnvelope(
@@ -218,11 +228,9 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 new XAttribute(XNamespace.Xmlns + "tem", service),
                 new XElement(
                     soap + "Body",
-                    new XElement(
-                        service + operationName,
-                        new XElement(service + "UserName", configuration.Username),
-                        new XElement(service + "Password", configuration.Password),
-                        payloadElements))));
+                    new XElement(service + "username", configuration.Username),
+                    new XElement(service + "password", configuration.Password),
+                    payloadElements)));
 
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -388,13 +396,13 @@ internal sealed record AxataLegacyOutboundOrderMaster(
     string S00SKOD,
     string S00TESN,
     string S00DKAN,
-    string S00TMUS,
     string S00SMUS,
-    string S00FDRM,
-    string S00HTP1,
-    string S00HTP2,
+    string S00TMUS,
     string S00TADR,
-    string S00FBLK);
+    string S00FDRM,
+    string S00FBLK,
+    string S00HTP1,
+    string S00HTP2);
 
 internal sealed record AxataLegacyOutboundOrderLine(
     string S01SKOD,
