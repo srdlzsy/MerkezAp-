@@ -60,7 +60,7 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                 INNER JOIN dbo.STOKLAR s WITH (NOLOCK)
                     ON s.sto_kod = ms.StokKodu
                 WHERE
-                    vw.[ShippingDate] >= @date
+                    vw.[ShippingDate] <= @date
                     AND vw.[ShippingDate] < @nextDate
                     AND vw.[BranchNo] = @warehouseNo
                 ORDER BY vw.[ProductName], vw.[ProductionDate];

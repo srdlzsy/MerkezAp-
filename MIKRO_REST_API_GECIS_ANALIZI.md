@@ -105,12 +105,16 @@ Onerilen ayar:
 ```json
 {
   "MikroWriteRouting": {
-    "InventoryCount": "Database",
-    "IssuedWarehouseOrder": "Database",
-    "IssuedCompanyOrder": "Database",
-    "StockReceipt": "Database",
-    "InterWarehouseShipment": "Database",
-    "CompanyMovement": "Database"
+    "InventoryCount": "MikroApi",
+    "IssuedWarehouseOrder": "MikroApi",
+    "IssuedCompanyOrder": "MikroApi",
+    "StockReceipt": "MikroApi",
+    "Virman": "MikroApi",
+    "InterWarehouseShipment": "MikroApi",
+    "WarehouseReturn": "MikroApi",
+    "CompanyMovement": "MikroApi",
+    "CompanyReceiving": "MikroApi",
+    "WarehouseReceivingAcceptance": "MikroApi"
   }
 }
 ```
@@ -223,6 +227,15 @@ Gecis notu:
 - REST payload olusturulmadan once cari bilgisi DB'den okunmaya devam edebilir.
 - Siparis tipi/cinsi net: mevcut kod `sip_tip=1`, `sip_cins=0`.
 
+Uygulama durumu:
+
+- `CreateIssuedCompanyOrderUseCase` icine `MikroWriteRouting:IssuedCompanyOrder` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu `POST /api/APIMethods/SiparisKaydetV2` endpoint'ini kullanir.
+- Payload mapper mevcut sistem davranisini korur: `sip_tip=1`, `sip_cins=0`, `sip_evrakno_seri=F{WarehouseNo}`, `sip_evrakno_sira` DB max + 1.
+- Cari defaultlari (`cari_odemeplan_no`, `cari_pasaport_no == "1"`) REST payload olusmadan once Mikro DB'den okunmaya devam eder.
+- REST create sonrasi belge `SIPARISLER` tablosundan geri okunup mevcut `CreateIssuedCompanyOrderResponse` formatina cevrilir.
+
 ### Zayiat Fisi / Masraf Fisi
 
 Mevcut kod:
@@ -251,6 +264,16 @@ Gecis notu:
 - Mevcut alanlarin cogu default; API minimum payload ile calisabilir.
 - Basarili geciste belge sira uretimini Mikro API'ye birakmak daha saglikli olabilir.
 
+Uygulama durumu:
+
+- `StockReceiptWriteService` icine `MikroWriteRouting:StockReceipt` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu `POST /Api/apiMethods/DahiliStokHareketKaydetV2` endpoint'ini kullanir.
+- Payload mapper mevcut sistem davranisini korur:
+  - zayiat/fire: `sth_evraktip=0`, `sth_cins=4`, `sth_tip=1`
+  - masraf/sarf: `sth_evraktip=0`, `sth_cins=5`, `sth_tip=1`
+- REST create sonrasi belge `STOK_HAREKETLERI` tablosundan geri okunup mevcut `CreateStockReceiptResponse` formatina cevrilir.
+
 ### Virman
 
 Mevcut kod:
@@ -276,6 +299,22 @@ Gecis notu:
 
 - Virman icin `sth_giris_depo_no` ve `sth_cikis_depo_no` ayni depo.
 - API payload'inda hem giris hem cikis satir modeli nasil bekleniyor test edilmeli.
+
+Uygulama durumu:
+
+- `VirmanWriteService` icine `MikroWriteRouting:Virman` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu `POST /Api/apiMethods/DahiliStokHareketKaydetV2` endpoint'ini kullanir.
+- Payload mapper mevcut sistem davranisini korur: `sth_evraktip=6`, `sth_cins=3`, `sth_tip` satirdan gelir, giris/cikis depo ayni depodur.
+- REST create sonrasi belge `STOK_HAREKETLERI` tablosundan geri okunup mevcut `CreateVirmanResponse` formatina cevrilir.
+
+Canli stok hareket frekansi notu:
+
+- Stok hareket REST fazinda `sth_cins`, `sth_tip`, `sth_evraktip` kombinasyonlari canli veriye gore dogrulanmali.
+- Zayiat/fire icin en net kombinasyon: `sth_cins=4`, `sth_tip=1`, `sth_evraktip=0`.
+- Sarf icin canli veri kombinasyonu: `sth_cins=5`, `sth_tip=1`, `sth_evraktip=0`.
+- Stok virman icin iki satirli akis beklenir: `sth_cins=3`, `sth_evraktip=6`, `sth_tip=1` cikis ve `sth_tip=0` giris.
+- Depolar arasi nakliye/sevk tarafinda transfer kombinasyonlari `sth_cins=6`, `sth_tip=2`, `sth_evraktip=17` veya `2` olarak gorunur; create icin `DahiliStokHareketKaydetV2` secildi, canli tek satirli payload ile teyit edilmelidir.
 
 ### Firma Sevk / Firma Iade
 
@@ -305,9 +344,13 @@ REST karsiliklari:
 
 Gecis notu:
 
-- Mevcut kod cari adres numarasini DB'den cozuyor.
-- REST payload'ina cari kodu, depo, seri/sira, stok satirlari, fiyat, parti/lot, proje ve sorumluluk merkezi alanlari maplenmeli.
-- Bu islem icin once test ortaminda tek satirli sevk ve iade payload'i dogrulanmali.
+- `CompanyMovementWriteService` icine `MikroWriteRouting:CompanyMovement` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu `POST /Api/apiMethods/IrsaliyeKaydetV2` endpoint'ini kullanir.
+- Payload mapper mevcut sistem davranisini korur: `sth_evraktip=1`, `sth_tip=1`, `sth_cins=0`, normal sevk icin `sth_normal_iade=0`, firma iade icin `sth_normal_iade=1`.
+- Cari kodu, depo, seri/sira, stok satirlari, fiyat, cari adres no, parti/lot, proje ve sorumluluk merkezi alanlari REST payload'ina maplenir.
+- REST create sonrasi belge `STOK_HAREKETLERI` tablosundan geri okunup mevcut `CreateCompanyMovementResponse` formatina cevrilir.
+- Canli ortamda tek satirli firma sevk ve firma iade payload'i ile Mikro tarafindaki e-irsaliye/irsaliye detay kurallari ayrica dogrulanmali.
 
 ### Depolar Arasi Sevk
 
@@ -336,10 +379,14 @@ REST karsiliklari:
 
 Gecis notu:
 
-- Bu modul tek REST call ile tasinmayabilir.
-- Hareket-ek (`STOK_HAREKETLERI_EK`) baglantisini Mikro API otomatik uretiyor mu bilinmiyor.
-- Siparis teslim miktari update davranisi API tarafinda otomatik olmuyorsa DB update gerekecek.
-- Bu yuzden P3, yani gecis icin gec asama adayi.
+- `CreateInterWarehouseShipmentUseCase` icine `MikroWriteRouting:InterWarehouseShipment` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu stok hareketini `POST /Api/apiMethods/DahiliStokHareketKaydetV2` endpoint'i ile olusturur.
+- Payload mapper mevcut sistem davranisini korur: `sth_evraktip=17`, `sth_tip=2`, `sth_cins=6`, `sth_normal_iade=0`, kaynak depo `sth_cikis_depo_no`, transit depo `sth_giris_depo_no`, hedef depo `sth_nakliyedeposu`, durum `sth_nakliyedurumu=0`.
+- REST create sonrasi hareket satirlari `STOK_HAREKETLERI` tablosundan `sth_Guid` ile geri okunur.
+- Hareket-ek (`STOK_HAREKETLERI_EK`) siparis baglantisi ve bagli siparis teslim miktari update davranisi Mikro API contract'inda net olmadigi icin REST hareketinden sonra DB tamamlayici adim olarak korunur.
+- Otomatik depo siparisi olusturma aciksa `DEPOLAR_ARASI_SIPARISLER` satirlari mevcut DB factory ile olusturulmaya devam eder ve hareket-ek baglantisi kurulur.
+- Canli ortamda tek satirli, bagli siparisli ve otomatik siparisli senaryolar ayri ayri dogrulanmali.
 
 ### Depo Iade
 
@@ -363,8 +410,13 @@ REST karsiliklari:
 
 Gecis notu:
 
-- Depolar arasi sevk ile ayni risk ailesinde.
-- REST gecisi icin once otomatik siparis kapali senaryo test edilmeli.
+- `CreateWarehouseReturnUseCase` icine `MikroWriteRouting:WarehouseReturn` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu stok hareketini `POST /Api/apiMethods/DahiliStokHareketKaydetV2` endpoint'i ile olusturur.
+- Payload mapper mevcut sistem davranisini korur: `sth_evraktip=17`, `sth_tip=2`, `sth_cins=6`, `sth_normal_iade=1`, kaynak depo `sth_cikis_depo_no`, transit depo `sth_giris_depo_no`, hedef depo `sth_nakliyedeposu`, durum `sth_nakliyedurumu=0`.
+- REST create sonrasi hareket satirlari `STOK_HAREKETLERI` tablosundan `sth_Guid` ile geri okunur.
+- Otomatik depo siparisi olusturma aciksa `DEPOLAR_ARASI_SIPARISLER` satirlari mevcut DB factory ile olusturulmaya devam eder ve hareket-ek baglantisi kurulur.
+- Canli ortamda otomatik siparis kapali ve acik depo iade senaryolari ayri ayri dogrulanmali.
 
 ### Firma Mal Kabul
 
@@ -392,9 +444,15 @@ REST karsiliklari:
 
 Gecis notu:
 
-- Siparis teslim miktari API tarafinda otomatik guncelleniyor mu bilinmiyor.
-- Mevcut kodda idempotency, duplicate belge kontrolu ve linked order logic var.
-- Bu modul P3 olmali; once daha basit stok/siparis endpointleri stabilize edilmeli.
+- `CreateCompanyReceivingUseCase` icine `MikroWriteRouting:CompanyReceiving` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu ana mal kabul hareketlerini `POST /Api/apiMethods/IrsaliyeKaydetV2` endpoint'i ile olusturur.
+- Payload mapper mevcut sistem davranisini korur: `sth_evraktip=13`, `sth_tip=0`, `sth_cins=0`, `sth_normal_iade=0`, cari kodu, depo, seri/sira, siparis GUID, SKT, teslim eden/alan, parti/lot, proje ve sorumluluk merkezi alanlari maplenir.
+- REST create sonrasi ana mal kabul hareketleri `STOK_HAREKETLERI` tablosundan `sth_Guid` ile geri okunur ve mevcut `CreateCompanyReceivingResponse` formatina cevrilir.
+- Bagli siparis teslim miktari update'i API contract'inda net olmadigi icin REST hareketinden sonra DB tamamlayici adim olarak korunur.
+- Kismi kabulde otomatik firma iade hareketi aciksa mevcut DB davranisi korunur; iade hareketleri `STOK_HAREKETLERI` tablosuna DB tamamlayici adimda yazilir.
+- Offline `clientRequestId` idempotency akisi korunur; trace degeri `sth_eticaret_kanal_kodu` alanina payload ile tasinir.
+- Canli ortamda siparissiz, siparis bagli, fazla kabul ve kismi kabul/otomatik iade senaryolari ayri ayri dogrulanmali.
 
 ### Depo Mal Kabul Kabul Islemi
 
@@ -420,9 +478,12 @@ REST karsiliklari:
 
 Gecis notu:
 
-- Bu islem standart belge create degil, mevcut hareket satirlarinda kabul durumunu degistiriyor.
-- Mikro REST collection'da "mal kabul kabul et" gibi direkt endpoint gorunmuyor.
-- DB'de kalmasi su an daha guvenli.
+- `AcceptWarehouseReceivingUseCase` icine `MikroWriteRouting:WarehouseReceivingAcceptance` baglandi.
+- `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
+- `MikroApi` modu mevcut hareket satirlarini `POST /Api/apiMethods/DahiliStokHareketDuzeltV2` endpoint'i ile GUID bazli gunceller.
+- Payload sadece kabul icin degisen alanlari tasir: `sth_Guid`, `sth_FormulMiktar`, `sth_giris_depo_no`, `sth_nakliyedeposu`, `sth_nakliyedurumu`, update user/date ve `sth_degisti`.
+- REST update sonrasi hareketler `STOK_HAREKETLERI` tablosundan geri okunur; kabul miktari, hedef depo, transit depo ve teslim durumu dogrulanir.
+- Canli ortamda eksiksiz kabul, eksik kabul ve fazla kabul senaryolari ayri ayri dogrulanmali.
 
 ### Kasa Sayimi
 
@@ -606,9 +667,9 @@ Her pilot icin:
 
 ### Faz 2 - Orta risk create/update aileleri
 
-1. `SiparisKaydetV2`
-2. `DahiliStokHareketKaydetV2`
-3. `IrsaliyeKaydetV2`
+1. `SiparisKaydetV2` - verilen firma siparisi create icin baglandi
+2. `DahiliStokHareketKaydetV2` - zayiat/masraf/virman/depolar arasi sevk/depo iade create icin baglandi
+3. `IrsaliyeKaydetV2` - firma sevk/iade ve firma mal kabul create icin baglandi
 
 Bu fazda update/sil endpointleri de contract olarak hazirlanabilir:
 

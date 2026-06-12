@@ -7,7 +7,9 @@ using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyRe
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
@@ -15,7 +17,10 @@ namespace FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.Co
 public sealed class CreateCompanyReceivingUseCase(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
-    MobileOfflineSyncService mobileOfflineSyncService)
+    MobileOfflineSyncService mobileOfflineSyncService,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<CreateCompanyReceivingUseCase> logger)
     : ICreateCompanyReceivingUseCase
 {
     private const short MovementFileId = 16;
@@ -39,6 +44,9 @@ public sealed class CreateCompanyReceivingUseCase(
     private const string ReturnStatusCreated = "IadeOlusturuldu";
     private const string ReturnEDespatchStatusNone = "Yok";
     private const string ReturnEDespatchStatusPending = "GonderimBekliyor";
+    private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCompanyReceivingResponse> ExecuteAsync(
@@ -72,6 +80,17 @@ public sealed class CreateCompanyReceivingUseCase(
                 throw new InvalidOperationException(
                     "An offline company receiving sync request with the same clientRequestId is already being processed.");
             }
+        }
+
+        if (mikroWriteRoutingOptions.CurrentValue.CompanyReceiving == MikroWriteMode.MikroApi)
+        {
+            return await ExecuteMikroApiWithOfflineStateAsync(request, cancellationToken);
+        }
+
+        if (mikroWriteRoutingOptions.CurrentValue.CompanyReceiving == MikroWriteMode.DualShadow)
+        {
+            logger.LogWarning(
+                "MikroWriteRouting:CompanyReceiving is DualShadow. IrsaliyeKaydetV2 has no dry-run contract, so only the database write path will run.");
         }
 
         var options = mikroWriteOptions.Value;
@@ -374,6 +393,331 @@ public sealed class CreateCompanyReceivingUseCase(
         }
     }
 
+    private async Task<CreateCompanyReceivingResponse> ExecuteMikroApiWithOfflineStateAsync(
+        CreateCompanyReceivingRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await ExecuteMikroApiAsync(request, cancellationToken);
+
+            if (request.ClientRequestId.HasValue)
+            {
+                await mobileOfflineSyncService.CompleteAsync(
+                    OfflineOperationCode,
+                    request.RequestedByUserId,
+                    request.ClientRequestId.Value,
+                    response,
+                    cancellationToken);
+            }
+
+            return response;
+        }
+        catch (Exception exception)
+        {
+            if (request.ClientRequestId.HasValue)
+            {
+                await TryMarkFailedAsync(
+                    request.RequestedByUserId,
+                    request.ClientRequestId.Value,
+                    exception.Message,
+                    cancellationToken);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<CreateCompanyReceivingResponse> ExecuteMikroApiAsync(
+        CreateCompanyReceivingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var now = DateTime.Now;
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+        var customerCode = request.CustomerCode.Trim();
+        var lines = request.Lines.ToArray();
+        var offlineTraceKey = request.ClientRequestId.HasValue
+            ? MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value)
+            : string.Empty;
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+
+        var customer = await GetCustomerAsync(customerCode, cancellationToken);
+        var customerAddressNo = ResolveCustomerAddressNo(customer);
+        var resolvedDocumentIdentity = await ResolveDocumentIdentityAsync(
+            request.DocumentNo,
+            customer,
+            customerCode,
+            request.WarehouseNo,
+            cancellationToken);
+        var documentSerie = resolvedDocumentIdentity.DocumentSerie;
+        var documentOrderNo = resolvedDocumentIdentity.DocumentOrderNo;
+        var documentNo = BuildDocumentNo(documentSerie, documentOrderNo);
+        await EnsureDocumentDoesNotExistAsync(
+            request.WarehouseNo,
+            customerCode,
+            documentNo,
+            cancellationToken);
+
+        var ordersByGuid = await LoadOrdersAsync(
+            request,
+            lines,
+            customerCode,
+            cancellationToken);
+        await EnsureDocumentIdentityDoesNotExistAsync(
+            request.WarehouseNo,
+            documentSerie,
+            documentOrderNo,
+            cancellationToken);
+
+        var shouldCreateReturnDocument = request.AutoCreateReturnForPartialAcceptance &&
+            lines.Any(line => CalculateReturnQuantity(line) > QuantityTolerance);
+        var returnDocumentSerie = shouldCreateReturnDocument
+            ? BuildReturnDocumentSerie(request.WarehouseNo)
+            : null;
+        var returnDocumentOrderNo = shouldCreateReturnDocument
+            ? await GetNextReturnDocumentOrderNoAsync(returnDocumentSerie!, cancellationToken)
+            : (int?)null;
+        var movements = new List<STOK_HAREKETLERI>();
+        var returnMovements = new List<STOK_HAREKETLERI>();
+        var results = new List<CreateCompanyReceivingLineResultDto>();
+        var rowNo = 0;
+        var returnRowNo = 0;
+
+        for (var sourceLineNo = 0; sourceLineNo < lines.Length; sourceLineNo++)
+        {
+            var line = lines[sourceLineNo];
+            var orderGuid = NormalizeOrderGuid(line.OrderGuid);
+            var dispatchQuantity = ResolveDispatchQuantity(line);
+            var physicalAcceptedQuantity = ResolvePhysicalAcceptedQuantity(line);
+            var returnQuantity = CalculateReturnQuantity(line);
+            var physicalAcceptedRemaining = physicalAcceptedQuantity;
+            var returnInfoForNextMovement = CreateReturnInfo(
+                request,
+                line,
+                customerCode,
+                customerAddressNo,
+                returnDocumentSerie,
+                returnDocumentOrderNo,
+                returnMovements,
+                documentSerie,
+                documentOrderNo,
+                movementDate,
+                documentDate,
+                now,
+                sourceLineNo,
+                ref returnRowNo,
+                returnQuantity,
+                offlineTraceKey);
+
+            if (orderGuid is null)
+            {
+                var movementPhysicalAcceptedQuantity = ConsumePhysicalAcceptedQuantity(
+                    dispatchQuantity,
+                    ref physicalAcceptedRemaining);
+                AddMovement(
+                    movements,
+                    results,
+                    request,
+                    line,
+                    customerCode,
+                    documentSerie,
+                    documentOrderNo,
+                    documentNo,
+                    movementDate,
+                    documentDate,
+                    now,
+                    sourceLineNo,
+                    ref rowNo,
+                    dispatchQuantity,
+                    null,
+                    "orderless",
+                    dispatchQuantity,
+                    0d,
+                    0d,
+                    0d,
+                    movementPhysicalAcceptedQuantity,
+                    ConsumeReturnInfo(ref returnInfoForNextMovement),
+                    offlineTraceKey);
+
+                continue;
+            }
+
+            var order = ordersByGuid[orderGuid.Value];
+            var remainingBefore = CalculateRemainingQuantity(order);
+
+            if (remainingBefore <= QuantityTolerance)
+            {
+                throw new InvalidOperationException(
+                    $"Order line has no remaining quantity for company receiving: {orderGuid.Value}");
+            }
+
+            if (dispatchQuantity > remainingBefore + QuantityTolerance)
+            {
+                if (!request.AllowOrderOverReceiving)
+                {
+                    throw new InvalidOperationException(
+                        $"Receiving quantity is greater than remaining order quantity for order line: {orderGuid.Value}");
+                }
+
+                var movementPhysicalAcceptedQuantity = ConsumePhysicalAcceptedQuantity(
+                    remainingBefore,
+                    ref physicalAcceptedRemaining);
+                AddMovement(
+                    movements,
+                    results,
+                    request,
+                    line,
+                    customerCode,
+                    documentSerie,
+                    documentOrderNo,
+                    documentNo,
+                    movementDate,
+                    documentDate,
+                    now,
+                    sourceLineNo,
+                    ref rowNo,
+                    remainingBefore,
+                    orderGuid.Value,
+                    "order-linked",
+                    dispatchQuantity,
+                    remainingBefore,
+                    remainingBefore,
+                    0d,
+                    movementPhysicalAcceptedQuantity,
+                    ConsumeReturnInfo(ref returnInfoForNextMovement),
+                    offlineTraceKey);
+                ApplyOrderDelivery(order, remainingBefore, now);
+
+                var overflowQuantity = dispatchQuantity - remainingBefore;
+                movementPhysicalAcceptedQuantity = ConsumePhysicalAcceptedQuantity(
+                    overflowQuantity,
+                    ref physicalAcceptedRemaining);
+                AddMovement(
+                    movements,
+                    results,
+                    request,
+                    line,
+                    customerCode,
+                    documentSerie,
+                    documentOrderNo,
+                    documentNo,
+                    movementDate,
+                    documentDate,
+                    now,
+                    sourceLineNo,
+                    ref rowNo,
+                    overflowQuantity,
+                    null,
+                    "order-overflow",
+                    dispatchQuantity,
+                    0d,
+                    0d,
+                    0d,
+                    movementPhysicalAcceptedQuantity,
+                    ConsumeReturnInfo(ref returnInfoForNextMovement),
+                    offlineTraceKey);
+
+                continue;
+            }
+
+            var remainingAfter = remainingBefore - dispatchQuantity;
+            var linkedPhysicalAcceptedQuantity = ConsumePhysicalAcceptedQuantity(
+                dispatchQuantity,
+                ref physicalAcceptedRemaining);
+            AddMovement(
+                movements,
+                results,
+                request,
+                line,
+                customerCode,
+                documentSerie,
+                documentOrderNo,
+                documentNo,
+                movementDate,
+                documentDate,
+                now,
+                sourceLineNo,
+                ref rowNo,
+                dispatchQuantity,
+                orderGuid.Value,
+                "order-linked",
+                dispatchQuantity,
+                dispatchQuantity,
+                remainingBefore,
+                remainingAfter,
+                linkedPhysicalAcceptedQuantity,
+                ConsumeReturnInfo(ref returnInfoForNextMovement),
+                offlineTraceKey);
+            ApplyOrderDelivery(order, dispatchQuantity, now);
+        }
+
+        var recovered = movements.Count == 0
+            ? RecoveredCompanyReceivingCreate.Empty(
+                documentSerie,
+                documentOrderNo,
+                movementDate,
+                documentDate,
+                documentNo,
+                request.WarehouseNo,
+                customerCode)
+            : await CreateCompanyReceivingMovementsWithMikroApiAsync(
+                request,
+                customerCode,
+                documentSerie,
+                documentOrderNo,
+                documentNo,
+                movementDate,
+                documentDate,
+                movements,
+                cancellationToken);
+        var adjustedResults = results
+            .Select(result =>
+            {
+                if (!recovered.MovementGuidByRowNo.TryGetValue(result.MovementLineNo, out var movementGuid))
+                {
+                    throw new InvalidOperationException(
+                        "Mikro API company receiving line could not be matched to the created movement row.");
+                }
+
+                return result with { MovementGuid = movementGuid };
+            })
+            .ToArray();
+
+        await PersistMikroApiSideEffectsAsync(
+            returnMovements,
+            adjustedResults.Any(line => line.IsOrderLinked && line.OrderLinkedQuantity > QuantityTolerance),
+            cancellationToken);
+
+        return new CreateCompanyReceivingResponse(
+            recovered.DocumentSerie,
+            recovered.DocumentOrderNo,
+            recovered.MovementDate,
+            recovered.DocumentDate,
+            recovered.DocumentNo,
+            recovered.WarehouseNo,
+            recovered.CustomerCode,
+            recovered.LineCount,
+            recovered.TotalQuantity,
+            adjustedResults.Sum(line => line.OrderLinkedQuantity),
+            adjustedResults.Sum(line => line.OrderlessQuantity),
+            adjustedResults
+                .Where(line => line.ReceivingMode == "order-overflow")
+                .Sum(line => line.AcceptedQuantity),
+            recovered.TotalAmount,
+            options.ConnectionStringName,
+            adjustedResults,
+            recovered.TotalQuantity,
+            adjustedResults.Sum(line => line.PhysicalAcceptedQuantity),
+            adjustedResults.Sum(line => line.ReturnQuantity),
+            returnMovements.Count,
+            returnMovements.Count > 0 ? returnDocumentSerie : null,
+            returnMovements.Count > 0 ? returnDocumentOrderNo : null,
+            returnMovements.Count > 0 ? ReturnEDespatchStatusPending : ReturnEDespatchStatusNone);
+    }
+
     public Task<OfflineSyncStatusDto<CreateCompanyReceivingResponse>> GetOfflineSyncStatusAsync(
         int warehouseNo,
         Guid requestedByUserId,
@@ -389,6 +733,225 @@ public sealed class CreateCompanyReceivingUseCase(
                 storedRequestPayload,
                 innerCancellationToken),
             cancellationToken);
+
+    private async Task<RecoveredCompanyReceivingCreate> CreateCompanyReceivingMovementsWithMikroApiAsync(
+        CreateCompanyReceivingRequest request,
+        string customerCode,
+        string documentSerie,
+        int documentOrderNo,
+        string documentNo,
+        DateTime movementDate,
+        DateTime documentDate,
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        CancellationToken cancellationToken)
+    {
+        var payload = CompanyReceivingIrsaliyeMikroApiPayloadFactory.Create(
+            movements,
+            NormalizeText(request.Description));
+
+        logger.LogInformation(
+            "Company receiving create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, LineCount={LineCount}",
+            IrsaliyeKaydetPath,
+            documentSerie,
+            documentOrderNo,
+            request.WarehouseNo,
+            customerCode,
+            movements.Count);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            IrsaliyeKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API company receiving create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            documentOrderNo,
+            request.WarehouseNo,
+            customerCode,
+            movements.Count,
+            movementDate,
+            documentDate,
+            documentNo,
+            cancellationToken);
+    }
+
+    private async Task<RecoveredCompanyReceivingCreate> RecoverMikroApiCreateResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        string customerCode,
+        int expectedLineCount,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverCompanyReceivingResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                warehouseNo,
+                customerCode,
+                expectedLineCount,
+                movementDate,
+                documentDate,
+                documentNo,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API company receiving create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private async Task<RecoveredCompanyReceivingCreate?> TryRecoverCompanyReceivingResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        string customerCode,
+        int expectedLineCount,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == ReceivingReceiptDocumentType &&
+                movement.sth_tip == IncomingMovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira == documentOrderNo &&
+                movement.sth_giris_depo_no == warehouseNo &&
+                movement.sth_cari_kodu == customerCode)
+            .Select(movement => new
+            {
+                movement.sth_Guid,
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_satirno,
+                movement.sth_giris_depo_no,
+                movement.sth_cari_kodu,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count < expectedLineCount)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_giris_depo_no,
+                row.sth_cari_kodu
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one company receiving document matched the same serie and order number.");
+        }
+
+        var duplicatedRowNo = rows
+            .GroupBy(row => row.sth_satirno ?? -1)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicatedRowNo is not null)
+        {
+            throw new InvalidOperationException(
+                "More than one company receiving line matched the same row number.");
+        }
+
+        var movementGuidByRowNo = rows
+            .Where(row => row.sth_satirno.HasValue)
+            .ToDictionary(row => row.sth_satirno!.Value, row => row.sth_Guid);
+
+        for (var rowNo = 0; rowNo < expectedLineCount; rowNo++)
+        {
+            if (!movementGuidByRowNo.ContainsKey(rowNo))
+            {
+                return null;
+            }
+        }
+
+        var firstRow = rows[0];
+
+        return new RecoveredCompanyReceivingCreate(
+            firstRow.sth_evrakno_seri ?? documentSerie,
+            firstRow.sth_evrakno_sira ?? documentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? documentNo,
+            firstRow.sth_giris_depo_no ?? warehouseNo,
+            firstRow.sth_cari_kodu ?? customerCode,
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            movementGuidByRowNo);
+    }
+
+    private async Task PersistMikroApiSideEffectsAsync(
+        IReadOnlyCollection<STOK_HAREKETLERI> returnMovements,
+        bool hasOrderDeliveryUpdates,
+        CancellationToken cancellationToken)
+    {
+        if (returnMovements.Count == 0 && !hasOrderDeliveryUpdates)
+        {
+            return;
+        }
+
+        await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        try
+        {
+            if (returnMovements.Count > 0)
+            {
+                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(
+                    returnMovements,
+                    cancellationToken);
+            }
+
+            await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
 
     private async Task<CARI_HESAPLAR> GetCustomerAsync(
         string customerCode,
@@ -1570,4 +2133,39 @@ public sealed class CreateCompanyReceivingUseCase(
         double? Quantity,
         double? Amount,
         Guid? OrderGuid);
+
+    private sealed record RecoveredCompanyReceivingCreate(
+        string DocumentSerie,
+        int DocumentOrderNo,
+        DateTime MovementDate,
+        DateTime DocumentDate,
+        string DocumentNo,
+        int WarehouseNo,
+        string CustomerCode,
+        int LineCount,
+        double TotalQuantity,
+        double TotalAmount,
+        IReadOnlyDictionary<int, Guid> MovementGuidByRowNo)
+    {
+        public static RecoveredCompanyReceivingCreate Empty(
+            string documentSerie,
+            int documentOrderNo,
+            DateTime movementDate,
+            DateTime documentDate,
+            string documentNo,
+            int warehouseNo,
+            string customerCode) =>
+            new(
+                documentSerie,
+                documentOrderNo,
+                movementDate,
+                documentDate,
+                documentNo,
+                warehouseNo,
+                customerCode,
+                0,
+                0d,
+                0d,
+                new Dictionary<int, Guid>());
+    }
 }

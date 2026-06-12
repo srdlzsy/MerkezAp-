@@ -1,15 +1,21 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 
 public sealed class CreateIssuedCompanyOrderUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<CreateIssuedCompanyOrderUseCase> logger)
     : ICreateIssuedCompanyOrderUseCase
 {
     private const short FileId = 21;
@@ -17,6 +23,9 @@ public sealed class CreateIssuedCompanyOrderUseCase(
     private const int FirstDocumentOrderNo = 0;
     private const byte IssuedOrderType = 1;
     private const byte NormalOrderGenre = 0;
+    private const string SiparisKaydetPath = "/api/APIMethods/SiparisKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1900, 1, 1);
 
     public async Task<CreateIssuedCompanyOrderResponse> ExecuteAsync(
@@ -25,6 +34,20 @@ public sealed class CreateIssuedCompanyOrderUseCase(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.IssuedCompanyOrder switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:IssuedCompanyOrder mode '{mode}'.")
+        };
+    }
+
+    private async Task<CreateIssuedCompanyOrderResponse> ExecuteDatabaseAsync(
+        CreateIssuedCompanyOrderRequest request,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var orderDate = (request.OrderDate ?? DateTime.Today).Date;
@@ -79,6 +102,174 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 throw;
             }
         });
+    }
+
+    private async Task<CreateIssuedCompanyOrderResponse> ExecuteMikroApiAsync(
+        CreateIssuedCompanyOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var orderDate = (request.OrderDate ?? DateTime.Today).Date;
+        var deliveryDate = request.DeliveryDate.Date;
+        var documentSerie = $"F{request.WarehouseNo}";
+        var lines = request.Lines.ToArray();
+        var customer = await GetCustomerInfoAsync(request.CustomerCode, cancellationToken);
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+        var payload = IssuedCompanyOrderMikroApiPayloadFactory.Create(
+            request,
+            lines,
+            customer.PaymentPlanNo,
+            customer.CanBeCalled,
+            orderDate,
+            deliveryDate,
+            documentSerie,
+            documentOrderNo);
+
+        logger.LogInformation(
+            "Issued company order create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, LineCount={LineCount}",
+            SiparisKaydetPath,
+            documentSerie,
+            documentOrderNo,
+            request.WarehouseNo,
+            request.CustomerCode.Trim(),
+            lines.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            SiparisKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API issued company order create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            documentOrderNo,
+            request,
+            orderDate,
+            deliveryDate,
+            options.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateIssuedCompanyOrderResponse> ExecuteDualShadowAsync(
+        CreateIssuedCompanyOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:IssuedCompanyOrder is DualShadow. SiparisKaydetV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, cancellationToken);
+    }
+
+    private async Task<CreateIssuedCompanyOrderResponse> RecoverMikroApiCreateResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedCompanyOrderRequest request,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverCompanyOrderResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                orderDate,
+                deliveryDate,
+                writeConnectionName,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API issued company order create succeeded, but created SIPARISLER rows could not be read back.");
+    }
+
+    private async Task<CreateIssuedCompanyOrderResponse?> TryRecoverCompanyOrderResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedCompanyOrderRequest request,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        var normalizedCustomerCode = request.CustomerCode.Trim();
+        var rows = await mikroWriteDbContext.SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.sip_tip == IssuedOrderType &&
+                order.sip_cins == NormalOrderGenre &&
+                order.sip_evrakno_seri == documentSerie &&
+                order.sip_evrakno_sira == documentOrderNo &&
+                order.sip_depono == request.WarehouseNo &&
+                order.sip_musteri_kod == normalizedCustomerCode)
+            .Select(order => new
+            {
+                order.sip_tarih,
+                order.sip_teslim_tarih,
+                order.sip_evrakno_seri,
+                order.sip_evrakno_sira,
+                order.sip_depono,
+                order.sip_musteri_kod,
+                order.sip_miktar,
+                order.sip_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sip_tarih,
+                row.sip_evrakno_seri,
+                row.sip_evrakno_sira,
+                row.sip_depono,
+                row.sip_musteri_kod
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one issued company order document matched the same serie and order number.");
+        }
+
+        var firstRow = rows[0];
+
+        return new CreateIssuedCompanyOrderResponse(
+            firstRow.sip_evrakno_seri ?? documentSerie,
+            firstRow.sip_evrakno_sira ?? documentOrderNo,
+            firstRow.sip_tarih?.Date ?? orderDate,
+            rows.Max(row => row.sip_teslim_tarih)?.Date ?? deliveryDate,
+            firstRow.sip_depono ?? request.WarehouseNo,
+            firstRow.sip_musteri_kod ?? normalizedCustomerCode,
+            rows.Count,
+            rows.Sum(row => row.sip_miktar ?? 0d),
+            rows.Sum(row => row.sip_tutar ?? 0d),
+            writeConnectionName);
     }
 
     private async Task<CustomerOrderDefaults> GetCustomerInfoAsync(

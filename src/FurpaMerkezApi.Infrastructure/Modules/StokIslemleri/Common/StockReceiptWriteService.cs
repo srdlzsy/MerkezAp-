@@ -1,15 +1,21 @@
 using System.Data;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 
 public sealed class StockReceiptWriteService(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<StockReceiptWriteService> logger)
 {
     private const short MovementFileId = 16;
     private const short MikroUserNo = 39;
@@ -20,6 +26,9 @@ public sealed class StockReceiptWriteService(
     private const byte ExpenseMovementGenre = 5;
     private const int FirstDocumentOrderNo = 0;
     private const string ExpenseWorkOrderCode = "0032";
+    private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateStockReceiptResponse> ExecuteAsync(
@@ -29,6 +38,21 @@ public sealed class StockReceiptWriteService(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.StockReceipt switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, kind, cancellationToken),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, kind, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, kind, cancellationToken),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:StockReceipt mode '{mode}'.")
+        };
+    }
+
+    private async Task<CreateStockReceiptResponse> ExecuteDatabaseAsync(
+        CreateStockReceiptRequest request,
+        StockReceiptKind kind,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
@@ -98,6 +122,207 @@ public sealed class StockReceiptWriteService(
                 throw;
             }
         });
+    }
+
+    private async Task<CreateStockReceiptResponse> ExecuteMikroApiAsync(
+        CreateStockReceiptRequest request,
+        StockReceiptKind kind,
+        CancellationToken cancellationToken)
+    {
+        var options = mikroWriteOptions.Value;
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+        var documentSerie = $"F{request.WarehouseNo}";
+        var documentNo = NormalizeText(request.DocumentNo, 50);
+        var creator = NormalizeText(request.Creator, 25);
+        var acceptor = NormalizeText(request.Acceptor, 25);
+        var description = NormalizeText(request.Description, 50);
+        var lines = request.Lines.ToArray();
+        var movementGenre = ResolveMovementGenre(kind);
+        var workOrderExpenseCode = ResolveWorkOrderExpenseCode(kind);
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(
+            documentSerie,
+            movementGenre,
+            cancellationToken);
+        var payload = StockMovementMikroApiPayloadFactory.CreateStockReceipt(
+            request,
+            lines,
+            movementGenre,
+            workOrderExpenseCode,
+            movementDate,
+            documentDate,
+            documentNo,
+            documentSerie,
+            documentOrderNo,
+            creator,
+            acceptor,
+            description);
+
+        logger.LogInformation(
+            "Stock receipt create is routed to Mikro API {Path}. Kind={Kind}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, MovementGenre={MovementGenre}, LineCount={LineCount}",
+            DahiliStokHareketKaydetPath,
+            kind,
+            documentSerie,
+            documentOrderNo,
+            request.WarehouseNo,
+            movementGenre,
+            lines.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DahiliStokHareketKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API stock receipt create failed.");
+        }
+
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            documentOrderNo,
+            request,
+            movementGenre,
+            movementDate,
+            documentDate,
+            documentNo,
+            creator,
+            acceptor,
+            options.ConnectionStringName,
+            cancellationToken);
+    }
+
+    private async Task<CreateStockReceiptResponse> ExecuteDualShadowAsync(
+        CreateStockReceiptRequest request,
+        StockReceiptKind kind,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "MikroWriteRouting:StockReceipt is DualShadow. DahiliStokHareketKaydetV2 has no dry-run contract, so only the database write path will run.");
+
+        return await ExecuteDatabaseAsync(request, kind, cancellationToken);
+    }
+
+    private async Task<CreateStockReceiptResponse> RecoverMikroApiCreateResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateStockReceiptRequest request,
+        byte movementGenre,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string creator,
+        string acceptor,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverStockReceiptResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                movementGenre,
+                movementDate,
+                documentDate,
+                documentNo,
+                creator,
+                acceptor,
+                writeConnectionName,
+                cancellationToken);
+
+            if (response is not null)
+            {
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API stock receipt create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private async Task<CreateStockReceiptResponse?> TryRecoverStockReceiptResponseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateStockReceiptRequest request,
+        byte movementGenre,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string creator,
+        string acceptor,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == StockReceiptDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cins == movementGenre &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira == documentOrderNo &&
+                movement.sth_cikis_depo_no == request.WarehouseNo)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_HareketGrupKodu1,
+                movement.sth_HareketGrupKodu2,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one stock receipt document matched the same serie and order number.");
+        }
+
+        var firstRow = rows[0];
+
+        return new CreateStockReceiptResponse(
+            firstRow.sth_evrakno_seri ?? documentSerie,
+            firstRow.sth_evrakno_sira ?? documentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? documentNo,
+            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
+            firstRow.sth_HareketGrupKodu1 ?? creator,
+            firstRow.sth_HareketGrupKodu2 ?? acceptor,
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            writeConnectionName);
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(
