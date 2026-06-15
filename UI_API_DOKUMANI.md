@@ -4254,25 +4254,32 @@ Response:
 
 ### Kunye Etiket Yazdirma Detayli Liste
 
-Belirli bir depo ve tarih icin kunye etiket kayitlarini stok kodu, stok adi, satis fiyati ve urun birimi bilgileriyle getirir. Mevcut `GET /api/kasa-islemleri/kunye-etiket-yazdirma` endpointi degismeden kalir; bu endpoint zengin response gereken ekranlar icindir.
+Belirli bir depo icin kunye etiket kayitlarini stok kodu, stok adi, satis fiyati ve urun birimi bilgileriyle getirir. `dateToGet` verilirse secilen gun icindeki kayitlardan, verilmezse son 1 ay icindeki kayitlardan her stok icin son kunye kaydi secilir. Mevcut `GET /api/kasa-islemleri/kunye-etiket-yazdirma` endpointi degismeden kalir; bu endpoint zengin response gereken ekranlar icindir.
 
 `GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24`
 
+Varsayilan son 1 ay sorgusu:
+
+`GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110`
+
 Yetki:
 
-- `kasa-islemleri.kunye-etiket-yazdirma.list`
+- yok; token gerekmez, herkese aciktir
 
 Query:
 
 - `warehouseNo` zorunlu, 1 veya daha buyuk depo numarasi
-- `dateToGet` zorunlu, sorgulanacak sevk tarihi
+- `dateToGet` opsiyonel, verilirse sorgulanacak sevk tarihi
 
 Not:
 
 - response modeli `KunyeLabelTagDto` doner
-- veri `[Furpa].[dbo].[VwKunyeNet]`, `[KUNYENET].[dbo].[FaturaIslem]`, `[KUNYENET].[dbo].[MuhStok]` ve Mikro `dbo.STOKLAR` joinlerinden okunur
+- veri Mikro `dbo.STOKLAR`, `[KUNYENET].[dbo].[MuhStok]`, `[KUNYENET].[dbo].[FaturaIslem]` ve `[Furpa].[dbo].[VwKunyeNet]` joinlerinden okunur
+- `FaturaIslem.StokId` bazinda `ROW_NUMBER() OVER (PARTITION BY StokId ORDER BY ShippingDate DESC)` kullanilarak her stok icin son kunye kaydi secilir
+- sadece Mikro `STOKLAR.sto_model_kodu` degeri `10`, `11`, `12` olan stoklar doner
 - `salesPrice` alani Mikro `dbo.fn_StokSatisFiyati(stockCode, '1', branchNo, '1')` fonksiyonundan gelir
-- tarih filtresi secilen gunun tamamini kapsar
+- `dateToGet` verilirse tarih filtresi secilen gunun tamamini kapsar; verilmezse `ShippingDate` son 1 ay ile sinirlanir
+- liste `ShippingDate desc` siralanir
 
 Response:
 
@@ -6356,10 +6363,10 @@ Kasa Islemleri / Etiket Belgeleri
 Kasa Islemleri / Kunye Etiket Yazdirma
   -> tarih bazli kunye etiket kayitlari icin GET /api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=...
   -> liste satirlarini LabelTagDto ile goster
-  -> depo ve tarih bazli zengin response icin GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=...&dateToGet=...
+  -> depo bazli zengin response icin GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=...
+  -> dateToGet opsiyoneldir; verilirse o gun icinden, verilmezse son 1 ay icinden son kunye kaydi secilir
   -> zengin liste satirlarini KunyeLabelTagDto ile goster
   -> detayli-etiketler endpointi token istemez
-  -> yetki kodu kasa-islemleri.kunye-etiket-yazdirma.list
 
 Stok Islemleri / Virmanlar
   -> liste filtreleri: tarih araligi, opsiyonel depo
@@ -10976,6 +10983,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Stok ve Etiket Request Modelleri
 
 - `LabelTagListHttpRequest`: `DateToGet`
+- `KunyeDetailedLabelTagListHttpRequest`: `WarehouseNo`, `DateToGet` opsiyonel
 - `LabelPriceChangedProductListHttpRequest`: `DateTimeFilter`
 - `CreateLabelDocumentHttpRequest`: `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`

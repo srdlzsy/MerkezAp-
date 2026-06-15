@@ -18,8 +18,8 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
 
-        var date = request.DateToGet.Date;
-        var nextDate = date.AddDays(1);
+        var date = request.DateToGet?.Date;
+        var nextDate = date?.AddDays(1);
         var tags = new List<KunyeLabelTagDto>();
         var connection = mikroDbContext.Database.GetDbConnection();
         var closeConnection = connection.State == ConnectionState.Closed;
@@ -33,44 +33,82 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
         {
             using var command = connection.CreateCommand();
             command.CommandText = """
+                ;WITH SonKunye AS
+                (
+                    SELECT
+                        fi.StokId,
+                        vw.BranchNo,
+                        vw.BranchName,
+                        vw.ProductionCity,
+                        vw.ProductionDistrict,
+                        vw.ProductName,
+                        vw.GoodsType,
+                        vw.GoodsGenus,
+                        vw.Quantity,
+                        vw.TakenTag,
+                        vw.Buyer,
+                        vw.ProductionDate,
+                        vw.BuyingPrice,
+                        vw.ShippingDate,
+                        vw.Manufacturer,
+                        vw.ProductUnit,
+                        ROW_NUMBER() OVER
+                        (
+                            PARTITION BY fi.StokId
+                            ORDER BY vw.ShippingDate DESC
+                        ) AS RN
+                    FROM [KUNYENET].[dbo].[FaturaIslem] fi WITH (NOLOCK)
+                    INNER JOIN [Furpa].[dbo].[VwKunyeNet] vw WITH (NOLOCK)
+                        ON vw.TakenTag = fi.Kunye
+                    WHERE
+                        vw.BranchNo = @warehouseNo
+                        AND (
+                            (
+                                @date IS NOT NULL
+                                AND vw.[ShippingDate] >= @date
+                                AND vw.[ShippingDate] < @nextDate
+                            )
+                            OR (
+                                @date IS NULL
+                                AND vw.[ShippingDate] >= DATEADD(MONTH, -1, CAST(SYSDATETIME() AS date))
+                                AND vw.[ShippingDate] < DATEADD(DAY, 1, CAST(SYSDATETIME() AS date))
+                            )
+                        )
+                )
                 SELECT
-                    vw.[BranchNo],
-                    COALESCE(vw.[BranchName], '') AS BranchName,
-                    COALESCE(vw.[ProductionCity], '') AS ProductionCity,
+                    sk.BranchNo,
+                    COALESCE(sk.BranchName, '') AS BranchName,
+                    COALESCE(sk.ProductionCity, '') AS ProductionCity,
                     s.sto_kod AS StockCode,
                     COALESCE(s.sto_isim, '') AS StockName,
-                    dbo.[fn_StokSatisFiyati](s.sto_kod, '1', vw.[BranchNo], '1') AS SalesPrice,
-                    COALESCE(vw.[ProductionDistrict], '') AS ProductionDistrict,
-                    COALESCE(vw.[ProductName], '') AS ProductName,
-                    COALESCE(vw.[GoodsType], '') AS GoodsType,
-                    COALESCE(vw.[GoodsGenus], '') AS GoodsGenus,
-                    vw.[Quantity],
-                    COALESCE(vw.[TakenTag], '') AS TakenTag,
-                    COALESCE(vw.[Buyer], '') AS Buyer,
-                    vw.[ProductionDate],
-                    vw.[BuyingPrice],
-                    vw.[ShippingDate],
-                    COALESCE(vw.[Manufacturer], '') AS Manufacturer,
-                    COALESCE(vw.[ProductUnit], '') AS ProductUnit
-                FROM [Furpa].[dbo].[VwKunyeNet] vw WITH (NOLOCK)
-                INNER JOIN [KUNYENET].[dbo].[FaturaIslem] fi WITH (NOLOCK)
-                    ON fi.Kunye = vw.[TakenTag]
+                    dbo.[fn_StokSatisFiyati](s.sto_kod, '1', sk.BranchNo, '1') AS SalesPrice,
+                    COALESCE(sk.ProductionDistrict, '') AS ProductionDistrict,
+                    COALESCE(sk.ProductName, '') AS ProductName,
+                    COALESCE(sk.GoodsType, '') AS GoodsType,
+                    COALESCE(sk.GoodsGenus, '') AS GoodsGenus,
+                    sk.Quantity,
+                    COALESCE(sk.TakenTag, '') AS TakenTag,
+                    COALESCE(sk.Buyer, '') AS Buyer,
+                    sk.ProductionDate,
+                    sk.BuyingPrice,
+                    sk.ShippingDate,
+                    COALESCE(sk.Manufacturer, '') AS Manufacturer,
+                    COALESCE(sk.ProductUnit, '') AS ProductUnit
+                FROM [dbo].[STOKLAR] s WITH (NOLOCK)
                 INNER JOIN [KUNYENET].[dbo].[MuhStok] ms WITH (NOLOCK)
-                    ON ms.Stokid = fi.StokId
-                INNER JOIN dbo.STOKLAR s WITH (NOLOCK)
-                    ON s.sto_kod = ms.StokKodu
-                WHERE
-                    vw.[ShippingDate] <= @date
-                    AND vw.[ShippingDate] < @nextDate
-                    AND vw.[BranchNo] = @warehouseNo
-                ORDER BY vw.[ProductName], vw.[ProductionDate];
+                    ON ms.StokKodu = s.sto_kod
+                INNER JOIN SonKunye sk
+                    ON sk.StokId = ms.Stokid
+                    AND sk.RN = 1
+                WHERE s.sto_model_kodu IN ('10', '11', '12')
+                ORDER BY s.sto_isim;
                 """;
             command.CommandType = CommandType.Text;
             command.CommandTimeout = 180;
 
-            AddParameter(command, "@date", date);
-            AddParameter(command, "@nextDate", nextDate);
-            AddParameter(command, "@warehouseNo", request.WarehouseNo);
+            AddParameter(command, "@date", date, DbType.DateTime2);
+            AddParameter(command, "@nextDate", nextDate, DbType.DateTime2);
+            AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -108,10 +146,15 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
         return tags;
     }
 
-    private static void AddParameter(DbCommand command, string name, object? value)
+    private static void AddParameter(DbCommand command, string name, object? value, DbType? dbType = null)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
+        if (dbType.HasValue)
+        {
+            parameter.DbType = dbType.Value;
+        }
+
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }

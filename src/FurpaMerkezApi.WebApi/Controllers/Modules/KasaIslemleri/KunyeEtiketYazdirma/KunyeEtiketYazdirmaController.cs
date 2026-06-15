@@ -53,7 +53,7 @@ public sealed class KunyeEtiketYazdirmaController(
         var response = await listKunyeLabelTagsUseCase.ExecuteAsync(
             new KunyeLabelTagListRequest(
                 request.WarehouseNo!.Value,
-                request.DateToGet!.Value),
+                request.DateToGet),
             cancellationToken);
 
         return Ok(response);
@@ -72,6 +72,5 @@ public sealed class KunyeDetailedLabelTagListHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Required]
     public DateTime? DateToGet { get; init; }
 }
