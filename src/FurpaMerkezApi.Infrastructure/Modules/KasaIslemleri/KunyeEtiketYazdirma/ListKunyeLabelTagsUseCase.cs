@@ -37,6 +37,8 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                 (
                     SELECT
                         fi.StokId,
+                        fi.Aciklama AS FaturaAciklama,
+                        fi.BirimAdi AS FaturaBirimAdi,
                         vw.BranchNo,
                         vw.BranchName,
                         vw.ProductionCity,
@@ -101,6 +103,12 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                     ON sk.StokId = ms.Stokid
                     AND sk.RN = 1
                 WHERE s.sto_model_kodu IN ('10', '11', '12')
+                    AND ISNULL(s.sto_satis_dursun, 0) = 0
+                    AND ISNULL(s.sto_siparis_dursun, 0) = 0
+                    AND ISNULL(s.sto_malkabul_dursun, 0) = 0
+                    AND ISNULL(s.sto_pasif_fl, 0) = 0
+                    AND LTRIM(RTRIM(ISNULL(s.sto_isim, ''))) = LTRIM(RTRIM(ISNULL(sk.FaturaAciklama, '')))
+                    AND UPPER(LTRIM(RTRIM(ISNULL(s.sto_birim1_ad, '')))) = UPPER(LTRIM(RTRIM(ISNULL(sk.FaturaBirimAdi, ''))))
                 ORDER BY s.sto_isim;
                 """;
             command.CommandType = CommandType.Text;
