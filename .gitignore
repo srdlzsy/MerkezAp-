@@ -13,5 +13,8 @@ tmp_*
 AppDataKeys/
 src/**/AppDataKeys/
 **/appsettings.Local.json
+**/appsettings.Production.json
+**/appsettings.*.local.json
+**/*.secrets.json
 logs/
 src/FurpaMerkezApi.WebApi/logs/
