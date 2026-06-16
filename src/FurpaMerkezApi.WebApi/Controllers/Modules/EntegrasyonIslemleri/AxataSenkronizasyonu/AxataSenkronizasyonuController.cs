@@ -319,6 +319,42 @@ public sealed class AxataSenkronizasyonuController(
             User.GetRequiredUserId(),
             cancellationToken));
 
+    [HttpGet("live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo:int}/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewC01OutboundDeliveryDocumentImport(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewC01DocumentAsync(
+            new AxataOutboundDeliveryDocumentImportPreviewRequest(
+                documentSerie,
+                documentOrderNo,
+                status),
+            cancellationToken));
+
+    [HttpPost("live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo:int}/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteC01OutboundDeliveryDocumentImport(
+        string documentSerie,
+        int documentOrderNo,
+        [FromBody] AxataOutboundDeliveryDocumentImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteC01DocumentAsync(
+            new AxataOutboundDeliveryDocumentImportExecuteRequest(
+                documentSerie,
+                documentOrderNo,
+                request.Status,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
     [HttpPost("manual/axata/outbound-deliveries/inter-warehouse-shipments")]
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(CreateInterWarehouseShipmentResponse), StatusCodes.Status201Created)]
@@ -882,6 +918,14 @@ public sealed class AxataOutboundDeliveryImportExecuteHttpRequest
     public bool ContinueOnError { get; init; } = true;
 
     public bool Acknowledge { get; init; } = true;
+}
+
+public sealed class AxataOutboundDeliveryDocumentImportExecuteHttpRequest
+{
+    [RegularExpression("^[01]$")]
+    public string? Status { get; init; }
+
+    public bool Acknowledge { get; init; }
 }
 
 public class AxataSynchronizationManualDocumentHttpRequest

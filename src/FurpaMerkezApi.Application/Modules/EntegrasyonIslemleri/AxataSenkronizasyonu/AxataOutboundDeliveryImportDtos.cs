@@ -14,6 +14,15 @@ public interface IAxataOutboundDeliveryImportService
         AxataOutboundDeliveryImportExecuteRequest request,
         Guid requestedByUserId,
         CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportPreviewDto> PreviewC01DocumentAsync(
+        AxataOutboundDeliveryDocumentImportPreviewRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportExecuteDto> ExecuteC01DocumentAsync(
+        AxataOutboundDeliveryDocumentImportExecuteRequest request,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record AxataOutboundDeliveryQueuePreviewRequest(
@@ -26,6 +35,17 @@ public sealed record AxataOutboundDeliveryImportPreviewRequest(
 public sealed record AxataOutboundDeliveryImportExecuteRequest(
     int? Take,
     bool ContinueOnError,
+    bool Acknowledge);
+
+public sealed record AxataOutboundDeliveryDocumentImportPreviewRequest(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string? Status);
+
+public sealed record AxataOutboundDeliveryDocumentImportExecuteRequest(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string? Status,
     bool Acknowledge);
 
 public sealed record AxataOutboundDeliveryQueuePreviewDto(

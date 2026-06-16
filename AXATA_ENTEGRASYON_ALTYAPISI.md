@@ -315,6 +315,7 @@ Kontroller:
 
 - Mikro depolar arasi siparisleri `ssip_cikdepo` uzerinden okur.
 - `ssip_special1` tum satirlarda worker basari bayragi olarak `1` mi kontrol eder.
+- `ssip_special1=1` olan siparislerde `STOK_HAREKETLERI_EK.sth_subesip_uid` sevk linki var mi kontrol eder.
 - AXATA pending outbound delivery kuyrugunu `C01`, `C02`, `C03`, `C4` icin `Status=0` olarak okur.
 - C01 icin Mikro siparis satiri, depo uyumu, kalan miktar ve sevk fisi linkini kontrol eder.
 - C02/C03/C4 icin kuyruk seviyesinde rapor verir.
@@ -325,11 +326,19 @@ Response'taki kritik alanlar:
 - `summary`
 - `outboundDeliverySummaries`
 - `unsyncedWarehouseOrders`
+- `sentWarehouseOrdersMissingMikroShipments`
 - `pendingOutboundDeliveries`
 - `interventionCandidates`
+- `operations`
 - `notes`
 
 `unsyncedWarehouseOrders` icindeki bir evrak, `manual/tasks/issued-warehouse-order-sync/documents/candidates` endpoint'inde ayni `warehouseNo/startDate/endDate` ile gorulebilmelidir. Bu eslesme AXATA C01 kaynak depo filtresinin dogrulama kuralidir.
+
+`operations` alani UI'nin kontrol kulesi ekraninda kullanacagi operasyon kartlarini verir:
+
+- `warehouse-orders-not-sent-to-axata`: Mikro siparis AXATA'ya gitmemis/eksik gitmis; manuel dispatch route'u vardir.
+- `axata-pending-outbound-deliveries`: AXATA `Status=0` bekleyen sevk kuyrugu; C01 icin import route'u vardir.
+- `sent-to-axata-missing-mikro-shipment`: AXATA'ya gonderildi isaretli ama Mikro sevk linki eksik; liste overview icindedir, C01 belge bazli rescue route'u vardir.
 
 ### Outbound Delivery Live Queue Preview
 
@@ -373,6 +382,8 @@ Response `AxataOutboundDeliveryQueuePreviewDto` doner. Her belge icin:
 ```text
 GET  /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview?take=20
 POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import
+GET  /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/F50/15035/preview?status=1
+POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/F50/15035/import
 ```
 
 Preview:
@@ -388,6 +399,14 @@ Import:
 - Uygun C01 teslimatlarini Mikro depolar arasi sevk fisine cevirir.
 - `acknowledge=true` ise Mikro yazim basarili olduktan sonra `updIntegrationTableAsync` ile `ENT006.S06STAT=1` yapar.
 - Mikro sevk linki zaten varsa duplicate fis acmaz; uygun durumda sadece ack atabilir.
+
+Belge bazli rescue:
+
+- `sentWarehouseOrdersMissingMikroShipments` listesindeki `documentSerie/documentOrderNo` ile calisir.
+- AXATA ana servisten `OrderNumber=seri.sira`, `MovementType=C01` ile teslimat detayini arar.
+- `status` verilmezse once `0`, sonra `1` denenir.
+- AXATA teslimat satirlari Mikro siparis satirlariyla birebir eslesirse Mikro sevk fisi olusturur.
+- POST body: `{ "status": "1", "acknowledge": false }`; `acknowledge` default olarak kapali tutulmalidir.
 
 Guvenli sira:
 

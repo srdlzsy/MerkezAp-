@@ -22,8 +22,10 @@ public sealed record AxataIntegrationAuditDto(
     AxataIntegrationAuditSummaryDto Summary,
     IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
+    IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> PendingOutboundDeliveries,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> InterventionCandidates,
+    IReadOnlyCollection<AxataIntegrationAuditOperationDto> Operations,
     IReadOnlyCollection<string> Notes);
 
 public sealed record AxataIntegrationAuditSummaryDto(
@@ -31,6 +33,9 @@ public sealed record AxataIntegrationAuditSummaryDto(
     int SentWarehouseOrderDocumentCount,
     int PartiallySentWarehouseOrderDocumentCount,
     int UnsentWarehouseOrderDocumentCount,
+    int SentWarehouseOrderMissingMikroShipmentDocumentCount,
+    int SentWarehouseOrderMissingMikroShipmentLineCount,
+    double SentWarehouseOrderMissingMikroShipmentQuantity,
     int PendingOutboundDeliveryDocumentCount,
     int PendingOutboundDeliveryLineCount,
     double PendingOutboundDeliveryQuantity,
@@ -48,6 +53,21 @@ public sealed record AxataOutboundDeliveryMovementSummaryDto(
     int MikroExistsPendingAckDocumentCount,
     string CheckLevel);
 
+public sealed record AxataIntegrationAuditOperationDto(
+    string Code,
+    string Title,
+    string State,
+    string Severity,
+    int DocumentCount,
+    int LineCount,
+    double Quantity,
+    string? ListRoute,
+    string? PreviewRoute,
+    string? ExecuteRoute,
+    bool CanExecute,
+    bool WritesData,
+    string Description);
+
 public sealed record AxataUnsyncedWarehouseOrderDto(
     string DocumentSerie,
     int DocumentOrderNo,
@@ -60,6 +80,24 @@ public sealed record AxataUnsyncedWarehouseOrderDto(
     double TotalQuantity,
     double SentQuantity,
     double UnsentQuantity,
+    string State,
+    DateTime? LastUpdateDate,
+    string Warning);
+
+public sealed record AxataSentWarehouseOrderMissingShipmentDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    DateTime DocumentDate,
+    int InWarehouseNo,
+    int OutWarehouseNo,
+    int LineCount,
+    int SentLineCount,
+    int MissingMovementLinkLineCount,
+    double TotalQuantity,
+    double SentQuantity,
+    double MissingMovementLinkQuantity,
+    double DeliveredQuantity,
+    int LinkedMovementLineCount,
     string State,
     DateTime? LastUpdateDate,
     string Warning);
