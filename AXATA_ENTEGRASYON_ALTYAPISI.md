@@ -101,7 +101,7 @@ Bu yonde bugun iki farkli seviye vardir:
 1. Canli C01 fetch/import:
    - AXATA ana servisten `getOutBoundDeliveryListAsync` ile `MovementType=C01`, `Status=0` okunur.
    - Mikro siparis satirlari `S06TESL` -> `DocumentSerie.DocumentOrderNo` ile bulunur.
-   - Satir eslesmesi `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod` ile yapilir.
+   - Satir eslesmesi once `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod`, sonra 1-bazli satir no farki, son olarak tekil stok + kalan miktar ile guvenli eslesme seklinde yapilir.
    - Mikro depolar arasi sevk fisi yazilir.
    - `STOK_HAREKETLERI_EK.sth_subesip_uid` linki ve teslim miktari kontrol edilir.
    - Basarili Mikro yazimdan sonra istenirse AXATA EXT `updIntegrationTableAsync` ile `ENT006.S06STAT=1` yapilir.
@@ -117,7 +117,7 @@ Bugun olmayanlar:
 - C02/C03/C4 icin Mikro'ya yazan live import/ack.
 - G01/G02 icin live fetch/import.
 - AXATA EXT `getViewDataAsync` polling ile otomatik sayim import.
-- Belge numarasi verip AXATA'dan tek belge fetch eden endpoint.
+- C01 disindaki hareket tipleri icin belge numarasi verip AXATA'dan tek belge fetch/import eden endpoint.
 - Kalici retry/ack monitor.
 
 ## Mimari Bilesenler
@@ -315,7 +315,9 @@ Kontroller:
 
 - Mikro depolar arasi siparisleri `ssip_cikdepo` uzerinden okur.
 - `ssip_special1` tum satirlarda worker basari bayragi olarak `1` mi kontrol eder.
-- `ssip_special1=1` olan siparislerde `STOK_HAREKETLERI_EK.sth_subesip_uid` sevk linki var mi kontrol eder.
+- `ssip_special1=1` olan belgede hic `STOK_HAREKETLERI_EK.sth_subesip_uid` sevk linki yoksa `sentWarehouseOrdersMissingMikroShipments`, en az bir link olup eksik link veya miktar farki varsa `sentWarehouseOrdersWithShipmentDifferences` olarak ayirir.
+- Sevk donus problemi once belge bazinda tek havuzda hesaplanir; `linkedMovementLineCount == 0` kritik liste, `linkedMovementLineCount > 0` ve eksik link/miktar farki uyari listesidir.
+- Tarih filtresi `ssip_tarih` uzerinden calisir; `ssip_lastup_date` sadece problem listelerinde en yeni guncellenen belgeyi one almak icin kullanilir.
 - AXATA pending outbound delivery kuyrugunu `C01`, `C02`, `C03`, `C4` icin `Status=0` olarak okur.
 - C01 icin Mikro siparis satiri, depo uyumu, kalan miktar ve sevk fisi linkini kontrol eder.
 - C02/C03/C4 icin kuyruk seviyesinde rapor verir.
@@ -327,6 +329,7 @@ Response'taki kritik alanlar:
 - `outboundDeliverySummaries`
 - `unsyncedWarehouseOrders`
 - `sentWarehouseOrdersMissingMikroShipments`
+- `sentWarehouseOrdersWithShipmentDifferences`
 - `pendingOutboundDeliveries`
 - `interventionCandidates`
 - `operations`
@@ -338,7 +341,8 @@ Response'taki kritik alanlar:
 
 - `warehouse-orders-not-sent-to-axata`: Mikro siparis AXATA'ya gitmemis/eksik gitmis; manuel dispatch route'u vardir.
 - `axata-pending-outbound-deliveries`: AXATA `Status=0` bekleyen sevk kuyrugu; C01 icin import route'u vardir.
-- `sent-to-axata-missing-mikro-shipment`: AXATA'ya gonderildi isaretli ama Mikro sevk linki eksik; liste overview icindedir, C01 belge bazli rescue route'u vardir.
+- `sent-to-axata-missing-mikro-shipment`: AXATA'ya gonderildi isaretli ama belge genelinde Mikro sevk linki yok; liste overview icindedir, C01 belge bazli rescue route'u vardir.
+- `sent-to-axata-shipment-differences`: Belgede en az bir Mikro sevk linki var ama eksik link veya miktar farki bulunur; kismi sevk/satir farki olarak aksiyonsuz incelenir.
 
 ### Outbound Delivery Live Queue Preview
 
@@ -405,7 +409,8 @@ Belge bazli rescue:
 - `sentWarehouseOrdersMissingMikroShipments` listesindeki `documentSerie/documentOrderNo` ile calisir.
 - AXATA ana servisten `OrderNumber=seri.sira`, `MovementType=C01` ile teslimat detayini arar.
 - `status` verilmezse once `0`, sonra `1` denenir.
-- AXATA teslimat satirlari Mikro siparis satirlariyla birebir eslesirse Mikro sevk fisi olusturur.
+- AXATA teslimat satirlari Mikro siparis satirlariyla guvenli eslesirse ve teslim miktari Mikro kalan siparis miktarini asmazsa Mikro sevk fisi olusturur.
+- `sentWarehouseOrdersWithShipmentDifferences` listesindeki belgeler kismi sevk/satir farki uyarisi olarak incelenir; otomatik rescue/import butonu burada acilmaz.
 - POST body: `{ "status": "1", "acknowledge": false }`; `acknowledge` default olarak kapali tutulmalidir.
 
 Guvenli sira:
@@ -630,7 +635,7 @@ UI su ayrimi net yapmalidir:
 - Firma ve urun master task'lari canli SOAP dispatch yapmaz.
 - C02/C03/C4 live queue preview vardir ama live import/ack henuz yoktur.
 - G01/G02 live fetch-import henuz yoktur.
-- AXATA belge numarasi ile tek belge fetch endpoint'i yoktur.
+- C01 belge bazli rescue vardir; C02/C03/C4/G01/G02 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.
 - EXT `getViewDataAsync` tabanli otomatik sayim polling yoktur.
 - Dispatch request/response XML'i response body'de doner; hassas veri icerebilecegi icin UI bunu dikkatli gostermelidir.
 
@@ -674,6 +679,6 @@ Canli AXATA dogrulamasi icin sahada kontrol edilmesi gerekenler:
    - `addSKUBarcode`
    - `addSKUPalet`
 5. Kalici job/audit/retry tablolari.
-6. Belge numarasi ile AXATA'dan tek belge fetch endpointleri.
+6. C02/C03/C4/G01/G02 icin belge numarasi ile AXATA'dan tek belge fetch endpointleri.
 7. Ack/retry monitor ekrani.
 8. Dispatch sonucunu DB'de saklayan reconcile katmani.

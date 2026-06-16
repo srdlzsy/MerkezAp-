@@ -11,7 +11,9 @@ public sealed record AxataIntegrationAuditRequest(
     DateTime? StartDate,
     DateTime? EndDate,
     int? WarehouseNo,
-    int? Take);
+    int? Take,
+    string? DocumentSerie,
+    int? DocumentOrderNo);
 
 public sealed record AxataIntegrationAuditDto(
     bool IsInSync,
@@ -23,6 +25,7 @@ public sealed record AxataIntegrationAuditDto(
     IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,
+    IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersWithShipmentDifferences,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> PendingOutboundDeliveries,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> InterventionCandidates,
     IReadOnlyCollection<AxataIntegrationAuditOperationDto> Operations,
@@ -36,6 +39,9 @@ public sealed record AxataIntegrationAuditSummaryDto(
     int SentWarehouseOrderMissingMikroShipmentDocumentCount,
     int SentWarehouseOrderMissingMikroShipmentLineCount,
     double SentWarehouseOrderMissingMikroShipmentQuantity,
+    int SentWarehouseOrderShipmentDifferenceDocumentCount,
+    int SentWarehouseOrderShipmentDifferenceLineCount,
+    double SentWarehouseOrderShipmentDifferenceQuantity,
     int PendingOutboundDeliveryDocumentCount,
     int PendingOutboundDeliveryLineCount,
     double PendingOutboundDeliveryQuantity,
@@ -98,6 +104,9 @@ public sealed record AxataSentWarehouseOrderMissingShipmentDto(
     double MissingMovementLinkQuantity,
     double DeliveredQuantity,
     int LinkedMovementLineCount,
+    int DifferenceLineCount,
+    double DifferenceQuantity,
+    string DifferenceReason,
     string State,
     DateTime? LastUpdateDate,
     string Warning);

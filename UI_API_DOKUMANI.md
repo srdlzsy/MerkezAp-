@@ -7385,7 +7385,7 @@ Mevcut endpointler:
 - `GET /api/integrations/axata-sync/live/audit/overview?startDate=2026-06-08&endDate=2026-06-08&warehouseNo=50&take=50`
   - eski worker calisirken Mikro ve AXATA arasindaki farklari kontrol eder; veri yazmaz
   - Mikro -> AXATA siparis tarafinda `ssip_special1` worker basari bayragini raporlar
-  - `ssip_special1=1` oldugu halde Mikro sevk linki olmayan siparisleri `STOK_HAREKETLERI_EK.sth_subesip_uid` uzerinden yakalar
+  - `ssip_special1=1` oldugu halde belge genelinde Mikro sevk linki olmayan siparisleri `STOK_HAREKETLERI_EK.sth_subesip_uid` uzerinden yakalar; kismi linkli belgeleri ayri fark listesine alir
   - AXATA -> Mikro sevk tarafinda `getOutBoundDeliveryListAsync` ile `C01/C02/C03/C4`, `Status=0` kuyrugunu okur
   - C01 icin Mikro siparis satiri ve sevk fisi linkini de kontrol eder
   - response icindeki `operations` UI kontrol kulesi kartlari icin hazir aksiyon/route bilgisi tasir
@@ -7457,7 +7457,8 @@ Mevcut endpointler:
   - response `AxataOutboundDeliveryImportPreviewDto`
 - `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import`
   - AXATA'da teslimati kesilmis ama Mikro sevk linki eksik C01 belgeyi Mikro depolar arasi sevk fisine cevirir
-  - AXATA satirlari Mikro siparis satirlariyla birebir eslesmezse veri yazmaz
+  - AXATA satirlari Mikro siparis satirlariyla guvenli eslesmezse veya AXATA miktari Mikro kalan siparis miktarini asarsa veri yazmaz
+  - Guvenli eslesme sirasi: `S07KALN + S07SKOD`, 1-bazli satir no farki, son olarak tekil stok + kalan miktar eslesmesi
   - body `AxataOutboundDeliveryDocumentImportExecuteHttpRequest`
   - response `AxataOutboundDeliveryImportExecuteDto`
 - `POST /api/integrations/axata-sync/manual/axata/outbound-deliveries/inter-warehouse-shipments`
@@ -7510,11 +7511,11 @@ UI icin endpoint davranis rehberi:
 | Genel Durum | `GET /api/integrations/axata-sync` | Task listesini, aktif/pasif durumlari, worker/scheduler bilgisini ve son job'lari getirir | Hayir | Sayfa acilisinda cagir |
 | Genel Durum | `GET /api/integrations/axata-sync/health` | Mikro SQL, Furpa SQL, AXATA Main ve EXT endpoint erisimini kontrol eder | Hayir | "Baglanti testi" veya otomatik durum karti |
 | Profil Katalogu | `GET /api/integrations/axata-sync/fetch-profiles` | AXATA servislerinden hangi profillerin okunabilecegini ve backendde hangi seviyede desteklendigini listeler | Hayir | UI butonlarini capability'ye gore ac/kapat |
-| Fark Analizi | `GET /api/integrations/axata-sync/live/audit/overview` | Mikro siparis bayragi, AXATA pending sevk kuyrugu ve Mikro sevk linki eksik belgeleri birlikte kontrol eder | Hayir | "Kontrol et" butonu |
+| Fark Analizi | `GET /api/integrations/axata-sync/live/audit/overview` | Mikro siparis bayragi, AXATA pending sevk kuyrugu, Mikro sevk donus eksigi ve kismi sevk/satir farklarini birlikte kontrol eder | Hayir | "Kontrol et" butonu |
 | AXATA Kuyruk | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` | C01/C02/C03/C4 pending outbound delivery kuyrugunu canli okur | Hayir | "AXATA kuyrugunu goster" butonu |
 | C01 Import | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview` | C01 pending teslimatlari Mikro siparis satirlariyla eslestirir | Hayir | "C01 import onizle" butonu |
 | C01 Import | `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import` | Uygun C01 teslimatini Mikro depolar arasi sevk fisine cevirir; istenirse AXATA ack atar | Evet | "C01'i Mikro'ya isle" butonu |
-| C01 Rescue | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{serie}/{sira}/preview` | AXATA'ya gonderildi gorunen ama Mikro sevk linki eksik tek belgeyi AXATA'dan belge bazinda arar | Hayir | "Eksik sevki onizle" |
+| C01 Rescue | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{serie}/{sira}/preview` | AXATA'ya gonderildi gorunen ama belge genelinde Mikro sevk linki olmayan tek belgeyi AXATA'dan belge bazinda arar | Hayir | "Eksik sevki onizle" |
 | C01 Rescue | `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{serie}/{sira}/import` | AXATA teslimat detayi bulunur ve Mikro siparisiyle eslesirse eksik Mikro sevkini olusturur | Evet | "Eksik sevki Mikro'ya dusur" |
 | Mikro -> AXATA Manuel | `GET /manual/tasks/{taskCode}/documents/candidates` | Manuel kurtarma icin Mikro evrak adaylarini listeler | Hayir | "Evraklari getir" |
 | Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/preview` | Secili Mikro evrakindan AXATA payload preview uretir | Hayir | "Payload onizle" |
@@ -7538,7 +7539,7 @@ UI'da asil karistirilmamasi gereken farklar:
 | `outbound-deliveries/preview` | AXATA C01/C02/C03/C4 pending kuyrugunu okur | Mikro'ya yazmaz, ack atmaz |
 | `c01/import` | AXATA C01 teslimatini Mikro sevke cevirir | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
 | `c01/documents/{serie}/{sira}/preview` | C01 teslimatini AXATA'da belge no ile arar, status verilmezse `0` sonra `1` dener | Veri yazmaz |
-| `c01/documents/{serie}/{sira}/import` | AXATA'da sevki kesilmis ama Mikro sevk linki eksik C01 belgeyi Mikro'ya dusurur | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
+| `c01/documents/{serie}/{sira}/import` | AXATA'da sevki kesilmis ama belge genelinde Mikro sevk linki olmayan C01 belgeyi Mikro'ya dusurur | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
 | `manual/axata/*` | AXATA verisi body olarak UI/operasyon tarafindan saglanir | AXATA'dan canli fetch yapmaz |
 | `manual/incoming/*` | Mikro'ya manuel belge yazar | AXATA status guncellemez |
 
@@ -7564,12 +7565,16 @@ Ekranda gosterilecek durum alanlari:
 |---|---|---|
 | `isInSync` | audit overview | Tum kontrol basliklari temizse true |
 | `summary.unsentWarehouseOrderDocumentCount` | audit overview | Mikro'da AXATA'ya gitmemis depo siparisi sayisi |
-| `summary.sentWarehouseOrderMissingMikroShipmentDocumentCount` | audit overview | AXATA'ya gonderildi isaretli ama Mikro sevk linki eksik belge sayisi |
-| `summary.sentWarehouseOrderMissingMikroShipmentLineCount` | audit overview | Mikro sevk linki eksik satir sayisi |
-| `summary.sentWarehouseOrderMissingMikroShipmentQuantity` | audit overview | Mikro sevk linki eksik toplam miktar |
+| `summary.sentWarehouseOrderMissingMikroShipmentDocumentCount` | audit overview | AXATA'ya gonderildi isaretli ama belge genelinde Mikro sevk linki olmayan belge sayisi |
+| `summary.sentWarehouseOrderMissingMikroShipmentLineCount` | audit overview | Belge genelinde hic Mikro sevk linki olmayan satir sayisi |
+| `summary.sentWarehouseOrderMissingMikroShipmentQuantity` | audit overview | Belge genelinde hic Mikro sevk linki olmayan toplam miktar |
+| `summary.sentWarehouseOrderShipmentDifferenceDocumentCount` | audit overview | En az bir sevk linki olan ama eksik link veya miktar farki bulunan belge sayisi |
+| `summary.sentWarehouseOrderShipmentDifferenceLineCount` | audit overview | Kismi sevk/satir farki icindeki problemli satir sayisi |
+| `summary.sentWarehouseOrderShipmentDifferenceQuantity` | audit overview | Kismi sevk/satir farki icindeki miktar farki |
 | `summary.pendingOutboundDeliveryDocumentCount` | audit overview | AXATA'da Status=0 bekleyen sevk sayisi |
 | `unsyncedWarehouseOrders` | audit overview | Mikro -> AXATA tarafinda tekrar gonderim adayi |
-| `sentWarehouseOrdersMissingMikroShipments` | audit overview | AXATA'ya gitmis gorunen ama Mikro sevk fisi/linki eksik belgeler; C01 rescue adayi |
+| `sentWarehouseOrdersMissingMikroShipments` | audit overview | AXATA'ya gitmis gorunen ama belge genelinde Mikro sevk fisi/linki olmayan belgeler; C01 rescue adayi |
+| `sentWarehouseOrdersWithShipmentDifferences` | audit overview | Belge icinde en az bir Mikro sevk linki var ama eksik link veya miktar farki bulunur; kismi sevk/fark inceleme listesi |
 | `pendingOutboundDeliveries` | audit overview | AXATA -> Mikro tarafinda bekleyen kuyruk |
 | `interventionCandidates` | audit overview | C01 icin backendin guvenli mudahale adayi gordugu kayitlar |
 | `operations` | audit overview | Kontrol kulesi kartlari; her operasyon icin route, sayac, severity ve yazma durumu verir |
@@ -7647,17 +7652,27 @@ GET /api/integrations/axata-sync/live/audit/overview?startDate=2026-06-08&endDat
 Authorization: Bearer {token}
 ```
 
+Tek belgeyi debug etmek icin:
+
+```http
+GET /api/integrations/axata-sync/live/audit/overview?startDate=2026-06-01&endDate=2026-06-16&warehouseNo=50&documentSerie=F50&documentOrderNo=15035&take=50
+Authorization: Bearer {token}
+```
+
 Bu cagri veri yazmaz. Amaci eski worker calisirken durumu anlamaktir:
 
 - `isInSync=true` ise secili tarih araliginda Mikro siparis bayraklari tamam, AXATA pending sevk kuyrugu bos ve AXATA'ya gonderildi isaretli siparislerde Mikro sevk linki eksigi yok demektir
 - `unsyncedWarehouseOrders` Mikro'da olup worker basari bayragi tum satirlarda `1` olmayan depolar arasi siparisleri gosterir
-- `sentWarehouseOrdersMissingMikroShipments` Mikro'da `ssip_special1=1` oldugu halde `STOK_HAREKETLERI_EK.sth_subesip_uid` linki olmayan sevk donus eksiklerini gosterir
+- Sevk donus problemi once belge bazinda tek havuzda hesaplanir; `linkedMovementLineCount == 0` olan belgeler kritik `sentWarehouseOrdersMissingMikroShipments`, `linkedMovementLineCount > 0` olup eksik link veya miktar farki olan belgeler uyari `sentWarehouseOrdersWithShipmentDifferences` listesine ayrilir
+- `sentWarehouseOrdersMissingMikroShipments` Mikro'da `ssip_special1=1` oldugu halde belge genelinde hic `STOK_HAREKETLERI_EK.sth_subesip_uid` linki olmayan kritik sevk donus eksiklerini gosterir
+- `sentWarehouseOrdersWithShipmentDifferences` belgede en az bir Mikro sevk linki oldugu halde eksik link veya siparis-teslim miktar farki bulunan kismi sevk/satir farki durumlarini gosterir; UI bunu dogrudan import aksiyonu degil inceleme uyarisi olarak ele almalidir
 - Mikro siparis kontrolu merkezden cikan depo sevk akisi icin `ssip_cikdepo` uzerinden yapilir; `warehouseNo=50` merkezden cikacak depo siparislerini denetler
+- Audit tarih filtresi `ssip_tarih` uzerinden calisir; `ssip_lastup_date` sadece problem listelerinde en yeni guncellenen belgeyi one almak icin kullanilir
 - `pendingOutboundDeliveries` AXATA'da `Status=0` bekleyen sevkleri gosterir
 - `interventionCandidates` C01 icin guvenli mudahale adaylarini gosterir
 - `operations` UI'nin "siparis AXATA'ya dustu mu", "bekleyen AXATA sevki var mi", "AXATA sevki kesilmis ama Mikro'ya dusmemis mi" kartlarini besler
 - `MikroShipmentExistsPendingAck` ise Mikro fis/link zaten vardir; duplicate fis acmadan sadece AXATA ack gerekebilir
-- `ReadyForImport` ise Mikro siparis satiri eslesmistir ama sevk fisi yoktur; C01 import ile mudahale edilebilir
+- `ReadyForImport` ise AXATA satirlari Mikro siparis satirlariyla guvenli eslesmistir, sevk fisi yoktur ve C01 import ile mudahale edilebilir
 
 Ornek outbound delivery kuyruk preview:
 
@@ -7698,7 +7713,7 @@ Import davranisi:
 - AXATA fetch: `AxataServicePool.svc/getOutBoundDeliveryListAsync`
 - Query: `CompanyCode=01`, `WarehouseCode=01`, `MovementType=C01`, `Status=0`
 - Mikro eslesme: `S06TESL` degeri `DocumentSerie.DocumentOrderNo` olarak okunur
-- Satir eslesme: `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod`
+- Satir eslesme: once `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod`, sonra 1-bazli satir no farki, son olarak tekil stok + kalan miktar kontrolu
 - Mikro yazim: depolar arasi sevk fisi, `STOK_HAREKETLERI_EK.sth_subesip_uid` linki ve `ssip_teslim_miktar` guncellemesi
 - AXATA ack: Mikro yazim basarili olursa `AxataServicePoolEXT.svc/updIntegrationTableAsync` ile `ENT006.S06STAT=1`, `IDField=S06SIRA`
 - `acknowledge=false` verilirse Mikro yazilir ama AXATA status guncellenmez; bu sadece kontrollu test/kurtarma icin kullanilmalidir
@@ -7731,8 +7746,9 @@ Rescue davranisi:
 
 - AXATA fetch: `AxataServicePool.svc/getOutBoundDeliveryListAsync`
 - Query: `CompanyCode=01`, `WarehouseCode=01`, `MovementType=C01`, `OrderNumber=F50.15035`, `Status=1`
-- Mikro eslesme: `S06TESL` -> `DocumentSerie.DocumentOrderNo`, `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod`
+- Mikro eslesme: `S06TESL` -> `DocumentSerie.DocumentOrderNo`; satir eslesmesi guvenli eslesme kuralini kullanir (`S07KALN + S07SKOD`, 1-bazli satir no farki, tekil stok + kalan miktar)
 - Mikro yazim: AXATA teslimat miktari Mikro kalan miktarini asmiyorsa depolar arasi sevk fisi, `STOK_HAREKETLERI_EK.sth_subesip_uid` linki ve `ssip_teslim_miktar` guncellemesi
+- `sentWarehouseOrdersWithShipmentDifferences` listesindeki kismi sevk/satir farki belgeleri icin otomatik import onerilmez; once AXATA satirlariyla fark incelemesi yapilmalidir
 - `acknowledge=false` tavsiye edilir; belge AXATA'da zaten `Status=1` ise tekrar ack gerekmeyebilir
 
 Ornek manuel evrak preview:
@@ -7891,6 +7907,7 @@ UI ekran parcasi onerisi:
   - "siparisler AXATA'ya gitti mi", "AXATA sevkleri Mikro'ya dustu mu", "mudahaale adayi var mi" kartlari
   - kartlar icin once `operations` listesi okunmalidir; `state`, `severity`, `documentCount`, `previewRoute`, `executeRoute`, `canExecute`, `writesData` UI buton durumunu belirler
   - `sentWarehouseOrdersMissingMikroShipments` tablosunda belge satiri secilirse C01 belge bazli rescue preview/import route'lari kullanilir
+  - `sentWarehouseOrdersWithShipmentDifferences` tablosu kismi sevk/satir farki incelemesi icindir; dogrudan import/ack butonu gostermemelidir
   - varsayilan tarih bugun olmali; tarih araligi ve depo filtresi opsiyonel verilmelidir
 - `Mikro -> AXATA Manuel` sekmesi:
   - task secimi
@@ -10782,6 +10799,7 @@ public sealed record AxataIntegrationAuditDto(
     IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,
+    IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersWithShipmentDifferences,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> PendingOutboundDeliveries,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> InterventionCandidates,
     IReadOnlyCollection<AxataIntegrationAuditOperationDto> Operations,
@@ -10795,6 +10813,9 @@ public sealed record AxataIntegrationAuditSummaryDto(
     int SentWarehouseOrderMissingMikroShipmentDocumentCount,
     int SentWarehouseOrderMissingMikroShipmentLineCount,
     double SentWarehouseOrderMissingMikroShipmentQuantity,
+    int SentWarehouseOrderShipmentDifferenceDocumentCount,
+    int SentWarehouseOrderShipmentDifferenceLineCount,
+    double SentWarehouseOrderShipmentDifferenceQuantity,
     int PendingOutboundDeliveryDocumentCount,
     int PendingOutboundDeliveryLineCount,
     double PendingOutboundDeliveryQuantity,
@@ -10857,6 +10878,9 @@ public sealed record AxataSentWarehouseOrderMissingShipmentDto(
     double MissingMovementLinkQuantity,
     double DeliveredQuantity,
     int LinkedMovementLineCount,
+    int DifferenceLineCount,
+    double DifferenceQuantity,
+    string DifferenceReason,
     string State,
     DateTime? LastUpdateDate,
     string Warning);
@@ -11165,7 +11189,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `AxataSynchronizationExecuteHttpRequest`: `TaskCode`, `ExecutionMode`, `WarehouseNo`
 - `AxataSynchronizationExecuteTaskHttpRequest`: `ExecutionMode`, `WarehouseNo`
 - `AxataSynchronizationManualDocumentCandidatesHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `Skip`, `Take`
-- `AxataIntegrationAuditHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `Take`
+- `AxataIntegrationAuditHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `Take`, `DocumentSerie`, `DocumentOrderNo`
 - `AxataOutboundDeliveryQueuePreviewHttpRequest`: `MovementType`, `Take`
 - `AxataOutboundDeliveryImportPreviewHttpRequest`: `Take`
 - `AxataOutboundDeliveryImportExecuteHttpRequest`: `Take`, `ContinueOnError`, `Acknowledge`
