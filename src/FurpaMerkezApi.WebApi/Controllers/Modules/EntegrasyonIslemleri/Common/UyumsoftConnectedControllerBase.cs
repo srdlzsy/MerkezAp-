@@ -25,17 +25,16 @@ public abstract class UyumsoftConnectedControllerBase(
         params UyumsoftOperationParameterRequest[] parameters) =>
         queryService.InvokeGetOperationAsync(
             serviceKind,
-            new UyumsoftOperationInvocationRequest(operationName, null, parameters),
+            new UyumsoftOperationInvocationRequest(operationName, parameters),
             cancellationToken);
 
     protected Task<UyumsoftOperationResponseDto> InvokeOperationAsync(
         string operationName,
-        string? payloadXml,
         IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters,
         CancellationToken cancellationToken) =>
         queryService.InvokeGetOperationAsync(
             serviceKind,
-            new UyumsoftOperationInvocationRequest(operationName, payloadXml, parameters.ToArray()),
+            new UyumsoftOperationInvocationRequest(operationName, parameters.ToArray()),
             cancellationToken);
 
     protected static UyumsoftOperationParameterRequest Parameter(string name, string? value) =>

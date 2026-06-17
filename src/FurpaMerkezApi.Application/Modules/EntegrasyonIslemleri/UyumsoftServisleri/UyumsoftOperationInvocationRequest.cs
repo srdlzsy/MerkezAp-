@@ -2,7 +2,6 @@ namespace FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServis
 
 public sealed record UyumsoftOperationInvocationRequest(
     string OperationName,
-    string? PayloadXml,
     IReadOnlyCollection<UyumsoftOperationParameterRequest> Parameters);
 
 public sealed record UyumsoftOperationParameterRequest(

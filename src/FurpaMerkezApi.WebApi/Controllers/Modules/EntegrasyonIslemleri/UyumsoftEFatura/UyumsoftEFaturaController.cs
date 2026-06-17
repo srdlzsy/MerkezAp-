@@ -45,12 +45,10 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> InvokeGetOperationByQuery(
         string operationName,
-        [FromQuery] string? payloadXml,
         [FromQuery(Name = "parameter")] string[]? parameters,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             operationName,
-            payloadXml,
             ParseParameters(parameters),
             cancellationToken));
 
@@ -214,7 +212,6 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             operationName,
-            request.PayloadXml,
             request.Parameters
                 .Select(parameter => new UyumsoftOperationParameterRequest(parameter.Name, parameter.Value))
                 .ToArray(),

@@ -113,8 +113,8 @@ public sealed record AxataSynchronizationManualDispatchDto(
     int? ServiceState,
     string ServiceMessage,
     string PayloadJson,
-    string RequestXml,
-    string ResponseXml,
+    string RequestPayloadJson,
+    string ResponsePayloadJson,
     IReadOnlyCollection<string> Notes);
 
 public sealed record AxataSynchronizationManualDispatchBatchDto(

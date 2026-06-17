@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
@@ -11,6 +10,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using UyumsoftDespatch = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Despatch;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
@@ -21,14 +21,9 @@ public sealed class EDespatchService(
     ILogger<EDespatchService> logger)
     : IEDespatchService
 {
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
-    private const string ServiceNamespace = "http://tempuri.org/";
     private const string DespatchNamespace = "urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2";
     private const string AggregateNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
     private const string BasicNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";
-    private const string SendDespatchSoapAction = "http://tempuri.org/IBasicDespatchIntegration/SendDespatch";
-    private const string GetOutboxDespatchListSoapAction = "http://tempuri.org/IBasicDespatchIntegration/GetOutboxDespatchList";
-    private const string GetOutboxDespatchPdfSoapAction = "http://tempuri.org/IBasicDespatchIntegration/GetOutboxDespatchPdf";
     private const short MikroUserNo = 39;
     private const byte CompanyDispatchDocumentType = 1;
     private const byte ReceivingReceiptDocumentType = 13;
@@ -38,10 +33,6 @@ public sealed class EDespatchService(
     private const byte ReturnMovement = 1;
     private const byte InterWarehouseShipmentDocumentType = 17;
     private const string CommonEDespatchDocumentPrefix = "FRM";
-    private static readonly HttpClient HttpClient = new()
-    {
-        Timeout = TimeSpan.FromMinutes(5)
-    };
 
     public async Task<SendEDespatchResponse> SendAsync(
         SendEDespatchRequest request,
@@ -175,8 +166,7 @@ public sealed class EDespatchService(
             document.Detail.Header.CustomerCode,
             document.Metadata.AddressNo,
             cancellationToken);
-        var envelope = BuildSendDespatchEnvelope(
-            config,
+        var despatchInfo = BuildDespatchInfo(
             BuildCompanyMovementDespatchAdvice(
                 document.Detail,
                 sourceWarehouse,
@@ -192,8 +182,8 @@ public sealed class EDespatchService(
             deliveryCustomer.TaxNumber,
             deliveryCustomer.DisplayName);
         var serviceResult = await SendToUyumsoftAsync(
-            envelope,
-            config.EndpointUrl,
+            despatchInfo,
+            config,
             cancellationToken);
 
         await TryMarkAsSentAsync(
@@ -250,8 +240,7 @@ public sealed class EDespatchService(
             document.Context,
             document.Detail.Header.TargetWarehouseNo,
             cancellationToken);
-        var envelope = BuildSendDespatchEnvelope(
-            config,
+        var despatchInfo = BuildDespatchInfo(
             BuildInterWarehouseDespatchAdvice(
                 document.Detail,
                 supplierCustomer,
@@ -267,8 +256,8 @@ public sealed class EDespatchService(
             null,
             null);
         var serviceResult = await SendToUyumsoftAsync(
-            envelope,
-            config.EndpointUrl,
+            despatchInfo,
+            config,
             cancellationToken);
 
         await TryMarkAsSentAsync(
@@ -571,126 +560,36 @@ public sealed class EDespatchService(
             NormalizeText(warehouse.dep_yetkili_email));
     }
 
-    private static string BuildSendDespatchEnvelope(
-        EDespatchOptions config,
+    private static UyumsoftDespatch.DespatchInfo BuildDespatchInfo(
         XElement despatchAdvice,
         string localDocumentId,
         string? targetCustomerAlias,
         string? targetCustomerTaxNumber,
         string? targetCustomerTitle)
     {
-        var soap = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-        var despatchInfo = new XElement(
-            service + "DespatchInfo",
-            new XAttribute("LocalDocumentId", localDocumentId),
-            new XAttribute("ExtraInformation", string.Empty),
-            despatchAdvice);
+        var despatchInfo = new UyumsoftDespatch.DespatchInfo
+        {
+            DespatchAdvice = UyumsoftWcfClientHelper.DeserializeUbl<UyumsoftDespatch.DespatchAdviceType>(
+                despatchAdvice.ToString(SaveOptions.DisableFormatting),
+                "DespatchAdvice",
+                DespatchNamespace),
+            LocalDocumentId = localDocumentId,
+            ExtraInformation = string.Empty
+        };
 
         if (!string.IsNullOrWhiteSpace(targetCustomerTaxNumber) ||
             !string.IsNullOrWhiteSpace(targetCustomerAlias) ||
             !string.IsNullOrWhiteSpace(targetCustomerTitle))
         {
-            var targetCustomer = new XElement(service + "TargetCustomer");
-
-            if (!string.IsNullOrWhiteSpace(targetCustomerTaxNumber))
+            despatchInfo.TargetCustomer = new UyumsoftDespatch.CustomerInfo
             {
-                targetCustomer.Add(new XAttribute("VknTckn", targetCustomerTaxNumber!.Trim()));
-            }
-
-            if (!string.IsNullOrWhiteSpace(targetCustomerAlias))
-            {
-                targetCustomer.Add(new XAttribute("Alias", targetCustomerAlias!.Trim()));
-            }
-
-            if (!string.IsNullOrWhiteSpace(targetCustomerTitle))
-            {
-                targetCustomer.Add(new XAttribute("Title", targetCustomerTitle!.Trim()));
-            }
-
-            despatchInfo.Add(targetCustomer);
+                VknTckn = targetCustomerTaxNumber?.Trim(),
+                Alias = targetCustomerAlias?.Trim(),
+                Title = targetCustomerTitle?.Trim()
+            };
         }
 
-        return new XDocument(
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    new XElement(
-                        service + "SendDespatch",
-                        new XElement(
-                            service + "userInfo",
-                            new XAttribute("Username", config.Username),
-                            new XAttribute("Password", config.Password)),
-                        new XElement(
-                            service + "despatches",
-                            despatchInfo)))))
-            .ToString(SaveOptions.DisableFormatting);
-    }
-
-    private static string BuildGetOutboxDespatchListEnvelope(
-        EDespatchOptions config,
-        string eDespatchDocumentNo)
-    {
-        var soap = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-        var xsi = XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance");
-
-        return new XDocument(
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XAttribute(XNamespace.Xmlns + "xsi", xsi.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    new XElement(
-                        service + "GetOutboxDespatchList",
-                        new XElement(
-                            service + "userInfo",
-                            new XAttribute("Username", config.Username),
-                            new XAttribute("Password", config.Password)),
-                        new XElement(
-                            service + "query",
-                            new XAttribute("PageIndex", 0),
-                            new XAttribute("PageSize", 10),
-                            new XAttribute("IsOnlyNewReceiptAdvice", false),
-                            BuildNilElement(service, xsi, "ExecutionStartDate"),
-                            BuildNilElement(service, xsi, "ExecutionEndDate"),
-                            BuildNilElement(service, xsi, "ActualDespatchStartDate"),
-                            BuildNilElement(service, xsi, "ActualDespatchEndDate"),
-                            BuildNilElement(service, xsi, "CreateStartDate"),
-                            BuildNilElement(service, xsi, "CreateEndDate"),
-                            new XElement(service + "DespatchNumbers", eDespatchDocumentNo),
-                            BuildNilElement(service, xsi, "SortColumn"),
-                            BuildNilElement(service, xsi, "SortMode"),
-                            BuildNilElement(service, xsi, "IsArchived"),
-                            BuildNilElement(service, xsi, "ReceiptAdviceStartDate"),
-                            BuildNilElement(service, xsi, "ReceiptAdviceEndDate"))))))
-            .ToString(SaveOptions.DisableFormatting);
-    }
-
-    private static string BuildGetOutboxDespatchPdfEnvelope(
-        EDespatchOptions config,
-        string despatchId)
-    {
-        var soap = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-
-        return new XDocument(
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    new XElement(
-                        service + "GetOutboxDespatchPdf",
-                        new XElement(
-                            service + "userInfo",
-                            new XAttribute("Username", config.Username),
-                            new XAttribute("Password", config.Password)),
-                        new XElement(service + "despatchId", despatchId)))))
-            .ToString(SaveOptions.DisableFormatting);
+        return despatchInfo;
     }
 
     private static XElement BuildCompanyMovementDespatchAdvice(
@@ -1174,165 +1073,96 @@ public sealed class EDespatchService(
         return elements.Count == 0 ? null : new XElement(aggregate + elementName, elements);
     }
 
-    private static async Task<ServiceSendResult> SendToUyumsoftAsync(
-        string envelope,
-        string endpointUrl,
-        CancellationToken cancellationToken)
-    {
-        var responseContent = await SendSoapRequestAsync(
-            envelope,
-            endpointUrl,
-            SendDespatchSoapAction,
-            cancellationToken);
-
-        return ParseSendDespatchResponse(responseContent);
-    }
-
-    private static async Task<string> SendSoapRequestAsync(
-        string envelope,
-        string endpointUrl,
-        string soapAction,
-        CancellationToken cancellationToken)
-    {
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, endpointUrl)
-        {
-            Content = new StringContent(envelope, Encoding.UTF8, "text/xml")
-        };
-
-        requestMessage.Headers.TryAddWithoutValidation("SOAPAction", soapAction);
-
-        using var response = await HttpClient.SendAsync(requestMessage, cancellationToken);
-        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                ExtractSoapFaultOrDefault(
-                    responseContent,
-                    $"Uyumsoft e-despatch service returned HTTP {(int)response.StatusCode}."));
-        }
-
-        return responseContent;
-    }
-
-    private static ServiceSendResult ParseSendDespatchResponse(string responseContent)
-    {
-        var resultElement = GetSuccessfulResultElement(
-            responseContent,
-            "SendDespatchResult",
-            "e-despatch");
-
-        var valueElement = resultElement.Elements()
-            .FirstOrDefault(element => element.Name.LocalName == "Value");
-
-        if (valueElement is null)
-        {
-            throw new InvalidOperationException(
-                "Uyumsoft e-despatch response does not contain a document identity.");
-        }
-
-        return new ServiceSendResult(
-            valueElement.Attribute("Id")?.Value?.Trim() ?? string.Empty,
-            valueElement.Attribute("Number")?.Value?.Trim() ?? string.Empty);
-    }
-
-    private static XElement GetSuccessfulResultElement(
-        string responseContent,
-        string resultElementName,
-        string operationName)
-    {
-        var document = XDocument.Parse(responseContent);
-        var faultMessage = ExtractSoapFaultOrDefault(responseContent, null);
-
-        if (!string.IsNullOrWhiteSpace(faultMessage))
-        {
-            throw new InvalidOperationException(faultMessage);
-        }
-
-        var resultElement = document.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == resultElementName);
-
-        if (resultElement is null)
-        {
-            throw new InvalidOperationException(
-                $"Uyumsoft {operationName} response could not be parsed.");
-        }
-
-        var isSucceeded = bool.TryParse(
-            resultElement.Attribute("IsSucceded")?.Value,
-            out var parsedSucceeded) &&
-            parsedSucceeded;
-        var message = resultElement.Attribute("Message")?.Value?.Trim();
-
-        if (!isSucceeded)
-        {
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(message)
-                    ? $"Uyumsoft {operationName} service rejected the request."
-                    : message);
-        }
-
-        return resultElement;
-    }
-
     private static async Task<string> ResolveOutboxDespatchIdAsync(
         EDespatchOptions config,
         string eDespatchDocumentNo,
         CancellationToken cancellationToken)
     {
-        var envelope = BuildGetOutboxDespatchListEnvelope(config, eDespatchDocumentNo);
-        var responseContent = await SendSoapRequestAsync(
-            envelope,
-            config.EndpointUrl,
-            GetOutboxDespatchListSoapAction,
-            cancellationToken);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
 
-        return ParseOutboxDespatchIdResponse(responseContent, eDespatchDocumentNo);
+        try
+        {
+            var response = await client.GetOutboxDespatchListAsync(
+                UyumsoftWcfClientHelper.CreateDespatchUserInfo(ToEndpointOptions(config)),
+                new UyumsoftDespatch.OutboxDespatchListQueryModel
+                {
+                    PageIndex = 0,
+                    PageSize = 10,
+                    IsOnlyNewReceiptAdvice = false,
+                    DespatchNumbers = [eDespatchDocumentNo]
+                });
+
+            EnsureSucceeded(response, "e-despatch outbox list");
+
+            var items = response.Value?.Items ?? [];
+            var matchedItem = items.FirstOrDefault(item =>
+                string.Equals(
+                    item.DespatchNumber?.Trim(),
+                    eDespatchDocumentNo,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (matchedItem is null && items.Length == 1)
+            {
+                matchedItem = items[0];
+            }
+
+            if (matchedItem is null)
+            {
+                throw new InvalidOperationException(
+                    $"Could not find the sent e-despatch in Uyumsoft for document number {eDespatchDocumentNo}.");
+            }
+
+            if (string.IsNullOrWhiteSpace(matchedItem.DespatchId))
+            {
+                throw new InvalidOperationException(
+                    $"Uyumsoft e-despatch list response does not contain a document id for {eDespatchDocumentNo}.");
+            }
+
+            return matchedItem.DespatchId.Trim();
+        }
+        catch
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
     }
 
-    private static string ParseOutboxDespatchIdResponse(
-        string responseContent,
-        string eDespatchDocumentNo)
+    private static async Task<ServiceSendResult> SendToUyumsoftAsync(
+        UyumsoftDespatch.DespatchInfo despatchInfo,
+        EDespatchOptions config,
+        CancellationToken cancellationToken)
     {
-        var resultElement = GetSuccessfulResultElement(
-            responseContent,
-            "GetOutboxDespatchListResult",
-            "e-despatch outbox list");
-        var items = resultElement.Descendants()
-            .Where(element => element.Name.LocalName == "Items")
-            .ToArray();
-        var matchedItem = items.FirstOrDefault(element =>
-            string.Equals(
-                element.Elements()
-                    .FirstOrDefault(child => child.Name.LocalName == "DespatchNumber")
-                    ?.Value
-                    ?.Trim(),
-                eDespatchDocumentNo,
-                StringComparison.OrdinalIgnoreCase));
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
 
-        if (matchedItem is null && items.Length == 1)
+        try
         {
-            matchedItem = items[0];
-        }
+            var response = await client.SendDespatchAsync(
+                UyumsoftWcfClientHelper.CreateDespatchUserInfo(ToEndpointOptions(config)),
+                [despatchInfo]);
 
-        if (matchedItem is null)
+            EnsureSucceeded(response, "e-despatch");
+
+            var identity = response.Value?.FirstOrDefault()
+                           ?? throw new InvalidOperationException(
+                               "Uyumsoft e-despatch response does not contain a document identity.");
+
+            return new ServiceSendResult(
+                identity.Id?.Trim() ?? string.Empty,
+                identity.Number?.Trim() ?? string.Empty);
+        }
+        catch
         {
-            throw new InvalidOperationException(
-                $"Could not find the sent e-despatch in Uyumsoft for document number {eDespatchDocumentNo}.");
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
         }
-
-        var despatchId = matchedItem.Elements()
-            .FirstOrDefault(child => child.Name.LocalName == "DespatchId")
-            ?.Value
-            ?.Trim();
-
-        if (string.IsNullOrWhiteSpace(despatchId))
+        finally
         {
-            throw new InvalidOperationException(
-                $"Uyumsoft e-despatch list response does not contain a document id for {eDespatchDocumentNo}.");
+            await UyumsoftWcfClientHelper.CloseAsync(client);
         }
-
-        return despatchId;
     }
 
     private static async Task<byte[]> GetOutboxDespatchPdfAsync(
@@ -1340,92 +1170,64 @@ public sealed class EDespatchService(
         string despatchId,
         CancellationToken cancellationToken)
     {
-        var envelope = BuildGetOutboxDespatchPdfEnvelope(config, despatchId);
-        var responseContent = await SendSoapRequestAsync(
-            envelope,
-            config.EndpointUrl,
-            GetOutboxDespatchPdfSoapAction,
-            cancellationToken);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
 
-        return ParseOutboxDespatchPdfResponse(responseContent, despatchId);
-    }
+        try
+        {
+            var response = await client.GetOutboxDespatchPdfAsync(
+                UyumsoftWcfClientHelper.CreateDespatchUserInfo(ToEndpointOptions(config)),
+                despatchId);
 
-    private static byte[] ParseOutboxDespatchPdfResponse(
-        string responseContent,
-        string despatchId)
-    {
-        var resultElement = GetSuccessfulResultElement(
-            responseContent,
-            "GetOutboxDespatchPdfResult",
-            "e-despatch PDF");
-        var items = resultElement.Descendants()
-            .Where(element => element.Name.LocalName == "Items")
-            .ToArray();
-        var matchedItem = items.FirstOrDefault(element =>
+            EnsureSucceeded(response, "e-despatch PDF");
+
+            var matchedItem = response.Value?.Items?.FirstOrDefault(item =>
             string.Equals(
-                element.Attribute("DespatchId")?.Value?.Trim(),
+                item.DespatchId?.Trim(),
                 despatchId,
                 StringComparison.OrdinalIgnoreCase));
 
-        if (matchedItem is null && items.Length == 1)
-        {
-            matchedItem = items[0];
-        }
-
-        if (matchedItem is null)
-        {
-            throw new InvalidOperationException(
-                $"Uyumsoft e-despatch PDF response does not contain PDF data for document id {despatchId}.");
-        }
-
-        var data = matchedItem.Elements()
-            .FirstOrDefault(child => child.Name.LocalName == "Data")
-            ?.Value
-            ?.Trim();
-
-        if (string.IsNullOrWhiteSpace(data))
-        {
-            throw new InvalidOperationException(
-                $"Uyumsoft e-despatch PDF response returned empty data for document id {despatchId}.");
-        }
-
-        try
-        {
-            return Convert.FromBase64String(data);
-        }
-        catch (FormatException exception)
-        {
-            throw new InvalidOperationException(
-                "Uyumsoft e-despatch PDF response contains invalid PDF data.",
-                exception);
-        }
-    }
-
-    private static string? ExtractSoapFaultOrDefault(string responseContent, string? fallbackMessage)
-    {
-        try
-        {
-            var document = XDocument.Parse(responseContent);
-            var faultElement = document.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName == "Fault");
-
-            if (faultElement is null)
+            if (matchedItem is null && response.Value?.Items?.Length == 1)
             {
-                return fallbackMessage;
+                matchedItem = response.Value.Items[0];
             }
 
-            return faultElement.Descendants()
-                       .FirstOrDefault(element =>
-                           element.Name.LocalName is "faultstring" or "Reason" or "Text")
-                       ?.Value
-                       ?.Trim()
-                   ?? fallbackMessage;
+            if (matchedItem?.Data is null || matchedItem.Data.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Uyumsoft e-despatch PDF response returned empty data for document id {despatchId}.");
+            }
+
+            return matchedItem.Data;
         }
         catch
         {
-            return fallbackMessage;
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
         }
     }
+
+    private static void EnsureSucceeded(UyumsoftDespatch.Response response, string operationName)
+    {
+        if (!response.IsSucceded)
+        {
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(response.Message)
+                    ? $"Uyumsoft {operationName} service rejected the request."
+                    : response.Message);
+        }
+    }
+
+    private static UyumsoftServiceEndpointOptions ToEndpointOptions(EDespatchOptions config) =>
+        new(
+            config.EndpointUrl,
+            string.Empty,
+            config.Username,
+            config.Password,
+            "IBasicDespatchIntegration");
 
     private async Task TryMarkAsSentAsync(
         MikroDbContext context,
@@ -1694,14 +1496,6 @@ public sealed class EDespatchService(
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];
-
-    private static XElement BuildNilElement(
-        XNamespace serviceNamespace,
-        XNamespace xsiNamespace,
-        string elementName) =>
-        new(
-            serviceNamespace + elementName,
-            new XAttribute(xsiNamespace + "nil", true));
 
     private static SentDespatchInfo ExtractSentDespatchInfo(
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements)

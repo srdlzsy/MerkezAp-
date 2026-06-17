@@ -113,7 +113,6 @@ public sealed class FaturaGonderimiController(
             UyumsoftConnectedServiceKind.EInvoice,
             new UyumsoftOperationInvocationRequest(
                 "GetOutboxInvoices",
-                request.PayloadXml,
                 request.Parameters
                     .Select(parameter => new UyumsoftOperationParameterRequest(parameter.Name, parameter.Value))
                     .ToArray()),

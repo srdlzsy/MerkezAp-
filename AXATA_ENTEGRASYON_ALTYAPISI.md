@@ -13,7 +13,7 @@ Guvenlik notu:
 Mevcut API modulu uc isi birlikte yapar:
 
 - `Mikro -> AXATA` yonunde Mikro verisinden preview/outbox payload uretir.
-- Secili task'larda AXATA ana SOAP servisine canli dispatch yapar.
+- Secili task'larda AXATA ana servisine WCF client ile canli dispatch yapar.
 - `AXATA -> Mikro` yonunde C01 outbound delivery icin canli fetch/import/ack, diger akislarda manuel body tabanli kurtarma saglar.
 
 Bugunku net durum:
@@ -164,7 +164,7 @@ Ana servisler:
 - `AxataSynchronizationOutboxWriter`
   - Outbox JSON artifact yazar.
 - `AxataSynchronizationLiveTransportService`
-  - `addOutboundOrder*` ve `addInboundOrder*` SOAP envelope uretip gonderir.
+  - `addOutboundOrder*` ve `addInboundOrder*` WCF client ile typed request gonderir.
 - `AxataOutboundDeliveryImportService`
   - C01 live fetch/import/ack ve live audit overview.
 - `AxataSynchronizationConnectionProbeService`
@@ -273,7 +273,7 @@ POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/dispatch-bat
 Destekleyen task'lar:
 
 - `issued-warehouse-order-sync`
-  - Varsayilan SOAP operation fallback: `addOutboundOrder`
+  - Varsayilan WCF operation fallback: `addOutboundOrder`
   - Config ile genelde `addOutboundOrderV2`
   - Hareket tipi: `C01`
   - Master alanlari worker parity:
@@ -284,7 +284,7 @@ Destekleyen task'lar:
     - `S00HTP2 = C01`
     - `S00FBLK = OutWarehouseNo`
 - `company-receiving-sync`
-  - Varsayilan SOAP operation fallback: `addInboundOrder`
+  - Varsayilan WCF operation fallback: `addInboundOrder`
   - Config ile genelde `addInboundOrderV2`
   - Hareket tipi: `G01`
   - Master alanlari worker parity:
@@ -300,8 +300,8 @@ Canli dispatch response'u sunlari tasir:
 - `serviceState`
 - `serviceMessage`
 - `payloadJson`
-- `requestXml`
-- `responseXml`
+- `requestPayloadJson`
+- `responsePayloadJson`
 
 ### Live Audit
 
@@ -617,7 +617,7 @@ Bu tablolar zorunlu degil; ancak kalici retry, ack monitor ve servis restart son
 UI su ayrimi net yapmalidir:
 
 - `execute` endpointleri `DryRun/Outbox` isidir, AXATA'ya canli gonderim degildir.
-- `dispatch` endpointleri AXATA'ya canli SOAP yazim yapar.
+- `dispatch` endpointleri AXATA'ya WCF client ile canli yazim yapar.
 - `live/axata/outbound-deliveries/preview` C01/C02/C03/C4 kuyrugunu canli okur ama veri yazmaz.
 - `live/axata/outbound-deliveries/c01/import` AXATA'dan canli okur ve Mikro'ya yazar.
 - `manual/axata/*` endpointleri AXATA'dan canli okumaz; body UI veya operasyon tarafindan saglanir.
@@ -632,7 +632,7 @@ UI su ayrimi net yapmalidir:
 
 - Job listesi ve sonuc detaylari kalici DB'de tutulmaz.
 - Outbox basarisi "AXATA kabul etti" anlamina gelmez.
-- Firma ve urun master task'lari canli SOAP dispatch yapmaz.
+- Firma ve urun master task'lari canli WCF dispatch yapmaz.
 - C02/C03/C4 live queue preview vardir ama live import/ack henuz yoktur.
 - G01/G02 live fetch-import henuz yoktur.
 - C01 belge bazli rescue vardir; C02/C03/C4/G01/G02 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.

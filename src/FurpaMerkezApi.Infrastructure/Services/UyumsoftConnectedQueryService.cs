@@ -1,20 +1,15 @@
-using System.Net.Http;
-using System.Text;
-using System.Xml.Linq;
+using System.Globalization;
+using System.Reflection;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using Microsoft.Extensions.Options;
+using UyumsoftDespatch = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Despatch;
+using UyumsoftInvoice = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Invoice;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
-public sealed class UyumsoftConnectedQueryService(
-    IHttpClientFactory httpClientFactory,
-    IOptions<UyumsoftConnectedServicesOptions> options)
+public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServicesOptions> options)
     : IUyumsoftConnectedQueryService
 {
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
-    private const string ServiceNamespace = "http://tempuri.org/";
-    private const int SendAttemptCount = 3;
-
     public Task<UyumsoftConnectedServiceOverviewDto> GetOverviewAsync(
         UyumsoftConnectedServiceKind serviceKind,
         CancellationToken cancellationToken)
@@ -33,7 +28,7 @@ public sealed class UyumsoftConnectedQueryService(
             catalog.Operations
                 .Select(operation => operation with
                 {
-                    SoapAction = BuildSoapAction(config.ContractName, operation.OperationName)
+                    SoapAction = operation.OperationName
                 })
                 .ToArray()));
     }
@@ -45,12 +40,11 @@ public sealed class UyumsoftConnectedQueryService(
         cancellationToken.ThrowIfCancellationRequested();
 
         var catalog = UyumsoftConnectedServiceCatalog.GetService(serviceKind);
-        var config = ResolveServiceOptions(serviceKind, catalog);
 
         IReadOnlyCollection<UyumsoftOperationDefinitionDto> operations = catalog.Operations
             .Select(operation => operation with
             {
-                SoapAction = BuildSoapAction(config.ContractName, operation.OperationName)
+                SoapAction = operation.OperationName
             })
             .ToArray();
 
@@ -70,18 +64,25 @@ public sealed class UyumsoftConnectedQueryService(
         var catalog = UyumsoftConnectedServiceCatalog.GetService(serviceKind);
         var config = ResolveServiceOptions(serviceKind, catalog);
         var operation = UyumsoftConnectedServiceCatalog.GetGetOperation(serviceKind, request.OperationName);
-        var soapAction = BuildSoapAction(config.ContractName, operation.OperationName);
-        var envelope = BuildEnvelope(config, operation.OperationName, request);
-        var responseContent = await SendSoapRequestAsync(
-            config.EndpointUrl,
-            soapAction,
-            envelope,
-            cancellationToken);
 
-        return ParseResponse(
-            catalog,
-            operation.OperationName,
-            responseContent);
+        return serviceKind switch
+        {
+            UyumsoftConnectedServiceKind.EInvoice => await InvokeInvoiceOperationAsync(
+                catalog,
+                config,
+                operation.OperationName,
+                request.Parameters,
+                cancellationToken),
+
+            UyumsoftConnectedServiceKind.EDespatch => await InvokeDespatchOperationAsync(
+                catalog,
+                config,
+                operation.OperationName,
+                request.Parameters,
+                cancellationToken),
+
+            _ => throw new ArgumentOutOfRangeException(nameof(serviceKind), serviceKind, "Unsupported Uyumsoft service.")
+        };
     }
 
     private UyumsoftServiceEndpointOptions ResolveServiceOptions(
@@ -126,235 +127,362 @@ public sealed class UyumsoftConnectedQueryService(
         return resolved;
     }
 
-    private static string BuildSoapAction(string contractName, string operationName) =>
-        $"{ServiceNamespace}{contractName}/{operationName}";
-
-    private static string BuildEnvelope(
-        UyumsoftServiceEndpointOptions options,
+    private static async Task<UyumsoftOperationResponseDto> InvokeInvoiceOperationAsync(
+        UyumsoftServiceCatalogEntry catalog,
+        UyumsoftServiceEndpointOptions config,
         string operationName,
-        UyumsoftOperationInvocationRequest request)
+        IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters,
+        CancellationToken cancellationToken)
     {
-        var soapNamespace = XNamespace.Get(SoapEnvelopeNamespace);
-        var serviceNamespace = XNamespace.Get(ServiceNamespace);
-        var operationElement = new XElement(
-            serviceNamespace + operationName,
-            new XElement(
-                serviceNamespace + "userInfo",
-                new XAttribute("Username", options.Username),
-                new XAttribute("Password", options.Password)));
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
 
-        foreach (var parameter in request.Parameters)
+        try
         {
-            if (string.IsNullOrWhiteSpace(parameter.Name))
+            var response = await InvokeClientOperationAsync(
+                client,
+                operationName,
+                parameters,
+                type => type == typeof(UyumsoftInvoice.UserInformation)
+                    ? UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config)
+                    : null,
+                cancellationToken);
+
+            return UyumsoftWcfClientHelper.ToOperationResponse(catalog, operationName, response);
+        }
+        catch
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
+    private static async Task<UyumsoftOperationResponseDto> InvokeDespatchOperationAsync(
+        UyumsoftServiceCatalogEntry catalog,
+        UyumsoftServiceEndpointOptions config,
+        string operationName,
+        IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters,
+        CancellationToken cancellationToken)
+    {
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
+
+        try
+        {
+            var response = await InvokeClientOperationAsync(
+                client,
+                operationName,
+                parameters,
+                type => type == typeof(UyumsoftDespatch.UserInformation)
+                    ? UyumsoftWcfClientHelper.CreateDespatchUserInfo(config)
+                    : null,
+                cancellationToken);
+
+            return UyumsoftWcfClientHelper.ToOperationResponse(catalog, operationName, response);
+        }
+        catch
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
+    private static async Task<object?> InvokeClientOperationAsync(
+        object client,
+        string operationName,
+        IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters,
+        Func<Type, object?> specialArgumentFactory,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var methodName = $"{operationName}Async";
+        var method = client.GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(item =>
+                string.Equals(item.Name, methodName, StringComparison.OrdinalIgnoreCase) &&
+                typeof(Task).IsAssignableFrom(item.ReturnType));
+
+        if (method is null)
+        {
+            throw new ArgumentException($"{operationName} WCF operation was not found.");
+        }
+
+        var bag = new ParameterBag(parameters);
+        var arguments = method.GetParameters()
+            .Select(parameter => BuildArgument(parameter.ParameterType, parameter.Name ?? string.Empty, bag, specialArgumentFactory))
+            .ToArray();
+        var task = (Task?)method.Invoke(client, arguments)
+                   ?? throw new InvalidOperationException($"{operationName} WCF operation did not return a task.");
+
+        await task.WaitAsync(cancellationToken);
+
+        return task.GetType().GetProperty("Result", BindingFlags.Instance | BindingFlags.Public)
+            ?.GetValue(task);
+    }
+
+    private static object? BuildArgument(
+        Type targetType,
+        string parameterName,
+        ParameterBag bag,
+        Func<Type, object?> specialArgumentFactory)
+    {
+        var specialArgument = specialArgumentFactory(targetType);
+        if (specialArgument is not null)
+        {
+            return specialArgument;
+        }
+
+        if (targetType.IsArray)
+        {
+            return BuildArrayArgument(targetType.GetElementType()!, parameterName, bag);
+        }
+
+        if (IsSimpleType(targetType) &&
+            TryConvertSimple(targetType, bag.GetSingle(parameterName, required: true), out var simpleValue))
+        {
+            return simpleValue;
+        }
+
+        var instance = Activator.CreateInstance(targetType)
+                       ?? throw new InvalidOperationException($"{targetType.Name} could not be created.");
+
+        PopulateObject(instance, bag);
+
+        return instance;
+    }
+
+    private static Array BuildArrayArgument(Type elementType, string parameterName, ParameterBag bag)
+    {
+        var values = bag.GetMany(parameterName);
+        if (values.Count == 0)
+        {
+            values = bag.GetMany(ToSingular(parameterName));
+        }
+
+        var array = Array.CreateInstance(elementType, values.Count);
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            if (!TryConvertSimple(elementType, values[i], out var converted))
+            {
+                throw new ArgumentException($"{parameterName} parameter could not be converted to {elementType.Name}.");
+            }
+
+            array.SetValue(converted, i);
+        }
+
+        return array;
+    }
+
+    private static void PopulateObject(object instance, ParameterBag bag)
+    {
+        var properties = instance.GetType()
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Where(property => property.CanWrite && property.GetIndexParameters().Length == 0);
+
+        foreach (var property in properties)
+        {
+            if (property.PropertyType.IsArray)
+            {
+                var values = bag.GetMany(property.Name);
+                if (values.Count == 0)
+                {
+                    values = bag.GetMany(ToSingular(property.Name));
+                }
+
+                if (values.Count == 0)
+                {
+                    continue;
+                }
+
+                property.SetValue(instance, BuildArrayValue(property.PropertyType.GetElementType()!, values));
+                continue;
+            }
+
+            var value = bag.GetSingle(property.Name, required: false);
+            if (value is null)
             {
                 continue;
             }
 
-            operationElement.Add(new XElement(serviceNamespace + parameter.Name.Trim(), parameter.Value ?? string.Empty));
-        }
-
-        foreach (var fragment in ParsePayloadFragments(request.PayloadXml))
-        {
-            QualifyElementNamespace(fragment, serviceNamespace);
-            operationElement.Add(fragment);
-        }
-
-        var envelope = new XDocument(
-            new XElement(
-                soapNamespace + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soapenv", soapNamespace),
-                new XAttribute(XNamespace.Xmlns + "tem", serviceNamespace),
-                new XElement(
-                    soapNamespace + "Body",
-                    operationElement)));
-
-        return envelope.ToString(SaveOptions.DisableFormatting);
-    }
-
-    private static IReadOnlyCollection<XElement> ParsePayloadFragments(string? payloadXml)
-    {
-        if (string.IsNullOrWhiteSpace(payloadXml))
-        {
-            return Array.Empty<XElement>();
-        }
-
-        try
-        {
-            var wrapped = XDocument.Parse($"<root>{payloadXml}</root>");
-
-            return wrapped.Root?.Elements().ToArray() ?? Array.Empty<XElement>();
-        }
-        catch (Exception exception)
-        {
-            throw new ArgumentException("payloadXml is not a valid XML fragment.", nameof(payloadXml), exception);
-        }
-    }
-
-    private static void QualifyElementNamespace(
-        XElement element,
-        XNamespace serviceNamespace)
-    {
-        if (element.Name.Namespace == XNamespace.None)
-        {
-            element.Name = serviceNamespace + element.Name.LocalName;
-        }
-
-        foreach (var child in element.Elements())
-        {
-            QualifyElementNamespace(child, serviceNamespace);
-        }
-    }
-
-    private async Task<string> SendSoapRequestAsync(
-        string endpointUrl,
-        string soapAction,
-        string envelope,
-        CancellationToken cancellationToken)
-    {
-        using var client = httpClientFactory.CreateClient(nameof(UyumsoftConnectedQueryService));
-        Exception? lastTransportException = null;
-
-        for (var attempt = 1; attempt <= SendAttemptCount; attempt++)
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpointUrl);
-            request.Headers.Add("SOAPAction", soapAction);
-            request.Content = new StringContent(envelope, Encoding.UTF8, "text/xml");
-
-            try
+            if (TryConvertSimple(property.PropertyType, value, out var converted))
             {
-                using var response = await client.SendAsync(request, cancellationToken);
-                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var faultMessage = ExtractSoapFaultOrDefault(responseContent, null);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new InvalidOperationException(
-                        string.IsNullOrWhiteSpace(faultMessage)
-                            ? $"Uyumsoft request failed with HTTP {(int)response.StatusCode}."
-                            : faultMessage);
-                }
-
-                if (!string.IsNullOrWhiteSpace(faultMessage))
-                {
-                    throw new InvalidOperationException(faultMessage);
-                }
-
-                return responseContent;
-            }
-            catch (HttpRequestException exception) when (attempt < SendAttemptCount)
-            {
-                lastTransportException = exception;
-                await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt), cancellationToken);
-            }
-            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested && attempt < SendAttemptCount)
-            {
-                lastTransportException = exception;
-                await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt), cancellationToken);
+                property.SetValue(instance, converted);
             }
         }
 
-        throw new HttpRequestException(
-            $"Uyumsoft request could not be completed after {SendAttemptCount} attempts.",
-            lastTransportException);
+        ApplyPagedDefaults(instance);
     }
 
-    private static UyumsoftOperationResponseDto ParseResponse(
-        UyumsoftServiceCatalogEntry catalog,
-        string operationName,
-        string responseContent)
+    private static Array BuildArrayValue(Type elementType, IReadOnlyList<string?> values)
     {
-        var document = XDocument.Parse(responseContent);
-        var resultElementName = $"{operationName}Result";
-        var resultElement = document.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == resultElementName);
+        var array = Array.CreateInstance(elementType, values.Count);
 
-        if (resultElement is null)
+        for (var i = 0; i < values.Count; i++)
         {
-            throw new InvalidOperationException(
-                $"{catalog.ServiceName} response could not be parsed for {operationName}.");
+            if (!TryConvertSimple(elementType, values[i], out var converted))
+            {
+                throw new ArgumentException($"Parameter value could not be converted to {elementType.Name}.");
+            }
+
+            array.SetValue(converted, i);
         }
 
-        var attributes = resultElement.Attributes()
+        return array;
+    }
+
+    private static void ApplyPagedDefaults(object instance)
+    {
+        var pageIndexProperty = instance.GetType().GetProperty("PageIndex", BindingFlags.Instance | BindingFlags.Public);
+        var pageSizeProperty = instance.GetType().GetProperty("PageSize", BindingFlags.Instance | BindingFlags.Public);
+
+        if (pageIndexProperty is not null && pageIndexProperty.PropertyType == typeof(int) &&
+            (int)(pageIndexProperty.GetValue(instance) ?? 0) < 0)
+        {
+            pageIndexProperty.SetValue(instance, 0);
+        }
+
+        if (pageSizeProperty is not null && pageSizeProperty.PropertyType == typeof(int) &&
+            (int)(pageSizeProperty.GetValue(instance) ?? 0) <= 0)
+        {
+            pageSizeProperty.SetValue(instance, 50);
+        }
+    }
+
+    private static bool TryConvertSimple(Type targetType, string? rawValue, out object? converted)
+    {
+        targetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        converted = null;
+
+        if (targetType == typeof(string))
+        {
+            converted = rawValue ?? string.Empty;
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            converted = targetType.IsValueType ? Activator.CreateInstance(targetType) : null;
+            return true;
+        }
+
+        if (targetType == typeof(bool))
+        {
+            converted = bool.Parse(rawValue);
+            return true;
+        }
+
+        if (targetType == typeof(int))
+        {
+            converted = int.Parse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        if (targetType == typeof(long))
+        {
+            converted = long.Parse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        if (targetType == typeof(decimal))
+        {
+            converted = decimal.Parse(rawValue, NumberStyles.Number, CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        if (targetType == typeof(DateTime))
+        {
+            converted = DateTime.Parse(rawValue, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces);
+            return true;
+        }
+
+        if (targetType == typeof(Guid))
+        {
+            converted = Guid.Parse(rawValue);
+            return true;
+        }
+
+        if (targetType.IsEnum)
+        {
+            converted = Enum.Parse(targetType, rawValue, ignoreCase: true);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsSimpleType(Type targetType)
+    {
+        targetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+        return targetType == typeof(string) ||
+               targetType == typeof(bool) ||
+               targetType == typeof(int) ||
+               targetType == typeof(long) ||
+               targetType == typeof(decimal) ||
+               targetType == typeof(DateTime) ||
+               targetType == typeof(Guid) ||
+               targetType.IsEnum;
+    }
+
+    private static string ToSingular(string name) =>
+        name.EndsWith("ies", StringComparison.OrdinalIgnoreCase)
+            ? $"{name[..^3]}y"
+            : name.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+                ? name[..^1]
+                : name;
+
+    private sealed class ParameterBag(IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters)
+    {
+        private readonly Dictionary<string, List<string?>> values = parameters
+            .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Name))
+            .GroupBy(parameter => NormalizeName(parameter.Name), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
-                attribute => attribute.Name.LocalName,
-                attribute => NormalizeValue(attribute.Value),
+                group => group.Key,
+                group => group.Select(parameter => parameter.Value).ToList(),
                 StringComparer.OrdinalIgnoreCase);
-        var isSucceeded = !attributes.TryGetValue("IsSucceded", out var succeededValue) ||
-                          !bool.TryParse(succeededValue, out var parsedSucceeded) ||
-                          parsedSucceeded;
-        var message = attributes.TryGetValue("Message", out var parsedMessage)
-            ? parsedMessage
-            : null;
 
-        if (!isSucceeded)
+        public string? GetSingle(string name, bool required)
         {
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(message)
-                    ? $"{catalog.ServiceName} request was rejected by {operationName}."
-                    : message);
-        }
-
-        var nodes = resultElement.Elements().Select(MapNode).ToArray();
-        var scalarValue = attributes.TryGetValue("Value", out var valueAttribute)
-            ? valueAttribute
-            : nodes.Length == 0
-                ? NormalizeValue(resultElement.Value)
-                : null;
-
-        return new UyumsoftOperationResponseDto(
-            catalog.ServiceKey,
-            catalog.ServiceName,
-            operationName,
-            resultElementName,
-            isSucceeded,
-            message,
-            scalarValue,
-            attributes,
-            nodes,
-            resultElement.ToString(SaveOptions.DisableFormatting));
-    }
-
-    private static UyumsoftResponseNodeDto MapNode(XElement element)
-    {
-        var children = element.Elements().Select(MapNode).ToArray();
-
-        return new UyumsoftResponseNodeDto(
-            element.Name.LocalName,
-            children.Length == 0 ? NormalizeValue(element.Value) : null,
-            element.Attributes()
-                .ToDictionary(
-                    attribute => attribute.Name.LocalName,
-                    attribute => NormalizeValue(attribute.Value),
-                    StringComparer.OrdinalIgnoreCase),
-            children);
-    }
-
-    private static string? NormalizeValue(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static string? ExtractSoapFaultOrDefault(string responseContent, string? fallbackMessage)
-    {
-        try
-        {
-            var document = XDocument.Parse(responseContent);
-            var faultElement = document.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName == "Fault");
-
-            if (faultElement is null)
+            var normalizedName = NormalizeName(name);
+            if (values.TryGetValue(normalizedName, out var exactValues) && exactValues.Count > 0)
             {
-                return fallbackMessage;
+                return exactValues[^1];
             }
 
-            return faultElement.Descendants()
-                       .FirstOrDefault(element =>
-                           element.Name.LocalName is "faultstring" or "Reason" or "Text")
-                       ?.Value
-                       ?.Trim()
-                   ?? fallbackMessage;
+            var singular = NormalizeName(ToSingular(name));
+            if (values.TryGetValue(singular, out var singularValues) && singularValues.Count > 0)
+            {
+                return singularValues[^1];
+            }
+
+            if (required)
+            {
+                throw new ArgumentException($"{name} parameter is required.");
+            }
+
+            return null;
         }
-        catch
+
+        public IReadOnlyList<string?> GetMany(string name)
         {
-            return fallbackMessage;
+            var normalizedName = NormalizeName(name);
+            return values.TryGetValue(normalizedName, out var exactValues)
+                ? exactValues
+                : Array.Empty<string?>();
         }
+
+        private static string NormalizeName(string name) =>
+            name.Replace("_", string.Empty, StringComparison.Ordinal)
+                .Replace("-", string.Empty, StringComparison.Ordinal)
+                .Trim()
+                .ToLowerInvariant();
     }
 }

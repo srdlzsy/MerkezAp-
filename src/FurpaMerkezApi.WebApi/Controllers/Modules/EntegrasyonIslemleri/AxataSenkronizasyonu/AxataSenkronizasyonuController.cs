@@ -76,7 +76,8 @@ public sealed class AxataSenkronizasyonuController(
                 request.WarehouseNo,
                 request.Take,
                 request.DocumentSerie,
-                request.DocumentOrderNo),
+                request.DocumentOrderNo,
+                request.Statuses),
             cancellationToken));
 
     [HttpGet("tasks/{taskCode}/preview")]
@@ -901,6 +902,10 @@ public sealed class AxataIntegrationAuditHttpRequest
 
     [Range(1, int.MaxValue)]
     public int? DocumentOrderNo { get; init; }
+
+    [StringLength(20)]
+    [RegularExpression(@"^\s*[01]\s*(,\s*[01]\s*)*$")]
+    public string? Statuses { get; init; }
 }
 
 public sealed class AxataOutboundDeliveryQueuePreviewHttpRequest

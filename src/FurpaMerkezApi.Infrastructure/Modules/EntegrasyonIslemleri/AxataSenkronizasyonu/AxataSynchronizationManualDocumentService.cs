@@ -295,7 +295,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
         var succeededCount = documents.Count(document => document.IsSuccess);
         var notes = new List<string>
         {
-            "Bu endpoint payload'i outbox'a yazmak yerine eski AXATA worker kontratina gore canli SOAP dispatch yapar.",
+            "Bu endpoint payload'i outbox'a yazmak yerine eski AXATA worker kontratina gore canli WCF dispatch yapar.",
             continueOnError
                 ? "Batch dispatch'te hatali evraklar kaydedildi ve kalan evraklarla devam edildi."
                 : "Batch dispatch'te ilk hata veya red cevabinda islem durdurulur."
@@ -407,7 +407,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
         var warehouseNo = GetRequiredWarehouseNo(context);
         var notes = new List<string>
         {
-            "Bu endpoint worker kuyruguna girmeden secili evraki canli AXATA SOAP servisine gonderir."
+            "Bu endpoint worker kuyruguna girmeden secili evraki canli AXATA WCF client ile gonderir."
         };
 
         AxataLiveDispatchResult dispatchResult;
@@ -479,8 +479,8 @@ internal sealed class AxataSynchronizationManualDocumentService(
             dispatchResult.ServiceState,
             dispatchResult.ServiceMessage,
             dispatchResult.PayloadJson,
-            dispatchResult.RequestXml,
-            dispatchResult.ResponseXml,
+            dispatchResult.RequestPayloadJson,
+            dispatchResult.ResponsePayloadJson,
             notes);
     }
 

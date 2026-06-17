@@ -1,17 +1,17 @@
 using System.Globalization;
-using System.Text;
-using System.Xml.Linq;
+using System.ServiceModel;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using AxataExt = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Ext;
+using AxataMain = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
 internal sealed class AxataOutboundDeliveryImportService(
-    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<AxataSynchronizationOptions> options,
     MikroWriteDbContext mikroWriteDbContext,
     ICreateInterWarehouseShipmentUseCase createInterWarehouseShipmentUseCase)
@@ -29,11 +29,6 @@ internal sealed class AxataOutboundDeliveryImportService(
     private const int TransitWarehouseNo = 60;
     private const int DefaultTake = 20;
     private const int MaxTake = 200;
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
-    private const string ServiceNamespace = "http://tempuri.org/";
-    private const string AxataWmsNamespace = "http://axatawms";
-    private const string MainContractName = "IAxataServicePool";
-    private const string ExtContractName = "IAxataServicePoolEXT";
     private const string FetchOperationName = "getOutBoundDeliveryList";
     private const string AckOperationName = "updIntegrationTable";
     private const int DefaultWarehouseOrderSourceWarehouseNo = 50;
@@ -85,6 +80,8 @@ internal sealed class AxataOutboundDeliveryImportService(
     {
         var (startDate, endDate) = ResolveDateRange(request.StartDate, request.EndDate);
         var take = NormalizeTake(request.Take);
+        var outboundDeliveryStatuses = ResolveAuditOutboundDeliveryStatuses(request.Statuses);
+        var outboundDeliveryStatusLabel = FormatStatuses(outboundDeliveryStatuses);
         var warehouseOrderSourceWarehouseNos = ResolveWarehouseOrderSourceWarehouseNos(request.WarehouseNo);
         var warehouseAudit = await GetWarehouseOrderAuditAsync(
             startDate,
@@ -102,13 +99,19 @@ internal sealed class AxataOutboundDeliveryImportService(
 
         foreach (var movementType in AuditMovementTypes)
         {
-            var fetchResult = await TryFetchPendingOutboundDeliveriesForAuditAsync(movementType, cancellationToken);
+            var fetchResult = await TryFetchOutboundDeliveriesForAuditAsync(
+                movementType,
+                outboundDeliveryStatuses,
+                cancellationToken);
             if (!fetchResult.IsSuccess)
             {
-                movementDocuments[movementType] = Array.Empty<AxataOutboundDeliveryDocument>();
                 movementFetchErrors[movementType] = fetchResult.ErrorMessage
                     ?? "AXATA fetch failed.";
-                continue;
+                if (fetchResult.Documents.Count == 0)
+                {
+                    movementDocuments[movementType] = Array.Empty<AxataOutboundDeliveryDocument>();
+                    continue;
+                }
             }
 
             var documents = fetchResult.Documents;
@@ -148,7 +151,7 @@ internal sealed class AxataOutboundDeliveryImportService(
 
                 return new AxataOutboundDeliveryMovementSummaryDto(
                     movementType,
-                    hasFetchError ? "FetchFailed" : PendingStatus,
+                    hasFetchError ? $"FetchFailed: {outboundDeliveryStatusLabel}" : outboundDeliveryStatusLabel,
                     movementPending.Length,
                     movementPending.Sum(document => document.LineCount),
                     movementPending.Sum(document => document.Quantity),
@@ -206,12 +209,12 @@ internal sealed class AxataOutboundDeliveryImportService(
             "Mikro depolar arasi siparislerdeki ssip_special1 worker basari bayragi kontrol edilir.",
             "Audit tarih filtresi ssip_tarih uzerindedir; ssip_lastup_date problem listelerinde en yeni guncellenen belgeyi one almak icin kullanilir.",
             "ssip_special1=1 olan belgede hic STOK_HAREKETLERI_EK.sth_subesip_uid sevk linki yoksa AXATA'dan Mikro'ya donus sevki eksik kabul edilir; en az bir link olup eksik link veya miktar farki varsa kismi sevk/fark olarak ayrica izlenir.",
-            "Sevk kontrolu AXATA getOutBoundDeliveryListAsync status 0 kuyrugundan okunur.",
+            $"Sevk kontrolu AXATA getOutBoundDeliveryListAsync status {outboundDeliveryStatusLabel} kuyrugundan okunur.",
             "C01 icin Mikro siparis satiri ve STOK_HAREKETLERI_EK linki kontrol edilir; diger hareket tipleri bu raporda kuyruk seviyesinde izlenir.",
-            "AXATA servisi tarih filtresi almadigi icin tarih parse edilemeyen pending sevkler rapora dahil edilir."
+            "AXATA servisi tarih filtresi almadigi icin tarih parse edilemeyen sevkler rapora dahil edilir."
         };
         notes.AddRange(movementFetchErrors.Select(error =>
-            $"AXATA {error.Key} pending sevk kuyrugu okunamadi: {error.Value}"));
+            $"AXATA {error.Key} status {outboundDeliveryStatusLabel} sevk kuyrugu okunamadi: {error.Value}"));
 
         return new AxataIntegrationAuditDto(
             isInSync,
@@ -1280,18 +1283,38 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var configuration = GetRequiredConfiguration(requireExtendedEndpoint: false);
-        var envelope = BuildFetchEnvelope(
-            configuration,
-            movementType,
-            status,
-            orderNumber);
-        var responseXml = await SendSoapAsync(
-            envelope,
-            configuration.MainEndpointUrl,
-            MainContractName,
-            FetchOperationName,
-            cancellationToken);
-        var serviceResponse = ParseSoapServiceResponse(responseXml);
+        var client = CreateMainClient(configuration.MainEndpointUrl);
+        AxataMain.getOutboundDelivery_Res response;
+
+        try
+        {
+            response = await client
+                .getOutBoundDeliveryListAsync(
+                    new AxataMain.getOutboundDelivery_Req(
+                        configuration.Username,
+                        configuration.Password,
+                        new AxataMain.OutboundDeliveryQuery
+                        {
+                            CompanyCode = CompanyCode,
+                            WarehouseCode = WarehouseCode,
+                            OrderNumber = NormalizeQueryValue(orderNumber),
+                            Firma = string.Empty,
+                            MovementType = movementType,
+                            Status = status,
+                            YuklemeNo = string.Empty,
+                            Type = string.Empty
+                        }))
+                .WaitAsync(cancellationToken);
+
+            CloseWcfClient(client);
+        }
+        catch
+        {
+            AbortWcfClient(client);
+            throw;
+        }
+
+        var serviceResponse = ToAxataServiceResponse(response.state, response.message);
 
         if (!serviceResponse.IsSuccess)
         {
@@ -1299,27 +1322,40 @@ internal sealed class AxataOutboundDeliveryImportService(
                 $"AXATA {FetchOperationName} failed: {serviceResponse.Message}");
         }
 
-        return ParseOutboundDeliveryDocuments(responseXml, movementType);
+        return MapOutboundDeliveryDocuments(response.OutboundDeliveryList, movementType);
     }
 
-    private async Task<OutboundDeliveryAuditFetchResult> TryFetchPendingOutboundDeliveriesForAuditAsync(
+    private async Task<OutboundDeliveryAuditFetchResult> TryFetchOutboundDeliveriesForAuditAsync(
         string movementType,
+        IReadOnlyCollection<string> statuses,
         CancellationToken cancellationToken)
     {
-        try
+        var documents = new List<AxataOutboundDeliveryDocument>();
+        var errors = new List<string>();
+
+        foreach (var status in statuses)
         {
-            return new OutboundDeliveryAuditFetchResult(
-                true,
-                await FetchPendingOutboundDeliveriesAsync(movementType, cancellationToken),
-                null);
+            try
+            {
+                documents.AddRange(await FetchOutboundDeliveriesAsync(
+                    movementType,
+                    status,
+                    null,
+                    cancellationToken));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                errors.Add($"status {status}: {exception.Message}");
+            }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return new OutboundDeliveryAuditFetchResult(
-                false,
-                Array.Empty<AxataOutboundDeliveryDocument>(),
-                exception.Message);
-        }
+
+        return new OutboundDeliveryAuditFetchResult(
+            errors.Count == 0,
+            documents
+                .OrderBy(document => document.Status)
+                .ThenBy(document => document.AxataSequenceNo)
+                .ToArray(),
+            errors.Count == 0 ? null : string.Join("; ", errors));
     }
 
     private async Task AcknowledgeOutboundDeliveryAsync(
@@ -1327,14 +1363,38 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var configuration = GetRequiredConfiguration(requireExtendedEndpoint: true);
-        var envelope = BuildAckEnvelope(configuration, axataSequenceNo);
-        var responseXml = await SendSoapAsync(
-            envelope,
-            configuration.ExtendedEndpointUrl,
-            ExtContractName,
-            AckOperationName,
-            cancellationToken);
-        var serviceResponse = ParseSoapServiceResponse(responseXml);
+        var client = CreateExtClient(configuration.ExtendedEndpointUrl);
+        AxataExt.updIntegrationTable_Res response;
+
+        try
+        {
+            response = await client
+                .updIntegrationTableAsync(
+                    new AxataExt.updIntegrationTable_Req(
+                        configuration.Username,
+                        configuration.Password,
+                        new AxataExt.IntegrationTable
+                        {
+                            TableName = "ENT006",
+                            UpdateField = "S06STAT",
+                            UpdateValue = CompletedStatus,
+                            IDField = "S06SIRA",
+                            IDValues = new AxataExt.IDList
+                            {
+                                axataSequenceNo.ToString(CultureInfo.InvariantCulture)
+                            }
+                        }))
+                .WaitAsync(cancellationToken);
+
+            CloseWcfClient(client);
+        }
+        catch
+        {
+            AbortWcfClient(client);
+            throw;
+        }
+
+        var serviceResponse = ToAxataServiceResponse(response.state, response.message);
 
         if (!serviceResponse.IsSuccess)
         {
@@ -1374,136 +1434,78 @@ internal sealed class AxataOutboundDeliveryImportService(
             currentOptions.Password);
     }
 
-    private static string BuildFetchEnvelope(
-        AxataOutboundDeliveryConfiguration configuration,
-        string movementType,
-        string status,
-        string? orderNumber)
+    private static AxataMain.AxataServicePoolClient CreateMainClient(string endpointUrl) =>
+        new(
+            AxataMain.AxataServicePoolClient.EndpointConfiguration.BasicHttpBinding_IAxataServicePool,
+            endpointUrl);
+
+    private static AxataExt.AxataServicePoolEXTClient CreateExtClient(string endpointUrl) =>
+        new(
+            AxataExt.AxataServicePoolEXTClient.EndpointConfiguration.BasicHttpBinding_IAxataServicePoolEXT,
+            endpointUrl);
+
+    private static void CloseWcfClient(ICommunicationObject client)
     {
-        var soap = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-        var document = new XDocument(
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soapenv", soap),
-                new XAttribute(XNamespace.Xmlns + "tem", service),
-                new XElement(
-                    soap + "Body",
-                    new XElement(service + "username", configuration.Username),
-                    new XElement(service + "password", configuration.Password),
-                    new XElement(
-                        "OutboundDeliveryQuery",
-                        new XElement("CompanyCode", CompanyCode),
-                        new XElement("WarehouseCode", WarehouseCode),
-                        new XElement("OrderNumber", NormalizeQueryValue(orderNumber)),
-                        new XElement("Firma", string.Empty),
-                        new XElement("MovementType", movementType),
-                        new XElement("Status", status),
-                        new XElement("YuklemeNo", string.Empty),
-                        new XElement("Type", string.Empty)))));
-
-        return document.ToString(SaveOptions.DisableFormatting);
-    }
-
-    private static string BuildAckEnvelope(
-        AxataOutboundDeliveryConfiguration configuration,
-        long axataSequenceNo)
-    {
-        var soap = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-        var axataWms = XNamespace.Get(AxataWmsNamespace);
-        var document = new XDocument(
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soapenv", soap),
-                new XAttribute(XNamespace.Xmlns + "tem", service),
-                new XElement(
-                    soap + "Body",
-                    new XElement(service + "username", configuration.Username),
-                    new XElement(service + "password", configuration.Password),
-                    new XElement(
-                        axataWms + "Table",
-                        new XElement("TableName", "ENT006"),
-                        new XElement("UpdateField", "S06STAT"),
-                        new XElement("UpdateValue", CompletedStatus),
-                        new XElement("IDField", "S06SIRA"),
-                        new XElement(
-                            "IDValues",
-                            new XElement("IDValue", axataSequenceNo.ToString(CultureInfo.InvariantCulture)))))));
-
-        return document.ToString(SaveOptions.DisableFormatting);
-    }
-
-    private async Task<string> SendSoapAsync(
-        string envelope,
-        string endpointUrl,
-        string contractName,
-        string operationName,
-        CancellationToken cancellationToken)
-    {
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, endpointUrl)
+        if (client.State == CommunicationState.Faulted)
         {
-            Content = new StringContent(envelope, Encoding.UTF8, "text/xml")
-        };
-
-        requestMessage.Headers.TryAddWithoutValidation(
-            "SOAPAction",
-            $"{ServiceNamespace}{contractName}/{operationName}");
-
-        using var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(requestMessage, cancellationToken);
-        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                AppendResponsePreview(
-                    ExtractSoapFaultOrDefault(
-                    responseContent,
-                        $"AXATA service returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}."),
-                    responseContent));
+            client.Abort();
+            return;
         }
 
-        return responseContent;
+        client.Close();
     }
 
-    private static IReadOnlyCollection<AxataOutboundDeliveryDocument> ParseOutboundDeliveryDocuments(
-        string responseXml,
+    private static void AbortWcfClient(ICommunicationObject client)
+    {
+        if (client.State != CommunicationState.Closed)
+        {
+            client.Abort();
+        }
+    }
+
+    private static AxataWcfServiceResponse ToAxataServiceResponse(int? state, string? message)
+    {
+        var isSuccess = !state.HasValue || state.Value == 0;
+
+        return new AxataWcfServiceResponse(
+            isSuccess,
+            state,
+            string.IsNullOrWhiteSpace(message) ? "AXATA response received." : message.Trim());
+    }
+
+    private static IReadOnlyCollection<AxataOutboundDeliveryDocument> MapOutboundDeliveryDocuments(
+        AxataMain.OutboundDelivery[]? deliveryList,
         string requestedMovementType)
     {
-        var document = XDocument.Parse(responseXml);
-        var documentElements = document.Descendants()
-            .Where(element => Child(element, "ENT006") is not null)
-            .ToArray();
-        var result = new List<AxataOutboundDeliveryDocument>(documentElements.Length);
-
-        foreach (var documentElement in documentElements)
+        if (deliveryList is null || deliveryList.Length == 0)
         {
-            var header = Child(documentElement, "ENT006");
+            return Array.Empty<AxataOutboundDeliveryDocument>();
+        }
+
+        var result = new List<AxataOutboundDeliveryDocument>(deliveryList.Length);
+
+        foreach (var delivery in deliveryList)
+        {
+            var header = delivery.ENT006;
             if (header is null)
             {
                 continue;
             }
 
-            var axataDeliveryNo = Field(header, "S06TESL");
+            var axataDeliveryNo = header.S06TESL?.Trim() ?? string.Empty;
             var (documentSerie, documentOrderNo) = ParseAxataDeliveryNo(axataDeliveryNo);
-            var movementType = requestedMovementType;
-            var sourceWarehouseNo = ParseInt(FirstNonEmpty(Field(header, "S06FIRM"), Field(header, "S06SMUS"))) ?? 0;
-            var targetWarehouseNo = ParseInt(FirstNonEmpty(Field(header, "S06TFIR"), Field(header, "S06TMUS"))) ?? 0;
-            var status = FirstNonEmpty(Field(header, "S06STAT"), PendingStatus);
-            var axataDate = ParseDate(FirstNonEmpty(
-                Field(header, "S06ITAR"),
-                Field(header, "S06TARI"),
-                Field(header, "S06SDAT"),
-                Field(header, "S06CTAR")));
-            var lines = ParseOutboundDeliveryLines(documentElement);
+            var sourceWarehouseNo = ParseInt(header.S06FIRM ?? string.Empty) ?? 0;
+            var targetWarehouseNo = ParseInt(header.S06TFIR ?? string.Empty) ?? 0;
+            var status = FirstNonEmpty(FormatDecimal(header.S06STAT), PendingStatus);
+            var axataDate = ParseDate(FormatDecimal(header.S06ITAR));
+            var lines = MapOutboundDeliveryLines(delivery.ENT007_List);
 
             result.Add(new AxataOutboundDeliveryDocument(
-                ParseLong(Field(header, "S06SIRA")) ?? 0,
+                header.S06SIRA,
                 axataDeliveryNo,
                 documentSerie,
                 documentOrderNo,
-                movementType,
+                requestedMovementType,
                 status,
                 sourceWarehouseNo,
                 targetWarehouseNo,
@@ -1516,93 +1518,16 @@ internal sealed class AxataOutboundDeliveryImportService(
             .ToArray();
     }
 
-    private static IReadOnlyCollection<AxataOutboundDeliveryLine> ParseOutboundDeliveryLines(XElement documentElement)
-    {
-        var lineRoot = Child(documentElement, "ENT007_List") ?? documentElement;
-
-        return lineRoot.Descendants()
-            .Where(element =>
-                Child(element, "S07KALN") is not null &&
-                Child(element, "S07SKOD") is not null)
-            .Select(element => new AxataOutboundDeliveryLine(
-                ParseInt(Field(element, "S07KALN")) ?? 0,
-                Field(element, "S07SKOD"),
-                ParseDouble(Field(element, "S07MIKT")) ?? 0d))
-            .ToArray();
-    }
-
-    private static AxataSoapServiceResponse ParseSoapServiceResponse(string responseXml)
-    {
-        var faultMessage = ExtractSoapFaultOrDefault(responseXml, null);
-        if (!string.IsNullOrWhiteSpace(faultMessage))
-        {
-            return new AxataSoapServiceResponse(false, null, faultMessage);
-        }
-
-        var document = XDocument.Parse(responseXml);
-        var stateText = document.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName.Equals("state", StringComparison.OrdinalIgnoreCase))
-            ?.Value
-            .Trim();
-        var message = document.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName.Equals("message", StringComparison.OrdinalIgnoreCase))
-            ?.Value
-            .Trim();
-        var state = ParseInt(stateText ?? string.Empty);
-        var isSuccess = !state.HasValue || state.Value == 0;
-
-        return new AxataSoapServiceResponse(
-            isSuccess,
-            state,
-            string.IsNullOrWhiteSpace(message) ? "AXATA response received." : message);
-    }
-
-    private static string ExtractSoapFaultOrDefault(string responseContent, string? fallbackMessage)
-    {
-        try
-        {
-            var document = XDocument.Parse(responseContent);
-            var fault = document.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName.Equals("Fault", StringComparison.OrdinalIgnoreCase));
-
-            if (fault is null)
-            {
-                return fallbackMessage ?? string.Empty;
-            }
-
-            var faultString = fault.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName.Equals("faultstring", StringComparison.OrdinalIgnoreCase))
-                ?.Value
-                .Trim();
-
-            return string.IsNullOrWhiteSpace(faultString)
-                ? fallbackMessage ?? "AXATA SOAP fault was returned."
-                : faultString;
-        }
-        catch
-        {
-            return fallbackMessage ?? string.Empty;
-        }
-    }
-
-    private static string AppendResponsePreview(string message, string responseContent)
-    {
-        if (string.IsNullOrWhiteSpace(responseContent))
-        {
-            return message;
-        }
-
-        var preview = responseContent
-            .Replace("\r", " ", StringComparison.Ordinal)
-            .Replace("\n", " ", StringComparison.Ordinal)
-            .Trim();
-        if (preview.Length > 500)
-        {
-            preview = preview[..500] + "...";
-        }
-
-        return $"{message} Response body: {preview}";
-    }
+    private static IReadOnlyCollection<AxataOutboundDeliveryLine> MapOutboundDeliveryLines(
+        AxataMain.ENT007[]? lineList) =>
+        lineList?
+            .Where(line => !string.IsNullOrWhiteSpace(line.S07KALN) && !string.IsNullOrWhiteSpace(line.S07SKOD))
+            .Select(line => new AxataOutboundDeliveryLine(
+                ParseInt(line.S07KALN) ?? 0,
+                line.S07SKOD.Trim(),
+                line.S07MIKT.HasValue ? (double)line.S07MIKT.Value : 0d))
+            .ToArray()
+        ?? Array.Empty<AxataOutboundDeliveryLine>();
 
     private static (DateTime StartDate, DateTime EndDate) ResolveDateRange(DateTime? startDate, DateTime? endDate)
     {
@@ -1649,6 +1574,28 @@ internal sealed class AxataOutboundDeliveryImportService(
         return normalized is PendingStatus or CompletedStatus
             ? [normalized]
             : throw new ArgumentException("Status must be 0 or 1.", nameof(status));
+    }
+
+    private static IReadOnlyCollection<string> ResolveAuditOutboundDeliveryStatuses(string? statuses)
+    {
+        if (string.IsNullOrWhiteSpace(statuses))
+        {
+            return [PendingStatus];
+        }
+
+        var normalizedStatuses = statuses
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalizedStatuses.Length == 0)
+        {
+            return [PendingStatus];
+        }
+
+        return normalizedStatuses.All(status => status is PendingStatus or CompletedStatus)
+            ? normalizedStatuses
+            : throw new ArgumentException("Statuses must contain only 0 and/or 1.", nameof(statuses));
     }
 
     private static string NormalizeRequiredDocumentSerie(string documentSerie)
@@ -1722,13 +1669,6 @@ internal sealed class AxataOutboundDeliveryImportService(
             : (serie, null);
     }
 
-    private static string Field(XElement element, string localName) =>
-        Child(element, localName)?.Value.Trim() ?? string.Empty;
-
-    private static XElement? Child(XElement element, string localName) =>
-        element.Elements()
-            .FirstOrDefault(child => child.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase));
-
     private static string FirstNonEmpty(params string[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 
@@ -1740,29 +1680,8 @@ internal sealed class AxataOutboundDeliveryImportService(
             ? parsed
             : null;
 
-    private static long? ParseLong(string value) =>
-        long.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
-
-    private static double? ParseDouble(string value)
-    {
-        var trimmed = value.Trim();
-        if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out var invariantValue))
-        {
-            return invariantValue;
-        }
-
-        if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.GetCultureInfo("tr-TR"), out var trValue))
-        {
-            return trValue;
-        }
-
-        var normalized = trimmed.Replace(',', '.');
-        return double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var normalizedValue)
-            ? normalizedValue
-            : null;
-    }
+    private static string FormatDecimal(decimal? value) =>
+        value?.ToString("0.#############################", CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static DateTime? ParseDate(string value)
     {
@@ -1811,7 +1730,7 @@ internal sealed record AxataOutboundDeliveryConfiguration(
     string Username,
     string Password);
 
-internal sealed record AxataSoapServiceResponse(
+internal sealed record AxataWcfServiceResponse(
     bool IsSuccess,
     int? State,
     string Message);

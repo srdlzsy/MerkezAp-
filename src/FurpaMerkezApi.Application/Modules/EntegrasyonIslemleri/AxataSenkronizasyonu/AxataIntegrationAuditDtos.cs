@@ -13,7 +13,8 @@ public sealed record AxataIntegrationAuditRequest(
     int? WarehouseNo,
     int? Take,
     string? DocumentSerie,
-    int? DocumentOrderNo);
+    int? DocumentOrderNo,
+    string? Statuses);
 
 public sealed record AxataIntegrationAuditDto(
     bool IsInSync,

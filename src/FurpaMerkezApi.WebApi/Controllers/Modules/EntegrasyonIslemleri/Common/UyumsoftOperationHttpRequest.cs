@@ -4,8 +4,6 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Common;
 
 public sealed class UyumsoftOperationHttpRequest
 {
-    public string? PayloadXml { get; init; }
-
     public IReadOnlyCollection<UyumsoftOperationParameterHttpRequest> Parameters { get; init; } =
         Array.Empty<UyumsoftOperationParameterHttpRequest>();
 }

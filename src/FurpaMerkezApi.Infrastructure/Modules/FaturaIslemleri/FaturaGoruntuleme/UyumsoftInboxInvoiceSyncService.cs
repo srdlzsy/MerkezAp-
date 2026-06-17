@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net.Http;
-using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Domain.Entities;
@@ -19,7 +18,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     private const int SyncPageSize = 200;
     private const int MaxSyncPageCount = 250;
     private const int MaxConsecutiveNoChangePages = 2;
-    private static readonly XNamespace XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     private static readonly IReadOnlyCollection<DateRangeQueryFilterMode> DateRangeQueryFilterModes =
     [
         DateRangeQueryFilterMode.ExecutionDate,
@@ -198,8 +196,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     UyumsoftConnectedServiceKind.EInvoice,
                     new UyumsoftOperationInvocationRequest(
                         "GetInboxInvoiceList",
-                        candidate.PayloadXml,
-                        []),
+                        candidate.Parameters),
                     cancellationToken);
 
                 var page = ParsePage(response);
@@ -433,7 +430,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         ];
     }
 
-    private static string BuildInboxInvoiceListQueryPayload(
+    private static IReadOnlyCollection<UyumsoftOperationParameterRequest> BuildInboxInvoiceListQueryPayload(
         int pageIndex,
         int pageSize,
         bool onlyNewestInvoices,
@@ -452,90 +449,95 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         string? targetTitle = null,
         string? targetTcknVkn = null)
     {
-        var content = new List<object>
+        var parameters = new List<UyumsoftOperationParameterRequest>
         {
-            new XAttribute(XNamespace.Xmlns + "xsi", XsiNamespace),
-            new XAttribute("PageIndex", pageIndex),
-            new XAttribute("PageSize", pageSize),
-            new XAttribute("OnlyNewestInvoices", onlyNewestInvoices),
-            BuildNillableDateElement("ExecutionStartDate", executionStartDate),
-            BuildNillableDateElement("ExecutionEndDate", executionEndDate),
-            BuildNillableDateElement("CreateStartDate", createStartDate),
-            BuildNillableDateElement("CreateEndDate", createEndDate),
-            BuildNillableValueElement("Status", status)
+            Parameter("PageIndex", pageIndex),
+            Parameter("PageSize", pageSize),
+            Parameter("OnlyNewestInvoices", onlyNewestInvoices)
         };
+
+        AddParameter(parameters, "ExecutionStartDate", executionStartDate);
+        AddParameter(parameters, "ExecutionEndDate", executionEndDate);
+        AddParameter(parameters, "CreateStartDate", createStartDate);
+        AddParameter(parameters, "CreateEndDate", createEndDate);
+        AddParameter(parameters, "Status", status);
 
         if (invoiceIds is not null)
         {
-            content.AddRange(
+            parameters.AddRange(
                 invoiceIds
                     .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => new XElement("InvoiceIds", value.Trim())));
+                    .Select(value => Parameter("InvoiceIds", value.Trim())));
         }
 
         if (invoiceNumbers is not null)
         {
-            content.AddRange(
+            parameters.AddRange(
                 invoiceNumbers
                     .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => new XElement("InvoiceNumbers", value.Trim())));
+                    .Select(value => Parameter("InvoiceNumbers", value.Trim())));
         }
 
         if (statusInList is not null)
         {
-            content.AddRange(
+            parameters.AddRange(
                 statusInList
                     .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => new XElement("StatusInList", value.Trim())));
+                    .Select(value => Parameter("StatusInList", value.Trim())));
         }
 
         if (statusNotInList is not null)
         {
-            content.AddRange(
+            parameters.AddRange(
                 statusNotInList
                     .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => new XElement("StatusNotInList", value.Trim())));
+                    .Select(value => Parameter("StatusNotInList", value.Trim())));
         }
 
-        content.Add(BuildNillableValueElement("SortColumn", sortColumn));
-        content.Add(BuildNillableValueElement("SortMode", sortMode));
-        content.Add(BuildNillableBooleanElement("IsArchived", isArchived));
+        AddParameter(parameters, "SortColumn", sortColumn);
+        AddParameter(parameters, "SortMode", sortMode);
+        AddParameter(parameters, "IsArchived", isArchived);
+        AddParameter(parameters, "TargetTitle", targetTitle);
+        AddParameter(parameters, "TargetTcknVkn", targetTcknVkn);
 
-        if (!string.IsNullOrWhiteSpace(targetTitle))
-        {
-            content.Add(new XElement("TargetTitle", targetTitle.Trim()));
-        }
-
-        if (!string.IsNullOrWhiteSpace(targetTcknVkn))
-        {
-            content.Add(new XElement("TargetTcknVkn", targetTcknVkn.Trim()));
-        }
-
-        return new XElement("query", content).ToString(SaveOptions.DisableFormatting);
+        return parameters;
     }
 
-    private static string FormatDateTime(DateTime value) =>
-        value.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+    private static UyumsoftOperationParameterRequest Parameter(string name, object value) =>
+        new(name, Convert.ToString(value, CultureInfo.InvariantCulture));
 
-    private static XElement BuildNillableDateElement(string elementName, DateTime? value) =>
-        value.HasValue
-            ? new XElement(elementName, FormatDateTime(value.Value))
-            : BuildNilElement(elementName);
+    private static void AddParameter(
+        List<UyumsoftOperationParameterRequest> parameters,
+        string name,
+        DateTime? value)
+    {
+        if (value.HasValue)
+        {
+            parameters.Add(Parameter(name, value.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)));
+        }
+    }
 
-    private static XElement BuildNillableBooleanElement(string elementName, bool? value) =>
-        value.HasValue
-            ? new XElement(elementName, value.Value.ToString().ToLowerInvariant())
-            : BuildNilElement(elementName);
+    private static void AddParameter(
+        List<UyumsoftOperationParameterRequest> parameters,
+        string name,
+        bool? value)
+    {
+        if (value.HasValue)
+        {
+            parameters.Add(Parameter(name, value.Value));
+        }
+    }
 
-    private static XElement BuildNillableValueElement(string elementName, string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? BuildNilElement(elementName)
-            : new XElement(elementName, value.Trim());
-
-    private static XElement BuildNilElement(string elementName) =>
-        new(
-            elementName,
-            new XAttribute(XsiNamespace + "nil", true));
+    private static void AddParameter(
+        List<UyumsoftOperationParameterRequest> parameters,
+        string name,
+        string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            parameters.Add(Parameter(name, value.Trim()));
+        }
+    }
 
     private static string BuildPageSignature(IReadOnlyCollection<ParsedInboxInvoice> items)
     {
@@ -972,7 +974,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
     private sealed record InboxInvoiceQueryPayload(
         string Name,
-        string PayloadXml);
+        IReadOnlyCollection<UyumsoftOperationParameterRequest> Parameters);
 
     private enum DateRangeQueryFilterMode
     {

@@ -30,15 +30,12 @@ public sealed class GetInboundDespatchLookupUseCase(
             UyumsoftConnectedServiceKind.EDespatch,
             new UyumsoftOperationInvocationRequest(
                 "GetInboxDespatches",
-                BuildInboxDespatchLookupPayload(ettn),
-                Array.Empty<UyumsoftOperationParameterRequest>()),
+                BuildInboxDespatchLookupParameters(ettn)),
             cancellationToken);
 
-        var resultDocument = XDocument.Parse(uyumsoftResponse.RawXml, LoadOptions.PreserveWhitespace);
-        var itemElement = resultDocument.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == "Items");
-        var despatchAdvice = itemElement?.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == "DespatchAdvice");
+        var despatchAdvice = TryFindDespatchAdviceXml(uyumsoftResponse, out var despatchAdviceXml)
+            ? XDocument.Parse(despatchAdviceXml, LoadOptions.PreserveWhitespace).Root
+            : null;
 
         if (despatchAdvice is null)
         {
@@ -337,17 +334,49 @@ public sealed class GetInboundDespatchLookupUseCase(
             NormalizeOrNull(GetPathValue(partyElement, "PostalAddress", "CityName")));
     }
 
-    private static string BuildInboxDespatchLookupPayload(string ettn)
-    {
-        var queryElement = new XElement(
-            "query",
-            new XAttribute("PageIndex", 0),
-            new XAttribute("PageSize", 1),
-            new XAttribute("SetTaken", false),
-            new XAttribute("OnlyNewestDespatches", true),
-            new XElement("DespatchIds", ettn));
+    private static IReadOnlyCollection<UyumsoftOperationParameterRequest> BuildInboxDespatchLookupParameters(string ettn) =>
+    [
+        new("PageIndex", "0"),
+        new("PageSize", "1"),
+        new("SetTaken", "false"),
+        new("OnlyNewestDespatches", "true"),
+        new("DespatchIds", ettn)
+    ];
 
-        return queryElement.ToString(SaveOptions.DisableFormatting);
+    private static bool TryFindDespatchAdviceXml(
+        UyumsoftOperationResponseDto response,
+        out string despatchAdviceXml)
+    {
+        foreach (var value in response.Nodes.SelectMany(FlattenNodeValues))
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var trimmed = value.Trim();
+            if (trimmed.Contains("<DespatchAdvice", StringComparison.OrdinalIgnoreCase))
+            {
+                despatchAdviceXml = trimmed;
+                return true;
+            }
+        }
+
+        despatchAdviceXml = string.Empty;
+        return false;
+    }
+
+    private static IEnumerable<string?> FlattenNodeValues(UyumsoftResponseNodeDto node)
+    {
+        yield return node.Value;
+
+        foreach (var child in node.Children)
+        {
+            foreach (var value in FlattenNodeValues(child))
+            {
+                yield return value;
+            }
+        }
     }
 
     private static string DetermineCustomerMatchReason(

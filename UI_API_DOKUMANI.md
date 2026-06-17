@@ -6689,7 +6689,7 @@ Response:
 
 - `UyumsoftOperationResponseDto`
 - Backend Uyumsoft e-fatura `GetInboxInvoicePdf` operasyonunu `invoiceId = documentId` parametresiyle cagirir.
-- PDF payload Uyumsoft response yapisina gore `scalarValue`, `nodes` veya `rawXml` icinde gelir; UI mevcut entegrasyon endpointindeki `GetInboxInvoicePdf` cevabi gibi yorumlamalidir.
+- PDF payload Uyumsoft response yapisina gore `scalarValue`, `nodes` veya `responsePayloadJson` icinde gelir; UI mevcut entegrasyon endpointindeki `GetInboxInvoicePdf` cevabi gibi yorumlamalidir.
 
 Bu endpoint ne icin kullanilmali:
 
@@ -6733,7 +6733,7 @@ Detay davranisi:
 - sonra legacy semantige uygun olarak ayni satirin `documentId` degerini Uyumsoft `GetInboxInvoice` cagrisinda lookup parametresi olarak kullanir
 - bu akis eski `FaturaGoruntuleyici` formunun `documentId` bazli acilisina karsilik gelir
 - UI HTML donusumunu kendi icinde yapmaz; backend'den gelen `htmlContent` dogrudan gosterilir
-- `xmlContent` debug, inceleme veya raw XML sekmesi icin kullanilabilir
+- `xmlContent` debug, inceleme veya kaynak belge sekmesi icin kullanilabilir
 - `summary.invoiceId` ve `document.invoiceId` kullanicinin gordugu fatura numarasidir; detay acma anahtari yine `documentId` olarak kalir
 - bu endpoint legacy'deki cift-tik onizlemesine karsilik gelir; tek basina `isPrinted` update etmez
 - response icindeki `document.source` bu modulde `inbox` olur; outbox/onizleme akislari `fatura-gonderimi` altinda ayridir
@@ -7041,7 +7041,7 @@ Response `SendInvoiceDocumentsResponse`:
 Davranis:
 
 - secimler duplicate ise backend tekilleştirir
-- gonderim `batch SOAP array` yerine fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
+- gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
 - ayni anda `cha_kilitli = true`, `cha_degisti = true`, `cha_lastup_user = 39` ve `cha_lastup_date = now` set edilir
@@ -7077,7 +7077,7 @@ Request body:
 Davranis:
 
 - bu endpoint Uyumsoft `GetOutboxInvoices` operasyonunu API icinden cagirir
-- body icindeki `payloadXml` ve `parameters` dogrudan Uyumsoft sorgusuna aktarilir
+- body icindeki `parameters` Uyumsoft WCF metod parametrelerine aktarilir
 - response normalize edilmis bir liste DTO'su degil, Uyumsoft'un genel response modelidir
 - yani UI bu endpointte "backend business listesi" degil, "Uyumsoft sorgu cevabi" ile calisir
 
@@ -7433,13 +7433,13 @@ Mevcut endpointler:
   - response `AxataSynchronizationManualDocumentBatchDto`
   - `ContinueOnError = true` ise hatali evraklar `Failures` icine yazilir, diger evraklar devam eder
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/dispatch`
-  - secilen tek evraki eski AXATA worker kontratina uygun SOAP envelope ile canli gonderir
+  - secilen tek evraki eski AXATA worker kontratina uygun WCF client ile canli gonderir
   - response `AxataSynchronizationManualDispatchDto`
   - su an `issued-warehouse-order-sync` ve `company-receiving-sync` icin tanimlidir
   - `issued-warehouse-order-sync` worker parity icin `C01` hareket kodu ile `addOutboundOrder*` operasyonunu kullanir
   - `company-receiving-sync` worker parity icin `G01` hareket kodu ile `addInboundOrder*` operasyonunu kullanir
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/dispatch-batch`
-  - secilen birden fazla evraki canli SOAP dispatch ile toplu gonderir
+  - secilen birden fazla evraki canli WCF dispatch ile toplu gonderir
   - response `AxataSynchronizationManualDispatchBatchDto`
   - `ContinueOnError = true` ise red alan veya hata veren evraklar `Failures` icine yazilir
 - `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview?take=20`
@@ -7520,7 +7520,7 @@ UI icin endpoint davranis rehberi:
 | Mikro -> AXATA Manuel | `GET /manual/tasks/{taskCode}/documents/candidates` | Manuel kurtarma icin Mikro evrak adaylarini listeler | Hayir | "Evraklari getir" |
 | Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/preview` | Secili Mikro evrakindan AXATA payload preview uretir | Hayir | "Payload onizle" |
 | Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/execute` | Secili evrak icin `DryRun` veya `Outbox` calistirir | Outbox modunda dosya yazar | "Outbox'a hazirla" |
-| Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/dispatch` | Secili evraki AXATA Main servise canli SOAP ile gonderir | AXATA'ya yazar | "AXATA'ya gonder" |
+| Mikro -> AXATA Manuel | `POST /manual/tasks/{taskCode}/documents/dispatch` | Secili evraki AXATA Main servise WCF client ile gonderir | AXATA'ya yazar | "AXATA'ya gonder" |
 | AXATA Body Manuel | `POST /manual/axata/outbound-deliveries/inter-warehouse-shipments` | Hazir AXATA outbound delivery body bilgisinden Mikro sevk fisi olusturur | Evet | "Body'den sevk olustur" |
 | AXATA Body Manuel | `POST /manual/axata/inbound-atf/company-receivings` | Hazir AXATA inbound ATF body bilgisinden Mikro firma mal kabul olusturur | Evet | "ATF'den mal kabul olustur" |
 | Serbest Incoming | `POST /manual/incoming/company-receivings` | Serbest body ile Mikro firma mal kabul olusturur | Evet | "Manuel mal kabul olustur" |
@@ -7808,7 +7808,7 @@ Manuel kurtarma akis onerisi:
   - coklu belge geliyorsa `.../company-receivings/batch` veya `.../inventory-counts/batch` ile tek cagrida islenebilir
   - depo sevki zaten bekleyen belge olarak Mikro'ya dusmus ama kabulde takildiysa once `manual/incoming/warehouse-receivings` ile listele, gerekirse detay endpoint'i ile satirlari kontrol et, sonra `.../accept` veya `.../accept-batch` kullan
 - Not:
-  - C01 icin backend AXATA'dan canli SOAP fetch/import yapar; C02/C03/C04 icin canli kuyruk preview vardir ama import/ack ayri fazdir; G01/G02 fetch-import akislari ayri fazdir
+  - C01 icin backend AXATA'dan WCF client ile canli fetch/import yapar; C02/C03/C04 icin canli kuyruk preview vardir ama import/ack ayri fazdir; G01/G02 fetch-import akislari ayri fazdir
   - `dispatch` endpoint'leri AXATA'ya canli yazim yapar; `execute` endpoint'leri ise sadece `DryRun/Outbox` icindir
   - eski worker operasyon isimleri kullanildigi icin canli AXATA dispatch sahada endpoint/credential ile dogrulanmalidir
 
@@ -7829,7 +7829,7 @@ Entegrasyon modulu notlari:
 - `live/axata/outbound-deliveries/c01/*` endpoint'leri AXATA'dan canli C01 cekip Mikro'ya yazar; AXATA ack sadece Mikro kaydi basarili olursa atilir
 - `live/axata/outbound-deliveries/c01/import` gerekiyorsa mudahale icindir; mevcut worker'in yerine otomatik calisan yeni worker olarak dusunulmemelidir
 - toplu endpoint'lerde `ContinueOnError = true` ise HTTP 200 donup basarisiz item'lari `Failures` listesinde raporlar
-- `Outbox` modu su an gercek SOAP dispatch degil, payload uretim ve dosyalama asamasidir
+- `Outbox` modu su an gercek WCF dispatch degil, payload uretim ve dosyalama asamasidir
 - canli AXATA import/ack adapter'i su an C01 depo sevki icin aktiftir; pending kuyruk importu ve belge bazli rescue desteklenir; C02/C03/C4 icin kuyruk preview vardir, import yoktur
 - `GET /api/integrations/axata-sync` icindeki her task artik `supportsManualDocuments`, `supportsLiveDispatch` ve varsa `liveOperationName` alanlarini da dondurur
 - `GET /api/integrations/axata-sync/fetch-profiles` ile UI eski worker parity icin hedeflenen `C01/C02/C03/C04(query C4)/G01/G02` ve benzeri fetch profillerini okuyabilir
@@ -7887,7 +7887,7 @@ UI manuel aktarim senaryolari:
 
 UI'nin kullaniciya acik soylemesi gereken kritik sinirlar:
 
-- C01 depo sevki icin AXATA'dan canli SOAP fetch/import vardir; pending kuyruk ve belge bazli rescue desteklenir
+- C01 depo sevki icin AXATA'dan WCF client ile canli fetch/import vardir; pending kuyruk ve belge bazli rescue desteklenir
 - C02/C03/C04 icin "AXATA'dan cek ve kuyrukta goster" akisi vardir; "Mikro'ya yaz ve ack at" akisi henuz yoktur
 - G01/G02 icin "AXATA'dan cek ve Mikro'ya yaz" akisi henuz yoktur
 - `dispatch*` endpoint'leri sadece `issued-warehouse-order-sync` ve `company-receiving-sync` icin aktiflenmelidir
@@ -7947,7 +7947,7 @@ UI'da sonraki faz icin acilabilecek ekranlar:
   - amac: AXATA'ya ack atilamayan veya yarim kalmis entegrasyonlari operasyon ekibi gorsun
   - bu ekran ancak backend'de kalici audit/retry tablolari eklenirse anlamli olur
 - `Transport Profili` sekmesi
-  - amac: task'in `V1` mi `V2` mi SOAP operasyonu kullanacagini gostermek
+  - amac: task'in `V1` mi `V2` mi WCF operasyonu kullanacagini gostermek
   - ozellikle eski worker'da `addOutboundOrderV2Async` ve `addInboundOrderV2Async` kullanimi varsa faydalidir
 
 UI tarafinda simdiden scaffold edilebilecek ama mevcut backend'de henuz aktif olmayan endpoint aileleri:
@@ -8330,14 +8330,14 @@ Liste ve detay response'lari:
 
 Detayli ve Uyumsoft odakli ayri dokuman icin bkz. [UYUMSOFT_ENTEGRASYON_DOKUMANI.md](UYUMSOFT_ENTEGRASYON_DOKUMANI.md).
 
-Bu bolum, yeni eklenen Uyumsoft connected-service query modullerini anlatir. Bu moduller operasyonel sevk/iade ekranlarindaki mevcut `e-irsaliye gonder` ve `PDF getir` endpoint'lerinin yerine gecmez; onlar mevcut business akislari icin kullanilmaya devam eder. Yeni moduller, daha cok entegrasyon/operasyon destek ekibi icin "Uyumsoft'ta ne var, hangi GET operasyonlari acik, ilgili dokuman/paged query sonucu ne donuyor" ihtiyacini karsilar.
+Bu bolum, Uyumsoft WCF client tabanli query modullerini anlatir. Bu moduller operasyonel sevk/iade ekranlarindaki mevcut `e-irsaliye gonder` ve `PDF getir` endpoint'lerinin yerine gecmez; onlar mevcut business akislari icin kullanilmaya devam eder. Yeni moduller, daha cok entegrasyon/operasyon destek ekibi icin "Uyumsoft'ta ne var, hangi GET operasyonlari acik, ilgili dokuman/paged query sonucu ne donuyor" ihtiyacini karsilar.
 
 Bu entegrasyonun kapsami:
 
 - Uyumsoft `BasicIntegration` servisi icin `e-fatura` query modulu
 - Uyumsoft `BasicDespatchIntegration` servisi icin `e-irsaliye` query modulu
 - sadece whitelist'e alinmis `Get*` operasyonlarinin acilmasi
-- request body'sinde scalar parametre + XML fragment (`payloadXml`) destegi
+- request body'sinde `parameters` listesiyle scalar parametre ve typed query model alani destegi
 - response'un generic ve recursive bir agac modeli ile normalize edilmesi
 - ileride `Send*`, `Save*`, `Query*`, `Change*`, `Set*` ailelerinin ayni omurgaya eklenebilecek sekilde tasarlanmasi
 
@@ -8354,7 +8354,7 @@ Bu moduller ileride neler icin kullanilabilir:
 
 - e-fatura remote inbox/outbox dashboard
 - Uyumsoft durum loglari, red/cevap takibi
-- operasyonel belge tekrar sorgulama ve raw XML inceleme
+- operasyonel belge tekrar sorgulama ve typed response/payload JSON inceleme
 - portal parity amacli alias/kullanici listeleme
 - query builder bazli ileri seviye filtre ekranlari
 - `SendInvoice`, `SendDespatch`, `SaveAsDraft`, `TransformAndSend` gibi yazan operasyonlar icin ayni route ailesinin genisletilmesi
@@ -8443,7 +8443,7 @@ Not:
 
 ### Konfigurasyon ve Kimlik Bilgisi Modeli
 
-Backend, `userInfo` bilgisini UI'dan almaz; server-side config ile SOAP envelope icine kendisi yerlestirir. Bu nedenle UI kullanicisi username/password gormez ve gondermez.
+Backend, `userInfo` bilgisini UI'dan almaz; server-side config ile WCF client tarafinda kendisi olusturur. Bu nedenle UI kullanicisi username/password gormez ve gondermez.
 
 Su an kullanilan config anahtarlari:
 
@@ -8513,7 +8513,6 @@ Amac:
 
 Query:
 
-- `payloadXml` opsiyonel
 - `parameter` tekrar eden query parametresidir ve `name=value` formatinda gonderilir
 
 Response:
@@ -8524,7 +8523,7 @@ Not:
 
 - browser, test araci veya hizli operator kullanimi icin pratiktir
 - kisa scalar parametreli operasyonlarda UI dogrudan bu route'u kullanabilir
-- uzun veya kompleks XML payload'lar icin URL encode ve uzunluk sebepleriyle `POST` tercih edilmelidir
+- cok sayida parametre veya kompleks query model alanlari icin `POST` tercih edilmelidir
 - ayni davranis `e-irsaliye` modulu icin de gecerlidir
 
 #### `POST /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/{operationName}`
@@ -8546,7 +8545,7 @@ Not:
 - ayni davranis `e-irsaliye` modulu icin de gecerlidir
 - `operationName` buyuk/kucuk harf duyarli gibi dusunulmemeli; backend case-insensitive bakar
 - buna ragmen UI exact isimleri her zaman `GET .../operations` cevabindan alip kullanmalidir
-- `payloadXml` ile kompleks `<query>...</query>` veya `<request>...</request>` yapilari gonderilecekse ana tercih bu route olmalidir
+- cok alanli typed query modellerinde ana tercih bu route olmalidir
 
 #### Hazir alias `GET` route'lari
 
@@ -8571,7 +8570,6 @@ Tek endpoint uzerinden farkli operasyonlar `query string` ile de cagrilabilir.
 
 Format:
 
-- `payloadXml` opsiyoneldir
 - her scalar parametre icin ayri `parameter=name=value` query parametresi gonderilir
 
 Ornekler:
@@ -8590,19 +8588,14 @@ GET /api/entegrasyon-islemleri/uyumsoft/e-irsaliye/get/GetDespatchEnvelope?param
 Authorization: Bearer {token}
 ```
 
-Not:
-
-- `payloadXml` query string ile de gonderilebilir; ancak gercek UI akislari icin uzun XML'lerde `POST` kullanmak daha guvenlidir
-
 ### `POST` Request Body Formati
 
-Tek endpoint uzerinden farkli operasyonlar cagirildigi icin request body'si generic tutulmustur.
+Tek endpoint uzerinden farkli operasyonlar cagirildigi icin request body'si generic tutulmustur. Backend bu parametreleri generated WCF metod imzasina gore scalar argumanlara veya typed query model property'lerine basar.
 
 Model:
 
 ```json
 {
-  "payloadXml": "<query>...</query>",
   "parameters": [
     { "name": "format", "value": "yyyy-MM-dd" }
   ]
@@ -8612,14 +8605,9 @@ Model:
 Alan kurallari:
 
 - `parameters`
-  - scalar child element'ler icin kullanilir
-  - ornek: `format`, `invoiceId`, `despatchId`, `isInbox`
-- `payloadXml`
-  - kompleks query/request objeleri icin kullanilir
-  - root wrapper gerekmez; backend bunu kendisi fragment olarak parse eder
-  - gonderilen XML, Uyumsoft operasyonunun bekledigi child element adi ile baslamalidir
-  - ornek: `<query>...</query>`, `<request>...</request>`
-- `parameters` ve `payloadXml` birlikte kullanilabilir
+  - scalar metod argumanlari ve query model property'leri icin kullanilir
+  - ornek: `format`, `invoiceId`, `despatchId`, `isInbox`, `PageIndex`, `PageSize`, `IsArchived`
+  - array alanlarda ayni `name` birden fazla kez gonderilebilir; ornek `despatchId` / `despatchIds`
 
 Ornekler:
 
@@ -8665,7 +8653,11 @@ Content-Type: application/json
 
 ```json
 {
-  "payloadXml": "<query><PageIndex>1</PageIndex><PageSize>20</PageSize><IsArchived>false</IsArchived></query>"
+  "parameters": [
+    { "name": "PageIndex", "value": "1" },
+    { "name": "PageSize", "value": "20" },
+    { "name": "IsArchived", "value": "false" }
+  ]
 }
 ```
 
@@ -8719,13 +8711,13 @@ Authorization: Bearer {token}
 Not:
 
 - bu alias route'lar da `UyumsoftOperationResponseDto` JSON modeli doner
-- path'te `/pdf` gecmesi binary dosya indirilecegi anlamina gelmez; PDF verisi response icindeki node/attribute/rawXml alanlarinda gelir
+- path'te `/pdf` gecmesi binary dosya indirilecegi anlamina gelmez; PDF verisi response icindeki node/attribute/responsePayloadJson alanlarinda gelir
 
 UI request form onerisi:
 
 - operasyon secildiginde `requestHint` alani yardim metni olarak gosterilsin
-- "scalar parametre" ve "payloadXml" ayni ekranda ama ayrik bloklar halinde sunulsun
-- `payloadXml` icin monospaced multiline editor kullanilsin
+- scalar parametre ve query model alanlari ayni dinamik formda sunulsun
+- cok degerli alanlar icin ayni parametre adini tekrar ekleyebilen liste UI'i kullanilsin
 - request history / son kullanilan operasyon parametreleri lokal olarak cache'lenebilir
 - sik kullanilan tekil belge sorgulari icin ayni ekranda ayrica hazir alias butonlari sunulabilir
 
@@ -8742,7 +8734,7 @@ Tum operasyonlar normalize edilmis tek bir response modeline dondurulur:
 - `scalarValue`
 - `resultAttributes`
 - `nodes`
-- `rawXml`
+- `responsePayloadJson`
 
 Alan anlami:
 
@@ -8755,9 +8747,9 @@ Alan anlami:
 - `nodes`
   - kompleks response'lar icin recursive tree yapisidir
   - paged result, item listesi, ic ice child node yapilari buradan okunur
-- `rawXml`
-  - SOAP body'nin tamamini degil, ilgili `...Result` element'inin XML'ini verir
-  - debug/raw inceleme sekmesi icin uygundur
+- `responsePayloadJson`
+  - WCF response objesinin JSON karsiligini verir
+  - debug/response inceleme sekmesi icin uygundur
 
 UI render onerisi:
 
@@ -8780,7 +8772,7 @@ Bu modullerde exception middleware davranisi su sekildedir:
 
 - `400 Bad Request`
   - eksik/hatali scalar parameter
-  - invalid `payloadXml`
+  - eksik/hatali typed query parameter
   - katalogda olmayan `operationName`
 - `401 Unauthorized`
   - token yok/gecersiz
@@ -8788,7 +8780,7 @@ Bu modullerde exception middleware davranisi su sekildedir:
   - ilgili module permission'i yok
 - `409 Conflict`
   - Uyumsoft remote service request'i reddetti
-  - SOAP fault dondu
+  - WCF servis hatasi dondu
   - server-side endpoint/credential/config eksik
 - `500 Internal Server Error`
   - beklenmeyen parse/runtime problemi
@@ -8957,20 +8949,19 @@ Neden su an sadece GET acildi:
 - `Operasyon Explorer` sekmesi
   - kategori filtreli operasyon listesi
   - secili operasyon request hint'i
-  - dynamic form + payloadXml editor
+  - dynamic parameter formu
 - `Sonuc` sekmesi
   - summary
   - tree
-  - raw xml
+  - response payload
 - opsiyonel `Template/History` alanlari
   - son kullanilan operasyon parametreleri
-  - sik kullanilan query XML'leri
+  - sik kullanilan query parametre setleri
 
 UI'nin dikkat etmesi gereken sinirlar:
 
 - backend sadece katalogdaki operasyonlari cagirir
 - UI operationName'i manuel string olarak uretmemelidir
-- `payloadXml` dogrudan XML fragment oldugu icin text-area validation ve escaping konusunda dikkatli davranilmalidir
 - `Get...Pdf` operasyonlari base64 veya data node dondugu icin UI raw sonucu dogrudan preview etmeyebilir; gerekirse ayrik base64 decode araci sonraki fazda eklenebilir
 - mevcut business `e-irsaliye gonder` butonlari bu modullere tasinmamalidir
 
@@ -9111,7 +9102,7 @@ public sealed record UyumsoftOperationResponseDto(
     string? ScalarValue,
     IReadOnlyDictionary<string, string?> ResultAttributes,
     IReadOnlyCollection<UyumsoftResponseNodeDto> Nodes,
-    string RawXml);
+    string ResponsePayloadJson);
 
 public sealed record UyumsoftResponseNodeDto(
     string Name,
@@ -10772,8 +10763,8 @@ public sealed record AxataSynchronizationManualDispatchDto(
     int? ServiceState,
     string ServiceMessage,
     string PayloadJson,
-    string RequestXml,
-    string ResponseXml,
+    string RequestPayloadJson,
+    string ResponsePayloadJson,
     IReadOnlyCollection<string> Notes);
 
 public sealed record AxataSynchronizationManualDispatchBatchDto(
@@ -11184,7 +11175,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 
 ### Entegrasyon Request Modelleri
 
-- `UyumsoftOperationHttpRequest`: `PayloadXml`, `Parameters`
+- `UyumsoftOperationHttpRequest`: `Parameters`
 - `UyumsoftOperationParameterHttpRequest`: `Name`, `Value`
 - `AxataSynchronizationExecuteHttpRequest`: `TaskCode`, `ExecutionMode`, `WarehouseNo`
 - `AxataSynchronizationExecuteTaskHttpRequest`: `ExecutionMode`, `WarehouseNo`
@@ -11224,7 +11215,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/preview` endpoint'i body almaz; `status` query parametresi opsiyoneldir ve sadece `0` veya `1` olabilir
 - `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import` body'de `status` ve `acknowledge` alir; `acknowledge=false` kontrollu rescue icin onerilir
 - `ExecutionMode` su an yalnizca `DryRun` veya `Outbox` olabilir
-- `dispatch` ve `dispatch-batch` endpoint'leri `ExecutionMode` almaz; bunlar dogrudan canli AXATA SOAP gonderimidir
+- `dispatch` ve `dispatch-batch` endpoint'leri `ExecutionMode` almaz; bunlar dogrudan canli AXATA WCF gonderimidir
 - `issued-warehouse-order-sync` dispatch payload'i worker parity icin `C01`, `company-receiving-sync` dispatch payload'i `G01` hareket kodu ile gonderilir
 - `manual/tasks/{taskCode}/documents/preview` ve `manual/tasks/{taskCode}/documents/execute` request body alanlari task'a gore kullanilir:
   - `issued-warehouse-order-sync`: `DocumentSerie` + `DocumentOrderNo`
@@ -11252,7 +11243,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `AxataInboundAtfCompanyReceivingLineHttpRequest` icinde yalnizca `Quantity` vardir; bu endpoint native ATF miktarini tam kabul sayar. Kismi kabul/iade gerekiyorsa `manual/incoming/company-receivings` endpoint'ine `dispatchQuantity` ve `acceptedQuantity` ayrimiyla payload gonderilmelidir.
 - E-irsaliye olusturan endpointler body'de `SendEDespatchHttpRequest`, path'te `documentSerie` ve `documentOrderNo`, query'de opsiyonel `warehouseNo` alir.
 - `POST /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/{operationName}` ve `POST /api/entegrasyon-islemleri/uyumsoft/e-irsaliye/get/{operationName}` endpoint'leri body'de `UyumsoftOperationHttpRequest` alir.
-- `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/{operationName}` ve `GET /api/entegrasyon-islemleri/uyumsoft/e-irsaliye/get/{operationName}` endpoint'leri body almaz; opsiyonel `payloadXml` ve tekrar eden `parameter=name=value` query parametresi kullanir.
+- `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/{operationName}` ve `GET /api/entegrasyon-islemleri/uyumsoft/e-irsaliye/get/{operationName}` endpoint'leri body almaz; tekrar eden `parameter=name=value` query parametresi kullanir.
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/system/date/formatted` endpoint'i `format` query parametresi alir.
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/.../{invoiceId}` alias route'lari `invoiceId` path parametresiyle calisir.
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-irsaliye/.../{despatchId}` alias route'lari `despatchId` path parametresiyle calisir; `GET /api/entegrasyon-islemleri/uyumsoft/e-irsaliye/despatches/{despatchId}/envelope` icin ek olarak `isInbox` query parametresi zorunludur.

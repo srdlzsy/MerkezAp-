@@ -10,7 +10,7 @@ public sealed record UyumsoftOperationResponseDto(
     string? ScalarValue,
     IReadOnlyDictionary<string, string?> ResultAttributes,
     IReadOnlyCollection<UyumsoftResponseNodeDto> Nodes,
-    string RawXml);
+    string ResponsePayloadJson);
 
 public sealed record UyumsoftResponseNodeDto(
     string Name,

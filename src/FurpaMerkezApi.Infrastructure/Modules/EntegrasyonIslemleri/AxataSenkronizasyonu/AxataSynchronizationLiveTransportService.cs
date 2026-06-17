@@ -1,21 +1,18 @@
 using System.Globalization;
-using System.Text;
-using System.Xml.Linq;
+using System.ServiceModel;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using Microsoft.Extensions.Options;
+using AxataInbound = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main.WMSServiceCore.Models.Inbounds;
+using AxataMain = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main;
+using AxataOutbound = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main.WMSServiceCore.Models.Outbound;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
 internal sealed class AxataSynchronizationLiveTransportService(
-    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<AxataSynchronizationOptions> options)
 {
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
-    private const string ServiceNamespace = "http://tempuri.org/";
-    private const string AxataWmsNamespace = "http://axatawms";
-    private const string OutboundDataContractNamespace = "http://schemas.datacontract.org/2004/07/WMSServiceCore.Models.Outbound";
-    private const string ServiceContractName = "IAxataServicePool";
     private const string DefaultBranchCode = "01";
     private const string DefaultExternalChannel = "01";
     private const string DefaultActionCode = "01";
@@ -34,13 +31,12 @@ internal sealed class AxataSynchronizationLiveTransportService(
         var configuration = GetRequiredConfiguration();
         var operationName = ResolveOperationName(context.Definition.Code, DefaultOutboundOperationName);
         var payload = BuildOutboundOrderPayload(detail);
-        var envelope = BuildOutboundOrderEnvelope(payload, configuration, operationName);
-        var responseXml = await SendSoapAsync(
-            envelope,
-            configuration.MainEndpointUrl,
+        var response = await AddOutboundOrderAsync(
+            configuration,
             operationName,
+            payload,
             cancellationToken);
-        var serviceResponse = ParseServiceResponse(responseXml, operationName);
+        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
 
         return new AxataLiveDispatchResult(
             operationName,
@@ -49,10 +45,10 @@ internal sealed class AxataSynchronizationLiveTransportService(
             serviceResponse.State,
             serviceResponse.Message,
             AxataSynchronizationPayloadFactory.Serialize(payload),
-            RedactSensitiveXml(envelope),
-            responseXml,
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
             [
-                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` ile SOAP envelope gonderildi.",
+                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
                 $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi."
             ]);
     }
@@ -65,13 +61,12 @@ internal sealed class AxataSynchronizationLiveTransportService(
         var configuration = GetRequiredConfiguration();
         var operationName = ResolveOperationName(context.Definition.Code, DefaultInboundOperationName);
         var payload = BuildInboundOrderPayload(detail);
-        var envelope = BuildInboundOrderEnvelope(payload, configuration, operationName);
-        var responseXml = await SendSoapAsync(
-            envelope,
-            configuration.MainEndpointUrl,
+        var response = await AddInboundOrderAsync(
+            configuration,
             operationName,
+            payload,
             cancellationToken);
-        var serviceResponse = ParseServiceResponse(responseXml, operationName);
+        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
 
         return new AxataLiveDispatchResult(
             operationName,
@@ -80,10 +75,10 @@ internal sealed class AxataSynchronizationLiveTransportService(
             serviceResponse.State,
             serviceResponse.Message,
             AxataSynchronizationPayloadFactory.Serialize(payload),
-            RedactSensitiveXml(envelope),
-            responseXml,
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
             [
-                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` ile SOAP envelope gonderildi.",
+                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
                 $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi."
             ]);
     }
@@ -180,175 +175,218 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 .ToArray());
     }
 
-    private static string BuildOutboundOrderEnvelope(
+    private static async Task<AxataWcfDispatchResponse> AddOutboundOrderAsync(
+        AxataSynchronizationLiveTransportConfiguration configuration,
+        string operationName,
         AxataLegacyOutboundOrderPayload payload,
-        AxataSynchronizationLiveTransportConfiguration configuration,
-        string operationName) =>
-        BuildSoapEnvelope(operationName, configuration, service =>
-        [
-            new XElement(
-                XNamespace.Get(AxataWmsNamespace) + "OutboundOrderList",
-                new XElement(
-                    XNamespace.Get(OutboundDataContractNamespace) + "OutboundOrderV1",
-                    new XElement(
-                        XNamespace.Get(OutboundDataContractNamespace) + "ENT000",
-                        CreateElements(payload.Master, XNamespace.None)),
-                    new XElement(
-                        XNamespace.Get(OutboundDataContractNamespace) + "ENT001_List",
-                        payload.Lines.Select(line => new XElement(
-                            XNamespace.None + "ENT001",
-                            CreateElements(line, XNamespace.None))))))
-        ]);
-
-    private static string BuildInboundOrderEnvelope(
-        AxataLegacyInboundOrderPayload payload,
-        AxataSynchronizationLiveTransportConfiguration configuration,
-        string operationName) =>
-        BuildSoapEnvelope(operationName, configuration, service =>
-        [
-            new XElement(service + "ENT013_MSTList",
-                new XElement(service + "ENT013_MST", CreateElements(payload.Master, service))),
-            new XElement(service + "ENT013List",
-                payload.Lines.Select(line => new XElement(service + "ENT013", CreateElements(line, service))))
-        ]);
-
-    private static string BuildSoapEnvelope(
-        string operationName,
-        AxataSynchronizationLiveTransportConfiguration configuration,
-        Func<XNamespace, IReadOnlyCollection<XElement>> payloadFactory)
-    {
-        var soap = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-        var payloadElements = payloadFactory(service);
-
-        var document = new XDocument(
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soapenv", soap),
-                new XAttribute(XNamespace.Xmlns + "tem", service),
-                new XElement(
-                    soap + "Body",
-                    new XElement(service + "username", configuration.Username),
-                    new XElement(service + "password", configuration.Password),
-                    payloadElements)));
-
-        return document.ToString(SaveOptions.DisableFormatting);
-    }
-
-    private async Task<string> SendSoapAsync(
-        string envelope,
-        string endpointUrl,
-        string operationName,
         CancellationToken cancellationToken)
     {
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, endpointUrl)
+        var client = CreateMainClient(configuration.MainEndpointUrl);
+        var order = ToWcfOutboundOrder(payload);
+
+        try
         {
-            Content = new StringContent(envelope, Encoding.UTF8, "text/xml")
-        };
+            if (operationName.Equals("addOutboundOrderV2", StringComparison.OrdinalIgnoreCase))
+            {
+                var response = await client
+                    .addOutboundOrderV2Async(
+                        new AxataMain.addOutboundOrder_Req1(
+                            configuration.Username,
+                            configuration.Password,
+                            [order]))
+                    .WaitAsync(cancellationToken);
 
-        requestMessage.Headers.TryAddWithoutValidation(
-            "SOAPAction",
-            $"{ServiceNamespace}{ServiceContractName}/{operationName}");
+                CloseWcfClient(client);
+                return new AxataWcfDispatchResponse(response.state, response.message, response.processResult);
+            }
 
-        using var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(requestMessage, cancellationToken);
-        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (operationName.Equals(DefaultOutboundOperationName, StringComparison.OrdinalIgnoreCase))
+            {
+                var response = await client
+                    .addOutboundOrderAsync(
+                        new AxataMain.addOutboundOrder_Req(
+                            configuration.Username,
+                            configuration.Password,
+                            [order]))
+                    .WaitAsync(cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                ExtractSoapFaultOrDefault(
-                    responseContent,
-                    $"AXATA service returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}."));
+                CloseWcfClient(client);
+                return new AxataWcfDispatchResponse(response.state, response.message, response.processResult);
+            }
+
+            throw new NotSupportedException(
+                $"AXATA WCF outbound dispatch operation '{operationName}' is not supported.");
         }
-
-        return responseContent;
+        catch
+        {
+            AbortWcfClient(client);
+            throw;
+        }
     }
 
-    private static AxataServiceResponse ParseServiceResponse(string responseXml, string operationName)
+    private static async Task<AxataWcfDispatchResponse> AddInboundOrderAsync(
+        AxataSynchronizationLiveTransportConfiguration configuration,
+        string operationName,
+        AxataLegacyInboundOrderPayload payload,
+        CancellationToken cancellationToken)
     {
-        var document = XDocument.Parse(responseXml);
-        var faultMessage = ExtractSoapFaultOrDefault(responseXml, null);
+        var client = CreateMainClient(configuration.MainEndpointUrl);
+        var order = ToWcfInboundOrder(payload);
 
-        if (!string.IsNullOrWhiteSpace(faultMessage))
+        try
         {
-            return new AxataServiceResponse(false, null, faultMessage);
+            if (operationName.Equals("addInboundOrderV2", StringComparison.OrdinalIgnoreCase))
+            {
+                var response = await client
+                    .addInboundOrderV2Async(
+                        new AxataMain.addInboundOrder_Req1(
+                            configuration.Username,
+                            configuration.Password,
+                            [order]))
+                    .WaitAsync(cancellationToken);
+
+                CloseWcfClient(client);
+                return new AxataWcfDispatchResponse(response.state, response.message, response.processResultList);
+            }
+
+            if (operationName.Equals(DefaultInboundOperationName, StringComparison.OrdinalIgnoreCase))
+            {
+                var response = await client
+                    .addInboundOrderAsync(
+                        new AxataMain.addInboundOrder_Req(
+                            configuration.Username,
+                            configuration.Password,
+                            [order]))
+                    .WaitAsync(cancellationToken);
+
+                CloseWcfClient(client);
+                return new AxataWcfDispatchResponse(response.state, response.message, response.processResult);
+            }
+
+            throw new NotSupportedException(
+                $"AXATA WCF inbound dispatch operation '{operationName}' is not supported.");
+        }
+        catch
+        {
+            AbortWcfClient(client);
+            throw;
+        }
+    }
+
+    private static AxataOutbound.OutboundOrderV1 ToWcfOutboundOrder(AxataLegacyOutboundOrderPayload payload) =>
+        new()
+        {
+            ENT000 = new AxataMain.ENT000
+            {
+                S00SKOD = payload.Master.S00SKOD,
+                S00TESN = payload.Master.S00TESN,
+                S00DKAN = payload.Master.S00DKAN,
+                S00SMUS = payload.Master.S00SMUS,
+                S00TMUS = payload.Master.S00TMUS,
+                S00TADR = payload.Master.S00TADR,
+                S00FDRM = payload.Master.S00FDRM,
+                S00FBLK = payload.Master.S00FBLK,
+                S00HTP1 = payload.Master.S00HTP1,
+                S00HTP2 = payload.Master.S00HTP2
+            },
+            ENT001_List = payload.Lines
+                .Select(line => new AxataMain.ENT001
+                {
+                    S01SKOD = line.S01SKOD,
+                    S01TESL = line.S01TESL,
+                    S01KALN = line.S01KALN.ToString(CultureInfo.InvariantCulture),
+                    S01SKU = line.S01SKU,
+                    S01MIKT = (decimal)line.S01MIKT,
+                    S01DEPO = line.S01DEPO
+                })
+                .ToArray()
+        };
+
+    private static AxataInbound.InboundOrderV1 ToWcfInboundOrder(AxataLegacyInboundOrderPayload payload) =>
+        new()
+        {
+            ENT013_MST = new AxataMain.ENT013_MST
+            {
+                S13SKOD = payload.Master.S13SKOD,
+                S13HKOD = payload.Master.S13HKOD,
+                S13BNUM = payload.Master.S13BNUM,
+                S13AKOD = payload.Master.S13AKOD,
+                S13FIRM = payload.Master.S13FIRM,
+                S13SIPT = ToAxataDateNumber(payload.Master.S13SIPT),
+                S13TEST = ToAxataDateNumber(payload.Master.S13TEST)
+            },
+            ENT013_List = payload.Lines
+                .Select(line => new AxataMain.ENT013
+                {
+                    S13SKOD = line.S13SKOD,
+                    S13HKOD = line.S13HKOD,
+                    S13BNUM = line.S13BNUM,
+                    S13AKOD = line.S13AKOD,
+                    S13KALN = line.S13KALN.ToString(CultureInfo.InvariantCulture),
+                    S13SKU = line.S13SKU,
+                    S13FIRM = line.S13FIRM,
+                    S13MIKT = (decimal)line.S13MIKT,
+                    S13SIPT = ToAxataDateNumber(line.S13SIPT),
+                    S13TEST = ToAxataDateNumber(line.S13TEST)
+                })
+                .ToArray()
+        };
+
+    private static AxataMain.AxataServicePoolClient CreateMainClient(string endpointUrl) =>
+        new(
+            AxataMain.AxataServicePoolClient.EndpointConfiguration.BasicHttpBinding_IAxataServicePool,
+            endpointUrl);
+
+    private static void CloseWcfClient(ICommunicationObject client)
+    {
+        if (client.State == CommunicationState.Faulted)
+        {
+            client.Abort();
+            return;
         }
 
-        var stateText = document.Descendants()
-            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "state", StringComparison.OrdinalIgnoreCase))
-            ?.Value
-            ?.Trim();
-        var messageText = document.Descendants()
-            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "message", StringComparison.OrdinalIgnoreCase))
-            ?.Value
-            ?.Trim();
-        int? state = int.TryParse(stateText, out var parsedState) ? parsedState : null;
+        client.Close();
+    }
+
+    private static void AbortWcfClient(ICommunicationObject client)
+    {
+        if (client.State != CommunicationState.Closed)
+        {
+            client.Abort();
+        }
+    }
+
+    private static AxataServiceResponse ToServiceResponse(int? state, string? message, string operationName)
+    {
         var isSuccess = !state.HasValue || state.Value == 0;
 
         return new AxataServiceResponse(
             isSuccess,
             state,
-            string.IsNullOrWhiteSpace(messageText)
+            string.IsNullOrWhiteSpace(message)
                 ? $"{operationName} response received."
-                : messageText);
+                : message.Trim());
     }
 
-    private static string ExtractSoapFaultOrDefault(string responseContent, string? fallbackMessage)
-    {
-        try
-        {
-            var document = XDocument.Parse(responseContent);
-            var fault = document.Descendants()
-                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "Fault", StringComparison.OrdinalIgnoreCase));
-
-            if (fault is null)
+    private static string SerializeResponsePayload(
+        string operationName,
+        int? state,
+        string? message,
+        IReadOnlyCollection<AxataMain.ProcessResult>? processResults) =>
+        JsonSerializer.Serialize(
+            new
             {
-                return fallbackMessage ?? string.Empty;
-            }
+                operationName,
+                state,
+                message,
+                processResults
+            },
+            AxataSynchronizationJson.Options);
 
-            var faultString = fault.Descendants()
-                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "faultstring", StringComparison.OrdinalIgnoreCase))
-                ?.Value
-                ?.Trim();
-
-            return string.IsNullOrWhiteSpace(faultString)
-                ? fallbackMessage ?? "AXATA SOAP fault was returned."
-                : faultString;
-        }
-        catch
-        {
-            return fallbackMessage ?? string.Empty;
-        }
-    }
-
-    private static string RedactSensitiveXml(string xml)
-    {
-        try
-        {
-            var document = XDocument.Parse(xml);
-            foreach (var element in document
-                         .Descendants()
-                         .Where(element => string.Equals(
-                             element.Name.LocalName,
-                             "Password",
-                             StringComparison.OrdinalIgnoreCase)))
-            {
-                element.Value = "***";
-            }
-
-            return document.ToString(SaveOptions.DisableFormatting);
-        }
-        catch
-        {
-            return xml;
-        }
-    }
-
-    private static IEnumerable<XElement> CreateElements(object value, XNamespace elementNamespace) =>
-        value.GetType()
-            .GetProperties()
-            .Select(property => new XElement(elementNamespace + property.Name, property.GetValue(value) ?? string.Empty));
+    private static decimal? ToAxataDateNumber(string value) =>
+        decimal.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
 
     private static string BuildDocumentNumber(string documentSerie, int documentOrderNo) =>
         $"{documentSerie.Trim()}.{documentOrderNo.ToString(CultureInfo.InvariantCulture)}";
@@ -372,8 +410,8 @@ internal sealed record AxataLiveDispatchResult(
     int? ServiceState,
     string ServiceMessage,
     string PayloadJson,
-    string RequestXml,
-    string ResponseXml,
+    string RequestPayloadJson,
+    string ResponsePayloadJson,
     IReadOnlyCollection<string> Notes);
 
 internal sealed record AxataSynchronizationLiveTransportConfiguration(
@@ -385,6 +423,11 @@ internal sealed record AxataServiceResponse(
     bool IsSuccess,
     int? State,
     string Message);
+
+internal sealed record AxataWcfDispatchResponse(
+    int State,
+    string Message,
+    IReadOnlyCollection<AxataMain.ProcessResult>? ProcessResults);
 
 internal sealed record AxataLegacyOutboundOrderPayload(
     string DocumentNumber,

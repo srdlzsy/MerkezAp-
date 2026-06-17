@@ -78,7 +78,6 @@ public sealed class FaturaGoruntulemeController(
             UyumsoftConnectedServiceKind.EInvoice,
             new UyumsoftOperationInvocationRequest(
                 "GetInboxInvoicePdf",
-                null,
                 [new UyumsoftOperationParameterRequest("invoiceId", documentId)]),
             cancellationToken));
 

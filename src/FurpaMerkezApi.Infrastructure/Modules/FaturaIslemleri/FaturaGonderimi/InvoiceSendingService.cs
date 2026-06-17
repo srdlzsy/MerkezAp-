@@ -1,6 +1,5 @@
 using System.Data;
 using System.Data.Common;
-using System.Net.Http;
 using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
@@ -13,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using UyumsoftInvoice = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Invoice;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGonderimi;
 
@@ -20,18 +20,14 @@ public sealed class InvoiceSendingService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IEInvoiceDocumentRenderer invoiceDocumentRenderer,
-    IHttpClientFactory httpClientFactory,
     IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
     IOptions<EDespatchOptions> eDespatchOptions,
     IHostEnvironment hostEnvironment,
     ILogger<InvoiceSendingService> logger)
 {
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
-    private const string ServiceNamespace = "http://tempuri.org/";
     private const string InvoiceNamespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
     private const string AggregateNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
     private const string BasicNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";
-    private const string SendInvoiceSoapAction = "http://tempuri.org/IBasicIntegration/SendInvoice";
     private const short MikroUserNo = 39;
     private const string CurrencyCode = "TRY";
     private const string PreviewSource = "pending-send";
@@ -1046,134 +1042,75 @@ public sealed class InvoiceSendingService(
         CancellationToken cancellationToken)
     {
         var config = uyumsoftOptions.Value.EInvoice;
-        var envelope = BuildSendInvoiceEnvelope(config, invoice, scenario);
-        using var request = new HttpRequestMessage(HttpMethod.Post, config.EndpointUrl);
-        request.Headers.Add("SOAPAction", SendInvoiceSoapAction);
-        request.Content = new StringContent(envelope, Encoding.UTF8, "text/xml");
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
 
-        using var client = httpClientFactory.CreateClient(nameof(UyumsoftConnectedQueryService));
-        using var response = await client.SendAsync(request, cancellationToken);
-        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-        var fault = ExtractSoapFaultOrDefault(responseContent, null);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(fault)
-                    ? $"Uyumsoft gonderim istegi HTTP {(int)response.StatusCode} ile basarisiz oldu."
-                    : fault);
-        }
+            var response = await client.SendInvoiceAsync(
+                UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
+                [BuildInvoiceInfo(invoice, scenario)]);
 
-        if (!string.IsNullOrWhiteSpace(fault))
+            if (!response.IsSucceded)
+            {
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(response.Message)
+                        ? "Uyumsoft faturayi kabul etmedi."
+                        : response.Message);
+            }
+
+            var identity = response.Value?.FirstOrDefault()
+                           ?? throw new InvalidOperationException(
+                               "Uyumsoft SendInvoice response does not contain a sent invoice identity.");
+
+            if (string.IsNullOrWhiteSpace(identity.Number))
+            {
+                throw new InvalidOperationException(
+                    "Uyumsoft SendInvoice response does not contain a document number.");
+            }
+
+            return new ServiceSendResponse(
+                identity.Id?.Trim() ?? string.Empty,
+                identity.Number.Trim());
+        }
+        catch
         {
-            throw new InvalidOperationException(fault);
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
         }
-
-        return ParseSendResponse(responseContent);
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
     }
 
-    private string BuildSendInvoiceEnvelope(
-        UyumsoftServiceEndpointOptions config,
+    private static UyumsoftInvoice.InvoiceInfo BuildInvoiceInfo(
         BuiltInvoiceDocument invoice,
-        InvoiceSendingScenario scenario)
-    {
-        var soapNamespace = XNamespace.Get(SoapEnvelopeNamespace);
-        var service = XNamespace.Get(ServiceNamespace);
-        var invoiceElement = XDocument.Parse(invoice.XmlContent).Root
-                            ?? throw new InvalidOperationException("Invoice XML could not be parsed.");
-        var wrappedInvoiceElement = new XElement(
-            service + "Invoice",
-            invoiceElement.Attributes(),
-            invoiceElement.Nodes());
-        var invoiceInfo = new XElement(
-            service + "InvoiceInfo",
-            new XAttribute("LocalDocumentId", BuildLocalDocumentId(invoice.InvoiceId, scenario)),
-            wrappedInvoiceElement,
-            new XElement(
-                service + "TargetCustomer",
-                new XAttribute("VknTckn", invoice.CustomerTaxNumber),
-                new XAttribute("Alias", invoice.TargetAlias),
-                new XAttribute("Title", invoice.CustomerTitle)),
-            new XElement(
-                service + "Scenario",
-                scenario == InvoiceSendingScenario.EArsiv ? "eArchive" : "eInvoice"),
-            new XElement(
-                service + "CreateDateUtc",
-                DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")));
-
-        if (scenario == InvoiceSendingScenario.EArsiv)
+        InvoiceSendingScenario scenario) =>
+        new()
         {
-            invoiceInfo.Add(
-                new XElement(
-                    service + "EArchiveInvoiceInfo",
-                    new XAttribute("DeliveryType", "Electronic")));
-        }
-
-        var envelope = new XDocument(
-            new XElement(
-                soapNamespace + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soapenv", soapNamespace),
-                new XAttribute(XNamespace.Xmlns + "tem", service),
-                new XElement(
-                    soapNamespace + "Body",
-                    new XElement(
-                        service + "SendInvoice",
-                        new XElement(
-                            service + "userInfo",
-                            new XAttribute("Username", config.Username),
-                            new XAttribute("Password", config.Password)),
-                        new XElement(service + "invoices", invoiceInfo)))));
-
-        return envelope.ToString(SaveOptions.DisableFormatting);
-    }
-
-    private static ServiceSendResponse ParseSendResponse(string responseContent)
-    {
-        var document = XDocument.Parse(responseContent);
-        var resultElement = document.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == "SendInvoiceResult")
-            ?? throw new InvalidOperationException("Uyumsoft SendInvoice response could not be parsed.");
-        var isSucceededAttribute = resultElement.Attributes()
-            .FirstOrDefault(attribute => attribute.Name.LocalName == "IsSucceded")
-            ?.Value;
-        var message = resultElement.Attributes()
-            .FirstOrDefault(attribute => attribute.Name.LocalName == "Message")
-            ?.Value
-            ?.Trim();
-
-        if (!string.IsNullOrWhiteSpace(isSucceededAttribute) &&
-            bool.TryParse(isSucceededAttribute, out var isSucceeded) &&
-            !isSucceeded)
-        {
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(message)
-                    ? "Uyumsoft faturayi kabul etmedi."
-                    : message);
-        }
-
-        var valueElement = resultElement.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName is "Value" or "InvoiceIdentity")
-            ?? throw new InvalidOperationException(
-                "Uyumsoft SendInvoice response does not contain a sent invoice identity.");
-        var serviceDocumentId = valueElement.Attributes()
-            .FirstOrDefault(attribute => attribute.Name.LocalName == "Id")
-            ?.Value
-            ?.Trim()
-            ?? string.Empty;
-        var serviceDocumentNumber = valueElement.Attributes()
-            .FirstOrDefault(attribute => attribute.Name.LocalName == "Number")
-            ?.Value
-            ?.Trim()
-            ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(serviceDocumentNumber))
-        {
-            throw new InvalidOperationException(
-                "Uyumsoft SendInvoice response does not contain a document number.");
-        }
-
-        return new ServiceSendResponse(serviceDocumentId, serviceDocumentNumber);
-    }
+            Invoice = UyumsoftWcfClientHelper.DeserializeUbl<UyumsoftInvoice.InvoiceType>(
+                invoice.XmlContent,
+                "Invoice",
+                InvoiceNamespace),
+            LocalDocumentId = BuildLocalDocumentId(invoice.InvoiceId, scenario),
+            ExtraInformation = string.Empty,
+            TargetCustomer = new UyumsoftInvoice.CustomerInfo
+            {
+                VknTckn = invoice.CustomerTaxNumber,
+                Alias = invoice.TargetAlias,
+                Title = invoice.CustomerTitle
+            },
+            Scenario = scenario == InvoiceSendingScenario.EArsiv
+                ? UyumsoftInvoice.InvoiceScenarioChoosen.eArchive
+                : UyumsoftInvoice.InvoiceScenarioChoosen.eInvoice,
+            EArchiveInvoiceInfo = scenario == InvoiceSendingScenario.EArsiv
+                ? new UyumsoftInvoice.EArchiveInvoiceInformation
+                {
+                    DeliveryType = UyumsoftInvoice.InvoiceDeliveryType.Electronic
+                }
+                : null,
+            CreateDateUtc = DateTime.UtcNow
+        };
 
     private async Task MarkAsSentAsync(
         string documentSerie,
@@ -1638,32 +1575,6 @@ public sealed class InvoiceSendingService(
         }
 
         return Convert.ToDecimal(reader.GetValue(ordinal));
-    }
-
-    private static string? ExtractSoapFaultOrDefault(string responseContent, string? fallbackMessage)
-    {
-        try
-        {
-            var document = XDocument.Parse(responseContent);
-            var faultElement = document.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName == "Fault");
-
-            if (faultElement is null)
-            {
-                return fallbackMessage;
-            }
-
-            return faultElement.Descendants()
-                       .FirstOrDefault(element =>
-                           element.Name.LocalName is "faultstring" or "Reason" or "Text")
-                       ?.Value
-                       ?.Trim()
-                   ?? fallbackMessage;
-        }
-        catch
-        {
-            return fallbackMessage;
-        }
     }
 
     private sealed record PendingInvoiceRecord(

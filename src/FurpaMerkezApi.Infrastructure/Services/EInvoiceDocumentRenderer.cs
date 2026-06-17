@@ -143,7 +143,6 @@ public sealed class EInvoiceDocumentRenderer(
             UyumsoftConnectedServiceKind.EInvoice,
             new UyumsoftOperationInvocationRequest(
                 operationName,
-                null,
                 [new UyumsoftOperationParameterRequest("invoiceId", invoiceLookupId)]),
             cancellationToken);
 
@@ -162,7 +161,7 @@ public sealed class EInvoiceDocumentRenderer(
     {
         var candidates = new List<string?>(capacity: response.Nodes.Count + 2)
         {
-            response.RawXml,
+            response.ResponsePayloadJson,
             response.ScalarValue
         };
 
