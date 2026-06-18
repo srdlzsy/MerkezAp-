@@ -69,7 +69,11 @@ public sealed record InvoiceSendingListItemDto(
     string ReturnInvoiceNo,
     DateTime? ReturnInvoiceDate,
     string WarehouseName,
-    string Description);
+    string Description,
+    string? SendingPdfInvoiceUuid,
+    string? SendingPdfInvoiceNumber,
+    string? SendingPdfLocalDocumentId,
+    string? SendingPdfFilePath);
 
 public sealed record InvoiceSendingDetailDto(
     InvoiceSendingListItemDto Summary,

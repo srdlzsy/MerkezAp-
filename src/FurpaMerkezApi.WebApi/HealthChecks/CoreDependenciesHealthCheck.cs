@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Infrastructure.Persistence;
+using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Shopigo;
@@ -24,6 +25,13 @@ public sealed class CoreDependenciesHealthCheck(
         await CheckDbContextAsync("furpaDb", scope.ServiceProvider.GetRequiredService<FurpaDbContext>(), data, failures, cancellationToken);
         await CheckDbContextAsync("mikroReadDb", scope.ServiceProvider.GetRequiredService<MikroDbContext>(), data, failures, cancellationToken);
         await CheckDbContextAsync("mikroWriteDb", scope.ServiceProvider.GetRequiredService<MikroWriteDbContext>(), data, failures, cancellationToken);
+
+        var axataDbContext = scope.ServiceProvider.GetService<AxataDbContext>();
+
+        if (axataDbContext is not null)
+        {
+            await CheckDbContextAsync("axataDb", axataDbContext, data, failures, cancellationToken);
+        }
 
         var shopigoDbContext = scope.ServiceProvider.GetService<ShopigoCiroDbContext>();
 

@@ -171,6 +171,7 @@ using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.ZayiatFisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.ZayiatFisleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.ZayiatFisleri.List;
 using FurpaMerkezApi.Infrastructure.Persistence;
+using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Shopigo;
@@ -193,6 +194,7 @@ public static class ServiceCollectionExtensions
         var mikroConnection = configuration.GetConnectionString(mikroConnectionName);
         var mikroWriteConnection = configuration.GetConnectionString(mikroWriteConnectionName);
         var furpaConnection = configuration.GetConnectionString("FurpaConnection");
+        var axataConnection = configuration.GetConnectionString("AxataConnection");
         var shopigoCiroConnection = configuration.GetConnectionString("ShopigoCiroConnection");
 
         if (string.IsNullOrWhiteSpace(authConnection))
@@ -326,6 +328,18 @@ public static class ServiceCollectionExtensions
                     sqlServer.EnableRetryOnFailure();
                     sqlServer.CommandTimeout(180);
                 }));
+
+        if (!string.IsNullOrWhiteSpace(axataConnection))
+        {
+            services.AddDbContext<AxataDbContext>(options =>
+                options.UseSqlServer(
+                    axataConnection,
+                    sqlServer =>
+                    {
+                        sqlServer.EnableRetryOnFailure();
+                        sqlServer.CommandTimeout(180);
+                    }));
+        }
 
         if (!string.IsNullOrWhiteSpace(shopigoCiroConnection))
         {

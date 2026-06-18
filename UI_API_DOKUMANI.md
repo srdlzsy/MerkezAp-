@@ -6941,7 +6941,40 @@ Response `InvoiceSendingListResponse`:
       "returnInvoiceNo": "",
       "returnInvoiceDate": null,
       "warehouseName": "MERKEZ DEPO",
-      "description": "Aciklama"
+      "description": "Aciklama",
+      "sendingPdfInvoiceUuid": null,
+      "sendingPdfInvoiceNumber": null,
+      "sendingPdfLocalDocumentId": null,
+      "sendingPdfFilePath": null
+    },
+    {
+      "documentSerie": "FRP",
+      "documentOrderNo": 21645,
+      "invoiceId": "FRP2026000021645",
+      "documentDate": "2026-06-18T00:00:00",
+      "sentDocumentNo": "FRM2026600076468",
+      "isSent": true,
+      "customerCode": "120002",
+      "customerTitle": "GONDERILMIS MUSTERI",
+      "customerTcknVkn": "1234567890",
+      "targetAlias": "urn:mail:gonderilmis@firma.com",
+      "invoiceProfileId": "TICARIFATURA",
+      "invoiceTypeCode": "SATIS",
+      "scenario": 0,
+      "lineExtensionTotal": 1000.00,
+      "taxTotal": 180.00,
+      "chargeTotal": 0.00,
+      "payableTotal": 1180.00,
+      "shipmentDocumentNo": "",
+      "shipmentDocumentDate": null,
+      "returnInvoiceNo": "",
+      "returnInvoiceDate": null,
+      "warehouseName": "MERKEZ DEPO",
+      "description": "",
+      "sendingPdfInvoiceUuid": null,
+      "sendingPdfInvoiceNumber": "FRM2026600076468",
+      "sendingPdfLocalDocumentId": "EFatura:FRP2026000021645",
+      "sendingPdfFilePath": "/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/FRP2026000021645/pdf-file?alternateDocumentReference=FRM2026600076468&alternateDocumentReference=EFatura%3AFRP2026000021645"
     }
   ]
 }
@@ -6955,14 +6988,51 @@ Davranis:
 - `InvoiceSendingScenario` JSON response/body degeri sayisaldir: `0 = EFatura`, `1 = EArsiv`; query string tarafinda `EFatura` / `EArsiv` adlari da kullanilabilir
 - `isSent/SentState = 0` ise `cha_belge_no` bos olan kayitlar, `1` ise dolu olan kayitlar, `-1` ise tumu doner
 - `invoiceId` legacy WinForms mantigina uygun sekilde `seri + yil + 9 haneli sira` olarak uretilir
+- `invoiceId`, UBL icindeki `cbc:ID` degeridir; gonderilmis fatura PDF cozumlemesinde ilk arama anahtari olarak kullanilir
+- `sentDocumentNo` Mikro `cha_belge_no` alanidir; gonderim sonrasi kullaniciya gosterilen resmi belge numarasidir
+- `sendingPdfInvoiceUuid` Uyumsoft teknik UUID/ETTN degeridir; mevcut Mikro liste kaynaginda genellikle sakli olmadigi icin `null` olabilir
+- `sendingPdfInvoiceNumber`, PDF cozumlemesinde yedek referans olarak kullanilacak resmi belge numarasidir; `isSent = true` ve `sentDocumentNo` doluysa dolar
+- `sendingPdfLocalDocumentId`, gonderim sirasinda Uyumsoft'a verilen lokal referanstir; format `Scenario:invoiceId` seklindedir
+- `sendingPdfFilePath`, UI'nin PDF butonu icin dogrudan cagiracagi relative API yoludur
+- UI PDF butonunu `isSent && !!sendingPdfFilePath` ile aktif etmelidir; `serviceDocumentId` bu liste DTO'sunda beklenmemelidir
+- UI `invoiceId`, `sentDocumentNo` veya `sendingPdfInvoiceNumber` degerinden kendisi URL uretmemelidir; her zaman `sendingPdfFilePath` kullanilmalidir
+- `sendingPdfFilePath` teknik UUID yoksa `invoiceId` ile gelen fallback yolu tasir; teknik UUID cozumleme isi backend `by-number` route'unda yapilir
+- path icindeki tekrarli `alternateDocumentReference` query'leri backend icin ek cozumleme ipuclaridir; genellikle `sentDocumentNo` ve `Scenario:invoiceId` degerlerini tasir
 - `invoiceProfileId` alani:
   - e-fatura icin `TICARIFATURA` veya `TEMELFATURA`
   - e-arsiv icin `EARSIVFATURA`
 - `invoiceTypeCode` alani:
   - `IADE`, `ISTISNA`, `OZELMATRAH`, `SATIS`
+- `serviceDocumentId`, sadece `send` response'unda anlik donen Uyumsoft teknik id'dir; Mikro liste kaynagi bunu kalici saklamadigi icin liste ekraninda bu alana bagimli UI yazilmamalidir
 - iade faturalarinda Mikro `EBELGE_EVRAK_HAREKETLERI` kaydi `ebh_related_uid = CARI_HESAP_HAREKETLERI.cha_Guid` ile baglanir
 - `ebh_iade_fat_no1` ve `ebh_iade_fat_tarihi1` degerleri response'ta `returnInvoiceNo` / `returnInvoiceDate` olarak doner
 - iade referansi doluysa UBL'ye `cac:BillingReference/cac:InvoiceDocumentReference` eklenir; XSLT'deki `Iadeye Konu Olan Faturalar` tablosu bu alandan dolar
+
+PDF butonu icin kopyalanabilir UI kurali:
+
+```ts
+function canOpenSendingPdf(summary: InvoiceSendingListItemDto | null | undefined): boolean {
+  return Boolean(summary?.isSent && summary.sendingPdfFilePath);
+}
+
+async function openSendingPdf(summary: InvoiceSendingListItemDto, token: string) {
+  if (!summary.sendingPdfFilePath) {
+    throw new Error("Gonderilmis fatura icin PDF yolu API cevabinda bulunamadi.");
+  }
+
+  const response = await fetch(summary.sendingPdfFilePath, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gonderilmis fatura PDF alinamadi. HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+```
 
 ### Fatura Gonderimi Iade Referansi
 
@@ -7273,6 +7343,8 @@ Davranis:
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
+- `serviceDocumentId` Uyumsoft'un teknik id'sidir ve send response'unda bilgilendirme icin doner; mevcut Mikro tabloya yazilmadigi icin sonraki liste response'unda garanti edilmez
+- sonraki liste/PDF butonu icin UI'nin kullanacagi alan `sendingPdfFilePath` alanidir; backend bu path'i once `invoiceId` ile, yedek olarak `sentDocumentNo` ve `sendingPdfLocalDocumentId` ipuclariyla uretir
 - ayni anda `cha_kilitli = true`, `cha_degisti = true`, `cha_lastup_user = 39` ve `cha_lastup_date = now` set edilir
 - zaten gonderilmis kayitlar response'ta `isSucceeded = false` ile doner; genel request tamamen patlatilmaz
 
@@ -9072,22 +9144,31 @@ const pdfUrl = row.pdfFilePath;
 
 UI `pdfFilePath` degerini degistirmeden cagirir. `FRM2026600075612` gibi resmi fatura numarasindan URL uretmez.
 
-Fatura numarasiyla e-fatura PDF dosyasi, yalnizca legacy/operator endpointi:
+Fatura dokuman referansiyla e-fatura PDF dosyasi, yalnizca legacy/operator veya `fatura-gonderimi.sendingPdfFilePath` kullanimi:
 
 ```http
-GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/FRP2026000021435/pdf-file
+GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/FRP2026000021645/pdf-file?alternateDocumentReference=FRM2026600076468&alternateDocumentReference=EFatura%3AFRP2026000021645
 Authorization: Bearer {token}
 ```
+
+Query:
+
+- `alternateDocumentReference` opsiyoneldir
+- ayni query birden fazla kez gonderilebilir
+- `fatura-gonderimi` listesinde path kismi varsayilan olarak `summary.invoiceId` degerini tasir
+- query icinde `sentDocumentNo` ve `Scenario:invoiceId` gibi ek adaylar bulunabilir
+- gonderim listesinde backend tarafindan `sendingPdfFilePath` icine otomatik yazilir
+- UI manuel route kurarken bu query'yi uretmez; hazir `sendingPdfFilePath` kullanir
 
 Response:
 
 - `Content-Type: application/pdf`
 - `Content-Disposition: inline`
-- UI bu endpointleri fatura listesinde `PDF Goster` icin kullanabilir; JSON parse edilmez.
-- Yeni UI akisi her zaman `invoiceList.items[].pdfFilePath` alanini kullanmalidir.
-- `pdfFilePath`, `invoiceUuid` ile olusturulmus normal `{invoiceUuid}/pdf-file` route'unu tasir.
-- `invoiceNumber`/`DocumentId` kullaniciya gosterilir; PDF route'una teknik anahtar olarak gonderilmez.
-- `by-number` endpoint'i once resmi numarayla Uyumsoft listesinde teknik UUID cozmeye calisir ve yalnizca `DocumentId` degeri istenen numarayla birebir eslesen satiri kabul eder. Eslesme bulunmazsa ilk kaydi kullanmaz; yanlis faturayi acma riski yerine `Uyumsoft fatura numarasina gore teknik invoiceId bulunamadi` detayli `404` cevabi doner.
+- UI `summary.sendingPdfFilePath` veya generic Uyumsoft listede `invoiceList.items[].pdfFilePath` alanini degistirmeden cagirir; JSON parse edilmez.
+- Generic Uyumsoft listelerinde `pdfFilePath`, `invoiceUuid` ile olusturulmus normal `{invoiceUuid}/pdf-file` route'unu tasir.
+- Fatura gonderimi listesinde `serviceDocumentId` kalici olmadigi icin `sendingPdfFilePath`, `summary.invoiceId` ile olusturulmus `by-number` fallback route'unu tasiyabilir.
+- `invoiceNumber`/`DocumentId` kullaniciya gosterilir; generic Uyumsoft listesinde PDF route'una teknik anahtar olarak gonderilmez.
+- `by-number` endpoint'i path'teki referans ve varsa tekrarli `alternateDocumentReference` degerleriyle Uyumsoft listesinde teknik UUID cozmeye calisir; `InvoiceNumbers` ve `InvoiceIds` aramalarini dener. Yalnizca `DocumentId`, `InvoiceNumber` veya `LocalDocumentId` birebir eslesen satiri kabul eder. Eslesme bulunmazsa ilk kaydi kullanmaz; yanlis faturayi acma riski yerine `Uyumsoft fatura numarasina gore teknik invoiceId bulunamadi` detayli `404` cevabi doner.
 - Frontend `pdfFilePath` istegi hata verdiginde `by-number` endpoint'ine geri dusmemelidir; asil hata kullaniciya gosterilmeli ve correlationId loglanmalidir.
 
 Tekil e-irsaliye makbuz PDF sorgusu:

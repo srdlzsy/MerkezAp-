@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -14,17 +15,28 @@ internal sealed class AxataSynchronizationConnectionProbeService(
     FurpaDbContext furpaDbContext,
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
-    IOptionsMonitor<AxataSynchronizationOptions> options)
+    IOptionsMonitor<AxataSynchronizationOptions> options,
+    AxataDbContext? axataDbContext = null)
 {
     public async Task<AxataSynchronizationConnectionTestDto> ProbeAsync(CancellationToken cancellationToken)
     {
         var currentOptions = options.CurrentValue;
         var endpointTimeout = TimeSpan.FromSeconds(Math.Clamp(currentOptions.EndpointProbeTimeoutSeconds, 1, 60));
-        var probes = await Task.WhenAll(
+        var probeTasks = new List<Task<AxataSynchronizationProbeDto>>
+        {
             ProbeDatabaseAsync("Mikro SQL", mikroDbContext.Database, cancellationToken),
             ProbeDatabaseAsync("Furpa SQL", furpaDbContext.Database, cancellationToken),
+            axataDbContext is null
+                ? Task.FromResult(new AxataSynchronizationProbeDto(
+                    "AXATA SQL",
+                    "NotConfigured",
+                    null,
+                    "Connection string 'AxataConnection' is empty."))
+                : ProbeDatabaseAsync("AXATA SQL", axataDbContext.Database, cancellationToken),
             ProbeEndpointAsync("AXATA Main Endpoint", currentOptions.MainEndpointUrl, endpointTimeout, cancellationToken),
-            ProbeEndpointAsync("AXATA EXT Endpoint", currentOptions.ExtendedEndpointUrl, endpointTimeout, cancellationToken));
+            ProbeEndpointAsync("AXATA EXT Endpoint", currentOptions.ExtendedEndpointUrl, endpointTimeout, cancellationToken)
+        };
+        var probes = await Task.WhenAll(probeTasks);
 
         return new AxataSynchronizationConnectionTestDto(
             DateTime.UtcNow,

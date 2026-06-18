@@ -227,6 +227,11 @@ static void ValidateProductionConfiguration(
     ValidateRequiredSetting(configuration, $"ConnectionStrings:{mikroReadConnectionKey}");
     ValidateRequiredSetting(configuration, $"ConnectionStrings:{mikroWriteConnectionKey}");
 
+    if (configuration.GetValue("AxataSynchronization:Enabled", false))
+    {
+        ValidateRequiredSetting(configuration, "ConnectionStrings:AxataConnection");
+    }
+
     var jwtSecret = configuration["Jwt:SecretKey"];
 
     if (string.IsNullOrWhiteSpace(jwtSecret) ||
