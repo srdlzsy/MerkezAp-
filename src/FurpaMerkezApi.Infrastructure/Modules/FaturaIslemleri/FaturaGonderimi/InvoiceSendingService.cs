@@ -472,17 +472,61 @@ public sealed class InvoiceSendingService(
             throw new ArgumentException("Document serie is required.", nameof(documentSerie));
         }
 
-        var items = await LoadPendingInvoicesAsync(
-            scenario,
-            null,
-            null,
-            documentSerie.Trim(),
-            documentOrderNo,
-            cancellationToken);
+        var lookupSeries = ResolveDocumentSerieLookupCandidates(documentSerie);
 
-        return items.FirstOrDefault()
-               ?? throw new KeyNotFoundException(
-                   $"Pending invoice was not found for {documentSerie}/{documentOrderNo}.");
+        foreach (var lookupSerie in lookupSeries)
+        {
+            var items = await LoadPendingInvoicesAsync(
+                scenario,
+                null,
+                null,
+                lookupSerie,
+                documentOrderNo,
+                cancellationToken);
+
+            var invoice = items.FirstOrDefault();
+            if (invoice is not null)
+            {
+                return invoice;
+            }
+        }
+
+        throw new KeyNotFoundException(
+            $"Pending invoice was not found for {documentSerie}/{documentOrderNo}. Scenario={scenario}. Tried series: {string.Join(", ", lookupSeries)}.");
+    }
+
+    private static IReadOnlyCollection<string> ResolveDocumentSerieLookupCandidates(string documentSerie)
+    {
+        var trimmed = documentSerie.Trim();
+        var candidates = new List<string> { trimmed };
+
+        if (LooksLikeInvoiceIdDerivedSerie(trimmed))
+        {
+            candidates.Add(trimmed[..3]);
+        }
+
+        return candidates
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool LooksLikeInvoiceIdDerivedSerie(string documentSerie)
+    {
+        if (documentSerie.Length != 5 ||
+            !documentSerie[..3].All(char.IsLetter) ||
+            !documentSerie[^2..].All(char.IsDigit))
+        {
+            return false;
+        }
+
+        var yearSuffix = documentSerie[^2..];
+        var currentYear = DateTime.Today.Year % 100;
+        var plausibleYearSuffixes = Enumerable
+            .Range(currentYear - 1, 3)
+            .Select(year => ((year + 100) % 100).ToString("D2", System.Globalization.CultureInfo.InvariantCulture));
+
+        return plausibleYearSuffixes.Contains(yearSuffix, StringComparer.Ordinal);
     }
 
     private async Task<PendingInvoiceRecord> EnsureReturnReferenceBeforeSendAsync(

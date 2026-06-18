@@ -131,6 +131,27 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         return CreatePdfFileResult(response, invoiceId);
     }
 
+    [HttpGet("inbox/invoices/by-number/{invoiceNumber}/pdf-file")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInboxInvoicePdfFileByNumber(
+        string invoiceNumber,
+        CancellationToken cancellationToken)
+    {
+        var invoiceId = await ResolveInvoiceIdByNumberAsync(
+            "GetInboxInvoiceList",
+            invoiceNumber,
+            cancellationToken);
+
+        var response = await InvokeOperationAsync(
+            "GetInboxInvoicePdf",
+            cancellationToken,
+            Parameter("invoiceId", invoiceId));
+
+        return CreatePdfFileResult(response, invoiceNumber);
+    }
+
     [HttpGet("inbox/invoices/{invoiceId}/status-with-logs")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
@@ -202,6 +223,27 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         return CreatePdfFileResult(response, invoiceId);
     }
 
+    [HttpGet("outbox/invoices/by-number/{invoiceNumber}/pdf-file")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOutboxInvoicePdfFileByNumber(
+        string invoiceNumber,
+        CancellationToken cancellationToken)
+    {
+        var invoiceId = await ResolveInvoiceIdByNumberAsync(
+            "GetOutboxInvoiceList",
+            invoiceNumber,
+            cancellationToken);
+
+        var response = await InvokeOperationAsync(
+            "GetOutboxInvoicePdf",
+            cancellationToken,
+            Parameter("invoiceId", invoiceId));
+
+        return CreatePdfFileResult(response, invoiceNumber);
+    }
+
     [HttpGet("outbox/invoices/{invoiceId}/status-with-logs")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
@@ -260,6 +302,65 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         Response.Headers.ContentDisposition = $"inline; filename=\"{fileName}\"";
 
         return File(pdfBytes, "application/pdf");
+    }
+
+    private async Task<string> ResolveInvoiceIdByNumberAsync(
+        string listOperationName,
+        string invoiceNumber,
+        CancellationToken cancellationToken)
+    {
+        var trimmedInvoiceNumber = RequireQueryValue(invoiceNumber, nameof(invoiceNumber)).Trim();
+        var listResponse = await InvokeOperationAsync(
+            listOperationName,
+            cancellationToken,
+            Parameter("InvoiceNumbers", trimmedInvoiceNumber),
+            Parameter("PageIndex", "0"),
+            Parameter("PageSize", "5"));
+
+        var invoiceId = FindInvoiceIdByDocumentId(listResponse, trimmedInvoiceNumber)
+                        ?? FindFirstInvoiceId(listResponse);
+
+        return string.IsNullOrWhiteSpace(invoiceId)
+            ? throw new KeyNotFoundException(
+                $"Uyumsoft fatura numarasina gore teknik invoiceId bulunamadi. Fatura No: {trimmedInvoiceNumber}")
+            : invoiceId;
+    }
+
+    private static string? FindInvoiceIdByDocumentId(
+        UyumsoftOperationResponseDto response,
+        string documentId)
+    {
+        if (TryFindInvoiceIdByDocumentIdFromJson(response.ResponsePayloadJson, documentId, out var jsonInvoiceId))
+        {
+            return jsonInvoiceId;
+        }
+
+        return response.Nodes
+            .SelectMany(FlattenNodes)
+            .Select(node => new
+            {
+                InvoiceId = FindChildValue(node, "InvoiceId"),
+                DocumentId = FindChildValue(node, "DocumentId")
+            })
+            .FirstOrDefault(candidate =>
+                !string.IsNullOrWhiteSpace(candidate.InvoiceId) &&
+                string.Equals(candidate.DocumentId, documentId, StringComparison.OrdinalIgnoreCase))
+            ?.InvoiceId;
+    }
+
+    private static string? FindFirstInvoiceId(UyumsoftOperationResponseDto response)
+    {
+        if (TryFindFirstInvoiceIdFromJson(response.ResponsePayloadJson, out var jsonInvoiceId))
+        {
+            return jsonInvoiceId;
+        }
+
+        return response.Nodes
+            .SelectMany(FlattenNodes)
+            .FirstOrDefault(node =>
+                string.Equals(node.Name, "InvoiceId", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(node.Value))
+            ?.Value;
     }
 
     private static byte[] ExtractPdfBytes(UyumsoftOperationResponseDto response)
@@ -357,6 +458,152 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
 
         return false;
     }
+
+    private static bool TryFindInvoiceIdByDocumentIdFromJson(
+        string? payloadJson,
+        string documentId,
+        out string? invoiceId)
+    {
+        invoiceId = null;
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            invoiceId = FindInvoiceIdByDocumentId(document.RootElement, documentId);
+            return !string.IsNullOrWhiteSpace(invoiceId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryFindFirstInvoiceIdFromJson(
+        string? payloadJson,
+        out string? invoiceId)
+    {
+        invoiceId = null;
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            invoiceId = FindFirstInvoiceId(document.RootElement);
+            return !string.IsNullOrWhiteSpace(invoiceId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string? FindInvoiceIdByDocumentId(JsonElement element, string documentId)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var invoiceId = GetStringProperty(element, "invoiceId");
+            var candidateDocumentId = GetStringProperty(element, "documentId");
+
+            if (!string.IsNullOrWhiteSpace(invoiceId) &&
+                string.Equals(candidateDocumentId, documentId, StringComparison.OrdinalIgnoreCase))
+            {
+                return invoiceId;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var found = FindInvoiceIdByDocumentId(property.Value, documentId);
+
+                if (!string.IsNullOrWhiteSpace(found))
+                {
+                    return found;
+                }
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var found = FindInvoiceIdByDocumentId(item, documentId);
+
+                if (!string.IsNullOrWhiteSpace(found))
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindFirstInvoiceId(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var invoiceId = GetStringProperty(element, "invoiceId");
+
+            if (!string.IsNullOrWhiteSpace(invoiceId))
+            {
+                return invoiceId;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var found = FindFirstInvoiceId(property.Value);
+
+                if (!string.IsNullOrWhiteSpace(found))
+                {
+                    return found;
+                }
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var found = FindFirstInvoiceId(item);
+
+                if (!string.IsNullOrWhiteSpace(found))
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetStringProperty(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String)
+            {
+                return property.Value.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindChildValue(UyumsoftResponseNodeDto node, string childName) =>
+        node.Children
+            .FirstOrDefault(child =>
+                string.Equals(child.Name, childName, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(child.Value))
+            ?.Value;
 
     private static bool TryDecodeBase64(string? value, out byte[] bytes)
     {
