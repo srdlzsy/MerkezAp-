@@ -29,6 +29,19 @@ public sealed record SendInvoiceDocumentSelection(
     string DocumentSerie,
     int DocumentOrderNo);
 
+public sealed record InvoiceReturnReferenceCandidatesRequest(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    InvoiceSendingScenario Scenario);
+
+public sealed record UpdateInvoiceReturnReferenceRequest(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    InvoiceSendingScenario Scenario,
+    string? SourceDocumentSerie,
+    int? SourceDocumentOrderNo,
+    bool UseFallbackWhenNotSelected);
+
 public sealed record InvoiceSendingListResponse(
     int TotalCount,
     IReadOnlyCollection<InvoiceSendingListItemDto> Items);
@@ -53,6 +66,8 @@ public sealed record InvoiceSendingListItemDto(
     decimal PayableTotal,
     string ShipmentDocumentNo,
     DateTime? ShipmentDocumentDate,
+    string ReturnInvoiceNo,
+    DateTime? ReturnInvoiceDate,
     string WarehouseName,
     string Description);
 
@@ -77,6 +92,37 @@ public sealed record SendInvoiceDocumentResultDto(
     string? ServiceDocumentId,
     string? ServiceDocumentNumber,
     string Message);
+
+public sealed record InvoiceReturnReferenceCandidatesResponse(
+    InvoiceSendingListItemDto Invoice,
+    InvoiceReturnReferenceDto? CurrentReference,
+    InvoiceReturnReferenceCandidateDto? FallbackReference,
+    IReadOnlyCollection<InvoiceReturnReferenceCandidateDto> Candidates);
+
+public sealed record UpdateInvoiceReturnReferenceResponse(
+    InvoiceSendingListItemDto Invoice,
+    InvoiceReturnReferenceDto Reference);
+
+public sealed record InvoiceReturnReferenceDto(
+    string InvoiceNo,
+    DateTime? InvoiceDate,
+    string Source);
+
+public sealed record InvoiceReturnReferenceCandidateDto(
+    string SourceDocumentSerie,
+    int SourceDocumentOrderNo,
+    string InvoiceNo,
+    DateTime? InvoiceDate,
+    DateTime? DocumentDate,
+    DateTime CreatedAt,
+    string CustomerCode,
+    string CustomerTitle,
+    decimal LineExtensionTotal,
+    decimal TaxTotal,
+    decimal PayableTotal,
+    bool IsFallbackCandidate,
+    bool IsCurrentReference,
+    bool IsGeneratedInvoiceNo);
 
 public enum InvoiceSendingScenario
 {

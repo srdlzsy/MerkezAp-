@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Xsl;
@@ -7,6 +9,7 @@ using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
 using Microsoft.Extensions.Hosting;
+using QRCoder;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
@@ -121,7 +124,9 @@ public sealed class EInvoiceDocumentRenderer(
             preferEmbeddedXslt,
             fallbackToDefaultXslt,
             cancellationToken);
-        var htmlContent = TransformToHtml(invoiceDocument, resolvedXslt);
+        var htmlContent = AddStaticQrCode(
+            invoiceDocument,
+            TransformToHtml(invoiceDocument, resolvedXslt));
 
         return new InvoiceRenderedDocumentDto(
             source,
@@ -479,6 +484,123 @@ public sealed class EInvoiceDocumentRenderer(
 
         return stringWriter.ToString();
     }
+
+    private static string AddStaticQrCode(XDocument invoiceDocument, string htmlContent)
+    {
+        if (string.IsNullOrWhiteSpace(htmlContent) ||
+            !htmlContent.Contains("id=\"qrcode\"", StringComparison.OrdinalIgnoreCase))
+        {
+            return htmlContent;
+        }
+
+        var payload = BuildInvoiceQrPayload(invoiceDocument);
+
+        if (payload.Count == 0)
+        {
+            return htmlContent;
+        }
+
+        var json = JsonSerializer.Serialize(payload);
+        using var qrCodeData = QRCodeGenerator.GenerateQrCode(
+            json,
+            QRCodeGenerator.ECCLevel.M);
+        using var qrCode = new SvgQRCode(qrCodeData);
+        var svg = qrCode.GetGraphic(4);
+
+        return Regex.Replace(
+            htmlContent,
+            @"<div(?<attributes>[^>]*\bid\s*=\s*[""']qrcode[""'][^>]*)>\s*</div>",
+            match => $"<div{match.Groups["attributes"].Value}>{svg}</div>",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
+    }
+
+    private static Dictionary<string, string> BuildInvoiceQrPayload(XDocument invoiceDocument)
+    {
+        var invoice = FindInvoiceElement(invoiceDocument);
+
+        if (invoice is null)
+        {
+            return [];
+        }
+
+        var payload = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["vkntckn"] = ResolvePartyTaxNumber(invoice, "AccountingSupplierParty"),
+            ["avkntckn"] = ResolvePartyTaxNumber(invoice, "AccountingCustomerParty"),
+            ["senaryo"] = ReadDirectValue(invoice, "ProfileID"),
+            ["tip"] = ReadDirectValue(invoice, "InvoiceTypeCode"),
+            ["tarih"] = ReadDirectValue(invoice, "IssueDate"),
+            ["no"] = ReadDirectValue(invoice, "ID"),
+            ["ettn"] = ReadDirectValue(invoice, "UUID"),
+            ["parabirimi"] = ReadDirectValue(invoice, "DocumentCurrencyCode")
+        };
+
+        var monetaryTotal = invoice
+            .Elements()
+            .FirstOrDefault(element => element.Name.LocalName == "LegalMonetaryTotal");
+
+        payload["malhizmettoplam"] = ReadDirectValue(monetaryTotal, "LineExtensionAmount");
+
+        var taxSubtotals = invoice
+            .Elements()
+            .Where(element => element.Name.LocalName == "TaxTotal")
+            .Elements()
+            .Where(element => element.Name.LocalName == "TaxSubtotal")
+            .Where(IsVatSubtotal);
+
+        foreach (var subtotal in taxSubtotals)
+        {
+            var rate = ReadDirectValue(subtotal, "Percent");
+
+            if (string.IsNullOrWhiteSpace(rate))
+            {
+                continue;
+            }
+
+            payload[$"kdvmatrah({rate})"] = ReadDirectValue(subtotal, "TaxableAmount");
+            payload[$"hesaplanankdv({rate})"] = ReadDirectValue(subtotal, "TaxAmount");
+        }
+
+        payload["vergidahil"] = ReadDirectValue(monetaryTotal, "TaxInclusiveAmount");
+        payload["odenecek"] = ReadDirectValue(monetaryTotal, "PayableAmount");
+
+        return payload;
+    }
+
+    private static bool IsVatSubtotal(XElement subtotal) =>
+        subtotal
+            .Descendants()
+            .Any(element =>
+                element.Name.LocalName == "TaxTypeCode" &&
+                string.Equals(element.Value.Trim(), "0015", StringComparison.Ordinal));
+
+    private static string ResolvePartyTaxNumber(XElement invoice, string partyElementName)
+    {
+        var party = invoice
+            .Elements()
+            .FirstOrDefault(element => element.Name.LocalName == partyElementName);
+
+        return party?
+                   .Descendants()
+                   .FirstOrDefault(element =>
+                       element.Name.LocalName == "ID" &&
+                       element.Attributes().Any(attribute =>
+                           attribute.Name.LocalName == "schemeID" &&
+                           (string.Equals(attribute.Value, "VKN", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(attribute.Value, "TCKN", StringComparison.OrdinalIgnoreCase))))
+                   ?.Value
+                   .Trim()
+               ?? string.Empty;
+    }
+
+    private static string ReadDirectValue(XElement? parent, string elementName) =>
+        parent?
+            .Elements()
+            .FirstOrDefault(element => element.Name.LocalName == elementName)
+            ?.Value
+            .Trim()
+        ?? string.Empty;
 
     private sealed record ResolvedXslt(
         string Name,

@@ -6912,6 +6912,8 @@ Response `InvoiceSendingListResponse`:
       "payableTotal": 1180.00,
       "shipmentDocumentNo": "IRS-001",
       "shipmentDocumentDate": "2026-05-05T00:00:00",
+      "returnInvoiceNo": "",
+      "returnInvoiceDate": null,
       "warehouseName": "MERKEZ DEPO",
       "description": "Aciklama"
     }
@@ -6931,6 +6933,64 @@ Davranis:
   - e-arsiv icin `EARSIVFATURA`
 - `invoiceTypeCode` alani:
   - `IADE`, `ISTISNA`, `OZELMATRAH`, `SATIS`
+- iade faturalarinda Mikro `EBELGE_EVRAK_HAREKETLERI` kaydi `ebh_related_uid = CARI_HESAP_HAREKETLERI.cha_Guid` ile baglanir
+- `ebh_iade_fat_no1` ve `ebh_iade_fat_tarihi1` degerleri response'ta `returnInvoiceNo` / `returnInvoiceDate` olarak doner
+- iade referansi doluysa UBL'ye `cac:BillingReference/cac:InvoiceDocumentReference` eklenir; XSLT'deki `Iadeye Konu Olan Faturalar` tablosu bu alandan dolar
+
+### Fatura Gonderimi Iade Referansi
+
+Iade faturasi icin UI akisi:
+
+1. Liste/detail response'ta `invoiceTypeCode = IADE` ise UI her zaman `Iadeye konu fatura sec/degistir` aksiyonu gostermelidir.
+2. `returnInvoiceNo` bos ise gonderimden once referans secimi zorunludur.
+3. `returnInvoiceNo` doluysa mevcut referans gosterilir; kullanici bunun gecici sorgu/fallback ile doldugunu dusunuyorsa yine aday listesinden dogru faturayi secip guncelleyebilir.
+4. UI adaylari ceker.
+5. Kullanici dogru faturayi secerse referans kaydedilir.
+6. Kullanici secemiyorsa gecici olarak fallback kullanilabilir; fallback ayni carinin son normal faturasini secer.
+7. Sonra normal `send` endpoint'i cagrilir.
+
+`GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/return-reference-candidates?scenario=EFatura`
+
+Response `InvoiceReturnReferenceCandidatesResponse`:
+
+```json
+{
+  "currentReference": null,
+  "fallbackReference": {
+    "sourceDocumentSerie": "ABC",
+    "sourceDocumentOrderNo": 123,
+    "invoiceNo": "ABC2026000000123",
+    "invoiceDate": "2026-06-01T00:00:00",
+    "isFallbackCandidate": true,
+    "isGeneratedInvoiceNo": false
+  },
+  "candidates": []
+}
+```
+
+`PUT /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/return-reference`
+
+Secilen faturayi kaydetmek icin:
+
+```json
+{
+  "scenario": "EFatura",
+  "sourceDocumentSerie": "ABC",
+  "sourceDocumentOrderNo": 123,
+  "useFallbackWhenNotSelected": false
+}
+```
+
+Gecici fallback'i kaydetmek icin:
+
+```json
+{
+  "scenario": "EFatura",
+  "useFallbackWhenNotSelected": true
+}
+```
+
+Not: Kayit `EBELGE_EVRAK_HAREKETLERI.ebh_related_uid = iade faturasi cha_Guid` uzerinden update/insert edilir. `send` sirasinda iade referansi halen bos ise backend fallback'i otomatik deneyip kaydeder; fallback bulunamazsa gonderim durdurulur.
 
 ### Fatura Gonderimi Detay
 
@@ -6951,6 +7011,8 @@ Davranis:
 - belge tipi stok faturasi ise satirlar `STOK_HAREKETLERI` uzerinden, hizmet/demirbas ise ilgili hizmet sorgusu uzerinden toplanir
 - backend UBL invoice uretir
 - render icin once embedded XSLT denenir; yoksa `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olur
+- e-fatura XSLT'si firma logosunu ve GIB karekod alanlarini icerir; API render sonucunda JavaScript gerektiren bos karekod alani backend tarafinda statik SVG karekod ile doldurulur
+- statik karekod UBL icindeki satici/alici VKN-TCKN, senaryo, fatura tipi, tarih, fatura no, ETTN, para birimi, KDV matrahi, hesaplanan KDV ve toplam alanlarindan uretilir
 - bu endpoint sadece onizleme/render icindir; Uyumsoft'a gonderim yapmaz
 
 ### Fatura Gonderimi Render
@@ -7155,6 +7217,7 @@ Fatura modulu notlari:
 - `fatura-gonderimi` detail/send akisinda invoice XML Mikro verisinden backend tarafinda yeniden uretilir; UI ham XML kurmak zorunda degildir
 - `fatura-gonderimi` send akisinda basarili sonuclarda Mikro `cha_belge_no` geri yazilir ve kayit kilitlenir
 - render sirasinda once embedded XSLT denenir; yoksa WebApi icindeki `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olarak kullanilir
+- e-fatura HTML onizlemesindeki karekod backend tarafinda statik SVG olarak uretilir; UI iframe'inde script yetkisi acilmasi gerekmez
 - `fatura-goruntuleme` PDF/detail lookup anahtari `documentId`'dir; `invoiceId` ise kullaniciya gosterilen numaradir
 
 ## UI Tasarim Onerisi

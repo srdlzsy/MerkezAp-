@@ -692,7 +692,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             sth_evrakno_seri = documentSerie,
             sth_evrakno_sira = documentOrderNo,
             sth_satirno = rowNo,
-            sth_belge_no = documentNo,
+            sth_belge_no = "",
             sth_belge_tarih = documentDate,
             sth_stok_kod = line.StockCode.Trim(),
             sth_isk_mas1 = 0,

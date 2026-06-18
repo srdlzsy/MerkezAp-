@@ -428,6 +428,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetInvoiceSendingDocumentUseCase, GetInvoiceSendingDocumentUseCase>();
         services.AddScoped<IRenderInvoiceSendingDocumentUseCase, RenderInvoiceSendingDocumentUseCase>();
         services.AddScoped<ISendInvoiceSendingDocumentsUseCase, SendInvoiceSendingDocumentsUseCase>();
+        services.AddScoped<IListInvoiceReturnReferenceCandidatesUseCase, ListInvoiceReturnReferenceCandidatesUseCase>();
+        services.AddScoped<IUpdateInvoiceReturnReferenceUseCase, UpdateInvoiceReturnReferenceUseCase>();
         services.AddScoped<IListInvoiceViewingDocumentsUseCase, ListInvoiceViewingDocumentsUseCase>();
         services.AddScoped<ISynchronizeInvoiceViewingDocumentsUseCase, SynchronizeInvoiceViewingDocumentsUseCase>();
         services.AddScoped<IRenderInvoiceViewingDocumentUseCase, RenderInvoiceViewingDocumentUseCase>();

@@ -126,6 +126,7 @@ public sealed class InvoiceSendingService(
                     continue;
                 }
 
+                invoice = await EnsureReturnReferenceBeforeSendAsync(invoice, cancellationToken);
                 var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
                 var serviceResponse = await SendToUyumsoftAsync(
                     builtInvoice,
@@ -182,6 +183,94 @@ public sealed class InvoiceSendingService(
             results);
     }
 
+    public async Task<InvoiceReturnReferenceCandidatesResponse> ListReturnReferenceCandidatesAsync(
+        InvoiceReturnReferenceCandidatesRequest request,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await LoadSingleInvoiceAsync(
+            request.Scenario,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
+        EnsureReturnInvoice(invoice);
+
+        var candidates = await LoadReturnReferenceCandidatesAsync(
+            invoice,
+            null,
+            null,
+            100,
+            cancellationToken);
+        var fallback = candidates.FirstOrDefault();
+
+        return new InvoiceReturnReferenceCandidatesResponse(
+            MapListItem(invoice),
+            CreateCurrentReturnReference(invoice),
+            fallback is null ? null : MapReturnReferenceCandidate(fallback, invoice, true),
+            candidates
+                .Select((candidate, index) => MapReturnReferenceCandidate(candidate, invoice, index == 0))
+                .ToArray());
+    }
+
+    public async Task<UpdateInvoiceReturnReferenceResponse> UpdateReturnReferenceAsync(
+        UpdateInvoiceReturnReferenceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await LoadSingleInvoiceAsync(
+            request.Scenario,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
+        EnsureReturnInvoice(invoice);
+
+        ReturnReferenceCandidateRecord? reference = null;
+        var isFallbackReference = false;
+
+        if (!string.IsNullOrWhiteSpace(request.SourceDocumentSerie) &&
+            request.SourceDocumentOrderNo is > 0)
+        {
+            reference = (await LoadReturnReferenceCandidatesAsync(
+                    invoice,
+                    request.SourceDocumentSerie,
+                    request.SourceDocumentOrderNo,
+                    1,
+                    cancellationToken))
+                .FirstOrDefault();
+        }
+
+        if (reference is null && request.UseFallbackWhenNotSelected)
+        {
+            reference = (await LoadReturnReferenceCandidatesAsync(
+                    invoice,
+                    null,
+                    null,
+                    1,
+                    cancellationToken))
+                .FirstOrDefault();
+            isFallbackReference = reference is not null;
+        }
+
+        if (reference is null)
+        {
+            throw new InvalidOperationException(
+                "Iade faturasi icin iadeye konu fatura secilmeli veya gecici fallback kullanilmalidir.");
+        }
+
+        await SaveReturnReferenceAsync(invoice.InvoiceGuid, reference, cancellationToken);
+        var updatedInvoice = invoice with
+        {
+            ReturnInvoiceNo = reference.InvoiceNo,
+            ReturnInvoiceDate = reference.InvoiceDate
+        };
+
+        return new UpdateInvoiceReturnReferenceResponse(
+            MapListItem(updatedInvoice),
+            CreateReturnReference(
+                reference,
+                isFallbackReference
+                    ? ResolveReferenceSource(reference, "fallback")
+                    : ResolveReferenceSource(reference, "selected")));
+    }
+
     private async Task<IReadOnlyCollection<PendingInvoiceRecord>> LoadPendingInvoicesAsync(
         InvoiceSendingScenario scenario,
         DateTime? startDate,
@@ -226,6 +315,8 @@ public sealed class InvoiceSendingService(
                     ISNULL(ek.cha_ozel_matrah_kodu, N'') AS OzelMatrahKodu,
                     ISNULL((SELECT TOP (1) sth_belge_no FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid), N'') AS IrsaliyeNo,
                     (SELECT TOP (1) sth_belge_tarih FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid) AS IrsaliyeTarihi,
+                    ISNULL(iadeRef.IadeFaturaNo, N'') AS IadeFaturaNo,
+                    iadeRef.IadeFaturaTarihi,
                     ISNULL((
                         SELECT TOP (1) dep.dep_adi
                         FROM STOK_HAREKETLERI sh WITH (NOLOCK)
@@ -237,6 +328,25 @@ public sealed class InvoiceSendingService(
                 INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
                 INNER JOIN Furpa.dbo.FaturaSeries fatSer WITH (NOLOCK) ON ch.cha_evrakno_seri LIKE CONCAT(fatSer.seri, N'%')
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))) AS IadeFaturaNo,
+                        COALESCE(
+                            TRY_CONVERT(
+                                date,
+                                NULLIF(CONVERT(nvarchar(30), ebh.ebh_iade_fat_tarihi1), N''),
+                                112),
+                            TRY_CONVERT(date, ebh.ebh_iade_fat_tarihi1)
+                        ) AS IadeFaturaTarihi
+                    FROM dbo.EBELGE_EVRAK_HAREKETLERI ebh WITH (NOLOCK)
+                    WHERE
+                        ebh.ebh_related_uid = ch.cha_Guid
+                        AND ISNULL(ebh.ebh_iptal, 0) = 0
+                        AND NULLIF(LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))), N'') IS NOT NULL
+                    ORDER BY
+                        ebh.ebh_lastup_date DESC,
+                        ebh.ebh_create_date DESC
+                ) iadeRef
                 WHERE
                     (@startDate IS NULL OR CAST(ch.cha_belge_tarih AS date) >= CAST(@startDate AS date))
                     AND (@endDate IS NULL OR CAST(ch.cha_belge_tarih AS date) <= CAST(@endDate AS date))
@@ -280,6 +390,8 @@ public sealed class InvoiceSendingService(
                 OzelMatrahKodu,
                 IrsaliyeNo,
                 IrsaliyeTarihi,
+                IadeFaturaNo,
+                IadeFaturaTarihi,
                 Depo
             FROM Faturalar
             GROUP BY
@@ -310,6 +422,8 @@ public sealed class InvoiceSendingService(
                 OzelMatrahKodu,
                 IrsaliyeNo,
                 IrsaliyeTarihi,
+                IadeFaturaNo,
+                IadeFaturaTarihi,
                 Depo
             ORDER BY
                 BelgeTarihi DESC,
@@ -369,6 +483,287 @@ public sealed class InvoiceSendingService(
         return items.FirstOrDefault()
                ?? throw new KeyNotFoundException(
                    $"Pending invoice was not found for {documentSerie}/{documentOrderNo}.");
+    }
+
+    private async Task<PendingInvoiceRecord> EnsureReturnReferenceBeforeSendAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken)
+    {
+        if (!invoice.IsReturn || !string.IsNullOrWhiteSpace(invoice.ReturnInvoiceNo))
+        {
+            return invoice;
+        }
+
+        var fallback = (await LoadReturnReferenceCandidatesAsync(
+                invoice,
+                null,
+                null,
+                1,
+                cancellationToken))
+            .FirstOrDefault();
+
+        if (fallback is null)
+        {
+            throw new InvalidOperationException(
+                "Iade faturasi icin iadeye konu fatura bulunamadi. Fatura gondermeden once referans fatura secilmelidir.");
+        }
+
+        await SaveReturnReferenceAsync(invoice.InvoiceGuid, fallback, cancellationToken);
+
+        return invoice with
+        {
+            ReturnInvoiceNo = fallback.InvoiceNo,
+            ReturnInvoiceDate = fallback.InvoiceDate
+        };
+    }
+
+    private async Task<IReadOnlyCollection<ReturnReferenceCandidateRecord>> LoadReturnReferenceCandidatesAsync(
+        PendingInvoiceRecord invoice,
+        string? sourceDocumentSerie,
+        int? sourceDocumentOrderNo,
+        int topCount,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            WITH CandidateRows AS (
+                SELECT
+                    ISNULL(src.cha_evrakno_seri, N'') AS SourceDocumentSerie,
+                    ISNULL(src.cha_evrakno_sira, 0) AS SourceDocumentOrderNo,
+                    resolved.InvoiceNo,
+                    CAST(COALESCE(src.cha_belge_tarih, src.cha_tarihi) AS date) AS InvoiceDate,
+                    CAST(src.cha_belge_tarih AS date) AS DocumentDate,
+                    src.cha_create_date AS CreatedAt,
+                    ISNULL(NULLIF(src.cha_ciro_cari_kodu, N''), ISNULL(src.cha_kod, N'')) AS CustomerCode,
+                    LTRIM(RTRIM(CONCAT(
+                        ISNULL(c.cari_unvan1, N''),
+                        CASE WHEN ISNULL(c.cari_unvan2, N'') = N'' THEN N'' ELSE N' ' + c.cari_unvan2 END))) AS CustomerTitle,
+                    ISNULL(src.cha_aratoplam, 0) AS LineExtensionTotal,
+                    ISNULL(src.cha_vergi1, 0) AS TaxTotal,
+                    ISNULL(src.cha_aratoplam, 0) + ISNULL(src.cha_vergi1, 0) AS PayableTotal,
+                    CASE WHEN stored.StoredInvoiceNo IS NULL THEN 1 ELSE 0 END AS IsGeneratedInvoiceNo
+                FROM dbo.CARI_HESAP_HAREKETLERI ret WITH (NOLOCK)
+                INNER JOIN dbo.CARI_HESAP_HAREKETLERI src WITH (NOLOCK) ON src.cha_kod = ret.cha_kod
+                LEFT JOIN dbo.CARI_HESAPLAR c WITH (NOLOCK)
+                    ON c.cari_kod = ISNULL(NULLIF(src.cha_ciro_cari_kodu, N''), src.cha_kod)
+                CROSS APPLY (
+                    SELECT NULLIF(LTRIM(RTRIM(ISNULL(src.cha_belge_no, N''))), N'') AS StoredInvoiceNo
+                ) stored
+                CROSS APPLY (
+                    SELECT
+                        CASE
+                            WHEN stored.StoredInvoiceNo IS NOT NULL THEN stored.StoredInvoiceNo
+                            WHEN
+                                LEN(ISNULL(src.cha_evrakno_seri, N'')) BETWEEN 1 AND 13
+                                AND src.cha_evrakno_sira IS NOT NULL
+                            THEN
+                                LEFT(src.cha_evrakno_seri, 3)
+                                + N'20'
+                                + RIGHT(CONVERT(nvarchar(4), YEAR(GETDATE())), 2)
+                                + RIGHT(
+                                    REPLICATE(N'0', 16) + CONVERT(nvarchar(20), src.cha_evrakno_sira),
+                                    14 - LEN(src.cha_evrakno_seri))
+                            ELSE N''
+                        END AS InvoiceNo
+                ) resolved
+                WHERE
+                    ret.cha_Guid = @returnInvoiceGuid
+                    AND src.cha_Guid <> ret.cha_Guid
+                    AND ISNULL(src.cha_iptal, 0) = 0
+                    AND ISNULL(src.cha_normal_Iade, 0) = 0
+                    AND src.cha_evrak_tip = 0
+                    AND src.cha_tip = 1
+                    AND (@sourceDocumentSerie IS NULL OR src.cha_evrakno_seri = @sourceDocumentSerie)
+                    AND (@sourceDocumentOrderNo IS NULL OR src.cha_evrakno_sira = @sourceDocumentOrderNo)
+                    AND src.cha_create_date <= GETDATE()
+                    AND NULLIF(resolved.InvoiceNo, N'') IS NOT NULL
+            )
+            SELECT TOP (@topCount)
+                SourceDocumentSerie,
+                SourceDocumentOrderNo,
+                InvoiceNo,
+                InvoiceDate,
+                DocumentDate,
+                MIN(CreatedAt) AS CreatedAt,
+                CustomerCode,
+                CustomerTitle,
+                SUM(LineExtensionTotal) AS LineExtensionTotal,
+                SUM(TaxTotal) AS TaxTotal,
+                SUM(PayableTotal) AS PayableTotal,
+                MAX(IsGeneratedInvoiceNo) AS IsGeneratedInvoiceNo
+            FROM CandidateRows
+            GROUP BY
+                SourceDocumentSerie,
+                SourceDocumentOrderNo,
+                InvoiceNo,
+                InvoiceDate,
+                DocumentDate,
+                CustomerCode,
+                CustomerTitle
+            ORDER BY
+                COALESCE(InvoiceDate, DocumentDate) DESC,
+                MIN(CreatedAt) DESC,
+                SourceDocumentSerie DESC,
+                SourceDocumentOrderNo DESC;
+            """;
+
+        var rows = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@returnInvoiceGuid", invoice.InvoiceGuid);
+                AddParameter(command, "@sourceDocumentSerie", string.IsNullOrWhiteSpace(sourceDocumentSerie) ? null : sourceDocumentSerie.Trim());
+                AddParameter(command, "@sourceDocumentOrderNo", sourceDocumentOrderNo);
+                AddParameter(command, "@topCount", Math.Max(1, topCount));
+            },
+            reader => new ReturnReferenceCandidateRecord(
+                ReadString(reader, "SourceDocumentSerie"),
+                ReadInt32(reader, "SourceDocumentOrderNo"),
+                ReadString(reader, "InvoiceNo"),
+                ReadNullableDateTime(reader, "InvoiceDate"),
+                ReadNullableDateTime(reader, "DocumentDate"),
+                ReadDateTime(reader, "CreatedAt"),
+                ReadString(reader, "CustomerCode"),
+                ReadString(reader, "CustomerTitle"),
+                RoundMoney(ReadDecimal(reader, "LineExtensionTotal")),
+                RoundMoney(ReadDecimal(reader, "TaxTotal")),
+                RoundMoney(ReadDecimal(reader, "PayableTotal")),
+                ReadInt32(reader, "IsGeneratedInvoiceNo") != 0),
+            cancellationToken);
+
+        return rows;
+    }
+
+    private async Task SaveReturnReferenceAsync(
+        Guid returnInvoiceGuid,
+        ReturnReferenceCandidateRecord reference,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE dbo.EBELGE_EVRAK_HAREKETLERI
+            SET
+                ebh_iade_fat_no1 = @returnInvoiceNo,
+                ebh_iade_fat_tarihi1 = @returnInvoiceDateText,
+                ebh_degisti = 1,
+                ebh_lastup_user = @mikroUserNo,
+                ebh_lastup_date = GETDATE()
+            WHERE
+                ebh_related_uid = @returnInvoiceGuid
+                AND ISNULL(ebh_iptal, 0) = 0;
+
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO dbo.EBELGE_EVRAK_HAREKETLERI
+                (
+                    ebh_Guid,
+                    ebh_DBCno,
+                    ebh_SpecRecNo,
+                    ebh_iptal,
+                    ebh_fileid,
+                    ebh_hidden,
+                    ebh_kilitli,
+                    ebh_degisti,
+                    ebh_CheckSum,
+                    Ebh_create_user,
+                    ebh_create_date,
+                    ebh_lastup_user,
+                    ebh_lastup_date,
+                    ebh_special1,
+                    ebh_special2,
+                    ebh_special3,
+                    ebh_hareket_tipi,
+                    ebh_related_uid,
+                    ebh_odeme_sekli,
+                    ebh_odeme_aciklama,
+                    ebh_odeme_aracisi,
+                    ebh_satisin_webadresi,
+                    ebh_gonderi_tarihi,
+                    ebh_gonderi_tasiyan,
+                    ebh_gonderi_no,
+                    ebh_iade_fat_no1,
+                    ebh_iade_fat_tarihi1,
+                    ebh_ekli_dosya,
+                    ebh_mukellefiyetdosyano,
+                    ebh_mukellefiyetdonembasi,
+                    ebh_mukellefiyetdonemsonu,
+                    ebh_konaklamafaturasi_fl,
+                    ebh_ImeI_no,
+                    ebh_mac_no,
+                    ebh_enerjifaturatipi,
+                    ebh_arac_plakano,
+                    ebh_arac_kimlikno,
+                    ebh_sarjunite_serino,
+                    ebh_sarj_baslama,
+                    ebh_sarj_bitis,
+                    ebh_esurapor_id,
+                    ebh_esuRapor_tarihi,
+                    ebh_Internet_satis_fl
+                )
+                VALUES
+                (
+                    NEWID(),
+                    0,
+                    0,
+                    0,
+                    597,
+                    0,
+                    0,
+                    0,
+                    0,
+                    @mikroUserNo,
+                    GETDATE(),
+                    @mikroUserNo,
+                    GETDATE(),
+                    N'',
+                    N'',
+                    N'',
+                    1,
+                    @returnInvoiceGuid,
+                    0,
+                    N'',
+                    N'',
+                    N'',
+                    CONVERT(nvarchar(8), GETDATE(), 112),
+                    N'',
+                    N'',
+                    @returnInvoiceNo,
+                    @returnInvoiceDateText,
+                    N'',
+                    N'',
+                    N'18991230',
+                    N'18991230',
+                    0,
+                    N'',
+                    N'',
+                    0,
+                    N'',
+                    N'',
+                    N'',
+                    N'18991230',
+                    N'18991230',
+                    N'',
+                    N'18991230',
+                    0
+                );
+            END;
+            """;
+
+        await ExecuteNonQueryAsync(
+            mikroWriteDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@returnInvoiceGuid", returnInvoiceGuid);
+                AddParameter(command, "@returnInvoiceNo", reference.InvoiceNo.Trim());
+                AddParameter(
+                    command,
+                    "@returnInvoiceDateText",
+                    reference.InvoiceDate.HasValue
+                        ? reference.InvoiceDate.Value.ToString("yyyyMMdd")
+                        : string.Empty);
+                AddParameter(command, "@mikroUserNo", MikroUserNo);
+            },
+            cancellationToken);
     }
 
     private async Task<IReadOnlyCollection<InvoiceLineSeed>> LoadInvoiceLinesAsync(
@@ -632,6 +1027,12 @@ public sealed class InvoiceSendingService(
         elements.Add(new XElement(basic + "DocumentCurrencyCode", CurrencyCode));
         elements.Add(new XElement(basic + "LineCountNumeric", lineElements.Count));
 
+        var billingReference = BuildBillingReferenceElement(invoice);
+        if (billingReference is not null)
+        {
+            elements.Add(billingReference);
+        }
+
         if (!string.IsNullOrWhiteSpace(invoice.ShipmentDocumentNo))
         {
             var despatchDocumentReference = new XElement(
@@ -694,6 +1095,34 @@ public sealed class InvoiceSendingService(
         elements.AddRange(lineElements);
 
         return new XElement(invoiceNamespace + "Invoice", elements);
+    }
+
+    private static XElement? BuildBillingReferenceElement(PendingInvoiceRecord invoice)
+    {
+        if (!invoice.IsReturn || string.IsNullOrWhiteSpace(invoice.ReturnInvoiceNo))
+        {
+            return null;
+        }
+
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var documentReference = new XElement(
+            aggregate + "InvoiceDocumentReference",
+            new XElement(basic + "ID", invoice.ReturnInvoiceNo.Trim()));
+
+        if (invoice.ReturnInvoiceDate.HasValue)
+        {
+            documentReference.Add(
+                new XElement(
+                    basic + "IssueDate",
+                    invoice.ReturnInvoiceDate.Value.ToString("yyyy-MM-dd")));
+        }
+
+        documentReference.Add(new XElement(basic + "DocumentType", "FATURA"));
+
+        return new XElement(
+            aggregate + "BillingReference",
+            documentReference);
     }
 
     private static IReadOnlyCollection<object> BuildInvoiceNotes(
@@ -1193,6 +1622,8 @@ public sealed class InvoiceSendingService(
             payableTotal,
             ReadString(reader, "IrsaliyeNo"),
             ReadNullableDateTime(reader, "IrsaliyeTarihi"),
+            ReadString(reader, "IadeFaturaNo"),
+            ReadNullableDateTime(reader, "IadeFaturaTarihi"),
             ReadString(reader, "Depo"),
             ReadString(reader, "Aciklama"),
             scenario);
@@ -1219,8 +1650,78 @@ public sealed class InvoiceSendingService(
             invoice.PayableTotal,
             invoice.ShipmentDocumentNo,
             invoice.ShipmentDocumentDate,
+            invoice.ReturnInvoiceNo,
+            invoice.ReturnInvoiceDate,
             invoice.WarehouseName,
             invoice.Description);
+
+    private static void EnsureReturnInvoice(PendingInvoiceRecord invoice)
+    {
+        if (!invoice.IsReturn)
+        {
+            throw new InvalidOperationException("Bu belge iade faturasi degil.");
+        }
+    }
+
+    private static InvoiceReturnReferenceDto? CreateCurrentReturnReference(PendingInvoiceRecord invoice) =>
+        string.IsNullOrWhiteSpace(invoice.ReturnInvoiceNo)
+            ? null
+            : new InvoiceReturnReferenceDto(
+                invoice.ReturnInvoiceNo,
+                invoice.ReturnInvoiceDate,
+                "saved");
+
+    private static InvoiceReturnReferenceDto CreateReturnReference(
+        ReturnReferenceCandidateRecord reference,
+        string source) =>
+        new(reference.InvoiceNo, reference.InvoiceDate, source);
+
+    private static InvoiceReturnReferenceCandidateDto MapReturnReferenceCandidate(
+        ReturnReferenceCandidateRecord candidate,
+        PendingInvoiceRecord invoice,
+        bool isFallbackCandidate) =>
+        new(
+            candidate.SourceDocumentSerie,
+            candidate.SourceDocumentOrderNo,
+            candidate.InvoiceNo,
+            candidate.InvoiceDate,
+            candidate.DocumentDate,
+            candidate.CreatedAt,
+            candidate.CustomerCode,
+            candidate.CustomerTitle,
+            candidate.LineExtensionTotal,
+            candidate.TaxTotal,
+            candidate.PayableTotal,
+            isFallbackCandidate,
+            IsCurrentReturnReference(invoice, candidate),
+            candidate.IsGeneratedInvoiceNo);
+
+    private static bool IsCurrentReturnReference(
+        PendingInvoiceRecord invoice,
+        ReturnReferenceCandidateRecord candidate)
+    {
+        if (string.IsNullOrWhiteSpace(invoice.ReturnInvoiceNo))
+        {
+            return false;
+        }
+
+        if (!string.Equals(
+                invoice.ReturnInvoiceNo.Trim(),
+                candidate.InvoiceNo.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !invoice.ReturnInvoiceDate.HasValue ||
+               !candidate.InvoiceDate.HasValue ||
+               invoice.ReturnInvoiceDate.Value.Date == candidate.InvoiceDate.Value.Date;
+    }
+
+    private static string ResolveReferenceSource(
+        ReturnReferenceCandidateRecord reference,
+        string source) =>
+        reference.IsGeneratedInvoiceNo ? $"{source}-generated" : source;
 
     private static void ValidateListRequest(InvoiceSendingListRequest request)
     {
@@ -1502,6 +2003,39 @@ public sealed class InvoiceSendingService(
         return items;
     }
 
+    private static async Task<int> ExecuteNonQueryAsync(
+        DbContext context,
+        string sql,
+        Action<DbCommand> configureCommand,
+        CancellationToken cancellationToken)
+    {
+        var connection = context.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 180;
+            configureCommand(command);
+
+            return await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
     private static void AddParameter(DbCommand command, string name, object? value)
     {
         var parameter = command.CreateParameter();
@@ -1608,6 +2142,8 @@ public sealed class InvoiceSendingService(
         decimal PayableTotal,
         string ShipmentDocumentNo,
         DateTime? ShipmentDocumentDate,
+        string ReturnInvoiceNo,
+        DateTime? ReturnInvoiceDate,
         string WarehouseName,
         string Description,
         InvoiceSendingScenario Scenario)
@@ -1616,6 +2152,20 @@ public sealed class InvoiceSendingService(
 
         public bool IsReturn => ReturnFlag != 0;
     }
+
+    private sealed record ReturnReferenceCandidateRecord(
+        string SourceDocumentSerie,
+        int SourceDocumentOrderNo,
+        string InvoiceNo,
+        DateTime? InvoiceDate,
+        DateTime? DocumentDate,
+        DateTime CreatedAt,
+        string CustomerCode,
+        string CustomerTitle,
+        decimal LineExtensionTotal,
+        decimal TaxTotal,
+        decimal PayableTotal,
+        bool IsGeneratedInvoiceNo);
 
     private sealed record InvoiceLineSeed(
         string Code,

@@ -1252,7 +1252,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             TransitWarehouseNo,
             analysis.Document.AxataDate ?? DateTime.Today,
             analysis.Document.AxataDate ?? DateTime.Today,
-            analysis.Document.AxataDeliveryNo,
+            "",
             analysis.Document.AxataDeliveryNo,
             analysis.MatchedLines
                 .OrderBy(line => line.AxataLine.LineNo)

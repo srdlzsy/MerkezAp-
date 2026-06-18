@@ -19,6 +19,8 @@ public sealed class FaturaGonderimiController(
     IGetInvoiceSendingDocumentUseCase getInvoiceSendingDocumentUseCase,
     IRenderInvoiceSendingDocumentUseCase renderInvoiceSendingDocumentUseCase,
     ISendInvoiceSendingDocumentsUseCase sendInvoiceSendingDocumentsUseCase,
+    IListInvoiceReturnReferenceCandidatesUseCase listInvoiceReturnReferenceCandidatesUseCase,
+    IUpdateInvoiceReturnReferenceUseCase updateInvoiceReturnReferenceUseCase,
     IEInvoiceDocumentRenderer invoiceDocumentRenderer,
     IUyumsoftConnectedQueryService queryService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
@@ -81,6 +83,43 @@ public sealed class FaturaGonderimiController(
                 request?.Profile ?? InvoiceDocumentProfile.Auto,
                 request?.PreferEmbeddedXslt,
                 request?.FallbackToDefaultXslt ?? true),
+            cancellationToken));
+
+    [HttpGet("{documentSerie}/{documentOrderNo:int}/return-reference-candidates")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(InvoiceReturnReferenceCandidatesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InvoiceReturnReferenceCandidatesResponse>> ReturnReferenceCandidates(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery] InvoiceSendingScenario scenario = InvoiceSendingScenario.EFatura,
+        CancellationToken cancellationToken = default) =>
+        Ok(await listInvoiceReturnReferenceCandidatesUseCase.ExecuteAsync(
+            new InvoiceReturnReferenceCandidatesRequest(
+                documentSerie,
+                documentOrderNo,
+                scenario),
+            cancellationToken));
+
+    [HttpPut("{documentSerie}/{documentOrderNo:int}/return-reference")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(UpdateInvoiceReturnReferenceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UpdateInvoiceReturnReferenceResponse>> UpdateReturnReference(
+        string documentSerie,
+        int documentOrderNo,
+        [FromBody, Required] UpdateInvoiceReturnReferenceHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await updateInvoiceReturnReferenceUseCase.ExecuteAsync(
+            new UpdateInvoiceReturnReferenceRequest(
+                documentSerie,
+                documentOrderNo,
+                request.Scenario,
+                request.SourceDocumentSerie,
+                request.SourceDocumentOrderNo,
+                request.UseFallbackWhenNotSelected),
             cancellationToken));
 
     [HttpPost("send")]
@@ -191,6 +230,19 @@ public sealed class InvoiceSendingRenderHttpRequest
 
     [System.Text.Json.Serialization.JsonPropertyName("fallbackToGeneral")]
     public bool FallbackToDefaultXslt { get; init; } = true;
+}
+
+public sealed class UpdateInvoiceReturnReferenceHttpRequest
+{
+    public InvoiceSendingScenario Scenario { get; init; } = InvoiceSendingScenario.EFatura;
+
+    [StringLength(20)]
+    public string? SourceDocumentSerie { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? SourceDocumentOrderNo { get; init; }
+
+    public bool UseFallbackWhenNotSelected { get; init; }
 }
 
 public sealed class InvoiceSendingBatchHttpRequest
