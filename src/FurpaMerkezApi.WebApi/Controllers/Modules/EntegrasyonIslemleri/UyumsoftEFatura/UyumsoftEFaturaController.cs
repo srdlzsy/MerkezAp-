@@ -71,64 +71,64 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
             cancellationToken,
             Parameter("format", RequireQueryValue(format, nameof(format)))));
 
-    [HttpGet("inbox/invoices/{invoiceId}")]
+    [HttpGet("inbox/invoices/{invoiceUuid}")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetInboxInvoice(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetInboxInvoice",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("inbox/invoices/{invoiceId}/data")]
+    [HttpGet("inbox/invoices/{invoiceUuid}/data")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetInboxInvoiceData(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetInboxInvoiceData",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("inbox/invoices/{invoiceId}/view")]
+    [HttpGet("inbox/invoices/{invoiceUuid}/view")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetInboxInvoiceView(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetInboxInvoiceView",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("inbox/invoices/{invoiceId}/pdf")]
+    [HttpGet("inbox/invoices/{invoiceUuid}/pdf")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetInboxInvoicePdf(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetInboxInvoicePdf",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("inbox/invoices/{invoiceId}/pdf-file")]
+    [HttpGet("inbox/invoices/{invoiceUuid}/pdf-file")]
     [Authorize(Policy = DetailPolicy)]
     [Produces("application/pdf")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetInboxInvoicePdfFile(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken)
     {
         var response = await InvokeOperationAsync(
             "GetInboxInvoicePdf",
             cancellationToken,
-            Parameter("invoiceId", invoiceId));
+            Parameter("invoiceId", invoiceUuid));
 
-        return CreatePdfFileResult(response, invoiceId);
+        return CreatePdfFileResult(response, invoiceUuid);
     }
 
     [HttpGet("inbox/invoices/by-number/{invoiceNumber}/pdf-file")]
@@ -139,7 +139,7 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         string invoiceNumber,
         CancellationToken cancellationToken)
     {
-        var invoiceId = await ResolveInvoiceIdByNumberAsync(
+        var invoiceUuid = await ResolveInvoiceIdByNumberAsync(
             "GetInboxInvoiceList",
             invoiceNumber,
             cancellationToken);
@@ -147,80 +147,80 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         var response = await InvokeOperationAsync(
             "GetInboxInvoicePdf",
             cancellationToken,
-            Parameter("invoiceId", invoiceId));
+            Parameter("invoiceId", invoiceUuid));
 
         return CreatePdfFileResult(response, invoiceNumber);
     }
 
-    [HttpGet("inbox/invoices/{invoiceId}/status-with-logs")]
+    [HttpGet("inbox/invoices/{invoiceUuid}/status-with-logs")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetInboxInvoiceStatusWithLogs(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetInboxInvoiceStatusWithLogs",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("outbox/invoices/{invoiceId}")]
+    [HttpGet("outbox/invoices/{invoiceUuid}")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetOutboxInvoice(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetOutboxInvoice",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("outbox/invoices/{invoiceId}/data")]
+    [HttpGet("outbox/invoices/{invoiceUuid}/data")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetOutboxInvoiceData(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetOutboxInvoiceData",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("outbox/invoices/{invoiceId}/view")]
+    [HttpGet("outbox/invoices/{invoiceUuid}/view")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetOutboxInvoiceView(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetOutboxInvoiceView",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("outbox/invoices/{invoiceId}/pdf")]
+    [HttpGet("outbox/invoices/{invoiceUuid}/pdf")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetOutboxInvoicePdf(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetOutboxInvoicePdf",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("outbox/invoices/{invoiceId}/pdf-file")]
+    [HttpGet("outbox/invoices/{invoiceUuid}/pdf-file")]
     [Authorize(Policy = DetailPolicy)]
     [Produces("application/pdf")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetOutboxInvoicePdfFile(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken)
     {
         var response = await InvokeOperationAsync(
             "GetOutboxInvoicePdf",
             cancellationToken,
-            Parameter("invoiceId", invoiceId));
+            Parameter("invoiceId", invoiceUuid));
 
-        return CreatePdfFileResult(response, invoiceId);
+        return CreatePdfFileResult(response, invoiceUuid);
     }
 
     [HttpGet("outbox/invoices/by-number/{invoiceNumber}/pdf-file")]
@@ -231,7 +231,7 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         string invoiceNumber,
         CancellationToken cancellationToken)
     {
-        var invoiceId = await ResolveInvoiceIdByNumberAsync(
+        var invoiceUuid = await ResolveInvoiceIdByNumberAsync(
             "GetOutboxInvoiceList",
             invoiceNumber,
             cancellationToken);
@@ -239,43 +239,43 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         var response = await InvokeOperationAsync(
             "GetOutboxInvoicePdf",
             cancellationToken,
-            Parameter("invoiceId", invoiceId));
+            Parameter("invoiceId", invoiceUuid));
 
         return CreatePdfFileResult(response, invoiceNumber);
     }
 
-    [HttpGet("outbox/invoices/{invoiceId}/status-with-logs")]
+    [HttpGet("outbox/invoices/{invoiceUuid}/status-with-logs")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetOutboxInvoiceStatusWithLogs(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetOutboxInvoiceStatusWithLogs",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("outbox/invoices/{invoiceId}/response-view")]
+    [HttpGet("outbox/invoices/{invoiceUuid}/response-view")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetOutboxInvoiceResponseView(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetOutboxInvoiceResponseView",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
-    [HttpGet("invoices/{invoiceId}/envelope")]
+    [HttpGet("invoices/{invoiceUuid}/envelope")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UyumsoftOperationResponseDto>> GetInvoiceEnvelope(
-        string invoiceId,
+        string invoiceUuid,
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             "GetInvoiceEnvelope",
             cancellationToken,
-            Parameter("invoiceId", invoiceId)));
+            Parameter("invoiceId", invoiceUuid)));
 
     [HttpPost("get/{operationName}")]
     [Authorize(Policy = DetailPolicy)]
@@ -294,10 +294,10 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
 
     private FileContentResult CreatePdfFileResult(
         UyumsoftOperationResponseDto response,
-        string invoiceId)
+        string invoiceUuid)
     {
         var pdfBytes = ExtractPdfBytes(response);
-        var fileName = $"{SanitizeFileName(invoiceId)}.pdf";
+        var fileName = $"{SanitizeFileName(invoiceUuid)}.pdf";
 
         Response.Headers.ContentDisposition = $"inline; filename=\"{fileName}\"";
 
@@ -317,8 +317,7 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
             Parameter("PageIndex", "0"),
             Parameter("PageSize", "5"));
 
-        var invoiceId = FindInvoiceIdByDocumentId(listResponse, trimmedInvoiceNumber)
-                        ?? FindFirstInvoiceId(listResponse);
+        var invoiceId = FindInvoiceIdByDocumentId(listResponse, trimmedInvoiceNumber);
 
         return string.IsNullOrWhiteSpace(invoiceId)
             ? throw new KeyNotFoundException(
@@ -346,21 +345,6 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
                 !string.IsNullOrWhiteSpace(candidate.InvoiceId) &&
                 string.Equals(candidate.DocumentId, documentId, StringComparison.OrdinalIgnoreCase))
             ?.InvoiceId;
-    }
-
-    private static string? FindFirstInvoiceId(UyumsoftOperationResponseDto response)
-    {
-        if (TryFindFirstInvoiceIdFromJson(response.ResponsePayloadJson, out var jsonInvoiceId))
-        {
-            return jsonInvoiceId;
-        }
-
-        return response.Nodes
-            .SelectMany(FlattenNodes)
-            .FirstOrDefault(node =>
-                string.Equals(node.Name, "InvoiceId", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(node.Value))
-            ?.Value;
     }
 
     private static byte[] ExtractPdfBytes(UyumsoftOperationResponseDto response)
@@ -483,29 +467,6 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         }
     }
 
-    private static bool TryFindFirstInvoiceIdFromJson(
-        string? payloadJson,
-        out string? invoiceId)
-    {
-        invoiceId = null;
-
-        if (string.IsNullOrWhiteSpace(payloadJson))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(payloadJson);
-            invoiceId = FindFirstInvoiceId(document.RootElement);
-            return !string.IsNullOrWhiteSpace(invoiceId);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
     private static string? FindInvoiceIdByDocumentId(JsonElement element, string documentId)
     {
         if (element.ValueKind == JsonValueKind.Object)
@@ -535,44 +496,6 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
             foreach (var item in element.EnumerateArray())
             {
                 var found = FindInvoiceIdByDocumentId(item, documentId);
-
-                if (!string.IsNullOrWhiteSpace(found))
-                {
-                    return found;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static string? FindFirstInvoiceId(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var invoiceId = GetStringProperty(element, "invoiceId");
-
-            if (!string.IsNullOrWhiteSpace(invoiceId))
-            {
-                return invoiceId;
-            }
-
-            foreach (var property in element.EnumerateObject())
-            {
-                var found = FindFirstInvoiceId(property.Value);
-
-                if (!string.IsNullOrWhiteSpace(found))
-                {
-                    return found;
-                }
-            }
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray())
-            {
-                var found = FindFirstInvoiceId(item);
 
                 if (!string.IsNullOrWhiteSpace(found))
                 {

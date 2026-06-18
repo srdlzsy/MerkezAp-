@@ -97,6 +97,7 @@ internal static class UyumsoftWcfClientHelper
         };
         var scalarValue = ToScalarValue(value);
         var resultNode = MapNode($"{operationName}Result", response, 0);
+        var invoiceList = MapInvoiceList(response);
 
         return new UyumsoftOperationResponseDto(
             catalog.ServiceKey,
@@ -108,6 +109,7 @@ internal static class UyumsoftWcfClientHelper
             scalarValue,
             attributes,
             resultNode.Children,
+            invoiceList,
             JsonSerializer.Serialize(response, JsonOptions));
     }
 
@@ -201,6 +203,87 @@ internal static class UyumsoftWcfClientHelper
                 xml = string.Empty;
                 return false;
         }
+    }
+
+    private static UyumsoftInvoiceListDto? MapInvoiceList(object response) =>
+        response switch
+        {
+            UyumsoftInvoice.OutboxInvoiceListResponse outboxResponse when outboxResponse.Value is not null =>
+                new UyumsoftInvoiceListDto(
+                    outboxResponse.Value.PageIndex,
+                    outboxResponse.Value.PageSize,
+                    outboxResponse.Value.TotalCount,
+                    outboxResponse.Value.TotalPages,
+                    (outboxResponse.Value.Items ?? [])
+                    .Select(MapInvoiceListItem)
+                    .ToArray()),
+
+            UyumsoftInvoice.InboxInvoiceListResponse inboxResponse when inboxResponse.Value is not null =>
+                new UyumsoftInvoiceListDto(
+                    inboxResponse.Value.PageIndex,
+                    inboxResponse.Value.PageSize,
+                    inboxResponse.Value.TotalCount,
+                    inboxResponse.Value.TotalPages,
+                    (inboxResponse.Value.Items ?? [])
+                    .Select(MapInvoiceListItem)
+                    .ToArray()),
+
+            _ => null
+        };
+
+    private static UyumsoftInvoiceListItemDto MapInvoiceListItem(
+        UyumsoftInvoice.InvoiceListItemBase item)
+    {
+        var outboxItem = item as UyumsoftInvoice.OutboxInvoiceListItem;
+        var inboxItem = item as UyumsoftInvoice.InboxInvoiceListItem;
+        var invoiceUuid = NormalizeValue(item.InvoiceId);
+        var direction = outboxItem is null ? "inbox" : "outbox";
+        var pdfFilePath = invoiceUuid is null
+            ? null
+            : $"/api/entegrasyon-islemleri/uyumsoft/e-fatura/{direction}/invoices/{Uri.EscapeDataString(invoiceUuid)}/pdf-file";
+
+        return new UyumsoftInvoiceListItemDto(
+            invoiceUuid,
+            NormalizeValue(item.DocumentId),
+            direction,
+            pdfFilePath,
+            outboxItem?.LocalDocumentId,
+            outboxItem?.Scenario.ToString(),
+            outboxItem?.ScenarioCode,
+            item.Type.ToString(),
+            item.TypeCode,
+            NormalizeValue(item.TargetTcknVkn),
+            NormalizeValue(item.TargetTitle),
+            NormalizeValue(item.EnvelopeIdentifier),
+            item.Status.ToString(),
+            item.StatusCode,
+            item.EnvelopeStatus.ToString(),
+            item.EnvelopeStatusCode,
+            NormalizeValue(item.Message),
+            item.CreateDateUtc,
+            item.ExecutionDate,
+            item.PayableAmount,
+            item.TaxTotal,
+            item.TaxExclusiveAmount,
+            NormalizeValue(item.DocumentCurrencyCode),
+            item.ExchangeRate,
+            item.Vat1,
+            item.Vat8,
+            item.Vat10,
+            item.Vat18,
+            item.Vat20,
+            item.Vat0TaxableAmount,
+            item.Vat1TaxableAmount,
+            item.Vat8TaxableAmount,
+            item.Vat10TaxableAmount,
+            item.Vat18TaxableAmount,
+            item.Vat20TaxableAmount,
+            NormalizeValue(item.OrderDocumentId),
+            item.IsArchived,
+            item.InvoiceTipType.ToString(),
+            item.InvoiceTipTypeCode,
+            inboxItem?.IsNew,
+            inboxItem?.IsSeen);
     }
 
     private static string? ToScalarValue(object? value)

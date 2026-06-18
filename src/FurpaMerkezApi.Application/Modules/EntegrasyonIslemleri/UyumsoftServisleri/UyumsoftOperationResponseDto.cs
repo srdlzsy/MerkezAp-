@@ -10,6 +10,7 @@ public sealed record UyumsoftOperationResponseDto(
     string? ScalarValue,
     IReadOnlyDictionary<string, string?> ResultAttributes,
     IReadOnlyCollection<UyumsoftResponseNodeDto> Nodes,
+    UyumsoftInvoiceListDto? InvoiceList,
     string ResponsePayloadJson);
 
 public sealed record UyumsoftResponseNodeDto(
@@ -17,3 +18,53 @@ public sealed record UyumsoftResponseNodeDto(
     string? Value,
     IReadOnlyDictionary<string, string?> Attributes,
     IReadOnlyCollection<UyumsoftResponseNodeDto> Children);
+
+public sealed record UyumsoftInvoiceListDto(
+    int PageIndex,
+    int PageSize,
+    int TotalCount,
+    int TotalPages,
+    IReadOnlyCollection<UyumsoftInvoiceListItemDto> Items);
+
+public sealed record UyumsoftInvoiceListItemDto(
+    string? InvoiceUuid,
+    string? InvoiceNumber,
+    string Direction,
+    string? PdfFilePath,
+    string? LocalDocumentId,
+    string? Scenario,
+    int? ScenarioCode,
+    string Type,
+    int TypeCode,
+    string? TargetTcknVkn,
+    string? TargetTitle,
+    string? EnvelopeIdentifier,
+    string Status,
+    int StatusCode,
+    string EnvelopeStatus,
+    int EnvelopeStatusCode,
+    string? Message,
+    DateTime CreateDateUtc,
+    DateTime? ExecutionDate,
+    decimal PayableAmount,
+    decimal TaxTotal,
+    decimal TaxExclusiveAmount,
+    string? DocumentCurrencyCode,
+    decimal ExchangeRate,
+    decimal Vat1,
+    decimal Vat8,
+    decimal Vat10,
+    decimal Vat18,
+    decimal Vat20,
+    decimal Vat0TaxableAmount,
+    decimal Vat1TaxableAmount,
+    decimal Vat8TaxableAmount,
+    decimal Vat10TaxableAmount,
+    decimal Vat18TaxableAmount,
+    decimal Vat20TaxableAmount,
+    string? OrderDocumentId,
+    bool IsArchived,
+    string InvoiceTipType,
+    int InvoiceTipTypeCode,
+    bool? IsNew,
+    bool? IsSeen);
