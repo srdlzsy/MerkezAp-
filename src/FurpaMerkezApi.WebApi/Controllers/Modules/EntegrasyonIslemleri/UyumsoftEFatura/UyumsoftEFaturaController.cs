@@ -2,6 +2,7 @@ using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri
 using FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.UyumsoftEFatura;
 
@@ -114,6 +115,22 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
             cancellationToken,
             Parameter("invoiceId", invoiceId)));
 
+    [HttpGet("inbox/invoices/{invoiceId}/pdf-file")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInboxInvoicePdfFile(
+        string invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var response = await InvokeOperationAsync(
+            "GetInboxInvoicePdf",
+            cancellationToken,
+            Parameter("invoiceId", invoiceId));
+
+        return CreatePdfFileResult(response, invoiceId);
+    }
+
     [HttpGet("inbox/invoices/{invoiceId}/status-with-logs")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
@@ -169,6 +186,22 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
             cancellationToken,
             Parameter("invoiceId", invoiceId)));
 
+    [HttpGet("outbox/invoices/{invoiceId}/pdf-file")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOutboxInvoicePdfFile(
+        string invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var response = await InvokeOperationAsync(
+            "GetOutboxInvoicePdf",
+            cancellationToken,
+            Parameter("invoiceId", invoiceId));
+
+        return CreatePdfFileResult(response, invoiceId);
+    }
+
     [HttpGet("outbox/invoices/{invoiceId}/status-with-logs")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
@@ -216,4 +249,144 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
                 .Select(parameter => new UyumsoftOperationParameterRequest(parameter.Name, parameter.Value))
                 .ToArray(),
             cancellationToken));
+
+    private FileContentResult CreatePdfFileResult(
+        UyumsoftOperationResponseDto response,
+        string invoiceId)
+    {
+        var pdfBytes = ExtractPdfBytes(response);
+        var fileName = $"{SanitizeFileName(invoiceId)}.pdf";
+
+        Response.Headers.ContentDisposition = $"inline; filename=\"{fileName}\"";
+
+        return File(pdfBytes, "application/pdf");
+    }
+
+    private static byte[] ExtractPdfBytes(UyumsoftOperationResponseDto response)
+    {
+        var dataNodeValue = response.Nodes
+            .SelectMany(FlattenNodes)
+            .FirstOrDefault(node =>
+                string.Equals(node.Name, "Data", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(node.Value))
+            ?.Value;
+
+        if (TryDecodeBase64(dataNodeValue, out var nodeBytes))
+        {
+            return nodeBytes;
+        }
+
+        if (TryExtractPdfBytesFromJson(response.ResponsePayloadJson, out var jsonBytes))
+        {
+            return jsonBytes;
+        }
+
+        if (TryDecodeBase64(response.ScalarValue, out var scalarBytes))
+        {
+            return scalarBytes;
+        }
+
+        throw new InvalidOperationException("Uyumsoft PDF cevabinda okunabilir PDF verisi bulunamadi.");
+    }
+
+    private static IEnumerable<UyumsoftResponseNodeDto> FlattenNodes(UyumsoftResponseNodeDto node)
+    {
+        yield return node;
+
+        foreach (var child in node.Children.SelectMany(FlattenNodes))
+        {
+            yield return child;
+        }
+    }
+
+    private static bool TryExtractPdfBytesFromJson(string? payloadJson, out byte[] pdfBytes)
+    {
+        pdfBytes = [];
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            return TryFindBase64Property(document.RootElement, "data", out pdfBytes);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryFindBase64Property(
+        JsonElement element,
+        string propertyName,
+        out byte[] bytes)
+    {
+        bytes = [];
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.String &&
+                    TryDecodeBase64(property.Value.GetString(), out bytes))
+                {
+                    return true;
+                }
+
+                if (TryFindBase64Property(property.Value, propertyName, out bytes))
+                {
+                    return true;
+                }
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (TryFindBase64Property(item, propertyName, out bytes))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryDecodeBase64(string? value, out byte[] bytes)
+    {
+        bytes = [];
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            bytes = Convert.FromBase64String(value);
+            return bytes.Length > 0;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var safe = string.IsNullOrWhiteSpace(value) ? "invoice" : value.Trim();
+
+        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        {
+            safe = safe.Replace(invalidChar, '_');
+        }
+
+        return safe;
+    }
 }

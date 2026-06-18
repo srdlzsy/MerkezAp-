@@ -6691,6 +6691,16 @@ Response:
 - Backend Uyumsoft e-fatura `GetInboxInvoicePdf` operasyonunu `invoiceId = documentId` parametresiyle cagirir.
 - PDF payload Uyumsoft response yapisina gore `scalarValue`, `nodes` veya `responsePayloadJson` icinde gelir; UI mevcut entegrasyon endpointindeki `GetInboxInvoicePdf` cevabi gibi yorumlamalidir.
 
+Direkt PDF binary almak isteyen UI ekranlari icin onerilen endpoint:
+
+`GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{documentId}/pdf-file`
+
+Response:
+
+- `Content-Type: application/pdf`
+- `Content-Disposition: inline`
+- JSON beklenmemelidir; UI yeni sekme, iframe veya blob URL ile dogrudan PDF gosterebilir.
+
 Bu endpoint ne icin kullanilmali:
 
 - kullanici liste satirina tiklayip faturanin resmi PDF'ini acmak istediginde
@@ -8444,11 +8454,13 @@ Mevcut business akislardan farki:
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceId}/data`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceId}/view`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceId}/pdf`
+- `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceId}/pdf-file`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceId}/status-with-logs`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}/data`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}/view`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}/pdf`
+- `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}/pdf-file`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}/status-with-logs`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceId}/response-view`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/invoices/{invoiceId}/envelope`
@@ -8478,6 +8490,7 @@ Not:
 - generic `GET/POST .../get/{operationName}` route'lari katalogdaki tum whitelist `Get*` operasyonlarini kapsar
 - hazir alias `GET` route'lari katalogdaki sik kullanilan sistem tarihi ve tekil remote belge sorgularini operation formu kurmadan cagirabilmek icin vardir
 - bu modullerde `/pdf`, `/view`, `/envelope` ile biten route'lar binary dosya degil, JSON `UyumsoftOperationResponseDto` doner
+- e-fatura icin `/pdf-file` ile biten inbox/outbox route'lari istisnadir; direkt `application/pdf` binary response doner ve liste ekranlarindaki `PDF Goster` aksiyonlari icin onerilir
 
 ### Yetki Kodlari
 
@@ -8757,6 +8770,19 @@ GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/9d6e0f84-3d3c-4
 Authorization: Bearer {token}
 ```
 
+Tekil e-fatura PDF dosyasi:
+
+```http
+GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/9d6e0f84-3d3c-4c58-a1b0-4c0f8f4fd999/pdf-file
+Authorization: Bearer {token}
+```
+
+Response:
+
+- `Content-Type: application/pdf`
+- `Content-Disposition: inline`
+- UI bu endpointi fatura listesinde `PDF Goster` icin kullanabilir; JSON parse edilmez.
+
 Tekil e-irsaliye makbuz PDF sorgusu:
 
 ```http
@@ -8775,6 +8801,7 @@ Not:
 
 - bu alias route'lar da `UyumsoftOperationResponseDto` JSON modeli doner
 - path'te `/pdf` gecmesi binary dosya indirilecegi anlamina gelmez; PDF verisi response icindeki node/attribute/responsePayloadJson alanlarinda gelir
+- e-fatura `/pdf-file` route'lari bu kuralin disindadir ve dogrudan PDF binary doner
 
 UI request form onerisi:
 
