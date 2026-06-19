@@ -3845,6 +3845,8 @@ Response modeli `StockMovementDocumentDto`:
     "inputWarehouseName": "",
     "outputWarehouseNo": 110,
     "outputWarehouseName": "KESTEL 1",
+    "shippingWarehouseNo": 60,
+    "shippingWarehouseName": "NAKLIYE DEPO",
     "description": "Gun sonu zayiat",
     "movementGroupCode1": "VARDIYA-1",
     "movementGroupCode2": "SEF-01",
@@ -3900,6 +3902,7 @@ Body:
     "documentDate": "2026-04-21",
     "documentNo": "DUZ-001",
     "description": "Duzeltilen aciklama",
+    "shippingWarehouseNo": 60,
     "movementGroupCode1": "VARDIYA-1",
     "movementGroupCode2": "SEF-01"
   },
@@ -3923,7 +3926,7 @@ Body:
 Guncellenebilir header alanlari:
 
 - `movementDate`, `documentDate`, `documentNo`, `customerCode`
-- `inputWarehouseNo`, `outputWarehouseNo`
+- `inputWarehouseNo`, `outputWarehouseNo`, `shippingWarehouseNo`
 - `description`, `movementGroupCode1`, `movementGroupCode2`, `movementGroupCode3`
 - `customerResponsibilityCenter`, `stockResponsibilityCenter`, `projectCode`
 

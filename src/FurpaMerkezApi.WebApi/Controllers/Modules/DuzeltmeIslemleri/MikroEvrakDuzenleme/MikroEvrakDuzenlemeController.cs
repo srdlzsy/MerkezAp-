@@ -296,6 +296,9 @@ public sealed class StockMovementHeaderPatchHttpRequest
     [Range(0, int.MaxValue)]
     public int? OutputWarehouseNo { get; init; }
 
+    [Range(0, int.MaxValue)]
+    public int? ShippingWarehouseNo { get; init; }
+
     [StringLength(50)]
     public string? Description { get; init; }
 
@@ -325,6 +328,7 @@ public sealed class StockMovementHeaderPatchHttpRequest
             CustomerCode,
             InputWarehouseNo,
             OutputWarehouseNo,
+            ShippingWarehouseNo,
             Description,
             MovementGroupCode1,
             MovementGroupCode2,

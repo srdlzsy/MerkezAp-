@@ -444,7 +444,12 @@ public sealed class MikroDocumentEditingService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var warehouseNos = rows
-            .SelectMany(row => new[] { row.sth_giris_depo_no, row.sth_cikis_depo_no })
+            .SelectMany(row => new[]
+            {
+                row.sth_giris_depo_no,
+                row.sth_cikis_depo_no,
+                row.sth_nakliyedeposu
+            })
             .Where(value => value.HasValue && value.Value > 0)
             .Select(value => value!.Value)
             .Distinct()
@@ -505,6 +510,7 @@ public sealed class MikroDocumentEditingService(
         var customer = ResolveCustomer(customers, first.sth_cari_kodu);
         var inputWarehouseName = ResolveWarehouseName(warehouses, first.sth_giris_depo_no);
         var outputWarehouseName = ResolveWarehouseName(warehouses, first.sth_cikis_depo_no);
+        var shippingWarehouseName = ResolveWarehouseName(warehouses, first.sth_nakliyedeposu);
 
         var header = new StockMovementDocumentHeaderDto(
             first.sth_evrakno_seri ?? string.Empty,
@@ -522,6 +528,8 @@ public sealed class MikroDocumentEditingService(
             inputWarehouseName,
             first.sth_cikis_depo_no ?? 0,
             outputWarehouseName,
+            first.sth_nakliyedeposu ?? 0,
+            shippingWarehouseName,
             first.sth_aciklama ?? string.Empty,
             first.sth_HareketGrupKodu1 ?? string.Empty,
             first.sth_HareketGrupKodu2 ?? string.Empty,
@@ -697,7 +705,12 @@ public sealed class MikroDocumentEditingService(
             .ToArray();
         var warehouseNos = request.Lines
             .SelectMany(line => new[] { line.InputWarehouseNo, line.OutputWarehouseNo })
-            .Concat(new[] { request.Header?.InputWarehouseNo, request.Header?.OutputWarehouseNo })
+            .Concat(new[]
+            {
+                request.Header?.InputWarehouseNo,
+                request.Header?.OutputWarehouseNo,
+                request.Header?.ShippingWarehouseNo
+            })
             .Where(value => value.HasValue && value.Value > 0)
             .Select(value => value!.Value)
             .Distinct()
@@ -872,6 +885,7 @@ public sealed class MikroDocumentEditingService(
         if (patch.CustomerCode is not null) row.sth_cari_kodu = NormalizeText(patch.CustomerCode, 25, nameof(patch.CustomerCode));
         if (patch.InputWarehouseNo.HasValue) row.sth_giris_depo_no = ValidateNonNegative(patch.InputWarehouseNo.Value, nameof(patch.InputWarehouseNo));
         if (patch.OutputWarehouseNo.HasValue) row.sth_cikis_depo_no = ValidateNonNegative(patch.OutputWarehouseNo.Value, nameof(patch.OutputWarehouseNo));
+        if (patch.ShippingWarehouseNo.HasValue) row.sth_nakliyedeposu = ValidateNonNegative(patch.ShippingWarehouseNo.Value, nameof(patch.ShippingWarehouseNo));
         if (patch.Description is not null) row.sth_aciklama = NormalizeText(patch.Description, 50, nameof(patch.Description));
         if (patch.MovementGroupCode1 is not null) row.sth_HareketGrupKodu1 = NormalizeText(patch.MovementGroupCode1, 25, nameof(patch.MovementGroupCode1));
         if (patch.MovementGroupCode2 is not null) row.sth_HareketGrupKodu2 = NormalizeText(patch.MovementGroupCode2, 25, nameof(patch.MovementGroupCode2));
@@ -1081,6 +1095,7 @@ public sealed class MikroDocumentEditingService(
         patch.CustomerCode is not null ||
         patch.InputWarehouseNo.HasValue ||
         patch.OutputWarehouseNo.HasValue ||
+        patch.ShippingWarehouseNo.HasValue ||
         patch.Description is not null ||
         patch.MovementGroupCode1 is not null ||
         patch.MovementGroupCode2 is not null ||
