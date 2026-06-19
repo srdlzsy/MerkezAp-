@@ -122,7 +122,7 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         string invoiceUuid,
         CancellationToken cancellationToken)
     {
-        var pdfBytes = await queryService.GetInboxInvoicePdfFileAsync(
+        var pdfBytes = await GetInboxInvoicePdfFileAsync(
             invoiceUuid,
             cancellationToken);
 
@@ -192,7 +192,7 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         string invoiceUuid,
         CancellationToken cancellationToken)
     {
-        var pdfBytes = await queryService.GetOutboxInvoicePdfFileAsync(
+        var pdfBytes = await GetOutboxInvoicePdfFileAsync(
             invoiceUuid,
             cancellationToken);
 

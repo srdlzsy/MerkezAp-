@@ -3663,6 +3663,400 @@ Firma mal kabul UI akisi:
 - Otomatik iade olustugunda UI e-irsaliye gonderimini kendiliginden tetiklememelidir. Kullanici "Firma iadesi e-irsaliye gonder" aksiyonuna bastiginda `POST /api/iade-islemleri/firma-iadeleri/{seri}/{sira}/e-irsaliye` cagrilir.
 - Bu ekranda plaka, sofor ve TCKN istenmez. Firma mal kabul icin opsiyonel `deliverer` ve `receiver` alanlari teslim eden/teslim alan notu olarak kullanilabilir.
 
+## Duzeltme Islemleri / Mikro Evrak Duzenleme
+
+Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin eklendi. Ilk kapsam:
+
+- `STOK_HAREKETLERI` belgeleri
+- `CARI_HESAP_HAREKETLERI` belgeleri
+- `STOKLAR` stok kartlari
+
+Menu:
+
+- Module: `DuzeltmeIslemleri`
+- Menu: `MikroEvrakDuzenleme`
+- Route kok: `/api/duzeltme-islemleri/mikro-evrak-duzenleme`
+
+Yetki kodlari:
+
+- `duzeltme-islemleri.mikro-evrak-duzenleme.list`
+- `duzeltme-islemleri.mikro-evrak-duzenleme.detail`
+- `duzeltme-islemleri.mikro-evrak-duzenleme.update`
+
+Genel kurallar:
+
+- Detay endpointleri Mikro read connection uzerinden okur; guncelleme endpointleri Mikro write connection uzerinden yazar.
+- Stok ve cari hareket belgelerinde `documentSerie` ve `documentOrderNo` zorunludur.
+- `documentType`, `movementType`, `movementKind`, `normalReturn` filtreleri opsiyoneldir. Seri-sira birden fazla evrak tipi/cins/iade kombinasyonuna denk gelirse backend `409 Conflict` doner; UI kullaniciya "evrak tipi/cins/iade filtresi ile daraltin" mesaji gostermelidir.
+- Satir guncellemeleri `movementGuid` ile yapilir. UI detay response'undaki `lines[].movementGuid` degerini satir modelinde saklamalidir.
+- Request body'de `null` gelen alanlar degismez. Bos string gonderilirse ilgili metin alani bosaltma istegi olarak islenir.
+- Kayitlarda Mikro audit alanlari guncellenir: `lastup_user`, `lastup_date`, `degisti`.
+- Bu modul delete veya yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari` | query | `StockCardSearchHttpRequest` | `StockCardListItemDto[]` | `list` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path | `stockCode` | `StockCardDetailDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path + body | `StockCardPatchHttpRequest` | `StockCardUpdateResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | body | `UpdateCustomerMovementDocumentHttpRequest` | `CustomerMovementDocumentUpdateResponse` | `update` |
+
+### Stok Karti Arama
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari?searchText=sut&take=20`
+
+Query:
+
+- `searchText`: opsiyonel, stok kodu/ad/kisa ad icinde arar
+- `includePassive`: varsayilan `false`
+- `take`: varsayilan `50`, maksimum `200`
+
+Response item:
+
+```json
+{
+  "stockCode": "015550",
+  "name": "URUN ADI",
+  "shortName": "URUN",
+  "supplierCode": "120.01.03106",
+  "unit1Name": "AD",
+  "mainGroupCode": "GIDA",
+  "subGroupCode": "SUT",
+  "categoryCode": "",
+  "isPassive": false,
+  "lastUpdatedAt": "2026-06-19T14:30:00"
+}
+```
+
+### Stok Karti Detay
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550`
+
+Response modeli `StockCardDetailDto`:
+
+```json
+{
+  "stockCode": "015550",
+  "name": "URUN ADI",
+  "shortName": "URUN",
+  "foreignName": "",
+  "supplierCode": "120.01.03106",
+  "stockType": 0,
+  "currencyType": 0,
+  "trackingType": 0,
+  "unit1Name": "AD",
+  "unit2Name": "KOLI",
+  "unit3Name": "",
+  "unit4Name": "",
+  "retailTaxPointer": 8,
+  "wholesaleTaxPointer": 8,
+  "categoryCode": "",
+  "mainGroupCode": "GIDA",
+  "subGroupCode": "SUT",
+  "brandCode": "",
+  "sectorCode": "",
+  "rayonCode": "",
+  "manufacturerCode": "",
+  "responsibilityCode": "",
+  "shelfCode": "",
+  "salesStopped": false,
+  "orderStopped": false,
+  "receivingStopped": false,
+  "isPassive": false,
+  "discountDisabled": false,
+  "createdAt": "2026-01-01T09:00:00",
+  "lastUpdatedAt": "2026-06-19T14:30:00"
+}
+```
+
+### Stok Karti Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550`
+
+Body'de sadece degistirilecek alanlar gonderilmelidir:
+
+```json
+{
+  "name": "YENI URUN ADI",
+  "shortName": "YENI AD",
+  "supplierCode": "120.01.03106",
+  "unit1Name": "AD",
+  "retailTaxPointer": 8,
+  "wholesaleTaxPointer": 8,
+  "salesStopped": false,
+  "orderStopped": false,
+  "receivingStopped": false,
+  "isPassive": false
+}
+```
+
+Response:
+
+```json
+{
+  "summary": {
+    "target": "stok-kartlari",
+    "updatedRowCount": 1,
+    "updatedAt": "2026-06-19T15:20:00",
+    "updateUser": 110
+  },
+  "stockCard": {
+    "stockCode": "015550",
+    "name": "YENI URUN ADI"
+  }
+}
+```
+
+### Stok Hareket Evraki Getir
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?documentSerie=F110&documentOrderNo=12&documentType=0&movementKind=4&normalReturn=0&warehouseNo=110`
+
+Query:
+
+- `documentSerie`: zorunlu, Mikro `sth_evrakno_seri`
+- `documentOrderNo`: zorunlu, Mikro `sth_evrakno_sira`
+- `documentType`: opsiyonel, Mikro `sth_evraktip`
+- `movementType`: opsiyonel, Mikro `sth_tip`
+- `movementKind`: opsiyonel, Mikro `sth_cins`
+- `normalReturn`: opsiyonel, Mikro `sth_normal_iade`
+- `warehouseNo`: opsiyonel; `sth_giris_depo_no` veya `sth_cikis_depo_no` eslesmesi arar
+
+Response modeli `StockMovementDocumentDto`:
+
+```json
+{
+  "header": {
+    "documentSerie": "F110",
+    "documentOrderNo": 12,
+    "documentType": 0,
+    "movementTypes": [1],
+    "movementKind": 4,
+    "normalReturn": 0,
+    "movementDate": "2026-04-21T00:00:00",
+    "documentDate": "2026-04-21T00:00:00",
+    "documentNo": "",
+    "customerCode": "",
+    "customerTitle": "",
+    "inputWarehouseNo": 0,
+    "inputWarehouseName": "",
+    "outputWarehouseNo": 110,
+    "outputWarehouseName": "KESTEL 1",
+    "description": "Gun sonu zayiat",
+    "movementGroupCode1": "VARDIYA-1",
+    "movementGroupCode2": "SEF-01",
+    "movementGroupCode3": "",
+    "customerResponsibilityCenter": "",
+    "stockResponsibilityCenter": "",
+    "projectCode": "",
+    "lineCount": 1,
+    "totalQuantity": 2,
+    "totalAmount": 0
+  },
+  "lines": [
+    {
+      "movementGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
+      "rowNo": 0,
+      "stockCode": "015792",
+      "stockName": "URUN ADI",
+      "unitPointer": 1,
+      "unitName": "AD",
+      "quantity": 2,
+      "secondaryQuantity": 0,
+      "unitPrice": 0,
+      "amount": 0,
+      "description": "Gun sonu zayiat",
+      "partyCode": "",
+      "lotNo": 0,
+      "projectCode": "",
+      "inputWarehouseNo": 0,
+      "outputWarehouseNo": 110
+    }
+  ]
+}
+```
+
+### Stok Hareket Evraki Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri`
+
+Body:
+
+```json
+{
+  "lookup": {
+    "documentSerie": "F110",
+    "documentOrderNo": 12,
+    "documentType": 0,
+    "movementKind": 4,
+    "normalReturn": 0,
+    "warehouseNo": 110
+  },
+  "header": {
+    "movementDate": "2026-04-21",
+    "documentDate": "2026-04-21",
+    "documentNo": "DUZ-001",
+    "description": "Duzeltilen aciklama",
+    "movementGroupCode1": "VARDIYA-1",
+    "movementGroupCode2": "SEF-01"
+  },
+  "lines": [
+    {
+      "movementGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
+      "rowNo": 0,
+      "stockCode": "015792",
+      "unitPointer": 1,
+      "quantity": 3,
+      "amount": 0,
+      "description": "Satir aciklamasi",
+      "partyCode": "",
+      "lotNo": 0,
+      "projectCode": ""
+    }
+  ]
+}
+```
+
+Guncellenebilir header alanlari:
+
+- `movementDate`, `documentDate`, `documentNo`, `customerCode`
+- `inputWarehouseNo`, `outputWarehouseNo`
+- `description`, `movementGroupCode1`, `movementGroupCode2`, `movementGroupCode3`
+- `customerResponsibilityCenter`, `stockResponsibilityCenter`, `projectCode`
+
+Guncellenebilir satir alanlari:
+
+- `rowNo`, `stockCode`, `unitPointer`, `quantity`, `secondaryQuantity`, `amount`
+- `discount1..discount6`, `expense1..expense4`, `taxPointer`, `taxAmount`
+- `netWeight`, `grossWeight`, `description`, `partyCode`, `lotNo`, `projectCode`
+- `customerResponsibilityCenter`, `stockResponsibilityCenter`, `inputWarehouseNo`, `outputWarehouseNo`
+
+Response `StockMovementDocumentUpdateResponse` doner; `document` alaninda kaydin guncel hali bulunur.
+
+### Cari Hareket Evraki Getir
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?documentSerie=PS110&documentOrderNo=422&documentType=63&movementKind=6&normalReturn=0&customerCode=120.01.03106`
+
+Query:
+
+- `documentSerie`: zorunlu, Mikro `cha_evrakno_seri`
+- `documentOrderNo`: zorunlu, Mikro `cha_evrakno_sira`
+- `documentType`: opsiyonel, Mikro `cha_evrak_tip`
+- `movementType`: opsiyonel, Mikro `cha_tip`
+- `movementKind`: opsiyonel, Mikro `cha_cinsi`
+- `normalReturn`: opsiyonel, Mikro `cha_normal_Iade`
+- `customerCode`: opsiyonel; `cha_kod` veya `cha_ciro_cari_kodu` eslesmesi arar
+
+Response modeli `CustomerMovementDocumentDto`:
+
+```json
+{
+  "header": {
+    "documentSerie": "PS110",
+    "documentOrderNo": 422,
+    "documentType": 63,
+    "movementTypes": [0],
+    "movementKind": 6,
+    "normalReturn": 0,
+    "movementDate": "2026-04-21T00:00:00",
+    "documentDate": "2026-04-21T00:00:00",
+    "documentNo": "PS1102026000000422",
+    "customerCode": "120.01.03106",
+    "turnoverCustomerCode": "120.01.03106",
+    "customerTitle": "CARI UNVAN",
+    "description": "Aciklama",
+    "sellerCode": "",
+    "projectCode": "",
+    "responsibilityCenter": "",
+    "lineCount": 1,
+    "totalQuantity": 1,
+    "totalAmount": 100,
+    "totalSubAmount": 100
+  },
+  "lines": [
+    {
+      "movementGuid": "9f3db1de-50ef-48a0-a617-7cf5634c4f3a",
+      "rowNo": 0,
+      "customerCode": "120.01.03106",
+      "turnoverCustomerCode": "120.01.03106",
+      "customerTitle": "CARI UNVAN",
+      "movementType": 0,
+      "movementKind": 6,
+      "normalReturn": 0,
+      "quantity": 1,
+      "amount": 100,
+      "subAmount": 100,
+      "dueDay": 0,
+      "description": "Aciklama",
+      "sellerCode": "",
+      "projectCode": "",
+      "responsibilityCenter": ""
+    }
+  ]
+}
+```
+
+### Cari Hareket Evraki Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri`
+
+Body:
+
+```json
+{
+  "lookup": {
+    "documentSerie": "PS110",
+    "documentOrderNo": 422,
+    "documentType": 63,
+    "movementKind": 6,
+    "normalReturn": 0,
+    "customerCode": "120.01.03106"
+  },
+  "header": {
+    "movementDate": "2026-04-21",
+    "documentDate": "2026-04-21",
+    "documentNo": "PS1102026000000422",
+    "description": "Duzeltilen cari aciklama",
+    "customerCode": "120.01.03106",
+    "turnoverCustomerCode": "120.01.03106"
+  },
+  "lines": [
+    {
+      "movementGuid": "9f3db1de-50ef-48a0-a617-7cf5634c4f3a",
+      "amount": 125,
+      "subAmount": 125,
+      "quantity": 1,
+      "description": "Satir aciklamasi"
+    }
+  ]
+}
+```
+
+Guncellenebilir header alanlari:
+
+- `movementDate`, `documentDate`, `documentNo`
+- `customerCode`, `turnoverCustomerCode`
+- `description`, `sellerCode`, `projectCode`, `responsibilityCenter`
+
+Guncellenebilir satir alanlari:
+
+- `rowNo`, `customerCode`, `turnoverCustomerCode`
+- `quantity`, `amount`, `subAmount`, `dueDay`
+- `discount1..discount6`, `expense1..expense4`, `tax1..tax5`
+- `description`, `sellerCode`, `projectCode`, `responsibilityCenter`
+
+UI is akisi onerisi:
+
+1. Kullanici evrak tipini secer: Stok Hareketi, Cari Hareketi veya Stok Karti.
+2. Stok/cari hareketinde seri-sira girilir; evrak tipi/cins/iade alanlari varsa query'e eklenir.
+3. Detay response'u geldikten sonra UI `movementGuid` alanlarini satir gridinde gizli anahtar olarak saklar.
+4. Kullanici sadece degisen alanlari gonderir; degismeyen alanlar `null` veya body disinda birakilir.
+5. `409 Conflict` gelirse filtreleri daraltma mesaji gosterilir.
+6. Basarili `PUT` response'u guncel belge/kart halini dondurdugu icin UI gridini bu response ile yeniler.
+
 ## Stok Islemleri
 
 ### Zayiat Fisleri Liste
@@ -11748,6 +12142,19 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `LabelPriceChangedProductListHttpRequest`: `DateTimeFilter`
 - `CreateLabelDocumentHttpRequest`: `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`
+
+### Mikro Evrak Duzenleme Request Modelleri
+
+- `StockCardSearchHttpRequest`: `SearchText`, `IncludePassive`, `Take`
+- `StockCardPatchHttpRequest`: `Name`, `ShortName`, `ForeignName`, `SupplierCode`, `StockType`, `CurrencyType`, `TrackingType`, `Unit1Name`, `Unit2Name`, `Unit3Name`, `Unit4Name`, `RetailTaxPointer`, `WholesaleTaxPointer`, `CategoryCode`, `MainGroupCode`, `SubGroupCode`, `BrandCode`, `SectorCode`, `RayonCode`, `ManufacturerCode`, `ResponsibilityCode`, `ShelfCode`, `SalesStopped`, `OrderStopped`, `ReceivingStopped`, `IsPassive`, `DiscountDisabled`
+- `StockMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `WarehouseNo`
+- `UpdateStockMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
+- `StockMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `InputWarehouseNo`, `OutputWarehouseNo`, `Description`, `MovementGroupCode1`, `MovementGroupCode2`, `MovementGroupCode3`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `ProjectCode`
+- `StockMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `StockCode`, `UnitPointer`, `Quantity`, `SecondaryQuantity`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `NetWeight`, `GrossWeight`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `InputWarehouseNo`, `OutputWarehouseNo`
+- `CustomerMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `CustomerCode`
+- `UpdateCustomerMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
+- `CustomerMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `TurnoverCustomerCode`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
+- `CustomerMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `CustomerCode`, `TurnoverCustomerCode`, `Quantity`, `Amount`, `SubAmount`, `DueDay`, `Discount1..Discount6`, `Expense1..Expense4`, `Tax1..Tax5`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
 
 ### Ayar Request Modelleri
 

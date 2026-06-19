@@ -37,6 +37,16 @@ public abstract class UyumsoftConnectedControllerBase(
             new UyumsoftOperationInvocationRequest(operationName, parameters.ToArray()),
             cancellationToken);
 
+    protected Task<byte[]> GetInboxInvoicePdfFileAsync(
+        string invoiceUuid,
+        CancellationToken cancellationToken) =>
+        queryService.GetInboxInvoicePdfFileAsync(invoiceUuid, cancellationToken);
+
+    protected Task<byte[]> GetOutboxInvoicePdfFileAsync(
+        string invoiceUuid,
+        CancellationToken cancellationToken) =>
+        queryService.GetOutboxInvoicePdfFileAsync(invoiceUuid, cancellationToken);
+
     protected static UyumsoftOperationParameterRequest Parameter(string name, string? value) =>
         new(name, value);
 

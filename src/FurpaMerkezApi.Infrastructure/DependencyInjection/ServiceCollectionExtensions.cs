@@ -5,6 +5,7 @@ using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestio
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchCustomers;
+using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
@@ -87,6 +88,7 @@ using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductCustomerSugges
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchCustomers;
+using FurpaMerkezApi.Infrastructure.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
 using FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGonderimi;
@@ -365,6 +367,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<ISikayetOneriService, SikayetOneriService>();
         services.AddScoped<IAyarlarService, AyarlarService>();
+        services.AddScoped<IMikroDocumentEditingService, MikroDocumentEditingService>();
         services.AddScoped<MobileOfflineSyncService>();
         services.AddScoped<ISearchProductsUseCase, SearchProductsUseCase>();
         services.AddScoped<ISearchCustomersUseCase, SearchCustomersUseCase>();
