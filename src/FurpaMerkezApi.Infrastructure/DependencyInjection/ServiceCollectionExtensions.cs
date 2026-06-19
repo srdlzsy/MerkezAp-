@@ -494,7 +494,6 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
         services.AddScoped<AxataSynchronizationConnectionProbeService>();
         services.AddScoped<IAxataSynchronizationService, AxataSynchronizationService>();
-        services.AddScoped<IAxataOutboundDeliveryImportService, AxataOutboundDeliveryImportService>();
         services.AddScoped<IPosMuhasebeAktarimiService, PosMuhasebeAktarimiService>();
         services.AddScoped<IAxataSynchronizationTaskHandler, FirmMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, ProductMasterSyncTaskHandler>();

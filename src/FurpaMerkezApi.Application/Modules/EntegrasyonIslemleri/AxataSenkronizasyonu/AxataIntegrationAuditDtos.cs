@@ -28,6 +28,7 @@ public sealed record AxataIntegrationAuditDto(
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersWithShipmentDifferences,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> PendingOutboundDeliveries,
+    IReadOnlyCollection<AxataPendingOutboundDeliveryDto> AxataOutboundDeliveries,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> InterventionCandidates,
     IReadOnlyCollection<AxataIntegrationAuditOperationDto> Operations,
     IReadOnlyCollection<string> Notes);
@@ -40,6 +41,12 @@ public sealed record AxataIntegrationAuditSummaryDto(
     int SentWarehouseOrderMissingMikroShipmentDocumentCount,
     int SentWarehouseOrderMissingMikroShipmentLineCount,
     double SentWarehouseOrderMissingMikroShipmentQuantity,
+    int SentWarehouseOrderMissingMikroShipmentWithAxataDeliveryDocumentCount,
+    int SentWarehouseOrderMissingMikroShipmentWithAxataDeliveryLineCount,
+    double SentWarehouseOrderMissingMikroShipmentWithAxataDeliveryQuantity,
+    int SentWarehouseOrderMissingAxataOutboundDeliveryDocumentCount,
+    int SentWarehouseOrderMissingAxataOutboundDeliveryLineCount,
+    double SentWarehouseOrderMissingAxataOutboundDeliveryQuantity,
     int SentWarehouseOrderShipmentDifferenceDocumentCount,
     int SentWarehouseOrderShipmentDifferenceLineCount,
     double SentWarehouseOrderShipmentDifferenceQuantity,
@@ -48,7 +55,15 @@ public sealed record AxataIntegrationAuditSummaryDto(
     double PendingOutboundDeliveryQuantity,
     int C01PendingDocumentCount,
     int C01MissingInMikroDocumentCount,
-    int C01MikroExistsPendingAckDocumentCount);
+    int C01MikroExistsPendingAckDocumentCount,
+    int AxataOutboundDeliveryDocumentCount,
+    int AxataOutboundDeliveryLineCount,
+    double AxataOutboundDeliveryQuantity,
+    int AxataCompletedOutboundDeliveryDocumentCount,
+    int AxataCancelledOutboundDeliveryDocumentCount,
+    int AxataCancelledOutboundDeliveryLineCount,
+    double AxataCancelledOutboundDeliveryQuantity,
+    int AxataEmptyOutboundDeliveryDocumentCount);
 
 public sealed record AxataOutboundDeliveryMovementSummaryDto(
     string MovementType,
@@ -110,7 +125,12 @@ public sealed record AxataSentWarehouseOrderMissingShipmentDto(
     string DifferenceReason,
     string State,
     DateTime? LastUpdateDate,
-    string Warning);
+    string Warning,
+    bool AxataOutboundDeliveryExists,
+    string? AxataOutboundDeliveryStatus,
+    DateTime? AxataOutboundDeliveryDate,
+    int AxataOutboundDeliveryLineCount,
+    double AxataOutboundDeliveryQuantity);
 
 public sealed record AxataPendingOutboundDeliveryDto(
     string MovementType,
@@ -130,4 +150,7 @@ public sealed record AxataPendingOutboundDeliveryDto(
     int ExistingLinkedMovementLineCount,
     string MikroCheckState,
     bool CanIntervene,
-    string? Warning);
+    string? Warning,
+    string AxataShipmentState,
+    bool IsCancelled,
+    string? CancellationCode);
