@@ -857,12 +857,16 @@
 						</td>
 						<td id="lineTableBudgetTd" style="width:81px; " align="right">
 							<span>
-								<xsl:for-each select="n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount">
-									<xsl:call-template name="Curr_Type">
-										<xsl:with-param name="valuePath" select="."/>
-										<xsl:with-param name="format" select="'###.##0,00'"/>
-									</xsl:call-template>
-								</xsl:for-each>
+								<xsl:value-of select="format-number(sum(n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount) + sum(n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount), '###.##0,00', 'european')"/>
+								<xsl:text> </xsl:text>
+								<xsl:choose>
+									<xsl:when test="n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID = 'TRY' or n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID = 'TRL'">
+										<xsl:text>TL</xsl:text>
+									</xsl:when>
+									<xsl:otherwise>
+										<xsl:value-of select="n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID"/>
+									</xsl:otherwise>
+								</xsl:choose>
 							</span>
 						</td>
 					</tr>
@@ -884,6 +888,26 @@
 							</span>
 						</td>
 					</tr>
+					<xsl:if test="number(n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount) &gt; 0">
+						<tr id="budgetContainerTr" align="right">
+							<td id="budgetContainerDummyTd"/>
+							<td id="lineTableBudgetTd" align="right" width="200px">
+								<span style="font-weight:bold; ">
+									<xsl:text>&#x130;skonto Sonras&#x131; Vergi Hari&#xE7; Tutar</xsl:text>
+								</span>
+							</td>
+							<td id="lineTableBudgetTd" style="width:81px; " align="right">
+								<span>
+									<xsl:for-each select="n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount">
+										<xsl:call-template name="Curr_Type">
+											<xsl:with-param name="valuePath" select="."/>
+											<xsl:with-param name="format" select="'###.##0,00'"/>
+										</xsl:call-template>
+									</xsl:for-each>
+								</span>
+							</td>
+						</tr>
+					</xsl:if>
 					<xsl:for-each select="n1:Invoice/cac:TaxTotal/cac:TaxSubtotal">
 						<tr id="budgetContainerTr" align="right">
 							<td id="budgetContainerDummyTd"/>
@@ -1935,10 +1959,20 @@
 			<td id="lineTableTd" align="right">
 				<span>
 					<xsl:text>&#xA0;</xsl:text>
-					<xsl:call-template name="Curr_Type">
-						<xsl:with-param name="valuePath" select="./cbc:LineExtensionAmount"/>
-						<xsl:with-param name="format" select="'###.##0,00'"/>
-					</xsl:call-template>
+					<xsl:choose>
+						<xsl:when test="./cac:AllowanceCharge[cbc:ChargeIndicator = 'false' or cbc:ChargeIndicator = 'FALSE']/cbc:BaseAmount">
+							<xsl:call-template name="Curr_Type">
+								<xsl:with-param name="valuePath" select="(./cac:AllowanceCharge[cbc:ChargeIndicator = 'false' or cbc:ChargeIndicator = 'FALSE']/cbc:BaseAmount)[1]"/>
+								<xsl:with-param name="format" select="'###.##0,00'"/>
+							</xsl:call-template>
+						</xsl:when>
+						<xsl:otherwise>
+							<xsl:call-template name="Curr_Type">
+								<xsl:with-param name="valuePath" select="./cbc:LineExtensionAmount"/>
+								<xsl:with-param name="format" select="'###.##0,00'"/>
+							</xsl:call-template>
+						</xsl:otherwise>
+					</xsl:choose>
 				</span>
 			</td>
 		</tr>

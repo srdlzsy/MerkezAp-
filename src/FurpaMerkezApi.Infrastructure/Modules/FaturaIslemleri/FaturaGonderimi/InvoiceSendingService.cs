@@ -1451,7 +1451,7 @@ public sealed class InvoiceSendingService(
                 break;
             }
 
-            var ratio = discount / remainingBase * 100m;
+            var ratio = discount / remainingBase;
             result.Add(
                 new XElement(
                     aggregate + "AllowanceCharge",

@@ -7320,6 +7320,8 @@ Davranis:
 - e-fatura XSLT'si firma logosunu ve GIB karekod alanlarini icerir
 - API, XSLT sonucu olusan HTML'e ikinci bir QR/SVG eklemez
 - karekod icerigi ve gorseli tamamen secilen embedded veya fallback XSLT'nin sorumlulugundadir
+- satir ve `Mal Hizmet Toplam Tutari` alanlari iskonto oncesi brut tutari gosterir; ilk `AllowanceCharge/BaseAmount` satir brutunun kaynagidir
+- `Toplam Iskonto` UBL `AllowanceTotalAmount`, `Iskonto Sonrasi Vergi Haric Tutar` ise `TaxExclusiveAmount` alanindan gosterilir
 - bu endpoint sadece onizleme/render icindir; Uyumsoft'a gonderim yapmaz
 
 ### Fatura Gonderimi Render
@@ -7433,6 +7435,7 @@ UBL / gonderim kurallari:
   - `OzelMatrahKodu dolu -> OZELMATRAH`
   - aksi halde `SATIS`
 - stok satirlarinda iskonto alanlari `AllowanceCharge` olarak satir bazinda XML'e yazilir
+- `AllowanceCharge/MultiplierFactorNumeric` ondalik katsayi olarak yazilir; ornegin `%3 = 0.03`, `%5 = 0.05`. XSLT ekranda bu degeri `100` ile carparak yuzdeyi gosterir.
 - e-arsiv gonderiminde `EArchiveInvoiceInfo DeliveryType="Electronic"` kullanilir
 
 ### Fatura Gonderimi XML Preview
