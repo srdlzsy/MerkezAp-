@@ -1675,19 +1675,6 @@ public sealed class InvoiceSendingService(
 
     private static InvoiceSendingListItemDto MapListItem(PendingInvoiceRecord invoice)
     {
-        var sendingPdfInvoiceNumber = ResolveSendingPdfInvoiceNumber(invoice);
-        var sendingPdfInvoiceUuid = LooksLikeTechnicalInvoiceId(sendingPdfInvoiceNumber)
-            ? sendingPdfInvoiceNumber
-            : null;
-        var sendingPdfLocalDocumentId = invoice.IsSent
-            ? BuildLocalDocumentId(invoice.InvoiceId, invoice.Scenario)
-            : null;
-        var sendingPdfFilePath = BuildSendingPdfFilePath(
-            sendingPdfInvoiceUuid,
-            invoice.IsSent ? invoice.InvoiceId : null,
-            sendingPdfInvoiceNumber,
-            sendingPdfLocalDocumentId);
-
         return new InvoiceSendingListItemDto(
             invoice.DocumentSerie,
             invoice.DocumentOrderNo,
@@ -1711,68 +1698,8 @@ public sealed class InvoiceSendingService(
             invoice.ReturnInvoiceNo,
             invoice.ReturnInvoiceDate,
             invoice.WarehouseName,
-            invoice.Description,
-            sendingPdfInvoiceUuid,
-            sendingPdfInvoiceNumber,
-            sendingPdfLocalDocumentId,
-            sendingPdfFilePath);
+            invoice.Description);
     }
-
-    private static string? ResolveSendingPdfInvoiceNumber(PendingInvoiceRecord invoice)
-    {
-        if (!invoice.IsSent || string.IsNullOrWhiteSpace(invoice.SentDocumentNo))
-        {
-            return null;
-        }
-
-        return invoice.SentDocumentNo.Trim();
-    }
-
-    private static string? BuildSendingPdfFilePath(
-        string? invoiceUuid,
-        string? invoiceId,
-        string? invoiceNumber,
-        string? localDocumentId)
-    {
-        if (!string.IsNullOrWhiteSpace(invoiceUuid))
-        {
-            return $"/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{Uri.EscapeDataString(invoiceUuid.Trim())}/pdf-file";
-        }
-
-        var primaryReference = NormalizeFirstNonEmpty(invoiceId, invoiceNumber);
-        if (primaryReference is null)
-        {
-            return null;
-        }
-
-        var path = $"/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/{Uri.EscapeDataString(primaryReference)}/pdf-file";
-        var alternateReferences = new[] { invoiceNumber, localDocumentId }
-            .Select(NormalizeValue)
-            .Where(reference =>
-                !string.IsNullOrWhiteSpace(reference) &&
-                !string.Equals(reference, primaryReference, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(reference => $"alternateDocumentReference={Uri.EscapeDataString(reference!)}")
-            .ToArray();
-
-        return alternateReferences.Length == 0
-            ? path
-            : $"{path}?{string.Join("&", alternateReferences)}";
-    }
-
-    private static bool LooksLikeTechnicalInvoiceId(string? value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        Guid.TryParse(value.Trim(), out _);
-
-    private static string? NormalizeFirstNonEmpty(params string?[] values) =>
-        values
-            .Select(NormalizeValue)
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
-    private static string? NormalizeValue(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? null
-            : value.Trim();
 
     private static void EnsureReturnInvoice(PendingInvoiceRecord invoice)
     {

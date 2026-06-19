@@ -6456,7 +6456,7 @@ Kasa Islemleri / Kasa Hareket Aktarimi
 
 ## Fatura Islemleri
 
-Bu bolum 2026-05-06 tarihinde kaynak kod uzerinden yeniden dogrulanmistir.
+Bu bolum 2026-06-19 tarihinde kaynak kod uzerinden yeniden dogrulanmistir.
 
 Kodla dogrulanan ana dosyalar:
 
@@ -6468,6 +6468,7 @@ Kodla dogrulanan ana dosyalar:
 - `src/FurpaMerkezApi.Infrastructure/Modules/FaturaIslemleri/FaturaGonderimi/InvoiceSendingService.cs`
 - `src/FurpaMerkezApi.Infrastructure/Services/EInvoiceDocumentRenderer.cs`
 - `src/FurpaMerkezApi.WebApi/Controllers/Modules/FaturaIslemleri/FaturaGonderimi/FaturaGonderimiController.cs`
+- `src/FurpaMerkezApi.WebApi/Controllers/Modules/EntegrasyonIslemleri/UyumsoftEFatura/UyumsoftEFaturaController.cs`
 
 Bu bolumde daha once karisiklik yaratan nokta, is kurali ile mevcut HTTP endpointlerinin ayni paragrafta ic ice anlatilmasiydi. 2026-05-06 itibariyla iki akis da API tarafinda ayri ayri temsil edilmektedir:
 
@@ -6483,35 +6484,34 @@ Bu bolumde daha once karisiklik yaratan nokta, is kurali ile mevcut HTTP endpoin
   - HTML detay/render gerektiginde Uyumsoft `GetInboxInvoice` ile XML alip `XML -> XSLT -> HTML` render eder
   - gercek print/isaretleme ayrimini koruyup `isPrinted` durumunu ayri endpoint ile gunceller
 
-UI tarafinda artik ayri iki operasyon mantigi vardir:
+UI tarafinda karistirilmamasi gereken net kural:
 
-- `gonderim = Mikro bekleyen faturayi sec, onizle, Uyumsoft'a yolla`
-- `goruntuleme = mevcut/gelen belgeyi ac, render et, yazdirildi durumunu yonet`
+- `fatura-gonderimi`, giden faturalarin ekranidir. Satir `isSent = false` veya `isSent = true` olsa da UI sadece lokal HTML onizleme acar.
+- `fatura-gonderimi` listesinde Uyumsoft resmi PDF acma aksiyonu yoktur; Mikro kaynakta Uyumsoft teknik `invoiceId` kalici saklanmadigi icin gonderilmis giden faturalar Uyumsoft PDF endpointinden cozumlenmez.
+- `fatura-goruntuleme`, gelen/inbox faturalari ve cache listesidir. Giden fatura PDF aksiyonunun ana yolu degildir.
 
-`fatura-gonderimi` tarafinda ayrica ileri seviye operasyonlar da acik tutulmustur:
-
-- Uyumsoft outbox arama
-- outbox belgesi render etme
-- eldeki herhangi bir XML'i manuel preview etme
+`fatura-gonderimi` tarafinda eldeki herhangi bir XML'i manuel preview etme endpoint'i ayrica acik tutulmustur.
 
 ### UI Icin Kisa Karar Agaci
 
 Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 
-1. Mikro'daki bekleyen faturalari listelemek icin `GET /api/fatura-islemleri/fatura-gonderimi`
-2. Kullanici bir bekleyen fatura satirina tiklayip onizleme acmak istediginde:
+1. Giden faturalari listelemek icin `GET /api/fatura-islemleri/fatura-gonderimi`
+2. Liste varsayilan olarak `isSent=0` ile gonderilmemisleri getirir. `isSent=1` gonderilmis giden faturalar icindir.
+3. Kullanici herhangi bir giden fatura satirinda lokal onizleme acmak istediginde:
    - default davranis yeterliyse `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}?scenario=...`
    - XSLT secimini elle kontrol etmek istiyorsaniz `POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/render`
-3. Secilen bekleyen faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
-4. Yeni eklendi: secilen tarih araligini Uyumsoft'tan cache tabloya almak icin `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
-5. Lokal cache/DB'deki gonderilmis belge listesini doldurmak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
-6. Gonderilmis belgeyi resmi PDF olarak acmak icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
-7. HTML render/onizleme gerekiyorsa:
+   - UI response icindeki yalnizca `document.htmlContent` alanini tek bir iframe/webview icinde render eder
+   - UI ayrica QR/karekod uretmez; karekodun tek kaynagi secilen XSLT'nin urettigi HTML'dir
+4. Giden fatura satirinda resmi PDF butonu gosterilmez; Uyumsoft outbox/PDF endpoint'i cagrilmaz.
+5. Secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
+6. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
+7. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
+8. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
+9. Gelen/inbox HTML render/onizleme gerekiyorsa:
    - default davranis yeterliyse `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/detail`
    - XSLT secimini elle kontrol etmek istiyorsaniz `POST /api/fatura-islemleri/fatura-goruntuleme/{documentId}/render`
-8. Kullanici PDF/HTML'i gercekten yazdirdiktan veya acikca onay verdikten sonra `PATCH /api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed`
-9. Uyumsoft outbox tarafindaki giden faturayi sorgulamak gerekiyorsa `POST /api/fatura-islemleri/fatura-gonderimi/outbox/search`
-10. Uyumsoft outbox'taki tekil belgeyi gostermek gerekiyorsa `GET /api/fatura-islemleri/fatura-gonderimi/outbox/{invoiceId}`
+10. Gelen/inbox PDF/HTML gercekten yazdirildiktan veya acikca onaylandiktan sonra `PATCH /api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed`
 11. UI lokal veya baska bir kaynaktan XML uretip sadece goruntusunu gormek istiyorsa `POST /api/fatura-islemleri/fatura-gonderimi/preview`
 
 Temel route'lar:
@@ -6706,7 +6706,7 @@ UI uygulama kurali:
 - `row.documentId` -> teknik UUID -> route'a gonderilir
 - `row.invoiceId` -> resmi fatura numarasi -> ekranda gosterilir
 - UI `row.invoiceId` degerini PDF URL'sine yazmaz
-- UI `by-number` endpointine otomatik fallback yapmaz
+- UI fatura numarasindan teknik UUID/PDF route'u uretmeye calismaz
 - `row.documentId` bos ise PDF butonu pasif olur ve veri/entegrasyon hatasi gosterilir
 
 Bu endpoint ne icin kullanilmali:
@@ -6730,6 +6730,13 @@ Bu endpoint ne yapmaz:
 ### Fatura Goruntuleme HTML Detay
 
 `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/detail`
+
+Ornek:
+
+```http
+GET /api/fatura-islemleri/fatura-goruntuleme/78644214-ce3b-4976-9fc3-d5de0d7cfe7e/detail
+Authorization: Bearer {accessToken}
+```
 
 Yetki:
 
@@ -6759,6 +6766,8 @@ Detay davranisi:
 - sonra legacy semantige uygun olarak ayni satirin `documentId` degerini Uyumsoft `GetInboxInvoice` cagrisinda lookup parametresi olarak kullanir
 - bu akis eski `FaturaGoruntuleyici` formunun `documentId` bazli acilisina karsilik gelir
 - UI HTML donusumunu kendi icinde yapmaz; backend'den gelen `htmlContent` dogrudan gosterilir
+- backend HTML'e yeni bir QR/SVG eklemez; karekod sadece Uyumsoft belgesindeki embedded XSLT veya fallback XSLT tarafindan uretilir
+- UI `document.htmlContent` alanini yalniz bir kez render eder ve ayrica QR kutuphanesi calistirmaz
 - `xmlContent` debug, inceleme veya kaynak belge sekmesi icin kullanilabilir
 - `summary.invoiceId` ve `document.invoiceId` kullanicinin gordugu fatura numarasidir; detay acma anahtari yine `documentId` olarak kalir
 - bu endpoint legacy'deki cift-tik onizlemesine karsilik gelir; tek basina `isPrinted` update etmez
@@ -6880,6 +6889,7 @@ Komut davranisi:
 - embedded tasarim bulunursa `usedEmbeddedXslt = true` olur
 - embedded tasarim bulunamazsa `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olarak kullanilir
 - `profile = Auto` ise belge icinden `ProfileID` / `ScenarioId` / `DocumentTypeCode` okunarak `EFatura` veya `EArsiv` secilir
+- renderer XSLT sonucuna ikinci bir QR eklemez; `fatura-goruntuleme/detail`, `fatura-goruntuleme/render`, `fatura-gonderimi/detail`, `fatura-gonderimi/render` ve XML preview ayni ortak kurala tabidir
 - yani legacy'deki "custom varsa onu kullan, yoksa genel fallback" mantigi korunmustur; fark su ki fallback artik backend asset dosyalariyla uygulanir
 
 ### Fatura Goruntuleme WinUI Parity Notlari
@@ -6941,11 +6951,7 @@ Response `InvoiceSendingListResponse`:
       "returnInvoiceNo": "",
       "returnInvoiceDate": null,
       "warehouseName": "MERKEZ DEPO",
-      "description": "Aciklama",
-      "sendingPdfInvoiceUuid": null,
-      "sendingPdfInvoiceNumber": null,
-      "sendingPdfLocalDocumentId": null,
-      "sendingPdfFilePath": null
+      "description": "Aciklama"
     },
     {
       "documentSerie": "FRP",
@@ -6970,11 +6976,7 @@ Response `InvoiceSendingListResponse`:
       "returnInvoiceNo": "",
       "returnInvoiceDate": null,
       "warehouseName": "MERKEZ DEPO",
-      "description": "",
-      "sendingPdfInvoiceUuid": null,
-      "sendingPdfInvoiceNumber": "FRM2026600076468",
-      "sendingPdfLocalDocumentId": "EFatura:FRP2026000021645",
-      "sendingPdfFilePath": "/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/FRP2026000021645/pdf-file?alternateDocumentReference=FRM2026600076468&alternateDocumentReference=EFatura%3AFRP2026000021645"
+      "description": ""
     }
   ]
 }
@@ -6988,16 +6990,12 @@ Davranis:
 - `InvoiceSendingScenario` JSON response/body degeri sayisaldir: `0 = EFatura`, `1 = EArsiv`; query string tarafinda `EFatura` / `EArsiv` adlari da kullanilabilir
 - `isSent/SentState = 0` ise `cha_belge_no` bos olan kayitlar, `1` ise dolu olan kayitlar, `-1` ise tumu doner
 - `invoiceId` legacy WinForms mantigina uygun sekilde `seri + yil + 9 haneli sira` olarak uretilir
-- `invoiceId`, UBL icindeki `cbc:ID` degeridir; gonderilmis fatura PDF cozumlemesinde ilk arama anahtari olarak kullanilir
+- `invoiceId`, UBL icindeki `cbc:ID` degeridir; UI bunu PDF URL'si uretmek icin kullanmaz
 - `sentDocumentNo` Mikro `cha_belge_no` alanidir; gonderim sonrasi kullaniciya gosterilen resmi belge numarasidir
-- `sendingPdfInvoiceUuid` Uyumsoft teknik UUID/ETTN degeridir; mevcut Mikro liste kaynaginda genellikle sakli olmadigi icin `null` olabilir
-- `sendingPdfInvoiceNumber`, PDF cozumlemesinde yedek referans olarak kullanilacak resmi belge numarasidir; `isSent = true` ve `sentDocumentNo` doluysa dolar
-- `sendingPdfLocalDocumentId`, gonderim sirasinda Uyumsoft'a verilen lokal referanstir; format `Scenario:invoiceId` seklindedir
-- `sendingPdfFilePath`, UI'nin PDF butonu icin dogrudan cagiracagi relative API yoludur
-- UI PDF butonunu `isSent && !!sendingPdfFilePath` ile aktif etmelidir; `serviceDocumentId` bu liste DTO'sunda beklenmemelidir
-- UI `invoiceId`, `sentDocumentNo` veya `sendingPdfInvoiceNumber` degerinden kendisi URL uretmemelidir; her zaman `sendingPdfFilePath` kullanilmalidir
-- `sendingPdfFilePath` teknik UUID yoksa `invoiceId` ile gelen fallback yolu tasir; teknik UUID cozumleme isi backend `by-number` route'unda yapilir
-- path icindeki tekrarli `alternateDocumentReference` query'leri backend icin ek cozumleme ipuclaridir; genellikle `sentDocumentNo` ve `Scenario:invoiceId` degerlerini tasir
+- `isSent = false` ise fatura henuz Uyumsoft'a gonderilmemistir; UI lokal onizleme acar
+- `isSent = true` ise fatura Uyumsoft'a gonderilmis giden faturadir; UI yine lokal onizleme acar
+- giden fatura listesinde resmi Uyumsoft PDF alani/URL'si donmez; mevcut Mikro kaynaginda Uyumsoft teknik `invoiceId` kalici tutulmadigi icin fatura numarasindan PDF cozumleme yapilmaz
+- UI giden fatura ekraninda PDF butonu gostermez ve `invoiceId` / `sentDocumentNo` degerlerinden Uyumsoft PDF URL'si uretmez
 - `invoiceProfileId` alani:
   - e-fatura icin `TICARIFATURA` veya `TEMELFATURA`
   - e-arsiv icin `EARSIVFATURA`
@@ -7008,30 +7006,68 @@ Davranis:
 - `ebh_iade_fat_no1` ve `ebh_iade_fat_tarihi1` degerleri response'ta `returnInvoiceNo` / `returnInvoiceDate` olarak doner
 - iade referansi doluysa UBL'ye `cac:BillingReference/cac:InvoiceDocumentReference` eklenir; XSLT'deki `Iadeye Konu Olan Faturalar` tablosu bu alandan dolar
 
-PDF butonu icin kopyalanabilir UI kurali:
+Onizleme ve PDF butonlari icin kopyalanabilir UI kurali:
 
 ```ts
-function canOpenSendingPdf(summary: InvoiceSendingListItemDto | null | undefined): boolean {
-  return Boolean(summary?.isSent && summary.sendingPdfFilePath);
+function canPreviewSendingInvoice(summary: InvoiceSendingListItemDto | null | undefined): boolean {
+  return Boolean(summary?.documentSerie && summary.documentOrderNo);
 }
+```
 
-async function openSendingPdf(summary: InvoiceSendingListItemDto, token: string) {
-  if (!summary.sendingPdfFilePath) {
-    throw new Error("Gonderilmis fatura icin PDF yolu API cevabinda bulunamadi.");
-  }
+Onizleme butonu `isSent` degerine bakmaz; giden faturanin HTML'i Mikro verisinden lokal uretilir. Bu ekranda PDF butonu yoktur.
 
-  const response = await fetch(summary.sendingPdfFilePath, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
+#### Onizleme icin tek kaynak kurali
 
-  if (!response.ok) {
-    throw new Error(`Gonderilmis fatura PDF alinamadi. HTTP ${response.status}`);
-  }
+Gonderilmemis ve gonderilmis giden faturalar ayni lokal onizleme endpoint'ini kullanir:
 
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank", "noopener,noreferrer");
-}
+```http
+GET /api/fatura-islemleri/fatura-gonderimi/FRP26/21791?scenario=EFatura
+Authorization: Bearer {accessToken}
+```
+
+Bu endpoint:
+
+- Uyumsoft'a fatura gondermez
+- Uyumsoft outbox PDF servisini cagirmez
+- Mikro verisinden UBL XML'i yeniden uretir
+- secilen XSLT ile HTML olusturur
+- HTML'e backend tarafinda ek bir QR/SVG eklemez
+- JSON tipinde `InvoiceSendingDetailDto` doner; response dogrudan PDF veya `text/html` degildir
+
+UI'nin kullanacagi alan:
+
+```ts
+const detail = await api.get<InvoiceSendingDetailDto>(
+  `/api/fatura-islemleri/fatura-gonderimi/${encodeURIComponent(invoice.documentSerie)}/${invoice.documentOrderNo}`,
+  { params: { scenario: invoice.scenario } }
+);
+
+previewFrame.srcdoc = detail.document.htmlContent;
+```
+
+Karekod icin kesin UI kurali:
+
+- `document.htmlContent` sadece bir kez DOM'a yazilmalidir
+- ayni HTML hem ana container'a hem iframe'e birlikte yazilmamalidir
+- UI `QRCode`, `qrcode.js`, canvas veya baska bir kutuphane ile ikinci karekod uretmemelidir
+- `document.xmlContent` ekrana HTML olarak render edilmemelidir
+- XSLT karekodu JavaScript ile olusturuyorsa iframe/webview script politikasi buna gore ayarlanmalidir
+
+Backend karekod kurali:
+
+- ortak renderer QRCoder veya baska bir kutuphane ile yeni karekod uretmez
+- XSLT sonucuna statik SVG, canvas veya image eklenmez
+- karekodun tek kaynagi embedded XSLT veya fallback XSLT'dir
+- bu kural hem `fatura-gonderimi` hem `fatura-goruntuleme` HTML detay/render endpointlerinde gecerlidir
+
+UI kontrolu:
+
+```ts
+const html = detail.document.htmlContent;
+const qrContainerCount = (html.match(/\bid\s*=\s*["']qrcode["']/gi) ?? []).length;
+
+console.log({ qrContainerCount });
+// Fallback e-fatura XSLT icin beklenen container sayisi: 1
 ```
 
 ### Fatura Gonderimi Iade Referansi
@@ -7233,6 +7269,13 @@ Not: Kayit `EBELGE_EVRAK_HAREKETLERI.ebh_related_uid = iade faturasi cha_Guid` u
 
 `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}?scenario=EFatura`
 
+Calisan ornek:
+
+```http
+GET /api/fatura-islemleri/fatura-gonderimi/FRP26/21791?scenario=EFatura
+Authorization: Bearer {accessToken}
+```
+
 Yetki:
 
 - `fatura-islemleri.fatura-gonderimi.detail`
@@ -7242,14 +7285,41 @@ Response `InvoiceSendingDetailDto`:
 - `summary`: secilen bekleyen fatura satirinin ozeti
 - `document`: UBL XML'den render edilmis `InvoiceRenderedDocumentDto`
 
+Ornek response iskeleti:
+
+```json
+{
+  "summary": {
+    "documentSerie": "FRP26",
+    "documentOrderNo": 21791,
+    "invoiceId": "FRP2026000021791",
+    "isSent": true,
+    "scenario": 0
+  },
+  "document": {
+    "source": "pending-send",
+    "invoiceId": "FRP2026000021791",
+    "profile": 1,
+    "appliedXsltName": "efatura.xslt",
+    "xsltSource": "embedded-attachment",
+    "usedEmbeddedXslt": true,
+    "xmlContent": "<Invoice>...</Invoice>",
+    "htmlContent": "<html>...</html>"
+  }
+}
+```
+
+UI sadece `document.htmlContent` alanini onizleme yuzeyine verir. `xmlContent`, hata ayiklama veya ham UBL goruntuleme ihtiyaci disinda son kullanici onizlemesinde kullanilmaz.
+
 Davranis:
 
 - secilen kayit Mikro'dan okunur
 - belge tipi stok faturasi ise satirlar `STOK_HAREKETLERI` uzerinden, hizmet/demirbas ise ilgili hizmet sorgusu uzerinden toplanir
 - backend UBL invoice uretir
 - render icin once embedded XSLT denenir; yoksa `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olur
-- e-fatura XSLT'si firma logosunu ve GIB karekod alanlarini icerir; API render sonucunda JavaScript gerektiren bos karekod alani backend tarafinda statik SVG karekod ile doldurulur
-- statik karekod UBL icindeki satici/alici VKN-TCKN, senaryo, fatura tipi, tarih, fatura no, ETTN, para birimi, KDV matrahi, hesaplanan KDV ve toplam alanlarindan uretilir
+- e-fatura XSLT'si firma logosunu ve GIB karekod alanlarini icerir
+- API, XSLT sonucu olusan HTML'e ikinci bir QR/SVG eklemez
+- karekod icerigi ve gorseli tamamen secilen embedded veya fallback XSLT'nin sorumlulugundadir
 - bu endpoint sadece onizleme/render icindir; Uyumsoft'a gonderim yapmaz
 
 ### Fatura Gonderimi Render
@@ -7275,6 +7345,8 @@ Davranis:
 
 - `GET detail` ile ayni `InvoiceSendingDetailDto` tipini doner
 - farki, XSLT secimini body ile override edebilmenizdir
+- response yine JSON'dur; UI `document.htmlContent` alanini tek kez render eder
+- QR davranisi `GET detail` ile aynidir: backend yeni QR uretmez, UI da ikinci QR uretmez
 
 ### Fatura Gonderimi Send
 
@@ -7344,7 +7416,7 @@ Davranis:
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
 - `serviceDocumentId` Uyumsoft'un teknik id'sidir ve send response'unda bilgilendirme icin doner; mevcut Mikro tabloya yazilmadigi icin sonraki liste response'unda garanti edilmez
-- sonraki liste/PDF butonu icin UI'nin kullanacagi alan `sendingPdfFilePath` alanidir; backend bu path'i once `invoiceId` ile, yedek olarak `sentDocumentNo` ve `sendingPdfLocalDocumentId` ipuclariyla uretir
+- sonraki liste ekraninda UI yine lokal onizleme kullanir; `serviceDocumentId` kalici saklanmadigi icin gonderilmis giden fatura PDF'i Uyumsoft'tan acilmaz
 - ayni anda `cha_kilitli = true`, `cha_degisti = true`, `cha_lastup_user = 39` ve `cha_lastup_date = now` set edilir
 - zaten gonderilmis kayitlar response'ta `isSucceeded = false` ile doner; genel request tamamen patlatilmaz
 
@@ -7362,59 +7434,6 @@ UBL / gonderim kurallari:
   - aksi halde `SATIS`
 - stok satirlarinda iskonto alanlari `AllowanceCharge` olarak satir bazinda XML'e yazilir
 - e-arsiv gonderiminde `EArchiveInvoiceInfo DeliveryType="Electronic"` kullanilir
-
-### Fatura Gonderimi Outbox Arama
-
-`POST /api/fatura-islemleri/fatura-gonderimi/outbox/search`
-
-Yetki:
-
-- `fatura-islemleri.fatura-gonderimi.list`
-
-Request body:
-
-- `UyumsoftOperationHttpRequest`
-
-Davranis:
-
-- bu endpoint Uyumsoft `GetOutboxInvoices` operasyonunu API icinden cagirir
-- body icindeki `parameters` Uyumsoft WCF metod parametrelerine aktarilir
-- response normalize edilmis bir liste DTO'su degil, Uyumsoft'un genel response modelidir
-- yani UI bu endpointte "backend business listesi" degil, "Uyumsoft sorgu cevabi" ile calisir
-
-Response:
-
-- `UyumsoftOperationResponseDto`
-
-### Fatura Gonderimi Outbox Belge Render
-
-`GET /api/fatura-islemleri/fatura-gonderimi/outbox/{invoiceId}?profile=Auto&preferEmbeddedXslt=true`
-
-Yetki:
-
-- `fatura-islemleri.fatura-gonderimi.detail`
-
-Query:
-
-```text
-profile             opsiyonel; Auto, EFatura, EArsiv
-preferEmbeddedXslt  opsiyonel; default true
-```
-
-Response `InvoiceRenderedDocumentDto`:
-
-```json
-{
-  "source": "outbox",
-  "invoiceId": "INV-2026-0001",
-  "profile": "EFatura",
-  "appliedXsltName": "efatura.xslt",
-  "xsltSource": "asset-efatura",
-  "usedEmbeddedXslt": false,
-  "xmlContent": "<Invoice>...</Invoice>",
-  "htmlContent": "<html>...</html>"
-}
-```
 
 ### Fatura Gonderimi XML Preview
 
@@ -7447,7 +7466,7 @@ Bu endpoint ne zaman kullanilmali:
 
 Fatura modulu notlari:
 
-- is kurali tarafinda sade ozet sunudur: `fatura-gonderimi` bekleyen faturayi secip Uyumsoft'a yollama akisidir, `fatura-goruntuleme` ise Uyumsoft tarafindaki giden faturayi acma/yazdirma akisidir
+- is kurali tarafinda sade ozet sunudur: `fatura-gonderimi` giden faturayi lokal onizleme ve bekleyen kaydi Uyumsoft'a yollama akisidir, `fatura-goruntuleme` ise Uyumsoft gelen/inbox faturasini acma/yazdirma akisidir
 - bu repoda `fatura-gonderimi` icin artik dogrudan pending list, detay/render ve send endpointleri vardir
 - `fatura-goruntuleme` tarafi artik `uyumsoft_inbox_invoices` cache tablosundan liste alir; varsayilan acista Uyumsoft `GetInboxInvoicePdf` ile PDF datasini, HTML detayda `GetInboxInvoice` ile render datasini alir
 - yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` ile secilen tarih araligi manuel olarak Uyumsoft'tan cache'e alinabilir
@@ -7456,7 +7475,7 @@ Fatura modulu notlari:
 - `fatura-gonderimi` detail/send akisinda invoice XML Mikro verisinden backend tarafinda yeniden uretilir; UI ham XML kurmak zorunda degildir
 - `fatura-gonderimi` send akisinda basarili sonuclarda Mikro `cha_belge_no` geri yazilir ve kayit kilitlenir
 - render sirasinda once embedded XSLT denenir; yoksa WebApi icindeki `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olarak kullanilir
-- e-fatura HTML onizlemesindeki karekod backend tarafinda statik SVG olarak uretilir; UI iframe'inde script yetkisi acilmasi gerekmez
+- ortak renderer artik ek karekod uretmez; fatura-gonderimi ve fatura-goruntuleme HTML'inde karekodun tek kaynagi secilen XSLT'dir
 - `fatura-goruntuleme` PDF/detail lookup anahtari `documentId`'dir; `invoiceId` ise kullaniciya gosterilen numaradir
 
 ## UI Tasarim Onerisi
@@ -7698,6 +7717,12 @@ Mevcut endpointler:
   - Mikro'ya veri yazmaz ve AXATA ack/status guncellemez
   - C02/C03/C4 icin UI'nin kuyruk kontrol ekraninda kullanacagi guvenli preview endpoint'idir
   - response `AxataOutboundDeliveryQueuePreviewDto`
+- `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/by-date?date=2026-06-19`
+  - AXATA `ENT006` tablosundaki sevk basliklarini secilen tarihe gore listeler
+  - tarih filtresi `ENT006.S06ITAR = yyyyMMdd` seklinde uygulanir
+  - `ENT007` satirlari teslimat numarasina gore ozetlenir; satir sayisi ve toplam miktar response'a eklenir
+  - Mikro'ya veya AXATA'ya veri yazmaz
+  - response `AxataOutboundDeliveriesByDateDto`
 - `GET /api/integrations/axata-sync/tasks/{taskCode}/preview?warehouseNo=1&take=10`
   - secili task icin canli veriden preview payload dondurur
   - response `AxataSynchronizationPreviewDto`
@@ -7815,6 +7840,7 @@ UI icin endpoint davranis rehberi:
 | Profil Katalogu | `GET /api/integrations/axata-sync/fetch-profiles` | AXATA servislerinden hangi profillerin okunabilecegini ve backendde hangi seviyede desteklendigini listeler | Hayir | UI butonlarini capability'ye gore ac/kapat |
 | Fark Analizi | `GET /api/integrations/axata-sync/live/audit/overview` | Mikro siparis bayragi, AXATA pending sevk kuyrugu, Mikro sevk donus eksigi ve kismi sevk/satir farklarini birlikte kontrol eder | Hayir | "Kontrol et" butonu |
 | AXATA Kuyruk | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` | C01/C02/C03/C4 pending outbound delivery kuyrugunu canli okur | Hayir | "AXATA kuyrugunu goster" butonu |
+| AXATA Sevk Tarihi | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/by-date` | AXATA `ENT006.S06ITAR` tarihine gore sevk basliklarini ve `ENT007` satir ozetini listeler | Hayir | "Tarihe gore sevkleri getir" |
 | C01 Import | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview` | C01 pending teslimatlari Mikro siparis satirlariyla eslestirir | Hayir | "C01 import onizle" butonu |
 | C01 Import | `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import` | Uygun C01 teslimatini Mikro depolar arasi sevk fisine cevirir; istenirse AXATA ack atar | Evet | "C01'i Mikro'ya isle" butonu |
 | C01 Rescue | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{serie}/{sira}/preview` | AXATA'ya gonderildi gorunen ama belge genelinde Mikro sevk linki olmayan tek belgeyi AXATA'dan belge bazinda arar | Hayir | "Eksik sevki onizle" |
@@ -7839,6 +7865,7 @@ UI'da asil karistirilmamasi gereken farklar:
 | `dispatch` | Mikro evrakini AXATA Main servisine canli gonderir | AXATA tarafina yazar |
 | `live/audit/overview` | Mikro ve AXATA durumunu karsilastirir | Mudahale yapmaz |
 | `outbound-deliveries/preview` | AXATA C01/C02/C03/C4 pending kuyrugunu okur | Mikro'ya yazmaz, ack atmaz |
+| `outbound-deliveries/by-date` | AXATA `ENT006.S06ITAR` tarihine gore sevkleri listeler | Mikro'ya yazmaz, ack atmaz; pending filtrelemez |
 | `c01/import` | AXATA C01 teslimatini Mikro sevke cevirir | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
 | `c01/documents/{serie}/{sira}/preview` | C01 teslimatini AXATA'da belge no ile arar, status verilmezse `0` sonra `1` dener | Veri yazmaz |
 | `c01/documents/{serie}/{sira}/import` | AXATA'da sevki kesilmis ama belge genelinde Mikro sevk linki olmayan C01 belgeyi Mikro'ya dusurur | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
@@ -8689,7 +8716,7 @@ Kesin kurallar:
 3. UI teknik kimlik olarak sadece `row.invoiceUuid` kullanir.
 4. UI PDF URL'si uretmez; `row.pdfFilePath` degerini dogrudan cagirir.
 5. UI `invoiceNumber`, `localDocumentId` veya ekranda gorunen metinden UUID/route turetmez.
-6. UI yeni ekranlarda `by-number` endpointini cagirmez ve UUID istegi hata verirse `by-number` endpointine otomatik fallback yapmaz.
+6. UI yeni ekranlarda fatura numarasindan teknik UUID cozumleme denemesi yapmaz; UUID istegi hata verirse invoiceNumber ile otomatik fallback yapmaz.
 7. `invoiceUuid` veya `pdfFilePath` bos ise PDF butonu pasif olur; satir veri hatasi olarak ele alinir.
 8. `/pdf-file` cevabi JSON degil `application/pdf` binary veridir; istemci blob olarak okumali veya yetkili yeni sekme/iframe akisi kullanmalidir.
 
@@ -8747,14 +8774,12 @@ Isim benzerligine dikkat:
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceUuid}/view`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceUuid}/pdf`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceUuid}/pdf-file`
-- `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/by-number/{invoiceNumber}/pdf-file` (yalniz legacy/operator kullanimi)
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{invoiceUuid}/status-with-logs`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}/data`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}/view`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}/pdf`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}/pdf-file`
-- `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/{invoiceNumber}/pdf-file` (yalniz legacy/operator kullanimi)
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}/status-with-logs`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/{invoiceUuid}/response-view`
 - `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/invoices/{invoiceUuid}/envelope`
@@ -8787,7 +8812,7 @@ Not:
 - e-fatura icin `/pdf-file` ile biten inbox/outbox route'lari istisnadir; direkt `application/pdf` binary response doner ve liste ekranlarindaki `PDF Goster` aksiyonlari icin onerilir
 - `{invoiceUuid}` route'lari Uyumsoft teknik UUID bekler. Liste response'unda bu deger `invoiceList.items[].invoiceUuid` alanindadir.
 - Liste cevabi ayrica hazir `invoiceList.items[].pdfFilePath` dondurur; yeni UI bu yolu dogrudan cagirir.
-- `by-number/{invoiceNumber}/pdf-file` route'u sadece eski istemci veya manuel operator sorgusu icindir; yeni UI akisinin parcasi degildir.
+- fatura numarasiyla PDF cozumleme route'u yoktur; teknik UUID yoksa PDF butonu pasif kalir.
 
 ### Yetki Kodlari
 
@@ -9144,32 +9169,12 @@ const pdfUrl = row.pdfFilePath;
 
 UI `pdfFilePath` degerini degistirmeden cagirir. `FRM2026600075612` gibi resmi fatura numarasindan URL uretmez.
 
-Fatura dokuman referansiyla e-fatura PDF dosyasi, yalnizca legacy/operator veya `fatura-gonderimi.sendingPdfFilePath` kullanimi:
+Fatura numarasiyla giden e-fatura PDF cozumleme:
 
-```http
-GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/by-number/FRP2026000021645/pdf-file?alternateDocumentReference=FRM2026600076468&alternateDocumentReference=EFatura%3AFRP2026000021645
-Authorization: Bearer {token}
-```
-
-Query:
-
-- `alternateDocumentReference` opsiyoneldir
-- ayni query birden fazla kez gonderilebilir
-- `fatura-gonderimi` listesinde path kismi varsayilan olarak `summary.invoiceId` degerini tasir
-- query icinde `sentDocumentNo` ve `Scenario:invoiceId` gibi ek adaylar bulunabilir
-- gonderim listesinde backend tarafindan `sendingPdfFilePath` icine otomatik yazilir
-- UI manuel route kurarken bu query'yi uretmez; hazir `sendingPdfFilePath` kullanir
-
-Response:
-
-- `Content-Type: application/pdf`
-- `Content-Disposition: inline`
-- UI `summary.sendingPdfFilePath` veya generic Uyumsoft listede `invoiceList.items[].pdfFilePath` alanini degistirmeden cagirir; JSON parse edilmez.
-- Generic Uyumsoft listelerinde `pdfFilePath`, `invoiceUuid` ile olusturulmus normal `{invoiceUuid}/pdf-file` route'unu tasir.
-- Fatura gonderimi listesinde `serviceDocumentId` kalici olmadigi icin `sendingPdfFilePath`, `summary.invoiceId` ile olusturulmus `by-number` fallback route'unu tasiyabilir.
-- `invoiceNumber`/`DocumentId` kullaniciya gosterilir; generic Uyumsoft listesinde PDF route'una teknik anahtar olarak gonderilmez.
-- `by-number` endpoint'i path'teki referans ve varsa tekrarli `alternateDocumentReference` degerleriyle Uyumsoft listesinde teknik UUID cozmeye calisir; `InvoiceNumbers` ve `InvoiceIds` aramalarini dener. Yalnizca `DocumentId`, `InvoiceNumber` veya `LocalDocumentId` birebir eslesen satiri kabul eder. Eslesme bulunmazsa ilk kaydi kullanmaz; yanlis faturayi acma riski yerine `Uyumsoft fatura numarasina gore teknik invoiceId bulunamadi` detayli `404` cevabi doner.
-- Frontend `pdfFilePath` istegi hata verdiginde `by-number` endpoint'ine geri dusmemelidir; asil hata kullaniciya gosterilmeli ve correlationId loglanmalidir.
+- `fatura-gonderimi` ekraninda kullanilmaz.
+- Mikro liste kaynaginda Uyumsoft teknik `invoiceId`/ETTN kalici tutulmadigi icin `FRP...` gibi fatura numarasindan Uyumsoft PDF route'u uretilmez.
+- Generic Uyumsoft outbox listesi kullaniliyorsa UI sadece API cevabinda hazir gelen `invoiceList.items[].pdfFilePath` alanini cagirir; bu alan yoksa PDF butonu pasif kalir.
+- Frontend `invoiceId`, `invoiceNumber`, `sentDocumentNo` veya lokal belge referansindan kendi PDF URL'sini uretmemelidir.
 
 Tekil e-irsaliye makbuz PDF sorgusu:
 
@@ -9317,7 +9322,7 @@ Bu modullerde exception middleware davranisi su sekildedir:
 - `403 Forbidden`
   - ilgili module permission'i yok
 - `404 Not Found`
-  - legacy `by-number` endpointi resmi numaradan teknik UUID cozemedi
+  - teknik UUID ile istenen remote belge/PDF bulunamadi
   - UI bu durumda ayni istegi tekrar tekrar denemez ve baska satirin UUID'sini kullanmaz
 - `409 Conflict`
   - Uyumsoft remote service request'i reddetti
@@ -9331,7 +9336,7 @@ UI notu:
 - `409` cevaplarini "servis reddetti / uzak servis cevabi" gibi kullaniciya daha anlamli bir dille gostermek dogru olur
 - `400` cevaplari ise lokal request form hatasi gibi ele alinmalidir
 - hata response'undaki `correlationId`, destek/log incelemesi icin UI tarafinda kaydedilmelidir
-- `pdfFilePath` cagrisi `404` donerse UI `invoiceNumber` ile `by-number` fallback yapmamalidir; satiri yenileyip yeni `invoiceUuid/pdfFilePath` almak veya hatayi kullaniciya gostermek gerekir
+- `pdfFilePath` cagrisi `404` donerse UI `invoiceNumber` ile fallback yapmamalidir; satiri yenileyip yeni `invoiceUuid/pdfFilePath` almak veya hatayi kullaniciya gostermek gerekir
 
 ### E-Fatura Modulu: Dahil Olan GET Operasyonlari
 
@@ -11523,6 +11528,31 @@ public sealed record AxataOutboundDeliveryQueueDocumentDto(
     string CurrentHandling,
     string? Warning);
 
+public sealed record AxataOutboundDeliveriesByDateDto(
+    DateTime Date,
+    decimal AxataDateNumber,
+    DateTime GeneratedAtUtc,
+    int TotalDocumentCount,
+    int TotalLineCount,
+    double TotalQuantity,
+    IReadOnlyCollection<AxataOutboundDeliveryByDateItemDto> Items);
+
+public sealed record AxataOutboundDeliveryByDateItemDto(
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    string DocumentSerie,
+    int? DocumentOrderNo,
+    string Status,
+    string? MovementType,
+    string? SourceWarehouseCode,
+    string? TargetWarehouseCode,
+    DateTime? AxataDate,
+    DateTime? TransferDate,
+    int LineCount,
+    double Quantity,
+    string? VehiclePlate,
+    string? DriverName);
+
 public sealed record AxataOutboundDeliveryImportPreviewDto(
     string MovementType,
     string PendingStatus,
@@ -11760,13 +11790,11 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}` endpoint'i body almaz; `scenario` query parametresi kullanir
 - `POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/render` endpoint'i body'de `InvoiceSendingRenderHttpRequest` alir
 - `POST /api/fatura-islemleri/fatura-gonderimi/send` endpoint'i body'de `InvoiceSendingBatchHttpRequest` alir
-- `POST /api/fatura-islemleri/fatura-gonderimi/outbox/search` body'de `UyumsoftOperationHttpRequest` alir
 - `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i body'de `InvoiceViewingSynchronizationHttpRequest` alir
 - `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` ve `/pdf` endpointleri body almaz; `documentId` path parametresiyle Uyumsoft `GetInboxInvoicePdf` cagirir
 - `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/detail` endpoint'i body almaz; HTML detay icin `documentId` path parametresi kullanir
 - `POST /api/fatura-islemleri/fatura-goruntuleme/{documentId}/render` endpoint'i body'de `InvoiceViewingRenderHttpRequest` alir
 - `PATCH /api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed` endpoint'i body'de `InvoiceViewingPrintedStateHttpRequest` alir
-- `GET /api/fatura-islemleri/fatura-gonderimi/outbox/{invoiceId}` endpoint'i body almaz; `invoiceId` path parametresiyle birlikte `profile` ve `preferEmbeddedXslt` query parametrelerini kullanir
 
 ### Operasyon Request Modelleri
 
@@ -11782,6 +11810,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `AxataSynchronizationManualDocumentCandidatesHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `Skip`, `Take`
 - `AxataIntegrationAuditHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `Take`, `DocumentSerie`, `DocumentOrderNo`
 - `AxataOutboundDeliveryQueuePreviewHttpRequest`: `MovementType`, `Take`
+- `AxataOutboundDeliveriesByDateHttpRequest`: `Date`
 - `AxataOutboundDeliveryImportPreviewHttpRequest`: `Take`
 - `AxataOutboundDeliveryImportExecuteHttpRequest`: `Take`, `ContinueOnError`, `Acknowledge`
 - `AxataOutboundDeliveryDocumentImportExecuteHttpRequest`: `Status`, `Acknowledge`
@@ -11812,6 +11841,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GET /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/candidates` endpoint'i body almaz; `warehouseNo`, `startDate`, `endDate`, `skip`, `take` query parametresi kullanir
 - `issued-warehouse-order-sync` task'inda `warehouseNo` hedef depo degil AXATA kaynak/cikis depodur; Mikro filtre `ssip_cikdepo = warehouseNo` olur
 - `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` endpoint'i body almaz; query'de `movementType` ve `take` kullanir; `movementType` bos ise `C01` kabul edilir, `C04` alias'i `C4` olarak sorgulanir
+- `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/by-date` endpoint'i body almaz; query'de zorunlu `date` kullanir. Ornek: `date=2026-06-19`. Backend bu tarihi `yyyyMMdd` sayisal AXATA tarihine cevirip `ENT006.S06ITAR` alaninda filtreler
 - `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/preview` endpoint'i body almaz; `status` query parametresi opsiyoneldir ve sadece `0` veya `1` olabilir
 - `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import` body'de `status` ve `acknowledge` alir; `acknowledge=false` kontrollu rescue icin onerilir
 - `ExecutionMode` su an yalnizca `DryRun` veya `Outbox` olabilir

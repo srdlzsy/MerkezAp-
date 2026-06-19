@@ -57,4 +57,8 @@ public interface IAxataSynchronizationService
         AxataSynchronizationManualDocumentBatchRequest request,
         int defaultWarehouseNo,
         CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveriesByDateDto> GetOutboundDeliveriesByDateAsync(
+        DateTime date,
+        CancellationToken cancellationToken);
 }

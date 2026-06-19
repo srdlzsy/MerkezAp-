@@ -1,5 +1,4 @@
 namespace FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
-
 public sealed record AxataSynchronizationConnectionTestDto(
     DateTime TestedAtUtc,
     string SourceDatabaseProfile,

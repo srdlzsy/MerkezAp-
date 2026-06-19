@@ -1,10 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
-using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGonderimi;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
-using FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,8 +19,7 @@ public sealed class FaturaGonderimiController(
     ISendInvoiceSendingDocumentsUseCase sendInvoiceSendingDocumentsUseCase,
     IListInvoiceReturnReferenceCandidatesUseCase listInvoiceReturnReferenceCandidatesUseCase,
     IUpdateInvoiceReturnReferenceUseCase updateInvoiceReturnReferenceUseCase,
-    IEInvoiceDocumentRenderer invoiceDocumentRenderer,
-    IUyumsoftConnectedQueryService queryService)
+    IEInvoiceDocumentRenderer invoiceDocumentRenderer)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "fatura-islemleri";
@@ -139,37 +136,6 @@ public sealed class FaturaGonderimiController(
                         document.DocumentSerie,
                         document.DocumentOrderNo!.Value))
                     .ToArray()),
-            cancellationToken));
-
-    [HttpPost("outbox/search")]
-    [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<UyumsoftOperationResponseDto>> SearchOutbox(
-        [FromBody] UyumsoftOperationHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await queryService.InvokeGetOperationAsync(
-            UyumsoftConnectedServiceKind.EInvoice,
-            new UyumsoftOperationInvocationRequest(
-                "GetOutboxInvoices",
-                request.Parameters
-                    .Select(parameter => new UyumsoftOperationParameterRequest(parameter.Name, parameter.Value))
-                    .ToArray()),
-            cancellationToken));
-
-    [HttpGet("outbox/{invoiceId}")]
-    [Authorize(Policy = DetailPolicy)]
-    [ProducesResponseType(typeof(InvoiceRenderedDocumentDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<InvoiceRenderedDocumentDto>> RenderOutboxInvoice(
-        string invoiceId,
-        [FromQuery] InvoiceDocumentProfile profile = InvoiceDocumentProfile.Auto,
-        [FromQuery] bool preferEmbeddedXslt = true,
-        CancellationToken cancellationToken = default) =>
-        Ok(await invoiceDocumentRenderer.RenderOutboxInvoiceAsync(
-            invoiceId,
-            profile,
-            preferEmbeddedXslt,
             cancellationToken));
 
     [HttpPost("preview")]

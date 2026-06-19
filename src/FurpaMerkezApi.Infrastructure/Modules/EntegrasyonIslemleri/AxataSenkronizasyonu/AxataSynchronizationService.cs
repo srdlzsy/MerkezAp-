@@ -1,4 +1,7 @@
+using System.Globalization;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Persistence.Axata;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -9,6 +12,7 @@ internal sealed class AxataSynchronizationService(
     AxataSynchronizationExecutionCoordinator coordinator,
     AxataSynchronizationManualDocumentService manualDocumentService,
     AxataSynchronizationConnectionProbeService probeService,
+    AxataDbContext axataDbContext,
     IConfiguration configuration,
     IOptionsMonitor<AxataSynchronizationOptions> options)
     : IAxataSynchronizationService
@@ -510,6 +514,173 @@ internal sealed class AxataSynchronizationService(
             AxataEndpointKind.Extended => "AXATA EXT Endpoint",
             _ => endpointKind.ToString()
         };
+
+    public async Task<AxataOutboundDeliveriesByDateDto> GetOutboundDeliveriesByDateAsync(
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        var normalizedDate = date.Date;
+        var axataDateNumber = ToAxataDateNumber(normalizedDate);
+        var headers = await axataDbContext.ENT006s
+            .AsNoTracking()
+            .Where(delivery => delivery.S06ITAR == axataDateNumber)
+            .OrderBy(delivery => delivery.S06SIRA)
+            .Select(delivery => new AxataOutboundDeliveryHeaderRow(
+                delivery.S06SIRA,
+                delivery.S06TESL ?? string.Empty,
+                delivery.S06STAT,
+                delivery.S06HTIP,
+                delivery.S06FIRM,
+                delivery.S06TFIR,
+                delivery.S06ITAR,
+                delivery.S06TMTR,
+                delivery.S06PLKA,
+                delivery.S06SURUCU))
+            .ToListAsync(cancellationToken);
+
+        List<AxataOutboundDeliveryLineSummary> lineSummaries;
+
+        if (headers.Count == 0)
+        {
+            lineSummaries = [];
+        }
+        else
+        {
+            var deliveryNoQuery = axataDbContext.ENT006s
+                .AsNoTracking()
+                .Where(delivery =>
+                    delivery.S06ITAR == axataDateNumber &&
+                    delivery.S06TESL != null &&
+                    delivery.S06TESL != string.Empty)
+                .Select(delivery => delivery.S06TESL!)
+                .Distinct();
+
+            lineSummaries = await axataDbContext.ENT007s
+                .AsNoTracking()
+                .Join(
+                    deliveryNoQuery,
+                    line => line.S07TESL,
+                    deliveryNo => deliveryNo,
+                    (line, _) => line)
+                .GroupBy(line => line.S07TESL!)
+                .Select(group => new AxataOutboundDeliveryLineSummary(
+                    group.Key,
+                    group.Count(),
+                    group.Sum(line => line.S07MIKT ?? 0m)))
+                .ToListAsync(cancellationToken);
+        }
+
+        var lineSummariesByDeliveryNo = lineSummaries
+            .GroupBy(summary => NormalizeText(summary.AxataDeliveryNo), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => new AxataOutboundDeliveryLineSummary(
+                    group.Key,
+                    group.Sum(summary => summary.LineCount),
+                    group.Sum(summary => summary.Quantity)),
+                StringComparer.OrdinalIgnoreCase);
+
+        var items = headers
+            .Select(header =>
+            {
+                var axataDeliveryNo = NormalizeText(header.AxataDeliveryNo);
+                var (documentSerie, documentOrderNo) = ParseAxataDeliveryNo(axataDeliveryNo);
+                var lineSummary = lineSummariesByDeliveryNo.GetValueOrDefault(axataDeliveryNo);
+
+                return new AxataOutboundDeliveryByDateItemDto(
+                    header.AxataSequenceNo,
+                    axataDeliveryNo,
+                    documentSerie,
+                    documentOrderNo,
+                    FormatDecimal(header.Status),
+                    NormalizeNullableText(header.MovementType),
+                    NormalizeNullableText(header.SourceWarehouseCode),
+                    NormalizeNullableText(header.TargetWarehouseCode),
+                    ParseAxataDateNumber(header.AxataDateNumber),
+                    ParseAxataDateNumber(header.TransferDateNumber),
+                    lineSummary?.LineCount ?? 0,
+                    lineSummary is null ? 0d : (double)lineSummary.Quantity,
+                    NormalizeNullableText(header.VehiclePlate),
+                    NormalizeNullableText(header.DriverName));
+            })
+            .ToArray();
+
+        return new AxataOutboundDeliveriesByDateDto(
+            normalizedDate,
+            axataDateNumber,
+            DateTime.UtcNow,
+            items.Length,
+            items.Sum(item => item.LineCount),
+            items.Sum(item => item.Quantity),
+            items);
+    }
+
+    private static decimal ToAxataDateNumber(DateTime value) =>
+        decimal.Parse(value.ToString("yyyyMMdd", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
+    private static DateTime? ParseAxataDateNumber(decimal? value)
+    {
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        var normalized = value.Value.ToString("0", CultureInfo.InvariantCulture);
+        return DateTime.TryParseExact(
+            normalized,
+            "yyyyMMdd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static (string Serie, int? OrderNo) ParseAxataDeliveryNo(string deliveryNo)
+    {
+        var separatorIndex = deliveryNo.LastIndexOf('.');
+
+        if (separatorIndex <= 0 || separatorIndex >= deliveryNo.Length - 1)
+        {
+            return (deliveryNo, null);
+        }
+
+        var serie = deliveryNo[..separatorIndex].Trim();
+        var orderNoText = deliveryNo[(separatorIndex + 1)..].Trim();
+
+        return int.TryParse(orderNoText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var orderNo)
+            ? (serie, orderNo)
+            : (serie, null);
+    }
+
+    private static string FormatDecimal(decimal? value) =>
+        value?.ToString("0.#############################", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static string NormalizeText(string? value) =>
+        value?.Trim() ?? string.Empty;
+
+    private static string? NormalizeNullableText(string? value)
+    {
+        var normalized = NormalizeText(value);
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
 }
 
 internal sealed record AxataSynchronizationDateRange(DateTime StartDate, DateTime EndDate);
+
+internal sealed record AxataOutboundDeliveryHeaderRow(
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    decimal? Status,
+    string? MovementType,
+    string? SourceWarehouseCode,
+    string? TargetWarehouseCode,
+    decimal? AxataDateNumber,
+    decimal? TransferDateNumber,
+    string? VehiclePlate,
+    string? DriverName);
+
+internal sealed record AxataOutboundDeliveryLineSummary(
+    string AxataDeliveryNo,
+    int LineCount,
+    decimal Quantity);

@@ -344,6 +344,37 @@ Response'taki kritik alanlar:
 - `sent-to-axata-missing-mikro-shipment`: AXATA'ya gonderildi isaretli ama belge genelinde Mikro sevk linki yok; liste overview icindedir, C01 belge bazli rescue route'u vardir.
 - `sent-to-axata-shipment-differences`: Belgede en az bir Mikro sevk linki var ama eksik link veya miktar farki bulunur; kismi sevk/satir farki olarak aksiyonsuz incelenir.
 
+### Outbound Delivery By Date
+
+```text
+GET /api/integrations/axata-sync/live/axata/outbound-deliveries/by-date?date=2026-06-19
+```
+
+Bu endpoint:
+
+- AXATA `ENT006` tablosunu secilen tarihe gore okur.
+- `date` query parametresi zorunludur.
+- Tarih filtresi `ENT006.S06ITAR = yyyyMMdd` olarak uygulanir.
+- `ENT007` satirlari `S07TESL` teslimat numarasi ile gruplanip satir sayisi ve toplam miktar uretilir.
+- Mikro'ya veri yazmaz.
+- AXATA status/ack guncellemez.
+- Pending filtrelemez; secilen tarihteki AXATA sevk basliklarini raporlar.
+
+Response `AxataOutboundDeliveriesByDateDto` doner. Her kayit icin:
+
+- AXATA sira no
+- teslimat/belge no
+- parse edilebildiyse Mikro seri/sira
+- status
+- hareket tipi
+- kaynak/hedef depo kodu
+- AXATA sevk tarihi
+- transfer tarihi
+- satir sayisi
+- toplam miktar
+- plaka
+- surucu adi
+
 ### Outbound Delivery Live Queue Preview
 
 ```text
@@ -619,6 +650,7 @@ UI su ayrimi net yapmalidir:
 - `execute` endpointleri `DryRun/Outbox` isidir, AXATA'ya canli gonderim degildir.
 - `dispatch` endpointleri AXATA'ya WCF client ile canli yazim yapar.
 - `live/axata/outbound-deliveries/preview` C01/C02/C03/C4 kuyrugunu canli okur ama veri yazmaz.
+- `live/axata/outbound-deliveries/by-date` AXATA `ENT006.S06ITAR` tarihine gore sevkleri listeler; veri yazmaz ve pending filtrelemez.
 - `live/axata/outbound-deliveries/c01/import` AXATA'dan canli okur ve Mikro'ya yazar.
 - `manual/axata/*` endpointleri AXATA'dan canli okumaz; body UI veya operasyon tarafindan saglanir.
 - `inventory-count-sync` icin live dispatch butonu gosterilmemelidir.

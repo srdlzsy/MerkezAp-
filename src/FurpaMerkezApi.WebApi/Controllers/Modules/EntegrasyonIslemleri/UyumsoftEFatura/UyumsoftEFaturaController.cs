@@ -2,7 +2,6 @@ using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri
 using FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.UyumsoftEFatura;
 
@@ -123,35 +122,11 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         string invoiceUuid,
         CancellationToken cancellationToken)
     {
-        var response = await InvokeOperationAsync(
-            "GetInboxInvoicePdf",
-            cancellationToken,
-            Parameter("invoiceId", invoiceUuid));
-
-        return CreatePdfFileResult(response, invoiceUuid);
-    }
-
-    [HttpGet("inbox/invoices/by-number/{invoiceNumber}/pdf-file")]
-    [Authorize(Policy = DetailPolicy)]
-    [Produces("application/pdf")]
-    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetInboxInvoicePdfFileByNumber(
-        string invoiceNumber,
-        [FromQuery] string[]? alternateDocumentReference,
-        CancellationToken cancellationToken)
-    {
-        var invoiceUuid = await ResolveInvoiceIdByNumberAsync(
-            "GetInboxInvoiceList",
-            invoiceNumber,
-            alternateDocumentReference,
+        var pdfBytes = await queryService.GetInboxInvoicePdfFileAsync(
+            invoiceUuid,
             cancellationToken);
 
-        var response = await InvokeOperationAsync(
-            "GetInboxInvoicePdf",
-            cancellationToken,
-            Parameter("invoiceId", invoiceUuid));
-
-        return CreatePdfFileResult(response, invoiceNumber);
+        return CreatePdfFileResult(pdfBytes, invoiceUuid);
     }
 
     [HttpGet("inbox/invoices/{invoiceUuid}/status-with-logs")]
@@ -217,35 +192,11 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         string invoiceUuid,
         CancellationToken cancellationToken)
     {
-        var response = await InvokeOperationAsync(
-            "GetOutboxInvoicePdf",
-            cancellationToken,
-            Parameter("invoiceId", invoiceUuid));
-
-        return CreatePdfFileResult(response, invoiceUuid);
-    }
-
-    [HttpGet("outbox/invoices/by-number/{invoiceNumber}/pdf-file")]
-    [Authorize(Policy = DetailPolicy)]
-    [Produces("application/pdf")]
-    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetOutboxInvoicePdfFileByNumber(
-        string invoiceNumber,
-        [FromQuery] string[]? alternateDocumentReference,
-        CancellationToken cancellationToken)
-    {
-        var invoiceUuid = await ResolveInvoiceIdByNumberAsync(
-            "GetOutboxInvoiceList",
-            invoiceNumber,
-            alternateDocumentReference,
+        var pdfBytes = await queryService.GetOutboxInvoicePdfFileAsync(
+            invoiceUuid,
             cancellationToken);
 
-        var response = await InvokeOperationAsync(
-            "GetOutboxInvoicePdf",
-            cancellationToken,
-            Parameter("invoiceId", invoiceUuid));
-
-        return CreatePdfFileResult(response, invoiceNumber);
+        return CreatePdfFileResult(pdfBytes, invoiceUuid);
     }
 
     [HttpGet("outbox/invoices/{invoiceUuid}/status-with-logs")]
@@ -297,340 +248,17 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
             cancellationToken));
 
     private FileContentResult CreatePdfFileResult(
-        UyumsoftOperationResponseDto response,
+        byte[] pdfBytes,
         string invoiceUuid)
     {
-        var pdfBytes = ExtractPdfBytes(response);
         var fileName = $"{SanitizeFileName(invoiceUuid)}.pdf";
 
         Response.Headers.ContentDisposition = $"inline; filename=\"{fileName}\"";
 
-        return File(pdfBytes, "application/pdf");
-    }
-
-    private async Task<string> ResolveInvoiceIdByNumberAsync(
-        string listOperationName,
-        string invoiceNumber,
-        IReadOnlyCollection<string>? alternateDocumentReferences,
-        CancellationToken cancellationToken)
-    {
-        var trimmedInvoiceNumber = RequireQueryValue(invoiceNumber, nameof(invoiceNumber)).Trim();
-        var documentReferences = new[] { trimmedInvoiceNumber }
-            .Concat(alternateDocumentReferences ?? [])
-            .Where(reference => !string.IsNullOrWhiteSpace(reference))
-            .Select(reference => reference.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var directTechnicalId = documentReferences.FirstOrDefault(LooksLikeTechnicalInvoiceId);
-        if (!string.IsNullOrWhiteSpace(directTechnicalId))
+        return new FileContentResult(pdfBytes, "application/pdf")
         {
-            return directTechnicalId;
-        }
-
-        foreach (var lookupAttempt in documentReferences.SelectMany(BuildInvoiceLookupAttempts))
-        {
-            var listResponse = await InvokeOperationAsync(
-                listOperationName,
-                lookupAttempt.Parameters,
-                cancellationToken);
-
-            var invoiceId = FindInvoiceIdByDocumentReference(listResponse, documentReferences);
-
-            if (!string.IsNullOrWhiteSpace(invoiceId))
-            {
-                return invoiceId;
-            }
-        }
-
-        throw new KeyNotFoundException(
-            $"Uyumsoft fatura numarasina gore teknik invoiceId bulunamadi. Fatura No: {trimmedInvoiceNumber}");
-    }
-
-    private static IReadOnlyCollection<InvoiceLookupAttempt> BuildInvoiceLookupAttempts(string invoiceNumber)
-    {
-        bool?[] archiveStates = [null, false, true];
-        var attempts = new List<InvoiceLookupAttempt>(archiveStates.Length * 2);
-
-        foreach (var isArchived in archiveStates)
-        {
-            attempts.Add(new InvoiceLookupAttempt(
-                $"InvoiceNumbers/IsArchived={FormatArchiveState(isArchived)}",
-                BuildInvoiceLookupParameters("InvoiceNumbers", invoiceNumber, isArchived)));
-        }
-
-        foreach (var isArchived in archiveStates)
-        {
-            attempts.Add(new InvoiceLookupAttempt(
-                $"InvoiceIds/IsArchived={FormatArchiveState(isArchived)}",
-                BuildInvoiceLookupParameters("InvoiceIds", invoiceNumber, isArchived)));
-        }
-
-        return attempts;
-    }
-
-    private static IReadOnlyCollection<UyumsoftOperationParameterRequest> BuildInvoiceLookupParameters(
-        string lookupParameterName,
-        string invoiceNumber,
-        bool? isArchived)
-    {
-        var parameters = new List<UyumsoftOperationParameterRequest>
-        {
-            Parameter(lookupParameterName, invoiceNumber),
-            Parameter("PageIndex", "0"),
-            Parameter("PageSize", "10")
+            EnableRangeProcessing = true
         };
-
-        if (isArchived.HasValue)
-        {
-            parameters.Add(Parameter("IsArchived", isArchived.Value ? "true" : "false"));
-        }
-
-        return parameters;
-    }
-
-    private static string FormatArchiveState(bool? isArchived) =>
-        isArchived.HasValue
-            ? isArchived.Value.ToString()
-            : "null";
-
-    private static bool LooksLikeTechnicalInvoiceId(string value) =>
-        Guid.TryParse(value, out _);
-
-    private static string? FindInvoiceIdByDocumentReference(
-        UyumsoftOperationResponseDto response,
-        IReadOnlyCollection<string> documentReferences)
-    {
-        if (TryFindInvoiceIdByDocumentReferenceFromJson(response.ResponsePayloadJson, documentReferences, out var jsonInvoiceId))
-        {
-            return jsonInvoiceId;
-        }
-
-        return response.Nodes
-            .SelectMany(FlattenNodes)
-            .Select(node => new
-            {
-                InvoiceId = FindChildValue(node, "InvoiceId"),
-                DocumentId = FindChildValue(node, "DocumentId") ?? FindChildValue(node, "InvoiceNumber"),
-                LocalDocumentId = FindChildValue(node, "LocalDocumentId")
-            })
-            .FirstOrDefault(candidate =>
-                !string.IsNullOrWhiteSpace(candidate.InvoiceId) &&
-                (MatchesAnyDocumentReference(candidate.DocumentId, documentReferences) ||
-                 MatchesAnyDocumentReference(candidate.LocalDocumentId, documentReferences)))
-            ?.InvoiceId;
-    }
-
-    private static byte[] ExtractPdfBytes(UyumsoftOperationResponseDto response)
-    {
-        var dataNodeValue = response.Nodes
-            .SelectMany(FlattenNodes)
-            .FirstOrDefault(node =>
-                string.Equals(node.Name, "Data", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(node.Value))
-            ?.Value;
-
-        if (TryDecodeBase64(dataNodeValue, out var nodeBytes))
-        {
-            return nodeBytes;
-        }
-
-        if (TryExtractPdfBytesFromJson(response.ResponsePayloadJson, out var jsonBytes))
-        {
-            return jsonBytes;
-        }
-
-        if (TryDecodeBase64(response.ScalarValue, out var scalarBytes))
-        {
-            return scalarBytes;
-        }
-
-        throw new InvalidOperationException("Uyumsoft PDF cevabinda okunabilir PDF verisi bulunamadi.");
-    }
-
-    private static IEnumerable<UyumsoftResponseNodeDto> FlattenNodes(UyumsoftResponseNodeDto node)
-    {
-        yield return node;
-
-        foreach (var child in node.Children.SelectMany(FlattenNodes))
-        {
-            yield return child;
-        }
-    }
-
-    private static bool TryExtractPdfBytesFromJson(string? payloadJson, out byte[] pdfBytes)
-    {
-        pdfBytes = [];
-
-        if (string.IsNullOrWhiteSpace(payloadJson))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(payloadJson);
-            return TryFindBase64Property(document.RootElement, "data", out pdfBytes);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryFindBase64Property(
-        JsonElement element,
-        string propertyName,
-        out byte[] bytes)
-    {
-        bytes = [];
-
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in element.EnumerateObject())
-            {
-                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
-                    property.Value.ValueKind == JsonValueKind.String &&
-                    TryDecodeBase64(property.Value.GetString(), out bytes))
-                {
-                    return true;
-                }
-
-                if (TryFindBase64Property(property.Value, propertyName, out bytes))
-                {
-                    return true;
-                }
-            }
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray())
-            {
-                if (TryFindBase64Property(item, propertyName, out bytes))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryFindInvoiceIdByDocumentReferenceFromJson(
-        string? payloadJson,
-        IReadOnlyCollection<string> documentReferences,
-        out string? invoiceId)
-    {
-        invoiceId = null;
-
-        if (string.IsNullOrWhiteSpace(payloadJson))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(payloadJson);
-            invoiceId = FindInvoiceIdByDocumentReference(document.RootElement, documentReferences);
-            return !string.IsNullOrWhiteSpace(invoiceId);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static string? FindInvoiceIdByDocumentReference(
-        JsonElement element,
-        IReadOnlyCollection<string> documentReferences)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var invoiceId = GetStringProperty(element, "invoiceId");
-            var candidateDocumentId = GetStringProperty(element, "documentId", "invoiceNumber");
-            var candidateLocalDocumentId = GetStringProperty(element, "localDocumentId");
-
-            if (!string.IsNullOrWhiteSpace(invoiceId) &&
-                (MatchesAnyDocumentReference(candidateDocumentId, documentReferences) ||
-                 MatchesAnyDocumentReference(candidateLocalDocumentId, documentReferences)))
-            {
-                return invoiceId;
-            }
-
-            foreach (var property in element.EnumerateObject())
-            {
-                var found = FindInvoiceIdByDocumentReference(property.Value, documentReferences);
-
-                if (!string.IsNullOrWhiteSpace(found))
-                {
-                    return found;
-                }
-            }
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray())
-            {
-                var found = FindInvoiceIdByDocumentReference(item, documentReferences);
-
-                if (!string.IsNullOrWhiteSpace(found))
-                {
-                    return found;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static bool MatchesAnyDocumentReference(
-        string? candidate,
-        IReadOnlyCollection<string> documentReferences) =>
-        !string.IsNullOrWhiteSpace(candidate) &&
-        documentReferences.Any(documentReference =>
-            string.Equals(candidate.Trim(), documentReference, StringComparison.OrdinalIgnoreCase));
-
-    private static string? GetStringProperty(JsonElement element, params string[] propertyNames)
-    {
-        foreach (var property in element.EnumerateObject())
-        {
-            if (propertyNames.Any(propertyName => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)) &&
-                property.Value.ValueKind == JsonValueKind.String)
-            {
-                return property.Value.GetString();
-            }
-        }
-
-        return null;
-    }
-
-    private static string? FindChildValue(UyumsoftResponseNodeDto node, string childName) =>
-        node.Children
-            .FirstOrDefault(child =>
-                string.Equals(child.Name, childName, StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(child.Value))
-            ?.Value;
-
-    private static bool TryDecodeBase64(string? value, out byte[] bytes)
-    {
-        bytes = [];
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        try
-        {
-            bytes = Convert.FromBase64String(value);
-            return bytes.Length > 0;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
     }
 
     private static string SanitizeFileName(string value)
@@ -645,7 +273,4 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         return safe;
     }
 
-    private sealed record InvoiceLookupAttempt(
-        string Name,
-        IReadOnlyCollection<UyumsoftOperationParameterRequest> Parameters);
 }

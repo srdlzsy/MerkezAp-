@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using System.Text;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using Microsoft.Extensions.Options;
 using UyumsoftDespatch = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Despatch;
@@ -85,6 +86,16 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
         };
     }
 
+    public Task<byte[]> GetInboxInvoicePdfFileAsync(
+        string invoiceId,
+        CancellationToken cancellationToken) =>
+        GetInvoicePdfFileAsync(invoiceId, isInbox: true, cancellationToken);
+
+    public Task<byte[]> GetOutboxInvoicePdfFileAsync(
+        string invoiceId,
+        CancellationToken cancellationToken) =>
+        GetInvoicePdfFileAsync(invoiceId, isInbox: false, cancellationToken);
+
     private UyumsoftServiceEndpointOptions ResolveServiceOptions(
         UyumsoftConnectedServiceKind serviceKind,
         UyumsoftServiceCatalogEntry catalog)
@@ -148,6 +159,57 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
                 cancellationToken);
 
             return UyumsoftWcfClientHelper.ToOperationResponse(catalog, operationName, response);
+        }
+        catch
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
+    private async Task<byte[]> GetInvoicePdfFileAsync(
+        string invoiceId,
+        bool isInbox,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(invoiceId))
+        {
+            throw new ArgumentException("Invoice ID is required.", nameof(invoiceId));
+        }
+
+        var catalog = UyumsoftConnectedServiceCatalog.GetService(UyumsoftConnectedServiceKind.EInvoice);
+        var config = ResolveServiceOptions(UyumsoftConnectedServiceKind.EInvoice, catalog);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+
+        try
+        {
+            var userInfo = UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config);
+            var normalizedInvoiceId = invoiceId.Trim();
+            var response = isInbox
+                ? await client.GetInboxInvoicePdfAsync(userInfo, normalizedInvoiceId)
+                    .WaitAsync(cancellationToken)
+                : await client.GetOutboxInvoicePdfAsync(userInfo, normalizedInvoiceId)
+                    .WaitAsync(cancellationToken);
+
+            if (!response.IsSucceded)
+            {
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(response.Message)
+                        ? "Uyumsoft PDF istegini reddetti."
+                        : response.Message);
+            }
+
+            var pdfData = response.Value?.Data;
+            if (pdfData is null || pdfData.Length == 0)
+            {
+                throw new InvalidOperationException("Uyumsoft PDF cevabinda dosya verisi bulunamadi.");
+            }
+
+            return NormalizePdfData(pdfData);
         }
         catch
         {
@@ -431,6 +493,37 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
                targetType == typeof(Guid) ||
                targetType.IsEnum;
     }
+
+    private static byte[] NormalizePdfData(byte[] data)
+    {
+        if (HasPdfSignature(data))
+        {
+            return data;
+        }
+
+        try
+        {
+            var decoded = Convert.FromBase64String(Encoding.ASCII.GetString(data).Trim());
+            if (HasPdfSignature(decoded))
+            {
+                return decoded;
+            }
+        }
+        catch (FormatException)
+        {
+            // The WCF response should normally already contain decoded PDF bytes.
+        }
+
+        throw new InvalidOperationException("Uyumsoft cevabi gecerli bir PDF dosyasi degil.");
+    }
+
+    private static bool HasPdfSignature(ReadOnlySpan<byte> data) =>
+        data.Length >= 5 &&
+        data[0] == (byte)'%' &&
+        data[1] == (byte)'P' &&
+        data[2] == (byte)'D' &&
+        data[3] == (byte)'F' &&
+        data[4] == (byte)'-';
 
     private static string ToSingular(string name) =>
         name.EndsWith("ies", StringComparison.OrdinalIgnoreCase)

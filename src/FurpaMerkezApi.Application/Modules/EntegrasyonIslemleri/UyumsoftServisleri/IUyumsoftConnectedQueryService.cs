@@ -14,4 +14,12 @@ public interface IUyumsoftConnectedQueryService
         UyumsoftConnectedServiceKind serviceKind,
         UyumsoftOperationInvocationRequest request,
         CancellationToken cancellationToken);
+
+    Task<byte[]> GetInboxInvoicePdfFileAsync(
+        string invoiceId,
+        CancellationToken cancellationToken);
+
+    Task<byte[]> GetOutboxInvoicePdfFileAsync(
+        string invoiceId,
+        CancellationToken cancellationToken);
 }

@@ -62,6 +62,17 @@ public sealed class AxataSenkronizasyonuController(
         CancellationToken cancellationToken) =>
         Ok(await synchronizationService.GetFetchProfilesAsync(cancellationToken));
 
+    [HttpGet("live/axata/outbound-deliveries/by-date")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveriesByDateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveriesByDateDto>> GetOutboundDeliveriesByDate(
+        [FromQuery] AxataOutboundDeliveriesByDateHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await synchronizationService.GetOutboundDeliveriesByDateAsync(
+            request.Date!.Value,
+            cancellationToken));
+
     [HttpGet("live/audit/overview")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(AxataIntegrationAuditDto), StatusCodes.Status200OK)]
@@ -906,6 +917,12 @@ public sealed class AxataIntegrationAuditHttpRequest
     [StringLength(20)]
     [RegularExpression(@"^\s*[01]\s*(,\s*[01]\s*)*$")]
     public string? Statuses { get; init; }
+}
+
+public sealed class AxataOutboundDeliveriesByDateHttpRequest
+{
+    [Required]
+    public DateTime? Date { get; init; }
 }
 
 public sealed class AxataOutboundDeliveryQueuePreviewHttpRequest
