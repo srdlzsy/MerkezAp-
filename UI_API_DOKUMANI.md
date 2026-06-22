@@ -8602,10 +8602,39 @@ Bu cagri veri yazmaz. Amaci eski worker calisirken durumu anlamaktir:
 - `summary.sentWarehouseOrderMissingAxataOutboundDeliveryDocumentCount` Mikro'da `ssip_special1=1` gorunup secili AXATA sevk evreninde karsiligi bulunmayan ikincil tutarsizliklari gosterir; bu alan ana sevk donus alarmi degil inceleme bilgisidir
 - `pendingOutboundDeliveries` yalnizca AXATA `Status=0` bekleyen sevkleri gosterir
 - `axataOutboundDeliveries` secili `statuses` icindeki tum AXATA sevklerini sinirli liste olarak dondurur; `Status=1` tamamlanmis belgeler burada gorulur, `axataShipmentState/isCancelled/cancellationCode` alanlari iptal/zero ayrimini destekler
-- `interventionCandidates` C01 icin guvenli mudahale adaylarini gosterir
+- `interventionCandidates` C01 icin guvenli mudahale adaylarini gosterir; UI manuel butonlari bu listeye veya `canIntervene=true` olan satirlara baglamalidir
 - `operations` UI'nin "siparis AXATA'ya dustu mu", "bekleyen AXATA sevki var mi", "AXATA sevki kesilmis ama Mikro'ya dusmemis mi" kartlarini besler
-- `MikroShipmentExistsPendingAck` ise Mikro fis/link zaten vardir; duplicate fis acmadan sadece AXATA ack gerekebilir
+- `Synchronized` ise AXATA sevki `Status=1` durumundadir ve Mikro sevk/link zaten vardir; UI bunu yesil/tamamlandi gostermeli, import/ack butonu acmamalidir
+- `MikroShipmentExistsPendingAck` ise AXATA sevki `Status=0` durumundayken Mikro fis/link zaten vardir; duplicate fis acmadan sadece AXATA ack gerekebilir
 - `ReadyForImport` ise AXATA satirlari Mikro siparis satirlariyla guvenli eslesmistir, sevk fisi yoktur ve C01 import ile mudahale edilebilir
+
+`axataOutboundDeliveries[]` UI karar tablosu:
+
+| AXATA `status` | `mikroCheckState` | Mikro link/miktar anlami | UI durumu | UI aksiyonu |
+|---|---|---|---|---|
+| `1` | `Synchronized` | AXATA sevk tamamlanmis, Mikro sevk linki mevcut | Yesil / Tamamlandi | Buton gosterme |
+| `0` | `ReadyForImport` | AXATA sevki bekliyor, Mikro sevk linki yok, satirlar guvenli eslesmis | Sari / Aktarilabilir | C01 import butonu goster |
+| `0` | `MikroShipmentExistsPendingAck` | Mikro sevk linki zaten var, AXATA hala bekliyor | Sari / ACK bekliyor | Sadece ACK/onarim aksiyonu goster; yeni fis uretme |
+| `1` | `ReadyForImport` | AXATA tamamlanmis gorunuyor ama Mikro sevk linki yok | Kirmizi / Mikro donus eksik | Belge bazli rescue/import aksiyonu goster |
+| `0` veya `1` | `OrderNotFound`, `OrderLineMismatch`, `Blocked` | Siparis veya satir eslesmesi guvenli degil | Kirmizi / Manuel inceleme | Otomatik import butonu gosterme |
+| `0` veya `1` | `CancelledInAxata`, `EmptyAxataDelivery` | AXATA iptal/sifir miktarli veya satirsiz | Gri / Iptal veya bos | Mikro sevk bekleme, import butonu gosterme |
+
+Ornek yorum:
+
+```json
+{
+  "status": "1",
+  "axataDeliveryNo": "D110.2040",
+  "quantity": 195,
+  "mikroDeliveredQuantity": 195,
+  "existingLinkedMovementLineCount": 3,
+  "mikroCheckState": "Synchronized",
+  "canIntervene": false,
+  "warning": "Mikro sevk linki mevcut ve AXATA status tamamlandi; islem gerekmiyor."
+}
+```
+
+Bu ornek "AXATA sevk etmis, Mikro'da sevk/link var, miktar tam, islem yok" demektir. UI bu satiri hata veya mudahale adayi gibi gostermemelidir.
 
 Ornek outbound delivery kuyruk preview:
 
@@ -12004,6 +12033,7 @@ public sealed record AxataIntegrationAuditDto(
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersWithShipmentDifferences,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> PendingOutboundDeliveries,
+    IReadOnlyCollection<AxataPendingOutboundDeliveryDto> AxataOutboundDeliveries,
     IReadOnlyCollection<AxataPendingOutboundDeliveryDto> InterventionCandidates,
     IReadOnlyCollection<AxataIntegrationAuditOperationDto> Operations,
     IReadOnlyCollection<string> Notes);
@@ -12016,6 +12046,12 @@ public sealed record AxataIntegrationAuditSummaryDto(
     int SentWarehouseOrderMissingMikroShipmentDocumentCount,
     int SentWarehouseOrderMissingMikroShipmentLineCount,
     double SentWarehouseOrderMissingMikroShipmentQuantity,
+    int SentWarehouseOrderMissingMikroShipmentWithAxataDeliveryDocumentCount,
+    int SentWarehouseOrderMissingMikroShipmentWithAxataDeliveryLineCount,
+    double SentWarehouseOrderMissingMikroShipmentWithAxataDeliveryQuantity,
+    int SentWarehouseOrderMissingAxataOutboundDeliveryDocumentCount,
+    int SentWarehouseOrderMissingAxataOutboundDeliveryLineCount,
+    double SentWarehouseOrderMissingAxataOutboundDeliveryQuantity,
     int SentWarehouseOrderShipmentDifferenceDocumentCount,
     int SentWarehouseOrderShipmentDifferenceLineCount,
     double SentWarehouseOrderShipmentDifferenceQuantity,
@@ -12024,7 +12060,15 @@ public sealed record AxataIntegrationAuditSummaryDto(
     double PendingOutboundDeliveryQuantity,
     int C01PendingDocumentCount,
     int C01MissingInMikroDocumentCount,
-    int C01MikroExistsPendingAckDocumentCount);
+    int C01MikroExistsPendingAckDocumentCount,
+    int AxataOutboundDeliveryDocumentCount,
+    int AxataOutboundDeliveryLineCount,
+    double AxataOutboundDeliveryQuantity,
+    int AxataCompletedOutboundDeliveryDocumentCount,
+    int AxataCancelledOutboundDeliveryDocumentCount,
+    int AxataCancelledOutboundDeliveryLineCount,
+    double AxataCancelledOutboundDeliveryQuantity,
+    int AxataEmptyOutboundDeliveryDocumentCount);
 
 public sealed record AxataOutboundDeliveryMovementSummaryDto(
     string MovementType,

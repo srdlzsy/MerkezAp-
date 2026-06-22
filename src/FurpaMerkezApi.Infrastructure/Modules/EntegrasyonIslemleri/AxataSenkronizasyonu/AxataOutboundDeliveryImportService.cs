@@ -279,6 +279,8 @@ internal sealed class AxataOutboundDeliveryImportService(
             "AXATA S06IPTKOD dolu olan veya S06STTU=3 ve toplam sevk miktari 0 olan belgeler iptal/zero-quantity sevk olarak ayrilir; Mikro'ya sevk fisi beklenmez.",
             "Mikro ssip_special1=1 olup AXATA outbound delivery kaydi bulunmayan belgeler ikincil tutarsizlik olarak ozetlenir; ana eksik sevk alarmi sayilmaz.",
             "pendingOutboundDeliveries yalnizca Status=0 bekleyen AXATA sevklerini dondurur; axataOutboundDeliveries secili status kaynak evrenini dondurur.",
+            "C01 mikroCheckState=Synchronized ise AXATA Status=1 ve Mikro sevk linki mevcut demektir; UI bunu tamamlanmis kabul etmeli ve manuel islem gostermemelidir.",
+            "C01 mikroCheckState=MikroShipmentExistsPendingAck ise AXATA Status=0 iken Mikro sevk linki zaten vardir; duplicate fis olusturulmadan sadece AXATA ack aksiyonu dusunulebilir.",
             "C01 icin Mikro siparis satiri ve STOK_HAREKETLERI_EK linki kontrol edilir; diger hareket tipleri bu raporda kuyruk seviyesinde izlenir.",
             "workflowSummary ve orderLifecycles Mikro siparisini baslangic kabul eder; AXATA ENT000/ENT001 siparisi ve bu siparise ait tum C01 ENT006/ENT007 sevkleri, sevk tarihinden bagimsiz olarak izlenir."
         };
@@ -1936,7 +1938,9 @@ internal sealed class AxataOutboundDeliveryImportService(
 
         if (existingLinkedMovementLineCount > 0)
         {
-            return "Mikro sevk linki zaten mevcut; duplicate fis uretilmez.";
+            return IsCompletedStatus(document.Status)
+                ? "Mikro sevk linki mevcut ve AXATA status tamamlandi; islem gerekmiyor."
+                : "Mikro sevk linki zaten mevcut; duplicate fis uretilmeden AXATA ack yapilabilir.";
         }
 
         if (matchedLines.Any(line =>
@@ -1986,7 +1990,9 @@ internal sealed class AxataOutboundDeliveryImportService(
 
         if (existingLinkedMovementLineCount > 0)
         {
-            return "MikroShipmentExistsPendingAck";
+            return IsCompletedStatus(document.Status)
+                ? "Synchronized"
+                : "MikroShipmentExistsPendingAck";
         }
 
         if (canImport)
@@ -2010,6 +2016,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     private static bool CanAcknowledgeExistingMikroShipment(C01DeliveryAnalysis analysis) =>
         !IsCancelledOutboundDelivery(analysis.Document) &&
         HasPositiveAxataQuantity(analysis.Document) &&
+        IsPendingStatus(analysis.Document.Status) &&
         analysis.ImportDto.ExistingLinkedMovementLineCount > 0 &&
         analysis.ImportDto.MikroDeliveredQuantity + QuantityTolerance >= analysis.ImportDto.AxataQuantity;
 
