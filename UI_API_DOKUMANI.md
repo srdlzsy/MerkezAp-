@@ -4775,15 +4775,15 @@ Response:
 ]
 ```
 
-### Kunye Etiket Yazdirma Detayli Liste
+### Manav Kunye Etiket Yazdirma
 
-Belirli bir depo icin kunye etiket kayitlarini stok kodu, stok adi, satis fiyati ve urun birimi bilgileriyle getirir. `dateToGet` verilirse secilen gun icindeki kayitlardan, verilmezse son 1 ay icindeki kayitlardan her stok icin son kunye kaydi secilir. Mevcut `GET /api/kasa-islemleri/kunye-etiket-yazdirma` endpointi degismeden kalir; bu endpoint zengin response gereken ekranlar icindir.
+Belirli bir depo icin manav kunye etiket kayitlarini stok kodu, stok adi, satis fiyati ve urun birimi bilgileriyle getirir. `dateToGet` verilirse secilen gun icindeki kayitlardan, verilmezse son 1 ay icindeki kayitlardan her stok icin son kunye kaydi secilir. Bu ekran Kasa Islemleri altindaki `ManavKunyeEtiketYazdirma` menusu icindir.
 
-`GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24`
+`GET /api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24`
 
 Varsayilan son 1 ay sorgusu:
 
-`GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110`
+`GET /api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110`
 
 Yetki:
 
@@ -4803,6 +4803,7 @@ Not:
 - `salesPrice` alani Mikro `dbo.fn_StokSatisFiyati(stockCode, '1', branchNo, '1')` fonksiyonundan gelir
 - `dateToGet` verilirse tarih filtresi secilen gunun tamamini kapsar; verilmezse `ShippingDate` son 1 ay ile sinirlanir
 - liste `ShippingDate desc` siralanir
+- menu permission kodu `kasa-islemleri.manav-kunye-etiket-yazdirma.list`; endpoint anonim oldugu icin API cagrisi token istemez
 
 Response:
 
@@ -6886,10 +6887,12 @@ Kasa Islemleri / Etiket Belgeleri
 Kasa Islemleri / Kunye Etiket Yazdirma
   -> tarih bazli kunye etiket kayitlari icin GET /api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=...
   -> liste satirlarini LabelTagDto ile goster
-  -> depo bazli zengin response icin GET /api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=...
+
+Kasa Islemleri / Manav Kunye Etiket Yazdirma
+  -> depo bazli zengin response icin GET /api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=...
   -> dateToGet opsiyoneldir; verilirse o gun icinden, verilmezse son 1 ay icinden son kunye kaydi secilir
   -> zengin liste satirlarini KunyeLabelTagDto ile goster
-  -> detayli-etiketler endpointi token istemez
+  -> endpoint token istemez
 
 Stok Islemleri / Virmanlar
   -> liste filtreleri: tarih araligi, opsiyonel depo
@@ -12381,7 +12384,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Stok ve Etiket Request Modelleri
 
 - `LabelTagListHttpRequest`: `DateToGet`
-- `KunyeDetailedLabelTagListHttpRequest`: `WarehouseNo`, `DateToGet` opsiyonel
+- `ManavKunyeDetailedLabelTagListHttpRequest`: `WarehouseNo`, `DateToGet` opsiyonel
 - `LabelPriceChangedProductListHttpRequest`: `DateTimeFilter`
 - `CreateLabelDocumentHttpRequest`: `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`

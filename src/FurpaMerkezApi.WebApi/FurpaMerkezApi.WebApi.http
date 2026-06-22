@@ -256,7 +256,7 @@ Authorization: Bearer {{token}}
 
 ###
 
-GET {{baseUrl}}/api/kasa-islemleri/kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24
+GET {{baseUrl}}/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24
 Accept: application/json
 
 ###

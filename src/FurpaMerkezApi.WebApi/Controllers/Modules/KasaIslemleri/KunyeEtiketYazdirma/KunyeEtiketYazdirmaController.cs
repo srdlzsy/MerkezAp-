@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
-using FurpaMerkezApi.Application.Modules.KasaIslemleri.KunyeEtiketYazdirma;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -14,8 +13,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KunyeEtiketYaz
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class KunyeEtiketYazdirmaController(
-    IListLabelTagsUseCase listLabelTagsUseCase,
-    IListKunyeLabelTagsUseCase listKunyeLabelTagsUseCase)
+    IListLabelTagsUseCase listLabelTagsUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "kasa-islemleri";
@@ -41,36 +39,10 @@ public sealed class KunyeEtiketYazdirmaController(
 
         return Ok(response);
     }
-
-    [HttpGet("detayli-etiketler")]
-    [AllowAnonymous]
-    [ProducesResponseType(typeof(IReadOnlyCollection<KunyeLabelTagDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<IReadOnlyCollection<KunyeLabelTagDto>>> ListDetailed(
-        [FromQuery] KunyeDetailedLabelTagListHttpRequest request,
-        CancellationToken cancellationToken)
-    {
-        var response = await listKunyeLabelTagsUseCase.ExecuteAsync(
-            new KunyeLabelTagListRequest(
-                request.WarehouseNo!.Value,
-                request.DateToGet),
-            cancellationToken);
-
-        return Ok(response);
-    }
 }
 
 public sealed class KunyeLabelTagListHttpRequest
 {
     [Required]
-    public DateTime? DateToGet { get; init; }
-}
-
-public sealed class KunyeDetailedLabelTagListHttpRequest
-{
-    [Required]
-    [Range(1, int.MaxValue)]
-    public int? WarehouseNo { get; init; }
-
     public DateTime? DateToGet { get; init; }
 }
