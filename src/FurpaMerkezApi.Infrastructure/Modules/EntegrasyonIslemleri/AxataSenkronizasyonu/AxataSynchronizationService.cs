@@ -472,7 +472,7 @@ internal sealed class AxataSynchronizationService(
         taskCode is "issued-warehouse-order-sync" or "company-receiving-sync" or "inventory-count-sync";
 
     private static bool SupportsLiveDispatch(string taskCode) =>
-        taskCode is "issued-warehouse-order-sync" or "company-receiving-sync";
+        taskCode is "product-master-sync" or "issued-warehouse-order-sync" or "company-receiving-sync";
 
     private static string? ResolveLiveOperationName(
         string taskCode,
@@ -491,6 +491,7 @@ internal sealed class AxataSynchronizationService(
 
         return taskCode switch
         {
+            "product-master-sync" => "addSKUMaster",
             "issued-warehouse-order-sync" => "addOutboundOrder",
             "company-receiving-sync" => "addInboundOrder",
             _ => null

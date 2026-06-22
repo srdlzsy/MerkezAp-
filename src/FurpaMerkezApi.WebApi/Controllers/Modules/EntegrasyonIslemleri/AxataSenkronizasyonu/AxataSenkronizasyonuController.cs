@@ -23,6 +23,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.AxataSe
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class AxataSenkronizasyonuController(
     IAxataSynchronizationService synchronizationService,
+    IAxataProductSynchronizationService productSynchronizationService,
     IAxataOutboundDeliveryImportService outboundDeliveryImportService,
     IAxataIntegrationAuditService integrationAuditService,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
@@ -61,6 +62,50 @@ public sealed class AxataSenkronizasyonuController(
     public async Task<ActionResult<AxataSynchronizationFetchProfilesOverviewDto>> GetFetchProfiles(
         CancellationToken cancellationToken) =>
         Ok(await synchronizationService.GetFetchProfilesAsync(cancellationToken));
+
+    [HttpGet("live/products/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataProductSynchronizationPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataProductSynchronizationPreviewDto>> PreviewProducts(
+        [FromQuery] AxataProductSynchronizationPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await productSynchronizationService.PreviewAsync(
+            request.ProductCode,
+            request.Take,
+            cancellationToken));
+
+    [HttpPost("live/products/dispatch")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataProductSynchronizationExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AxataProductSynchronizationExecuteDto>> DispatchProducts(
+        [FromBody] AxataProductSynchronizationDispatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await productSynchronizationService.DispatchAsync(
+            new AxataProductSynchronizationDispatchRequest(
+                request.ProductCodes,
+                request.Take,
+                request.ContinueOnError),
+            cancellationToken));
+
+    [HttpPost("live/products/{productCode}/dispatch")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataProductSynchronizationExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AxataProductSynchronizationExecuteDto>> DispatchSingleProduct(
+        [StringLength(50), MinLength(1)] string productCode,
+        CancellationToken cancellationToken) =>
+        Ok(await productSynchronizationService.DispatchAsync(
+            new AxataProductSynchronizationDispatchRequest(
+                [productCode],
+                1,
+                false),
+            cancellationToken));
 
     [HttpGet("live/axata/outbound-deliveries/by-date")]
     [Authorize(Policy = DetailPolicy)]
@@ -923,6 +968,26 @@ public sealed class AxataOutboundDeliveriesByDateHttpRequest
 {
     [Required]
     public DateTime? Date { get; init; }
+}
+
+public sealed class AxataProductSynchronizationPreviewHttpRequest
+{
+    [StringLength(50)]
+    public string? ProductCode { get; init; }
+
+    [Range(1, 100000)]
+    public int? Take { get; init; }
+}
+
+public sealed class AxataProductSynchronizationDispatchHttpRequest
+{
+    [MaxLength(100000)]
+    public IReadOnlyCollection<string> ProductCodes { get; init; } = Array.Empty<string>();
+
+    [Range(1, 100000)]
+    public int? Take { get; init; }
+
+    public bool ContinueOnError { get; init; } = true;
 }
 
 public sealed class AxataOutboundDeliveryQueuePreviewHttpRequest

@@ -8229,6 +8229,15 @@ Mevcut endpointler:
   - eski worker parity icin planlanan AXATA fetch/import profillerini listeler
   - her profil icin bugunku fallback route ve implementasyon durumu gorulebilir
   - response `AxataSynchronizationFetchProfilesOverviewDto`
+- `GET /api/integrations/axata-sync/live/products/preview?productCode=URUN001&take=20`
+  - Mikro aktif stok, tum barkod ve birimlerini AXATA `addSKUMaster` paketinde onizler; veri yazmaz
+  - response `AxataProductSynchronizationPreviewDto`
+- `POST /api/integrations/axata-sync/live/products/dispatch`
+  - `productCodes` bos ise `take` kadar aktif urunu, dolu ise secili urunleri 100'luk paketlerle AXATA `addSKUMaster` operasyonuna gonderir
+  - response `AxataProductSynchronizationExecuteDto`
+- `POST /api/integrations/axata-sync/live/products/{productCode}/dispatch`
+  - tek Mikro urununu master, tum barkodlari ve birimleriyle AXATA'ya canli gonderir
+  - response `AxataProductSynchronizationExecuteDto`
 - `GET /api/integrations/axata-sync/live/audit/overview?startDate=2026-06-08&endDate=2026-06-08&warehouseNo=50&take=50`
   - eski worker calisirken Mikro ve AXATA arasindaki farklari kontrol eder; veri yazmaz
   - Mikro -> AXATA siparis tarafinda `ssip_special1` worker basari bayragini raporlar
@@ -8403,7 +8412,7 @@ Task bazli UI buton kurali:
 | Task/profil | Liste | Preview | Outbox execute | Live dispatch | Live queue preview | Live import/ack |
 |---|---|---|---|---|---|---|
 | `firm-master-sync` | Yok | Var | Var | Yok | Yok | Yok |
-| `product-master-sync` | Yok | Var | Var | Yok | Yok | Yok |
+| `product-master-sync` | Yok | Var | Var | Var (`Live`) | Yok | Yok |
 | `issued-warehouse-order-sync` | Var | Var | Var | Var | Yok | Yok |
 | `company-receiving-sync` | Var | Var | Var | Var | Yok | Yok |
 | `inventory-count-sync` | Var | Var | Var | Yok | Yok | Yok |
@@ -8477,6 +8486,49 @@ Ornek preview:
 GET /api/integrations/axata-sync/tasks/product-master-sync/preview?take=5
 Authorization: Bearer {token}
 ```
+
+Canli urun master job:
+
+```http
+POST /api/integrations/axata-sync/tasks/product-master-sync/execute
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+```json
+{
+  "executionMode": "Live"
+}
+```
+
+Tek urun:
+
+```http
+GET /api/integrations/axata-sync/live/products/preview?productCode=URUN001&take=1
+POST /api/integrations/axata-sync/live/products/URUN001/dispatch
+```
+
+Secili veya toplu urun gonderme:
+
+```http
+POST /api/integrations/axata-sync/live/products/dispatch
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+```json
+{
+  "productCodes": ["URUN001", "URUN002"],
+  "continueOnError": true
+}
+```
+
+`productCodes=[]` ve `take=500` gonderilirse sirali ilk 500 aktif Mikro urunu aktarilir.
+Payload AXATA `SKUMaster` icinde `ENT004` master, `ENT003_List` barkodlar ve
+`ENT004_UNIT_List` birimleri birlikte tasir. Canli urun endpointleri worker
+kuyruguna bagli degildir. Zamanli otomatik aktarim icin global `WorkerEnabled`,
+`SchedulerEnabled` ve `product-master-sync.ScheduleEnabled` alanlarinin ucunun
+da `true` olmasi gerekir.
 
 Ornek manual job:
 
@@ -8773,7 +8825,8 @@ UI'nin kullaniciya acik soylemesi gereken kritik sinirlar:
 - G01/G02 icin "AXATA'dan cek ve Mikro'ya yaz" akisi henuz yoktur
 - `dispatch*` endpoint'leri sadece `issued-warehouse-order-sync` ve `company-receiving-sync` icin aktiflenmelidir
 - `depolar-arasi-sevk` belge detayi icin ayrica AXATA dispatch butonu acilmamalidir
-- `firm-master-sync` ve `product-master-sync` icin UI sadece preview/job/outbox deneyimi sunmalidir
+- `firm-master-sync` icin UI sadece preview/job/outbox deneyimi sunmalidir
+- `product-master-sync` icin preview, toplu canli dispatch ve urun koduyla tekli canli dispatch sunulabilir
 - `inventory-count-sync` icin UI canli dispatch butonu gostermemelidir
 - `Outbox` basarisi "AXATA kabul etti" degil, "payload dosyalandi" anlamina gelir
 

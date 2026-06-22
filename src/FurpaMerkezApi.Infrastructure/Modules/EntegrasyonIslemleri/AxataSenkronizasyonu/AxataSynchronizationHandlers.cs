@@ -104,7 +104,8 @@ internal sealed class FirmMasterSyncTaskHandler(
 
 internal sealed class ProductMasterSyncTaskHandler(
     MikroDbContext mikroDbContext,
-    AxataSynchronizationOutboxWriter outboxWriter)
+    AxataSynchronizationOutboxWriter outboxWriter,
+    IAxataProductSynchronizationService productSynchronizationService)
     : IAxataSynchronizationTaskHandler
 {
     public string Code => "product-master-sync";
@@ -137,6 +138,26 @@ internal sealed class ProductMasterSyncTaskHandler(
         AxataSynchronizationTaskExecutionContext context,
         CancellationToken cancellationToken)
     {
+        if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
+        {
+            var dispatch = await productSynchronizationService.DispatchAsync(
+                new AxataProductSynchronizationDispatchRequest(
+                    Array.Empty<string>(),
+                    100000,
+                    true),
+                cancellationToken);
+            if (dispatch.FailedProductCount > 0)
+            {
+                throw new InvalidOperationException(
+                    $"{dispatch.FailedProductCount} urun AXATA'ya gonderilemedi. Basarili: {dispatch.SucceededProductCount}.");
+            }
+
+            return new AxataSynchronizationTaskExecutionResult(
+                dispatch.SucceededProductCount,
+                $"{dispatch.SucceededProductCount} urun AXATA addSKUMaster operasyonuyla canli gonderildi.",
+                Array.Empty<AxataSynchronizationJobArtifactDto>());
+        }
+
         var items = await CreateQuery().ToArrayAsync(cancellationToken);
         var payload = new
         {

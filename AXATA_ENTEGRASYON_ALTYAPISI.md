@@ -29,7 +29,8 @@ Bugunku net durum:
 | `issued-warehouse-order-sync` canli dispatch | Var, `addOutboundOrder*`, hareket kodu `C01` |
 | `company-receiving-sync` canli dispatch | Var, `addInboundOrder*`, hareket kodu `G01` |
 | `inventory-count-sync` canli dispatch | Yok |
-| Firma/urun master canli dispatch | Yok, preview/outbox var |
+| Firma master canli dispatch | Yok, preview/outbox var |
+| Urun master canli dispatch | Var, `addSKUMaster`; toplu ve urun koduyla tekli route var |
 | C01 AXATA pending delivery live fetch | Var |
 | C01 AXATA -> Mikro sevk import | Var |
 | C01 import sonrasi AXATA ack | Var, opsiyonel ama default true |
@@ -82,7 +83,7 @@ Desteklenen task'lar:
 | Task | Depo gerekir mi? | Preview | DryRun/Outbox | Live dispatch | Hareket kodu |
 |---|---:|---|---|---|---|
 | `firm-master-sync` | Hayir | Var | Var | Yok | - |
-| `product-master-sync` | Hayir | Var | Var | Yok | - |
+| `product-master-sync` | Hayir | Var | Var | Var | `addSKUMaster` |
 | `issued-warehouse-order-sync` | Evet | Var | Var | Var | `C01` |
 | `company-receiving-sync` | Evet | Var | Var | Var | `G01` |
 | `inventory-count-sync` | Evet | Var | Var | Yok | - |
@@ -654,7 +655,8 @@ UI su ayrimi net yapmalidir:
 - `live/axata/outbound-deliveries/c01/import` AXATA'dan canli okur ve Mikro'ya yazar.
 - `manual/axata/*` endpointleri AXATA'dan canli okumaz; body UI veya operasyon tarafindan saglanir.
 - `inventory-count-sync` icin live dispatch butonu gosterilmemelidir.
-- `firm-master-sync` ve `product-master-sync` icin live dispatch butonu gosterilmemelidir.
+- `firm-master-sync` icin live dispatch butonu gosterilmemelidir.
+- `product-master-sync` icin toplu live dispatch ve urun koduyla tekli dispatch butonu gosterilebilir.
 - `issued-warehouse-order-sync` aday listesinde `warehouseNo`, hedef depo degil AXATA kaynak/cikis depodur.
 - `live/audit/overview` veri yazmaz; kontrol ve karar ekranidir.
 - C02/C03/C4 icin UI preview butonu acabilir, import/ack butonu acmamalidir.
@@ -664,7 +666,8 @@ UI su ayrimi net yapmalidir:
 
 - Job listesi ve sonuc detaylari kalici DB'de tutulmaz.
 - Outbox basarisi "AXATA kabul etti" anlamina gelmez.
-- Firma ve urun master task'lari canli WCF dispatch yapmaz.
+- Firma master task'i canli WCF dispatch yapmaz.
+- Urun master task'i `Live` modunda `ENT004`, `ENT003_List` ve `ENT004_UNIT_List` iceren `addSKUMaster` paketlerini canli gonderir.
 - C02/C03/C4 live queue preview vardir ama live import/ack henuz yoktur.
 - G01/G02 live fetch-import henuz yoktur.
 - C01 belge bazli rescue vardir; C02/C03/C4/G01/G02 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.

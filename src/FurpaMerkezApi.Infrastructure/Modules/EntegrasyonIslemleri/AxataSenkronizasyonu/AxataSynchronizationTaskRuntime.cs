@@ -44,8 +44,17 @@ internal sealed class AxataSynchronizationExecutionCoordinator(IEnumerable<IAxat
 
     public Task<AxataSynchronizationTaskExecutionResult> ExecuteAsync(
         AxataSynchronizationTaskExecutionContext context,
-        CancellationToken cancellationToken) =>
-        GetRequiredHandler(context.Definition.Code).ExecuteAsync(context, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live &&
+            !context.Definition.Code.Equals("product-master-sync", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException(
+                $"Live job execution is not supported for task '{context.Definition.Code}'.");
+        }
+
+        return GetRequiredHandler(context.Definition.Code).ExecuteAsync(context, cancellationToken);
+    }
 
     private IAxataSynchronizationTaskHandler GetRequiredHandler(string taskCode) =>
         handlerMap.TryGetValue(taskCode, out var handler)

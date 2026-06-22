@@ -215,7 +215,8 @@ internal enum AxataSynchronizationJobStatus
 internal enum AxataSynchronizationJobExecutionMode
 {
     DryRun = 1,
-    Outbox = 2
+    Outbox = 2,
+    Live = 3
 }
 
 internal enum AxataSynchronizationJobTriggerSource
@@ -238,8 +239,13 @@ internal static class AxataSynchronizationJobMappings
             return AxataSynchronizationJobExecutionMode.Outbox;
         }
 
+        if (string.Equals(executionMode, "Live", StringComparison.OrdinalIgnoreCase))
+        {
+            return AxataSynchronizationJobExecutionMode.Live;
+        }
+
         throw new ArgumentException(
-            $"Unsupported execution mode '{executionMode}'. Allowed values: DryRun, Outbox.",
+            $"Unsupported execution mode '{executionMode}'. Allowed values: DryRun, Outbox, Live.",
             nameof(executionMode));
     }
 
@@ -258,6 +264,7 @@ internal static class AxataSynchronizationJobMappings
         {
             AxataSynchronizationJobExecutionMode.DryRun => "DryRun",
             AxataSynchronizationJobExecutionMode.Outbox => "Outbox",
+            AxataSynchronizationJobExecutionMode.Live => "Live",
             _ => executionMode.ToString()
         };
 
