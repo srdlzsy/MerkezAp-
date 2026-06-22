@@ -83,6 +83,38 @@ public sealed record UpdateStockCardRequest(
     StockCardPatchDto Patch,
     int CurrentUserWarehouseNo);
 
+public sealed record StockCardWarehouseSettingsDto(
+    string StockCode,
+    int WarehouseNo,
+    string WarehouseName,
+    bool HasWarehouseDetail,
+    bool HasAnyOverride,
+    bool GlobalSalesStopped,
+    bool GlobalOrderStopped,
+    bool GlobalReceivingStopped,
+    bool GlobalIsPassive,
+    bool GlobalDiscountDisabled,
+    bool SalesStopped,
+    bool OrderStopped,
+    bool ReceivingStopped,
+    bool IsPassive,
+    bool DiscountDisabled,
+    DateTime? LastUpdatedAt);
+
+public sealed record StockCardWarehousePatchDto(
+    bool? SalesStopped,
+    bool? OrderStopped,
+    bool? ReceivingStopped,
+    bool? IsPassive,
+    bool? DiscountDisabled,
+    bool ResetToGlobal);
+
+public sealed record UpdateStockCardWarehouseSettingsRequest(
+    string StockCode,
+    int WarehouseNo,
+    StockCardWarehousePatchDto Patch,
+    int CurrentUserWarehouseNo);
+
 public sealed record StockMovementDocumentLookupRequest(
     string DocumentSerie,
     int DocumentOrderNo,
@@ -341,6 +373,10 @@ public sealed record MikroDocumentUpdateSummary(
 public sealed record StockCardUpdateResponse(
     MikroDocumentUpdateSummary Summary,
     StockCardDetailDto StockCard);
+
+public sealed record StockCardWarehouseUpdateResponse(
+    MikroDocumentUpdateSummary Summary,
+    StockCardWarehouseSettingsDto WarehouseSettings);
 
 public sealed record StockMovementDocumentUpdateResponse(
     MikroDocumentUpdateSummary Summary,

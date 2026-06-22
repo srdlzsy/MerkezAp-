@@ -56,6 +56,35 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
                 User.GetRequiredWarehouseNo()),
             cancellationToken));
 
+    [HttpGet("stok-kartlari/{stockCode}/depolar")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<StockCardWarehouseSettingsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyCollection<StockCardWarehouseSettingsDto>>> GetStockCardWarehouseSettings(
+        string stockCode,
+        [FromQuery] int? warehouseNo,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetStockCardWarehouseSettingsAsync(stockCode, warehouseNo, cancellationToken));
+
+    [HttpPut("stok-kartlari/{stockCode}/depolar/{warehouseNo:int}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(StockCardWarehouseUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<StockCardWarehouseUpdateResponse>> UpdateStockCardWarehouseSettings(
+        string stockCode,
+        [Range(1, int.MaxValue)] int warehouseNo,
+        [FromBody] StockCardWarehousePatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdateStockCardWarehouseSettingsAsync(
+            new UpdateStockCardWarehouseSettingsRequest(
+                stockCode,
+                warehouseNo,
+                request.ToApplicationRequest(),
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
     [HttpGet("stok-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(StockMovementDocumentDto), StatusCodes.Status200OK)]
@@ -223,6 +252,30 @@ public sealed class StockCardPatchHttpRequest
             ReceivingStopped,
             IsPassive,
             DiscountDisabled);
+}
+
+public sealed class StockCardWarehousePatchHttpRequest
+{
+    public bool? SalesStopped { get; init; }
+
+    public bool? OrderStopped { get; init; }
+
+    public bool? ReceivingStopped { get; init; }
+
+    public bool? IsPassive { get; init; }
+
+    public bool? DiscountDisabled { get; init; }
+
+    public bool ResetToGlobal { get; init; }
+
+    public StockCardWarehousePatchDto ToApplicationRequest() =>
+        new(
+            SalesStopped,
+            OrderStopped,
+            ReceivingStopped,
+            IsPassive,
+            DiscountDisabled,
+            ResetToGlobal);
 }
 
 public sealed class StockMovementDocumentLookupHttpRequest

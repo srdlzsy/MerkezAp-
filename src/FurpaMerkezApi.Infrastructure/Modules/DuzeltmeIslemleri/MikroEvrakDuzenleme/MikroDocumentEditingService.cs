@@ -122,6 +122,186 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<IReadOnlyCollection<StockCardWarehouseSettingsDto>> GetStockCardWarehouseSettingsAsync(
+        string stockCode,
+        int? warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStockCode = NormalizeRequiredText(stockCode, 25, nameof(stockCode));
+        if (warehouseNo.HasValue && warehouseNo.Value <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(warehouseNo));
+        }
+
+        var stock = await mikroDbContext.STOKLARs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.sto_kod == normalizedStockCode, cancellationToken)
+            ?? throw new KeyNotFoundException("Stock card was not found.");
+
+        var warehouseQuery = mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .Where(warehouse =>
+                warehouse.dep_no.HasValue &&
+                warehouse.dep_no.Value > 0 &&
+                warehouse.dep_iptal != true &&
+                warehouse.dep_hidden != true);
+
+        if (warehouseNo.HasValue)
+        {
+            warehouseQuery = warehouseQuery.Where(warehouse => warehouse.dep_no == warehouseNo.Value);
+        }
+
+        var warehouses = await warehouseQuery
+            .OrderBy(warehouse => warehouse.dep_no)
+            .Select(warehouse => new
+            {
+                WarehouseNo = warehouse.dep_no.GetValueOrDefault(),
+                WarehouseName = warehouse.dep_adi ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        if (warehouseNo.HasValue && warehouses.Length == 0)
+        {
+            throw new KeyNotFoundException($"Warehouse was not found: {warehouseNo.Value}");
+        }
+
+        var warehouseNos = warehouses
+            .Select(warehouse => warehouse.WarehouseNo)
+            .ToArray();
+        var details = await mikroDbContext.STOK_DEPO_DETAYLARIs
+            .AsNoTracking()
+            .Where(detail =>
+                detail.sdp_depo_kod == normalizedStockCode &&
+                detail.sdp_depo_no.HasValue &&
+                warehouseNos.Contains(detail.sdp_depo_no.Value))
+            .ToArrayAsync(cancellationToken);
+        var detailsByWarehouse = details
+            .Where(detail => detail.sdp_depo_no.HasValue)
+            .ToDictionary(detail => detail.sdp_depo_no!.Value);
+
+        return warehouses
+            .Select(warehouse =>
+            {
+                detailsByWarehouse.TryGetValue(warehouse.WarehouseNo, out var detail);
+                return MapStockCardWarehouseSettings(
+                    stock,
+                    warehouse.WarehouseNo,
+                    warehouse.WarehouseName,
+                    detail);
+            })
+            .ToArray();
+    }
+
+    public async Task<StockCardWarehouseUpdateResponse> UpdateStockCardWarehouseSettingsAsync(
+        UpdateStockCardWarehouseSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        var warehouseNo = request.WarehouseNo > 0
+            ? request.WarehouseNo
+            : throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        if (!HasStockCardWarehousePatch(patch))
+        {
+            throw new ArgumentException(
+                "At least one warehouse stock field or resetToGlobal must be provided.",
+                nameof(request.Patch));
+        }
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var stock = await mikroWriteDbContext.STOKLARs
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.sto_kod == stockCode, cancellationToken)
+                    ?? throw new KeyNotFoundException("Stock card was not found in Mikro write database.");
+                var warehouse = await mikroWriteDbContext.DEPOLARs
+                    .AsNoTracking()
+                    .Where(item =>
+                        item.dep_no == warehouseNo &&
+                        item.dep_iptal != true &&
+                        item.dep_hidden != true)
+                    .Select(item => new
+                    {
+                        WarehouseNo = item.dep_no.GetValueOrDefault(),
+                        WarehouseName = item.dep_adi ?? string.Empty
+                    })
+                    .FirstOrDefaultAsync(cancellationToken)
+                    ?? throw new KeyNotFoundException($"Warehouse was not found: {warehouseNo}");
+
+                var detail = await mikroWriteDbContext.STOK_DEPO_DETAYLARIs
+                    .FirstOrDefaultAsync(
+                        item => item.sdp_depo_kod == stockCode && item.sdp_depo_no == warehouseNo,
+                        cancellationToken);
+
+                if (detail is null &&
+                    patch.ResetToGlobal &&
+                    !HasStockCardWarehouseValuePatch(patch))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+
+                    return new StockCardWarehouseUpdateResponse(
+                        new MikroDocumentUpdateSummary(
+                            $"stok-kartlari/{stockCode}/depolar/{warehouseNo}",
+                            0,
+                            updatedAt,
+                            updateUser),
+                        MapStockCardWarehouseSettings(
+                            stock,
+                            warehouse.WarehouseNo,
+                            warehouse.WarehouseName,
+                            null));
+                }
+
+                if (detail is null)
+                {
+                    detail = CreateStockCardWarehouseDetail(
+                        stockCode,
+                        warehouseNo,
+                        updateUser,
+                        updatedAt);
+                    mikroWriteDbContext.STOK_DEPO_DETAYLARIs.Add(detail);
+                }
+
+                ApplyStockCardWarehousePatch(detail, patch);
+                detail.sdp_lastup_user = updateUser;
+                detail.sdp_lastup_date = updatedAt;
+                detail.sdp_degisti = true;
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new StockCardWarehouseUpdateResponse(
+                    new MikroDocumentUpdateSummary(
+                        $"stok-kartlari/{stockCode}/depolar/{warehouseNo}",
+                        1,
+                        updatedAt,
+                        updateUser),
+                    MapStockCardWarehouseSettings(
+                        stock,
+                        warehouse.WarehouseNo,
+                        warehouse.WarehouseName,
+                        detail));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     public async Task<StockMovementDocumentDto> GetStockMovementDocumentAsync(
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken)
@@ -840,6 +1020,124 @@ public sealed class MikroDocumentEditingService(
             stock.sto_iskon_yapilamaz ?? false,
             stock.sto_create_date,
             stock.sto_lastup_date);
+
+    private static StockCardWarehouseSettingsDto MapStockCardWarehouseSettings(
+        STOKLAR stock,
+        int warehouseNo,
+        string warehouseName,
+        STOK_DEPO_DETAYLARI? detail)
+    {
+        var globalSalesStopped = ToBool(stock.sto_satis_dursun);
+        var globalOrderStopped = ToBool(stock.sto_siparis_dursun);
+        var globalReceivingStopped = ToBool(stock.sto_malkabul_dursun);
+        var globalIsPassive = stock.sto_pasif_fl ?? false;
+        var globalDiscountDisabled = stock.sto_iskon_yapilamaz ?? false;
+
+        return new StockCardWarehouseSettingsDto(
+            stock.sto_kod,
+            warehouseNo,
+            warehouseName,
+            detail is not null,
+            HasStockCardWarehouseOverride(detail),
+            globalSalesStopped,
+            globalOrderStopped,
+            globalReceivingStopped,
+            globalIsPassive,
+            globalDiscountDisabled,
+            detail?.sdp_satisdursun.HasValue == true
+                ? ToBool(detail.sdp_satisdursun)
+                : globalSalesStopped,
+            detail?.sdp_sipdursun.HasValue == true
+                ? ToBool(detail.sdp_sipdursun)
+                : globalOrderStopped,
+            detail?.sdp_malkabuldursun.HasValue == true
+                ? ToBool(detail.sdp_malkabuldursun)
+                : globalReceivingStopped,
+            detail?.sdp_Pasif_fl ?? globalIsPassive,
+            detail?.sdp_IskontoYapilamaz ?? globalDiscountDisabled,
+            detail?.sdp_lastup_date);
+    }
+
+    private static STOK_DEPO_DETAYLARI CreateStockCardWarehouseDetail(
+        string stockCode,
+        int warehouseNo,
+        short updateUser,
+        DateTime updatedAt) =>
+        new()
+        {
+            sdp_Guid = Guid.NewGuid(),
+            sdp_DBCno = 0,
+            sdp_SpecRECno = 0,
+            sdp_iptal = false,
+            sdp_hidden = false,
+            sdp_kilitli = false,
+            sdp_degisti = true,
+            sdp_checksum = 0,
+            sdp_create_user = updateUser,
+            sdp_create_date = updatedAt,
+            sdp_lastup_user = updateUser,
+            sdp_lastup_date = updatedAt,
+            sdp_depo_kod = stockCode,
+            sdp_depo_no = warehouseNo
+        };
+
+    private static void ApplyStockCardWarehousePatch(
+        STOK_DEPO_DETAYLARI detail,
+        StockCardWarehousePatchDto patch)
+    {
+        if (patch.ResetToGlobal)
+        {
+            detail.sdp_satisdursun = null;
+            detail.sdp_sipdursun = null;
+            detail.sdp_malkabuldursun = null;
+            detail.sdp_Pasif_fl = null;
+            detail.sdp_IskontoYapilamaz = null;
+        }
+
+        if (patch.SalesStopped.HasValue)
+        {
+            detail.sdp_satisdursun = ToByteFlag(patch.SalesStopped.Value);
+        }
+
+        if (patch.OrderStopped.HasValue)
+        {
+            detail.sdp_sipdursun = ToByteFlag(patch.OrderStopped.Value);
+        }
+
+        if (patch.ReceivingStopped.HasValue)
+        {
+            detail.sdp_malkabuldursun = ToByteFlag(patch.ReceivingStopped.Value);
+        }
+
+        if (patch.IsPassive.HasValue)
+        {
+            detail.sdp_Pasif_fl = patch.IsPassive.Value;
+        }
+
+        if (patch.DiscountDisabled.HasValue)
+        {
+            detail.sdp_IskontoYapilamaz = patch.DiscountDisabled.Value;
+        }
+    }
+
+    private static bool HasStockCardWarehousePatch(StockCardWarehousePatchDto patch) =>
+        patch.ResetToGlobal ||
+        HasStockCardWarehouseValuePatch(patch);
+
+    private static bool HasStockCardWarehouseValuePatch(StockCardWarehousePatchDto patch) =>
+        patch.SalesStopped.HasValue ||
+        patch.OrderStopped.HasValue ||
+        patch.ReceivingStopped.HasValue ||
+        patch.IsPassive.HasValue ||
+        patch.DiscountDisabled.HasValue;
+
+    private static bool HasStockCardWarehouseOverride(STOK_DEPO_DETAYLARI? detail) =>
+        detail is not null &&
+        (detail.sdp_satisdursun.HasValue ||
+         detail.sdp_sipdursun.HasValue ||
+         detail.sdp_malkabuldursun.HasValue ||
+         detail.sdp_Pasif_fl.HasValue ||
+         detail.sdp_IskontoYapilamaz.HasValue);
 
     private static bool ApplyStockCardPatch(STOKLAR stock, StockCardPatchDto patch)
     {

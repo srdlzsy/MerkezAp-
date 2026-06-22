@@ -3670,6 +3670,7 @@ Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin ekl
 - `STOK_HAREKETLERI` belgeleri
 - `CARI_HESAP_HAREKETLERI` belgeleri
 - `STOKLAR` stok kartlari
+- `STOK_DEPO_DETAYLARI` depo bazli stok karti ayarlari
 
 Menu:
 
@@ -3692,6 +3693,8 @@ Genel kurallar:
 - Request body'de `null` gelen alanlar degismez. Bos string gonderilirse ilgili metin alani bosaltma istegi olarak islenir.
 - Kayitlarda Mikro audit alanlari guncellenir: `lastup_user`, `lastup_date`, `degisti`.
 - Bu modul delete veya yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
+- `PUT /stok-kartlari/{stockCode}` global stok kartini degistirir ve tum depolari etkileyebilir.
+- Sadece belirli bir depoyu kapatmak/acmak icin `/stok-kartlari/{stockCode}/depolar/{warehouseNo}` endpoint'i kullanilmalidir.
 
 Endpoint ozeti:
 
@@ -3700,6 +3703,8 @@ Endpoint ozeti:
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari` | query | `StockCardSearchHttpRequest` | `StockCardListItemDto[]` | `list` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path | `stockCode` | `StockCardDetailDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path + body | `StockCardPatchHttpRequest` | `StockCardUpdateResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar` | path + query | `warehouseNo?: int` | `StockCardWarehouseSettingsDto[]` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar/{warehouseNo}` | path + body | `StockCardWarehousePatchHttpRequest` | `StockCardWarehouseUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |
@@ -3807,6 +3812,127 @@ Response:
   "stockCard": {
     "stockCode": "015550",
     "name": "YENI URUN ADI"
+  }
+}
+```
+
+### Stok Kartinin Depo Bazli Durumlari
+
+Tum aktif depolar:
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar`
+
+Yalnizca 150 numarali depo:
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar?warehouseNo=150`
+
+Response:
+
+```json
+[
+  {
+    "stockCode": "015550",
+    "warehouseNo": 150,
+    "warehouseName": "ORNEK DEPO",
+    "hasWarehouseDetail": true,
+    "hasAnyOverride": true,
+    "globalSalesStopped": false,
+    "globalOrderStopped": false,
+    "globalReceivingStopped": false,
+    "globalIsPassive": false,
+    "globalDiscountDisabled": false,
+    "salesStopped": true,
+    "orderStopped": false,
+    "receivingStopped": false,
+    "isPassive": false,
+    "discountDisabled": false,
+    "lastUpdatedAt": "2026-06-22T14:30:00"
+  }
+]
+```
+
+Alan anlamlari:
+
+- `global*` alanlari `STOKLAR` tablosundaki tum sistemi etkileyen stok karti degerleridir.
+- `salesStopped`, `orderStopped`, `receivingStopped`, `isPassive`, `discountDisabled` alanlari ilgili depoda gecerli nihai degerlerdir.
+- Depo ozel alani doluysa depo degeri, bos ise global stok karti degeri kullanilir.
+- `hasWarehouseDetail`, Mikro `STOK_DEPO_DETAYLARI` kaydinin varligini belirtir.
+- `hasAnyOverride`, bu modulun yonettigi alanlardan en az birinde depo ozel degeri bulundugunu belirtir.
+
+### Stok Kartini Belirli Depoda Guncelle
+
+Ornek: `015550` urununu yalnizca 150 numarali depoda satisa kapat:
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar/150`
+
+```json
+{
+  "salesStopped": true
+}
+```
+
+Ayni depoda satis, siparis ve mal kabulun tamamini kapat:
+
+```json
+{
+  "salesStopped": true,
+  "orderStopped": true,
+  "receivingStopped": true
+}
+```
+
+Guncellenebilir alanlar:
+
+- `salesStopped`: `STOK_DEPO_DETAYLARI.sdp_satisdursun`
+- `orderStopped`: `STOK_DEPO_DETAYLARI.sdp_sipdursun`
+- `receivingStopped`: `STOK_DEPO_DETAYLARI.sdp_malkabuldursun`
+- `isPassive`: `STOK_DEPO_DETAYLARI.sdp_Pasif_fl`
+- `discountDisabled`: `STOK_DEPO_DETAYLARI.sdp_IskontoYapilamaz`
+- `resetToGlobal`: yonetilen depo ozel alanlarini temizler ve global stok karti degerlerine geri doner
+
+Kurallar:
+
+- Body'de `null` veya gonderilmeyen alan degismez.
+- Depo detay kaydi yoksa ilk depo ozel guncellemede otomatik olusturulur.
+- Bu islem `STOKLAR` kaydini degistirmez; diger depolar etkilenmez.
+- `resetToGlobal=true` tum depo ozel blok/pasif/iskonto degerlerini temizler.
+- `resetToGlobal=true` ile ayni request'te baska alanlar da gonderilirse once ayarlar sifirlanir, sonra gonderilen yeni degerler uygulanir.
+
+Global ayarlara geri donme:
+
+```json
+{
+  "resetToGlobal": true
+}
+```
+
+Response:
+
+```json
+{
+  "summary": {
+    "target": "stok-kartlari/015550/depolar/150",
+    "updatedRowCount": 1,
+    "updatedAt": "2026-06-22T14:35:00",
+    "updateUser": 110
+  },
+  "warehouseSettings": {
+    "stockCode": "015550",
+    "warehouseNo": 150,
+    "warehouseName": "ORNEK DEPO",
+    "hasWarehouseDetail": true,
+    "hasAnyOverride": true,
+    "globalSalesStopped": false,
+    "globalOrderStopped": false,
+    "globalReceivingStopped": false,
+    "globalIsPassive": false,
+    "globalDiscountDisabled": false,
+    "salesStopped": true,
+    "orderStopped": false,
+    "receivingStopped": false,
+    "isPassive": false,
+    "discountDisabled": false,
+    "lastUpdatedAt": "2026-06-22T14:35:00"
   }
 }
 ```
