@@ -123,6 +123,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-hareket-aktarimi", "KasaHareketAktarimi"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-belgeleri", "EtiketBelgeleri"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kunye-etiket-yazdirma", "KunyeEtiketYazdirma"),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "manav-kunye-etiket-yazdirma", "ManavKunyeEtiketYazdirma"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "banknot-takipleri", "BanknotTakipleri", ReadCreateActions)
     ];
 

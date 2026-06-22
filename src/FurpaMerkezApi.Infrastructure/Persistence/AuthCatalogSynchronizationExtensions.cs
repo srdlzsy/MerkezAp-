@@ -18,6 +18,7 @@ public static class AuthCatalogSynchronizationExtensions
             .ToDictionary(permission => permission.Code, StringComparer.OrdinalIgnoreCase);
         var existingPermissionsById = existingPermissionList
             .ToDictionary(permission => permission.Id);
+        var catalogPermissionIds = new List<Guid>();
 
         foreach (var seededPermission in seededPermissions.Values)
         {
@@ -30,19 +31,26 @@ public static class AuthCatalogSynchronizationExtensions
                         seededPermission.Name,
                         seededPermission.Description,
                         now);
+                    existingPermissionsByCode[seededPermission.Code] = renamedPermission;
+                    catalogPermissionIds.Add(renamedPermission.Id);
                     changed = true;
                     continue;
                 }
 
-                dbContext.Permissions.Add(new Domain.Entities.AppPermission(
+                var permission = new Domain.Entities.AppPermission(
                     seededPermission.Id,
                     seededPermission.Code,
                     seededPermission.Name,
                     seededPermission.Description,
-                    seededPermission.CreatedAtUtc));
+                    seededPermission.CreatedAtUtc);
+                dbContext.Permissions.Add(permission);
+                existingPermissionsByCode[seededPermission.Code] = permission;
+                catalogPermissionIds.Add(permission.Id);
                 changed = true;
                 continue;
             }
+
+            catalogPermissionIds.Add(existingPermission.Id);
 
             if (!string.Equals(existingPermission.Name, seededPermission.Name, StringComparison.Ordinal) ||
                 !string.Equals(existingPermission.Description, seededPermission.Description, StringComparison.Ordinal))
@@ -66,8 +74,7 @@ public static class AuthCatalogSynchronizationExtensions
                 .Where(rolePermission => rolePermission.RoleId == AuthSeedData.AdministratorRoleId)
                 .Select(rolePermission => rolePermission.PermissionId)
                 .ToListAsync(cancellationToken);
-            var missingPermissionIds = seededPermissions.Values
-                .Select(permission => permission.Id)
+            var missingPermissionIds = catalogPermissionIds
                 .Except(existingAdministratorPermissionIds)
                 .ToArray();
 
