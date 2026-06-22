@@ -338,6 +338,9 @@ public static class ServiceCollectionExtensions
                     axataConnection,
                     sqlServer =>
                     {
+                        // AXATA SQL does not support EF's OPENJSON-based collection translation.
+                        // Compatibility level 120 makes collection Contains generate classic IN clauses.
+                        sqlServer.UseCompatibilityLevel(120);
                         sqlServer.EnableRetryOnFailure();
                         sqlServer.CommandTimeout(180);
                     }));
