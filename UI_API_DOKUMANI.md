@@ -8419,6 +8419,15 @@ Ekranda gosterilecek durum alanlari:
 | Response alani | Nerede gelir | UI yorumu |
 |---|---|---|
 | `isInSync` | audit overview | Tum kontrol basliklari temizse true |
+| `workflowSummary.mikroOrderDocumentCount` | audit overview | Secilen tarihte Mikro'ya dusen ve akisin baslangic evrenini olusturan siparis sayisi |
+| `workflowSummary.axataOrderDocumentCount` | audit overview | Mikro siparis numarasi ile AXATA `ENT000/ENT001` tarafinda gercekten bulunan siparis sayisi |
+| `workflowSummary.axataShipmentDocumentCount` | audit overview | Secilen Mikro siparislerine bagli tum AXATA C01 SEV belge sayisi; sevk tarihi farkli gun olabilir |
+| `workflowSummary.partiallyShippedDocumentCount` | audit overview | Toplam AXATA SEV miktari Mikro siparis miktarindan dusuk olan siparis sayisi |
+| `workflowSummary.fullyShippedDocumentCount` | audit overview | Toplam AXATA SEV miktari Mikro siparis miktarina esit olan siparis sayisi |
+| `workflowSummary.mikroLinkedShipmentDocumentCount` | audit overview | En az bir Mikro sevk hareketi siparis satirina baglanmis siparis sayisi |
+| `workflowSummary.fullySynchronizedDocumentCount` | audit overview | AXATA siparisi, toplam SEV ve Mikro siparis baglantisi miktar olarak tamamlanan siparis sayisi |
+| `workflowSummary.manualActionRequiredDocumentCount` | audit overview | Evrak bazinda manuel aksiyon onerilen siparis sayisi |
+| `orderLifecycles` | audit overview | Her Mikro siparisi icin AXATA siparis, tum SEV'ler, Mikro baglanti durumu ve onerilen aksiyonu tek kayitta verir |
 | `summary.unsentWarehouseOrderDocumentCount` | audit overview | Mikro'da AXATA'ya gitmemis depo siparisi sayisi |
 | `summary.sentWarehouseOrderMissingMikroShipmentDocumentCount` | audit overview | AXATA'ya gonderildi isaretli ama belge genelinde Mikro sevk linki olmayan belge sayisi |
 | `summary.sentWarehouseOrderMissingMikroShipmentLineCount` | audit overview | Belge genelinde hic Mikro sevk linki olmayan satir sayisi |
@@ -8521,6 +8530,12 @@ Authorization: Bearer {token}
 
 Bu cagri veri yazmaz. Amaci eski worker calisirken durumu anlamaktir:
 
+- Ana izleme evreni secilen `startDate/endDate` araliginda Mikro `DEPOLAR_ARASI_SIPARISLER.ssip_tarih` alanina dusen siparislerdir
+- Her Mikro siparisi AXATA `ENT000/ENT001` icinde evrak numarasi ile dogrudan aranir; `ssip_special1=1` yalnizca worker gonderim bayragidir ve AXATA'da gercek kayit bulundugunun yerine kullanilmaz
+- Secilen Mikro siparisine ait AXATA C01 `ENT006/ENT007` SEV kayitlari sevk tarihinden bagimsiz aranir; boylece bir gun acilan siparisin sonraki gun kesilen sevki ayni yasam dongusunde gorulur
+- Bir siparise ait birden fazla SEV miktari toplanir ve `PartiallyShipped`, `FullyShipped` veya `OverShipped` olarak siniflandirilir
+- Mikro donusu `STOK_HAREKETLERI_EK.sth_subesip_uid` ile bagli gercek `STOK_HAREKETLERI.sth_miktar` toplami uzerinden `WaitingForMikroTransfer`, `PartiallyLinked` veya `FullyLinked` olarak siniflandirilir
+- `orderLifecycles[].recommendedAction` yeniden siparis gonderme, C01 import, tamamlanmis SEV rescue, sadece AXATA ACK, bekleme veya manuel fark inceleme kararini evrak bazinda verir
 - `isInSync=true` ise secili tarih araliginda Mikro kaynakli siparis gonderim bayraklari tamam, AXATA `Status=0` bekleyen sevk kuyrugu bos, iptal/zero olmayan AXATA sevkleri Mikro'ya dusmus/baglanmis ve AXATA sevk kayitlarinda satirsiz/anomali belge yok demektir
 - `unsyncedWarehouseOrders` Mikro'da olup worker basari bayragi tum satirlarda `1` olmayan depolar arasi siparisleri gosterir
 - Entegrasyon iki yonludur: siparis tarafi Mikro kaynaklidir (`DEPOLAR_ARASI_SIPARISLER` -> AXATA), sevk donusu AXATA kaynaklidir (`ENT006/ENT007` -> Mikro sevk fisi/linki)
@@ -11929,6 +11944,8 @@ public sealed record AxataIntegrationAuditDto(
     DateTime EndDate,
     int? WarehouseNo,
     AxataIntegrationAuditSummaryDto Summary,
+    AxataOrderWorkflowSummaryDto WorkflowSummary,
+    IReadOnlyCollection<AxataOrderLifecycleDto> OrderLifecycles,
     IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,

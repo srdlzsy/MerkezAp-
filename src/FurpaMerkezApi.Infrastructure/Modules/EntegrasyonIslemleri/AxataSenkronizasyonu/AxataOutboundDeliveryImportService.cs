@@ -93,6 +93,14 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.DocumentOrderNo,
             take,
             cancellationToken);
+        var orderWorkflowAudit = await GetOrderWorkflowAuditAsync(
+            startDate,
+            endDate,
+            warehouseOrderSourceWarehouseNos,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            take,
+            cancellationToken);
 
         var movementDocuments = new Dictionary<string, IReadOnlyCollection<AxataOutboundDeliveryDocument>>(
             StringComparer.OrdinalIgnoreCase);
@@ -250,6 +258,13 @@ internal sealed class AxataOutboundDeliveryImportService(
                        summary.SentWarehouseOrderShipmentDifferenceDocumentCount == 0 &&
                        summary.PendingOutboundDeliveryDocumentCount == 0 &&
                        summary.AxataEmptyOutboundDeliveryDocumentCount == 0 &&
+                       orderWorkflowAudit.Summary.AxataOrderMissingDocumentCount == 0 &&
+                       orderWorkflowAudit.Summary.AxataOrderUnknownDocumentCount == 0 &&
+                       orderWorkflowAudit.Summary.WaitingForMikroTransferDocumentCount == 0 &&
+                       orderWorkflowAudit.Summary.PartiallyLinkedInMikroDocumentCount == 0 &&
+                       orderWorkflowAudit.Summary.ManualActionRequiredDocumentCount == 0 &&
+                       orderWorkflowAudit.Summary.FullySynchronizedDocumentCount ==
+                       orderWorkflowAudit.Summary.MikroOrderDocumentCount &&
                        movementFetchErrors.Count == 0;
         var operations = BuildAuditOperations(summary);
         var notes = new List<string>
@@ -264,7 +279,8 @@ internal sealed class AxataOutboundDeliveryImportService(
             "AXATA S06IPTKOD dolu olan veya S06STTU=3 ve toplam sevk miktari 0 olan belgeler iptal/zero-quantity sevk olarak ayrilir; Mikro'ya sevk fisi beklenmez.",
             "Mikro ssip_special1=1 olup AXATA outbound delivery kaydi bulunmayan belgeler ikincil tutarsizlik olarak ozetlenir; ana eksik sevk alarmi sayilmaz.",
             "pendingOutboundDeliveries yalnizca Status=0 bekleyen AXATA sevklerini dondurur; axataOutboundDeliveries secili status kaynak evrenini dondurur.",
-            "C01 icin Mikro siparis satiri ve STOK_HAREKETLERI_EK linki kontrol edilir; diger hareket tipleri bu raporda kuyruk seviyesinde izlenir."
+            "C01 icin Mikro siparis satiri ve STOK_HAREKETLERI_EK linki kontrol edilir; diger hareket tipleri bu raporda kuyruk seviyesinde izlenir.",
+            "workflowSummary ve orderLifecycles Mikro siparisini baslangic kabul eder; AXATA ENT000/ENT001 siparisi ve bu siparise ait tum C01 ENT006/ENT007 sevkleri, sevk tarihinden bagimsiz olarak izlenir."
         };
         notes.AddRange(movementFetchErrors.Select(error =>
             $"AXATA {error.Key} status {outboundDeliveryStatusLabel} sevk kuyrugu okunamadi: {error.Value}"));
@@ -276,6 +292,8 @@ internal sealed class AxataOutboundDeliveryImportService(
             endDate,
             request.WarehouseNo,
             summary,
+            orderWorkflowAudit.Summary,
+            orderWorkflowAudit.Documents,
             movementSummaries,
             warehouseAudit.UnsyncedDocuments,
             sentMissingMikroShipmentDocuments.Take(take).ToArray(),
@@ -566,6 +584,711 @@ internal sealed class AxataOutboundDeliveryImportService(
         }
 
         return configuredWarehouseNos;
+    }
+
+    private async Task<OrderWorkflowAuditResult> GetOrderWorkflowAuditAsync(
+        DateTime startDate,
+        DateTime endDate,
+        IReadOnlyCollection<int> sourceWarehouseNos,
+        string? documentSerie,
+        int? documentOrderNo,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var sourceWarehouseNoArray = sourceWarehouseNos
+            .Where(warehouseNo => warehouseNo > 0)
+            .Distinct()
+            .ToArray();
+        if (sourceWarehouseNoArray.Length == 0)
+        {
+            return OrderWorkflowAuditResult.Empty;
+        }
+
+        var endDateExclusive = endDate.Date.AddDays(1);
+        var normalizedDocumentSerie = NormalizeQueryValue(documentSerie);
+        var mikroQuery = mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_iptal != true &&
+                order.ssip_tarih.HasValue &&
+                order.ssip_tarih.Value >= startDate.Date &&
+                order.ssip_tarih.Value < endDateExclusive &&
+                order.ssip_evrakno_seri != null &&
+                order.ssip_evrakno_sira.HasValue &&
+                sourceWarehouseNoArray.Contains(order.ssip_cikdepo ?? 0));
+
+        if (!string.IsNullOrWhiteSpace(normalizedDocumentSerie))
+        {
+            mikroQuery = mikroQuery.Where(order => order.ssip_evrakno_seri == normalizedDocumentSerie);
+        }
+
+        if (documentOrderNo.HasValue)
+        {
+            mikroQuery = mikroQuery.Where(order => order.ssip_evrakno_sira == documentOrderNo.Value);
+        }
+
+        var mikroRows = await mikroQuery
+            .Select(order => new OrderWorkflowMikroRow(
+                order.ssip_evrakno_seri ?? string.Empty,
+                order.ssip_evrakno_sira ?? 0,
+                order.ssip_tarih ?? DateTime.MinValue,
+                order.ssip_cikdepo ?? 0,
+                order.ssip_girdepo ?? 0,
+                order.ssip_Guid,
+                order.ssip_miktar ?? 0d,
+                order.ssip_teslim_miktar ?? 0d,
+                order.ssip_special1 ?? string.Empty))
+            .ToListAsync(cancellationToken);
+
+        if (mikroRows.Count == 0)
+        {
+            return OrderWorkflowAuditResult.Empty;
+        }
+
+        var mikroDocuments = mikroRows
+            .GroupBy(row => new MikroDocumentKey(row.DocumentSerie, row.DocumentOrderNo))
+            .Select(group => new OrderWorkflowMikroDocument(
+                group.Key,
+                group.Min(row => row.DocumentDate).Date,
+                group.First().SourceWarehouseNo,
+                group.First().TargetWarehouseNo,
+                group.Count(),
+                group.Sum(row => row.Quantity),
+                group.Count(row => IsAxataSentFlag(row.Special1)),
+                group.ToArray()))
+            .OrderBy(document => document.DocumentDate)
+            .ThenBy(document => document.Key.DocumentSerie)
+            .ThenBy(document => document.Key.DocumentOrderNo)
+            .ToArray();
+        var documentNos = mikroDocuments
+            .Select(document => FormatAxataDocumentNo(
+                document.Key.DocumentSerie,
+                document.Key.DocumentOrderNo))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var orderLineGuids = mikroRows
+            .Select(row => row.OrderLineGuid)
+            .Distinct()
+            .ToArray();
+        var movementLinkCounts = await GetWarehouseOrderMovementLinkCountsAsync(
+            orderLineGuids,
+            cancellationToken);
+        var linkedMovementQuantities = await GetWarehouseOrderLinkedMovementQuantitiesAsync(
+            orderLineGuids,
+            cancellationToken);
+
+        Dictionary<string, OrderWorkflowAxataOrder> axataOrders;
+        Dictionary<string, IReadOnlyCollection<OrderWorkflowShipment>> shipmentsByDocument;
+        if (axataDbContext is null)
+        {
+            axataOrders = new Dictionary<string, OrderWorkflowAxataOrder>(StringComparer.OrdinalIgnoreCase);
+            shipmentsByDocument =
+                new Dictionary<string, IReadOnlyCollection<OrderWorkflowShipment>>(StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            axataOrders = await GetAxataOrdersForWorkflowAsync(documentNos, cancellationToken);
+            shipmentsByDocument = await GetAxataShipmentsForWorkflowAsync(documentNos, cancellationToken);
+        }
+
+        var documents = mikroDocuments
+            .Select(mikroDocument =>
+            {
+                var documentNo = FormatAxataDocumentNo(
+                    mikroDocument.Key.DocumentSerie,
+                    mikroDocument.Key.DocumentOrderNo);
+                var axataOrderExists = axataDbContext is null
+                    ? (bool?)null
+                    : axataOrders.ContainsKey(documentNo);
+                var axataOrder = axataOrders.GetValueOrDefault(documentNo);
+                var shipments = shipmentsByDocument.GetValueOrDefault(documentNo)
+                    ?? Array.Empty<OrderWorkflowShipment>();
+                var activeShipments = shipments
+                    .Where(shipment => !shipment.IsCancelled && shipment.Quantity > QuantityTolerance)
+                    .ToArray();
+                var shipmentQuantity = activeShipments.Sum(shipment => shipment.Quantity);
+                var linkedLineCount = mikroDocument.Rows.Sum(row =>
+                    movementLinkCounts.GetValueOrDefault(row.OrderLineGuid));
+                var linkedMovementQuantity = mikroDocument.Rows.Sum(row =>
+                    linkedMovementQuantities.GetValueOrDefault(row.OrderLineGuid));
+                var linkedDeliveredQuantity = mikroDocument.Rows
+                    .Where(row => movementLinkCounts.GetValueOrDefault(row.OrderLineGuid) > 0)
+                    .Sum(row => row.DeliveredQuantity);
+                var linkedQuantity = linkedMovementQuantity > QuantityTolerance
+                    ? linkedMovementQuantity
+                    : linkedDeliveredQuantity;
+                var dispatchFlagState = mikroDocument.SentFlagLineCount == mikroDocument.LineCount
+                    ? "Sent"
+                    : mikroDocument.SentFlagLineCount > 0
+                        ? "PartiallySent"
+                        : "NotSent";
+                var axataOrderState = ResolveAxataOrderState(
+                    axataOrderExists,
+                    mikroDocument.Quantity,
+                    axataOrder?.Quantity ?? 0d);
+                var shipmentState = ResolveOrderShipmentState(
+                    axataOrderExists,
+                    mikroDocument.Quantity,
+                    shipmentQuantity,
+                    shipments.Count(shipment => shipment.IsCancelled));
+                var mikroTransferState = ResolveMikroTransferState(shipmentQuantity, linkedQuantity);
+                var pendingShipmentCount = activeShipments.Count(shipment =>
+                    IsPendingStatus(shipment.Status));
+                var synchronizationState = ResolveOrderSynchronizationState(
+                    axataOrderState,
+                    shipmentState,
+                    mikroTransferState,
+                    pendingShipmentCount);
+                var action = BuildOrderRecommendedAction(
+                    mikroDocument.Key,
+                    axataOrderState,
+                    shipmentState,
+                    mikroTransferState,
+                    pendingShipmentCount,
+                    shipmentQuantity,
+                    linkedQuantity);
+
+                return new AxataOrderLifecycleDto(
+                    mikroDocument.Key.DocumentSerie,
+                    mikroDocument.Key.DocumentOrderNo,
+                    documentNo,
+                    mikroDocument.DocumentDate,
+                    mikroDocument.SourceWarehouseNo,
+                    mikroDocument.TargetWarehouseNo,
+                    mikroDocument.LineCount,
+                    mikroDocument.Quantity,
+                    mikroDocument.SentFlagLineCount,
+                    dispatchFlagState,
+                    axataOrderExists,
+                    axataOrder?.LineCount ?? 0,
+                    axataOrder?.Quantity ?? 0d,
+                    axataOrderState,
+                    activeShipments.Length,
+                    pendingShipmentCount,
+                    activeShipments.Count(shipment => IsCompletedStatus(shipment.Status)),
+                    shipments.Count(shipment => shipment.IsCancelled),
+                    activeShipments.Sum(shipment => shipment.LineCount),
+                    shipmentQuantity,
+                    shipmentState,
+                    linkedLineCount,
+                    linkedQuantity,
+                    mikroTransferState,
+                    synchronizationState,
+                    action,
+                    shipments
+                        .OrderBy(shipment => shipment.ShipmentDate)
+                        .ThenBy(shipment => shipment.AxataSequenceNo)
+                        .Select(shipment => new AxataOrderShipmentReferenceDto(
+                            shipment.AxataSequenceNo,
+                            shipment.AxataDeliveryNo,
+                            shipment.Status,
+                            shipment.ShipmentDate,
+                            shipment.LineCount,
+                            shipment.Quantity,
+                            shipment.IsCancelled,
+                            NormalizeNullableValue(shipment.CancellationCode)))
+                        .ToArray());
+            })
+            .ToArray();
+
+        var summary = new AxataOrderWorkflowSummaryDto(
+            documents.Length,
+            documents.Count(document => document.AxataOrderExists == true),
+            documents.Count(document => document.AxataOrderExists == false),
+            documents.Count(document => !document.AxataOrderExists.HasValue),
+            documents.Count(document => document.AxataOrderState == "QuantityMismatch"),
+            documents.Sum(document => document.Shipments.Count),
+            documents.Count(document => document.ShipmentState == "WaitingForAxataShipment"),
+            documents.Count(document => document.ShipmentState == "PartiallyShipped"),
+            documents.Count(document => document.ShipmentState == "FullyShipped"),
+            documents.Count(document => document.ShipmentState == "OverShipped"),
+            documents.Count(document => document.MikroLinkedShipmentLineCount > 0),
+            documents.Count(document => document.MikroTransferState == "WaitingForMikroTransfer"),
+            documents.Count(document => document.MikroTransferState == "PartiallyLinked"),
+            documents.Count(document => document.MikroTransferState == "FullyLinked"),
+            documents.Count(document => document.SynchronizationState == "FullySynchronized"),
+            documents.Count(document => document.RecommendedAction.RequiresManualAction));
+
+        return new OrderWorkflowAuditResult(
+            summary,
+            documents
+                .OrderByDescending(document => document.RecommendedAction.RequiresManualAction)
+                .ThenBy(document => document.DocumentDate)
+                .ThenBy(document => document.DocumentSerie)
+                .ThenBy(document => document.DocumentOrderNo)
+                .Take(take)
+                .ToArray());
+    }
+
+    private async Task<Dictionary<Guid, double>> GetWarehouseOrderLinkedMovementQuantitiesAsync(
+        IReadOnlyCollection<Guid> orderLineGuids,
+        CancellationToken cancellationToken)
+    {
+        var distinctOrderLineGuids = orderLineGuids
+            .Where(guid => guid != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (distinctOrderLineGuids.Length == 0)
+        {
+            return new Dictionary<Guid, double>();
+        }
+
+        var rows = await (
+                from movementExtra in mikroWriteDbContext.STOK_HAREKETLERI_EKs.AsNoTracking()
+                join movement in mikroWriteDbContext.STOK_HAREKETLERIs.AsNoTracking()
+                    on movementExtra.sthek_related_uid equals movement.sth_Guid
+                where movementExtra.sth_subesip_uid.HasValue &&
+                      distinctOrderLineGuids.Contains(movementExtra.sth_subesip_uid.Value) &&
+                      movement.sth_iptal != true
+                select new
+                {
+                    OrderLineGuid = movementExtra.sth_subesip_uid!.Value,
+                    Quantity = movement.sth_miktar ?? 0d
+                })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(row => row.OrderLineGuid)
+            .ToDictionary(group => group.Key, group => group.Sum(row => row.Quantity));
+    }
+
+    private async Task<Dictionary<string, OrderWorkflowAxataOrder>> GetAxataOrdersForWorkflowAsync(
+        IReadOnlyCollection<string> documentNos,
+        CancellationToken cancellationToken)
+    {
+        if (axataDbContext is null || documentNos.Count == 0)
+        {
+            return new Dictionary<string, OrderWorkflowAxataOrder>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var normalizedDocumentNos = documentNos
+            .Select(documentNo => documentNo.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var headers = await axataDbContext.ENT000s
+            .AsNoTracking()
+            .Where(header =>
+                header.S00TESN != null &&
+                normalizedDocumentNos.Contains(header.S00TESN.Trim()) &&
+                ((header.S00HTP1 != null && header.S00HTP1.Trim() == C01MovementType) ||
+                 (header.S00HTP2 != null && header.S00HTP2.Trim() == C01MovementType)))
+            .Select(header => header.S00TESN ?? string.Empty)
+            .ToListAsync(cancellationToken);
+        var lines = await axataDbContext.ENT001s
+            .AsNoTracking()
+            .Where(line =>
+                line.S01TESL != null &&
+                normalizedDocumentNos.Contains(line.S01TESL.Trim()))
+            .Select(line => new
+            {
+                DocumentNo = line.S01TESL ?? string.Empty,
+                Quantity = line.S01MIKT
+            })
+            .ToListAsync(cancellationToken);
+        var lineGroups = lines
+            .GroupBy(line => line.DocumentNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => new OrderWorkflowAxataOrder(
+                    group.Count(),
+                    group.Sum(line => line.Quantity.HasValue ? (double)line.Quantity.Value : 0d)),
+                StringComparer.OrdinalIgnoreCase);
+
+        return headers
+            .Select(documentNo => documentNo.Trim())
+            .Where(documentNo => !string.IsNullOrWhiteSpace(documentNo))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                documentNo => documentNo,
+                documentNo => lineGroups.GetValueOrDefault(documentNo)
+                              ?? new OrderWorkflowAxataOrder(0, 0d),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<Dictionary<string, IReadOnlyCollection<OrderWorkflowShipment>>> GetAxataShipmentsForWorkflowAsync(
+        IReadOnlyCollection<string> documentNos,
+        CancellationToken cancellationToken)
+    {
+        if (axataDbContext is null || documentNos.Count == 0)
+        {
+            return new Dictionary<string, IReadOnlyCollection<OrderWorkflowShipment>>(
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        var normalizedDocumentNos = documentNos
+            .Select(documentNo => documentNo.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var headers = await axataDbContext.ENT006s
+            .AsNoTracking()
+            .Where(header =>
+                header.S06TESL != null &&
+                normalizedDocumentNos.Contains(header.S06TESL.Trim()) &&
+                header.S06OHTP != null &&
+                header.S06OHTP.Trim() == C01MovementType &&
+                header.S06STAT.HasValue &&
+                (header.S06STAT.Value == 0m || header.S06STAT.Value == 1m))
+            .Select(header => new AxataAuditOutboundDeliveryHeaderRow(
+                header.S06SIRA,
+                header.S06TESL ?? string.Empty,
+                header.S06OHTP ?? C01MovementType,
+                header.S06STAT,
+                header.S06STTU,
+                header.S06IPTKOD,
+                header.S06FIRM,
+                header.S06TFIR,
+                header.S06ITAR))
+            .ToListAsync(cancellationToken);
+        var deliveryNos = headers
+            .Select(header => header.AxataDeliveryNo.Trim())
+            .Where(deliveryNo => !string.IsNullOrWhiteSpace(deliveryNo))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var lines = deliveryNos.Length == 0
+            ? []
+            : await axataDbContext.ENT007s
+                .AsNoTracking()
+                .Where(line => line.S07TESL != null && deliveryNos.Contains(line.S07TESL.Trim()))
+                .Select(line => new AxataAuditOutboundDeliveryLineRow(
+                    line.S07TESL ?? string.Empty,
+                    line.S07KALN,
+                    line.S07SKOD,
+                    line.S07MIKT))
+                .ToListAsync(cancellationToken);
+        var lineGroups = lines
+            .GroupBy(line => line.AxataDeliveryNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => new
+                {
+                    LineCount = group.Count(),
+                    Quantity = group.Sum(line => line.Quantity.HasValue ? (double)line.Quantity.Value : 0d)
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+        return headers
+            .Select(header =>
+            {
+                var documentNo = header.AxataDeliveryNo.Trim();
+                var lineGroup = lineGroups.GetValueOrDefault(documentNo);
+                var quantity = lineGroup?.Quantity ?? 0d;
+                var cancellationCode = NormalizeQueryValue(header.CancellationCode);
+                var isCancelled = !string.IsNullOrWhiteSpace(cancellationCode) ||
+                                  (string.Equals(
+                                       NormalizeQueryValue(header.ShipmentState),
+                                       "3",
+                                       StringComparison.OrdinalIgnoreCase) &&
+                                   quantity <= QuantityTolerance);
+
+                return new OrderWorkflowShipment(
+                    documentNo,
+                    header.AxataSequenceNo,
+                    documentNo,
+                    FirstNonEmpty(FormatDecimal(header.Status), PendingStatus),
+                    ParseDate(FormatDecimal(header.AxataDateKey)),
+                    lineGroup?.LineCount ?? 0,
+                    quantity,
+                    isCancelled,
+                    cancellationCode);
+            })
+            .GroupBy(shipment => shipment.DocumentNo, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToArray() as IReadOnlyCollection<OrderWorkflowShipment>,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveAxataOrderState(
+        bool? axataOrderExists,
+        double mikroOrderQuantity,
+        double axataOrderQuantity)
+    {
+        if (!axataOrderExists.HasValue)
+        {
+            return "Unknown";
+        }
+
+        if (!axataOrderExists.Value)
+        {
+            return "NotFound";
+        }
+
+        return HasQuantityDifference(mikroOrderQuantity, axataOrderQuantity)
+            ? "QuantityMismatch"
+            : "Confirmed";
+    }
+
+    private static string ResolveOrderShipmentState(
+        bool? axataOrderExists,
+        double orderQuantity,
+        double shipmentQuantity,
+        int cancelledShipmentCount)
+    {
+        if (!axataOrderExists.HasValue)
+        {
+            return "Unknown";
+        }
+
+        if (!axataOrderExists.Value)
+        {
+            return shipmentQuantity > QuantityTolerance
+                ? "ShipmentExistsWithoutAxataOrder"
+                : "WaitingForAxataOrder";
+        }
+
+        if (shipmentQuantity <= QuantityTolerance)
+        {
+            return cancelledShipmentCount > 0
+                ? "CancelledInAxata"
+                : "WaitingForAxataShipment";
+        }
+
+        if (shipmentQuantity + QuantityTolerance < orderQuantity)
+        {
+            return "PartiallyShipped";
+        }
+
+        return shipmentQuantity > orderQuantity + QuantityTolerance
+            ? "OverShipped"
+            : "FullyShipped";
+    }
+
+    private static string ResolveMikroTransferState(double shipmentQuantity, double linkedQuantity)
+    {
+        if (shipmentQuantity <= QuantityTolerance)
+        {
+            return "NotApplicable";
+        }
+
+        if (linkedQuantity <= QuantityTolerance)
+        {
+            return "WaitingForMikroTransfer";
+        }
+
+        if (linkedQuantity + QuantityTolerance < shipmentQuantity)
+        {
+            return "PartiallyLinked";
+        }
+
+        return linkedQuantity > shipmentQuantity + QuantityTolerance
+            ? "QuantityMismatch"
+            : "FullyLinked";
+    }
+
+    private static string ResolveOrderSynchronizationState(
+        string axataOrderState,
+        string shipmentState,
+        string mikroTransferState,
+        int pendingShipmentCount)
+    {
+        if (axataOrderState == "Unknown")
+        {
+            return "UnableToVerify";
+        }
+
+        if (axataOrderState == "NotFound")
+        {
+            return shipmentState == "ShipmentExistsWithoutAxataOrder"
+                ? "InconsistentAxataData"
+                : "WaitingForAxataTransfer";
+        }
+
+        if (axataOrderState == "QuantityMismatch" ||
+            shipmentState == "OverShipped" ||
+            mikroTransferState == "QuantityMismatch")
+        {
+            return "QuantityMismatch";
+        }
+
+        if (shipmentState == "CancelledInAxata")
+        {
+            return "CancelledInAxata";
+        }
+
+        if (shipmentState == "WaitingForAxataShipment")
+        {
+            return "WaitingForAxataShipment";
+        }
+
+        if (mikroTransferState == "WaitingForMikroTransfer")
+        {
+            return "WaitingForMikroTransfer";
+        }
+
+        if (mikroTransferState == "PartiallyLinked")
+        {
+            return "ManualReviewRequired";
+        }
+
+        if (pendingShipmentCount > 0 && mikroTransferState == "FullyLinked")
+        {
+            return "WaitingForAxataAck";
+        }
+
+        if (shipmentState == "PartiallyShipped" && mikroTransferState == "FullyLinked")
+        {
+            return "WaitingForRemainingAxataShipment";
+        }
+
+        return shipmentState == "FullyShipped" && mikroTransferState == "FullyLinked"
+            ? "FullySynchronized"
+            : "ReviewRequired";
+    }
+
+    private static AxataOrderRecommendedActionDto BuildOrderRecommendedAction(
+        MikroDocumentKey documentKey,
+        string axataOrderState,
+        string shipmentState,
+        string mikroTransferState,
+        int pendingShipmentCount,
+        double shipmentQuantity,
+        double linkedQuantity)
+    {
+        var documentPath =
+            $"/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{Uri.EscapeDataString(documentKey.DocumentSerie)}/{documentKey.DocumentOrderNo}";
+
+        if (axataOrderState == "Unknown")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "VERIFY_AXATA_CONNECTION",
+                "AXATA siparis kaydini dogrula",
+                "Warning",
+                true,
+                false,
+                "/api/integrations/axata-sync/health",
+                null,
+                "AXATA SQL baglantisi olmadigi icin siparisin AXATA'ya gercekten dustugu dogrulanamadi.");
+        }
+
+        if (axataOrderState == "NotFound")
+        {
+            if (shipmentQuantity > QuantityTolerance)
+            {
+                return new AxataOrderRecommendedActionDto(
+                    "REVIEW_SHIPMENT_WITHOUT_AXATA_ORDER",
+                    "AXATA kayit tutarsizligini incele",
+                    "Critical",
+                    true,
+                    false,
+                    documentPath + "/preview",
+                    null,
+                    "AXATA siparis basligi bulunamadi ancak bu evrak numarasina ait SEV var; siparisi yeniden gondermek duplicate riski tasir.");
+            }
+
+            return new AxataOrderRecommendedActionDto(
+                "RESEND_ORDER_TO_AXATA",
+                "Siparisi AXATA'ya yeniden gonder",
+                "Critical",
+                true,
+                true,
+                "/api/integrations/axata-sync/manual/tasks/issued-warehouse-order-sync/documents/preview",
+                "/api/integrations/axata-sync/manual/tasks/issued-warehouse-order-sync/documents/dispatch",
+                "Siparis Mikro'da var ancak AXATA ENT000/ENT001 kaydi bulunamadi.");
+        }
+
+        if (axataOrderState == "QuantityMismatch" ||
+            shipmentState == "OverShipped" ||
+            mikroTransferState == "QuantityMismatch")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "REVIEW_QUANTITY_MISMATCH",
+                "Miktar farkini manuel incele",
+                "Critical",
+                true,
+                false,
+                documentPath + "/preview",
+                null,
+                "Mikro siparis, AXATA siparis/sevk veya Mikro bagli sevk miktarlari birbiriyle uyusmuyor.");
+        }
+
+        if (shipmentState == "CancelledInAxata")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "NO_ACTION_CANCELLED",
+                "Islem yapma",
+                "Info",
+                false,
+                false,
+                null,
+                null,
+                "AXATA sevki iptal veya sifir miktarli; Mikro sevk fisi beklenmez.");
+        }
+
+        if (shipmentState == "WaitingForAxataShipment")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "WAIT_FOR_AXATA_SHIPMENT",
+                "AXATA sevkini bekle",
+                "Info",
+                false,
+                false,
+                null,
+                null,
+                "Siparis AXATA'da mevcut ancak henuz pozitif miktarli SEV olusmamis.");
+        }
+
+        if (mikroTransferState == "WaitingForMikroTransfer")
+        {
+            var pending = pendingShipmentCount > 0;
+            return new AxataOrderRecommendedActionDto(
+                pending ? "IMPORT_PENDING_C01" : "RESCUE_COMPLETED_C01",
+                pending ? "Bekleyen SEV'i Mikro'ya aktar" : "Tamamlanmis SEV icin rescue yap",
+                "Critical",
+                true,
+                true,
+                documentPath + $"/preview?status={(pending ? "0" : "1")}",
+                documentPath + "/import",
+                $"AXATA'da {shipmentQuantity:0.###} miktar SEV var, Mikro siparisine bagli sevk bulunamadi.");
+        }
+
+        if (mikroTransferState == "PartiallyLinked")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "REVIEW_PARTIAL_MIKRO_LINK",
+                "Eksik Mikro baglantisini incele",
+                "Warning",
+                true,
+                false,
+                documentPath + "/preview",
+                null,
+                $"AXATA sevk miktari {shipmentQuantity:0.###}, Mikro'ya bagli miktar {linkedQuantity:0.###}.");
+        }
+
+        if (pendingShipmentCount > 0 && mikroTransferState == "FullyLinked")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "ACK_AXATA_ONLY",
+                "Yalnizca AXATA durumunu onayla",
+                "Warning",
+                true,
+                true,
+                documentPath + "/preview?status=0",
+                documentPath + "/import",
+                "Mikro sevk baglantisi tamam ancak AXATA SEV hala Status=0; duplicate fis olusturmadan ACK gerekir.");
+        }
+
+        if (shipmentState == "PartiallyShipped")
+        {
+            return new AxataOrderRecommendedActionDto(
+                "WAIT_FOR_REMAINING_SHIPMENT",
+                "Kalan AXATA sevkini bekle",
+                "Info",
+                false,
+                false,
+                null,
+                null,
+                "Olusan AXATA sevkleri Mikro'ya tam baglanmis, siparisin kalan miktari henuz sevk edilmemis.");
+        }
+
+        return new AxataOrderRecommendedActionDto(
+            "NO_ACTION_FULLY_SYNCHRONIZED",
+            "Islem gerekmiyor",
+            "Success",
+            false,
+            false,
+            null,
+            null,
+            "Siparis AXATA'da mevcut, sevk tamam ve Mikro siparis baglantisi miktar olarak uyumlu.");
     }
 
     private async Task<WarehouseOrderAuditResult> GetWarehouseOrderAuditAsync(
@@ -2258,3 +2981,64 @@ internal sealed record WarehouseOrderAuditResult(
     double SentShipmentDifferenceQuantity,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentShipmentDifferenceDocuments,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedDocuments);
+
+internal sealed record OrderWorkflowMikroRow(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    DateTime DocumentDate,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    Guid OrderLineGuid,
+    double Quantity,
+    double DeliveredQuantity,
+    string Special1);
+
+internal sealed record OrderWorkflowMikroDocument(
+    MikroDocumentKey Key,
+    DateTime DocumentDate,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    int LineCount,
+    double Quantity,
+    int SentFlagLineCount,
+    IReadOnlyCollection<OrderWorkflowMikroRow> Rows);
+
+internal sealed record OrderWorkflowAxataOrder(
+    int LineCount,
+    double Quantity);
+
+internal sealed record OrderWorkflowShipment(
+    string DocumentNo,
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    string Status,
+    DateTime? ShipmentDate,
+    int LineCount,
+    double Quantity,
+    bool IsCancelled,
+    string CancellationCode);
+
+internal sealed record OrderWorkflowAuditResult(
+    AxataOrderWorkflowSummaryDto Summary,
+    IReadOnlyCollection<AxataOrderLifecycleDto> Documents)
+{
+    public static OrderWorkflowAuditResult Empty { get; } = new(
+        new AxataOrderWorkflowSummaryDto(
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0),
+        Array.Empty<AxataOrderLifecycleDto>());
+}

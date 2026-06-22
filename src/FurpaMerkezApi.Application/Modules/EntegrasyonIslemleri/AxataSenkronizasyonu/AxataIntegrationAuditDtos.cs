@@ -23,6 +23,8 @@ public sealed record AxataIntegrationAuditDto(
     DateTime EndDate,
     int? WarehouseNo,
     AxataIntegrationAuditSummaryDto Summary,
+    AxataOrderWorkflowSummaryDto WorkflowSummary,
+    IReadOnlyCollection<AxataOrderLifecycleDto> OrderLifecycles,
     IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
     IReadOnlyCollection<AxataSentWarehouseOrderMissingShipmentDto> SentWarehouseOrdersMissingMikroShipments,
@@ -64,6 +66,73 @@ public sealed record AxataIntegrationAuditSummaryDto(
     int AxataCancelledOutboundDeliveryLineCount,
     double AxataCancelledOutboundDeliveryQuantity,
     int AxataEmptyOutboundDeliveryDocumentCount);
+
+public sealed record AxataOrderWorkflowSummaryDto(
+    int MikroOrderDocumentCount,
+    int AxataOrderDocumentCount,
+    int AxataOrderMissingDocumentCount,
+    int AxataOrderUnknownDocumentCount,
+    int AxataOrderQuantityMismatchDocumentCount,
+    int AxataShipmentDocumentCount,
+    int WaitingForAxataShipmentDocumentCount,
+    int PartiallyShippedDocumentCount,
+    int FullyShippedDocumentCount,
+    int OverShippedDocumentCount,
+    int MikroLinkedShipmentDocumentCount,
+    int WaitingForMikroTransferDocumentCount,
+    int PartiallyLinkedInMikroDocumentCount,
+    int FullyLinkedInMikroDocumentCount,
+    int FullySynchronizedDocumentCount,
+    int ManualActionRequiredDocumentCount);
+
+public sealed record AxataOrderLifecycleDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string DocumentNo,
+    DateTime DocumentDate,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    int MikroOrderLineCount,
+    double MikroOrderQuantity,
+    int MikroSentFlagLineCount,
+    string MikroDispatchFlagState,
+    bool? AxataOrderExists,
+    int AxataOrderLineCount,
+    double AxataOrderQuantity,
+    string AxataOrderState,
+    int AxataShipmentDocumentCount,
+    int AxataPendingShipmentDocumentCount,
+    int AxataCompletedShipmentDocumentCount,
+    int AxataCancelledShipmentDocumentCount,
+    int AxataShipmentLineCount,
+    double AxataShipmentQuantity,
+    string ShipmentState,
+    int MikroLinkedShipmentLineCount,
+    double MikroLinkedShipmentQuantity,
+    string MikroTransferState,
+    string SynchronizationState,
+    AxataOrderRecommendedActionDto RecommendedAction,
+    IReadOnlyCollection<AxataOrderShipmentReferenceDto> Shipments);
+
+public sealed record AxataOrderRecommendedActionDto(
+    string Code,
+    string Title,
+    string Severity,
+    bool RequiresManualAction,
+    bool CanExecute,
+    string? PreviewRoute,
+    string? ExecuteRoute,
+    string Reason);
+
+public sealed record AxataOrderShipmentReferenceDto(
+    long AxataSequenceNo,
+    string AxataDeliveryNo,
+    string Status,
+    DateTime? ShipmentDate,
+    int LineCount,
+    double Quantity,
+    bool IsCancelled,
+    string? CancellationCode);
 
 public sealed record AxataOutboundDeliveryMovementSummaryDto(
     string MovementType,
