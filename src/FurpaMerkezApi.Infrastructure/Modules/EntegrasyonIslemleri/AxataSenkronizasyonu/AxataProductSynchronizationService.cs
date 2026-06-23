@@ -16,7 +16,7 @@ internal sealed class AxataProductSynchronizationService(
 {
     private const string CompanyCode = "01";
     private const string OperationName = "addSKUMaster";
-    private const string DefaultUnitCode = "ADET";
+    private const string DefaultUnitCode = "AD";
     private const int DefaultTake = 100;
     private const int MaxTake = 100000;
     private const int DispatchBatchSize = 100;
@@ -210,6 +210,9 @@ internal sealed class AxataProductSynchronizationService(
                 stock.sto_kod,
                 stock.sto_isim ?? string.Empty,
                 stock.sto_kisa_ismi ?? string.Empty,
+                stock.sto_paket_kodu,
+                stock.sto_cins,
+                stock.sto_toplam_rafomru,
                 stock.sto_birim1_ad,
                 stock.sto_birim1_katsayi,
                 stock.sto_birim1_agirlik,
@@ -279,6 +282,9 @@ internal sealed class AxataProductSynchronizationService(
                     stock.ProductCode,
                     FirstNonEmpty(stock.ProductName, stock.ShortName, stock.ProductCode),
                     units.First().UnitCode,
+                    NormalizeAxataCode(stock.PackageCode, 2),
+                    stock.TypeCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                    stock.ShelfLife ?? 0,
                     stock.ScaleProduct,
                     stock.SaleBlocked,
                     stock.OrderBlocked,
@@ -289,6 +295,12 @@ internal sealed class AxataProductSynchronizationService(
                             barcode.Barcode,
                             ResolveBarcodeUnit(units, barcode.UnitPointer),
                             barcode.IsMaster))
+                        .Append(new ProductSynchronizationBarcode(
+                            stock.ProductCode,
+                            units.First().UnitCode,
+                            false))
+                        .GroupBy(barcode => barcode.Barcode, StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.First())
                         .ToArray());
             })
             .ToArray();
@@ -300,7 +312,7 @@ internal sealed class AxataProductSynchronizationService(
         {
             new ProductSynchronizationUnit(
                 1,
-                NormalizeUnit(stock.Unit1Name),
+                NormalizeUnitCode(stock.Unit1Name),
                 NormalizeFactor(stock.Unit1Factor),
                 stock.Unit1Weight,
                 stock.Unit1Width,
@@ -309,7 +321,7 @@ internal sealed class AxataProductSynchronizationService(
                 true),
             new ProductSynchronizationUnit(
                 2,
-                NormalizeUnit(stock.Unit2Name),
+                NormalizeUnitCode(stock.Unit2Name),
                 NormalizeFactor(stock.Unit2Factor),
                 stock.Unit2Weight,
                 stock.Unit2Width,
@@ -318,7 +330,7 @@ internal sealed class AxataProductSynchronizationService(
                 false),
             new ProductSynchronizationUnit(
                 3,
-                NormalizeUnit(stock.Unit3Name),
+                NormalizeUnitCode(stock.Unit3Name),
                 NormalizeFactor(stock.Unit3Factor),
                 stock.Unit3Weight,
                 stock.Unit3Width,
@@ -327,7 +339,7 @@ internal sealed class AxataProductSynchronizationService(
                 false),
             new ProductSynchronizationUnit(
                 4,
-                NormalizeUnit(stock.Unit4Name),
+                NormalizeUnitCode(stock.Unit4Name),
                 NormalizeFactor(stock.Unit4Factor),
                 stock.Unit4Weight,
                 stock.Unit4Width,
@@ -376,20 +388,7 @@ internal sealed class AxataProductSynchronizationService(
 
     private static ProductSynchronizationPayload ToPayload(ProductSynchronizationRecord product) =>
         new(
-            new ProductMasterPayload(
-                CompanyCode,
-                product.ProductCode,
-                product.ProductName,
-                product.ProductName,
-                product.MainUnit,
-                product.MainUnit,
-                product.Barcodes.FirstOrDefault(barcode => barcode.IsMaster)?.Barcode
-                ?? product.Barcodes.FirstOrDefault()?.Barcode
-                ?? string.Empty,
-                product.ScaleProduct,
-                product.SaleBlocked,
-                product.OrderBlocked,
-                product.GoodsAcceptanceBlocked),
+            BuildMasterPayload(product),
             product.Barcodes
                 .Select(barcode => new ProductBarcodePayload(
                     CompanyCode,
@@ -412,6 +411,33 @@ internal sealed class AxataProductSynchronizationService(
                     unit.Weight))
                 .ToArray());
 
+    private static ProductMasterPayload BuildMasterPayload(ProductSynchronizationRecord product)
+    {
+        var baseUnit = product.Units
+            .Where(unit => !unit.IsDefault)
+            .OrderBy(unit => unit.Pointer)
+            .FirstOrDefault()
+            ?? product.Units.First();
+
+        return new ProductMasterPayload(
+            CompanyCode,
+            product.ProductCode,
+            NormalizeAxataCode(product.ProductName, 20),
+            product.ProductName,
+            product.MainUnit,
+            FirstNonEmpty(product.PackageCode, baseUnit.UnitCode),
+            baseUnit.Factor,
+            product.TypeCode,
+            product.ShelfLife,
+            product.Barcodes.FirstOrDefault(barcode => barcode.IsMaster)?.Barcode
+            ?? product.Barcodes.FirstOrDefault()?.Barcode
+            ?? string.Empty,
+            product.ScaleProduct,
+            product.SaleBlocked,
+            product.OrderBlocked,
+            product.GoodsAcceptanceBlocked);
+    }
+
     private static AxataSku.SKUMaster ToWcfProduct(ProductSynchronizationRecord product)
     {
         var payload = ToPayload(product);
@@ -423,11 +449,28 @@ internal sealed class AxataProductSynchronizationService(
                 S04MKOD = payload.Master.ProductCode,
                 S04KTAN = payload.Master.ProductName,
                 S04UTAN = payload.Master.ProductDescription,
+                S04SNFK = payload.Master.TypeCode,
                 S04MKBR = payload.Master.MainUnit,
-                S04MBBR = payload.Master.MainUnit,
-                S04KULBRM = 1,
+                S04MBBR = payload.Master.BaseUnit,
+                S04BKOR = (decimal)payload.Master.BaseUnitFactor,
+                S04PSTAN = 1m,
+                S04FIFO = 1,
+                S04KULBRM = 0,
+                S04GTKON = 1,
+                S04IKOD = 0,
+                S04LOT = "0",
+                S04LOT2 = 0,
+                S04LOT3 = 0,
+                S04SERI = 0,
+                S04SERI2 = 0,
+                S04SERI3 = 0,
+                S04ROMUR = payload.Master.ShelfLife,
+                S04PALTIP = "EU",
+                S04OND = 0,
+                S04SERIURET = 0,
                 S04GTIN = payload.Master.DefaultBarcode,
-                S04DSIM = payload.Master.ScaleProduct ? (byte)1 : (byte)0,
+                S04DSIM = 0,
+                S04CATI = 0,
                 S04ENT1 = payload.Master.SaleBlocked ? "1" : "0",
                 S04ENT2 = payload.Master.OrderBlocked ? "1" : "0",
                 S04ENT3 = payload.Master.GoodsAcceptanceBlocked ? "1" : "0"
@@ -462,7 +505,17 @@ internal sealed class AxataProductSynchronizationService(
                     S04NAGR = ToDecimal(unit.Weight)
                 })
                 .ToArray(),
-            ENT004PL_List = [],
+            ENT004PL_List =
+            [
+                new AxataMain.ENT004PL
+                {
+                    S04SKOD = payload.Master.CompanyCode,
+                    S04MKOD = payload.Master.ProductCode,
+                    S04PALTIP = "EU",
+                    S04PSTD = 100000m,
+                    S04DEPO = "01"
+                }
+            ],
             ENT004_PROP_List = []
         };
     }
@@ -531,11 +584,17 @@ internal sealed class AxataProductSynchronizationService(
     private static string NormalizeCode(string? value) =>
         value?.Trim() ?? string.Empty;
 
-    private static string NormalizeUnit(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+    private static string NormalizeUnitCode(string? value) =>
+        NormalizeAxataCode(value, 2);
 
     private static double NormalizeFactor(double? value) =>
-        value is > 0d ? value.Value : 1d;
+        value is { } factor && factor != 0d ? Math.Abs(factor) : 1d;
+
+    private static string NormalizeAxataCode(string? value, int maxLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength];
+    }
 
     private static decimal? ToDecimal(double? value) =>
         value.HasValue ? (decimal)value.Value : null;
@@ -553,6 +612,9 @@ internal sealed record ProductStockRow(
     string ProductCode,
     string ProductName,
     string ShortName,
+    string? PackageCode,
+    byte? TypeCode,
+    short? ShelfLife,
     string? Unit1Name,
     double? Unit1Factor,
     double? Unit1Weight,
@@ -592,6 +654,9 @@ internal sealed record ProductSynchronizationRecord(
     string ProductCode,
     string ProductName,
     string MainUnit,
+    string PackageCode,
+    string TypeCode,
+    short ShelfLife,
     bool ScaleProduct,
     bool SaleBlocked,
     bool OrderBlocked,
@@ -626,6 +691,9 @@ internal sealed record ProductMasterPayload(
     string ProductDescription,
     string MainUnit,
     string BaseUnit,
+    double BaseUnitFactor,
+    string TypeCode,
+    short ShelfLife,
     string DefaultBarcode,
     bool ScaleProduct,
     bool SaleBlocked,
