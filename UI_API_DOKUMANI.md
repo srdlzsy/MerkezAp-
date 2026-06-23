@@ -8194,6 +8194,24 @@ Operasyon modulu notlari:
 
 Bu modul, eski `Furpa.WorkerService` akisini yeni API icinde worker + manuel endpoint ayrimi ile yonetmek icin eklendi. UI tarafinda bu ekran "entegrasyon gorevi sec, preview al, dry-run yap veya outbox'a at, sonra job durumunu izle" mantigiyla kurgulanmalidir.
 
+Sonuc odakli kullanim icin onerilen ana yollar:
+
+- Urun master: `live/products/preview` ile kontrol et, secili urun icin `live/products/{productCode}/dispatch`, toplu secim icin `live/products/dispatch` kullan. Job/outbox akisini ikincil/teknik arac olarak goster.
+- Mikro -> AXATA evrak kurtarma: once `manual/tasks/{taskCode}/documents/candidates`, sonra `preview`, son olarak gercek gonderim icin `dispatch` kullan. `execute/Outbox` AXATA'ya gondermez, sadece dosya hazirlar.
+- AXATA -> Mikro C01 sevk: once `live/axata/outbound-deliveries/c01/preview`, uygun kayit varsa `import` kullan. Import ekraninda `acknowledge` secimi kullaniciya acik gosterilmelidir.
+- C02/C03/C4 kuyruklari: sadece `outbound-deliveries/preview` ile goruntule. Bu profiller icin otomatik Mikro yazma aksiyonu sunma.
+- Manuel body/import ekranlari: yalnizca operasyon AXATA body bilgisini elle sagladiginda kullanilacak yardimci araclar olarak konumlandir.
+
+AXATA ekranlari icin genel sadelik ilkesi:
+
+- UI ana hedefi "Mikro ve AXATA arasindaki durumu goster, uygun aksiyonu oner, kullanici onayi ile islemi tamamla" olmalidir.
+- Her ekran once is sonucunu gostermelidir: bekleyen kayit, hatali kayit, gonderilebilir kayit, aktarildi/aktarilmadi durumu.
+- Teknik kavramlar (`job`, `outbox`, `scheduler`, `fetch profile`, servis operasyon adi, raw payload) ana ekranda baskin olmamalidir; gerekirse "Gelismis/teknik detay" bolumunde katlanabilir sekilde gosterilmelidir.
+- Kullaniciya ayni is icin birden fazla benzer buton sunma. Ana aksiyonlar `Onizle`, `Gonder`, `Mikro'ya Isle`, `Kabul Et`, `Tekrar Dene` gibi sonuc odakli olmalidir.
+- Veri yazan aksiyonlar her zaman acikca ayristirilmalidir: AXATA'ya yazar, Mikro'ya yazar, sadece kontrol eder, sadece dosya hazirlar.
+- Manuel islemler kurtarma ve operasyon destegi icindir; normal akis yerine gecen ana yol gibi sunulmamalidir.
+- Liste ve fark ekranlari karar vermeye yardim etmelidir; kullanici ham payload veya servis alanlari icinde kaybolmadan hangi kayit icin hangi aksiyonun onerildigini gormelidir.
+
 Temel route:
 
 - `api/integrations/axata-sync`

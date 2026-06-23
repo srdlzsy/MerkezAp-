@@ -237,7 +237,6 @@ internal sealed class AxataProductSynchronizationService(
                 stock.sto_birim4_en,
                 stock.sto_birim4_boy,
                 stock.sto_birim4_yukseklik,
-                stock.sto_kasa_tarti_fl ?? false,
                 (stock.sto_satis_dursun ?? 0) != 0,
                 (stock.sto_siparis_dursun ?? 0) != 0,
                 (stock.sto_malkabul_dursun ?? 0) != 0))
@@ -285,7 +284,6 @@ internal sealed class AxataProductSynchronizationService(
                     NormalizeAxataCode(stock.PackageCode, 2),
                     stock.TypeCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
                     stock.ShelfLife ?? 0,
-                    stock.ScaleProduct,
                     stock.SaleBlocked,
                     stock.OrderBlocked,
                     stock.GoodsAcceptanceBlocked,
@@ -432,7 +430,6 @@ internal sealed class AxataProductSynchronizationService(
             product.Barcodes.FirstOrDefault(barcode => barcode.IsMaster)?.Barcode
             ?? product.Barcodes.FirstOrDefault()?.Barcode
             ?? string.Empty,
-            product.ScaleProduct,
             product.SaleBlocked,
             product.OrderBlocked,
             product.GoodsAcceptanceBlocked);
@@ -639,7 +636,6 @@ internal sealed record ProductStockRow(
     double? Unit4Width,
     double? Unit4Length,
     double? Unit4Height,
-    bool ScaleProduct,
     bool SaleBlocked,
     bool OrderBlocked,
     bool GoodsAcceptanceBlocked);
@@ -657,7 +653,6 @@ internal sealed record ProductSynchronizationRecord(
     string PackageCode,
     string TypeCode,
     short ShelfLife,
-    bool ScaleProduct,
     bool SaleBlocked,
     bool OrderBlocked,
     bool GoodsAcceptanceBlocked,
@@ -695,7 +690,6 @@ internal sealed record ProductMasterPayload(
     string TypeCode,
     short ShelfLife,
     string DefaultBarcode,
-    bool ScaleProduct,
     bool SaleBlocked,
     bool OrderBlocked,
     bool GoodsAcceptanceBlocked);
