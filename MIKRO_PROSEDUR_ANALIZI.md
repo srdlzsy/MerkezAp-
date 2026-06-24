@@ -2,6 +2,13 @@
 
 Bu dokuman, `MikroConnection` uzerindeki stored procedure'leri ileride tekrar bakabilmek icin ozetler.
 
+Not: Ilk analiz kapsami `MikroConnection` yani Mikro veritabaniydi. Kasa/POS
+aktariminda kritik olan `StokHareketYaz`, `StokHareketSil` ve `HareketSil`
+prosedurleri ise `FurpaConnection` / `Furpa` veritabani icinde durur ve
+cross-database olarak `MikroDB_V16_FURPA_2024` tablolarina yazar. Bu yuzden
+ilk Mikro procedure listesinde gorunmemeleri normaldir; asagida ayri bolumde
+notlanmistir.
+
 ## Onemli Not
 
 - Bu analiz sirasinda stored procedure calistirilmadi.
@@ -512,6 +519,142 @@ Risk:
 
 - Ilk taramada yazma gorunmedi.
 
+## Furpa DB Kaynakli Mikro Yazim Procedure'leri
+
+Bu bolumdeki procedure'ler `MikroConnection` icinde degil, `FurpaConnection`
+icindeki `Furpa` veritabaninda bulunur. Yine de Mikro hareketlerini dogrudan
+olusturduklari icin sistemin muhasebe/ERP akisini anlamak acisindan kritik
+onemdedir.
+
+### `StokHareketYaz`
+
+Amac:
+
+- Furpa DB'deki kasa/POS ham hareketlerini Mikro ERP'ye resmi stok ve cari
+  hareketi olarak aktarir.
+- Kaynak olarak agirlikli `PosFaturas` ve `PosFaturaSatirs` tablolarini okur.
+- Hedef olarak `MikroDB_V16_FURPA_2024.dbo.CARI_HESAP_HAREKETLERI` ve
+  `MikroDB_V16_FURPA_2024.dbo.STOK_HAREKETLERI` tablolarina insert yapar.
+- Aktarim tamamlandiktan sonra `Furpa.dbo.PosFaturas.MikroAktarimDurumu`
+  alanini `1` yapar.
+
+Parametre izleri:
+
+- `@Tarih datetime2(7) = NULL`
+- `@Sube nvarchar(5) = ''`
+
+Kaynak tablolar:
+
+- `Furpa.dbo.PosFaturas`
+- `Furpa.dbo.PosFaturaSatirs`
+
+Hedef Mikro tablolari:
+
+- `MikroDB_V16_FURPA_2024.dbo.CARI_HESAP_HAREKETLERI`
+- `MikroDB_V16_FURPA_2024.dbo.STOK_HAREKETLERI`
+
+Tipik Mikro yazim mantigi:
+
+- Cari taraf:
+  - `cha_evrakno_seri = 'PS' + Sube`
+  - `cha_evrak_tip = 63` ise perakende/POS satis hareketi
+  - `cha_evrak_tip = 61` ise gider pusulasi/Z raporu benzeri farkli belge tipi
+  - `cha_pos_hareketi = 1`
+- Stok taraf:
+  - `sth_evrakno_seri = 'PS' + Sube`
+  - `sth_tip = 1`, `sth_cins = 1`, `sth_evraktip = 4` satis cikisi icin
+  - `sth_pos_satis = 1`
+
+Is akisindaki yeri:
+
+```text
+Kasa/POS fisi
+  -> Furpa.dbo.PosFaturas
+  -> Furpa.dbo.PosFaturaSatirs
+  -> Furpa.dbo.StokHareketYaz
+  -> Mikro.dbo.CARI_HESAP_HAREKETLERI
+  -> Mikro.dbo.STOK_HAREKETLERI
+  -> PosFaturas.MikroAktarimDurumu = 1
+```
+
+Risk:
+
+- Bu procedure read-only degildir.
+- Canli Mikro stok ve cari hareketi olusturur.
+- Tekrar calistirilirse, silme/temizleme yapilmadan duplicate hareket riski
+  vardir.
+- `@Sube` bos verilirse tarih bazinda tum subeleri etkileyebilir.
+- API veya manuel arac uzerinden calistirilirken mutlaka tarih/sube filtresi,
+  aktarim durumu ve daha once Mikro'da ayni `PS+Sube` seri/sira var mi kontrol
+  edilmelidir.
+
+Karar:
+
+- Rapor/read-only adapter listesine alinmaz.
+- Kasa hareket aktarimi modulunun kontrollu operasyon procedure'u olarak
+  dokumante edilir.
+- Canli calistirma sadece yetkili operasyon aksiyonu, loglama ve on kontrolle
+  yapilmalidir.
+
+### `StokHareketSil`
+
+Amac:
+
+- Daha once Mikro'ya aktarilmis POS stok/cari hareketlerini tarih ve sube
+  bazinda silmek icin kullanilir.
+- `cha_pos_hareketi = 1` ve `sth_pos_satis = 1` isaretli Mikro hareketlerini
+  hedefler.
+- Silme sonrasi ilgili `Furpa.dbo.PosFaturas.MikroAktarimDurumu` alanini tekrar
+  `0` yapar.
+
+Parametre izleri:
+
+- `@Tarih date`
+- `@Sube nvarchar(5) = ''`
+
+Hedef Mikro tablolari:
+
+- `MikroDB_V16_FURPA_2024.dbo.CARI_HESAP_HAREKETLERI`
+- `MikroDB_V16_FURPA_2024.dbo.STOK_HAREKETLERI`
+
+Risk:
+
+- Canli Mikro hareketlerini `DELETE` eder.
+- Yanlis tarih/sube ile calistirilirse ilgili gunun POS kaynakli resmi Mikro
+  hareketleri silinebilir.
+
+Karar:
+
+- Normal API akisi icin kullanilmaz.
+- Sadece aktarim geri alma/duzeltme operasyonunda, yetkili onayi ile
+  calistirilmelidir.
+
+### `HareketSil`
+
+Amac:
+
+- Furpa DB'deki POS staging/ham hareketlerini siler.
+- `PosFaturas`, `PosFaturaSatirs`, `PosFaturaOdemes`, `PosFaturaPromosyons`,
+  `PosFaturaIptals`, `PosFaturaIptalSatirs` gibi Furpa tablolarini tarih,
+  sube ve kasa filtresine gore temizler.
+
+Parametre izleri:
+
+- `@Tarih date = NULL`
+- `@Sube nvarchar(50) = ''`
+- `@KasaNo int = 0`
+
+Risk:
+
+- Mikro DB'ye dogrudan yazmaz ama Furpa tarafindaki kaynak POS verisini siler.
+- Bu veri silinirse tekrar import edilmeden Mikro aktarim zinciri yeniden
+  kurulamaz.
+
+Karar:
+
+- Sadece staging veri temizleme/yeniden import senaryosunda kullanilmali.
+- Kullanici ekranindan genis yetkiyle acilmamali.
+
 ## Kesinlikle Calistirmayalim / Yazma Riski Yuksek
 
 ### `SiparisTeslim`
@@ -656,6 +799,8 @@ Bu procedure'ler icin ileride `Infrastructure/Mikro/StoredProcedures` gibi bir a
 - `DepoNakliyeTeslim`
 - `DepoDetaylariIcin_Kayitlar_Olustur`
 - `msp_DepoDurum`
+- `StokHareketYaz` read-only amacla kullanilmaz; sadece kontrollu kasa/POS aktarim operasyonudur
+- `StokHareketSil`
+- `HareketSil`
 - `Disable_*`
 - `Enable_*`
-

@@ -15,6 +15,7 @@ public sealed class SearchWarehousesUseCase(MikroDbContext mikroDbContext) : ISe
     {
         var take = NormalizeTake(request.Take);
         var searchText = NormalizeOrNull(request.SearchText);
+        var searchWarehouseNo = TryParseWarehouseNo(searchText);
         var like = searchText is null ? null : $"%{searchText}%";
 
         var query = mikroDbContext.DEPOLARs
@@ -29,6 +30,7 @@ public sealed class SearchWarehousesUseCase(MikroDbContext mikroDbContext) : ISe
         if (like is not null)
         {
             query = query.Where(warehouse =>
+                (searchWarehouseNo.HasValue && warehouse.dep_no == searchWarehouseNo.Value) ||
                 (warehouse.dep_adi != null && EF.Functions.Like(warehouse.dep_adi, like)) ||
                 (warehouse.dep_grup_kodu != null && EF.Functions.Like(warehouse.dep_grup_kodu, like)) ||
                 (warehouse.dep_Il != null && EF.Functions.Like(warehouse.dep_Il, like)) ||
@@ -82,6 +84,11 @@ public sealed class SearchWarehousesUseCase(MikroDbContext mikroDbContext) : ISe
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
+
+    private static int? TryParseWarehouseNo(string? value) =>
+        int.TryParse(value, out var warehouseNo) && warehouseNo > 0
+            ? warehouseNo
+            : null;
 
     private static string JoinNonEmpty(params string?[] values) =>
         string.Join(
