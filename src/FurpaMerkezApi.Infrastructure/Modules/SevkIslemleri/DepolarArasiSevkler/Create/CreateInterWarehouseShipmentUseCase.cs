@@ -130,7 +130,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(movementExtras, cancellationToken);
                 }
 
-                if (request.UpdateLinkedOrderDeliveredQuantities)
+                if (ShouldUpdateLinkedOrderDeliveredQuantities(request, lines))
                 {
                     ApplyLinkedOrderDeliveredQuantities(lines, linkedOrderLines, now);
                 }
@@ -462,7 +462,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                         cancellationToken);
                 }
 
-                if (request.UpdateLinkedOrderDeliveredQuantities)
+                if (ShouldUpdateLinkedOrderDeliveredQuantities(request, lines))
                 {
                     ApplyLinkedOrderDeliveredQuantities(lines, linkedOrderLines, now);
                 }
@@ -601,6 +601,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         return orderLines;
     }
 
+    private static bool ShouldUpdateLinkedOrderDeliveredQuantities(
+        CreateInterWarehouseShipmentRequest request,
+        IReadOnlyCollection<CreateInterWarehouseShipmentLineRequest> lines) =>
+        request.UpdateLinkedOrderDeliveredQuantities ||
+        lines.Any(line => line.WarehouseOrderLineGuid.HasValue);
+
     private static void ApplyLinkedOrderDeliveredQuantities(
         IReadOnlyCollection<CreateInterWarehouseShipmentLineRequest> lines,
         IReadOnlyDictionary<Guid, DEPOLAR_ARASI_SIPARISLER> linkedOrderLines,
@@ -621,6 +627,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             orderLine.ssip_teslim_miktar = totalQuantity > 0d
                 ? Math.Min(deliveredQuantity, totalQuantity)
                 : deliveredQuantity;
+            orderLine.ssip_kapat_fl = totalQuantity > 0d &&
+                orderLine.ssip_teslim_miktar >= totalQuantity;
             orderLine.ssip_lastup_user = MikroUserNo;
             orderLine.ssip_lastup_date = now;
         }
