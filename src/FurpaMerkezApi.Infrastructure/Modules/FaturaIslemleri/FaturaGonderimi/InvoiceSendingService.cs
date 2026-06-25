@@ -20,6 +20,8 @@ public sealed class InvoiceSendingService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IEInvoiceDocumentRenderer invoiceDocumentRenderer,
+    UblTrInvoiceBusinessRuleValidator ublTrInvoiceBusinessRuleValidator,
+    UblTrInvoiceXmlValidator ublTrInvoiceXmlValidator,
     IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
     IOptions<EDespatchOptions> eDespatchOptions,
     IHostEnvironment hostEnvironment,
@@ -128,6 +130,12 @@ public sealed class InvoiceSendingService(
 
                 invoice = await EnsureReturnReferenceBeforeSendAsync(invoice, cancellationToken);
                 var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
+                ublTrInvoiceBusinessRuleValidator.Validate(
+                    builtInvoice.XmlContent,
+                    builtInvoice.InvoiceId,
+                    request.Scenario,
+                    builtInvoice.TargetAlias);
+                ublTrInvoiceXmlValidator.Validate(builtInvoice.XmlContent, builtInvoice.InvoiceId);
                 var serviceResponse = await SendToUyumsoftAsync(
                     builtInvoice,
                     request.Scenario,
@@ -180,6 +188,94 @@ public sealed class InvoiceSendingService(
             deduplicatedDocuments.Length,
             succeededCount,
             failedCount,
+            results);
+    }
+
+    public async Task<ValidateInvoiceDocumentsResponse> ValidateAsync(
+        ValidateInvoiceDocumentsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateSendRequest(new SendInvoiceDocumentsRequest(request.Scenario, request.Documents));
+        ValidatePreflightConfiguration();
+
+        var deduplicatedDocuments = request.Documents
+            .Where(document => !string.IsNullOrWhiteSpace(document.DocumentSerie))
+            .Select(document => new SendInvoiceDocumentSelection(document.DocumentSerie.Trim(), document.DocumentOrderNo))
+            .Distinct()
+            .ToArray();
+        var results = new List<ValidateInvoiceDocumentResultDto>(deduplicatedDocuments.Length);
+
+        foreach (var document in deduplicatedDocuments)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var invoice = await LoadSingleInvoiceAsync(
+                    request.Scenario,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    cancellationToken);
+
+                if (invoice.IsSent)
+                {
+                    results.Add(new ValidateInvoiceDocumentResultDto(
+                        invoice.DocumentSerie,
+                        invoice.DocumentOrderNo,
+                        invoice.InvoiceId,
+                        invoice.CustomerCode,
+                        invoice.CustomerTitle,
+                        false,
+                        "Belge zaten gonderilmis."));
+                    continue;
+                }
+
+                invoice = await ResolveReturnReferenceForValidationAsync(invoice, cancellationToken);
+                var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
+                ublTrInvoiceBusinessRuleValidator.Validate(
+                    builtInvoice.XmlContent,
+                    builtInvoice.InvoiceId,
+                    request.Scenario,
+                    builtInvoice.TargetAlias);
+                ublTrInvoiceXmlValidator.Validate(builtInvoice.XmlContent, builtInvoice.InvoiceId);
+
+                results.Add(new ValidateInvoiceDocumentResultDto(
+                    invoice.DocumentSerie,
+                    invoice.DocumentOrderNo,
+                    invoice.InvoiceId,
+                    invoice.CustomerCode,
+                    invoice.CustomerTitle,
+                    true,
+                    "Gonderim oncesi kontrol basarili."));
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Invoice pre-send validation failed for {Scenario} {DocumentSerie}/{DocumentOrderNo}.",
+                    request.Scenario,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo);
+
+                results.Add(new ValidateInvoiceDocumentResultDto(
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
+                    string.Empty,
+                    string.Empty,
+                    false,
+                    exception.Message));
+            }
+        }
+
+        var validCount = results.Count(result => result.IsValid);
+        var invalidCount = results.Count - validCount;
+
+        return new ValidateInvoiceDocumentsResponse(
+            request.Scenario,
+            deduplicatedDocuments.Length,
+            validCount,
+            invalidCount,
             results);
     }
 
@@ -327,7 +423,17 @@ public sealed class InvoiceSendingService(
                 INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
                 INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
-                INNER JOIN Furpa.dbo.FaturaSeries fatSer WITH (NOLOCK) ON ch.cha_evrakno_seri LIKE CONCAT(fatSer.seri, N'%')
+                CROSS APPLY (
+                    SELECT TOP (1)
+                        fatSer.efatura
+                    FROM Furpa.dbo.FaturaSeries fatSer WITH (NOLOCK)
+                    WHERE
+                        NULLIF(LTRIM(RTRIM(ISNULL(fatSer.seri, N''))), N'') IS NOT NULL
+                        AND ch.cha_evrakno_seri LIKE CONCAT(LTRIM(RTRIM(fatSer.seri)), N'%')
+                    ORDER BY
+                        LEN(LTRIM(RTRIM(fatSer.seri))) DESC,
+                        LTRIM(RTRIM(fatSer.seri)) DESC
+                ) fatSer
                 OUTER APPLY (
                     SELECT TOP (1)
                         LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))) AS IadeFaturaNo,
@@ -553,6 +659,36 @@ public sealed class InvoiceSendingService(
         }
 
         await SaveReturnReferenceAsync(invoice.InvoiceGuid, fallback, cancellationToken);
+
+        return invoice with
+        {
+            ReturnInvoiceNo = fallback.InvoiceNo,
+            ReturnInvoiceDate = fallback.InvoiceDate
+        };
+    }
+
+    private async Task<PendingInvoiceRecord> ResolveReturnReferenceForValidationAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken)
+    {
+        if (!invoice.IsReturn || !string.IsNullOrWhiteSpace(invoice.ReturnInvoiceNo))
+        {
+            return invoice;
+        }
+
+        var fallback = (await LoadReturnReferenceCandidatesAsync(
+                invoice,
+                null,
+                null,
+                1,
+                cancellationToken))
+            .FirstOrDefault();
+
+        if (fallback is null)
+        {
+            throw new InvalidOperationException(
+                "Iade faturasi icin iadeye konu fatura bulunamadi. Fatura gondermeden once referans fatura secilmelidir.");
+        }
 
         return invoice with
         {
@@ -1818,6 +1954,14 @@ public sealed class InvoiceSendingService(
             throw new InvalidOperationException("EInvoice password configuration is required.");
         }
 
+        if (string.IsNullOrWhiteSpace(eDesPatchOptionsValue.SupplierCustomerCode))
+        {
+            throw new InvalidOperationException("Supplier customer code configuration is required.");
+        }
+    }
+
+    private void ValidatePreflightConfiguration()
+    {
         if (string.IsNullOrWhiteSpace(eDesPatchOptionsValue.SupplierCustomerCode))
         {
             throw new InvalidOperationException("Supplier customer code configuration is required.");

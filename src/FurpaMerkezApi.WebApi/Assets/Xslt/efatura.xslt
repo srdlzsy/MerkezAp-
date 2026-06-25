@@ -42,10 +42,10 @@
 					}
 					};
 				</script>
-				<style type="text/css"> body { background-color: #FFFFFF; font-family: 'Tahoma', "Times New Roman", Times, serif; font-size: 11px; color: #666666; -webkit-print-color-adjust: exact; } h1, h2 { padding-bottom: 3px; padding-top: 3px; margin-bottom: 5px; text-transform: uppercase; font-family: Arial, Helvetica, sans-serif; } h1 { font-size: 1.4em; text-transform:none; } h2 { font-size: 1em; color: brown; } h3 { font-size: 1em; color: #333333; text-align: justify; margin: 0; padding: 0; } h4 { font-size: 1.1em; font-style: bold; font-family: Arial, Helvetica, sans-serif; color: #000000; margin: 0; padding: 0; } hr { border: 2px solid #000000; } p, ul, ol { margin-top: 1.5em; } ul, ol { margin-left: 3em; } blockquote { margin-left: 3em; margin-right: 3em; font-style: italic; } a { text-decoration: none; color: #70A300; } a:hover { border: none; color: #70A300; } #budgetContainerTable { border-width: 0px; border-spacing: 0px; border-style: inset; border-color: black; border-collapse: collapse; margin-left:auto; } #despatchTable { border-collapse:collapse; float:right; border-color:black; max-width:270px; } #despatchDocumentReferenceTable{ border-collapse:collapse; } div.divContainer { width:800px; } #ettnTable { border-collapse:collapse; border-color:black; } #lineTable { border-width:2px; border-style: inset; border-color: black; border-collapse: collapse; } .lineTableTd { border-width: 1px; padding: 1px; border-style: inset; border-color: black; background-color: white; } #lineTableTr { border-width: 1px; padding: 0px; border-style: inset; border-color: black; background-color: white; } #lineTableBudgetTd { border-width: 2px; border-spacing:0px; padding: 1px; border-style: inset; border-color: black; background-color: white; } #notesTable { border-width: 2px; border-style: inset; border-color: black; border-collapse: collapse; } #notesTableTd { border-width: 0px; border-style: inset; border-color: black; border-collapse: collapse; } table { border-spacing:0px; } td { border-color:black; } .fixedTableCss{ table-layout:fixed; overflow-wrap:break-word; word-wrap:break-word; -ms-word-wrap:break-word; } #SGK_Table td{ max-width:400px; white-space: pre-wrap; white-space: -moz-pre-wrap; white-space: -pre-wrap; white-space: -o-pre-wrap; word-wrap: break-word; }</style>
+				<style type="text/css"> body { background-color: #FFFFFF; font-family: 'Tahoma', "Times New Roman", Times, serif; font-size: 11px; color: #666666; -webkit-print-color-adjust: exact; } h1, h2 { padding-bottom: 3px; padding-top: 3px; margin-bottom: 5px; text-transform: uppercase; font-family: Arial, Helvetica, sans-serif; } h1 { font-size: 1.4em; text-transform:none; } h2 { font-size: 1em; color: brown; } h3 { font-size: 1em; color: #333333; text-align: justify; margin: 0; padding: 0; } h4 { font-size: 1.1em; font-weight: bold; font-family: Arial, Helvetica, sans-serif; color: #000000; margin: 0; padding: 0; } hr { border: 2px solid #000000; } p, ul, ol { margin-top: 1.5em; } ul, ol { margin-left: 3em; } blockquote { margin-left: 3em; margin-right: 3em; font-style: italic; } a { text-decoration: none; color: #70A300; } a:hover { border: none; color: #70A300; } #budgetContainerTable { border-width: 0px; border-spacing: 0px; border-style: inset; border-color: black; border-collapse: collapse; margin-left:auto; } #despatchTable { border-collapse:collapse; float:right; border-color:black; max-width:270px; } #despatchDocumentReferenceTable{ border-collapse:collapse; } div.divContainer { width:800px; } #ettnTable { border-collapse:collapse; border-color:black; } .lineTable { border-width:2px; border-style: inset; border-color: black; border-collapse: collapse; } .lineTableTd { border-width: 1px; padding: 1px; border-style: inset; border-color: black; background-color: white; } .lineTableTr { border-width: 1px; padding: 0px; border-style: inset; border-color: black; background-color: white; } .lineTableBudgetTd { border-width: 2px; border-spacing:0px; padding: 1px; border-style: inset; border-color: black; background-color: white; } #notesTable { border-width: 2px; border-style: inset; border-color: black; border-collapse: collapse; } #notesTableTd { border-width: 0px; border-style: inset; border-color: black; border-collapse: collapse; } table { border-spacing:0px; } td { border-color:black; } .fixedTableCss{ table-layout:fixed; overflow-wrap:break-word; word-wrap:break-word; -ms-word-wrap:break-word; } #SGK_Table td{ max-width:400px; white-space: pre-wrap; white-space: -moz-pre-wrap; white-space: -pre-wrap; white-space: -o-pre-wrap; word-wrap: break-word; }</style>
 				<title>e-Fatura</title>
 			</head>
-			<body onload="javascript:GetDocumentWidth()" style="margin-left=0.6in; margin-right=0.6in; margin-top=0.79in; margin-bottom=0.79in">
+			<body onload="javascript:GetDocumentWidth()" style="margin-left:0.6in; margin-right:0.6in; margin-top:0.79in; margin-bottom:0.79in">
 				<xsl:for-each select="$XML">
 					<table border="0" cellspacing="0px" width="800" cellpadding="0px">
 						<tbody>
@@ -734,9 +734,9 @@
 							<xsl:text>&#xA0;</xsl:text>
 						</span>
 					</div>
-					<table border="1" id="lineTable" class="fixedTableCss" width="800">
+					<table border="1" class="lineTable fixedTableCss" width="800">
 						<tbody>
-							<tr id="lineTableTr">
+							<tr class="lineTableTr">
 								<td class="lineTableTd" style="width:4.3%;" align="center">
 									<span style="font-weight:bold;">
 										<xsl:text>Sıra No</xsl:text>
@@ -1447,13 +1447,13 @@
 												</xsl:for-each>
 											</xsl:variable>
 											<xsl:if test="$grossPrescriptionAmount != ''">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right" width="200px">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right" width="200px">
 														<span style="font-weight:bold; ">
 															<xsl:text>Toplam Brüt Reçete Tutar</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right" width="85px">
+													<td class="lineTableBudgetTd" align="right" width="85px">
 														<span>
 															<xsl:value-of select="format-number($grossPrescriptionAmount, '###.##0,00', 'european')"/>
 															<xsl:text> TL</xsl:text>
@@ -1463,13 +1463,13 @@
 											</xsl:if>
 										</xsl:if>
 										<xsl:if test="not($senaryo = 'IHRACAT' or $senaryo = 'İHRACAT')">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right" width="200px">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right" width="200px">
 													<span style="font-weight:bold; ">
 														<xsl:text>Mal Hizmet Toplam Tutarı</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right" width="85px">
+												<td class="lineTableBudgetTd" align="right" width="85px">
 													<span>
 														<xsl:value-of select="format-number(sum(//n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount) + sum(//n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount), '###.##0,00', 'european')"/>
 														<xsl:text> </xsl:text>
@@ -1486,13 +1486,13 @@
 											</tr>
 										</xsl:if>
 										<xsl:if test="$senaryo = 'IHRACAT' or $senaryo = 'İHRACAT'">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right" width="200px">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right" width="200px">
 													<span style="font-weight:bold; ">
 														<xsl:text>Mal Hizmet Toplam Tutarı</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right" width="85px">
+												<td class="lineTableBudgetTd" align="right" width="85px">
 													<span>
 														<xsl:value-of select="format-number(sum(//n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount) + sum(//n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount), '###.##0,00', 'european')"/>
 														<xsl:text> </xsl:text>
@@ -1506,13 +1506,13 @@
 												</td>
 											</tr>
 											<xsl:if test="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount !='' and number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount)  &gt; 0 ">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right" width="200px">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right" width="200px">
 														<span style="font-weight:bold; ">
 															<xsl:text>FOB Tutar</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span>
 															<xsl:for-each select="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount">
 																<xsl:call-template name="Curr_Type">
@@ -1525,13 +1525,13 @@
 												</tr>
 											</xsl:if>
 											<xsl:if test="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount !='' and number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount)  &gt; 0 ">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right" width="200px">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right" width="200px">
 														<span style="font-weight:bold; ">
 															<xsl:text>Nakliye Bedeli</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span>
 															<xsl:for-each select="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount">
 																<xsl:call-template name="Curr_Type">
@@ -1544,13 +1544,13 @@
 												</tr>
 											</xsl:if>
 											<xsl:if test="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount !='' and number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount)  &gt; 0 ">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right" width="200px">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right" width="200px">
 														<span style="font-weight:bold; ">
 															<xsl:text>Sigorta Bedeli</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span>
 															<xsl:for-each select="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount">
 																<xsl:call-template name="Curr_Type">
@@ -1566,26 +1566,26 @@
 										<xsl:if test="n1:Invoice/cbc:InvoiceTypeCode='SGK'">
 											<xsl:for-each select="//n1:Invoice/cbc:Note">
 												<xsl:if test="contains(. , 'Toplam Katılım Payı :')">
-													<tr id="budgetContainerTr" align="right">
-														<td id="lineTableBudgetTd" align="right">
+													<tr class="budgetContainerTr" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span style="font-weight:bold; ">
 																<xsl:text>Toplam Katılım Payı</xsl:text>
 															</span>
 														</td>
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<xsl:value-of select="substring-after(., ':')" />
 															<xsl:text> TL</xsl:text>
 														</td>
 													</tr>
 												</xsl:if>
 											</xsl:for-each>
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right" width="200px">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right" width="200px">
 													<span style="font-weight:bold; ">
 														<xsl:text>KDV Hariç Toplam Tutar</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" style="width:81px; " align="right">
+												<td class="lineTableBudgetTd" style="width:81px; " align="right">
 													<span>
 														<xsl:for-each select="n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount">
 															<xsl:call-template name="Curr_Type">
@@ -1598,13 +1598,13 @@
 											</tr>
 										</xsl:if>
 										<xsl:if test="n1:Invoice/cbc:InvoiceTypeCode!='SGK'">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span style="font-weight:bold; ">
 														<xsl:text>Toplam İskonto</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span>
 														<xsl:for-each select="//n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount">
 															<xsl:call-template name="Curr_Type">
@@ -1617,13 +1617,13 @@
 											</tr>
 										</xsl:if>
 										<xsl:if test="n1:Invoice/cbc:InvoiceTypeCode!='SGK' and number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount) &gt; 0">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span style="font-weight:bold; ">
 														<xsl:text>&#x130;skonto Sonras&#x131; Vergi Hari&#xE7; Tutar</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span>
 														<xsl:for-each select="//n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount">
 															<xsl:call-template name="Curr_Type">
@@ -1636,13 +1636,13 @@
 											</tr>
 										</xsl:if>
 										<xsl:if test="//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount !='' and number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount) &gt; 0">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span style="font-weight:bold; ">
 														<xsl:text>Toplam Artırım</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span>
 														<xsl:for-each select="//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount">
 															<xsl:call-template name="Curr_Type">
@@ -1655,8 +1655,8 @@
 											</tr>
 										</xsl:if>
 										<xsl:for-each select="//n1:Invoice/cac:TaxTotal/cac:TaxSubtotal">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span style="font-weight:bold; ">
 														<xsl:text>Hesaplanan </xsl:text>
 														<xsl:value-of select="cac:TaxCategory/cac:TaxScheme/cbc:Name"/>
@@ -1665,7 +1665,7 @@
 														<xsl:text>)</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<xsl:for-each select="cac:TaxCategory/cac:TaxScheme">
 														<xsl:text> </xsl:text>
 														<xsl:call-template name="Curr_Type">
@@ -1678,8 +1678,8 @@
 										</xsl:for-each>
 										<xsl:for-each select="//n1:Invoice/cac:WithholdingTaxTotal/cac:TaxSubtotal">
 											<xsl:if test="cbc:TaxAmount != ''">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span style="font-weight:bold; ">
 															<xsl:text>KDV Tevkifat-[</xsl:text>
 															<xsl:value-of select="cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode"/>
@@ -1689,7 +1689,7 @@
 															<xsl:text>)</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<xsl:for-each select="cac:TaxCategory/cac:TaxScheme">
 															<xsl:text> </xsl:text>
 															<xsl:call-template name="Curr_Type">
@@ -1702,13 +1702,13 @@
 											</xsl:if>
 										</xsl:for-each>
 										<xsl:if test="n1:Invoice/cbc:InvoiceTypeCode!='SGK'">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span style="font-weight:bold; ">
 														<xsl:text>Vergiler Dahil Toplam Tutar</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<xsl:for-each select="//n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount">
 														<xsl:call-template name="Curr_Type">
 															<xsl:with-param name="valuePath" select="."/>
@@ -1719,13 +1719,13 @@
 											</tr>
 										</xsl:if>
 										<xsl:if test="//n1:Invoice/cbc:ProfileID='HKS' and //n1:Invoice/cbc:InvoiceTypeCode='KOMISYONCU'">
-											<tr id="budgetContainerTr" align="right">
-												<td id="lineTableBudgetTd" align="right">
+											<tr class="budgetContainerTr" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<span style="font-weight:bold; ">
 														<xsl:text>Toplam Masraflar</xsl:text>
 													</span>
 												</td>
-												<td id="lineTableBudgetTd" align="right">
+												<td class="lineTableBudgetTd" align="right">
 													<xsl:for-each
                             select="n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount">
 														<xsl:call-template name="Curr_Type">
@@ -1736,8 +1736,8 @@
 												</td>
 											</tr>
 										</xsl:if>
-										<tr id="budgetContainerTr" align="right">
-											<td id="lineTableBudgetTd" align="right">
+										<tr class="budgetContainerTr" align="right">
+											<td class="lineTableBudgetTd" align="right">
 												<span style="font-weight:bold; ">
 													<xsl:choose>
 														<xsl:when test="//n1:Invoice/cbc:InvoiceTypeCode='SGK'">
@@ -1749,7 +1749,7 @@
 													</xsl:choose>
 												</span>
 											</td>
-											<td id="lineTableBudgetTd" align="right">
+											<td class="lineTableBudgetTd" align="right">
 												<xsl:for-each select="//n1:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount">
 													<xsl:call-template name="Curr_Type">
 														<xsl:with-param name="valuePath" select="."/>
@@ -1762,12 +1762,12 @@
 											<xsl:if test="not($senaryo = 'IHRACAT' or $senaryo = 'İHRACAT')">
 												<xsl:if test="not(//n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID ='TRY' or //n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID ='TRL')">
 													<tr align="right">
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span style="font-weight:bold; ">
 																<xsl:text>Mal Hizmet Toplam Tutarı(TL)</xsl:text>
 															</span>
 														</td>
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span>
 																<xsl:value-of select="format-number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 																<xsl:text> TL</xsl:text>
@@ -1779,12 +1779,12 @@
 											<xsl:if test="$senaryo = 'IHRACAT' or $senaryo = 'İHRACAT'">
 												<xsl:if test="not(//n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID ='TRY' or //n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount/@currencyID ='TRL')">
 													<tr align="right">
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span style="font-weight:bold; ">
 																<xsl:text>Mal Hizmet Toplam Tutarı(TL)</xsl:text>
 															</span>
 														</td>
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span>
 																<span>
 																	<xsl:value-of select="format-number((//n1:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount ) * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
@@ -1797,12 +1797,12 @@
 												<xsl:if test="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount !='' and number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount)  &gt; 0 ">
 													<xsl:if test="not(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount/@currencyID ='TRY' or //n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount/@currencyID ='TRL')">
 														<tr align="right">
-															<td id="lineTableBudgetTd" align="right">
+															<td class="lineTableBudgetTd" align="right">
 																<span style="font-weight:bold; ">
 																	<xsl:text>FOB Tutar(TL)</xsl:text>
 																</span>
 															</td>
-															<td id="lineTableBudgetTd" align="right">
+															<td class="lineTableBudgetTd" align="right">
 																<span>
 																	<xsl:value-of select="format-number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:FreeOnBoardValueAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 																	<xsl:text> TL</xsl:text>
@@ -1814,12 +1814,12 @@
 												<xsl:if test="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount !='' and number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount)  &gt; 0 ">
 													<xsl:if test="not(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount/@currencyID ='TRY' or //n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount/@currencyID ='TRL')">
 														<tr align="right">
-															<td id="lineTableBudgetTd" align="right">
+															<td class="lineTableBudgetTd" align="right">
 																<span style="font-weight:bold; ">
 																	<xsl:text>Nakliye Bedeli(TL)</xsl:text>
 																</span>
 															</td>
-															<td id="lineTableBudgetTd" align="right">
+															<td class="lineTableBudgetTd" align="right">
 																<span>
 																	<xsl:value-of select="format-number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:DeclaredForCarriageValueAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 																	<xsl:text> TL</xsl:text>
@@ -1831,12 +1831,12 @@
 												<xsl:if test="//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount !='' and number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount)  &gt; 0 ">
 													<xsl:if test="not(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount/@currencyID ='TRY' or //n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount/@currencyID ='TRL')">
 														<tr align="right">
-															<td id="lineTableBudgetTd" align="right">
+															<td class="lineTableBudgetTd" align="right">
 																<span style="font-weight:bold; ">
 																	<xsl:text>Sigorta Bedeli(TL)</xsl:text>
 																</span>
 															</td>
-															<td id="lineTableBudgetTd" align="right">
+															<td class="lineTableBudgetTd" align="right">
 																<span>
 																	<xsl:value-of select="format-number(//n1:Invoice/cac:Delivery/cac:Shipment/cbc:InsuranceValueAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 																	<xsl:text> TL</xsl:text>
@@ -1847,13 +1847,13 @@
 												</xsl:if>
 											</xsl:if>
 											<xsl:if test="n1:Invoice/cbc:InvoiceTypeCode='SGK'">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span style="font-weight:bold; ">
 															<xsl:text>KDV Hariç Toplam Tutar(TL)</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span>
 															<xsl:value-of select="format-number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 															<xsl:text> TL</xsl:text>
@@ -1862,13 +1862,13 @@
 												</tr>
 											</xsl:if>
 											<xsl:if test="not(//n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount/@currencyID ='TRY' or //n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount/@currencyID ='TRL')  and n1:Invoice/cbc:InvoiceTypeCode!='SGK'">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span style="font-weight:bold; ">
 															<xsl:text>Toplam İskonto(TL)</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span>
 															<xsl:value-of select="format-number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 															<xsl:text> TL</xsl:text>
@@ -1878,13 +1878,13 @@
 											</xsl:if>
 											<xsl:if test="not(//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount/@currencyID ='TRY' or //n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount/@currencyID ='TRL')">
 												<xsl:if test="//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount !='' and number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount) &gt; 0">
-													<tr id="budgetContainerTr" align="right">
-														<td id="lineTableBudgetTd" align="right">
+													<tr class="budgetContainerTr" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span style="font-weight:bold; ">
 																<xsl:text>Toplam Artırım(TL)</xsl:text>
 															</span>
 														</td>
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span>
 																<xsl:value-of select="format-number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 																<xsl:text> TL</xsl:text>
@@ -1896,7 +1896,7 @@
 											<xsl:for-each select="//n1:Invoice/cac:TaxTotal/cac:TaxSubtotal">
 												<xsl:if test="not(cbc:TaxAmount/@currencyID = 'TRY' or cbc:TaxAmount/@currencyID = 'TRL')">
 													<tr align="right">
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span style="font-weight:bold; ">
 																<xsl:text>Hesaplanan </xsl:text>
 																<xsl:value-of select="cac:TaxCategory/cac:TaxScheme/cbc:Name"/>
@@ -1905,7 +1905,7 @@
 																<xsl:text>)(TL)</xsl:text>
 															</span>
 														</td>
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span>
 																<xsl:value-of select="format-number(cbc:TaxAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 																<xsl:text> TL</xsl:text>
@@ -1916,8 +1916,8 @@
 											</xsl:for-each>
 											<xsl:for-each select="//n1:Invoice/cac:WithholdingTaxTotal/cac:TaxSubtotal">
 												<xsl:if test="not(cbc:TaxAmount/@currencyID = 'TRY' or cbc:TaxAmount/@currencyID = 'TRL') and cbc:TaxAmount != ''">
-													<tr id="budgetContainerTr" align="right">
-														<td id="lineTableBudgetTd" align="right">
+													<tr class="budgetContainerTr" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<span style="font-weight:bold; ">
 																<xsl:text>KDV Tevkifat-[</xsl:text>
 																<xsl:value-of select="cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode"/>
@@ -1927,7 +1927,7 @@
 																<xsl:text>)(TL)</xsl:text>
 															</span>
 														</td>
-														<td id="lineTableBudgetTd" align="right">
+														<td class="lineTableBudgetTd" align="right">
 															<xsl:for-each select="cac:TaxCategory/cac:TaxScheme">
 																<xsl:text> </xsl:text>
 																<xsl:value-of select="format-number(../../cbc:TaxAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
@@ -1938,13 +1938,13 @@
 												</xsl:if>
 											</xsl:for-each>
 											<xsl:if test="not(//n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount/@currencyID ='TRY' or //n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount/@currencyID ='TRL') and n1:Invoice/cbc:InvoiceTypeCode!='SGK'">
-												<tr id="budgetContainerTr" align="right">
-													<td id="lineTableBudgetTd" align="right">
+												<tr class="budgetContainerTr" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span style="font-weight:bold; ">
 															<xsl:text>Vergiler Dahil Toplam Tutar(TL)</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<xsl:value-of select="format-number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 														<xsl:text> TL</xsl:text>
 													</td>
@@ -1952,12 +1952,12 @@
 											</xsl:if>
 											<xsl:if test="not(//n1:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount/@currencyID ='TRY' or //n1:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount/@currencyID ='TRL')">
 												<tr align="right">
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<span style="font-weight:bold; ">
 															<xsl:text>Ödenecek Tutar(TL)</xsl:text>
 														</span>
 													</td>
-													<td id="lineTableBudgetTd" align="right">
+													<td class="lineTableBudgetTd" align="right">
 														<xsl:value-of select="format-number(//n1:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount * //n1:Invoice/cac:PricingExchangeRate/cbc:CalculationRate, '###.##0,00', 'european')"/>
 														<xsl:text> TL</xsl:text>
 													</td>
@@ -1972,16 +1972,16 @@
 				</div>
 				<br/>
 				<xsl:if test="//n1:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:DocumentType[translate(text(),'abcçdefgğhıijklmnoöpqrsştuüvwxyz','ABCÇDEFGĞHIİJKLMNOÖPQRSŞTUÜVWXYZ')='FATURA']">
-					<table id="lineTable" class="fixedTableCss" width="800">
+					<table class="lineTable fixedTableCss" width="800">
 						<thead>
-							<tr id="lineTableTr">
+							<tr class="lineTableTr">
 								<td class="lineTableTd" align="center" colspan="2">
 									<span style="font-weight:bold; ">İadeye Konu Olan Faturalar</span>
 								</td>
 							</tr>
 						</thead>
 						<tbody>
-							<tr id="lineTableTr" align="left">
+							<tr class="lineTableTr" align="left">
 								<td class="lineTableTd">
 									<span style="font-weight:bold; " align="center">&#xA0;&#xA0;&#xA0;&#xA0;&#xA0;Fatura No</span>
 								</td>
@@ -1990,7 +1990,7 @@
 								</td>
 							</tr>
 							<xsl:for-each select="//n1:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:DocumentType[translate(text(),'abcçdefgğhıijklmnoöpqrsştuüvwxyz','ABCÇDEFGĞHIİJKLMNOÖPQRSŞTUÜVWXYZ')='FATURA']">
-								<tr id="lineTableTr" align="left">
+								<tr class="lineTableTr" align="left">
 									<td class="lineTableTd">
 										&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; <xsl:value-of select="../cbc:ID"/>
 									</td>
@@ -2006,7 +2006,7 @@
 					<br/>
 				</xsl:if>
 				<xsl:if test="//n1:Invoice/cac:BillingReference/cac:AdditionalDocumentReference/cbc:DocumentTypeCode='OKCBF'">
-					<table id="lineTable" class="fixedTableCss" width="800" border="1">
+					<table class="lineTable fixedTableCss" width="800" border="1">
 						<thead>
 							<tr>
 								<th colspan="6">ÖKC Bilgileri</th>
@@ -2236,7 +2236,7 @@
 		<xsl:value-of select="substring(.,9,2)"/>-<xsl:value-of select="substring(.,6,2)"/>-<xsl:value-of select="substring(.,1,4)"/>
 	</xsl:template>
 	<xsl:template match="//n1:Invoice/cac:InvoiceLine">
-		<tr id="lineTableTr">
+		<tr class="lineTableTr">
 			<td class="lineTableTd">
 				<xsl:text> </xsl:text>
 				<xsl:value-of select="./cbc:ID"/>

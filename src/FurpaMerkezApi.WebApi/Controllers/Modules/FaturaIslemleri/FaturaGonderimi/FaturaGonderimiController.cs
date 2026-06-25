@@ -16,6 +16,7 @@ public sealed class FaturaGonderimiController(
     IListInvoiceSendingDocumentsUseCase listInvoiceSendingDocumentsUseCase,
     IGetInvoiceSendingDocumentUseCase getInvoiceSendingDocumentUseCase,
     IRenderInvoiceSendingDocumentUseCase renderInvoiceSendingDocumentUseCase,
+    IValidateInvoiceSendingDocumentsUseCase validateInvoiceSendingDocumentsUseCase,
     ISendInvoiceSendingDocumentsUseCase sendInvoiceSendingDocumentsUseCase,
     IListInvoiceReturnReferenceCandidatesUseCase listInvoiceReturnReferenceCandidatesUseCase,
     IUpdateInvoiceReturnReferenceUseCase updateInvoiceReturnReferenceUseCase,
@@ -130,6 +131,25 @@ public sealed class FaturaGonderimiController(
         CancellationToken cancellationToken) =>
         Ok(await sendInvoiceSendingDocumentsUseCase.ExecuteAsync(
             new SendInvoiceDocumentsRequest(
+                request.Scenario,
+                request.Documents
+                    .Select(document => new SendInvoiceDocumentSelection(
+                        document.DocumentSerie,
+                        document.DocumentOrderNo!.Value))
+                    .ToArray()),
+            cancellationToken));
+
+    [HttpPost("validate")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(ValidateInvoiceDocumentsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ValidateInvoiceDocumentsResponse>> Validate(
+        [FromBody] InvoiceSendingBatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await validateInvoiceSendingDocumentsUseCase.ExecuteAsync(
+            new ValidateInvoiceDocumentsRequest(
                 request.Scenario,
                 request.Documents
                     .Select(document => new SendInvoiceDocumentSelection(

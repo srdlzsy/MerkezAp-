@@ -7140,15 +7140,16 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
    - UI response icindeki yalnizca `document.htmlContent` alanini tek bir iframe/webview icinde render eder
    - UI ayrica QR/karekod uretmez; karekodun tek kaynagi secilen XSLT'nin urettigi HTML'dir
 4. Giden fatura satirinda resmi PDF butonu gosterilmez; Uyumsoft outbox/PDF endpoint'i cagrilmaz.
-5. Secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
-6. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
-7. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
-8. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
-9. Gelen/inbox HTML render/onizleme gerekiyorsa:
+5. Secilen gonderilmemis faturalarin gonderime hazir olup olmadigini canli gonderim yapmadan kontrol etmek icin `POST /api/fatura-islemleri/fatura-gonderimi/validate`
+6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
+7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
+8. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
+9. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
+10. Gelen/inbox HTML render/onizleme gerekiyorsa:
    - default davranis yeterliyse `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/detail`
    - XSLT secimini elle kontrol etmek istiyorsaniz `POST /api/fatura-islemleri/fatura-goruntuleme/{documentId}/render`
-10. Gelen/inbox PDF/HTML gercekten yazdirildiktan veya acikca onaylandiktan sonra `PATCH /api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed`
-11. UI lokal veya baska bir kaynaktan XML uretip sadece goruntusunu gormek istiyorsa `POST /api/fatura-islemleri/fatura-gonderimi/preview`
+11. Gelen/inbox PDF/HTML gercekten yazdirildiktan veya acikca onaylandiktan sonra `PATCH /api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed`
+12. UI lokal veya baska bir kaynaktan XML uretip sadece goruntusunu gormek istiyorsa `POST /api/fatura-islemleri/fatura-gonderimi/preview`
 
 Temel route'lar:
 
@@ -7985,6 +7986,56 @@ Davranis:
 - farki, XSLT secimini body ile override edebilmenizdir
 - response yine JSON'dur; UI `document.htmlContent` alanini tek kez render eder
 - QR davranisi `GET detail` ile aynidir: backend yeni QR uretmez, UI da ikinci QR uretmez
+
+### Fatura Gonderimi Validate
+
+`POST /api/fatura-islemleri/fatura-gonderimi/validate`
+
+Yetki:
+
+- `fatura-islemleri.fatura-gonderimi.create`
+
+Request `send` endpoint'i ile aynidir.
+
+Davranis:
+
+- secilen belgeler tekillestirilir
+- Mikro verisinden UBL XML uretilir
+- iade referansi gerekiyorsa fallback sadece simule edilir, Mikro'ya yazilmaz
+- UBL-TR is kurali ve XSD dogrulamalari calistirilir
+- Uyumsoft'a fatura gonderilmez
+- Mikro `cha_belge_no`, `cha_kilitli` veya baska alanlar guncellenmez
+
+Response `ValidateInvoiceDocumentsResponse`:
+
+```json
+{
+  "scenario": 0,
+  "requestedCount": 2,
+  "validCount": 1,
+  "invalidCount": 1,
+  "items": [
+    {
+      "documentSerie": "FAT",
+      "documentOrderNo": 12345,
+      "invoiceId": "FAT2026000012345",
+      "customerCode": "120001",
+      "customerTitle": "ORNEK MUSTERI",
+      "isValid": true,
+      "message": "Gonderim oncesi kontrol basarili."
+    },
+    {
+      "documentSerie": "FAT",
+      "documentOrderNo": 12346,
+      "invoiceId": "FAT2026000012346",
+      "customerCode": "",
+      "customerTitle": "",
+      "isValid": false,
+      "message": "Target customer alias/e-mail is required."
+    }
+  ]
+}
+```
 
 ### Fatura Gonderimi Send
 

@@ -25,6 +25,10 @@ public sealed record SendInvoiceDocumentsRequest(
     InvoiceSendingScenario Scenario,
     IReadOnlyCollection<SendInvoiceDocumentSelection> Documents);
 
+public sealed record ValidateInvoiceDocumentsRequest(
+    InvoiceSendingScenario Scenario,
+    IReadOnlyCollection<SendInvoiceDocumentSelection> Documents);
+
 public sealed record SendInvoiceDocumentSelection(
     string DocumentSerie,
     int DocumentOrderNo);
@@ -82,6 +86,13 @@ public sealed record SendInvoiceDocumentsResponse(
     int FailedCount,
     IReadOnlyCollection<SendInvoiceDocumentResultDto> Items);
 
+public sealed record ValidateInvoiceDocumentsResponse(
+    InvoiceSendingScenario Scenario,
+    int RequestedCount,
+    int ValidCount,
+    int InvalidCount,
+    IReadOnlyCollection<ValidateInvoiceDocumentResultDto> Items);
+
 public sealed record SendInvoiceDocumentResultDto(
     string DocumentSerie,
     int DocumentOrderNo,
@@ -91,6 +102,15 @@ public sealed record SendInvoiceDocumentResultDto(
     bool IsSucceeded,
     string? ServiceDocumentId,
     string? ServiceDocumentNumber,
+    string Message);
+
+public sealed record ValidateInvoiceDocumentResultDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string InvoiceId,
+    string CustomerCode,
+    string CustomerTitle,
+    bool IsValid,
     string Message);
 
 public sealed record InvoiceReturnReferenceCandidatesResponse(

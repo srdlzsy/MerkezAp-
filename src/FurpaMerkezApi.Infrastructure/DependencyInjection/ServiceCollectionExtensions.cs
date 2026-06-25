@@ -364,6 +364,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IEDespatchService, EDespatchService>();
         services.AddScoped<IEInvoiceDocumentRenderer, EInvoiceDocumentRenderer>();
+        services.AddScoped<UblTrInvoiceBusinessRuleValidator>();
+        services.AddScoped<UblTrInvoiceXmlValidator>();
         services.AddScoped<IUyumsoftConnectedQueryService, UyumsoftConnectedQueryService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IRoleService, RoleService>();
@@ -447,6 +449,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IListInvoiceSendingDocumentsUseCase, ListInvoiceSendingDocumentsUseCase>();
         services.AddScoped<IGetInvoiceSendingDocumentUseCase, GetInvoiceSendingDocumentUseCase>();
         services.AddScoped<IRenderInvoiceSendingDocumentUseCase, RenderInvoiceSendingDocumentUseCase>();
+        services.AddScoped<IValidateInvoiceSendingDocumentsUseCase, ValidateInvoiceSendingDocumentsUseCase>();
         services.AddScoped<ISendInvoiceSendingDocumentsUseCase, SendInvoiceSendingDocumentsUseCase>();
         services.AddScoped<IListInvoiceReturnReferenceCandidatesUseCase, ListInvoiceReturnReferenceCandidatesUseCase>();
         services.AddScoped<IUpdateInvoiceReturnReferenceUseCase, UpdateInvoiceReturnReferenceUseCase>();
