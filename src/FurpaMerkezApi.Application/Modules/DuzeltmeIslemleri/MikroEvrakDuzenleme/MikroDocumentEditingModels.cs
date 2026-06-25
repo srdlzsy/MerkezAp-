@@ -115,6 +115,39 @@ public sealed record UpdateStockCardWarehouseSettingsRequest(
     StockCardWarehousePatchDto Patch,
     int CurrentUserWarehouseNo);
 
+public sealed record StockSalesPriceDto(
+    Guid PriceGuid,
+    string StockCode,
+    int PriceListNo,
+    string PriceListName,
+    int WarehouseNo,
+    string WarehouseName,
+    int PaymentPlanNo,
+    byte UnitPointer,
+    string UnitName,
+    double Price,
+    byte CurrencyType,
+    byte ChangeReason,
+    DateTime CreatedAt,
+    DateTime? LastUpdatedAt);
+
+public sealed record UpsertStockSalesPriceRequest(
+    string StockCode,
+    int WarehouseNo,
+    int PriceListNo,
+    int PaymentPlanNo,
+    byte UnitPointer,
+    double Price,
+    byte CurrencyType,
+    byte ChangeReason,
+    int CurrentUserWarehouseNo);
+
+public sealed record StockSalesPriceUpsertResponse(
+    MikroDocumentUpdateSummary Summary,
+    bool Created,
+    double? PreviousPrice,
+    StockSalesPriceDto SalesPrice);
+
 public sealed record StockMovementDocumentLookupRequest(
     string DocumentSerie,
     int DocumentOrderNo,

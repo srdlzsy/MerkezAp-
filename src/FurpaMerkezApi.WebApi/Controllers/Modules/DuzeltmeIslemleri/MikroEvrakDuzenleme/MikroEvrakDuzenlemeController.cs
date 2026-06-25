@@ -85,6 +85,40 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
                 User.GetRequiredWarehouseNo()),
             cancellationToken));
 
+    [HttpGet("stok-kartlari/{stockCode}/satis-fiyatlari")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<StockSalesPriceDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyCollection<StockSalesPriceDto>>> GetStockSalesPrices(
+        string stockCode,
+        [FromQuery] int? warehouseNo,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetStockSalesPricesAsync(stockCode, warehouseNo, cancellationToken));
+
+    [HttpPut("stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo:int}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(StockSalesPriceUpsertResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<StockSalesPriceUpsertResponse>> UpsertStockSalesPrice(
+        string stockCode,
+        [Range(1, int.MaxValue)] int warehouseNo,
+        [FromBody] StockSalesPriceUpsertHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpsertStockSalesPriceAsync(
+            new UpsertStockSalesPriceRequest(
+                stockCode,
+                warehouseNo,
+                request.PriceListNo,
+                request.PaymentPlanNo,
+                request.UnitPointer,
+                request.Price,
+                request.CurrencyType,
+                request.ChangeReason,
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
     [HttpGet("stok-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(StockMovementDocumentDto), StatusCodes.Status200OK)]
@@ -276,6 +310,27 @@ public sealed class StockCardWarehousePatchHttpRequest
             IsPassive,
             DiscountDisabled,
             ResetToGlobal);
+}
+
+public sealed class StockSalesPriceUpsertHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int PriceListNo { get; init; } = 1;
+
+    [Range(0, int.MaxValue)]
+    public int PaymentPlanNo { get; init; }
+
+    [Range(1, 4)]
+    public byte UnitPointer { get; init; } = 1;
+
+    [Range(0.000001, double.MaxValue)]
+    public double Price { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte CurrencyType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte ChangeReason { get; init; } = 4;
 }
 
 public sealed class StockMovementDocumentLookupHttpRequest

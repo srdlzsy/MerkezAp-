@@ -23,6 +23,15 @@ public interface IMikroDocumentEditingService
         UpdateStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<StockSalesPriceDto>> GetStockSalesPricesAsync(
+        string stockCode,
+        int? warehouseNo,
+        CancellationToken cancellationToken);
+
+    Task<StockSalesPriceUpsertResponse> UpsertStockSalesPriceAsync(
+        UpsertStockSalesPriceRequest request,
+        CancellationToken cancellationToken);
+
     Task<StockMovementDocumentDto> GetStockMovementDocumentAsync(
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);

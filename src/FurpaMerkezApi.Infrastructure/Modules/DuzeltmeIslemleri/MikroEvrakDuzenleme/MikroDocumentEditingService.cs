@@ -12,6 +12,7 @@ public sealed class MikroDocumentEditingService(
     : IMikroDocumentEditingService
 {
     private const short FallbackMikroUserNo = 39;
+    private const short StockSalesPriceFileId = 228;
     private const int DefaultSearchTake = 50;
     private const int MaxSearchTake = 200;
 
@@ -293,6 +294,184 @@ public sealed class MikroDocumentEditingService(
                         warehouse.WarehouseNo,
                         warehouse.WarehouseName,
                         detail));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<IReadOnlyCollection<StockSalesPriceDto>> GetStockSalesPricesAsync(
+        string stockCode,
+        int? warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStockCode = NormalizeRequiredText(stockCode, 25, nameof(stockCode));
+        if (warehouseNo is <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(warehouseNo));
+        }
+
+        var stock = await mikroDbContext.STOKLARs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.sto_kod == normalizedStockCode, cancellationToken)
+            ?? throw new KeyNotFoundException("Stock card was not found.");
+
+        var query = mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs
+            .AsNoTracking()
+            .Where(item =>
+                item.sfiyat_stokkod == normalizedStockCode &&
+                item.sfiyat_iptal != true &&
+                item.sfiyat_hidden != true);
+
+        if (warehouseNo.HasValue)
+        {
+            query = query.Where(item => item.sfiyat_deposirano == warehouseNo.Value);
+        }
+
+        var rows = await query
+            .OrderBy(item => item.sfiyat_deposirano)
+            .ThenBy(item => item.sfiyat_listesirano)
+            .ThenBy(item => item.sfiyat_birim_pntr)
+            .ThenBy(item => item.sfiyat_odemeplan)
+            .ToArrayAsync(cancellationToken);
+
+        var warehouseNos = rows
+            .Select(item => item.sfiyat_deposirano.GetValueOrDefault())
+            .Where(item => item > 0)
+            .Distinct()
+            .ToArray();
+        var priceListNos = rows
+            .Select(item => item.sfiyat_listesirano.GetValueOrDefault())
+            .Where(item => item > 0)
+            .Distinct()
+            .ToArray();
+
+        var warehouseNames = await mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .Where(item => item.dep_no.HasValue && warehouseNos.Contains(item.dep_no.Value))
+            .ToDictionaryAsync(
+                item => item.dep_no!.Value,
+                item => item.dep_adi ?? string.Empty,
+                cancellationToken);
+        var priceListNames = await mikroDbContext.STOK_SATIS_FIYAT_LISTE_TANIMLARIs
+            .AsNoTracking()
+            .Where(item => item.sfl_sirano.HasValue && priceListNos.Contains(item.sfl_sirano.Value))
+            .ToDictionaryAsync(
+                item => item.sfl_sirano!.Value,
+                item => item.sfl_aciklama ?? string.Empty,
+                cancellationToken);
+
+        return rows
+            .Select(item => MapStockSalesPrice(item, stock, warehouseNames, priceListNames))
+            .ToArray();
+    }
+
+    public async Task<StockSalesPriceUpsertResponse> UpsertStockSalesPriceAsync(
+        UpsertStockSalesPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        ValidateStockSalesPriceRequest(request);
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            try
+            {
+                var stock = await mikroWriteDbContext.STOKLARs
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.sto_kod == stockCode, cancellationToken)
+                    ?? throw new KeyNotFoundException("Stock card was not found in Mikro write database.");
+                var warehouse = await mikroWriteDbContext.DEPOLARs
+                    .AsNoTracking()
+                    .Where(item =>
+                        item.dep_no == request.WarehouseNo &&
+                        item.dep_iptal != true &&
+                        item.dep_hidden != true)
+                    .Select(item => new
+                    {
+                        WarehouseNo = item.dep_no.GetValueOrDefault(),
+                        WarehouseName = item.dep_adi ?? string.Empty
+                    })
+                    .FirstOrDefaultAsync(cancellationToken)
+                    ?? throw new KeyNotFoundException($"Warehouse was not found: {request.WarehouseNo}");
+                var priceList = await mikroWriteDbContext.STOK_SATIS_FIYAT_LISTE_TANIMLARIs
+                    .AsNoTracking()
+                    .Where(item =>
+                        item.sfl_sirano == request.PriceListNo &&
+                        item.sfl_iptal != true &&
+                        item.sfl_hidden != true)
+                    .Select(item => new
+                    {
+                        PriceListNo = item.sfl_sirano.GetValueOrDefault(),
+                        PriceListName = item.sfl_aciklama ?? string.Empty
+                    })
+                    .FirstOrDefaultAsync(cancellationToken)
+                    ?? throw new KeyNotFoundException($"Active sales price list was not found: {request.PriceListNo}");
+
+                var row = await mikroWriteDbContext.STOK_SATIS_FIYAT_LISTELERIs
+                    .FirstOrDefaultAsync(
+                        item =>
+                            item.sfiyat_stokkod == stockCode &&
+                            item.sfiyat_listesirano == request.PriceListNo &&
+                            item.sfiyat_deposirano == request.WarehouseNo &&
+                            item.sfiyat_birim_pntr == request.UnitPointer &&
+                            item.sfiyat_odemeplan == request.PaymentPlanNo,
+                        cancellationToken);
+
+                var created = row is null;
+                var previousPrice = row?.sfiyat_fiyati;
+                if (row is null)
+                {
+                    row = CreateStockSalesPrice(request, stockCode, updateUser, updatedAt);
+                    mikroWriteDbContext.STOK_SATIS_FIYAT_LISTELERIs.Add(row);
+                }
+                else
+                {
+                    row.sfiyat_iptal = false;
+                    row.sfiyat_hidden = false;
+                    row.sfiyat_kilitli = false;
+                    row.sfiyat_degisti = true;
+                    row.sfiyat_lastup_user = updateUser;
+                    row.sfiyat_lastup_date = updatedAt;
+                    row.sfiyat_fiyati = request.Price;
+                    row.sfiyat_doviz = request.CurrencyType;
+                    row.sfiyat_deg_nedeni = request.ChangeReason;
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                var warehouseNames = new Dictionary<int, string>
+                {
+                    [warehouse.WarehouseNo] = warehouse.WarehouseName
+                };
+                var priceListNames = new Dictionary<int, string>
+                {
+                    [priceList.PriceListNo] = priceList.PriceListName
+                };
+
+                return new StockSalesPriceUpsertResponse(
+                    new MikroDocumentUpdateSummary(
+                        $"stok-kartlari/{stockCode}/satis-fiyatlari/{request.WarehouseNo}",
+                        1,
+                        updatedAt,
+                        updateUser),
+                    created,
+                    previousPrice,
+                    MapStockSalesPrice(row, stock, warehouseNames, priceListNames));
             }
             catch
             {
@@ -1058,6 +1237,70 @@ public sealed class MikroDocumentEditingService(
             detail?.sdp_lastup_date);
     }
 
+    private static StockSalesPriceDto MapStockSalesPrice(
+        STOK_SATIS_FIYAT_LISTELERI row,
+        STOKLAR stock,
+        IReadOnlyDictionary<int, string> warehouseNames,
+        IReadOnlyDictionary<int, string> priceListNames)
+    {
+        var warehouseNo = row.sfiyat_deposirano.GetValueOrDefault();
+        var priceListNo = row.sfiyat_listesirano.GetValueOrDefault();
+        var unitPointer = NormalizeUnitPointer(row.sfiyat_birim_pntr);
+
+        return new StockSalesPriceDto(
+            row.sfiyat_Guid,
+            row.sfiyat_stokkod ?? stock.sto_kod,
+            priceListNo,
+            priceListNames.GetValueOrDefault(priceListNo, string.Empty),
+            warehouseNo,
+            warehouseNames.GetValueOrDefault(warehouseNo, string.Empty),
+            row.sfiyat_odemeplan.GetValueOrDefault(),
+            unitPointer,
+            ResolveUnitName(unitPointer, stock),
+            row.sfiyat_fiyati.GetValueOrDefault(),
+            row.sfiyat_doviz.GetValueOrDefault(),
+            row.sfiyat_deg_nedeni.GetValueOrDefault(),
+            row.sfiyat_create_date,
+            row.sfiyat_lastup_date);
+    }
+
+    private static STOK_SATIS_FIYAT_LISTELERI CreateStockSalesPrice(
+        UpsertStockSalesPriceRequest request,
+        string stockCode,
+        short updateUser,
+        DateTime updatedAt) =>
+        new()
+        {
+            sfiyat_Guid = Guid.NewGuid(),
+            sfiyat_DBCno = 0,
+            sfiyat_SpecRECno = 0,
+            sfiyat_iptal = false,
+            sfiyat_fileid = StockSalesPriceFileId,
+            sfiyat_hidden = false,
+            sfiyat_kilitli = false,
+            sfiyat_degisti = true,
+            sfiyat_checksum = 0,
+            sfiyat_create_user = updateUser,
+            sfiyat_create_date = updatedAt,
+            sfiyat_lastup_user = updateUser,
+            sfiyat_lastup_date = updatedAt,
+            sfiyat_special1 = string.Empty,
+            sfiyat_special2 = string.Empty,
+            sfiyat_special3 = string.Empty,
+            sfiyat_stokkod = stockCode,
+            sfiyat_listesirano = request.PriceListNo,
+            sfiyat_deposirano = request.WarehouseNo,
+            sfiyat_odemeplan = request.PaymentPlanNo,
+            sfiyat_birim_pntr = request.UnitPointer,
+            sfiyat_fiyati = request.Price,
+            sfiyat_doviz = request.CurrencyType,
+            sfiyat_iskontokod = string.Empty,
+            sfiyat_deg_nedeni = request.ChangeReason,
+            sfiyat_primyuzdesi = 0d,
+            sfiyat_kampanyakod = string.Empty,
+            sfiyat_doviz_kuru = 0d
+        };
+
     private static STOK_DEPO_DETAYLARI CreateStockCardWarehouseDetail(
         string stockCode,
         int warehouseNo,
@@ -1347,6 +1590,31 @@ public sealed class MikroDocumentEditingService(
         if (request.CustomerCode is not null)
         {
             _ = NormalizeText(request.CustomerCode, 25, nameof(request.CustomerCode));
+        }
+    }
+
+    private static void ValidateStockSalesPriceRequest(UpsertStockSalesPriceRequest request)
+    {
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (request.PriceListNo <= 0)
+        {
+            throw new ArgumentException("Price list no must be greater than zero.", nameof(request.PriceListNo));
+        }
+
+        if (request.PaymentPlanNo < 0)
+        {
+            throw new ArgumentException("Payment plan no can not be negative.", nameof(request.PaymentPlanNo));
+        }
+
+        _ = ValidateUnitPointer(request.UnitPointer, nameof(request.UnitPointer));
+
+        if (double.IsNaN(request.Price) || double.IsInfinity(request.Price) || request.Price <= 0d)
+        {
+            throw new ArgumentException("Price must be a finite value greater than zero.", nameof(request.Price));
         }
     }
 

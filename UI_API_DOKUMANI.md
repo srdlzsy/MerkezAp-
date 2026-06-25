@@ -3671,6 +3671,7 @@ Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin ekl
 - `CARI_HESAP_HAREKETLERI` belgeleri
 - `STOKLAR` stok kartlari
 - `STOK_DEPO_DETAYLARI` depo bazli stok karti ayarlari
+- `STOK_SATIS_FIYAT_LISTELERI` depo bazli stok satis fiyatlari
 
 Menu:
 
@@ -3693,6 +3694,9 @@ Genel kurallar:
 - Request body'de `null` gelen alanlar degismez. Bos string gonderilirse ilgili metin alani bosaltma istegi olarak islenir.
 - Kayitlarda Mikro audit alanlari guncellenir: `lastup_user`, `lastup_date`, `degisti`.
 - Bu modul delete veya yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
+- Stok satis fiyati endpoint'i istisna olarak eksik `STOK_SATIS_FIYAT_LISTELERI` kaydini olusturabilir.
+- Satis fiyati kaydi `stockCode + priceListNo + warehouseNo + unitPointer + paymentPlanNo` birlesimiyle bulunur. Kayit varsa guncellenir, yoksa olusturulur.
+- Satis fiyati upsert islemi `STOK_FIYAT_DEGISIKLIKLERI` tablosunda sentetik fiyat degisiklik evraki olusturmaz.
 - `PUT /stok-kartlari/{stockCode}` global stok kartini degistirir ve tum depolari etkileyebilir.
 - Sadece belirli bir depoyu kapatmak/acmak icin `/stok-kartlari/{stockCode}/depolar/{warehouseNo}` endpoint'i kullanilmalidir.
 
@@ -3705,6 +3709,8 @@ Endpoint ozeti:
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path + body | `StockCardPatchHttpRequest` | `StockCardUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar` | path + query | `warehouseNo?: int` | `StockCardWarehouseSettingsDto[]` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar/{warehouseNo}` | path + body | `StockCardWarehousePatchHttpRequest` | `StockCardWarehouseUpdateResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari` | path + query | `warehouseNo?: int` | `StockSalesPriceDto[]` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo}` | path + body | `StockSalesPriceUpsertHttpRequest` | `StockSalesPriceUpsertResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |
@@ -3936,6 +3942,110 @@ Response:
   }
 }
 ```
+
+### Stok Satis Fiyatlarini Getir
+
+Stok kartinin tum aktif depo fiyatlari:
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari`
+
+Yalnizca 150 numarali depodaki fiyatlari:
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari?warehouseNo=150`
+
+Response:
+
+```json
+[
+  {
+    "priceGuid": "8dc423d4-4015-4afb-aee5-909e457e2f81",
+    "stockCode": "015550",
+    "priceListNo": 1,
+    "priceListName": "SATIS FIYATI",
+    "warehouseNo": 150,
+    "warehouseName": "ORNEK DEPO",
+    "paymentPlanNo": 0,
+    "unitPointer": 1,
+    "unitName": "AD",
+    "price": 109.5,
+    "currencyType": 0,
+    "changeReason": 4,
+    "createdAt": "2026-06-25T10:20:00",
+    "lastUpdatedAt": "2026-06-25T10:20:00"
+  }
+]
+```
+
+Aktif fiyat kaydi yoksa response bos dizi olur. Stok karti yoksa `404 Not Found` doner.
+
+### Stok Satis Fiyati Olustur veya Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari/150`
+
+Minimum body:
+
+```json
+{
+  "price": 109.5
+}
+```
+
+Minimum body kullanildiginda varsayilanlar:
+
+- `priceListNo = 1`
+- `paymentPlanNo = 0`
+- `unitPointer = 1`
+- `currencyType = 0`
+- `changeReason = 4`
+
+Tum alanlarla ornek:
+
+```json
+{
+  "priceListNo": 1,
+  "paymentPlanNo": 0,
+  "unitPointer": 1,
+  "price": 109.5,
+  "currencyType": 0,
+  "changeReason": 4
+}
+```
+
+Kurallar:
+
+- Fiyat sifirdan buyuk olmalidir.
+- Stok karti, depo ve aktif fiyat liste tanimi mevcut olmalidir.
+- Kayit `stockCode + priceListNo + warehouseNo + unitPointer + paymentPlanNo` anahtariyla aranir.
+- Kayit varsa yeni fiyat ve audit alanlari guncellenir.
+- Kayit yoksa Mikro standart alanlariyla yeni `STOK_SATIS_FIYAT_LISTELERI` satiri olusturulur.
+- Daha once iptal/pasif edilmis ayni anahtardaki kayit varsa aktif hale getirilerek guncellenir; ayni anahtarda ikinci kayit uretilmez.
+- Upsert transaction isolation seviyesi `Serializable` oldugu icin es zamanli isteklerde mukerrer fiyat kaydi riski engellenir.
+
+Yeni kayit response'u:
+
+```json
+{
+  "summary": {
+    "target": "stok-kartlari/015550/satis-fiyatlari/150",
+    "updatedRowCount": 1,
+    "updatedAt": "2026-06-25T10:20:00",
+    "updateUser": 110
+  },
+  "created": true,
+  "previousPrice": null,
+  "salesPrice": {
+    "stockCode": "015550",
+    "priceListNo": 1,
+    "warehouseNo": 150,
+    "unitPointer": 1,
+    "paymentPlanNo": 0,
+    "price": 109.5,
+    "currencyType": 0
+  }
+}
+```
+
+Mevcut kayit guncellenirse `created=false` olur ve `previousPrice` eski fiyati tasir.
 
 ### Stok Hareket Evraki Getir
 
