@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
@@ -28,11 +29,14 @@ public sealed class InvoiceSendingService(
     ILogger<InvoiceSendingService> logger)
 {
     private const string InvoiceNamespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
+    private const string ExtensionNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2";
     private const string AggregateNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
     private const string BasicNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";
+    private const string PlaceholderExtensionNamespace = "urn:furpa:ubl:extension-placeholder";
     private const short MikroUserNo = 39;
     private const string CurrencyCode = "TRY";
     private const string PreviewSource = "pending-send";
+    private static readonly CultureInfo TurkishCulture = new("tr-TR");
 
     public async Task<InvoiceSendingListResponse> ListAsync(
         InvoiceSendingListRequest request,
@@ -104,10 +108,11 @@ public sealed class InvoiceSendingService(
         foreach (var document in deduplicatedDocuments)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            PendingInvoiceRecord? invoice = null;
 
             try
             {
-                var invoice = await LoadSingleInvoiceAsync(
+                invoice = await LoadSingleInvoiceAsync(
                     request.Scenario,
                     document.DocumentSerie,
                     document.DocumentOrderNo,
@@ -168,11 +173,11 @@ public sealed class InvoiceSendingService(
                     document.DocumentOrderNo);
 
                 results.Add(new SendInvoiceDocumentResultDto(
-                    document.DocumentSerie,
-                    document.DocumentOrderNo,
-                    BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
-                    string.Empty,
-                    string.Empty,
+                    invoice?.DocumentSerie ?? document.DocumentSerie,
+                    invoice?.DocumentOrderNo ?? document.DocumentOrderNo,
+                    invoice?.InvoiceId ?? BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
+                    invoice?.CustomerCode ?? string.Empty,
+                    invoice?.CustomerTitle ?? string.Empty,
                     false,
                     null,
                     null,
@@ -208,10 +213,11 @@ public sealed class InvoiceSendingService(
         foreach (var document in deduplicatedDocuments)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            PendingInvoiceRecord? invoice = null;
 
             try
             {
-                var invoice = await LoadSingleInvoiceAsync(
+                invoice = await LoadSingleInvoiceAsync(
                     request.Scenario,
                     document.DocumentSerie,
                     document.DocumentOrderNo,
@@ -258,11 +264,11 @@ public sealed class InvoiceSendingService(
                     document.DocumentOrderNo);
 
                 results.Add(new ValidateInvoiceDocumentResultDto(
-                    document.DocumentSerie,
-                    document.DocumentOrderNo,
-                    BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
-                    string.Empty,
-                    string.Empty,
+                    invoice?.DocumentSerie ?? document.DocumentSerie,
+                    invoice?.DocumentOrderNo ?? document.DocumentOrderNo,
+                    invoice?.InvoiceId ?? BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
+                    invoice?.CustomerCode ?? string.Empty,
+                    invoice?.CustomerTitle ?? string.Empty,
                     false,
                     exception.Message));
             }
@@ -387,7 +393,16 @@ public sealed class InvoiceSendingService(
                     ch.cha_aciklama AS Aciklama,
                     ch.cha_belge_no AS BelgeNo,
                     ISNULL(ch.cha_aratoplam, 0) AS AraToplam,
-                    ISNULL(ch.cha_vergi1, 0) AS TaxTotal,
+                    ISNULL(ch.cha_vergi1, 0)
+                        + ISNULL(ch.cha_vergi2, 0)
+                        + ISNULL(ch.cha_vergi3, 0)
+                        + ISNULL(ch.cha_vergi4, 0)
+                        + ISNULL(ch.cha_vergi5, 0)
+                        + ISNULL(ch.cha_vergi6, 0)
+                        + ISNULL(ch.cha_vergi7, 0)
+                        + ISNULL(ch.cha_vergi8, 0)
+                        + ISNULL(ch.cha_vergi9, 0)
+                        + ISNULL(ch.cha_vergi10, 0) AS TaxTotal,
                     ISNULL(ch.cha_ebelge_turu, 0) AS EBelgeTuru,
                     LTRIM(RTRIM(CONCAT(
                         ISNULL(c.cari_unvan1, N''),
@@ -406,7 +421,10 @@ public sealed class InvoiceSendingService(
                     adr.adr_posta_kodu AS PostaKodu,
                     c.cari_CepTel AS CariTel,
                     c.cari_EMail AS Mail,
-                    ISNULL(ek.cha_Istisna1, N'') AS IstisnaKodu,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(ISNULL(ek.cha_Istisna1, N''))), N''),
+                        stokIstisna.IstisnaKodu,
+                        N'') AS IstisnaKodu,
                     ISNULL(ek.cha_HalRusum, 0) AS Rusum,
                     ISNULL(ek.cha_ozel_matrah_kodu, N'') AS OzelMatrahKodu,
                     ISNULL((SELECT TOP (1) sth_belge_no FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid), N'') AS IrsaliyeNo,
@@ -434,6 +452,22 @@ public sealed class InvoiceSendingService(
                         LEN(LTRIM(RTRIM(fatSer.seri))) DESC,
                         LTRIM(RTRIM(fatSer.seri)) DESC
                 ) fatSer
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        NULLIF(LTRIM(RTRIM(ISNULL(shek.sth_istisna, N''))), N'') AS IstisnaKodu
+                    FROM dbo.STOK_HAREKETLERI sh WITH (NOLOCK)
+                    INNER JOIN dbo.STOK_HAREKETLERI_EK shek WITH (NOLOCK)
+                        ON shek.sthek_related_uid = sh.sth_Guid
+                    WHERE
+                        sh.sth_fat_uid = ch.cha_Guid
+                        AND ISNULL(sh.sth_iptal, 0) = 0
+                        AND ISNULL(shek.sthek_iptal, 0) = 0
+                        AND NULLIF(LTRIM(RTRIM(ISNULL(shek.sth_istisna, N''))), N'') IS NOT NULL
+                    ORDER BY
+                        sh.sth_satirno,
+                        shek.sthek_lastup_date DESC,
+                        shek.sthek_create_date DESC
+                ) stokIstisna
                 OUTER APPLY (
                     SELECT TOP (1)
                         LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))) AS IadeFaturaNo,
@@ -973,10 +1007,16 @@ public sealed class InvoiceSendingService(
                 SUM(ISNULL(sh.sth_iskonto6, 0)) AS Discount6,
                 SUM(ISNULL(sh.sth_vergi, 0)) AS TaxAmount,
                 ISNULL(sh.sth_vergi_pntr, 0) AS TaxPointer,
+                ISNULL(taxRate.Rate, -1) AS ConfiguredTaxRate,
                 st.sto_birim1_ad AS UnitName
             FROM STOK_HAREKETLERI sh WITH (NOLOCK)
             INNER JOIN STOKLAR st WITH (NOLOCK) ON sh.sth_stok_kod = st.sto_kod
             INNER JOIN CARI_HESAP_HAREKETLERI ch WITH (NOLOCK) ON ch.cha_Guid = sh.sth_fat_uid
+            OUTER APPLY (
+                SELECT TOP (1) rateList.Rate
+                FROM dbo.fn_hs_vergi_oran_listesi() rateList
+                WHERE rateList.DepartmentNo = ISNULL(sh.sth_vergi_pntr, 0)
+            ) taxRate
             WHERE
                 ch.cha_evrakno_seri = @documentSerie
                 AND ch.cha_evrakno_sira = @documentOrderNo
@@ -985,6 +1025,7 @@ public sealed class InvoiceSendingService(
                 sh.sth_stok_kod,
                 st.sto_isim,
                 sh.sth_vergi_pntr,
+                taxRate.Rate,
                 st.sto_birim1_ad
             ORDER BY
                 sh.sth_stok_kod;
@@ -1016,8 +1057,7 @@ public sealed class InvoiceSendingService(
                 var taxRate = ResolveTaxRate(
                     netAmount,
                     taxAmount,
-                    ReadInt32(reader, "TaxPointer"),
-                    invoice);
+                    ReadDecimal(reader, "ConfiguredTaxRate"));
 
                 return new InvoiceLineSeed(
                     ReadString(reader, "StockCode"),
@@ -1045,13 +1085,31 @@ public sealed class InvoiceSendingService(
                 ISNULL(hiz.hiz_isim, ISNULL(dm.dem_isim, N'')) AS ItemName,
                 SUM(ISNULL(ch.cha_miktari, 0)) AS Quantity,
                 SUM(ISNULL(ch.cha_aratoplam, 0)) AS GrossAmount,
-                SUM(ISNULL(ch.cha_vergi1, 0)) AS TaxAmount,
-                ISNULL(ch.cha_vergipntr, 0) AS TaxPointer
+                SUM(CASE ISNULL(ch.cha_vergipntr, 0)
+                    WHEN 1 THEN ISNULL(ch.cha_vergi1, 0)
+                    WHEN 2 THEN ISNULL(ch.cha_vergi2, 0)
+                    WHEN 3 THEN ISNULL(ch.cha_vergi3, 0)
+                    WHEN 4 THEN ISNULL(ch.cha_vergi4, 0)
+                    WHEN 5 THEN ISNULL(ch.cha_vergi5, 0)
+                    WHEN 6 THEN ISNULL(ch.cha_vergi6, 0)
+                    WHEN 7 THEN ISNULL(ch.cha_vergi7, 0)
+                    WHEN 8 THEN ISNULL(ch.cha_vergi8, 0)
+                    WHEN 9 THEN ISNULL(ch.cha_vergi9, 0)
+                    WHEN 10 THEN ISNULL(ch.cha_vergi10, 0)
+                    ELSE ISNULL(ch.cha_vergi1, 0)
+                END) AS TaxAmount,
+                ISNULL(ch.cha_vergipntr, 0) AS TaxPointer,
+                ISNULL(taxRate.Rate, -1) AS ConfiguredTaxRate
             FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
             INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
             INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
             LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK) ON ch.cha_kasa_hizkod = hiz.hiz_kod
             LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK) ON ch.cha_kasa_hizkod = dm.dem_kod
+            OUTER APPLY (
+                SELECT TOP (1) rateList.Rate
+                FROM dbo.fn_hs_vergi_oran_listesi() rateList
+                WHERE rateList.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
+            ) taxRate
             WHERE
                 adr.adr_adres_no = 1
                 AND ch.cha_tip = 0
@@ -1061,7 +1119,8 @@ public sealed class InvoiceSendingService(
             GROUP BY
                 ISNULL(hiz.hiz_kod, ISNULL(dm.dem_kod, N'')),
                 ISNULL(hiz.hiz_isim, ISNULL(dm.dem_isim, N'')),
-                ISNULL(ch.cha_vergipntr, 0)
+                ISNULL(ch.cha_vergipntr, 0),
+                taxRate.Rate
             ORDER BY
                 ItemCode,
                 ItemName;
@@ -1082,8 +1141,7 @@ public sealed class InvoiceSendingService(
                 var taxRate = ResolveTaxRate(
                     grossAmount,
                     taxAmount,
-                    ReadInt32(reader, "TaxPointer"),
-                    invoice);
+                    ReadDecimal(reader, "ConfiguredTaxRate"));
 
                 return new InvoiceLineSeed(
                     ReadString(reader, "ItemCode"),
@@ -1117,7 +1175,7 @@ public sealed class InvoiceSendingService(
         var invoiceDate = invoice.DocumentDate;
         var createdAt = DateTime.Now;
         var invoiceId = invoice.InvoiceId;
-        var invoiceUuid = Guid.NewGuid().ToString();
+        var invoiceUuid = invoice.InvoiceGuid.ToString();
         var profileId = ResolveProfileId(invoice);
         var invoiceTypeCode = ResolveInvoiceTypeCode(invoice);
         var additionalDocumentReference = await BuildXsltDocumentReferenceAsync(
@@ -1184,14 +1242,19 @@ public sealed class InvoiceSendingService(
         XElement? additionalDocumentReference)
     {
         var invoiceNamespace = XNamespace.Get(InvoiceNamespace);
+        var extension = XNamespace.Get(ExtensionNamespace);
         var aggregate = XNamespace.Get(AggregateNamespace);
         var basic = XNamespace.Get(BasicNamespace);
+        var placeholderExtension = XNamespace.Get(PlaceholderExtensionNamespace);
         var customer = BuildCustomerPartyInfo(invoice);
         var notes = BuildInvoiceNotes(invoice, basic);
         var elements = new List<object>
         {
+            new XAttribute(XNamespace.Xmlns + "ext", extension.NamespaceName),
             new XAttribute(XNamespace.Xmlns + "cac", aggregate.NamespaceName),
             new XAttribute(XNamespace.Xmlns + "cbc", basic.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "furpa", placeholderExtension.NamespaceName),
+            BuildUblExtensionsElement(extension, placeholderExtension),
             new XElement(basic + "UBLVersionID", "2.1"),
             new XElement(basic + "CustomizationID", "TR1.2"),
             new XElement(basic + "ProfileID", profileId),
@@ -1235,6 +1298,7 @@ public sealed class InvoiceSendingService(
             elements.Add(additionalDocumentReference);
         }
 
+        elements.Add(BuildSignatureElement(supplier));
         elements.Add(BuildAccountingPartyElement("AccountingSupplierParty", supplier));
         elements.Add(BuildAccountingPartyElement("AccountingCustomerParty", customer));
         elements.Add(
@@ -1277,6 +1341,45 @@ public sealed class InvoiceSendingService(
         return new XElement(invoiceNamespace + "Invoice", elements);
     }
 
+    private static XElement BuildUblExtensionsElement(
+        XNamespace extension,
+        XNamespace placeholderExtension) =>
+        new(
+            extension + "UBLExtensions",
+            new XElement(
+                extension + "UBLExtension",
+                new XElement(
+                    extension + "ExtensionContent",
+                    new XElement(placeholderExtension + "ExtensionPlaceholder"))));
+
+    private static XElement BuildSignatureElement(PartyInfo supplier)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var taxSchemeId = ResolveTaxSchemeId(supplier.TaxNumber);
+
+        return new XElement(
+            aggregate + "Signature",
+            new XElement(
+                basic + "ID",
+                new XAttribute("schemeID", "VKN_TCKN"),
+                supplier.TaxNumber),
+            new XElement(
+                aggregate + "SignatoryParty",
+                new XElement(
+                    aggregate + "PartyIdentification",
+                    new XElement(
+                        basic + "ID",
+                        new XAttribute("schemeID", taxSchemeId),
+                        supplier.TaxNumber)),
+                BuildAddressElement("PostalAddress", supplier)),
+            new XElement(
+                aggregate + "DigitalSignatureAttachment",
+                new XElement(
+                    aggregate + "ExternalReference",
+                    new XElement(basic + "URI", "#Signature"))));
+    }
+
     private static XElement? BuildBillingReferenceElement(PendingInvoiceRecord invoice)
     {
         if (!invoice.IsReturn || string.IsNullOrWhiteSpace(invoice.ReturnInvoiceNo))
@@ -1311,17 +1414,43 @@ public sealed class InvoiceSendingService(
     {
         var notes = new List<object>();
 
+        notes.Add(new XElement(basic + "Note", $"Yalnız: #{FormatTurkishAmountInWords(invoice.PayableTotal)}#"));
+
+        if (!string.IsNullOrWhiteSpace(invoice.WarehouseName))
+        {
+            notes.Add(new XElement(basic + "Note", $"Şube: {invoice.WarehouseName.Trim()}"));
+        }
+
+        var shippingAddress = BuildShippingAddressNote(invoice);
+        if (!string.IsNullOrWhiteSpace(shippingAddress))
+        {
+            notes.Add(new XElement(basic + "Note", $"Sevkiyat Adresi: {shippingAddress}"));
+        }
+
         if (!string.IsNullOrWhiteSpace(invoice.Description))
         {
             notes.Add(new XElement(basic + "Note", invoice.Description.Trim()));
         }
 
-        if (!string.IsNullOrWhiteSpace(invoice.WarehouseName))
-        {
-            notes.Add(new XElement(basic + "Note", $"Depo: {invoice.WarehouseName.Trim()}"));
-        }
-
         return notes;
+    }
+
+    private static string BuildShippingAddressNote(PendingInvoiceRecord invoice)
+    {
+        var parts = new[]
+        {
+            invoice.AddressCity,
+            invoice.AddressDistrict,
+            invoice.AddressStreet,
+            invoice.AddressStreet2
+        };
+
+        return string.Join(
+            " ",
+            parts
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Select(part => part.Trim()))
+            .ToUpper(TurkishCulture);
     }
 
     private async Task<PartyInfo> LoadSupplierAsync(CancellationToken cancellationToken)
@@ -1417,13 +1546,8 @@ public sealed class InvoiceSendingService(
 
         return new XElement(
             aggregate + elementName,
-            new XElement(basic + "StreetName", string.IsNullOrWhiteSpace(partyInfo.Street) ? "-" : partyInfo.Street),
-            string.IsNullOrWhiteSpace(partyInfo.Street2)
-                ? null
-                : new XElement(basic + "AdditionalStreetName", partyInfo.Street2),
-            string.IsNullOrWhiteSpace(partyInfo.District)
-                ? null
-                : new XElement(basic + "CitySubdivisionName", partyInfo.District),
+            new XElement(basic + "StreetName", BuildStreetName(partyInfo)),
+            new XElement(basic + "CitySubdivisionName", string.IsNullOrWhiteSpace(partyInfo.District) ? "-" : partyInfo.District),
             new XElement(basic + "CityName", string.IsNullOrWhiteSpace(partyInfo.City) ? "-" : partyInfo.City),
             string.IsNullOrWhiteSpace(partyInfo.PostalCode)
                 ? null
@@ -1432,6 +1556,18 @@ public sealed class InvoiceSendingService(
                 aggregate + "Country",
                 new XElement(basic + "IdentificationCode", partyInfo.CountryCode),
                 new XElement(basic + "Name", partyInfo.CountryName)));
+    }
+
+    private static string BuildStreetName(PartyInfo partyInfo)
+    {
+        var streetParts = new[] { partyInfo.Street, partyInfo.Street2 }
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part.Trim())
+            .ToArray();
+
+        return streetParts.Length == 0
+            ? "-"
+            : string.Join(" ", streetParts);
     }
 
     private static XElement? BuildContactElement(string phone, string email)
@@ -1472,8 +1608,12 @@ public sealed class InvoiceSendingService(
                 })
             .Select(group =>
             {
-                var exemptionCode = ResolveExemptionCode(invoice);
-                var exemptionReason = ResolveExemptionReason(invoice);
+                var exemptionCode = group.Key.TaxRate == 0m
+                    ? ResolveExemptionCode(invoice)
+                    : string.Empty;
+                var exemptionReason = group.Key.TaxRate == 0m
+                    ? ResolveExemptionReason(invoice)
+                    : string.Empty;
 
                 return new XElement(
                     aggregate + "TaxSubtotal",
@@ -1513,8 +1653,12 @@ public sealed class InvoiceSendingService(
             ? line.GrossAmount
             : RoundMoney(line.GrossAmount / line.Quantity);
         var allowanceElements = BuildAllowanceChargeElements(line);
-        var exemptionCode = ResolveExemptionCode(invoice);
-        var exemptionReason = ResolveExemptionReason(invoice);
+        var exemptionCode = line.TaxRate == 0m
+            ? ResolveExemptionCode(invoice)
+            : string.Empty;
+        var exemptionReason = line.TaxRate == 0m
+            ? ResolveExemptionReason(invoice)
+            : string.Empty;
 
         return new XElement(
             aggregate + "InvoiceLine",
@@ -2033,12 +2177,11 @@ public sealed class InvoiceSendingService(
     private static decimal ResolveTaxRate(
         decimal taxableAmount,
         decimal taxAmount,
-        int taxPointer,
-        PendingInvoiceRecord invoice)
+        decimal configuredTaxRate)
     {
-        if (!string.IsNullOrWhiteSpace(invoice.IstisnaKodu) || !string.IsNullOrWhiteSpace(invoice.OzelMatrahKodu))
+        if (configuredTaxRate >= 0m)
         {
-            return 0m;
+            return configuredTaxRate;
         }
 
         if (taxableAmount > 0m && taxAmount > 0m)
@@ -2046,14 +2189,7 @@ public sealed class InvoiceSendingService(
             return Math.Round(taxAmount * 100m / taxableAmount, 2, MidpointRounding.AwayFromZero);
         }
 
-        return taxPointer switch
-        {
-            0 => 0m,
-            1 => 1m,
-            8 => 8m,
-            18 => 18m,
-            _ => 0m
-        };
+        return 0m;
     }
 
     private static string ResolveTargetAlias(string alias, string email)
@@ -2138,6 +2274,94 @@ public sealed class InvoiceSendingService(
     }
 
     private static decimal NormalizeQuantity(decimal quantity) => quantity <= 0m ? 1m : quantity;
+
+    private static string FormatTurkishAmountInWords(decimal amount)
+    {
+        var rounded = RoundMoney(Math.Abs(amount));
+        var lira = (long)Math.Truncate(rounded);
+        var kurus = (int)((rounded - lira) * 100m);
+        var prefix = amount < 0m ? "Eksi" : string.Empty;
+
+        return $"{prefix}{NumberToTurkishWords(lira)} TL, {NumberToTurkishWords(kurus)} Krş.";
+    }
+
+    private static string NumberToTurkishWords(long value)
+    {
+        if (value == 0)
+        {
+            return "Sıfır";
+        }
+
+        var groups = new[] { string.Empty, "Bin", "Milyon", "Milyar", "Trilyon" };
+        var parts = new List<string>();
+        var groupIndex = 0;
+
+        while (value > 0 && groupIndex < groups.Length)
+        {
+            var groupValue = (int)(value % 1000);
+            if (groupValue > 0)
+            {
+                var groupText = groupValue == 1 && groupIndex == 1
+                    ? groups[groupIndex]
+                    : $"{ThreeDigitNumberToTurkishWords(groupValue)}{groups[groupIndex]}";
+
+                parts.Insert(0, groupText);
+            }
+
+            value /= 1000;
+            groupIndex++;
+        }
+
+        return string.Concat(parts);
+    }
+
+    private static string ThreeDigitNumberToTurkishWords(int value)
+    {
+        var ones = new[]
+        {
+            string.Empty,
+            "Bir",
+            "İki",
+            "Üç",
+            "Dört",
+            "Beş",
+            "Altı",
+            "Yedi",
+            "Sekiz",
+            "Dokuz"
+        };
+        var tens = new[]
+        {
+            string.Empty,
+            "On",
+            "Yirmi",
+            "Otuz",
+            "Kırk",
+            "Elli",
+            "Altmış",
+            "Yetmiş",
+            "Seksen",
+            "Doksan"
+        };
+        var hundreds = value / 100;
+        var remainder = value % 100;
+        var result = new StringBuilder();
+
+        if (hundreds == 1)
+        {
+            result.Append("Yüz");
+        }
+        else if (hundreds > 1)
+        {
+            result.Append(ones[hundreds]);
+            result.Append("Yüz");
+        }
+
+        result.Append(tens[remainder / 10]);
+        result.Append(ones[remainder % 10]);
+
+        return result.ToString();
+    }
 
     private static decimal RoundMoney(decimal value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
