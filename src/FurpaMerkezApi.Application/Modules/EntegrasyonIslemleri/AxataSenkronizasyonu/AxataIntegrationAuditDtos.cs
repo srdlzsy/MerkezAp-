@@ -24,6 +24,7 @@ public sealed record AxataIntegrationAuditDto(
     int? WarehouseNo,
     AxataIntegrationAuditSummaryDto Summary,
     AxataOrderWorkflowSummaryDto WorkflowSummary,
+    AxataIntegrationFlowOverviewDto FlowOverview,
     IReadOnlyCollection<AxataOrderLifecycleDto> OrderLifecycles,
     IReadOnlyCollection<AxataOutboundDeliveryMovementSummaryDto> OutboundDeliverySummaries,
     IReadOnlyCollection<AxataUnsyncedWarehouseOrderDto> UnsyncedWarehouseOrders,
@@ -84,6 +85,62 @@ public sealed record AxataOrderWorkflowSummaryDto(
     int FullyLinkedInMikroDocumentCount,
     int FullySynchronizedDocumentCount,
     int ManualActionRequiredDocumentCount);
+
+public sealed record AxataIntegrationFlowOverviewDto(
+    string Title,
+    string State,
+    string Severity,
+    string Narrative,
+    int MikroOrderDocumentCount,
+    int AxataOrderDocumentCount,
+    int AxataOrderDifferenceDocumentCount,
+    int AxataShipmentDocumentCount,
+    int AxataCompletedShipmentDocumentCount,
+    int AxataPendingShipmentDocumentCount,
+    int AxataCancelledShipmentDocumentCount,
+    int WaitingForAxataShipmentDocumentCount,
+    int MikroLinkedShipmentDocumentCount,
+    int WaitingForMikroTransferDocumentCount,
+    int ReadyToImportToMikroDocumentCount,
+    int AckOnlyDocumentCount,
+    int FullySynchronizedDocumentCount,
+    int ManualReviewDocumentCount,
+    IReadOnlyCollection<AxataIntegrationFlowStepDto> Steps,
+    IReadOnlyCollection<AxataIntegrationFlowActionGroupDto> ActionGroups);
+
+public sealed record AxataIntegrationFlowStepDto(
+    string Code,
+    string Title,
+    string State,
+    string Severity,
+    int CurrentDocumentCount,
+    int ExpectedDocumentCount,
+    int DifferenceDocumentCount,
+    string Description,
+    string? ListRoute);
+
+public sealed record AxataIntegrationFlowActionGroupDto(
+    string Code,
+    string Title,
+    string Severity,
+    int DocumentCount,
+    bool CanExecute,
+    string? PreviewRoute,
+    string? ExecuteRoute,
+    string Description,
+    IReadOnlyCollection<AxataIntegrationFlowDocumentRefDto> Documents);
+
+public sealed record AxataIntegrationFlowDocumentRefDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string DocumentNo,
+    DateTime DocumentDate,
+    string SynchronizationState,
+    string RecommendedActionCode,
+    double MikroOrderQuantity,
+    double AxataShipmentQuantity,
+    double MikroLinkedShipmentQuantity,
+    string Reason);
 
 public sealed record AxataOrderLifecycleDto(
     string DocumentSerie,

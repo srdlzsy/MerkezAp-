@@ -267,6 +267,11 @@ internal sealed class AxataOutboundDeliveryImportService(
                        orderWorkflowAudit.Summary.MikroOrderDocumentCount &&
                        movementFetchErrors.Count == 0;
         var operations = BuildAuditOperations(summary);
+        var flowOverview = BuildFlowOverview(
+            isInSync,
+            summary,
+            orderWorkflowAudit.Summary,
+            orderWorkflowAudit.AllDocuments);
         var notes = new List<string>
         {
             $"Siparis kontrolu sadece AXATA kaynak/cikis depo(lar)i ({FormatWarehouseNos(warehouseOrderSourceWarehouseNos)}) icin ssip_cikdepo uzerinden yapilir.",
@@ -295,6 +300,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.WarehouseNo,
             summary,
             orderWorkflowAudit.Summary,
+            flowOverview,
             orderWorkflowAudit.Documents,
             movementSummaries,
             warehouseAudit.UnsyncedDocuments,
@@ -819,7 +825,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 .ThenBy(document => document.DocumentSerie)
                 .ThenBy(document => document.DocumentOrderNo)
                 .Take(take)
-                .ToArray());
+                .ToArray(),
+            documents);
     }
 
     private async Task<Dictionary<Guid, double>> GetWarehouseOrderLinkedMovementQuantitiesAsync(
@@ -1616,6 +1623,177 @@ internal sealed class AxataOutboundDeliveryImportService(
                 "Belgede en az bir Mikro sevk linki vardir, ancak eksik link veya siparis-teslim miktar farki bulunur; kismi sevk veya satir farki olarak incelenir.")
         ];
     }
+
+    private static AxataIntegrationFlowOverviewDto BuildFlowOverview(
+        bool isInSync,
+        AxataIntegrationAuditSummaryDto summary,
+        AxataOrderWorkflowSummaryDto workflowSummary,
+        IReadOnlyCollection<AxataOrderLifecycleDto> lifecycles)
+    {
+        var axataOrderDifferenceDocumentCount =
+            workflowSummary.AxataOrderMissingDocumentCount +
+            workflowSummary.AxataOrderUnknownDocumentCount +
+            workflowSummary.AxataOrderQuantityMismatchDocumentCount;
+        var readyToImportToMikroDocumentCount = lifecycles.Count(document =>
+            document.RecommendedAction.Code is "IMPORT_PENDING_C01" or "RESCUE_COMPLETED_C01");
+        var ackOnlyDocumentCount = lifecycles.Count(document =>
+            document.RecommendedAction.Code == "ACK_AXATA_ONLY");
+        var manualReviewDocumentCount = lifecycles.Count(document =>
+            document.RecommendedAction.RequiresManualAction &&
+            !document.RecommendedAction.CanExecute);
+        var actionRequiredDocumentCount =
+            workflowSummary.ManualActionRequiredDocumentCount +
+            axataOrderDifferenceDocumentCount +
+            summary.UnsentWarehouseOrderDocumentCount +
+            summary.PartiallySentWarehouseOrderDocumentCount;
+        var severity = isInSync
+            ? "Success"
+            : readyToImportToMikroDocumentCount > 0 || workflowSummary.WaitingForMikroTransferDocumentCount > 0
+                ? "Critical"
+                : actionRequiredDocumentCount > 0
+                    ? "Warning"
+                    : "Info";
+        var state = isInSync
+            ? "Synchronized"
+            : readyToImportToMikroDocumentCount > 0
+                ? "MikroTransferRequired"
+                : actionRequiredDocumentCount > 0
+                    ? "ActionRequired"
+                    : "Waiting";
+
+        var narrative = isInSync
+            ? "Secilen aralikta Mikro siparis, AXATA siparis, AXATA sevk ve Mikro sevk baglantisi ayni akista temiz gorunuyor."
+            : $"Mikro'da {workflowSummary.MikroOrderDocumentCount} siparis var; AXATA siparis eslesmesi {workflowSummary.AxataOrderDocumentCount}, AXATA sevk {workflowSummary.AxataShipmentDocumentCount}, Mikro'ya baglanan sevk {workflowSummary.MikroLinkedShipmentDocumentCount}. Mikro'ya aktarilabilir {readyToImportToMikroDocumentCount}, ACK bekleyen {ackOnlyDocumentCount}, manuel inceleme isteyen {manualReviewDocumentCount} belge var.";
+
+        return new AxataIntegrationFlowOverviewDto(
+            "Mikro -> AXATA -> Mikro fark kontrolu",
+            state,
+            severity,
+            narrative,
+            workflowSummary.MikroOrderDocumentCount,
+            workflowSummary.AxataOrderDocumentCount,
+            axataOrderDifferenceDocumentCount,
+            workflowSummary.AxataShipmentDocumentCount,
+            summary.AxataCompletedOutboundDeliveryDocumentCount,
+            summary.PendingOutboundDeliveryDocumentCount,
+            summary.AxataCancelledOutboundDeliveryDocumentCount,
+            workflowSummary.WaitingForAxataShipmentDocumentCount,
+            workflowSummary.MikroLinkedShipmentDocumentCount,
+            workflowSummary.WaitingForMikroTransferDocumentCount,
+            readyToImportToMikroDocumentCount,
+            ackOnlyDocumentCount,
+            workflowSummary.FullySynchronizedDocumentCount,
+            manualReviewDocumentCount,
+            BuildFlowSteps(summary, workflowSummary, axataOrderDifferenceDocumentCount),
+            BuildFlowActionGroups(lifecycles));
+    }
+
+    private static IReadOnlyCollection<AxataIntegrationFlowStepDto> BuildFlowSteps(
+        AxataIntegrationAuditSummaryDto summary,
+        AxataOrderWorkflowSummaryDto workflowSummary,
+        int axataOrderDifferenceDocumentCount) =>
+    [
+        new AxataIntegrationFlowStepDto(
+            "mikro-orders",
+            "1. Mikro siparis evreni",
+            workflowSummary.MikroOrderDocumentCount == 0 ? "Empty" : "Ok",
+            workflowSummary.MikroOrderDocumentCount == 0 ? "Info" : "Success",
+            workflowSummary.MikroOrderDocumentCount,
+            workflowSummary.MikroOrderDocumentCount,
+            0,
+            "Secilen tarihte Mikro depolar arasi siparis evreni. Sonraki tum kontroller bu belge listesinden yurur.",
+            null),
+        new AxataIntegrationFlowStepDto(
+            "axata-orders",
+            "2. AXATA siparis eslesmesi",
+            axataOrderDifferenceDocumentCount == 0 ? "Ok" : "Difference",
+            axataOrderDifferenceDocumentCount == 0 ? "Success" : "Warning",
+            workflowSummary.AxataOrderDocumentCount,
+            workflowSummary.MikroOrderDocumentCount,
+            axataOrderDifferenceDocumentCount,
+            "Mikro siparis numarasi AXATA ENT000/ENT001 tarafinda var mi ve miktar uyuyor mu kontrol eder.",
+            "/api/integrations/axata-sync/live/audit/overview#orderLifecycles"),
+        new AxataIntegrationFlowStepDto(
+            "axata-shipments",
+            "3. AXATA sevk durumu",
+            workflowSummary.WaitingForAxataShipmentDocumentCount == 0 ? "Ok" : "Waiting",
+            workflowSummary.WaitingForAxataShipmentDocumentCount == 0 ? "Success" : "Info",
+            workflowSummary.AxataShipmentDocumentCount,
+            workflowSummary.AxataOrderDocumentCount,
+            workflowSummary.WaitingForAxataShipmentDocumentCount,
+            "AXATA C01 SEV belgeleri; tamamlanan, bekleyen, iptal edilen ve henuz sevki olmayan siparisler burada ayrilir.",
+            "/api/integrations/axata-sync/live/audit/overview#axataOutboundDeliveries"),
+        new AxataIntegrationFlowStepDto(
+            "mikro-transfer",
+            "4. Mikro sevk donusu",
+            workflowSummary.WaitingForMikroTransferDocumentCount == 0 &&
+            workflowSummary.PartiallyLinkedInMikroDocumentCount == 0
+                ? "Ok"
+                : "Difference",
+            workflowSummary.WaitingForMikroTransferDocumentCount == 0 &&
+            workflowSummary.PartiallyLinkedInMikroDocumentCount == 0
+                ? "Success"
+                : "Critical",
+            workflowSummary.MikroLinkedShipmentDocumentCount,
+            workflowSummary.AxataShipmentDocumentCount,
+            workflowSummary.WaitingForMikroTransferDocumentCount + workflowSummary.PartiallyLinkedInMikroDocumentCount,
+            "AXATA'da sevki olusmus belgelerin Mikro STOK_HAREKETLERI_EK siparis linki var mi kontrol eder.",
+            "/api/integrations/axata-sync/live/audit/overview#interventionCandidates"),
+        new AxataIntegrationFlowStepDto(
+            "fully-synchronized",
+            "5. Tamamlanan akis",
+            workflowSummary.FullySynchronizedDocumentCount == workflowSummary.MikroOrderDocumentCount
+                ? "Ok"
+                : "Open",
+            workflowSummary.FullySynchronizedDocumentCount == workflowSummary.MikroOrderDocumentCount
+                ? "Success"
+                : "Warning",
+            workflowSummary.FullySynchronizedDocumentCount,
+            workflowSummary.MikroOrderDocumentCount,
+            workflowSummary.MikroOrderDocumentCount - workflowSummary.FullySynchronizedDocumentCount,
+            "Mikro siparis, AXATA siparis, AXATA sevk ve Mikro sevk linki miktar olarak tam uyusan belge sayisi.",
+            "/api/integrations/axata-sync/live/audit/overview#orderLifecycles")
+    ];
+
+    private static IReadOnlyCollection<AxataIntegrationFlowActionGroupDto> BuildFlowActionGroups(
+        IReadOnlyCollection<AxataOrderLifecycleDto> lifecycles) =>
+        lifecycles
+            .GroupBy(document => document.RecommendedAction.Code)
+            .OrderByDescending(group => group.Any(document => document.RecommendedAction.RequiresManualAction))
+            .ThenByDescending(group => group.Any(document => document.RecommendedAction.CanExecute))
+            .ThenBy(group => group.Key)
+            .Select(group =>
+            {
+                var first = group.First().RecommendedAction;
+
+                return new AxataIntegrationFlowActionGroupDto(
+                    group.Key,
+                    first.Title,
+                    first.Severity,
+                    group.Count(),
+                    group.Any(document => document.RecommendedAction.CanExecute),
+                    first.PreviewRoute,
+                    first.ExecuteRoute,
+                    first.Reason,
+                    group
+                        .OrderBy(document => document.DocumentDate)
+                        .ThenBy(document => document.DocumentSerie)
+                        .ThenBy(document => document.DocumentOrderNo)
+                        .Take(MaxTake)
+                        .Select(document => new AxataIntegrationFlowDocumentRefDto(
+                            document.DocumentSerie,
+                            document.DocumentOrderNo,
+                            document.DocumentNo,
+                            document.DocumentDate,
+                            document.SynchronizationState,
+                            document.RecommendedAction.Code,
+                            document.MikroOrderQuantity,
+                            document.AxataShipmentQuantity,
+                            document.MikroLinkedShipmentQuantity,
+                            document.RecommendedAction.Reason))
+                        .ToArray());
+            })
+            .ToArray();
 
     private async Task<C01DeliveryAnalysis> GetC01DocumentAnalysisAsync(
         string documentSerie,
@@ -3027,7 +3205,8 @@ internal sealed record OrderWorkflowShipment(
 
 internal sealed record OrderWorkflowAuditResult(
     AxataOrderWorkflowSummaryDto Summary,
-    IReadOnlyCollection<AxataOrderLifecycleDto> Documents)
+    IReadOnlyCollection<AxataOrderLifecycleDto> Documents,
+    IReadOnlyCollection<AxataOrderLifecycleDto> AllDocuments)
 {
     public static OrderWorkflowAuditResult Empty { get; } = new(
         new AxataOrderWorkflowSummaryDto(
@@ -3047,5 +3226,6 @@ internal sealed record OrderWorkflowAuditResult(
             0,
             0,
             0),
+        Array.Empty<AxataOrderLifecycleDto>(),
         Array.Empty<AxataOrderLifecycleDto>());
 }

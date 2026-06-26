@@ -119,8 +119,6 @@ public sealed class CreateCompanyReceivingUseCase(
                     var customerAddressNo = ResolveCustomerAddressNo(customer);
                     var resolvedDocumentIdentity = await ResolveDocumentIdentityAsync(
                         request.DocumentNo,
-                        customer,
-                        customerCode,
                         request.WarehouseNo,
                         cancellationToken);
                     var documentSerie = resolvedDocumentIdentity.DocumentSerie;
@@ -448,8 +446,6 @@ public sealed class CreateCompanyReceivingUseCase(
         var customerAddressNo = ResolveCustomerAddressNo(customer);
         var resolvedDocumentIdentity = await ResolveDocumentIdentityAsync(
             request.DocumentNo,
-            customer,
-            customerCode,
             request.WarehouseNo,
             cancellationToken);
         var documentSerie = resolvedDocumentIdentity.DocumentSerie;
@@ -930,27 +926,32 @@ public sealed class CreateCompanyReceivingUseCase(
             return;
         }
 
-        await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        try
+        await executionStrategy.ExecuteAsync(async () =>
         {
-            if (returnMovements.Count > 0)
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            try
             {
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(
-                    returnMovements,
-                    cancellationToken);
-            }
+                if (returnMovements.Count > 0)
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(
+                        returnMovements,
+                        cancellationToken);
+                }
 
-            await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
     }
 
     private async Task<CARI_HESAPLAR> GetCustomerAsync(
@@ -1101,8 +1102,6 @@ public sealed class CreateCompanyReceivingUseCase(
 
     private async Task<ResolvedDocumentIdentity> ResolveDocumentIdentityAsync(
         string? documentNo,
-        CARI_HESAPLAR customer,
-        string customerCode,
         int warehouseNo,
         CancellationToken cancellationToken)
     {
@@ -1114,8 +1113,6 @@ public sealed class CreateCompanyReceivingUseCase(
 
         var generatedDocumentSerie = BuildGeneratedDocumentSerie(
             normalizedDocumentNo,
-            customer,
-            customerCode,
             warehouseNo);
         var generatedDocumentOrderNo = await GetNextReceivingDocumentOrderNoAsync(
             warehouseNo,
@@ -1713,27 +1710,15 @@ public sealed class CreateCompanyReceivingUseCase(
 
     private static string BuildGeneratedDocumentSerie(
         string requestedDocumentNo,
-        CARI_HESAPLAR customer,
-        string customerCode,
         int warehouseNo)
     {
         var requestedSerie = NormalizeDocumentSerieToken(requestedDocumentNo);
-        var source = requestedSerie.Any(character => character is >= 'A' and <= 'Z')
-            ? requestedSerie
-            : NormalizeText($"{customer.cari_unvan1} {customer.cari_unvan2}");
-
-        if (string.IsNullOrWhiteSpace(source))
+        if (requestedSerie.Any(character => character is >= 'A' and <= 'Z'))
         {
-            source = customerCode;
+            return Truncate(requestedSerie, MaxDocumentSerieLength);
         }
 
-        var serie = NormalizeDocumentSerieToken(source);
-        if (string.IsNullOrWhiteSpace(serie))
-        {
-            serie = $"FMK{warehouseNo}";
-        }
-
-        return Truncate(serie, MaxDocumentSerieLength);
+        return Truncate($"FMK{warehouseNo}", MaxDocumentSerieLength);
     }
 
     private static string NormalizeDocumentSerieToken(string value)

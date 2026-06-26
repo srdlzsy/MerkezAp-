@@ -5,6 +5,7 @@ using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,11 +23,16 @@ public sealed class VirmanWriteService(
     private const short MikroUserNo = 39;
     private const byte VirmanDocumentType = 6;
     private const byte VirmanMovementGenre = 3;
+    private const byte IncomingMovementType = 0;
+    private const byte OutgoingMovementType = 1;
+    private const byte IncomingOutgoingMovementType = 2;
     private const byte NormalMovement = 0;
     private const int FirstDocumentOrderNo = 0;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
+    private const int StockSummaryDuplicateRetryAttemptCount = 3;
+    private const int StockSummaryDuplicateRetryDelayMilliseconds = 150;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
     private static readonly DateTime LegacyDeliveryDate = new(1900, 1, 1);
 
@@ -50,6 +56,35 @@ public sealed class VirmanWriteService(
         CreateVirmanRequest request,
         CancellationToken cancellationToken)
     {
+        for (var attempt = 1; attempt <= StockSummaryDuplicateRetryAttemptCount; attempt++)
+        {
+            try
+            {
+                return await ExecuteDatabaseOnceAsync(request, cancellationToken);
+            }
+            catch (DbUpdateException exception) when (
+                attempt < StockSummaryDuplicateRetryAttemptCount &&
+                IsStockSummaryDuplicateKeyException(exception))
+            {
+                logger.LogWarning(
+                    exception,
+                    "Virman database write hit STOK_HAREKETLERI_OZET duplicate key. Retrying attempt {Attempt}/{AttemptCount}.",
+                    attempt + 1,
+                    StockSummaryDuplicateRetryAttemptCount);
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(StockSummaryDuplicateRetryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        return await ExecuteDatabaseOnceAsync(request, cancellationToken);
+    }
+
+    private async Task<CreateVirmanResponse> ExecuteDatabaseOnceAsync(
+        CreateVirmanRequest request,
+        CancellationToken cancellationToken)
+    {
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
@@ -70,21 +105,29 @@ public sealed class VirmanWriteService(
             try
             {
                 var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
-                var movements = lines
-                    .Select((line, rowNo) => CreateMovement(
-                        request.WarehouseNo,
-                        line,
-                        description,
-                        rowNo,
-                        now,
-                        movementDate,
-                        documentDate,
-                        documentNo,
-                        documentSerie,
-                        documentOrderNo))
-                    .ToArray();
+                var movements = new List<STOK_HAREKETLERI>(lines.Length * 2);
+                foreach (var line in lines)
+                {
+                    foreach (var movementType in ExpandMovementTypes(line.MovementType))
+                    {
+                        movements.Add(CreateMovement(
+                            movementType,
+                            request.WarehouseNo,
+                            line,
+                            description,
+                            movements.Count,
+                            now,
+                            movementDate,
+                            documentDate,
+                            documentNo,
+                            documentSerie,
+                            documentOrderNo));
+                    }
+                }
 
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                var movementRows = movements.ToArray();
+
+                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
@@ -95,14 +138,14 @@ public sealed class VirmanWriteService(
                     documentDate,
                     documentNo,
                     request.WarehouseNo,
-                    movements
+                    movementRows
                         .Select(movement => movement.sth_tip ?? 0)
                         .Distinct()
                         .OrderBy(movementType => movementType)
                         .ToArray(),
-                    movements.Length,
-                    movements.Sum(movement => movement.sth_miktar ?? 0d),
-                    movements.Sum(movement => movement.sth_tutar ?? 0d),
+                    movementRows.Length,
+                    movementRows.Sum(movement => movement.sth_miktar ?? 0d),
+                    movementRows.Sum(movement => movement.sth_tutar ?? 0d),
                     options.ConnectionStringName);
             }
             catch
@@ -304,6 +347,7 @@ public sealed class VirmanWriteService(
     }
 
     private static STOK_HAREKETLERI CreateMovement(
+        byte movementType,
         int warehouseNo,
         CreateVirmanLineRequest line,
         string description,
@@ -335,7 +379,7 @@ public sealed class VirmanWriteService(
             sth_firmano = 0,
             sth_subeno = 0,
             sth_tarih = movementDate,
-            sth_tip = line.MovementType,
+            sth_tip = movementType,
             sth_cins = VirmanMovementGenre,
             sth_normal_iade = NormalMovement,
             sth_evraktip = VirmanDocumentType,
@@ -492,11 +536,28 @@ public sealed class VirmanWriteService(
                 throw new ArgumentException("Line unit pointer must be between 1 and 255.", nameof(request.Lines));
             }
 
+            if (line.MovementType is not (IncomingMovementType or OutgoingMovementType or IncomingOutgoingMovementType))
+            {
+                throw new ArgumentException("Virman movement type must be 0, 1, or 2.", nameof(request.Lines));
+            }
+
             if (line.LotNo < 0)
             {
                 throw new ArgumentException("Line lot no can not be negative.", nameof(request.Lines));
             }
         }
+    }
+
+    private static IEnumerable<byte> ExpandMovementTypes(byte movementType)
+    {
+        if (movementType == IncomingOutgoingMovementType)
+        {
+            yield return OutgoingMovementType;
+            yield return IncomingMovementType;
+            yield break;
+        }
+
+        yield return movementType;
     }
 
     private static string NormalizeText(string? value, int maxLength)
@@ -508,5 +569,18 @@ public sealed class VirmanWriteService(
 
         var trimmed = value.Trim();
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    private static bool IsStockSummaryDuplicateKeyException(DbUpdateException exception)
+    {
+        var sqlException = exception.GetBaseException() as SqlException;
+        if (sqlException is null || sqlException.Number is not (2601 or 2627))
+        {
+            return false;
+        }
+
+        return sqlException.Message.Contains(
+            "STOK_HAREKETLERI_OZET",
+            StringComparison.OrdinalIgnoreCase);
     }
 }

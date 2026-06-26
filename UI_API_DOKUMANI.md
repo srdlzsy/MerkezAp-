@@ -5081,7 +5081,7 @@ Onemli not:
 
 - `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 6`, `sth_normal_iade = 0`, `sth_cins = 3` olacak sekilde kayit yazar
-- `movementType` alaninin karsiligi satir bazinda `sth_tip` kolonuna yazilir
+- `movementType` alaninin karsiligi satir bazinda `sth_tip` kolonuna yazilir; `2` gonderilirse backend Mikro uyumu icin satiri `1` cikis ve `0` giris olarak iki stok hareketine acar
 - eski yapiya uygun olarak `sth_giris_depo_no` ve `sth_cikis_depo_no` ayni kullanici deposuna yazilir
 - eski yapiya uygun olarak `sth_fiyat_liste_no = -1` ve `sth_teslim_tarihi = 1900-01-01` degerleri kullanilir
 - `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir
@@ -5121,9 +5121,9 @@ Response:
   "documentDate": "2026-04-21T00:00:00",
   "documentNo": "",
   "warehouseNo": 110,
-  "movementTypes": [2],
-  "lineCount": 1,
-  "totalQuantity": 3,
+  "movementTypes": [0, 1],
+  "lineCount": 2,
+  "totalQuantity": 6,
   "totalAmount": 0,
   "writeConnectionName": "testMikroConnection"
 }
@@ -8618,6 +8618,9 @@ Ekranda gosterilecek durum alanlari:
 | `workflowSummary.mikroLinkedShipmentDocumentCount` | audit overview | En az bir Mikro sevk hareketi siparis satirina baglanmis siparis sayisi |
 | `workflowSummary.fullySynchronizedDocumentCount` | audit overview | AXATA siparisi, toplam SEV ve Mikro siparis baglantisi miktar olarak tamamlanan siparis sayisi |
 | `workflowSummary.manualActionRequiredDocumentCount` | audit overview | Evrak bazinda manuel aksiyon onerilen siparis sayisi |
+| `flowOverview` | audit overview | Mikro -> AXATA -> Mikro akisini okunur ozet olarak verir; ana sayilar, fark adimlari ve aksiyon gruplari burada toplanir |
+| `flowOverview.steps` | audit overview | 1 Mikro siparis, 2 AXATA siparis, 3 AXATA sevk, 4 Mikro sevk donusu, 5 tamamlanan akis kartlari |
+| `flowOverview.actionGroups` | audit overview | "Mikro'ya aktar", "AXATA ACK", "siparisi yeniden gonder", "bekle", "manuel incele" gibi aksiyonlara gore gruplanmis belgeler |
 | `orderLifecycles` | audit overview | Her Mikro siparisi icin AXATA siparis, tum SEV'ler, Mikro baglanti durumu ve onerilen aksiyonu tek kayitta verir |
 | `summary.unsentWarehouseOrderDocumentCount` | audit overview | Mikro'da AXATA'ya gitmemis depo siparisi sayisi |
 | `summary.sentWarehouseOrderMissingMikroShipmentDocumentCount` | audit overview | AXATA'ya gonderildi isaretli ama belge genelinde Mikro sevk linki olmayan belge sayisi |

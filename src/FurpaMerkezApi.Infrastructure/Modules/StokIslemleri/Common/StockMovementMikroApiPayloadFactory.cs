@@ -8,7 +8,9 @@ internal static class StockMovementMikroApiPayloadFactory
 {
     private const byte StockReceiptDocumentType = 0;
     private const byte VirmanDocumentType = 6;
+    private const byte IncomingMovementType = 0;
     private const byte OutgoingMovementType = 1;
+    private const byte IncomingOutgoingMovementType = 2;
     private const byte VirmanMovementGenre = 3;
     private const byte NormalMovement = 0;
     private static readonly DateTime VirmanLegacyDeliveryDate = new(1900, 1, 1);
@@ -81,48 +83,65 @@ internal static class StockMovementMikroApiPayloadFactory
         int documentOrderNo,
         string description)
     {
-        var satirlar = lines
-            .Select((line, rowNo) => new StockMovementMikroApiLine(
-                FormatDate(movementDate),
-                line.MovementType,
-                VirmanMovementGenre,
-                NormalMovement,
-                VirmanDocumentType,
-                NormalizeText(documentSerie, 20),
-                documentOrderNo,
-                rowNo,
-                NormalizeText(documentNo, 50),
-                FormatDate(documentDate),
-                NormalizeText(line.StockCode, 25),
-                0,
-                string.Empty,
-                string.Empty,
-                line.Quantity,
-                0d,
-                line.UnitPointer,
-                0d,
-                0,
-                0d,
-                false,
-                0,
-                0,
-                request.WarehouseNo,
-                request.WarehouseNo,
-                NormalizeText(line.Description ?? description, 50),
-                NormalizeText(line.PartyCode, 25),
-                line.LotNo,
-                NormalizeText(line.ProjectCode, 25),
-                -1,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                FormatDate(VirmanLegacyDeliveryDate)))
-            .ToArray();
+        var satirlar = new List<StockMovementMikroApiLine>(lines.Count * 2);
+        foreach (var line in lines)
+        {
+            foreach (var movementType in ExpandVirmanMovementTypes(line.MovementType))
+            {
+                satirlar.Add(new StockMovementMikroApiLine(
+                    FormatDate(movementDate),
+                    movementType,
+                    VirmanMovementGenre,
+                    NormalMovement,
+                    VirmanDocumentType,
+                    NormalizeText(documentSerie, 20),
+                    documentOrderNo,
+                    satirlar.Count,
+                    NormalizeText(documentNo, 50),
+                    FormatDate(documentDate),
+                    NormalizeText(line.StockCode, 25),
+                    0,
+                    string.Empty,
+                    string.Empty,
+                    line.Quantity,
+                    0d,
+                    line.UnitPointer,
+                    0d,
+                    0,
+                    0d,
+                    false,
+                    0,
+                    0,
+                    request.WarehouseNo,
+                    request.WarehouseNo,
+                    NormalizeText(line.Description ?? description, 50),
+                    NormalizeText(line.PartyCode, 25),
+                    line.LotNo,
+                    NormalizeText(line.ProjectCode, 25),
+                    -1,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    FormatDate(VirmanLegacyDeliveryDate)));
+            }
+        }
 
         return new StockMovementMikroApiPayload(
             [
-                new StockMovementMikroApiDocument(satirlar)
+                new StockMovementMikroApiDocument(satirlar.ToArray())
             ]);
+    }
+
+    private static IEnumerable<byte> ExpandVirmanMovementTypes(byte movementType)
+    {
+        if (movementType == IncomingOutgoingMovementType)
+        {
+            yield return OutgoingMovementType;
+            yield return IncomingMovementType;
+            yield break;
+        }
+
+        yield return movementType;
     }
 
     private static string FormatDate(DateTime value) =>

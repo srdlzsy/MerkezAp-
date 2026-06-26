@@ -145,13 +145,37 @@ Tam format sayilmayan ornekler:
 ```text
 IRS-000123      -> prefix moduna duser, seri IRS000123 olur
 IRS 000000123   -> prefix moduna duser, seri IRS000000123 olur
-000000123       -> sadece sayisal oldugu icin prefix kabul edilmez, cari unvanina duser
+000000123       -> sadece sayisal oldugu icin prefix kabul edilmez, FMK{depo} serisine duser
 ```
 
 E-belge/e-irsaliye yoksa:
 
 - UI `documentNo` alanini bos gonderebilir.
-- Backend cari unvanindan seri/prefix uretir.
+- Backend bos belge no icin cari unvanindan seri uretmez.
+- Bos belge no icin backend depo bazli sabit seri kullanir:
+
+```text
+documentSerie = FMK{kullaniciDeposu}
+```
+
+- Ayni depo ve `FMK{kullaniciDeposu}` serisi icin siradaki `documentOrderNo`
+  degerini verir.
+- Response'taki `documentNo`, uretilen nihai evrak no olur.
+
+Ornek:
+
+```text
+kullanici deposu  = 50
+request documentNo = bos
+uretilen seri      = FMK50
+siradaki sira      = 1
+response documentNo = FMK50000000001
+```
+
+Prefix davranisi:
+
+- UI veya kullanici `ULK`, `ABC`, `IRS-000123` gibi harf iceren bir deger
+  gonderirse backend bunu seri/prefix olarak kullanabilir.
 - Ayni depo ve seri icin siradaki `documentOrderNo` degerini verir.
 - Response'taki `documentNo`, uretilen nihai evrak no olur.
 
@@ -219,9 +243,10 @@ notes                                  -> UI not paneli veya kisa description ad
 
 `despatchNumber` tam `seri + 9 haneli sira` formatindaysa backend seri/sirayi
 bundan cozer. Tam formatta degilse backend bunu harf iceren prefix olarak
-degerlendirebilir veya cari unvanindan seri uretebilir. Bu yuzden kayit sonrasi
-UI yine response'taki `documentNo`, `documentSerie` ve `documentOrderNo`
-alanlarini esas almalidir.
+degerlendirebilir. Tam format degilse ve kullanilabilir harf iceren prefix
+uretmezse backend `FMK{kullaniciDeposu}` serisine duser. Bu yuzden kayit
+sonrasi UI yine response'taki `documentNo`, `documentSerie` ve
+`documentOrderNo` alanlarini esas almalidir.
 
 Cari secimi:
 
@@ -732,6 +757,7 @@ Yeni mal kabul:
   sayisal sira` formatinda gonderebilir.
 - E-belge/e-irsaliye yoksa UI `documentNo` alanini bos birakabilir veya
   kullanicidan `ULK`, `ABC` gibi kisa bir seri/prefix alabilir.
+- `documentNo` bos birakilirsa backend `FMK{kullaniciDeposu}` serisini kullanir.
 - UI kayit sonrasi request'teki bos/prefix degeri degil, response'taki
   `documentNo`, `documentSerie` ve `documentOrderNo` alanlarini esas almalidir.
 - UI yeni taslakta `clientRequestId` uretip saklamalidir.
@@ -1097,8 +1123,8 @@ seri + 9 haneli sayisal sira
 ```
 
 Tam formatta degilse seri/prefix kabul edilir ve siradaki sira backend
-tarafindan uretilir. Bu alanlarin hepsi bos ise backend cari unvanindan
-seri/sira uretir.
+tarafindan uretilir. Bu alanlarin hepsi bos ise backend `FMK{depo}` serisine
+duser.
 
 ### Manuel Incoming Company Receiving
 
@@ -1168,6 +1194,8 @@ Receiving quantity is greater than remaining order quantity.
   formatinda gonderilebilir.
 - E-belge/e-irsaliye yoksa `documentNo` bos veya harf iceren kisa prefix
   olabilir.
+- `documentNo` bos ise backend cari unvanindan seri uretmez; `FMK{kullaniciDeposu}`
+  serisini kullanir.
 - Yeni UI `quantity` yerine `dispatchQuantity` ve `acceptedQuantity` gonderir.
 - `acceptedQuantity > dispatchQuantity` engellenir.
 - Eksik kabulde fark gosterilir.
