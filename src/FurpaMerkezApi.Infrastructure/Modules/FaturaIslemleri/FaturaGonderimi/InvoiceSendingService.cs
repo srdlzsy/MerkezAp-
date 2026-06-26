@@ -1401,6 +1401,7 @@ public sealed class InvoiceSendingService(
                     invoice.ReturnInvoiceDate.Value.ToString("yyyy-MM-dd")));
         }
 
+        documentReference.Add(new XElement(basic + "DocumentTypeCode", "IADE"));
         documentReference.Add(new XElement(basic + "DocumentType", "FATURA"));
 
         return new XElement(

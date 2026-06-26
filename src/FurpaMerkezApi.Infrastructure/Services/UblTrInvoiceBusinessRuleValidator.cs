@@ -401,10 +401,15 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
             ?.Element(aggregate + "InvoiceDocumentReference");
         var referenceNo = reference?.Element(basic + "ID")?.Value?.Trim() ?? string.Empty;
         var referenceDate = reference?.Element(basic + "IssueDate")?.Value?.Trim() ?? string.Empty;
+        var documentTypeCode = reference?.Element(basic + "DocumentTypeCode")?.Value?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(referenceNo))
         {
             errors.Add("Return invoice requires BillingReference invoice number.");
+        }
+        else if (referenceNo.Length != 16)
+        {
+            errors.Add("Return invoice BillingReference invoice number must be 16 characters.");
         }
 
         if (!DateTime.TryParseExact(
@@ -415,6 +420,11 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
                 out _))
         {
             errors.Add("Return invoice requires BillingReference IssueDate in yyyy-MM-dd format.");
+        }
+
+        if (!string.Equals(documentTypeCode, "IADE", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Return invoice requires BillingReference DocumentTypeCode IADE.");
         }
     }
 
