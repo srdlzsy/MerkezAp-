@@ -51,6 +51,8 @@ Bu endpoint Mikro'dan gonderime uygun belgeleri listeler. Senaryoya gore e-Fatur
 
 Onemli nokta: seri eslesmesi `FaturaSeries` uzerinden yapilir. Seri cakismalarinda toplamlar sismesin diye en uzun ve en spesifik seri secilir. Ornek: `FR` ve `FRP` varsa `FRP001` icin `FRP` tercih edilir.
 
+Liste belge bazinda doner. Ayni `cha_evrakno_seri` + `cha_evrakno_sira` altinda birden fazla hizmet/cari hareket satiri varsa tek fatura satirinda toplanir; `sourceLineCount`, `sourceLineSummary` ve `taxRateSummary` alanlari bu birlesen kaynak satirlari UI'a aciklar. XML/UBL uretilirken hizmet satirlari yine ayri kalem olarak kalir; farkli KDV oranlari tek satira ezilmez.
+
 ### 2. Detay ve Render
 
 Endpoint:

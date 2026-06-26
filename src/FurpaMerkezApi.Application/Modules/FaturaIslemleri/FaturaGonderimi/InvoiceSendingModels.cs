@@ -73,7 +73,10 @@ public sealed record InvoiceSendingListItemDto(
     string ReturnInvoiceNo,
     DateTime? ReturnInvoiceDate,
     string WarehouseName,
-    string Description);
+    string Description,
+    int SourceLineCount,
+    string SourceLineSummary,
+    string TaxRateSummary);
 
 public sealed record InvoiceSendingDetailDto(
     InvoiceSendingListItemDto Summary,

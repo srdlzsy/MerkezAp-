@@ -436,11 +436,28 @@ public sealed class InvoiceSendingService(
                         FROM STOK_HAREKETLERI sh WITH (NOLOCK)
                         INNER JOIN DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
                         WHERE sh.sth_fat_uid = ch.cha_Guid
-                    ), N'') AS Depo
+                    ), N'') AS Depo,
+                    CASE
+                        WHEN NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_kasa_hizkod, N''))), N'') IS NULL THEN N''
+                        ELSE CONCAT(
+                            LTRIM(RTRIM(ISNULL(ch.cha_kasa_hizkod, N''))),
+                            N' - ',
+                            COALESCE(
+                                NULLIF(LTRIM(RTRIM(ISNULL(hiz.hiz_isim, N''))), N''),
+                                NULLIF(LTRIM(RTRIM(ISNULL(dm.dem_isim, N''))), N''),
+                                NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_aciklama, N''))), N''),
+                                N''))
+                    END AS SourceLineSummary,
+                    CASE
+                        WHEN taxRate.Rate IS NULL THEN N''
+                        ELSE CONCAT(N'%', CONVERT(nvarchar(32), CONVERT(decimal(9, 2), taxRate.Rate)))
+                    END AS TaxRateSummary
                 FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
                 INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
                 INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
+                LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK) ON ch.cha_kasa_hizkod = hiz.hiz_kod
+                LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK) ON ch.cha_kasa_hizkod = dm.dem_kod
                 CROSS APPLY (
                     SELECT TOP (1)
                         fatSer.efatura
@@ -468,6 +485,12 @@ public sealed class InvoiceSendingService(
                         shek.sthek_lastup_date DESC,
                         shek.sthek_create_date DESC
                 ) stokIstisna
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        rateList.Rate
+                    FROM dbo.fn_hs_vergi_oran_listesi() rateList
+                    WHERE rateList.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
+                ) taxRate
                 OUTER APPLY (
                     SELECT TOP (1)
                         LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))) AS IadeFaturaNo,
@@ -499,23 +522,23 @@ public sealed class InvoiceSendingService(
                     AND ISNULL(ch.cha_iptal, 0) = 0
             )
             SELECT
-                FatGuid,
+                MIN(FatGuid) AS FatGuid,
                 DocumentSerie,
                 DocumentOrderNo,
-                EvrakTip,
-                Iade,
+                MAX(EvrakTip) AS EvrakTip,
+                MAX(Iade) AS Iade,
                 BelgeTarihi,
-                Aciklama,
+                MAX(Aciklama) AS Aciklama,
                 BelgeNo,
                 SUM(AraToplam) AS AraToplam,
                 SUM(TaxTotal) AS TaxTotal,
                 SUM(Rusum) AS Rusum,
-                EBelgeTuru,
+                MAX(EBelgeTuru) AS EBelgeTuru,
                 MusteriAdi,
                 MusteriKodu,
                 VDNo,
                 EFaturaMukellefiMi,
-                CariHareketCins,
+                MAX(CariHareketCins) AS CariHareketCins,
                 VergiDairesi,
                 Cadde,
                 Sokak,
@@ -526,29 +549,26 @@ public sealed class InvoiceSendingService(
                 PostaKodu,
                 CariTel,
                 Mail,
-                IstisnaKodu,
-                OzelMatrahKodu,
-                IrsaliyeNo,
-                IrsaliyeTarihi,
-                IadeFaturaNo,
-                IadeFaturaTarihi,
-                Depo
+                MAX(IstisnaKodu) AS IstisnaKodu,
+                MAX(OzelMatrahKodu) AS OzelMatrahKodu,
+                MAX(IrsaliyeNo) AS IrsaliyeNo,
+                MAX(IrsaliyeTarihi) AS IrsaliyeTarihi,
+                MAX(IadeFaturaNo) AS IadeFaturaNo,
+                MAX(IadeFaturaTarihi) AS IadeFaturaTarihi,
+                MAX(Depo) AS Depo,
+                COUNT(DISTINCT FatGuid) AS SourceLineCount,
+                ISNULL(STRING_AGG(NULLIF(SourceLineSummary, N''), N' | '), N'') AS SourceLineSummary,
+                ISNULL(STRING_AGG(NULLIF(TaxRateSummary, N''), N' | '), N'') AS TaxRateSummary
             FROM Faturalar
             GROUP BY
-                FatGuid,
                 DocumentSerie,
                 DocumentOrderNo,
-                EvrakTip,
-                Iade,
                 BelgeTarihi,
-                Aciklama,
                 BelgeNo,
-                EBelgeTuru,
                 MusteriAdi,
                 MusteriKodu,
                 VDNo,
                 EFaturaMukellefiMi,
-                CariHareketCins,
                 VergiDairesi,
                 Cadde,
                 Sokak,
@@ -557,14 +577,7 @@ public sealed class InvoiceSendingService(
                 FaturaMail,
                 PostaKodu,
                 CariTel,
-                Mail,
-                IstisnaKodu,
-                OzelMatrahKodu,
-                IrsaliyeNo,
-                IrsaliyeTarihi,
-                IadeFaturaNo,
-                IadeFaturaTarihi,
-                Depo
+                Mail
             ORDER BY
                 BelgeTarihi DESC,
                 DocumentSerie DESC,
@@ -1951,6 +1964,9 @@ public sealed class InvoiceSendingService(
             ReadNullableDateTime(reader, "IadeFaturaTarihi"),
             ReadString(reader, "Depo"),
             ReadString(reader, "Aciklama"),
+            ReadInt32(reader, "SourceLineCount"),
+            ReadString(reader, "SourceLineSummary"),
+            ReadString(reader, "TaxRateSummary"),
             scenario);
     }
 
@@ -1979,7 +1995,10 @@ public sealed class InvoiceSendingService(
             invoice.ReturnInvoiceNo,
             invoice.ReturnInvoiceDate,
             invoice.WarehouseName,
-            invoice.Description);
+            invoice.Description,
+            invoice.SourceLineCount,
+            invoice.SourceLineSummary,
+            invoice.TaxRateSummary);
     }
 
     private static void EnsureReturnInvoice(PendingInvoiceRecord invoice)
@@ -2561,6 +2580,9 @@ public sealed class InvoiceSendingService(
         DateTime? ReturnInvoiceDate,
         string WarehouseName,
         string Description,
+        int SourceLineCount,
+        string SourceLineSummary,
+        string TaxRateSummary,
         InvoiceSendingScenario Scenario)
     {
         public bool IsSent => !string.IsNullOrWhiteSpace(SentDocumentNo);

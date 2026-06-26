@@ -7588,7 +7588,10 @@ Response `InvoiceSendingListResponse`:
       "returnInvoiceNo": "",
       "returnInvoiceDate": null,
       "warehouseName": "MERKEZ DEPO",
-      "description": "Aciklama"
+      "description": "Aciklama",
+      "sourceLineCount": 1,
+      "sourceLineSummary": "",
+      "taxRateSummary": "%20.00"
     },
     {
       "documentSerie": "FRP",
@@ -7613,7 +7616,10 @@ Response `InvoiceSendingListResponse`:
       "returnInvoiceNo": "",
       "returnInvoiceDate": null,
       "warehouseName": "MERKEZ DEPO",
-      "description": ""
+      "description": "",
+      "sourceLineCount": 2,
+      "sourceLineSummary": "0056 - CIRO PRIMI GELIRI % 20 | 0055 - CIRO PRIMI GELIRI % 10",
+      "taxRateSummary": "%20.00 | %10.00"
     }
   ]
 }
@@ -7629,6 +7635,10 @@ Davranis:
 - `invoiceId` legacy WinForms mantigina uygun sekilde `seri + yil + 9 haneli sira` olarak uretilir
 - `invoiceId`, UBL icindeki `cbc:ID` degeridir; UI bunu PDF URL'si uretmek icin kullanmaz
 - `sentDocumentNo` Mikro `cha_belge_no` alanidir; gonderim sonrasi kullaniciya gosterilen resmi belge numarasidir
+- liste belge bazinda doner; ayni `cha_evrakno_seri` + `cha_evrakno_sira` altindaki birden fazla hizmet/cari hareket satiri tek fatura satirinda toplanir
+- `sourceLineCount`, belge altinda birlesen Mikro kaynak cari hareket satiri sayisidir; hizmet faturalarinda tek fatura icindeki hizmet kalemlerini anlamak icin kullanilir
+- `sourceLineSummary`, hizmet/demirbas kaynakli satirlarda `kod - ad` ozetidir; ornek: `0056 - CIRO PRIMI GELIRI % 20 | 0055 - CIRO PRIMI GELIRI % 10`
+- `taxRateSummary`, kaynak satirlarin Mikro vergi pointer'larindan cozulen KDV oran ozetidir; farkli KDV'li hizmet satirlari ayni faturada gorunebilir
 - `isSent = false` ise fatura henuz Uyumsoft'a gonderilmemistir; UI lokal onizleme acar
 - `isSent = true` ise fatura Uyumsoft'a gonderilmis giden faturadir; UI yine lokal onizleme acar
 - giden fatura listesinde resmi Uyumsoft PDF alani/URL'si donmez; mevcut Mikro kaynaginda Uyumsoft teknik `invoiceId` kalici tutulmadigi icin fatura numarasindan PDF cozumleme yapilmaz
