@@ -3672,6 +3672,8 @@ Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin ekl
 - `STOKLAR` stok kartlari
 - `STOK_DEPO_DETAYLARI` depo bazli stok karti ayarlari
 - `STOK_SATIS_FIYAT_LISTELERI` depo bazli stok satis fiyatlari
+- `DEPOLAR` depo kartlari
+- `CARI_HESAPLAR` cari kartlari
 
 Menu:
 
@@ -3699,6 +3701,9 @@ Genel kurallar:
 - Satis fiyati upsert islemi `STOK_FIYAT_DEGISIKLIKLERI` tablosunda sentetik fiyat degisiklik evraki olusturmaz.
 - `PUT /stok-kartlari/{stockCode}` global stok kartini degistirir ve tum depolari etkileyebilir.
 - Sadece belirli bir depoyu kapatmak/acmak icin `/stok-kartlari/{stockCode}/depolar/{warehouseNo}` endpoint'i kullanilmalidir.
+- Depo karti ve cari karti endpointleri yeni kart olusturmaz; sadece mevcut Mikro kartini gunceller.
+- Cari kartinda `parentCustomerCode`, `defaultInputWarehouseNo`, `defaultOutputWarehouseNo` gonderilirse backend ilgili cari/depo kaydinin varligini kontrol eder.
+- Depo kartinda GPS alanlari icin `latitude` -90..90, `longitude` -180..180 araliginda olmalidir.
 
 Endpoint ozeti:
 
@@ -3711,6 +3716,12 @@ Endpoint ozeti:
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar/{warehouseNo}` | path + body | `StockCardWarehousePatchHttpRequest` | `StockCardWarehouseUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari` | path + query | `warehouseNo?: int` | `StockSalesPriceDto[]` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo}` | path + body | `StockSalesPriceUpsertHttpRequest` | `StockSalesPriceUpsertResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar` | query | `WarehouseCardSearchHttpRequest` | `WarehouseCardListItemDto[]` | `list` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | path | `warehouseNo` | `WarehouseCardDetailDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | path + body | `WarehouseCardPatchHttpRequest` | `WarehouseCardUpdateResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler` | query | `CustomerCardSearchHttpRequest` | `CustomerCardListItemDto[]` | `list` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | path | `customerCode` | `CustomerCardDetailDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | path + body | `CustomerCardPatchHttpRequest` | `CustomerCardUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |

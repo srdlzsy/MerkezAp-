@@ -303,6 +303,244 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<IReadOnlyCollection<WarehouseCardListItemDto>> SearchWarehouseCardsAsync(
+        WarehouseCardSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var take = request.Take <= 0
+            ? DefaultSearchTake
+            : Math.Min(request.Take, MaxSearchTake);
+        var searchText = request.SearchText?.Trim();
+        var hasWarehouseNo = int.TryParse(searchText, out var warehouseNo);
+
+        var query = mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .Where(warehouse => warehouse.dep_no.HasValue && warehouse.dep_no.Value > 0);
+
+        if (!request.IncludePassive)
+        {
+            query = query.Where(warehouse =>
+                warehouse.dep_iptal != true &&
+                warehouse.dep_hidden != true);
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            query = query.Where(warehouse =>
+                (hasWarehouseNo && warehouse.dep_no == warehouseNo) ||
+                (warehouse.dep_adi != null && warehouse.dep_adi.Contains(searchText)) ||
+                (warehouse.dep_grup_kodu != null && warehouse.dep_grup_kodu.Contains(searchText)) ||
+                (warehouse.dep_Il != null && warehouse.dep_Il.Contains(searchText)) ||
+                (warehouse.dep_Ilce != null && warehouse.dep_Ilce.Contains(searchText)));
+        }
+
+        return await query
+            .OrderBy(warehouse => warehouse.dep_no)
+            .Take(take)
+            .Select(warehouse => new WarehouseCardListItemDto(
+                warehouse.dep_no.GetValueOrDefault(),
+                warehouse.dep_adi ?? string.Empty,
+                warehouse.dep_grup_kodu ?? string.Empty,
+                warehouse.dep_tipi ?? 0,
+                warehouse.dep_Il ?? string.Empty,
+                warehouse.dep_Ilce ?? string.Empty,
+                warehouse.dep_iptal ?? false,
+                warehouse.dep_hidden ?? false,
+                warehouse.dep_lastup_date))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<WarehouseCardDetailDto> GetWarehouseCardAsync(
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        if (warehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(warehouseNo));
+        }
+
+        var warehouse = await mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.dep_no == warehouseNo, cancellationToken)
+            ?? throw new KeyNotFoundException($"Warehouse was not found: {warehouseNo}");
+
+        return MapWarehouseCardDetail(warehouse);
+    }
+
+    public async Task<WarehouseCardUpdateResponse> UpdateWarehouseCardAsync(
+        UpdateWarehouseCardRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var warehouseNo = request.WarehouseNo > 0
+            ? request.WarehouseNo
+            : throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        if (!HasWarehouseCardPatch(patch))
+        {
+            throw new ArgumentException("At least one warehouse card field must be provided.", nameof(request.Patch));
+        }
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var warehouse = await mikroWriteDbContext.DEPOLARs
+                    .FirstOrDefaultAsync(item => item.dep_no == warehouseNo, cancellationToken)
+                    ?? throw new KeyNotFoundException($"Warehouse was not found in Mikro write database: {warehouseNo}");
+
+                var changed = ApplyWarehouseCardPatch(warehouse, patch);
+                if (!changed)
+                {
+                    throw new ArgumentException("At least one warehouse card field must be provided.", nameof(request.Patch));
+                }
+
+                warehouse.dep_lastup_user = updateUser;
+                warehouse.dep_lastup_date = updatedAt;
+                warehouse.dep_degisti = true;
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new WarehouseCardUpdateResponse(
+                    new MikroDocumentUpdateSummary($"depolar/{warehouseNo}", 1, updatedAt, updateUser),
+                    MapWarehouseCardDetail(warehouse));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<IReadOnlyCollection<CustomerCardListItemDto>> SearchCustomerCardsAsync(
+        CustomerCardSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var take = request.Take <= 0
+            ? DefaultSearchTake
+            : Math.Min(request.Take, MaxSearchTake);
+        var searchText = request.SearchText?.Trim();
+
+        var query = mikroDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .Where(customer => customer.cari_kod != null);
+
+        if (!request.IncludePassive)
+        {
+            query = query.Where(customer =>
+                customer.cari_iptal != true &&
+                customer.cari_hidden != true);
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            query = query.Where(customer =>
+                customer.cari_kod!.Contains(searchText) ||
+                (customer.cari_unvan1 != null && customer.cari_unvan1.Contains(searchText)) ||
+                (customer.cari_unvan2 != null && customer.cari_unvan2.Contains(searchText)) ||
+                (customer.cari_VergiKimlikNo != null && customer.cari_VergiKimlikNo.Contains(searchText)));
+        }
+
+        return await query
+            .OrderBy(customer => customer.cari_kod)
+            .Take(take)
+            .Select(customer => new CustomerCardListItemDto(
+                customer.cari_kod ?? string.Empty,
+                customer.cari_unvan1 ?? string.Empty,
+                customer.cari_unvan2 ?? string.Empty,
+                customer.cari_vdaire_adi ?? string.Empty,
+                customer.cari_VergiKimlikNo ?? string.Empty,
+                customer.cari_grup_kodu ?? string.Empty,
+                customer.cari_bolge_kodu ?? string.Empty,
+                customer.cari_temsilci_kodu ?? string.Empty,
+                customer.cari_firma_acik_kapal ?? false,
+                customer.cari_cari_kilitli_flg ?? false,
+                customer.cari_lastup_date))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<CustomerCardDetailDto> GetCustomerCardAsync(
+        string customerCode,
+        CancellationToken cancellationToken)
+    {
+        var normalizedCustomerCode = NormalizeRequiredText(customerCode, 25, nameof(customerCode));
+
+        var customer = await mikroDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.cari_kod == normalizedCustomerCode, cancellationToken)
+            ?? throw new KeyNotFoundException($"Customer was not found: {normalizedCustomerCode}");
+
+        return MapCustomerCardDetail(customer);
+    }
+
+    public async Task<CustomerCardUpdateResponse> UpdateCustomerCardAsync(
+        UpdateCustomerCardRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var customerCode = NormalizeRequiredText(request.CustomerCode, 25, nameof(request.CustomerCode));
+        var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        if (!HasCustomerCardPatch(patch))
+        {
+            throw new ArgumentException("At least one customer card field must be provided.", nameof(request.Patch));
+        }
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var customer = await mikroWriteDbContext.CARI_HESAPLARs
+                    .FirstOrDefaultAsync(item => item.cari_kod == customerCode, cancellationToken)
+                    ?? throw new KeyNotFoundException(
+                        $"Customer was not found in Mikro write database: {customerCode}");
+
+                await EnsureCustomerCardReferencesExistAsync(patch, cancellationToken);
+
+                var changed = ApplyCustomerCardPatch(customer, patch);
+                if (!changed)
+                {
+                    throw new ArgumentException("At least one customer card field must be provided.", nameof(request.Patch));
+                }
+
+                customer.cari_lastup_user = updateUser;
+                customer.cari_lastup_date = updatedAt;
+                customer.cari_degisti = true;
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new CustomerCardUpdateResponse(
+                    new MikroDocumentUpdateSummary($"cariler/{customerCode}", 1, updatedAt, updateUser),
+                    MapCustomerCardDetail(customer));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     public async Task<IReadOnlyCollection<StockSalesPriceDto>> GetStockSalesPricesAsync(
         string stockCode,
         int? warehouseNo,
@@ -1047,6 +1285,25 @@ public sealed class MikroDocumentEditingService(
         return rows.ToDictionary(warehouse => warehouse.WarehouseNo, warehouse => warehouse.dep_adi ?? string.Empty);
     }
 
+    private async Task EnsureCustomerCardReferencesExistAsync(
+        CustomerCardPatchDto patch,
+        CancellationToken cancellationToken)
+    {
+        var customerCodes = new[] { patch.ParentCustomerCode }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => NormalizeRequiredText(value!, 25, nameof(patch.ParentCustomerCode)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = new[] { patch.DefaultInputWarehouseNo, patch.DefaultOutputWarehouseNo }
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        await EnsureCustomerCodesExistAsync(customerCodes, cancellationToken);
+        await EnsureWarehouseNosExistAsync(warehouseNos, cancellationToken);
+    }
+
     private async Task EnsureStockMovementReferencesExistAsync(
         UpdateStockMovementDocumentRequest request,
         CancellationToken cancellationToken)
@@ -1166,6 +1423,101 @@ public sealed class MikroDocumentEditingService(
             throw new KeyNotFoundException($"Warehouse was not found: {string.Join(", ", missingNos)}");
         }
     }
+
+    private static WarehouseCardDetailDto MapWarehouseCardDetail(DEPOLAR warehouse) =>
+        new(
+            warehouse.dep_Guid,
+            warehouse.dep_no ?? 0,
+            warehouse.dep_adi ?? string.Empty,
+            warehouse.dep_grup_kodu ?? string.Empty,
+            warehouse.dep_tipi ?? 0,
+            warehouse.dep_DepoSevkOtoFiyat ?? 0,
+            warehouse.dep_hareket_tipi ?? 0,
+            warehouse.dep_muh_kodu ?? string.Empty,
+            warehouse.dep_sor_mer_kodu ?? string.Empty,
+            warehouse.dep_proje_kodu ?? string.Empty,
+            warehouse.dep_DepoSevkUygFiyat ?? 0,
+            warehouse.dep_KilitTarihi,
+            warehouse.dep_cadde ?? string.Empty,
+            warehouse.dep_mahalle ?? string.Empty,
+            warehouse.dep_sokak ?? string.Empty,
+            warehouse.dep_Semt ?? string.Empty,
+            warehouse.dep_Apt_No ?? string.Empty,
+            warehouse.dep_Daire_No ?? string.Empty,
+            warehouse.dep_posta_Kodu ?? string.Empty,
+            warehouse.dep_Ilce ?? string.Empty,
+            warehouse.dep_Il ?? string.Empty,
+            warehouse.dep_Ulke ?? string.Empty,
+            warehouse.dep_Adres_kodu ?? string.Empty,
+            warehouse.dep_gps_enlem ?? 0d,
+            warehouse.dep_gps_boylam ?? 0d,
+            warehouse.dep_yetkili_email ?? string.Empty,
+            warehouse.dep_tel_ulke_kodu ?? string.Empty,
+            warehouse.dep_tel_bolge_kodu ?? string.Empty,
+            warehouse.dep_tel_no1 ?? string.Empty,
+            warehouse.dep_tel_no2 ?? string.Empty,
+            warehouse.dep_tel_faxno ?? string.Empty,
+            warehouse.dep_envanter_harici_fl ?? false,
+            warehouse.dep_detay_takibi ?? 0,
+            warehouse.dep_bolge_kodu ?? string.Empty,
+            warehouse.dep_gidiste_eirsaliye_fl ?? false,
+            warehouse.dep_geliste_eirsaliye_fl ?? false,
+            warehouse.dep_iptal ?? false,
+            warehouse.dep_hidden ?? false,
+            warehouse.dep_kilitli ?? false,
+            warehouse.dep_create_date,
+            warehouse.dep_lastup_date);
+
+    private static CustomerCardDetailDto MapCustomerCardDetail(CARI_HESAPLAR customer) =>
+        new(
+            customer.cari_Guid,
+            customer.cari_kod ?? string.Empty,
+            customer.cari_unvan1 ?? string.Empty,
+            customer.cari_unvan2 ?? string.Empty,
+            customer.cari_hareket_tipi ?? 0,
+            customer.cari_baglanti_tipi ?? 0,
+            customer.cari_stok_alim_cinsi ?? 0,
+            customer.cari_stok_satim_cinsi ?? 0,
+            customer.cari_muh_kod ?? string.Empty,
+            customer.cari_muh_kod1 ?? string.Empty,
+            customer.cari_muh_kod2 ?? string.Empty,
+            customer.cari_doviz_cinsi ?? 0,
+            customer.cari_doviz_cinsi1 ?? 0,
+            customer.cari_doviz_cinsi2 ?? 0,
+            customer.cari_vdaire_adi ?? string.Empty,
+            customer.cari_vdaire_no ?? string.Empty,
+            customer.cari_sicil_no ?? string.Empty,
+            customer.cari_VergiKimlikNo ?? string.Empty,
+            customer.cari_satis_fk ?? 0,
+            customer.cari_odeme_cinsi ?? 0,
+            customer.cari_odeme_gunu ?? 0,
+            customer.cari_odemeplan_no ?? 0,
+            customer.cari_opsiyon_gun ?? 0,
+            customer.cari_fatura_adres_no ?? 0,
+            customer.cari_sevk_adres_no ?? 0,
+            customer.cari_Ana_cari_kodu ?? string.Empty,
+            customer.cari_sektor_kodu ?? string.Empty,
+            customer.cari_bolge_kodu ?? string.Empty,
+            customer.cari_grup_kodu ?? string.Empty,
+            customer.cari_temsilci_kodu ?? string.Empty,
+            customer.cari_firma_acik_kapal ?? false,
+            customer.cari_cari_kilitli_flg ?? false,
+            customer.cari_efatura_fl ?? false,
+            customer.cari_def_efatura_cinsi ?? 0,
+            customer.cari_eirsaliye_fl ?? false,
+            customer.cari_def_eirsaliye_cinsi ?? 0,
+            customer.cari_wwwadresi ?? string.Empty,
+            customer.cari_EMail ?? string.Empty,
+            customer.cari_CepTel ?? string.Empty,
+            customer.cari_VarsayilanGirisDepo ?? 0,
+            customer.cari_VarsayilanCikisDepo ?? 0,
+            customer.cari_KEP_adresi ?? string.Empty,
+            customer.cari_mutabakat_mail_adresi ?? string.Empty,
+            customer.cari_mersis_no ?? string.Empty,
+            customer.cari_vergidairekodu ?? string.Empty,
+            customer.cari_Perakende_fl ?? false,
+            customer.cari_create_date,
+            customer.cari_lastup_date);
 
     private static StockCardDetailDto MapStockCardDetail(STOKLAR stock) =>
         new(
@@ -1381,6 +1733,101 @@ public sealed class MikroDocumentEditingService(
          detail.sdp_malkabuldursun.HasValue ||
          detail.sdp_Pasif_fl.HasValue ||
          detail.sdp_IskontoYapilamaz.HasValue);
+
+    private static bool ApplyWarehouseCardPatch(DEPOLAR warehouse, WarehouseCardPatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.Name, value => warehouse.dep_adi = NormalizeText(value, 50, nameof(patch.Name)), ref changed);
+        SetIfPresent(patch.GroupCode, value => warehouse.dep_grup_kodu = NormalizeText(value, 25, nameof(patch.GroupCode)), ref changed);
+        SetIfPresent(patch.WarehouseType, value => warehouse.dep_tipi = value, ref changed);
+        SetIfPresent(patch.ShipmentAutoPriceType, value => warehouse.dep_DepoSevkOtoFiyat = value, ref changed);
+        SetIfPresent(patch.MovementType, value => warehouse.dep_hareket_tipi = value, ref changed);
+        SetIfPresent(patch.AccountingCode, value => warehouse.dep_muh_kodu = NormalizeText(value, 40, nameof(patch.AccountingCode)), ref changed);
+        SetIfPresent(patch.ResponsibilityCenter, value => warehouse.dep_sor_mer_kodu = NormalizeText(value, 25, nameof(patch.ResponsibilityCenter)), ref changed);
+        SetIfPresent(patch.ProjectCode, value => warehouse.dep_proje_kodu = NormalizeText(value, 25, nameof(patch.ProjectCode)), ref changed);
+        SetIfPresent(patch.ShipmentAppliedPriceNo, value => warehouse.dep_DepoSevkUygFiyat = ValidateNonNegative(value, nameof(patch.ShipmentAppliedPriceNo)), ref changed);
+        SetIfPresent(patch.LockDate, value => warehouse.dep_KilitTarihi = value.Date, ref changed);
+        SetIfPresent(patch.Street, value => warehouse.dep_cadde = NormalizeText(value, 50, nameof(patch.Street)), ref changed);
+        SetIfPresent(patch.Neighborhood, value => warehouse.dep_mahalle = NormalizeText(value, 50, nameof(patch.Neighborhood)), ref changed);
+        SetIfPresent(patch.Avenue, value => warehouse.dep_sokak = NormalizeText(value, 50, nameof(patch.Avenue)), ref changed);
+        SetIfPresent(patch.Quarter, value => warehouse.dep_Semt = NormalizeText(value, 25, nameof(patch.Quarter)), ref changed);
+        SetIfPresent(patch.ApartmentNo, value => warehouse.dep_Apt_No = NormalizeText(value, 10, nameof(patch.ApartmentNo)), ref changed);
+        SetIfPresent(patch.ApartmentUnitNo, value => warehouse.dep_Daire_No = NormalizeText(value, 10, nameof(patch.ApartmentUnitNo)), ref changed);
+        SetIfPresent(patch.PostalCode, value => warehouse.dep_posta_Kodu = NormalizeText(value, 8, nameof(patch.PostalCode)), ref changed);
+        SetIfPresent(patch.District, value => warehouse.dep_Ilce = NormalizeText(value, 50, nameof(patch.District)), ref changed);
+        SetIfPresent(patch.City, value => warehouse.dep_Il = NormalizeText(value, 50, nameof(patch.City)), ref changed);
+        SetIfPresent(patch.Country, value => warehouse.dep_Ulke = NormalizeText(value, 50, nameof(patch.Country)), ref changed);
+        SetIfPresent(patch.AddressCode, value => warehouse.dep_Adres_kodu = NormalizeText(value, 10, nameof(patch.AddressCode)), ref changed);
+        SetIfPresent(patch.Latitude, value => warehouse.dep_gps_enlem = ValidateLatitude(value, nameof(patch.Latitude)), ref changed);
+        SetIfPresent(patch.Longitude, value => warehouse.dep_gps_boylam = ValidateLongitude(value, nameof(patch.Longitude)), ref changed);
+        SetIfPresent(patch.AuthorizedEmail, value => warehouse.dep_yetkili_email = NormalizeText(value, 50, nameof(patch.AuthorizedEmail)), ref changed);
+        SetIfPresent(patch.PhoneCountryCode, value => warehouse.dep_tel_ulke_kodu = NormalizeText(value, 5, nameof(patch.PhoneCountryCode)), ref changed);
+        SetIfPresent(patch.PhoneAreaCode, value => warehouse.dep_tel_bolge_kodu = NormalizeText(value, 5, nameof(patch.PhoneAreaCode)), ref changed);
+        SetIfPresent(patch.PhoneNo1, value => warehouse.dep_tel_no1 = NormalizeText(value, 10, nameof(patch.PhoneNo1)), ref changed);
+        SetIfPresent(patch.PhoneNo2, value => warehouse.dep_tel_no2 = NormalizeText(value, 10, nameof(patch.PhoneNo2)), ref changed);
+        SetIfPresent(patch.FaxNo, value => warehouse.dep_tel_faxno = NormalizeText(value, 10, nameof(patch.FaxNo)), ref changed);
+        SetIfPresent(patch.ExcludedFromInventory, value => warehouse.dep_envanter_harici_fl = value, ref changed);
+        SetIfPresent(patch.DetailTrackingType, value => warehouse.dep_detay_takibi = value, ref changed);
+        SetIfPresent(patch.RegionCode, value => warehouse.dep_bolge_kodu = NormalizeText(value, 25, nameof(patch.RegionCode)), ref changed);
+        SetIfPresent(patch.OutgoingEDespatchEnabled, value => warehouse.dep_gidiste_eirsaliye_fl = value, ref changed);
+        SetIfPresent(patch.IncomingEDespatchEnabled, value => warehouse.dep_geliste_eirsaliye_fl = value, ref changed);
+        SetIfPresent(patch.IsPassive, value => warehouse.dep_iptal = value, ref changed);
+        SetIfPresent(patch.IsHidden, value => warehouse.dep_hidden = value, ref changed);
+        SetIfPresent(patch.IsLocked, value => warehouse.dep_kilitli = value, ref changed);
+
+        return changed;
+    }
+
+    private static bool ApplyCustomerCardPatch(CARI_HESAPLAR customer, CustomerCardPatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.Title1, value => customer.cari_unvan1 = NormalizeText(value, 127, nameof(patch.Title1)), ref changed);
+        SetIfPresent(patch.Title2, value => customer.cari_unvan2 = NormalizeText(value, 127, nameof(patch.Title2)), ref changed);
+        SetIfPresent(patch.MovementType, value => customer.cari_hareket_tipi = value, ref changed);
+        SetIfPresent(patch.ConnectionType, value => customer.cari_baglanti_tipi = value, ref changed);
+        SetIfPresent(patch.PurchaseStockType, value => customer.cari_stok_alim_cinsi = value, ref changed);
+        SetIfPresent(patch.SalesStockType, value => customer.cari_stok_satim_cinsi = value, ref changed);
+        SetIfPresent(patch.AccountingCode, value => customer.cari_muh_kod = NormalizeText(value, 40, nameof(patch.AccountingCode)), ref changed);
+        SetIfPresent(patch.AccountingCode1, value => customer.cari_muh_kod1 = NormalizeText(value, 40, nameof(patch.AccountingCode1)), ref changed);
+        SetIfPresent(patch.AccountingCode2, value => customer.cari_muh_kod2 = NormalizeText(value, 40, nameof(patch.AccountingCode2)), ref changed);
+        SetIfPresent(patch.CurrencyType, value => customer.cari_doviz_cinsi = value, ref changed);
+        SetIfPresent(patch.CurrencyType1, value => customer.cari_doviz_cinsi1 = value, ref changed);
+        SetIfPresent(patch.CurrencyType2, value => customer.cari_doviz_cinsi2 = value, ref changed);
+        SetIfPresent(patch.TaxOffice, value => customer.cari_vdaire_adi = NormalizeText(value, 50, nameof(patch.TaxOffice)), ref changed);
+        SetIfPresent(patch.TaxOfficeNo, value => customer.cari_vdaire_no = NormalizeText(value, 15, nameof(patch.TaxOfficeNo)), ref changed);
+        SetIfPresent(patch.RegistryNo, value => customer.cari_sicil_no = NormalizeText(value, 15, nameof(patch.RegistryNo)), ref changed);
+        SetIfPresent(patch.TaxNo, value => customer.cari_VergiKimlikNo = NormalizeText(value, 10, nameof(patch.TaxNo)), ref changed);
+        SetIfPresent(patch.SalesPriceListNo, value => customer.cari_satis_fk = ValidateNonNegative(value, nameof(patch.SalesPriceListNo)), ref changed);
+        SetIfPresent(patch.PaymentType, value => customer.cari_odeme_cinsi = value, ref changed);
+        SetIfPresent(patch.PaymentDay, value => customer.cari_odeme_gunu = value, ref changed);
+        SetIfPresent(patch.PaymentPlanNo, value => customer.cari_odemeplan_no = ValidateNonNegative(value, nameof(patch.PaymentPlanNo)), ref changed);
+        SetIfPresent(patch.OptionDay, value => customer.cari_opsiyon_gun = ValidateNonNegative(value, nameof(patch.OptionDay)), ref changed);
+        SetIfPresent(patch.InvoiceAddressNo, value => customer.cari_fatura_adres_no = ValidateNonNegative(value, nameof(patch.InvoiceAddressNo)), ref changed);
+        SetIfPresent(patch.ShippingAddressNo, value => customer.cari_sevk_adres_no = ValidateNonNegative(value, nameof(patch.ShippingAddressNo)), ref changed);
+        SetIfPresent(patch.ParentCustomerCode, value => customer.cari_Ana_cari_kodu = NormalizeText(value, 25, nameof(patch.ParentCustomerCode)), ref changed);
+        SetIfPresent(patch.SectorCode, value => customer.cari_sektor_kodu = NormalizeText(value, 25, nameof(patch.SectorCode)), ref changed);
+        SetIfPresent(patch.RegionCode, value => customer.cari_bolge_kodu = NormalizeText(value, 25, nameof(patch.RegionCode)), ref changed);
+        SetIfPresent(patch.GroupCode, value => customer.cari_grup_kodu = NormalizeText(value, 25, nameof(patch.GroupCode)), ref changed);
+        SetIfPresent(patch.RepresentativeCode, value => customer.cari_temsilci_kodu = NormalizeText(value, 25, nameof(patch.RepresentativeCode)), ref changed);
+        SetIfPresent(patch.IsClosed, value => customer.cari_firma_acik_kapal = value, ref changed);
+        SetIfPresent(patch.IsLocked, value => customer.cari_cari_kilitli_flg = value, ref changed);
+        SetIfPresent(patch.EInvoiceEnabled, value => customer.cari_efatura_fl = value, ref changed);
+        SetIfPresent(patch.DefaultEInvoiceType, value => customer.cari_def_efatura_cinsi = value, ref changed);
+        SetIfPresent(patch.EDespatchEnabled, value => customer.cari_eirsaliye_fl = value, ref changed);
+        SetIfPresent(patch.DefaultEDespatchType, value => customer.cari_def_eirsaliye_cinsi = value, ref changed);
+        SetIfPresent(patch.Website, value => customer.cari_wwwadresi = NormalizeText(value, 30, nameof(patch.Website)), ref changed);
+        SetIfPresent(patch.Email, value => customer.cari_EMail = NormalizeText(value, 127, nameof(patch.Email)), ref changed);
+        SetIfPresent(patch.MobilePhone, value => customer.cari_CepTel = NormalizeText(value, 20, nameof(patch.MobilePhone)), ref changed);
+        SetIfPresent(patch.DefaultInputWarehouseNo, value => customer.cari_VarsayilanGirisDepo = ValidateNonNegative(value, nameof(patch.DefaultInputWarehouseNo)), ref changed);
+        SetIfPresent(patch.DefaultOutputWarehouseNo, value => customer.cari_VarsayilanCikisDepo = ValidateNonNegative(value, nameof(patch.DefaultOutputWarehouseNo)), ref changed);
+        SetIfPresent(patch.KepAddress, value => customer.cari_KEP_adresi = NormalizeText(value, 80, nameof(patch.KepAddress)), ref changed);
+        SetIfPresent(patch.ReconciliationEmail, value => customer.cari_mutabakat_mail_adresi = NormalizeText(value, 80, nameof(patch.ReconciliationEmail)), ref changed);
+        SetIfPresent(patch.MersisNo, value => customer.cari_mersis_no = NormalizeText(value, 25, nameof(patch.MersisNo)), ref changed);
+        SetIfPresent(patch.TaxOfficeCode, value => customer.cari_vergidairekodu = NormalizeText(value, 10, nameof(patch.TaxOfficeCode)), ref changed);
+        SetIfPresent(patch.RetailCustomer, value => customer.cari_Perakende_fl = value, ref changed);
+
+        return changed;
+    }
 
     private static bool ApplyStockCardPatch(STOKLAR stock, StockCardPatchDto patch)
     {
@@ -1681,6 +2128,91 @@ public sealed class MikroDocumentEditingService(
         patch.ProjectCode is not null ||
         patch.ResponsibilityCenter is not null;
 
+    private static bool HasWarehouseCardPatch(WarehouseCardPatchDto patch) =>
+        patch.Name is not null ||
+        patch.GroupCode is not null ||
+        patch.WarehouseType.HasValue ||
+        patch.ShipmentAutoPriceType.HasValue ||
+        patch.MovementType.HasValue ||
+        patch.AccountingCode is not null ||
+        patch.ResponsibilityCenter is not null ||
+        patch.ProjectCode is not null ||
+        patch.ShipmentAppliedPriceNo.HasValue ||
+        patch.LockDate.HasValue ||
+        patch.Street is not null ||
+        patch.Neighborhood is not null ||
+        patch.Avenue is not null ||
+        patch.Quarter is not null ||
+        patch.ApartmentNo is not null ||
+        patch.ApartmentUnitNo is not null ||
+        patch.PostalCode is not null ||
+        patch.District is not null ||
+        patch.City is not null ||
+        patch.Country is not null ||
+        patch.AddressCode is not null ||
+        patch.Latitude.HasValue ||
+        patch.Longitude.HasValue ||
+        patch.AuthorizedEmail is not null ||
+        patch.PhoneCountryCode is not null ||
+        patch.PhoneAreaCode is not null ||
+        patch.PhoneNo1 is not null ||
+        patch.PhoneNo2 is not null ||
+        patch.FaxNo is not null ||
+        patch.ExcludedFromInventory.HasValue ||
+        patch.DetailTrackingType.HasValue ||
+        patch.RegionCode is not null ||
+        patch.OutgoingEDespatchEnabled.HasValue ||
+        patch.IncomingEDespatchEnabled.HasValue ||
+        patch.IsPassive.HasValue ||
+        patch.IsHidden.HasValue ||
+        patch.IsLocked.HasValue;
+
+    private static bool HasCustomerCardPatch(CustomerCardPatchDto patch) =>
+        patch.Title1 is not null ||
+        patch.Title2 is not null ||
+        patch.MovementType.HasValue ||
+        patch.ConnectionType.HasValue ||
+        patch.PurchaseStockType.HasValue ||
+        patch.SalesStockType.HasValue ||
+        patch.AccountingCode is not null ||
+        patch.AccountingCode1 is not null ||
+        patch.AccountingCode2 is not null ||
+        patch.CurrencyType.HasValue ||
+        patch.CurrencyType1.HasValue ||
+        patch.CurrencyType2.HasValue ||
+        patch.TaxOffice is not null ||
+        patch.TaxOfficeNo is not null ||
+        patch.RegistryNo is not null ||
+        patch.TaxNo is not null ||
+        patch.SalesPriceListNo.HasValue ||
+        patch.PaymentType.HasValue ||
+        patch.PaymentDay.HasValue ||
+        patch.PaymentPlanNo.HasValue ||
+        patch.OptionDay.HasValue ||
+        patch.InvoiceAddressNo.HasValue ||
+        patch.ShippingAddressNo.HasValue ||
+        patch.ParentCustomerCode is not null ||
+        patch.SectorCode is not null ||
+        patch.RegionCode is not null ||
+        patch.GroupCode is not null ||
+        patch.RepresentativeCode is not null ||
+        patch.IsClosed.HasValue ||
+        patch.IsLocked.HasValue ||
+        patch.EInvoiceEnabled.HasValue ||
+        patch.DefaultEInvoiceType.HasValue ||
+        patch.EDespatchEnabled.HasValue ||
+        patch.DefaultEDespatchType.HasValue ||
+        patch.Website is not null ||
+        patch.Email is not null ||
+        patch.MobilePhone is not null ||
+        patch.DefaultInputWarehouseNo.HasValue ||
+        patch.DefaultOutputWarehouseNo.HasValue ||
+        patch.KepAddress is not null ||
+        patch.ReconciliationEmail is not null ||
+        patch.MersisNo is not null ||
+        patch.TaxOfficeCode is not null ||
+        patch.RetailCustomer.HasValue;
+
     private static STOKLAR? ResolveStock(IReadOnlyDictionary<string, STOKLAR> stocks, string? stockCode) =>
         !string.IsNullOrWhiteSpace(stockCode) && stocks.TryGetValue(stockCode, out var stock)
             ? stock
@@ -1761,6 +2293,26 @@ public sealed class MikroDocumentEditingService(
         if (value < 0d)
         {
             throw new ArgumentException("Value can not be negative.", parameterName);
+        }
+
+        return value;
+    }
+
+    private static double ValidateLatitude(double value, string parameterName)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value) || value is < -90d or > 90d)
+        {
+            throw new ArgumentException("Latitude must be between -90 and 90.", parameterName);
+        }
+
+        return value;
+    }
+
+    private static double ValidateLongitude(double value, string parameterName)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value) || value is < -180d or > 180d)
+        {
+            throw new ArgumentException("Longitude must be between -180 and 180.", parameterName);
         }
 
         return value;

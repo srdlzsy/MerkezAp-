@@ -85,6 +85,86 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
                 User.GetRequiredWarehouseNo()),
             cancellationToken));
 
+    [HttpGet("depolar")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<WarehouseCardListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<WarehouseCardListItemDto>>> SearchWarehouseCards(
+        [FromQuery] WarehouseCardSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.SearchWarehouseCardsAsync(
+            new WarehouseCardSearchRequest(
+                request.SearchText,
+                request.IncludePassive,
+                request.Take),
+            cancellationToken));
+
+    [HttpGet("depolar/{warehouseNo:int}")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(WarehouseCardDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<WarehouseCardDetailDto>> GetWarehouseCard(
+        [Range(1, int.MaxValue)] int warehouseNo,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetWarehouseCardAsync(warehouseNo, cancellationToken));
+
+    [HttpPut("depolar/{warehouseNo:int}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(WarehouseCardUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<WarehouseCardUpdateResponse>> UpdateWarehouseCard(
+        [Range(1, int.MaxValue)] int warehouseNo,
+        [FromBody] WarehouseCardPatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdateWarehouseCardAsync(
+            new UpdateWarehouseCardRequest(
+                warehouseNo,
+                request.ToApplicationRequest(),
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
+    [HttpGet("cariler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CustomerCardListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CustomerCardListItemDto>>> SearchCustomerCards(
+        [FromQuery] CustomerCardSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.SearchCustomerCardsAsync(
+            new CustomerCardSearchRequest(
+                request.SearchText,
+                request.IncludePassive,
+                request.Take),
+            cancellationToken));
+
+    [HttpGet("cariler/{customerCode}")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(CustomerCardDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CustomerCardDetailDto>> GetCustomerCard(
+        string customerCode,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetCustomerCardAsync(customerCode, cancellationToken));
+
+    [HttpPut("cariler/{customerCode}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(CustomerCardUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CustomerCardUpdateResponse>> UpdateCustomerCard(
+        string customerCode,
+        [FromBody] CustomerCardPatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdateCustomerCardAsync(
+            new UpdateCustomerCardRequest(
+                customerCode,
+                request.ToApplicationRequest(),
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
     [HttpGet("stok-kartlari/{stockCode}/satis-fiyatlari")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<StockSalesPriceDto>), StatusCodes.Status200OK)]
@@ -310,6 +390,353 @@ public sealed class StockCardWarehousePatchHttpRequest
             IsPassive,
             DiscountDisabled,
             ResetToGlobal);
+}
+
+public sealed class WarehouseCardSearchHttpRequest
+{
+    [StringLength(100)]
+    public string? SearchText { get; init; }
+
+    public bool IncludePassive { get; init; }
+
+    [Range(1, 200)]
+    public int Take { get; init; } = 50;
+}
+
+public sealed class WarehouseCardPatchHttpRequest
+{
+    [StringLength(50)]
+    public string? Name { get; init; }
+
+    [StringLength(25)]
+    public string? GroupCode { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? WarehouseType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? ShipmentAutoPriceType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? MovementType { get; init; }
+
+    [StringLength(40)]
+    public string? AccountingCode { get; init; }
+
+    [StringLength(25)]
+    public string? ResponsibilityCenter { get; init; }
+
+    [StringLength(25)]
+    public string? ProjectCode { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? ShipmentAppliedPriceNo { get; init; }
+
+    public DateTime? LockDate { get; init; }
+
+    [StringLength(50)]
+    public string? Street { get; init; }
+
+    [StringLength(50)]
+    public string? Neighborhood { get; init; }
+
+    [StringLength(50)]
+    public string? Avenue { get; init; }
+
+    [StringLength(25)]
+    public string? Quarter { get; init; }
+
+    [StringLength(10)]
+    public string? ApartmentNo { get; init; }
+
+    [StringLength(10)]
+    public string? ApartmentUnitNo { get; init; }
+
+    [StringLength(8)]
+    public string? PostalCode { get; init; }
+
+    [StringLength(50)]
+    public string? District { get; init; }
+
+    [StringLength(50)]
+    public string? City { get; init; }
+
+    [StringLength(50)]
+    public string? Country { get; init; }
+
+    [StringLength(10)]
+    public string? AddressCode { get; init; }
+
+    public double? Latitude { get; init; }
+
+    public double? Longitude { get; init; }
+
+    [StringLength(50)]
+    [EmailAddress]
+    public string? AuthorizedEmail { get; init; }
+
+    [StringLength(5)]
+    public string? PhoneCountryCode { get; init; }
+
+    [StringLength(5)]
+    public string? PhoneAreaCode { get; init; }
+
+    [StringLength(10)]
+    public string? PhoneNo1 { get; init; }
+
+    [StringLength(10)]
+    public string? PhoneNo2 { get; init; }
+
+    [StringLength(10)]
+    public string? FaxNo { get; init; }
+
+    public bool? ExcludedFromInventory { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? DetailTrackingType { get; init; }
+
+    [StringLength(25)]
+    public string? RegionCode { get; init; }
+
+    public bool? OutgoingEDespatchEnabled { get; init; }
+
+    public bool? IncomingEDespatchEnabled { get; init; }
+
+    public bool? IsPassive { get; init; }
+
+    public bool? IsHidden { get; init; }
+
+    public bool? IsLocked { get; init; }
+
+    public WarehouseCardPatchDto ToApplicationRequest() =>
+        new(
+            Name,
+            GroupCode,
+            WarehouseType,
+            ShipmentAutoPriceType,
+            MovementType,
+            AccountingCode,
+            ResponsibilityCenter,
+            ProjectCode,
+            ShipmentAppliedPriceNo,
+            LockDate,
+            Street,
+            Neighborhood,
+            Avenue,
+            Quarter,
+            ApartmentNo,
+            ApartmentUnitNo,
+            PostalCode,
+            District,
+            City,
+            Country,
+            AddressCode,
+            Latitude,
+            Longitude,
+            AuthorizedEmail,
+            PhoneCountryCode,
+            PhoneAreaCode,
+            PhoneNo1,
+            PhoneNo2,
+            FaxNo,
+            ExcludedFromInventory,
+            DetailTrackingType,
+            RegionCode,
+            OutgoingEDespatchEnabled,
+            IncomingEDespatchEnabled,
+            IsPassive,
+            IsHidden,
+            IsLocked);
+}
+
+public sealed class CustomerCardSearchHttpRequest
+{
+    [StringLength(100)]
+    public string? SearchText { get; init; }
+
+    public bool IncludePassive { get; init; }
+
+    [Range(1, 200)]
+    public int Take { get; init; } = 50;
+}
+
+public sealed class CustomerCardPatchHttpRequest
+{
+    [StringLength(127)]
+    public string? Title1 { get; init; }
+
+    [StringLength(127)]
+    public string? Title2 { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? MovementType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? ConnectionType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? PurchaseStockType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? SalesStockType { get; init; }
+
+    [StringLength(40)]
+    public string? AccountingCode { get; init; }
+
+    [StringLength(40)]
+    public string? AccountingCode1 { get; init; }
+
+    [StringLength(40)]
+    public string? AccountingCode2 { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? CurrencyType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? CurrencyType1 { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? CurrencyType2 { get; init; }
+
+    [StringLength(50)]
+    public string? TaxOffice { get; init; }
+
+    [StringLength(15)]
+    public string? TaxOfficeNo { get; init; }
+
+    [StringLength(15)]
+    public string? RegistryNo { get; init; }
+
+    [StringLength(10)]
+    public string? TaxNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? SalesPriceListNo { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? PaymentType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? PaymentDay { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? PaymentPlanNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? OptionDay { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? InvoiceAddressNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? ShippingAddressNo { get; init; }
+
+    [StringLength(25)]
+    public string? ParentCustomerCode { get; init; }
+
+    [StringLength(25)]
+    public string? SectorCode { get; init; }
+
+    [StringLength(25)]
+    public string? RegionCode { get; init; }
+
+    [StringLength(25)]
+    public string? GroupCode { get; init; }
+
+    [StringLength(25)]
+    public string? RepresentativeCode { get; init; }
+
+    public bool? IsClosed { get; init; }
+
+    public bool? IsLocked { get; init; }
+
+    public bool? EInvoiceEnabled { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? DefaultEInvoiceType { get; init; }
+
+    public bool? EDespatchEnabled { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? DefaultEDespatchType { get; init; }
+
+    [StringLength(30)]
+    public string? Website { get; init; }
+
+    [StringLength(127)]
+    [EmailAddress]
+    public string? Email { get; init; }
+
+    [StringLength(20)]
+    public string? MobilePhone { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? DefaultInputWarehouseNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? DefaultOutputWarehouseNo { get; init; }
+
+    [StringLength(80)]
+    public string? KepAddress { get; init; }
+
+    [StringLength(80)]
+    [EmailAddress]
+    public string? ReconciliationEmail { get; init; }
+
+    [StringLength(25)]
+    public string? MersisNo { get; init; }
+
+    [StringLength(10)]
+    public string? TaxOfficeCode { get; init; }
+
+    public bool? RetailCustomer { get; init; }
+
+    public CustomerCardPatchDto ToApplicationRequest() =>
+        new(
+            Title1,
+            Title2,
+            MovementType,
+            ConnectionType,
+            PurchaseStockType,
+            SalesStockType,
+            AccountingCode,
+            AccountingCode1,
+            AccountingCode2,
+            CurrencyType,
+            CurrencyType1,
+            CurrencyType2,
+            TaxOffice,
+            TaxOfficeNo,
+            RegistryNo,
+            TaxNo,
+            SalesPriceListNo,
+            PaymentType,
+            PaymentDay,
+            PaymentPlanNo,
+            OptionDay,
+            InvoiceAddressNo,
+            ShippingAddressNo,
+            ParentCustomerCode,
+            SectorCode,
+            RegionCode,
+            GroupCode,
+            RepresentativeCode,
+            IsClosed,
+            IsLocked,
+            EInvoiceEnabled,
+            DefaultEInvoiceType,
+            EDespatchEnabled,
+            DefaultEDespatchType,
+            Website,
+            Email,
+            MobilePhone,
+            DefaultInputWarehouseNo,
+            DefaultOutputWarehouseNo,
+            KepAddress,
+            ReconciliationEmail,
+            MersisNo,
+            TaxOfficeCode,
+            RetailCustomer);
 }
 
 public sealed class StockSalesPriceUpsertHttpRequest

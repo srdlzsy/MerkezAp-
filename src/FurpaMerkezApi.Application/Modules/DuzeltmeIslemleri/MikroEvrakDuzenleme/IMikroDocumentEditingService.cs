@@ -23,6 +23,30 @@ public interface IMikroDocumentEditingService
         UpdateStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<WarehouseCardListItemDto>> SearchWarehouseCardsAsync(
+        WarehouseCardSearchRequest request,
+        CancellationToken cancellationToken);
+
+    Task<WarehouseCardDetailDto> GetWarehouseCardAsync(
+        int warehouseNo,
+        CancellationToken cancellationToken);
+
+    Task<WarehouseCardUpdateResponse> UpdateWarehouseCardAsync(
+        UpdateWarehouseCardRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CustomerCardListItemDto>> SearchCustomerCardsAsync(
+        CustomerCardSearchRequest request,
+        CancellationToken cancellationToken);
+
+    Task<CustomerCardDetailDto> GetCustomerCardAsync(
+        string customerCode,
+        CancellationToken cancellationToken);
+
+    Task<CustomerCardUpdateResponse> UpdateCustomerCardAsync(
+        UpdateCustomerCardRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<StockSalesPriceDto>> GetStockSalesPricesAsync(
         string stockCode,
         int? warehouseNo,
