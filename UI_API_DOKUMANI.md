@@ -3954,6 +3954,271 @@ Response:
 }
 ```
 
+### Depo Karti Arama
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar?searchText=kestel&take=20`
+
+Query:
+
+- `searchText`: opsiyonel; depo no, depo adi, grup kodu, il veya ilce icinde arar
+- `includePassive`: varsayilan `false`; `true` olursa pasif/gizli depolar da gelir
+- `take`: varsayilan `50`, maksimum `200`
+
+Response item:
+
+```json
+{
+  "warehouseNo": 110,
+  "name": "KESTEL 1",
+  "groupCode": "MAGAZA",
+  "warehouseType": 0,
+  "city": "BURSA",
+  "district": "KESTEL",
+  "isPassive": false,
+  "isHidden": false,
+  "lastUpdatedAt": "2026-06-26T10:20:00"
+}
+```
+
+### Depo Karti Detay
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/110`
+
+Response modeli `WarehouseCardDetailDto`:
+
+```json
+{
+  "warehouseGuid": "9f3db1de-50ef-48a0-a617-7cf5634c4f3a",
+  "warehouseNo": 110,
+  "name": "KESTEL 1",
+  "groupCode": "MAGAZA",
+  "warehouseType": 0,
+  "shipmentAutoPriceType": 0,
+  "movementType": 0,
+  "accountingCode": "",
+  "responsibilityCenter": "SRM-110",
+  "projectCode": "",
+  "shipmentAppliedPriceNo": 1,
+  "lockDate": null,
+  "street": "ORNEK CADDE",
+  "neighborhood": "",
+  "avenue": "",
+  "quarter": "",
+  "apartmentNo": "",
+  "apartmentUnitNo": "",
+  "postalCode": "",
+  "district": "KESTEL",
+  "city": "BURSA",
+  "country": "TURKIYE",
+  "addressCode": "",
+  "latitude": 40.195,
+  "longitude": 29.211,
+  "authorizedEmail": "depo110@furpa.com.tr",
+  "phoneCountryCode": "90",
+  "phoneAreaCode": "224",
+  "phoneNo1": "0000000",
+  "phoneNo2": "",
+  "faxNo": "",
+  "excludedFromInventory": false,
+  "detailTrackingType": 0,
+  "regionCode": "BURSA",
+  "outgoingEDespatchEnabled": true,
+  "incomingEDespatchEnabled": true,
+  "isPassive": false,
+  "isHidden": false,
+  "isLocked": false,
+  "createdAt": "2026-01-01T09:00:00",
+  "lastUpdatedAt": "2026-06-26T10:20:00"
+}
+```
+
+### Depo Karti Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/110`
+
+Body'de sadece degistirilecek alanlar gonderilmelidir:
+
+```json
+{
+  "name": "KESTEL 1",
+  "groupCode": "MAGAZA",
+  "responsibilityCenter": "SRM-110",
+  "projectCode": "",
+  "city": "BURSA",
+  "district": "KESTEL",
+  "phoneCountryCode": "90",
+  "phoneAreaCode": "224",
+  "phoneNo1": "0000000",
+  "authorizedEmail": "depo110@furpa.com.tr",
+  "outgoingEDespatchEnabled": true,
+  "incomingEDespatchEnabled": true
+}
+```
+
+Guncellenebilir alanlar:
+
+- Temel: `name`, `groupCode`, `warehouseType`, `movementType`, `shipmentAutoPriceType`, `shipmentAppliedPriceNo`
+- Muhasebe/organizasyon: `accountingCode`, `responsibilityCenter`, `projectCode`, `regionCode`
+- Adres: `street`, `neighborhood`, `avenue`, `quarter`, `apartmentNo`, `apartmentUnitNo`, `postalCode`, `district`, `city`, `country`, `addressCode`
+- Konum/iletisim: `latitude`, `longitude`, `authorizedEmail`, `phoneCountryCode`, `phoneAreaCode`, `phoneNo1`, `phoneNo2`, `faxNo`
+- Durum: `excludedFromInventory`, `detailTrackingType`, `outgoingEDespatchEnabled`, `incomingEDespatchEnabled`, `isPassive`, `isHidden`, `isLocked`, `lockDate`
+
+Response:
+
+```json
+{
+  "summary": {
+    "target": "depolar/110",
+    "updatedRowCount": 1,
+    "updatedAt": "2026-06-26T10:30:00",
+    "updateUser": 110
+  },
+  "warehouseCard": {
+    "warehouseNo": 110,
+    "name": "KESTEL 1",
+    "city": "BURSA",
+    "district": "KESTEL"
+  }
+}
+```
+
+### Cari Karti Arama
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler?searchText=120.01&take=20`
+
+Query:
+
+- `searchText`: opsiyonel; cari kod, unvan1, unvan2 veya vergi kimlik no icinde arar
+- `includePassive`: varsayilan `false`; `true` olursa iptal/gizli cariler de gelir
+- `take`: varsayilan `50`, maksimum `200`
+
+Response item:
+
+```json
+{
+  "customerCode": "120.01.03106",
+  "title1": "ORNEK CARI",
+  "title2": "",
+  "taxOffice": "NILUFER",
+  "taxNo": "1234567890",
+  "groupCode": "TEDARIKCI",
+  "regionCode": "BURSA",
+  "representativeCode": "",
+  "isClosed": false,
+  "isLocked": false,
+  "lastUpdatedAt": "2026-06-26T10:20:00"
+}
+```
+
+### Cari Karti Detay
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/120.01.03106`
+
+Response modeli `CustomerCardDetailDto`:
+
+```json
+{
+  "customerGuid": "8dc423d4-4015-4afb-aee5-909e457e2f81",
+  "customerCode": "120.01.03106",
+  "title1": "ORNEK CARI",
+  "title2": "",
+  "movementType": 0,
+  "connectionType": 0,
+  "purchaseStockType": 0,
+  "salesStockType": 0,
+  "accountingCode": "",
+  "accountingCode1": "",
+  "accountingCode2": "",
+  "currencyType": 0,
+  "currencyType1": 0,
+  "currencyType2": 0,
+  "taxOffice": "NILUFER",
+  "taxOfficeNo": "",
+  "registryNo": "",
+  "taxNo": "1234567890",
+  "salesPriceListNo": 1,
+  "paymentType": 0,
+  "paymentDay": 0,
+  "paymentPlanNo": 0,
+  "optionDay": 0,
+  "invoiceAddressNo": 1,
+  "shippingAddressNo": 1,
+  "parentCustomerCode": "",
+  "sectorCode": "",
+  "regionCode": "BURSA",
+  "groupCode": "TEDARIKCI",
+  "representativeCode": "",
+  "isClosed": false,
+  "isLocked": false,
+  "eInvoiceEnabled": true,
+  "defaultEInvoiceType": 0,
+  "eDespatchEnabled": true,
+  "defaultEDespatchType": 0,
+  "website": "",
+  "email": "cari@example.com",
+  "mobilePhone": "05320000000",
+  "defaultInputWarehouseNo": 110,
+  "defaultOutputWarehouseNo": 110,
+  "kepAddress": "",
+  "reconciliationEmail": "",
+  "mersisNo": "",
+  "taxOfficeCode": "",
+  "retailCustomer": false,
+  "createdAt": "2026-01-01T09:00:00",
+  "lastUpdatedAt": "2026-06-26T10:20:00"
+}
+```
+
+### Cari Karti Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/120.01.03106`
+
+Body'de sadece degistirilecek alanlar gonderilmelidir:
+
+```json
+{
+  "title1": "ORNEK CARI",
+  "taxOffice": "NILUFER",
+  "taxNo": "1234567890",
+  "groupCode": "TEDARIKCI",
+  "regionCode": "BURSA",
+  "email": "cari@example.com",
+  "mobilePhone": "05320000000",
+  "defaultInputWarehouseNo": 110,
+  "defaultOutputWarehouseNo": 110,
+  "eInvoiceEnabled": true,
+  "eDespatchEnabled": true
+}
+```
+
+Guncellenebilir alanlar:
+
+- Temel: `title1`, `title2`, `movementType`, `connectionType`, `purchaseStockType`, `salesStockType`
+- Muhasebe/doviz: `accountingCode`, `accountingCode1`, `accountingCode2`, `currencyType`, `currencyType1`, `currencyType2`
+- Vergi: `taxOffice`, `taxOfficeNo`, `registryNo`, `taxNo`, `taxOfficeCode`
+- Odeme/adres: `salesPriceListNo`, `paymentType`, `paymentDay`, `paymentPlanNo`, `optionDay`, `invoiceAddressNo`, `shippingAddressNo`
+- Organizasyon: `parentCustomerCode`, `sectorCode`, `regionCode`, `groupCode`, `representativeCode`
+- E-belge/iletisim: `eInvoiceEnabled`, `defaultEInvoiceType`, `eDespatchEnabled`, `defaultEDespatchType`, `website`, `email`, `mobilePhone`, `kepAddress`, `reconciliationEmail`
+- Diger: `defaultInputWarehouseNo`, `defaultOutputWarehouseNo`, `mersisNo`, `retailCustomer`, `isClosed`, `isLocked`
+
+Response:
+
+```json
+{
+  "summary": {
+    "target": "cariler/120.01.03106",
+    "updatedRowCount": 1,
+    "updatedAt": "2026-06-26T10:30:00",
+    "updateUser": 110
+  },
+  "customerCard": {
+    "customerCode": "120.01.03106",
+    "title1": "ORNEK CARI",
+    "taxNo": "1234567890"
+  }
+}
+```
+
 ### Stok Satis Fiyatlarini Getir
 
 Stok kartinin tum aktif depo fiyatlari:
@@ -4300,12 +4565,13 @@ Guncellenebilir satir alanlari:
 
 UI is akisi onerisi:
 
-1. Kullanici evrak tipini secer: Stok Hareketi, Cari Hareketi veya Stok Karti.
-2. Stok/cari hareketinde seri-sira girilir; evrak tipi/cins/iade alanlari varsa query'e eklenir.
-3. Detay response'u geldikten sonra UI `movementGuid` alanlarini satir gridinde gizli anahtar olarak saklar.
-4. Kullanici sadece degisen alanlari gonderir; degismeyen alanlar `null` veya body disinda birakilir.
-5. `409 Conflict` gelirse filtreleri daraltma mesaji gosterilir.
-6. Basarili `PUT` response'u guncel belge/kart halini dondurdugu icin UI gridini bu response ile yeniler.
+1. Kullanici duzeltme tipini secer: Stok Karti, Depo Karti, Cari Karti, Stok Hareketi veya Cari Hareketi.
+2. Kart duzeltmelerinde once arama endpoint'iyle kayit secilir, sonra detay endpoint'iyle form doldurulur.
+3. Stok/cari hareketinde seri-sira girilir; evrak tipi/cins/iade alanlari varsa query'e eklenir.
+4. Hareket detay response'u geldikten sonra UI `movementGuid` alanlarini satir gridinde gizli anahtar olarak saklar.
+5. Kullanici sadece degisen alanlari gonderir; degismeyen alanlar `null` veya body disinda birakilir.
+6. `409 Conflict` gelirse filtreleri daraltma mesaji gosterilir.
+7. Basarili `PUT` response'u guncel belge/kart halini dondurdugu icin UI gridini bu response ile yeniler.
 
 ## Stok Islemleri
 
