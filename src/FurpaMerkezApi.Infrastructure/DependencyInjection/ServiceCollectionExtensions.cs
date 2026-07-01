@@ -184,6 +184,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
 
 namespace FurpaMerkezApi.Infrastructure.DependencyInjection;
 
@@ -389,6 +393,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CompanyOrderListQueryExecutor>();
         services.AddScoped<WarehouseOrderListQueryExecutor>();
         services.AddScoped<WarehouseOrderDetailQueryExecutor>();
+        services.AddScoped<IListSuggestedWarehouseOrdersUseCase, ListSuggestedWarehouseOrdersUseCase>();
+        services.AddScoped<IListSuggestedCompanyOrdersUseCase, ListSuggestedCompanyOrdersUseCase>();
         services.AddScoped<CompanyMovementDetailQueryExecutor>();
         services.AddScoped<CompanyMovementListQueryExecutor>();
         services.AddScoped<CompanyMovementWriteService>();

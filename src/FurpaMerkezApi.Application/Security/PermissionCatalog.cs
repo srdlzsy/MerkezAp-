@@ -21,6 +21,12 @@ public static class PermissionCatalog
         new("list", "Listele")
     ];
 
+    private static readonly PermissionActionDefinition[] ListCreateActions =
+    [
+        new("list", "Listele"),
+        new("create", "Ekle")
+    ];
+
     private static readonly PermissionActionDefinition[] ReadCreateActions =
     [
         new("list", "Listele"),
@@ -91,6 +97,8 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-firma-siparisleri", "AlinanFirmaSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-firma-siparisleri", "VerilenFirmaSiparisleri"),
+        ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "onerilen-depo-siparisleri", "OnerilenDepoSiparisleri", ListCreateActions),
+        ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "onerilen-firma-siparisleri", "OnerilenFirmaSiparisleri", ListCreateActions),
 
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "giden-depolar-arasi-sevkler", "GidenDepolarArasiSevkler"),
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "gelen-depolar-arasi-sevkler", "GelenDepolarArasiSevkler"),

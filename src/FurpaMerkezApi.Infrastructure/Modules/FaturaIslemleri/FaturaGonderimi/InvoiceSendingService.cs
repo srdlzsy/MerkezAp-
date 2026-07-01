@@ -50,8 +50,8 @@ public sealed class InvoiceSendingService(
             request.EndDate.Date,
             null,
             null,
+            request.SentState,
             cancellationToken);
-        items = ApplySentState(items, request.SentState);
 
         var mappedItems = items
             .OrderByDescending(item => item.DocumentDate)
@@ -379,10 +379,33 @@ public sealed class InvoiceSendingService(
         DateTime? endDate,
         string? documentSerie,
         int? documentOrderNo,
+        int sentState,
         CancellationToken cancellationToken)
     {
         const string sql = """
-            WITH Faturalar AS (
+            WITH VergiOranlari AS (
+                SELECT
+                    rateList.DepartmentNo,
+                    MAX(rateList.Rate) AS Rate
+                FROM dbo.fn_hs_vergi_oran_listesi() rateList
+                GROUP BY rateList.DepartmentNo
+            ),
+            BaseFaturalar AS (
+                SELECT
+                    ch.*
+                FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                WHERE
+                    (@startDate IS NULL OR ch.cha_belge_tarih >= @startDate)
+                    AND (@endDateExclusive IS NULL OR ch.cha_belge_tarih < @endDateExclusive)
+                    AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
+                    AND (@documentOrderNo IS NULL OR ch.cha_evrakno_sira = @documentOrderNo)
+                    AND (@sentState = -1
+                        OR (@sentState = 0 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NULL)
+                        OR (@sentState = 1 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NOT NULL))
+                    AND ch.cha_tip = 0
+                    AND ISNULL(ch.cha_iptal, 0) = 0
+            ),
+            Faturalar AS (
                 SELECT
                     ch.cha_Guid AS FatGuid,
                     ch.cha_evrakno_seri AS DocumentSerie,
@@ -427,16 +450,11 @@ public sealed class InvoiceSendingService(
                         N'') AS IstisnaKodu,
                     ISNULL(ek.cha_HalRusum, 0) AS Rusum,
                     ISNULL(ek.cha_ozel_matrah_kodu, N'') AS OzelMatrahKodu,
-                    ISNULL((SELECT TOP (1) sth_belge_no FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid), N'') AS IrsaliyeNo,
-                    (SELECT TOP (1) sth_belge_tarih FROM STOK_HAREKETLERI WITH (NOLOCK) WHERE sth_fat_uid = ch.cha_Guid) AS IrsaliyeTarihi,
+                    ISNULL(sevkiyat.IrsaliyeNo, N'') AS IrsaliyeNo,
+                    sevkiyat.IrsaliyeTarihi,
                     ISNULL(iadeRef.IadeFaturaNo, N'') AS IadeFaturaNo,
                     iadeRef.IadeFaturaTarihi,
-                    ISNULL((
-                        SELECT TOP (1) dep.dep_adi
-                        FROM STOK_HAREKETLERI sh WITH (NOLOCK)
-                        INNER JOIN DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
-                        WHERE sh.sth_fat_uid = ch.cha_Guid
-                    ), N'') AS Depo,
+                    ISNULL(sevkiyat.Depo, N'') AS Depo,
                     CASE
                         WHEN NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_kasa_hizkod, N''))), N'') IS NULL THEN N''
                         ELSE CONCAT(
@@ -452,12 +470,13 @@ public sealed class InvoiceSendingService(
                         WHEN taxRate.Rate IS NULL THEN N''
                         ELSE CONCAT(N'%', CONVERT(nvarchar(32), CONVERT(decimal(9, 2), taxRate.Rate)))
                     END AS TaxRateSummary
-                FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                FROM BaseFaturalar ch
                 INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
                 INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
                 LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK) ON ch.cha_kasa_hizkod = hiz.hiz_kod
                 LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK) ON ch.cha_kasa_hizkod = dm.dem_kod
+                LEFT JOIN VergiOranlari taxRate ON taxRate.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
                 CROSS APPLY (
                     SELECT TOP (1)
                         fatSer.efatura
@@ -487,10 +506,13 @@ public sealed class InvoiceSendingService(
                 ) stokIstisna
                 OUTER APPLY (
                     SELECT TOP (1)
-                        rateList.Rate
-                    FROM dbo.fn_hs_vergi_oran_listesi() rateList
-                    WHERE rateList.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
-                ) taxRate
+                        sh.sth_belge_no AS IrsaliyeNo,
+                        sh.sth_belge_tarih AS IrsaliyeTarihi,
+                        dep.dep_adi AS Depo
+                    FROM STOK_HAREKETLERI sh WITH (NOLOCK)
+                    LEFT JOIN DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
+                    WHERE sh.sth_fat_uid = ch.cha_Guid
+                ) sevkiyat
                 OUTER APPLY (
                     SELECT TOP (1)
                         LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))) AS IadeFaturaNo,
@@ -511,15 +533,9 @@ public sealed class InvoiceSendingService(
                         ebh.ebh_create_date DESC
                 ) iadeRef
                 WHERE
-                    (@startDate IS NULL OR CAST(ch.cha_belge_tarih AS date) >= CAST(@startDate AS date))
-                    AND (@endDate IS NULL OR CAST(ch.cha_belge_tarih AS date) <= CAST(@endDate AS date))
-                    AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
-                    AND (@documentOrderNo IS NULL OR ch.cha_evrakno_sira = @documentOrderNo)
-                    AND ch.cha_tip = 0
-                    AND adr.adr_adres_no = 1
+                    adr.adr_adres_no = 1
                     AND fatSer.efatura = @efatura
                     AND c.cari_efatura_fl = @efatura
-                    AND ISNULL(ch.cha_iptal, 0) = 0
             )
             SELECT
                 MIN(FatGuid) AS FatGuid,
@@ -585,33 +601,23 @@ public sealed class InvoiceSendingService(
             """;
 
         var efatura = scenario == InvoiceSendingScenario.EFatura;
+        var endDateExclusive = endDate?.Date.AddDays(1);
         var items = await ExecuteReaderAsync(
             mikroDbContext,
             sql,
             command =>
             {
                 AddParameter(command, "@startDate", startDate);
-                AddParameter(command, "@endDate", endDate);
+                AddParameter(command, "@endDateExclusive", endDateExclusive);
                 AddParameter(command, "@documentSerie", string.IsNullOrWhiteSpace(documentSerie) ? null : documentSerie.Trim());
                 AddParameter(command, "@documentOrderNo", documentOrderNo);
+                AddParameter(command, "@sentState", sentState);
                 AddParameter(command, "@efatura", efatura);
             },
             reader => MapPendingInvoice(reader, scenario),
             cancellationToken);
 
         return items;
-    }
-
-    private static IReadOnlyCollection<PendingInvoiceRecord> ApplySentState(
-        IReadOnlyCollection<PendingInvoiceRecord> items,
-        int sentState)
-    {
-        return sentState switch
-        {
-            0 => items.Where(item => !item.IsSent).ToArray(),
-            1 => items.Where(item => item.IsSent).ToArray(),
-            _ => items.ToArray()
-        };
     }
 
     private async Task<PendingInvoiceRecord> LoadSingleInvoiceAsync(
@@ -635,6 +641,7 @@ public sealed class InvoiceSendingService(
                 null,
                 lookupSerie,
                 documentOrderNo,
+                -1,
                 cancellationToken);
 
             var invoice = items.FirstOrDefault();

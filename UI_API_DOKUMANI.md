@@ -2118,6 +2118,100 @@ Response:
 }
 ```
 
+### Onerilen Depo Siparisleri Liste
+
+`GET /api/siparis-islemleri/onerilen-depo-siparisleri?SourceWarehouseNo=50`
+
+Yetki:
+
+- `siparis-islemleri.onerilen-depo-siparisleri.list`
+
+Query:
+
+```text
+SourceWarehouseNo          zorunlu, urunu gonderecek kaynak depo
+TargetWarehouseNo          opsiyonel, verilmezse JWT icindeki depo kullanilir
+LookbackDays               opsiyonel, default 43
+FallbackRecommendedDay     opsiyonel, default 7
+```
+
+Not:
+
+- Bu endpoint read-only calisir, Mikro'ya veri yazmaz.
+- Kaynak depo `DEPOLAR.dep_barkod_yazici_yolu` alanindaki model kodlariyla urun ailesini belirler.
+- Acik gelen depo siparisleri ihtiyactan dusulur.
+- Kaynak depoda elde olmayan miktar onerilmez.
+- Kaynak depo model kodlari bos ise backend `400 ProblemDetails` dondurebilir.
+
+Liste satiri modeli:
+
+```json
+{
+  "stockCode": "010001",
+  "stockName": "Stok Adi",
+  "modelCode": "01",
+  "barcode": "8690000000001",
+  "targetOnHand": 2,
+  "sourceOnHand": 120,
+  "salesQuantity": 86,
+  "openIncomingOrderQuantity": 3,
+  "packageFactor": 1,
+  "minDay": 0,
+  "recommendedDay": 7,
+  "maxDay": 0,
+  "recommendedStockQuantity": 14,
+  "needQuantity": 9,
+  "suggestedOrderQuantity": 9
+}
+```
+
+UI akisi:
+
+- Tek sayfada kullanici once kaynak depo secer.
+- UI listeyi getirir ve stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis, ihtiyac ve onerilen siparis miktarini gosterir.
+- Kullanici satirlari secer, `quantity` alanini varsayilan olarak `suggestedOrderQuantity` ile doldurur.
+- Kullanici miktari degistirebilir; `recommendedQuantity` alanina orijinal `suggestedOrderQuantity` yazilmasi onerilir.
+
+### Onerilen Depo Siparislerini Siparise Cevir
+
+`POST /api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order`
+
+Yetki:
+
+- `siparis-islemleri.onerilen-depo-siparisleri.create`
+
+Not:
+
+- Bu endpoint mevcut `Verilen Depo Siparisi Olustur` altyapisini kullanir.
+- `inWarehouseNo` JWT icindeki kullanici deposundan gelir.
+- `sourceWarehouseNo`, olusacak depo siparisindeki `outWarehouseNo` olarak kullanilir.
+
+Request:
+
+```json
+{
+  "sourceWarehouseNo": 50,
+  "orderDate": "2026-07-01",
+  "deliveryDate": "2026-07-01",
+  "description": "Onerilen siparisten olustu",
+  "lines": [
+    {
+      "stockCode": "010001",
+      "quantity": 12,
+      "recommendedQuantity": 12,
+      "unitPrice": 0,
+      "unitPointer": 1,
+      "description": "",
+      "packageCode": "",
+      "projectCode": "",
+      "responsibilityCenter": ""
+    }
+  ]
+}
+```
+
+Response modeli `CreateIssuedWarehouseOrderResponse` ile aynidir.
+
 ### Alinan Depo Siparisleri Liste
 
 `GET /api/siparis-islemleri/alinan-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10`
@@ -2267,6 +2361,109 @@ Response:
   "writeConnectionName": "testMikroConnection"
 }
 ```
+
+### Onerilen Firma Siparisleri Liste
+
+`GET /api/siparis-islemleri/onerilen-firma-siparisleri?SupplierCode=32000999`
+
+Yetki:
+
+- `siparis-islemleri.onerilen-firma-siparisleri.list`
+
+Query:
+
+```text
+SupplierCode               zorunlu, secili firma/tedarikci kodu
+WarehouseNo                opsiyonel, verilmezse JWT icindeki depo kullanilir
+LookbackDays               opsiyonel, default 43
+FallbackRecommendedDay     opsiyonel, default 7
+```
+
+Not:
+
+- Bu endpoint read-only calisir, Mikro'ya veri yazmaz.
+- Firma siparisleri firma bazli oldugu icin `SupplierCode` zorunludur; firma secilmeden liste getirilmez.
+- Depo bazli tedarikci, stok karti tedarikcisi ve satinalma sartlari eslesmeleri secili firmaya gore dikkate alinir.
+- Acik verilen firma siparisleri ihtiyactan dusulur.
+- Satinalma sartinda asgari miktar varsa onerilen miktar asgari miktara tamamlanabilir.
+
+Liste satiri modeli:
+
+```json
+{
+  "supplierCode": "32000999",
+  "supplierName": "TEDARIKCI A.S.",
+  "stockCode": "010001",
+  "stockName": "Stok Adi",
+  "modelCode": "01",
+  "barcode": "8690000000001",
+  "targetOnHand": 4,
+  "salesQuantity": 86,
+  "openCompanyOrderQuantity": 2,
+  "packageFactor": 1,
+  "minDay": 0,
+  "recommendedDay": 7,
+  "maxDay": 0,
+  "recommendedStockQuantity": 14,
+  "needQuantity": 8,
+  "suggestedOrderQuantity": 24,
+  "purchasePrice": 15.75,
+  "minimumPurchaseQuantity": 24,
+  "deliveryDay": 2
+}
+```
+
+UI akisi:
+
+- Tek sayfada kullanici firma/tedarikci secer.
+- UI listeyi getirir ve firma, stok kodu, stok adi, barkod, mevcut stok, son satis, acik firma siparisi, ihtiyac, asgari alim, alis fiyati ve onerilen siparis miktarini gosterir.
+- Kullanici satirlari secer, `quantity` alanini varsayilan olarak `suggestedOrderQuantity` ile doldurur.
+- Kullanici miktari degistirebilir; `recommendedQuantity` alanina orijinal `suggestedOrderQuantity` yazilmasi onerilir.
+
+### Onerilen Firma Siparislerini Siparise Cevir
+
+`POST /api/siparis-islemleri/onerilen-firma-siparisleri/convert-to-order`
+
+Yetki:
+
+- `siparis-islemleri.onerilen-firma-siparisleri.create`
+
+Not:
+
+- Bu endpoint mevcut `Verilen Firma Siparisi Olustur` altyapisini kullanir.
+- `warehouseNo` JWT icindeki kullanici deposundan gelir.
+- `supplierCode`, olusacak firma siparisindeki `customerCode` olarak kullanilir.
+
+Request:
+
+```json
+{
+  "supplierCode": "32000999",
+  "orderDate": "2026-07-01",
+  "deliveryDate": "2026-07-02",
+  "description1": "Onerilen siparisten olustu",
+  "description2": "",
+  "deliverer": "",
+  "receiver": "",
+  "lines": [
+    {
+      "stockCode": "010001",
+      "quantity": 24,
+      "recommendedQuantity": 24,
+      "unitPrice": 15.75,
+      "unitPointer": 1,
+      "description1": "",
+      "description2": "",
+      "packageCode": "",
+      "projectCode": "",
+      "customerResponsibilityCenter": "",
+      "productResponsibilityCenter": ""
+    }
+  ]
+}
+```
+
+Response modeli `CreateIssuedCompanyOrderResponse` ile aynidir.
 
 ### Alinan Firma Siparisleri Liste
 
@@ -7058,6 +7255,8 @@ Bu endpoint iskelet olarak acildi. Is kurali ve Mikro veritabani entegrasyonu so
 - `POST /api/siparis-islemleri/alinan-depo-siparisleri`
 - `PUT /api/siparis-islemleri/alinan-depo-siparisleri/{id}`
 - `POST /api/siparis-islemleri/alinan-firma-siparisleri`
+- `POST /api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order`
+- `POST /api/siparis-islemleri/onerilen-firma-siparisleri/convert-to-order`
 - `PUT /api/siparis-islemleri/alinan-firma-siparisleri/{id}`
 - `PUT /api/siparis-islemleri/verilen-depo-siparisleri/{id}`
 - `PUT /api/siparis-islemleri/verilen-firma-siparisleri/{id}`
@@ -7156,6 +7355,20 @@ Siparis Islemleri / Verilen Firma Siparisleri
   -> GET /api/siparis-islemleri/verilen-firma-siparisleri
   -> kullanici satira tiklar
   -> GET /api/siparis-islemleri/verilen-firma-siparisleri/{seri}/{sira}
+
+Siparis Islemleri / Onerilen Depo Siparisleri
+  -> kullanici kaynak depo secer
+  -> GET /api/siparis-islemleri/onerilen-depo-siparisleri?SourceWarehouseNo=...
+  -> liste satirlarini SuggestedWarehouseOrderListItemDto ile goster
+  -> kullanici satirlari secer ve miktarlari duzenler
+  -> POST /api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order
+
+Siparis Islemleri / Onerilen Firma Siparisleri
+  -> kullanici firma/tedarikci secer
+  -> GET /api/siparis-islemleri/onerilen-firma-siparisleri?SupplierCode=...
+  -> liste satirlarini SuggestedCompanyOrderListItemDto ile goster
+  -> kullanici satirlari secer ve miktarlari duzenler
+  -> POST /api/siparis-islemleri/onerilen-firma-siparisleri/convert-to-order
 
 Siparis Islemleri / Alinan Firma Siparisleri
   -> liste filtreleri: tarih araligi, opsiyonel depo
@@ -11101,6 +11314,44 @@ public sealed record CompanyOrderDetailDto(
     CompanyOrderHeaderDto Header,
     IReadOnlyCollection<CompanyOrderLineItemDto> Items);
 
+public sealed record SuggestedWarehouseOrderListItemDto(
+    string StockCode,
+    string StockName,
+    string ModelCode,
+    string Barcode,
+    double TargetOnHand,
+    double SourceOnHand,
+    double SalesQuantity,
+    double OpenIncomingOrderQuantity,
+    double PackageFactor,
+    double MinDay,
+    double RecommendedDay,
+    double MaxDay,
+    double RecommendedStockQuantity,
+    double NeedQuantity,
+    double SuggestedOrderQuantity);
+
+public sealed record SuggestedCompanyOrderListItemDto(
+    string SupplierCode,
+    string SupplierName,
+    string StockCode,
+    string StockName,
+    string ModelCode,
+    string Barcode,
+    double TargetOnHand,
+    double SalesQuantity,
+    double OpenCompanyOrderQuantity,
+    double PackageFactor,
+    double MinDay,
+    double RecommendedDay,
+    double MaxDay,
+    double RecommendedStockQuantity,
+    double NeedQuantity,
+    double SuggestedOrderQuantity,
+    double PurchasePrice,
+    double MinimumPurchaseQuantity,
+    int? DeliveryDay);
+
 public sealed record CreateIssuedWarehouseOrderResponse(
     string DocumentSerie,
     int DocumentOrderNo,
@@ -12838,6 +13089,12 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CreateIssuedCompanyOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description1`, `Description2`, `PackageCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
 - `CreateIssuedWarehouseOrderHttpRequest`: `OutWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
 - `CreateIssuedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
+- `SuggestedWarehouseOrderListHttpRequest`: `TargetWarehouseNo`, `SourceWarehouseNo`, `LookbackDays`, `FallbackRecommendedDay`
+- `ConvertSuggestedWarehouseOrderHttpRequest`: `SourceWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
+- `ConvertSuggestedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
+- `SuggestedCompanyOrderListHttpRequest`: `WarehouseNo`, `SupplierCode`, `LookbackDays`, `FallbackRecommendedDay`
+- `ConvertSuggestedCompanyOrderHttpRequest`: `SupplierCode`, `OrderDate`, `DeliveryDate`, `Description1`, `Description2`, `Deliverer`, `Receiver`, `Lines`
+- `ConvertSuggestedCompanyOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description1`, `Description2`, `PackageCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
 
 ### Sevk, Iade ve Mal Kabul Request Modelleri
 
