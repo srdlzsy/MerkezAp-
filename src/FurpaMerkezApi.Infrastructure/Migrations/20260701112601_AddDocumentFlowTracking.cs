@@ -63,23 +63,72 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.InsertData(
-                table: "app_permissions",
-                columns: new[] { "id", "code", "created_at_utc", "description", "name", "updated_at_utc" },
-                values: new object[,]
-                {
-                    { new Guid("3934735c-d7c4-1d56-b46d-13b97d62975e"), "operasyon-islemleri.belge-akis-takibi.list", new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc), "OperasyonIslemleri > BelgeAkisTakibi > Listele yetkisi.", "BelgeAkisTakibi Listele", null },
-                    { new Guid("446beaaf-9a9f-b474-8e2d-741f8fddf46d"), "operasyon-islemleri.belge-akis-takibi.detail", new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc), "OperasyonIslemleri > BelgeAkisTakibi > Detay yetkisi.", "BelgeAkisTakibi Detay", null }
-                });
+            migrationBuilder.Sql(
+                """
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM [app_permissions]
+                    WHERE [id] = '3934735c-d7c4-1d56-b46d-13b97d62975e'
+                       OR [code] = N'operasyon-islemleri.belge-akis-takibi.list'
+                )
+                BEGIN
+                    INSERT INTO [app_permissions] ([id], [code], [created_at_utc], [description], [name], [updated_at_utc])
+                    VALUES ('3934735c-d7c4-1d56-b46d-13b97d62975e', N'operasyon-islemleri.belge-akis-takibi.list', '2026-04-14T00:00:00.0000000Z', N'OperasyonIslemleri > BelgeAkisTakibi > Listele yetkisi.', N'BelgeAkisTakibi Listele', NULL);
+                END
 
-            migrationBuilder.InsertData(
-                table: "app_role_permissions",
-                columns: new[] { "permission_id", "role_id", "assigned_at_utc" },
-                values: new object[,]
-                {
-                    { new Guid("3934735c-d7c4-1d56-b46d-13b97d62975e"), new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"), new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc) },
-                    { new Guid("446beaaf-9a9f-b474-8e2d-741f8fddf46d"), new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"), new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc) }
-                });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM [app_permissions]
+                    WHERE [id] = '446beaaf-9a9f-b474-8e2d-741f8fddf46d'
+                       OR [code] = N'operasyon-islemleri.belge-akis-takibi.detail'
+                )
+                BEGIN
+                    INSERT INTO [app_permissions] ([id], [code], [created_at_utc], [description], [name], [updated_at_utc])
+                    VALUES ('446beaaf-9a9f-b474-8e2d-741f8fddf46d', N'operasyon-islemleri.belge-akis-takibi.detail', '2026-04-14T00:00:00.0000000Z', N'OperasyonIslemleri > BelgeAkisTakibi > Detay yetkisi.', N'BelgeAkisTakibi Detay', NULL);
+                END
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM [app_permissions]
+                    WHERE [id] = '3934735c-d7c4-1d56-b46d-13b97d62975e'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM [app_roles]
+                    WHERE [id] = '2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM [app_role_permissions]
+                    WHERE [permission_id] = '3934735c-d7c4-1d56-b46d-13b97d62975e'
+                      AND [role_id] = '2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a'
+                )
+                BEGIN
+                    INSERT INTO [app_role_permissions] ([permission_id], [role_id], [assigned_at_utc])
+                    VALUES ('3934735c-d7c4-1d56-b46d-13b97d62975e', '2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a', '2026-04-14T00:00:00.0000000Z');
+                END
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM [app_permissions]
+                    WHERE [id] = '446beaaf-9a9f-b474-8e2d-741f8fddf46d'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM [app_roles]
+                    WHERE [id] = '2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM [app_role_permissions]
+                    WHERE [permission_id] = '446beaaf-9a9f-b474-8e2d-741f8fddf46d'
+                      AND [role_id] = '2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a'
+                )
+                BEGIN
+                    INSERT INTO [app_role_permissions] ([permission_id], [role_id], [assigned_at_utc])
+                    VALUES ('446beaaf-9a9f-b474-8e2d-741f8fddf46d', '2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a', '2026-04-14T00:00:00.0000000Z');
+                END
+                """);
 
             migrationBuilder.CreateIndex(
                 name: "ix_document_flow_events_flow_occurred",
