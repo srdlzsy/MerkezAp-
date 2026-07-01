@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -15,6 +17,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.OnerilenFir
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class OnerilenFirmaSiparisleriController(
     IListSuggestedCompanyOrdersUseCase listSuggestedCompanyOrdersUseCase,
+    IDocumentFlowService documentFlowService,
     ICreateIssuedCompanyOrderUseCase createIssuedCompanyOrderUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -78,6 +81,24 @@ public sealed class OnerilenFirmaSiparisleriController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.IssuedCompanyOrder,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.IssuedCompanyOrder,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.OrderCreated,
+                DocumentFlowStatus.Succeeded,
+                "Oneriden firma siparisi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

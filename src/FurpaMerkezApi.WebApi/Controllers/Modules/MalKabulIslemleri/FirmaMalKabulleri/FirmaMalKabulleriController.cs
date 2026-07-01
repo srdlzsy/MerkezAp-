@@ -6,6 +6,8 @@ using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.FirmaMalKabulleri.Det
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.FirmaMalKabulleri.List;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.Offline;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -22,6 +24,7 @@ public sealed class FirmaMalKabulleriController(
     IGetCompanyReceivingDocumentDetailUseCase getCompanyReceivingDocumentDetailUseCase,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
     IGetCompanyReceivingOfflineSyncStatusUseCase getCompanyReceivingOfflineSyncStatusUseCase,
+    IDocumentFlowService documentFlowService,
     IGetInboundDespatchLookupUseCase getInboundDespatchLookupUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -103,6 +106,25 @@ public sealed class FirmaMalKabulleriController(
                 request.Lines
                     .Select(MapLine)
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.CompanyReceiving,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.CompanyReceiving,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Firma mal kabulu olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

@@ -4,6 +4,8 @@ using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Detail;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.List;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -19,6 +21,7 @@ public sealed class FirmaIadeleriController(
     IListCompanyReturnsUseCase listCompanyReturnsUseCase,
     IGetCompanyReturnDetailUseCase getCompanyReturnDetailUseCase,
     ICreateCompanyReturnUseCase createCompanyReturnUseCase,
+    IDocumentFlowService documentFlowService,
     IEDespatchService eDespatchService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -101,6 +104,25 @@ public sealed class FirmaIadeleriController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.CompanyReturn,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.CompanyReturn,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Firma iadesi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

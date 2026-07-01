@@ -3,7 +3,9 @@ using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Detail;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.List;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -19,6 +21,7 @@ public sealed class DepoIadeleriController(
     IListWarehouseReturnsUseCase listWarehouseReturnsUseCase,
     IGetWarehouseReturnDetailUseCase getWarehouseReturnDetailUseCase,
     ICreateWarehouseReturnUseCase createWarehouseReturnUseCase,
+    IDocumentFlowService documentFlowService,
     IEDespatchService eDespatchService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -136,6 +139,25 @@ public sealed class DepoIadeleriController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.WarehouseReturn,
+                    response.SourceWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.WarehouseReturn,
+                response.SourceWarehouseNo,
+                response.TargetWarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Depo iadesi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

@@ -4,7 +4,9 @@ using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -19,6 +21,7 @@ namespace FurpaMerkezApi.Infrastructure.Services;
 public sealed class EDespatchService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
+    IDocumentFlowService documentFlowService,
     IOptions<EDespatchOptions> options,
     ILogger<EDespatchService> logger)
     : IEDespatchService
@@ -48,35 +51,96 @@ public sealed class EDespatchService(
         var config = options.Value;
         ValidateConfiguration(config);
 
-        await using var documentNumberLock = await AcquireDocumentNumberLockAsync(cancellationToken);
-
-        return request.DocumentType switch
+        try
         {
-            EDespatchDocumentType.OutgoingCompanyShipment => await SendCompanyMovementAsync(
-                request,
-                CompanyMovementKind.OutgoingShipment,
-                cancellationToken),
+            await using var documentNumberLock = await AcquireDocumentNumberLockAsync(cancellationToken);
+            var response = request.DocumentType switch
+            {
+                EDespatchDocumentType.OutgoingCompanyShipment => await SendCompanyMovementAsync(
+                    request,
+                    CompanyMovementKind.OutgoingShipment,
+                    cancellationToken),
 
-            EDespatchDocumentType.CompanyReturn => await SendCompanyMovementAsync(
-                request,
-                CompanyMovementKind.PurchaseReturn,
-                cancellationToken),
+                EDespatchDocumentType.CompanyReturn => await SendCompanyMovementAsync(
+                    request,
+                    CompanyMovementKind.PurchaseReturn,
+                    cancellationToken),
 
-            EDespatchDocumentType.InterWarehouseShipment => await SendInterWarehouseDocumentAsync(
-                request,
-                false,
-                cancellationToken),
+                EDespatchDocumentType.InterWarehouseShipment => await SendInterWarehouseDocumentAsync(
+                    request,
+                    false,
+                    cancellationToken),
 
-            EDespatchDocumentType.WarehouseReturn => await SendInterWarehouseDocumentAsync(
-                request,
-                true,
-                cancellationToken),
+                EDespatchDocumentType.WarehouseReturn => await SendInterWarehouseDocumentAsync(
+                    request,
+                    true,
+                    cancellationToken),
 
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(request.DocumentType),
-                request.DocumentType,
-                "Unsupported e-despatch document type.")
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(request.DocumentType),
+                    request.DocumentType,
+                    "Unsupported e-despatch document type.")
+            };
+
+            await RecordEDespatchFlowAsync(
+                request,
+                DocumentFlowStatus.Succeeded,
+                "E-irsaliye Uyumsoft'a basariyla gonderildi.",
+                null,
+                response,
+                cancellationToken);
+
+            return response;
+        }
+        catch (Exception exception)
+        {
+            await RecordEDespatchFlowAsync(
+                request,
+                DocumentFlowStatus.Failed,
+                "E-irsaliye gonderimi basarisiz oldu.",
+                exception.Message,
+                null,
+                CancellationToken.None);
+            throw;
+        }
+    }
+
+    private Task RecordEDespatchFlowAsync(
+        SendEDespatchRequest request,
+        DocumentFlowStatus status,
+        string message,
+        string? error,
+        SendEDespatchResponse? response,
+        CancellationToken cancellationToken)
+    {
+        var documentType = request.DocumentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => DocumentFlowType.CompanyShipment,
+            EDespatchDocumentType.CompanyReturn => DocumentFlowType.CompanyReturn,
+            EDespatchDocumentType.InterWarehouseShipment => DocumentFlowType.InterWarehouseShipment,
+            EDespatchDocumentType.WarehouseReturn => DocumentFlowType.WarehouseReturn,
+            _ => throw new ArgumentOutOfRangeException(nameof(request.DocumentType))
         };
+
+        return documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    documentType,
+                    request.WarehouseNo,
+                    request.DocumentSerie,
+                    request.DocumentOrderNo),
+                documentType,
+                request.WarehouseNo,
+                null,
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                DocumentFlowStep.EDespatchSubmission,
+                status,
+                message,
+                error,
+                ExternalDocumentNo: response?.EDespatchDocumentNo,
+                ExternalUuid: response?.EDespatchUuid),
+            cancellationToken);
     }
 
     public async Task<GetEDespatchPdfResponse> GetPdfAsync(

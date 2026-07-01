@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.List;
@@ -17,6 +19,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirm
 public sealed class VerilenFirmaSiparisleriController(
     IListIssuedCompanyOrdersUseCase listIssuedCompanyOrdersUseCase,
     IGetIssuedCompanyOrderDetailUseCase getIssuedCompanyOrderDetailUseCase,
+    IDocumentFlowService documentFlowService,
     ICreateIssuedCompanyOrderUseCase createIssuedCompanyOrderUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -116,6 +119,24 @@ public sealed class VerilenFirmaSiparisleriController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.IssuedCompanyOrder,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.IssuedCompanyOrder,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.OrderCreated,
+                DocumentFlowStatus.Succeeded,
+                "Verilen firma siparisi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

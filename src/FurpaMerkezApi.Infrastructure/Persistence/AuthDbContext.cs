@@ -21,6 +21,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<FeedbackItem> FeedbackItems => Set<FeedbackItem>();
 
+    public DbSet<DocumentFlow> DocumentFlows => Set<DocumentFlow>();
+
+    public DbSet<DocumentFlowEvent> DocumentFlowEvents => Set<DocumentFlowEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(

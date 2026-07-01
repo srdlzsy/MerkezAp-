@@ -3,7 +3,9 @@ using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLooku
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.DepoMalKabulleri.Detail;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.DepoMalKabulleri.List;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -19,6 +21,7 @@ public sealed class DepoMalKabulleriController(
     IListPendingWarehouseReceivingsUseCase listPendingWarehouseReceivingsUseCase,
     IGetPendingWarehouseReceivingDetailUseCase getPendingWarehouseReceivingDetailUseCase,
     IAcceptWarehouseReceivingUseCase acceptWarehouseReceivingUseCase,
+    IDocumentFlowService documentFlowService,
     IGetInboundDespatchLookupUseCase getInboundDespatchLookupUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -93,7 +96,7 @@ public sealed class DepoMalKabulleriController(
     {
         var warehouseNo = User.GetRequiredWarehouseNo();
 
-        return Ok(await acceptWarehouseReceivingUseCase.ExecuteAsync(
+        var response = await acceptWarehouseReceivingUseCase.ExecuteAsync(
             new AcceptWarehouseReceivingRequest(
                 warehouseNo,
                 documentSerie,
@@ -104,7 +107,31 @@ public sealed class DepoMalKabulleriController(
                         line.MovementGuid,
                 line.ReceivedQuantity))
                     .ToArray()),
-            cancellationToken));
+            cancellationToken);
+
+        var documentType = response.IsReturn
+            ? DocumentFlowType.WarehouseReturn
+            : DocumentFlowType.InterWarehouseShipment;
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    documentType,
+                    response.SourceWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                documentType,
+                response.SourceWarehouseNo,
+                response.WarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.WarehouseReceivingAccepted,
+                DocumentFlowStatus.Succeeded,
+                "Depo mal kabulu tamamlandi.",
+                ChangedByUserId: User.GetRequiredUserId()),
+            cancellationToken);
+
+        return Ok(response);
     }
 
     [HttpGet("e-irsaliye/ettn/{ettn}")]

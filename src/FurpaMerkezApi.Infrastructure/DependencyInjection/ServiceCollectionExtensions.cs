@@ -32,6 +32,7 @@ using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyRe
 using FurpaMerkezApi.Application.Modules.MobileSync.CustomerCatalog;
 using FurpaMerkezApi.Application.Modules.MobileSync.ProductPriceCatalog;
 using FurpaMerkezApi.Application.Modules.MobileSync.WarehouseCatalog;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Create;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.List;
@@ -43,6 +44,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Files;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Lookups;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Queries;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCiroAktarimi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
@@ -240,6 +242,7 @@ public static class ServiceCollectionExtensions
         });
         services.Configure<MikroApiOptions>(configuration.GetSection(MikroApiOptions.SectionName));
         services.Configure<MikroWriteRoutingOptions>(configuration.GetSection(MikroWriteRoutingOptions.SectionName));
+        services.Configure<DocumentFlowTrackingOptions>(configuration.GetSection(DocumentFlowTrackingOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
         {
@@ -521,6 +524,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<OperationsJobQueue>();
         services.AddHostedService<OperationsJobWorker>();
         services.AddScoped<IOperationsService, OperationsService>();
+        services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<OperationsFileGenerationService>();
 
         return services;

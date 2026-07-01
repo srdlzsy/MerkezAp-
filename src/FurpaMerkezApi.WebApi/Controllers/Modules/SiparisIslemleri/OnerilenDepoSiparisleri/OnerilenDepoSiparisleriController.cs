@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -15,6 +17,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.OnerilenDep
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class OnerilenDepoSiparisleriController(
     IListSuggestedWarehouseOrdersUseCase listSuggestedWarehouseOrdersUseCase,
+    IDocumentFlowService documentFlowService,
     ICreateIssuedWarehouseOrderUseCase createIssuedWarehouseOrderUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -72,6 +75,24 @@ public sealed class OnerilenDepoSiparisleriController(
                         line.ProjectCode,
                         line.ResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.IssuedWarehouseOrder,
+                    response.InWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.IssuedWarehouseOrder,
+                response.InWarehouseNo,
+                response.OutWarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.OrderCreated,
+                DocumentFlowStatus.Succeeded,
+                "Oneriden depo siparisi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

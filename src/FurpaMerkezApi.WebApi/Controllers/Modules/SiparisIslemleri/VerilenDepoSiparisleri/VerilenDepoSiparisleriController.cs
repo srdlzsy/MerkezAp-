@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.List;
@@ -17,6 +19,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenDepo
 public sealed class VerilenDepoSiparisleriController(
     IListIssuedWarehouseOrdersUseCase listIssuedWarehouseOrdersUseCase,
     IGetIssuedWarehouseOrderDetailUseCase getIssuedWarehouseOrderDetailUseCase,
+    IDocumentFlowService documentFlowService,
     ICreateIssuedWarehouseOrderUseCase createIssuedWarehouseOrderUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -108,6 +111,24 @@ public sealed class VerilenDepoSiparisleriController(
                         line.ProjectCode,
                         line.ResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.IssuedWarehouseOrder,
+                    response.InWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.IssuedWarehouseOrder,
+                response.InWarehouseNo,
+                response.OutWarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.OrderCreated,
+                DocumentFlowStatus.Succeeded,
+                "Verilen depo siparisi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

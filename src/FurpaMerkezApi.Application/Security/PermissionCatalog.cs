@@ -117,6 +117,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "virmanlar", "Virmanlar"),
         ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "satis-analizleri", "SatisAnalizleri", ListActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
+        ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),
         ..CreateMenuPermissions("duzeltme-islemleri", "DuzeltmeIslemleri", "mikro-evrak-duzenleme", "MikroEvrakDuzenleme", ReadUpdateActions),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "axata-senkronizasyonu", "AxataSenkronizasyonu"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "pos-muhasebe-aktarimi", "PosMuhasebeAktarimi"),

@@ -8845,6 +8845,172 @@ Authorization file ekran akis onerisi:
 - kaydet aksiyonunda secili/tum satirlar `POST /api/operations/saveauthorizationfile` ile toplu gonderilir
 - basarili durumda `201 Created` beklenmelidir
 
+### Belge Akis ve Hata Takibi
+
+Bu ekran sevk, iade, mal kabul, siparis ve e-irsaliye adimlarini Auth DB tarafinda izlemek icin eklendi. Mikro semasina yazmaz; kayitlar `document_flows` ve `document_flow_events` tablolarinda tutulur.
+
+Temel route:
+
+- `api/operasyon-islemleri/belge-akis-takibi`
+
+Yetki ve depo ayrimi:
+
+- Login olmus her depo kullanicisi kendi deposuyla iliskili akislari gorur.
+- Depo kullanicisinda query ile gelen `warehouseNo` dikkate alinmaz; backend JWT icindeki depo numarasini kullanir.
+- `Administrator` veya `Admin` rolundeki kullanici tum depolari gorebilir ve `warehouseNo` filtresini kullanabilir.
+- Detay endpointinde depo kullanicisi sadece kaynak veya hedef deposu kendi deposu olan akisi acabilir; aksi durumda `404` doner.
+- Permission katalogunda `operasyon-islemleri.belge-akis-takibi.list` ve `operasyon-islemleri.belge-akis-takibi.detail` kodlari vardir. Bunlar menu/rol gorunurlugu icin kullanilabilir; API erisiminde asil veri ayrimi rol ve depo uzerinden yapilir.
+
+Takibi acma/kapatma:
+
+```json
+"DocumentFlowTracking": {
+  "Enabled": true
+}
+```
+
+- `Enabled = true` ise yeni olaylar kaydedilir.
+- `Enabled = false` ise yeni olay yazimi durur; mevcut eski kayitlar liste/detaydan okunmaya devam eder.
+- Liste response icindeki `trackingEnabled` alani UI'nin "takip kapali" uyarisini gostermesi icin eklenmistir.
+- Takip yazimi islem akisini bozmaz; takip kaydi sirasinda hata olursa asil sevk/iade/siparis islemi devam eder, hata loglanir.
+
+Takip edilen isler:
+
+- Verilen firma siparisi olusturma
+- Verilen depo siparisi olusturma
+- Onerilen firma siparisini siparise cevirme
+- Onerilen depo siparisini siparise cevirme
+- Firma sevki olusturma
+- Depolar arasi sevk olusturma
+- Firma iadesi olusturma
+- Depo iadesi olusturma
+- Firma mal kabul olusturma
+- Depo mal kabul/kabul etme
+- E-irsaliye gonderimi basarili/basarisiz sonucu
+
+#### Belge Akis Liste
+
+```http
+GET /api/operasyon-islemleri/belge-akis-takibi?warehouseNo=1&startDate=2026-07-01&endDate=2026-07-01&documentType=CompanyShipment&status=Failed&search=FRM2026000000101&take=100
+```
+
+Query alanlari:
+
+- `warehouseNo`: opsiyonel. Sadece `Administrator`/`Admin` icin etkilidir.
+- `startDate`: opsiyonel. `updatedAtUtc` uzerinden filtreler.
+- `endDate`: opsiyonel. Gun sonu dahil olacak sekilde filtreler.
+- `documentType`: opsiyonel enum.
+- `status`: opsiyonel enum.
+- `search`: opsiyonel. `documentSerie`, `documentNo`, `externalDocumentNo`, `externalUuid` icinde arar.
+- `take`: 1-500 arasi, varsayilan `100`.
+
+Response:
+
+```json
+{
+  "trackingEnabled": true,
+  "totalCount": 1,
+  "items": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "documentType": "CompanyShipment",
+      "sourceWarehouseNo": 1,
+      "targetWarehouseNo": null,
+      "documentSerie": "FRM2026",
+      "documentOrderNo": 101,
+      "documentNo": "FRM2026000000101",
+      "externalDocumentNo": "FRM2026000000101",
+      "externalUuid": "22222222-2222-2222-2222-222222222222",
+      "status": "Succeeded",
+      "currentStep": "EDespatchSubmission",
+      "lastError": null,
+      "createdAtUtc": "2026-07-01T08:10:00Z",
+      "updatedAtUtc": "2026-07-01T08:12:00Z"
+    }
+  ]
+}
+```
+
+#### Belge Akis Detay
+
+```http
+GET /api/operasyon-islemleri/belge-akis-takibi/{id}
+```
+
+Response liste alanlarina ek olarak `events` timeline doner:
+
+```json
+{
+  "id": "11111111-1111-1111-1111-111111111111",
+  "flowKey": "CompanyShipment:1:FRM2026:101",
+  "documentType": "CompanyShipment",
+  "sourceWarehouseNo": 1,
+  "targetWarehouseNo": null,
+  "documentSerie": "FRM2026",
+  "documentOrderNo": 101,
+  "documentNo": "FRM2026000000101",
+  "externalDocumentNo": "FRM2026000000101",
+  "externalUuid": "22222222-2222-2222-2222-222222222222",
+  "status": "Succeeded",
+  "currentStep": "EDespatchSubmission",
+  "lastError": null,
+  "lastChangedByUserId": null,
+  "createdAtUtc": "2026-07-01T08:10:00Z",
+  "updatedAtUtc": "2026-07-01T08:12:00Z",
+  "events": [
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "step": "DocumentCreated",
+      "status": "Succeeded",
+      "message": "Firma sevki olusturuldu.",
+      "error": null,
+      "changedByUserId": "44444444-4444-4444-4444-444444444444",
+      "occurredAtUtc": "2026-07-01T08:10:00Z"
+    },
+    {
+      "id": "55555555-5555-5555-5555-555555555555",
+      "step": "EDespatchSubmission",
+      "status": "Succeeded",
+      "message": "E-irsaliye Uyumsoft'a gonderildi.",
+      "error": null,
+      "changedByUserId": null,
+      "occurredAtUtc": "2026-07-01T08:12:00Z"
+    }
+  ]
+}
+```
+
+Enum degerleri:
+
+```text
+documentType:
+  CompanyShipment
+  InterWarehouseShipment
+  CompanyReturn
+  WarehouseReturn
+  CompanyReceiving
+  IssuedCompanyOrder
+  IssuedWarehouseOrder
+
+status:
+  Succeeded
+  Failed
+
+step/currentStep:
+  DocumentCreated
+  OrderCreated
+  EDespatchSubmission
+  WarehouseReceivingAccepted
+```
+
+UI onerisi:
+
+- Liste gridinde belge tipi, kaynak depo, hedef depo, belge no, e-belge no, son adim, durum, son hata ve guncelleme tarihi kolonlari yeterlidir.
+- Durum badge'i `Succeeded` icin yesil, `Failed` icin kirmizi kullanilabilir.
+- Detayda timeline sirali gosterilmeli; hata varsa `error` alanindan kopyalanabilir teknik detay acilmalidir.
+- Admin kullanicida depo filtresi gosterilmeli; depo kullanicisinda depo filtresi gizlenmeli veya pasif olmalidir.
+- `trackingEnabled = false` ise ekranda "Yeni akis kaydi kapali, eski kayitlar goruntuleniyor" uyarisi gosterilmelidir.
+
 Operasyon modulu notlari:
 
 - bu modul Hangfire yerine uygulama ici hosted queue kullanir
@@ -12558,6 +12724,55 @@ public sealed record AuthorizationFileDto
     public bool R { get; init; }
     public bool X { get; init; }
 }
+
+public sealed record DocumentFlowListResponse(
+    bool TrackingEnabled,
+    int TotalCount,
+    IReadOnlyCollection<DocumentFlowListItemDto> Items);
+
+public sealed record DocumentFlowListItemDto(
+    Guid Id,
+    string DocumentType,
+    int SourceWarehouseNo,
+    int? TargetWarehouseNo,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string? DocumentNo,
+    string? ExternalDocumentNo,
+    string? ExternalUuid,
+    string Status,
+    string CurrentStep,
+    string? LastError,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record DocumentFlowDetailDto(
+    Guid Id,
+    string FlowKey,
+    string DocumentType,
+    int SourceWarehouseNo,
+    int? TargetWarehouseNo,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string? DocumentNo,
+    string? ExternalDocumentNo,
+    string? ExternalUuid,
+    string Status,
+    string CurrentStep,
+    string? LastError,
+    Guid? LastChangedByUserId,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    IReadOnlyCollection<DocumentFlowEventDto> Events);
+
+public sealed record DocumentFlowEventDto(
+    Guid Id,
+    string Step,
+    string Status,
+    string Message,
+    string? Error,
+    Guid? ChangedByUserId,
+    DateTime OccurredAtUtc);
 ```
 
 ### Entegrasyon Modelleri
@@ -13197,6 +13412,9 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 
 - `SaveAuthorizationFileHttpRequest`: `Id`, `UpdateDate`, `Name`, `Z`, `R`, `X`
 - `POST /api/operations/saveauthorizationfile` ve `POST /api/operations/authorization-files` body modeli tek obje degil, `IReadOnlyCollection<SaveAuthorizationFileHttpRequest>` dizisidir.
+- `DocumentFlowListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `DocumentType`, `Status`, `Search`, `Take`
+- `GET /api/operasyon-islemleri/belge-akis-takibi` body almaz; filtreleri query parametresi olarak alir.
+- `GET /api/operasyon-islemleri/belge-akis-takibi/{id}` body almaz; `id` belge akis kaydinin `Guid` degeridir.
 
 ### Entegrasyon Request Modelleri
 

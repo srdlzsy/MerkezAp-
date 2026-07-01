@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.FirmaSevkleri.Create;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.FirmaSevkleri.Detail;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.FirmaSevkleri.List;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -19,6 +21,7 @@ public sealed class FirmaSevkleriController(
     IListCompanyShipmentsUseCase listCompanyShipmentsUseCase,
     IGetCompanyShipmentDetailUseCase getCompanyShipmentDetailUseCase,
     ICreateCompanyShipmentUseCase createCompanyShipmentUseCase,
+    IDocumentFlowService documentFlowService,
     IEDespatchService eDespatchService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -219,6 +222,25 @@ public sealed class FirmaSevkleriController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.CompanyShipment,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.CompanyShipment,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Firma sevki olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

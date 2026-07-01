@@ -1,6 +1,8 @@
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.List;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -19,6 +21,7 @@ public sealed class DepolarArasiSevklerController(
     IListInterWarehouseShipmentsUseCase listInterWarehouseShipmentsUseCase,
     IGetInterWarehouseShipmentDetailUseCase getInterWarehouseShipmentDetailUseCase,
     ICreateInterWarehouseShipmentUseCase createInterWarehouseShipmentUseCase,
+    IDocumentFlowService documentFlowService,
     IEDespatchService eDespatchService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -221,6 +224,25 @@ public sealed class DepolarArasiSevklerController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.InterWarehouseShipment,
+                    response.SourceWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.InterWarehouseShipment,
+                response.SourceWarehouseNo,
+                response.TargetWarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Depolar arasi sevk olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);
