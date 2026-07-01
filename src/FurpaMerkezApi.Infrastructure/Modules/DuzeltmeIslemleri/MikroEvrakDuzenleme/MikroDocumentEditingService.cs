@@ -1070,6 +1070,7 @@ public sealed class MikroDocumentEditingService(
                 return new StockMovementDocumentLineDto(
                     row.sth_Guid,
                     row.sth_satirno ?? 0,
+                    row.sth_malkbl_sevk_tarihi,
                     row.sth_stok_kod ?? string.Empty,
                     stock?.sto_isim ?? string.Empty,
                     unitPointer,
@@ -1118,6 +1119,7 @@ public sealed class MikroDocumentEditingService(
             first.sth_normal_iade ?? 0,
             first.sth_tarih,
             first.sth_belge_tarih,
+            first.sth_malkbl_sevk_tarihi,
             first.sth_belge_no ?? string.Empty,
             first.sth_cari_kodu ?? string.Empty,
             BuildCustomerTitle(customer),
@@ -1869,6 +1871,7 @@ public sealed class MikroDocumentEditingService(
     {
         if (patch.MovementDate.HasValue) row.sth_tarih = patch.MovementDate.Value.Date;
         if (patch.DocumentDate.HasValue) row.sth_belge_tarih = patch.DocumentDate.Value.Date;
+        if (patch.GoodsAcceptanceDate.HasValue) row.sth_malkbl_sevk_tarihi = patch.GoodsAcceptanceDate.Value.Date;
         if (patch.DocumentNo is not null) row.sth_belge_no = NormalizeText(patch.DocumentNo, 50, nameof(patch.DocumentNo));
         if (patch.CustomerCode is not null) row.sth_cari_kodu = NormalizeText(patch.CustomerCode, 25, nameof(patch.CustomerCode));
         if (patch.InputWarehouseNo.HasValue) row.sth_giris_depo_no = ValidateNonNegative(patch.InputWarehouseNo.Value, nameof(patch.InputWarehouseNo));
@@ -1889,6 +1892,7 @@ public sealed class MikroDocumentEditingService(
     {
         var changed = false;
         SetIfPresent(patch.RowNo, value => row.sth_satirno = ValidateNonNegative(value, nameof(patch.RowNo)), ref changed);
+        SetIfPresent(patch.GoodsAcceptanceDate, value => row.sth_malkbl_sevk_tarihi = value.Date, ref changed);
         SetIfPresent(patch.StockCode, value => row.sth_stok_kod = NormalizeText(value, 25, nameof(patch.StockCode)), ref changed);
         SetIfPresent(patch.UnitPointer, value => row.sth_birim_pntr = ValidateUnitPointer(value, nameof(patch.UnitPointer)), ref changed);
         SetIfPresent(patch.Quantity, value => row.sth_miktar = ValidateNonNegative(value, nameof(patch.Quantity)), ref changed);
@@ -2104,6 +2108,7 @@ public sealed class MikroDocumentEditingService(
     private static bool HasStockMovementHeaderPatch(StockMovementHeaderPatchDto patch) =>
         patch.MovementDate.HasValue ||
         patch.DocumentDate.HasValue ||
+        patch.GoodsAcceptanceDate.HasValue ||
         patch.DocumentNo is not null ||
         patch.CustomerCode is not null ||
         patch.InputWarehouseNo.HasValue ||

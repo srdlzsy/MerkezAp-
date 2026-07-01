@@ -82,6 +82,9 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
             let resolvedTargetWarehouseNo = movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState
                 ? movement.sth_giris_depo_no
                 : movement.sth_nakliyedeposu
+            let resolvedShippingWarehouseNo = movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState
+                ? movement.sth_nakliyedeposu
+                : movement.sth_giris_depo_no
             join targetWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on resolvedTargetWarehouseNo equals targetWarehouse.dep_no into targetWarehouseGroup
             from targetWarehouse in targetWarehouseGroup.DefaultIfEmpty()
@@ -99,8 +102,10 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
                 movement.sth_cikis_depo_no,
                 SourceWarehouseName = sourceWarehouse.dep_adi,
                 movement.sth_giris_depo_no,
+                ResolvedTargetWarehouseNo = resolvedTargetWarehouseNo,
                 TargetWarehouseName = targetWarehouse.dep_adi,
                 movement.sth_nakliyedeposu,
+                ResolvedShippingWarehouseNo = resolvedShippingWarehouseNo,
                 movement.sth_nakliyedurumu,
                 movement.sth_normal_iade,
                 movement.sth_HareketGrupKodu1,
@@ -162,8 +167,8 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
 
         var firstRow = rows[0];
         var sourceWarehouseNo = firstRow.sth_cikis_depo_no ?? 0;
-        var targetWarehouseNo = firstRow.sth_giris_depo_no ?? 0;
-        var shippingWarehouseNo = firstRow.sth_nakliyedeposu ?? 0;
+        var targetWarehouseNo = firstRow.ResolvedTargetWarehouseNo ?? 0;
+        var shippingWarehouseNo = firstRow.ResolvedShippingWarehouseNo ?? 0;
         var isReturn = firstRow.sth_normal_iade == ReturnMovement;
         var normalizedDocumentSerie = firstRow.sth_evrakno_seri ?? documentSerie;
         var normalizedDocumentOrderNo = firstRow.sth_evrakno_sira ?? request.DocumentOrderNo;

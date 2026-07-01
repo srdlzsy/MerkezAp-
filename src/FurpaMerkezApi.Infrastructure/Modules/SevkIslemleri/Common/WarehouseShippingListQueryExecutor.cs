@@ -81,6 +81,9 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
             let resolvedTargetWarehouseNo = movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState
                 ? movement.sth_giris_depo_no
                 : movement.sth_nakliyedeposu
+            let resolvedShippingWarehouseNo = movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState
+                ? movement.sth_nakliyedeposu
+                : movement.sth_giris_depo_no
             join targetWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on resolvedTargetWarehouseNo equals targetWarehouse.dep_no into targetWarehouseGroup
             from targetWarehouse in targetWarehouseGroup.DefaultIfEmpty()
@@ -95,8 +98,10 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_cikis_depo_no,
                 SourceWarehouseName = sourceWarehouse.dep_adi,
                 movement.sth_giris_depo_no,
+                ResolvedTargetWarehouseNo = resolvedTargetWarehouseNo,
                 TargetWarehouseName = targetWarehouse.dep_adi,
                 movement.sth_nakliyedeposu,
+                ResolvedShippingWarehouseNo = resolvedShippingWarehouseNo,
                 movement.sth_nakliyedurumu,
                 movement.sth_normal_iade,
                 movement.sth_HareketGrupKodu1,
@@ -118,8 +123,10 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 grouped.Key.sth_cikis_depo_no,
                 grouped.Key.SourceWarehouseName,
                 grouped.Key.sth_giris_depo_no,
+                grouped.Key.ResolvedTargetWarehouseNo,
                 grouped.Key.TargetWarehouseName,
                 grouped.Key.sth_nakliyedeposu,
+                grouped.Key.ResolvedShippingWarehouseNo,
                 grouped.Key.sth_nakliyedurumu,
                 grouped.Key.sth_normal_iade,
                 grouped.Key.sth_HareketGrupKodu1,
@@ -143,9 +150,9 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 shipment.sth_evrakno_sira ?? 0,
                 shipment.sth_cikis_depo_no ?? request.WarehouseNo,
                 shipment.SourceWarehouseName ?? string.Empty,
-                shipment.sth_giris_depo_no ?? 0,
+                shipment.ResolvedTargetWarehouseNo ?? 0,
                 shipment.TargetWarehouseName ?? string.Empty,
-                shipment.sth_nakliyedeposu ?? 0,
+                shipment.ResolvedShippingWarehouseNo ?? 0,
                 shipment.sth_nakliyedurumu ?? 0,
                 shipment.sth_normal_iade == ReturnMovement,
                 shipment.sth_HareketGrupKodu1 ?? string.Empty,

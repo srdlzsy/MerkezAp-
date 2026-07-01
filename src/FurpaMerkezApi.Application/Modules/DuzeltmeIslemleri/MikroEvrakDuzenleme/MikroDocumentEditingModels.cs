@@ -392,6 +392,7 @@ public sealed record StockMovementDocumentHeaderDto(
     byte NormalReturn,
     DateTime? MovementDate,
     DateTime? DocumentDate,
+    DateTime? GoodsAcceptanceDate,
     string DocumentNo,
     string CustomerCode,
     string CustomerTitle,
@@ -417,6 +418,7 @@ public sealed record StockMovementDocumentHeaderDto(
 public sealed record StockMovementDocumentLineDto(
     Guid MovementGuid,
     int RowNo,
+    DateTime? GoodsAcceptanceDate,
     string StockCode,
     string StockName,
     byte UnitPointer,
@@ -452,6 +454,7 @@ public sealed record StockMovementDocumentLineDto(
 public sealed record StockMovementHeaderPatchDto(
     DateTime? MovementDate,
     DateTime? DocumentDate,
+    DateTime? GoodsAcceptanceDate,
     string? DocumentNo,
     string? CustomerCode,
     int? InputWarehouseNo,
@@ -468,6 +471,7 @@ public sealed record StockMovementHeaderPatchDto(
 public sealed record StockMovementLinePatchDto(
     Guid MovementGuid,
     int? RowNo,
+    DateTime? GoodsAcceptanceDate,
     string? StockCode,
     byte? UnitPointer,
     double? Quantity,

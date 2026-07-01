@@ -819,6 +819,8 @@ public sealed class StockMovementHeaderPatchHttpRequest
 
     public DateTime? DocumentDate { get; init; }
 
+    public DateTime? GoodsAcceptanceDate { get; init; }
+
     [StringLength(50)]
     public string? DocumentNo { get; init; }
 
@@ -859,6 +861,7 @@ public sealed class StockMovementHeaderPatchHttpRequest
         new(
             MovementDate,
             DocumentDate,
+            GoodsAcceptanceDate,
             DocumentNo,
             CustomerCode,
             InputWarehouseNo,
@@ -879,6 +882,8 @@ public sealed class StockMovementLinePatchHttpRequest
 
     [Range(0, int.MaxValue)]
     public int? RowNo { get; init; }
+
+    public DateTime? GoodsAcceptanceDate { get; init; }
 
     [StringLength(25)]
     public string? StockCode { get; init; }
@@ -965,6 +970,7 @@ public sealed class StockMovementLinePatchHttpRequest
         new(
             MovementGuid,
             RowNo,
+            GoodsAcceptanceDate,
             StockCode,
             UnitPointer,
             Quantity,

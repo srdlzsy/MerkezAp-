@@ -4547,6 +4547,7 @@ Response modeli `StockMovementDocumentDto`:
     "normalReturn": 0,
     "movementDate": "2026-04-21T00:00:00",
     "documentDate": "2026-04-21T00:00:00",
+    "goodsAcceptanceDate": "2026-04-21T00:00:00",
     "documentNo": "",
     "customerCode": "",
     "customerTitle": "",
@@ -4571,6 +4572,7 @@ Response modeli `StockMovementDocumentDto`:
     {
       "movementGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
       "rowNo": 0,
+      "goodsAcceptanceDate": "2026-04-21T00:00:00",
       "stockCode": "015792",
       "stockName": "URUN ADI",
       "unitPointer": 1,
@@ -4609,6 +4611,7 @@ Body:
   "header": {
     "movementDate": "2026-04-21",
     "documentDate": "2026-04-21",
+    "goodsAcceptanceDate": "2026-04-21",
     "documentNo": "DUZ-001",
     "description": "Duzeltilen aciklama",
     "shippingWarehouseNo": 60,
@@ -4619,6 +4622,7 @@ Body:
     {
       "movementGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
       "rowNo": 0,
+      "goodsAcceptanceDate": "2026-04-21",
       "stockCode": "015792",
       "unitPointer": 1,
       "quantity": 3,
@@ -4634,14 +4638,14 @@ Body:
 
 Guncellenebilir header alanlari:
 
-- `movementDate`, `documentDate`, `documentNo`, `customerCode`
+- `movementDate`, `documentDate`, `goodsAcceptanceDate`, `documentNo`, `customerCode`
 - `inputWarehouseNo`, `outputWarehouseNo`, `shippingWarehouseNo`
 - `description`, `movementGroupCode1`, `movementGroupCode2`, `movementGroupCode3`
 - `customerResponsibilityCenter`, `stockResponsibilityCenter`, `projectCode`
 
 Guncellenebilir satir alanlari:
 
-- `rowNo`, `stockCode`, `unitPointer`, `quantity`, `secondaryQuantity`, `amount`
+- `rowNo`, `goodsAcceptanceDate`, `stockCode`, `unitPointer`, `quantity`, `secondaryQuantity`, `amount`
 - `discount1..discount6`, `expense1..expense4`, `taxPointer`, `taxAmount`
 - `netWeight`, `grossWeight`, `description`, `partyCode`, `lotNo`, `projectCode`
 - `customerResponsibilityCenter`, `stockResponsibilityCenter`, `inputWarehouseNo`, `outputWarehouseNo`
@@ -13121,8 +13125,8 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `StockCardPatchHttpRequest`: `Name`, `ShortName`, `ForeignName`, `SupplierCode`, `StockType`, `CurrencyType`, `TrackingType`, `Unit1Name`, `Unit2Name`, `Unit3Name`, `Unit4Name`, `RetailTaxPointer`, `WholesaleTaxPointer`, `CategoryCode`, `MainGroupCode`, `SubGroupCode`, `BrandCode`, `SectorCode`, `RayonCode`, `ManufacturerCode`, `ResponsibilityCode`, `ShelfCode`, `SalesStopped`, `OrderStopped`, `ReceivingStopped`, `IsPassive`, `DiscountDisabled`
 - `StockMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `WarehouseNo`
 - `UpdateStockMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
-- `StockMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `InputWarehouseNo`, `OutputWarehouseNo`, `Description`, `MovementGroupCode1`, `MovementGroupCode2`, `MovementGroupCode3`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `ProjectCode`
-- `StockMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `StockCode`, `UnitPointer`, `Quantity`, `SecondaryQuantity`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `NetWeight`, `GrossWeight`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `InputWarehouseNo`, `OutputWarehouseNo`
+- `StockMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `GoodsAcceptanceDate`, `DocumentNo`, `CustomerCode`, `InputWarehouseNo`, `OutputWarehouseNo`, `Description`, `MovementGroupCode1`, `MovementGroupCode2`, `MovementGroupCode3`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `ProjectCode`
+- `StockMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `GoodsAcceptanceDate`, `StockCode`, `UnitPointer`, `Quantity`, `SecondaryQuantity`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `NetWeight`, `GrossWeight`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `InputWarehouseNo`, `OutputWarehouseNo`
 - `CustomerMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `CustomerCode`
 - `UpdateCustomerMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `CustomerMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `TurnoverCustomerCode`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
