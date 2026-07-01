@@ -1,3 +1,5 @@
+using System.Data;
+using System.Data.Common;
 using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
@@ -33,6 +35,9 @@ public sealed class EDespatchService(
     private const byte ReturnMovement = 1;
     private const byte InterWarehouseShipmentDocumentType = 17;
     private const string CommonEDespatchDocumentPrefix = "FRM";
+    private const string DocumentNumberLockResource = "FurpaMerkezApi:EDespatchDocumentNumber";
+    private const int DocumentNumberLockTimeoutMilliseconds = 120_000;
+    private static readonly SemaphoreSlim LocalDocumentNumberLock = new(1, 1);
 
     public async Task<SendEDespatchResponse> SendAsync(
         SendEDespatchRequest request,
@@ -42,6 +47,8 @@ public sealed class EDespatchService(
 
         var config = options.Value;
         ValidateConfiguration(config);
+
+        await using var documentNumberLock = await AcquireDocumentNumberLockAsync(cancellationToken);
 
         return request.DocumentType switch
         {
@@ -146,6 +153,7 @@ public sealed class EDespatchService(
             request.DocumentOrderNo,
             movementKind,
             cancellationToken);
+        EnsureNotAlreadySent(document.TrackedMovements);
         var config = options.Value;
         var now = DateTime.Now;
         var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
@@ -221,6 +229,7 @@ public sealed class EDespatchService(
             request.DocumentOrderNo,
             isReturn,
             cancellationToken);
+        EnsureNotAlreadySent(document.TrackedMovements);
         var config = options.Value;
         var now = DateTime.Now;
         var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
@@ -1289,6 +1298,101 @@ public sealed class EDespatchService(
         return $"{CommonEDespatchDocumentPrefix}{year}{documentNo}";
     }
 
+    private async Task<IAsyncDisposable> AcquireDocumentNumberLockAsync(
+        CancellationToken cancellationToken)
+    {
+        await LocalDocumentNumberLock.WaitAsync(cancellationToken);
+
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State != ConnectionState.Open;
+
+        try
+        {
+            if (closeConnection)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DECLARE @result int;
+                EXEC @result = sys.sp_getapplock
+                    @Resource = @resource,
+                    @LockMode = 'Exclusive',
+                    @LockOwner = 'Session',
+                    @LockTimeout = @lockTimeout;
+                SELECT @result;
+                """;
+            command.CommandTimeout = (DocumentNumberLockTimeoutMilliseconds / 1000) + 10;
+            AddParameter(command, "@resource", DbType.String, DocumentNumberLockResource);
+            AddParameter(
+                command,
+                "@lockTimeout",
+                DbType.Int32,
+                DocumentNumberLockTimeoutMilliseconds);
+
+            var result = Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken));
+
+            if (result < 0)
+            {
+                throw new TimeoutException(
+                    $"E-despatch document number lock could not be acquired. SQL result: {result}.");
+            }
+
+            return new DocumentNumberLockLease(
+                connection,
+                closeConnection,
+                LocalDocumentNumberLock,
+                logger);
+        }
+        catch
+        {
+            if (closeConnection && connection.State != ConnectionState.Closed)
+            {
+                await connection.CloseAsync();
+            }
+
+            LocalDocumentNumberLock.Release();
+            throw;
+        }
+    }
+
+    private static void AddParameter(
+        DbCommand command,
+        string name,
+        DbType type,
+        object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.DbType = type;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static void EnsureNotAlreadySent(
+        IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements)
+    {
+        var sentMovement = trackedMovements.FirstOrDefault(movement =>
+        {
+            var documentNo = movement.sth_belge_no;
+
+            return movement.sth_kilitli == true &&
+                   !string.IsNullOrWhiteSpace(documentNo) &&
+                   documentNo.StartsWith(
+                       CommonEDespatchDocumentPrefix,
+                       StringComparison.OrdinalIgnoreCase) &&
+                   Guid.TryParse(movement.sth_aciklama, out _);
+        });
+
+        if (sentMovement is not null)
+        {
+            throw new InvalidOperationException(
+                $"E-despatch has already been sent with document number {sentMovement.sth_belge_no}.");
+        }
+    }
+
     private async Task<string> GetLatestDocumentNoAsync(
         int year,
         CancellationToken cancellationToken)
@@ -1608,4 +1712,45 @@ public sealed class EDespatchService(
         string? Deliverer,
         string? Receiver,
         string? DriverTckn);
+
+    private sealed class DocumentNumberLockLease(
+        DbConnection connection,
+        bool closeConnection,
+        SemaphoreSlim localLock,
+        ILogger<EDespatchService> leaseLogger)
+        : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (connection.State == ConnectionState.Open)
+                {
+                    await using var command = connection.CreateCommand();
+                    command.CommandText = """
+                        EXEC sys.sp_releaseapplock
+                            @Resource = @resource,
+                            @LockOwner = 'Session';
+                        """;
+                    AddParameter(command, "@resource", DbType.String, DocumentNumberLockResource);
+                    await command.ExecuteNonQueryAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception exception)
+            {
+                leaseLogger.LogWarning(
+                    exception,
+                    "E-despatch document number SQL application lock could not be released explicitly.");
+            }
+            finally
+            {
+                if (closeConnection && connection.State != ConnectionState.Closed)
+                {
+                    await connection.CloseAsync();
+                }
+
+                localLock.Release();
+            }
+        }
+    }
 }
