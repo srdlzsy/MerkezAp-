@@ -8902,6 +8902,72 @@ Authorization file ekran akis onerisi:
 
 Bu ekran sevk, iade, mal kabul, siparis ve e-irsaliye adimlarini Auth DB tarafinda izlemek icin eklendi. Mikro semasina yazmaz; kayitlar `document_flows` ve `document_flow_events` tablolarinda tutulur.
 
+### Depo Operasyon Paneli
+
+Bu endpoint merkez yoneticisinin aktif depolari tek istekte izlemesi icindir. Depo numarasi ve adi Mikro `DEPOLAR` tablosundan okunur; operasyon sayilari yalnizca Furpa Merkez API'nin Auth DB'ye yazdigi belge akis kayitlarindan hesaplanir. Mikro veya baska bir uygulama uzerinden dogrudan yapilan islemler sayilara dahil edilmez.
+
+```http
+GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-02
+```
+
+- Yalniz `Administrator` veya `Admin` rolundeki ve `operasyon-islemleri.depo-operasyon-paneli.list` yetkisine sahip kullanicilar erisebilir.
+- Modul kodu `operasyon-islemleri`, menu kodu `depo-operasyon-paneli`, menu adi `DepoOperasyonPaneli` degeridir.
+- UI bu kaydi `Operasyon Islemleri > Depo Operasyon Paneli` menusu olarak gosterebilir.
+- `date` opsiyoneldir ve `yyyy-MM-dd` formatindadir. Gonderilmezse API sunucusunun bugunku tarihi kullanilir.
+- `todayShipmentCount`: secilen gunde API uzerinden olusturulan firma ve depolar arasi sevklerdir; kaynak depoya yazilir.
+- `todayReceivingCount`: secilen gunde API uzerinden tamamlanan depo mal kabulleridir; hedef depoya yazilir.
+- `pendingReceivingCount`: depolar arasi sevk veya depo iadesi olusturulmus, henuz depo mal kabulu tamamlanmamis kayitlardir; hedef depoya yazilir.
+- `failedEDespatchCount`: son belge akis adimi basarisiz e-irsaliye gonderimi olan kayitlardir; kaynak depoya yazilir.
+- `incompleteOperationCount`: bekleyen mal kabulleri ve basarisiz e-irsaliye gonderimlerini ifade eder. Genel ozette ayni belge bir kez sayilir.
+- `averageReceivingMinutes`: secilen gunde tamamlanan mal kabullerinin sevk olusturma ile kabul arasindaki ortalama suresidir.
+- `busiestWarehouse.value`: secilen gunun sevk ve mal kabul toplami.
+- `slowestWarehouse.value`: dakika cinsinden ortalama mal kabul suresi.
+- `healthStatus`: e-irsaliye hatasi varsa `Critical`, bekleyen kabul varsa `Warning`, ikisi de yoksa `Healthy` doner.
+- `trackingEnabled = false` ise yeni belge akisi yazimi kapalidir; panel mevcut eski kayitlardan hesaplanmaya devam eder.
+
+Response ornegi:
+
+```json
+{
+  "date": "2026-07-02",
+  "generatedAtUtc": "2026-07-02T11:20:00Z",
+  "trackingEnabled": true,
+  "summary": {
+    "warehouseCount": 60,
+    "todayShipmentCount": 420,
+    "todayReceivingCount": 385,
+    "pendingReceivingCount": 35,
+    "incompleteOperationCount": 38,
+    "failedEDespatchCount": 4
+  },
+  "busiestWarehouse": {
+    "warehouseNo": 12,
+    "warehouseName": "Kadikoy",
+    "value": 41
+  },
+  "slowestWarehouse": {
+    "warehouseNo": 20,
+    "warehouseName": "Pendik",
+    "value": 97.5
+  },
+  "warehouses": [
+    {
+      "warehouseNo": 12,
+      "warehouseName": "Kadikoy",
+      "todayShipmentCount": 24,
+      "todayReceivingCount": 17,
+      "pendingReceivingCount": 3,
+      "incompleteOperationCount": 3,
+      "failedEDespatchCount": 0,
+      "averageReceivingMinutes": 42.75,
+      "healthStatus": "Warning"
+    }
+  ]
+}
+```
+
+UI ekraninda ustte `summary` sayaclari, altta `warehouses` tablosu gosterilebilir. Depo satirina tiklandiginda ayni depo numarasiyla belge akis liste endpointine gidilerek ilgili belgeler acilabilir.
+
 Temel route:
 
 - `api/operasyon-islemleri/belge-akis-takibi`
