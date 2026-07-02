@@ -14,7 +14,7 @@ public sealed class InvoiceViewingService(
         CancellationToken cancellationToken)
         => await queryExecutor.ListAsync(request, cancellationToken);
 
-    public Task SynchronizeAsync(
+    public Task<InvoiceViewingSynchronizationResponse> SynchronizeAsync(
         InvoiceViewingSynchronizationRequest request,
         CancellationToken cancellationToken) =>
         syncService.SynchronizeRangeAsync(request.StartDate, request.EndDate, cancellationToken);

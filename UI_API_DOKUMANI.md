@@ -7774,7 +7774,9 @@ Liste davranisi:
 - `GET /api/fatura-islemleri/fatura-goruntuleme` otomatik Uyumsoft cagrisi yapmaz; sadece lokal cache/DB sonucunu doner
 - yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i secilen tarih araligini Uyumsoft `GetInboxInvoices` operasyonu ile cache tabloya upsert eder
 - legacy `GetInvoicesAsync(isProcessed, isPrinted)` akisindaki gibi tarih + islenme + yazdirilma filtresi uygulanir
-- tarih filtresi `invoiceDate` veya fallback olarak `createDate` alanina uygulanir
+- `invoiceDate` Uyumsoft full UBL icindeki `Invoice.IssueDate` (Fatura Tarihi) alanindan, `createDate` ise `InvoiceInfo.CreateDateUtc` alanindan doldurulur
+- senkron request'indeki tarih araligi Uyumsoft'tan cekilen kayitlara `invoiceDate` uzerinden tekrar uygulanir; bu nedenle DB'ye yalnizca Fatura Tarihi secilen aralikta olan belgeler yazilir
+- liste tarih filtresi `invoiceDate` veya bu alan yoksa fallback olarak `createDate` alanina uygulanir
 - tarih araligi gun seviyesindedir; bitis tarihi SQL tarafinda `+1 gun exclusive` mantigi ile uygulanir
 - `documentId` bu listedeki Uyumsoft teknik UUID/operasyon anahtaridir; UI row key, PDF, detay, render ve printed isteklerinde bunu aynen kullanir
 - `invoiceId` kullaniciya gosterilecek resmi fatura numarasidir; route parametresi olarak kullanilmaz
@@ -7782,7 +7784,7 @@ Liste davranisi:
 - `customerTitle` response'a buyuk harfe cevrilmis gelir
 - DB tarafindaki kolon `isStandart` olsa da API response'unda alan `isStandard` olarak gelir
 - `statusCode` ham DB degeridir; `status` ise UI'de direkt gosterebileceginiz aciklama metnidir
-- `despatchId` Uyumsoft `GetInboxInvoices` full UBL cevabinda `Invoice.DespatchDocumentReference[].ID` alanindan okunur; bos veya `-` gibi placeholder kalirsa backend ek olarak `GetInboxInvoice` full UBL detayindan `DespatchDocumentReference/ID` okuyup cache'i zenginlestirir
+- `despatchId` yalnizca Uyumsoft `GetInboxInvoices` full UBL cevabindaki `Invoice.DespatchDocumentReference[].ID` alanindan okunur; senkron sirasinda kayit basina ek `GetInboxInvoice` cagrisi yapilmaz
 - `orderDocumentId` ayri siparis/order referansi alanidir; irsaliye numarasi gibi kullanilmamalidir
 - `orderDocumentId`, `envelopeIdentifier`, `message`, vergi toplam/tutar, doviz, arsiv ve goruldu bilgileri Uyumsoft inbox cache tablosunda ayrica saklanir
 - `status` mapping'i:
@@ -7840,14 +7842,27 @@ Request body:
 }
 ```
 
-Response:
+Response `200 OK`:
 
-- `204 NoContent`
+```json
+{
+  "startDate": "2026-05-01T00:00:00",
+  "endDate": "2026-05-05T00:00:00",
+  "sourceTotalCount": 29,
+  "fetchedCount": 29,
+  "insertedCount": 29,
+  "updatedCount": 0
+}
+```
 
 Davranis:
 
 - secilen tarih araligini Uyumsoft `GetInboxInvoices` ile okur
+- Uyumsoft sayfalari `PageIndex = 0, 1, 2...` ve `PageSize = 20` ile `TotalPages` tamamlanana kadar okunur
+- tum sayfalar eksiksiz alindiktan sonra DB upsert/save yapilir; eksik veya tekrar eden sayfada yarim senkron basarili sayilmaz
 - gelen sonuc `uyumsoft_inbox_invoices` cache tablosuna upsert edilir
+- `sourceTotalCount` Uyumsoft'un bildirdigi toplam kayit, `fetchedCount` tum sayfalardan gercekten okunan kayit sayisidir
+- Uyumsoft cagrisi basarisiz olursa endpoint sessiz `204` donmez; hata response'u doner
 - tekrar eden veya degisiklik icermeyen sayfalar icin koruma vardir; sonsuz donguye girmez
 - sync tamamlandiktan sonra UI ayni tarih araligiyla `GET /api/fatura-islemleri/fatura-goruntuleme` cagirip DB sonucunu alabilir
 

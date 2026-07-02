@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
+using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Services;
@@ -17,12 +18,11 @@ namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntulem
 
 public sealed class UyumsoftInboxInvoiceSyncService(
     AuthDbContext authDbContext,
-    IUyumsoftConnectedQueryService queryService,
     IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
     IClock clock,
     ILogger<UyumsoftInboxInvoiceSyncService> logger)
 {
-    private const int SyncPageSize = 200;
+    private const int SyncPageSize = 20;
     private static readonly Regex InvoiceOpenTagRegex = new(
         @"<(?:(?<prefix>[A-Za-z_][\w.-]*):)?Invoice(?:\s|>|/)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -32,7 +32,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         DateRangeQueryFilterMode.ExecutionDate
     ];
 
-    public async Task SynchronizeRangeAsync(
+    public async Task<InvoiceViewingSynchronizationResponse> SynchronizeRangeAsync(
         DateTime startDate,
         DateTime endDate,
         CancellationToken cancellationToken)
@@ -42,19 +42,32 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             throw new ArgumentException("End date can not be earlier than start date.", nameof(endDate));
         }
 
+        var fetchedCount = 0;
+        var insertedCount = 0;
+        var updatedCount = 0;
+        var sourceTotalCount = 0;
+
         foreach (var filterMode in DateRangeQueryFilterModes)
         {
-            var completed = await SynchronizeDateRangeAsync(
+            var result = await SynchronizeDateRangeAsync(
                 startDate,
                 endDate,
                 filterMode,
                 cancellationToken);
 
-            if (!completed)
-            {
-                return;
-            }
+            fetchedCount += result.FetchedCount;
+            insertedCount += result.InsertedCount;
+            updatedCount += result.UpdatedCount;
+            sourceTotalCount = Math.Max(sourceTotalCount, result.SourceTotalCount);
         }
+
+        return new InvoiceViewingSynchronizationResponse(
+            startDate.Date,
+            endDate.Date,
+            sourceTotalCount,
+            fetchedCount,
+            insertedCount,
+            updatedCount);
     }
 
     public async Task EnsureInvoiceExistsAsync(
@@ -117,8 +130,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         IReadOnlyCollection<ParsedInboxInvoice> items,
         CancellationToken cancellationToken)
     {
-        items = await EnrichMissingDocumentReferencesAsync(items, cancellationToken);
-
         var syncTimestampUtc = clock.UtcNow;
         var documentIds = items
             .Select(item => item.DocumentId)
@@ -298,7 +309,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         return null;
     }
 
-    private async Task<bool> SynchronizeDateRangeAsync(
+    private async Task<SyncRunResult> SynchronizeDateRangeAsync(
         DateTime startDate,
         DateTime endDate,
         DateRangeQueryFilterMode filterMode,
@@ -306,6 +317,9 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     {
         var pageIndex = 1;
         int? totalPage = null;
+        var fetchedCount = 0;
+        var sourceTotalCount = 0;
+        var fetchedItems = new List<ParsedInboxInvoice>();
         var seenPageSignatures = new HashSet<string>(StringComparer.Ordinal);
         var filterLabel = filterMode switch
         {
@@ -325,8 +339,12 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
             if (page is null)
             {
-                return false;
+                throw new InvalidOperationException(
+                    $"Uyumsoft GetInboxInvoices failed for {filterLabel} range " +
+                    $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}.");
             }
+
+            sourceTotalCount = Math.Max(sourceTotalCount, page.TotalCount);
 
             if (page.Items.Count > 0)
             {
@@ -334,34 +352,13 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
                 if (!seenPageSignatures.Add(pageSignature))
                 {
-                    logger.LogWarning(
-                        "Uyumsoft inbox invoice sync detected a repeated page for {FilterLabel} range {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd}. PageIndex={PageIndex}, ItemCount={ItemCount}, TotalPage={TotalPage}. Synchronization stopped to avoid an infinite loop.",
-                        filterLabel,
-                        startDate,
-                        endDate,
-                        pageIndex,
-                        page.Items.Count,
-                        page.TotalPage);
-                    break;
+                    throw new InvalidOperationException(
+                        $"Uyumsoft GetInboxInvoices repeated page {pageIndex} for {filterLabel} range " +
+                        $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}.");
                 }
 
-                var upsertResult = await UpsertAsync(page.Items, cancellationToken);
-
-                if (upsertResult.HasChanges)
-                {
-                    await authDbContext.SaveChangesAsync(cancellationToken);
-                }
-                else
-                {
-                    logger.LogInformation(
-                        "Uyumsoft inbox invoice sync found no data changes for {FilterLabel} range {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd} on page {PageIndex}.",
-                        filterLabel,
-                        startDate,
-                        endDate,
-                        pageIndex);
-                }
-
-                authDbContext.ChangeTracker.Clear();
+                fetchedCount += page.Items.Count;
+                fetchedItems.AddRange(page.Items);
             }
 
             totalPage ??= page.TotalPage > 0 ? page.TotalPage : null;
@@ -371,12 +368,17 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 break;
             }
 
-            if (totalPage.HasValue && pageIndex >= totalPage.Value)
+            if (sourceTotalCount > 0 && fetchedCount >= sourceTotalCount)
             {
                 break;
             }
 
-            if (page.Items.Count < SyncPageSize)
+            if (sourceTotalCount == 0 && totalPage.HasValue && pageIndex >= totalPage.Value)
+            {
+                break;
+            }
+
+            if (sourceTotalCount == 0 && !totalPage.HasValue && page.Items.Count < SyncPageSize)
             {
                 break;
             }
@@ -384,7 +386,38 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             pageIndex++;
         }
 
-        return true;
+        if (sourceTotalCount > 0 && fetchedCount != sourceTotalCount)
+        {
+            throw new InvalidOperationException(
+                $"Uyumsoft GetInboxInvoices reported {sourceTotalCount} item(s), but " +
+                $"{fetchedCount} item(s) were fetched for {filterLabel} range " +
+                $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}.");
+        }
+
+        var invoiceDateStart = startDate.Date;
+        var invoiceDateEndExclusive = endDate.Date.AddDays(1);
+        var uniqueItems = fetchedItems
+            .Where(item =>
+                item.InvoiceDate.HasValue &&
+                item.InvoiceDate.Value >= invoiceDateStart &&
+                item.InvoiceDate.Value < invoiceDateEndExclusive)
+            .GroupBy(item => item.DocumentId, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .ToArray();
+        var upsertResult = await UpsertAsync(uniqueItems, cancellationToken);
+
+        if (upsertResult.HasChanges)
+        {
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        authDbContext.ChangeTracker.Clear();
+
+        return new SyncRunResult(
+            sourceTotalCount,
+            fetchedCount,
+            upsertResult.InsertedCount,
+            upsertResult.UpdatedCount);
     }
 
     private static IReadOnlyCollection<InboxInvoiceQueryPayload> BuildDateRangePayloadCandidates(
@@ -604,7 +637,11 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             items.Add(item);
         }
 
-        return new ParsedInboxInvoicePage(totalPage, items);
+        var totalCount = valueNode is null
+            ? items.Count
+            : ReadInt(valueNode, "TotalCount");
+
+        return new ParsedInboxInvoicePage(totalCount, totalPage, items);
     }
 
     private static ParsedInboxInvoicePage ParseInvoiceInfoPage(UyumsoftInvoice.InvoicesResponse response)
@@ -617,7 +654,17 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             .Select(item => item!)
             .ToArray();
 
-        return new ParsedInboxInvoicePage(value?.TotalPages ?? 0, mappedItems);
+        if (mappedItems.Length != items.Length)
+        {
+            throw new InvalidOperationException(
+                $"Uyumsoft GetInboxInvoices returned {items.Length} item(s), but " +
+                $"{mappedItems.Length} item(s) contained a usable Invoice payload.");
+        }
+
+        return new ParsedInboxInvoicePage(
+            value?.TotalCount ?? mappedItems.Length,
+            value?.TotalPages ?? 0,
+            mappedItems);
     }
 
     private static ParsedInboxInvoice? MapInvoiceInfo(UyumsoftInvoice.InvoiceInfo invoiceInfo)
@@ -654,6 +701,9 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             .Select(tax => tax.TaxAmount?.Value ?? 0m)
             .DefaultIfEmpty(0m)
             .Sum() ?? 0m;
+        var createDate = invoiceInfo.CreateDateUtc == default
+            ? (DateTime?)null
+            : invoiceInfo.CreateDateUtc;
 
         return new ParsedInboxInvoice(
             documentId,
@@ -662,8 +712,8 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             NormalizeOptional(invoiceInfo.LocalDocumentId),
             NormalizeOptional(invoiceInfo.TargetCustomer?.Title) ?? ResolveInvoicePartyTitle(invoice.AccountingSupplierParty?.Party),
             NormalizeOptional(invoiceInfo.TargetCustomer?.VknTckn) ?? ResolveInvoicePartyTaxNumber(invoice.AccountingSupplierParty?.Party),
-            invoiceInfo.CreateDateUtc == default ? null : invoiceInfo.CreateDateUtc,
-            invoice.IssueDate?.Value,
+            createDate,
+            invoice.IssueDate?.Value ?? createDate,
             NormalizeOptional(invoice.InvoiceTypeCode?.Value) ?? string.Empty,
             invoice.LegalMonetaryTotal?.PayableAmount?.Value ?? 0m,
             string.Join(", ", despatchId),
@@ -859,52 +909,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         return true;
     }
 
-    private async Task<IReadOnlyCollection<ParsedInboxInvoice>> EnrichMissingDocumentReferencesAsync(
-        IReadOnlyCollection<ParsedInboxInvoice> items,
-        CancellationToken cancellationToken)
-    {
-        if (items.Count == 0)
-        {
-            return items;
-        }
-
-        var enrichedItems = new List<ParsedInboxInvoice>(items.Count);
-
-        foreach (var item in items)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var hasDespatchId = !IsMissingReference(item.DespatchId);
-            var hasOrderDocumentId = !IsMissingReference(item.OrderDocumentId);
-
-            if (hasDespatchId && hasOrderDocumentId)
-            {
-                enrichedItems.Add(item);
-                continue;
-            }
-
-            var references = await FetchInvoiceDocumentReferencesAsync(item, cancellationToken);
-
-            if (references is null)
-            {
-                enrichedItems.Add(item);
-                continue;
-            }
-
-            enrichedItems.Add(item with
-            {
-                DespatchId = hasDespatchId
-                    ? item.DespatchId
-                    : references.DespatchId,
-                OrderDocumentId = hasOrderDocumentId
-                    ? item.OrderDocumentId
-                    : references.OrderDocumentId
-            });
-        }
-
-        return enrichedItems;
-    }
-
     private static bool IsMissingReference(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -931,79 +935,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-
-    private async Task<InvoiceDocumentReferences?> FetchInvoiceDocumentReferencesAsync(
-        ParsedInboxInvoice item,
-        CancellationToken cancellationToken)
-    {
-        var lookupIds = NormalizeReferenceValues(
-            [
-                item.DocumentId,
-                item.ServiceDocumentId,
-                item.LocalDocumentId,
-                item.InvoiceId
-            ]);
-
-        foreach (var lookupId in lookupIds)
-        {
-            try
-            {
-                var response = await queryService.InvokeGetOperationAsync(
-                    UyumsoftConnectedServiceKind.EInvoice,
-                    new UyumsoftOperationInvocationRequest(
-                        "GetInboxInvoice",
-                        [new UyumsoftOperationParameterRequest("invoiceId", lookupId)]),
-                    cancellationToken);
-
-                if (TryReadInvoiceDocumentReferences(response, out var references))
-                {
-                    return references;
-                }
-            }
-            catch (InvalidOperationException exception)
-            {
-                logger.LogDebug(
-                    exception,
-                    "Uyumsoft GetInboxInvoice could not enrich document references for invoice {InvoiceId} with lookup {LookupId}.",
-                    item.InvoiceId,
-                    lookupId);
-            }
-            catch (HttpRequestException exception)
-            {
-                logger.LogWarning(
-                    exception,
-                    "Uyumsoft GetInboxInvoice transport failure while enriching document references for invoice {InvoiceId}.",
-                    item.InvoiceId);
-                return null;
-            }
-            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                logger.LogWarning(
-                    exception,
-                    "Uyumsoft GetInboxInvoice timed out while enriching document references for invoice {InvoiceId}.",
-                    item.InvoiceId);
-                return null;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool TryReadInvoiceDocumentReferences(
-        UyumsoftOperationResponseDto response,
-        out InvoiceDocumentReferences references)
-    {
-        references = default!;
-
-        if (!TryExtractInvoiceDocument(response, out var invoiceDocument))
-        {
-            return false;
-        }
-
-        references = ReadInvoiceDocumentReferences(invoiceDocument);
-        return !string.IsNullOrWhiteSpace(references.DespatchId) ||
-               !string.IsNullOrWhiteSpace(references.OrderDocumentId);
-    }
 
     private static InvoiceDocumentReferences ReadInvoiceDocumentReferences(XDocument invoiceDocument)
     {
@@ -1612,6 +1543,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     }
 
     private sealed record ParsedInboxInvoicePage(
+        int TotalCount,
         int TotalPage,
         IReadOnlyCollection<ParsedInboxInvoice> Items);
 
@@ -1654,6 +1586,12 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     {
         public bool HasChanges => InsertedCount > 0 || UpdatedCount > 0;
     }
+
+    private sealed record SyncRunResult(
+        int SourceTotalCount,
+        int FetchedCount,
+        int InsertedCount,
+        int UpdatedCount);
 
     private sealed record InboxInvoiceQueryPayload(
         string Name,

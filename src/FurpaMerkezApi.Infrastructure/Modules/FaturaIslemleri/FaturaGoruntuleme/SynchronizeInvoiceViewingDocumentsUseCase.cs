@@ -5,7 +5,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntulem
 public sealed class SynchronizeInvoiceViewingDocumentsUseCase(InvoiceViewingService invoiceViewingService)
     : ISynchronizeInvoiceViewingDocumentsUseCase
 {
-    public Task ExecuteAsync(
+    public Task<InvoiceViewingSynchronizationResponse> ExecuteAsync(
         InvoiceViewingSynchronizationRequest request,
         CancellationToken cancellationToken) =>
         invoiceViewingService.SynchronizeAsync(request, cancellationToken);

@@ -2,7 +2,7 @@ namespace FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 
 public interface ISynchronizeInvoiceViewingDocumentsUseCase
 {
-    Task ExecuteAsync(
+    Task<InvoiceViewingSynchronizationResponse> ExecuteAsync(
         InvoiceViewingSynchronizationRequest request,
         CancellationToken cancellationToken);
 }

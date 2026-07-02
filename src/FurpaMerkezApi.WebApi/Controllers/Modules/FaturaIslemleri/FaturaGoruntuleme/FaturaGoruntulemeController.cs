@@ -62,19 +62,20 @@ public sealed class FaturaGoruntulemeController(
 
     [HttpPost("senkronize")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(InvoiceViewingSynchronizationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Synchronize(
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<InvoiceViewingSynchronizationResponse>> Synchronize(
         [FromBody] InvoiceViewingSynchronizationHttpRequest request,
         CancellationToken cancellationToken)
     {
-        await synchronizeInvoiceViewingDocumentsUseCase.ExecuteAsync(
+        var response = await synchronizeInvoiceViewingDocumentsUseCase.ExecuteAsync(
             new InvoiceViewingSynchronizationRequest(
                 request.StartDate!.Value,
                 request.EndDate!.Value),
             cancellationToken);
 
-        return NoContent();
+        return Ok(response);
     }
 
     [HttpGet("{documentId}")]

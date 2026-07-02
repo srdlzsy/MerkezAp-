@@ -27,6 +27,14 @@ public sealed record InvoiceViewingSynchronizationRequest(
     DateTime StartDate,
     DateTime EndDate);
 
+public sealed record InvoiceViewingSynchronizationResponse(
+    DateTime StartDate,
+    DateTime EndDate,
+    int SourceTotalCount,
+    int FetchedCount,
+    int InsertedCount,
+    int UpdatedCount);
+
 public sealed record InvoiceViewingDetailRequest(string DocumentId);
 
 public sealed record InvoiceViewingRenderRequest(
