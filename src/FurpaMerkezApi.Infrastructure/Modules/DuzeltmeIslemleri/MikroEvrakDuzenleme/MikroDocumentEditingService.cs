@@ -303,6 +303,70 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<MikroDocumentDeleteResponse> DeleteStockCardWarehouseSettingsAsync(
+        DeleteStockCardWarehouseSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        var warehouseNo = request.WarehouseNo > 0
+            ? request.WarehouseNo
+            : throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                _ = await mikroWriteDbContext.STOKLARs
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.sto_kod == stockCode, cancellationToken)
+                    ?? throw new KeyNotFoundException("Stock card was not found in Mikro write database.");
+                _ = await mikroWriteDbContext.DEPOLARs
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        item =>
+                            item.dep_no == warehouseNo &&
+                            item.dep_iptal != true &&
+                            item.dep_hidden != true,
+                        cancellationToken)
+                    ?? throw new KeyNotFoundException($"Warehouse was not found: {warehouseNo}");
+
+                var detail = await mikroWriteDbContext.STOK_DEPO_DETAYLARIs
+                    .FirstOrDefaultAsync(
+                        item => item.sdp_depo_kod == stockCode && item.sdp_depo_no == warehouseNo,
+                        cancellationToken);
+
+                if (detail is not null)
+                {
+                    mikroWriteDbContext.STOK_DEPO_DETAYLARIs.Remove(detail);
+                    await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    $"stok-kartlari/{stockCode}/depolar/{warehouseNo}",
+                    detail is null ? 0 : 1,
+                    deletedAt,
+                    deleteUser,
+                    "physical-delete-override");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     public async Task<IReadOnlyCollection<WarehouseCardListItemDto>> SearchWarehouseCardsAsync(
         WarehouseCardSearchRequest request,
         CancellationToken cancellationToken)
@@ -719,6 +783,64 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<MikroDocumentDeleteResponse> DeleteStockSalesPriceAsync(
+        DeleteStockSalesPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        ValidateStockSalesPriceKey(request.WarehouseNo, request.PriceListNo, request.PaymentPlanNo, request.UnitPointer);
+
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var row = await mikroWriteDbContext.STOK_SATIS_FIYAT_LISTELERIs
+                    .FirstOrDefaultAsync(
+                        item =>
+                            item.sfiyat_iptal != true &&
+                            item.sfiyat_stokkod == stockCode &&
+                            item.sfiyat_listesirano == request.PriceListNo &&
+                            item.sfiyat_deposirano == request.WarehouseNo &&
+                            item.sfiyat_birim_pntr == request.UnitPointer &&
+                            item.sfiyat_odemeplan == request.PaymentPlanNo,
+                        cancellationToken)
+                    ?? throw new KeyNotFoundException("Active stock sales price was not found in Mikro write database.");
+
+                row.sfiyat_iptal = true;
+                row.sfiyat_hidden = true;
+                row.sfiyat_kilitli = true;
+                row.sfiyat_degisti = true;
+                row.sfiyat_lastup_user = deleteUser;
+                row.sfiyat_lastup_date = deletedAt;
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    $"stok-kartlari/{stockCode}/satis-fiyatlari/{request.WarehouseNo}",
+                    1,
+                    deletedAt,
+                    deleteUser,
+                    "soft-delete");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     public async Task<StockMovementDocumentDto> GetStockMovementDocumentAsync(
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken)
@@ -830,6 +952,65 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<MikroDocumentDeleteResponse> DeleteStockMovementDocumentAsync(
+        DeleteStockMovementDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateStockMovementLookup(request.Lookup);
+
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateStockMovementQuery(mikroWriteDbContext.STOK_HAREKETLERIs, request.Lookup)
+                    .OrderBy(movement => movement.sth_satirno)
+                    .ThenBy(movement => movement.sth_stok_kod)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Stock movement document was not found in Mikro write database.");
+                }
+
+                EnsureSingleStockMovementDocument(rows);
+
+                foreach (var row in rows)
+                {
+                    row.sth_iptal = true;
+                    row.sth_hidden = true;
+                    row.sth_degisti = true;
+                    row.sth_lastup_user = deleteUser;
+                    row.sth_lastup_date = deletedAt;
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    "stok-hareketleri",
+                    rows.Length,
+                    deletedAt,
+                    deleteUser,
+                    "soft-delete");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     public async Task<CustomerMovementDocumentDto> GetCustomerMovementDocumentAsync(
         CustomerMovementDocumentLookupRequest request,
         CancellationToken cancellationToken)
@@ -932,6 +1113,65 @@ public sealed class MikroDocumentEditingService(
                 return new CustomerMovementDocumentUpdateResponse(
                     new MikroDocumentUpdateSummary("cari-hareketleri", touchedRows.Count, updatedAt, updateUser),
                     await MapCustomerMovementDocumentAsync(mikroWriteDbContext, rows, cancellationToken));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<MikroDocumentDeleteResponse> DeleteCustomerMovementDocumentAsync(
+        DeleteCustomerMovementDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateCustomerMovementLookup(request.Lookup);
+
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateCustomerMovementQuery(mikroWriteDbContext.CARI_HESAP_HAREKETLERIs, request.Lookup)
+                    .OrderBy(movement => movement.cha_satir_no)
+                    .ThenBy(movement => movement.cha_kod)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Customer movement document was not found in Mikro write database.");
+                }
+
+                EnsureSingleCustomerMovementDocument(rows);
+
+                foreach (var row in rows)
+                {
+                    row.cha_iptal = true;
+                    row.cha_hidden = true;
+                    row.cha_degisti = true;
+                    row.cha_lastup_user = deleteUser;
+                    row.cha_lastup_date = deletedAt;
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    "cari-hareketleri",
+                    rows.Length,
+                    deletedAt,
+                    deleteUser,
+                    "soft-delete");
             }
             catch
             {
@@ -2046,27 +2286,40 @@ public sealed class MikroDocumentEditingService(
 
     private static void ValidateStockSalesPriceRequest(UpsertStockSalesPriceRequest request)
     {
-        if (request.WarehouseNo <= 0)
-        {
-            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
-        }
-
-        if (request.PriceListNo <= 0)
-        {
-            throw new ArgumentException("Price list no must be greater than zero.", nameof(request.PriceListNo));
-        }
-
-        if (request.PaymentPlanNo < 0)
-        {
-            throw new ArgumentException("Payment plan no can not be negative.", nameof(request.PaymentPlanNo));
-        }
-
-        _ = ValidateUnitPointer(request.UnitPointer, nameof(request.UnitPointer));
+        ValidateStockSalesPriceKey(
+            request.WarehouseNo,
+            request.PriceListNo,
+            request.PaymentPlanNo,
+            request.UnitPointer);
 
         if (double.IsNaN(request.Price) || double.IsInfinity(request.Price) || request.Price <= 0d)
         {
             throw new ArgumentException("Price must be a finite value greater than zero.", nameof(request.Price));
         }
+    }
+
+    private static void ValidateStockSalesPriceKey(
+        int warehouseNo,
+        int priceListNo,
+        int paymentPlanNo,
+        byte unitPointer)
+    {
+        if (warehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(warehouseNo));
+        }
+
+        if (priceListNo <= 0)
+        {
+            throw new ArgumentException("Price list no must be greater than zero.", nameof(priceListNo));
+        }
+
+        if (paymentPlanNo < 0)
+        {
+            throw new ArgumentException("Payment plan no can not be negative.", nameof(paymentPlanNo));
+        }
+
+        _ = ValidateUnitPointer(unitPointer, nameof(unitPointer));
     }
 
     private static void ValidateStockMovementUpdate(UpdateStockMovementDocumentRequest request)

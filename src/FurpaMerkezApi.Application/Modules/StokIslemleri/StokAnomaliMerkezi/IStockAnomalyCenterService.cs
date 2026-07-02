@@ -124,7 +124,8 @@ public sealed record StockAnomalyScanResponse(
 
 public sealed record StockAnomalyScanRuleResultDto(
     string Type,
-    int DetectedCount);
+    int DetectedCount,
+    string? Error = null);
 
 public sealed record ChangeStockAnomalyStatusRequest(
     Guid Id,

@@ -130,6 +130,11 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         IReadOnlyCollection<ParsedInboxInvoice> items,
         CancellationToken cancellationToken)
     {
+        if (items.Count == 0)
+        {
+            return new SyncUpsertResult(0, 0);
+        }
+
         var syncTimestampUtc = clock.UtcNow;
         var documentIds = items
             .Select(item => item.DocumentId)
@@ -184,8 +189,8 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 continue;
             }
 
-            await authDbContext.UyumsoftInboxInvoices.AddAsync(
-                new UyumsoftInboxInvoice(
+            authDbContext.UyumsoftInboxInvoices.Add(
+                new(
                     Guid.NewGuid(),
                     item.DocumentId,
                     item.InvoiceId,
@@ -215,8 +220,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     item.InvoiceTipType,
                     item.InvoiceTipTypeCode,
                     item.IsSeen,
-                    syncTimestampUtc),
-                cancellationToken);
+                    syncTimestampUtc));
             insertedCount++;
         }
 
@@ -228,19 +232,39 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         string scenario,
         CancellationToken cancellationToken)
     {
+        var config = ResolveEInvoiceOptions();
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+
+        try
+        {
+            return await InvokeInboxInvoicesAsync(
+                client,
+                UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
+                payloadCandidates,
+                scenario,
+                cancellationToken);
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
+    private async Task<ParsedInboxInvoicePage?> InvokeInboxInvoicesAsync(
+        UyumsoftInvoice.BasicIntegrationClient client,
+        UyumsoftInvoice.UserInformation userInfo,
+        IReadOnlyCollection<InboxInvoiceQueryPayload> payloadCandidates,
+        string scenario,
+        CancellationToken cancellationToken)
+    {
         List<string>? failures = null;
         ParsedInboxInvoicePage? emptyPage = null;
-        var config = ResolveEInvoiceOptions();
 
         foreach (var candidate in payloadCandidates)
         {
-            var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
-
             try
             {
-                var response = await client.GetInboxInvoicesAsync(
-                        UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
-                        candidate.Query)
+                var response = await client.GetInboxInvoicesAsync(userInfo, candidate.Query)
                     .WaitAsync(cancellationToken);
 
                 if (!response.IsSucceded)
@@ -287,10 +311,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
                 return emptyPage;
             }
-            finally
-            {
-                await UyumsoftWcfClientHelper.CloseAsync(client);
-            }
         }
 
         if (emptyPage is not null)
@@ -327,63 +347,75 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             DateRangeQueryFilterMode.CreateDate => "create-date",
             _ => "unknown"
         };
+        var config = ResolveEInvoiceOptions();
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var userInfo = UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config);
 
-        while (true)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var page = await InvokeInboxInvoicesAsync(
-                BuildDateRangePayloadCandidates(startDate, endDate, pageIndex, SyncPageSize, filterMode),
-                $"{filterLabel} range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}",
-                cancellationToken);
-
-            if (page is null)
+            while (true)
             {
-                throw new InvalidOperationException(
-                    $"Uyumsoft GetInboxInvoices failed for {filterLabel} range " +
-                    $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}.");
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            sourceTotalCount = Math.Max(sourceTotalCount, page.TotalCount);
+                var page = await InvokeInboxInvoicesAsync(
+                    client,
+                    userInfo,
+                    BuildDateRangePayloadCandidates(startDate, endDate, pageIndex, SyncPageSize, filterMode),
+                    $"{filterLabel} range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}",
+                    cancellationToken);
 
-            if (page.Items.Count > 0)
-            {
-                var pageSignature = BuildPageSignature(page.Items);
-
-                if (!seenPageSignatures.Add(pageSignature))
+                if (page is null)
                 {
                     throw new InvalidOperationException(
-                        $"Uyumsoft GetInboxInvoices repeated page {pageIndex} for {filterLabel} range " +
+                        $"Uyumsoft GetInboxInvoices failed for {filterLabel} range " +
                         $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}.");
                 }
 
-                fetchedCount += page.Items.Count;
-                fetchedItems.AddRange(page.Items);
+                sourceTotalCount = Math.Max(sourceTotalCount, page.TotalCount);
+
+                if (page.Items.Count > 0)
+                {
+                    var pageSignature = BuildPageSignature(page.Items);
+
+                    if (!seenPageSignatures.Add(pageSignature))
+                    {
+                        throw new InvalidOperationException(
+                            $"Uyumsoft GetInboxInvoices repeated page {pageIndex} for {filterLabel} range " +
+                            $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}.");
+                    }
+
+                    fetchedCount += page.Items.Count;
+                    fetchedItems.AddRange(page.Items);
+                }
+
+                totalPage ??= page.TotalPage > 0 ? page.TotalPage : null;
+
+                if (page.Items.Count == 0)
+                {
+                    break;
+                }
+
+                if (sourceTotalCount > 0 && fetchedCount >= sourceTotalCount)
+                {
+                    break;
+                }
+
+                if (sourceTotalCount == 0 && totalPage.HasValue && pageIndex >= totalPage.Value)
+                {
+                    break;
+                }
+
+                if (sourceTotalCount == 0 && !totalPage.HasValue && page.Items.Count < SyncPageSize)
+                {
+                    break;
+                }
+
+                pageIndex++;
             }
-
-            totalPage ??= page.TotalPage > 0 ? page.TotalPage : null;
-
-            if (page.Items.Count == 0)
-            {
-                break;
-            }
-
-            if (sourceTotalCount > 0 && fetchedCount >= sourceTotalCount)
-            {
-                break;
-            }
-
-            if (sourceTotalCount == 0 && totalPage.HasValue && pageIndex >= totalPage.Value)
-            {
-                break;
-            }
-
-            if (sourceTotalCount == 0 && !totalPage.HasValue && page.Items.Count < SyncPageSize)
-            {
-                break;
-            }
-
-            pageIndex++;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
         }
 
         if (sourceTotalCount > 0 && fetchedCount != sourceTotalCount)

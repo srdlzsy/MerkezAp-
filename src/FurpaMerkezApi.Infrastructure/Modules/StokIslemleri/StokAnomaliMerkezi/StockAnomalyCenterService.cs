@@ -223,15 +223,26 @@ public sealed class StockAnomalyCenterService(
                 rows.HighCount);
     }
 
-    private static async Task AddRuleAsync(
+    private async Task AddRuleAsync(
         List<DetectedStockAnomaly> detected,
         List<StockAnomalyScanRuleResultDto> ruleResults,
         StockAnomalyType type,
         Func<Task<IReadOnlyCollection<DetectedStockAnomaly>>> find)
     {
-        var rows = await find();
-        detected.AddRange(rows);
-        ruleResults.Add(new StockAnomalyScanRuleResultDto(type.ToString(), rows.Count));
+        try
+        {
+            var rows = await find();
+            detected.AddRange(rows);
+            ruleResults.Add(new StockAnomalyScanRuleResultDto(type.ToString(), rows.Count));
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Stock anomaly rule failed. Type={Type}",
+                type);
+            ruleResults.Add(new StockAnomalyScanRuleResultDto(type.ToString(), 0, exception.Message));
+        }
     }
 
     private async Task UpsertDetectedAsync(
@@ -595,17 +606,6 @@ public sealed class StockAnomalyCenterService(
                 GROUP BY summary.sho_Depo, summary.sho_StokKodu
                 HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
                          - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) > 0.000001
-            ),
-            LastMovements AS (
-                SELECT
-                    CASE WHEN movement.sth_tip = 0 THEN movement.sth_giris_depo_no ELSE movement.sth_cikis_depo_no END AS WarehouseNo,
-                    movement.sth_stok_kod AS ProductCode,
-                    MAX(movement.sth_tarih) AS LastMovementDate
-                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-                WHERE movement.sth_iptal <> 1
-                  AND movement.sth_stok_kod IS NOT NULL
-                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
-                GROUP BY CASE WHEN movement.sth_tip = 0 THEN movement.sth_giris_depo_no ELSE movement.sth_cikis_depo_no END, movement.sth_stok_kod
             )
             SELECT TOP (@take)
                 balances.WarehouseNo,
@@ -615,8 +615,17 @@ public sealed class StockAnomalyCenterService(
                 balances.Quantity,
                 lastMovements.LastMovementDate
             FROM Balances AS balances
-            LEFT JOIN LastMovements AS lastMovements
-                ON lastMovements.WarehouseNo = balances.WarehouseNo AND lastMovements.ProductCode = balances.ProductCode
+            OUTER APPLY (
+                SELECT TOP (1) movement.sth_tarih AS LastMovementDate
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                WHERE movement.sth_iptal <> 1
+                  AND movement.sth_stok_kod = balances.ProductCode
+                  AND (
+                      (movement.sth_tip = 0 AND movement.sth_giris_depo_no = balances.WarehouseNo) OR
+                      (movement.sth_tip <> 0 AND movement.sth_cikis_depo_no = balances.WarehouseNo)
+                  )
+                ORDER BY movement.sth_tarih DESC
+            ) AS lastMovements
             LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = balances.WarehouseNo
             LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = balances.ProductCode
             WHERE lastMovements.LastMovementDate IS NULL OR lastMovements.LastMovementDate < @dormantCutoffDate
@@ -681,6 +690,8 @@ public sealed class StockAnomalyCenterService(
             WHERE movement.sth_iptal <> 1
               AND movement.sth_evraktip = 17
               AND ISNULL(movement.sth_nakliyedurumu, 0) <> 1
+              AND movement.sth_tarih >= @startDate
+              AND movement.sth_tarih < @endDateExclusive
               AND movement.sth_tarih < @pendingTransferCutoffDate
               AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo OR movement.sth_nakliyedeposu = @warehouseNo)
             ORDER BY movement.sth_tarih ASC

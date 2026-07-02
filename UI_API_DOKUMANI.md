@@ -3883,6 +3883,7 @@ Yetki kodlari:
 - `duzeltme-islemleri.mikro-evrak-duzenleme.list`
 - `duzeltme-islemleri.mikro-evrak-duzenleme.detail`
 - `duzeltme-islemleri.mikro-evrak-duzenleme.update`
+- `duzeltme-islemleri.mikro-evrak-duzenleme.delete`
 
 Genel kurallar:
 
@@ -3892,7 +3893,10 @@ Genel kurallar:
 - Satir guncellemeleri `movementGuid` ile yapilir. UI detay response'undaki `lines[].movementGuid` degerini satir modelinde saklamalidir.
 - Request body'de `null` gelen alanlar degismez. Bos string gonderilirse ilgili metin alani bosaltma istegi olarak islenir.
 - Kayitlarda Mikro audit alanlari guncellenir: `lastup_user`, `lastup_date`, `degisti`.
-- Bu modul delete veya yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
+- Bu modul yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
+- Delete yalnizca silinmesi guvenli kayitlarda vardir: depo ozel stok ayari, depo bazli satis fiyati, stok hareket evraki ve cari hareket evraki.
+- Stok karti, depo karti ve cari karti icin delete yoktur; UI bu ana kartlarda sil butonu gostermemelidir.
+- Stok/cari hareket silme fiziksel delete degildir; Mikro `iptal/hidden` bayraklariyla soft-delete yapilir.
 - Stok satis fiyati endpoint'i istisna olarak eksik `STOK_SATIS_FIYAT_LISTELERI` kaydini olusturabilir.
 - Satis fiyati kaydi `stockCode + priceListNo + warehouseNo + unitPointer + paymentPlanNo` birlesimiyle bulunur. Kayit varsa guncellenir, yoksa olusturulur.
 - Satis fiyati upsert islemi `STOK_FIYAT_DEGISIKLIKLERI` tablosunda sentetik fiyat degisiklik evraki olusturmaz.
@@ -3911,8 +3915,10 @@ Endpoint ozeti:
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path + body | `StockCardPatchHttpRequest` | `StockCardUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar` | path + query | `warehouseNo?: int` | `StockCardWarehouseSettingsDto[]` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar/{warehouseNo}` | path + body | `StockCardWarehousePatchHttpRequest` | `StockCardWarehouseUpdateResponse` | `update` |
+| `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/depolar/{warehouseNo}` | path | `stockCode`, `warehouseNo` | `MikroDocumentDeleteResponse` | `delete` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari` | path + query | `warehouseNo?: int` | `StockSalesPriceDto[]` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo}` | path + body | `StockSalesPriceUpsertHttpRequest` | `StockSalesPriceUpsertResponse` | `update` |
+| `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo}` | path + query | `StockSalesPriceDeleteHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar` | query | `WarehouseCardSearchHttpRequest` | `WarehouseCardListItemDto[]` | `list` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | path | `warehouseNo` | `WarehouseCardDetailDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | path + body | `WarehouseCardPatchHttpRequest` | `WarehouseCardUpdateResponse` | `update` |
@@ -3921,8 +3927,10 @@ Endpoint ozeti:
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | path + body | `CustomerCardPatchHttpRequest` | `CustomerCardUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
+| `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | body | `UpdateCustomerMovementDocumentHttpRequest` | `CustomerMovementDocumentUpdateResponse` | `update` |
+| `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
 
 ### Stok Karti Arama
 
@@ -4150,6 +4158,26 @@ Response:
   }
 }
 ```
+
+### Stok Kartinin Depo Ozel Ayarini Sil
+
+Depo ozel `STOK_DEPO_DETAYLARI` satirini kaldirir. Stok karti silinmez; urun ilgili depoda global stok karti ayarlarina geri doner.
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar/150`
+
+Response:
+
+```json
+{
+  "target": "stok-kartlari/015550/depolar/150",
+  "deletedRowCount": 1,
+  "deletedAt": "2026-07-02T12:46:00",
+  "deleteUser": 110,
+  "deletionMode": "physical-delete-override"
+}
+```
+
+Depo ozel kayit zaten yoksa `deletedRowCount=0` doner. Stok veya depo bulunamazsa `404 Not Found` doner.
 
 ### Depo Karti Arama
 
@@ -4520,6 +4548,30 @@ Yeni kayit response'u:
 
 Mevcut kayit guncellenirse `created=false` olur ve `previousPrice` eski fiyati tasir.
 
+### Stok Satis Fiyatini Sil
+
+Aktif depo bazli satis fiyatini iptal eder. Fiziksel delete yapilmaz; `sfiyat_iptal`, `sfiyat_hidden`, `sfiyat_kilitli` alanlari set edilir.
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari/150?priceListNo=1&paymentPlanNo=0&unitPointer=1`
+
+Query:
+
+- `priceListNo`: varsayilan `1`
+- `paymentPlanNo`: varsayilan `0`
+- `unitPointer`: varsayilan `1`
+
+Response:
+
+```json
+{
+  "target": "stok-kartlari/015550/satis-fiyatlari/150",
+  "deletedRowCount": 1,
+  "deletedAt": "2026-07-02T12:46:00",
+  "deleteUser": 110,
+  "deletionMode": "soft-delete"
+}
+```
+
 ### Stok Hareket Evraki Getir
 
 `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?documentSerie=F110&documentOrderNo=12&documentType=0&movementKind=4&normalReturn=0&warehouseNo=110`
@@ -4652,6 +4704,30 @@ Guncellenebilir satir alanlari:
 
 Response `StockMovementDocumentUpdateResponse` doner; `document` alaninda kaydin guncel hali bulunur.
 
+### Stok Hareket Evraki Sil
+
+Evrakin tum satirlarini soft-delete yapar. Fiziksel delete yapilmaz; `sth_iptal`, `sth_hidden`, `sth_degisti`, `sth_lastup_user`, `sth_lastup_date` alanlari guncellenir.
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?documentSerie=F110&documentOrderNo=12&documentType=0&movementKind=4&normalReturn=0&warehouseNo=110`
+
+Kurallar:
+
+- Query alani `GET /stok-hareketleri` ile aynidir.
+- Filtre birden fazla evraka denk gelirse `409 Conflict` doner.
+- Eslesen aktif satir yoksa `404 Not Found` doner.
+
+Response:
+
+```json
+{
+  "target": "stok-hareketleri",
+  "deletedRowCount": 3,
+  "deletedAt": "2026-07-02T12:46:00",
+  "deleteUser": 110,
+  "deletionMode": "soft-delete"
+}
+```
+
 ### Cari Hareket Evraki Getir
 
 `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?documentSerie=PS110&documentOrderNo=422&documentType=63&movementKind=6&normalReturn=0&customerCode=120.01.03106`
@@ -4763,6 +4839,30 @@ Guncellenebilir satir alanlari:
 - `quantity`, `amount`, `subAmount`, `dueDay`
 - `discount1..discount6`, `expense1..expense4`, `tax1..tax5`
 - `description`, `sellerCode`, `projectCode`, `responsibilityCenter`
+
+### Cari Hareket Evraki Sil
+
+Evrakin tum satirlarini soft-delete yapar. Fiziksel delete yapilmaz; `cha_iptal`, `cha_hidden`, `cha_degisti`, `cha_lastup_user`, `cha_lastup_date` alanlari guncellenir.
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?documentSerie=PS110&documentOrderNo=422&documentType=63&movementKind=6&normalReturn=0&customerCode=120.01.03106`
+
+Kurallar:
+
+- Query alani `GET /cari-hareketleri` ile aynidir.
+- Filtre birden fazla evraka denk gelirse `409 Conflict` doner.
+- Eslesen aktif satir yoksa `404 Not Found` doner.
+
+Response:
+
+```json
+{
+  "target": "cari-hareketleri",
+  "deletedRowCount": 1,
+  "deletedAt": "2026-07-02T12:46:00",
+  "deleteUser": 110,
+  "deletionMode": "soft-delete"
+}
+```
 
 UI is akisi onerisi:
 
@@ -5307,15 +5407,17 @@ Response:
   "finishedAtUtc": "2026-07-02T08:30:04Z",
   "detectedCount": 6,
   "rules": [
-    { "type": "NegativeStock", "detectedCount": 1 },
-    { "type": "DuplicateDocument", "detectedCount": 0 },
-    { "type": "ReceivingDifference", "detectedCount": 2 },
-    { "type": "HighQuantity", "detectedCount": 1 },
-    { "type": "DormantStock", "detectedCount": 2 },
-    { "type": "PendingInterWarehouseTransfer", "detectedCount": 0 }
+    { "type": "NegativeStock", "detectedCount": 1, "error": null },
+    { "type": "DuplicateDocument", "detectedCount": 0, "error": null },
+    { "type": "ReceivingDifference", "detectedCount": 2, "error": null },
+    { "type": "HighQuantity", "detectedCount": 1, "error": null },
+    { "type": "DormantStock", "detectedCount": 2, "error": null },
+    { "type": "PendingInterWarehouseTransfer", "detectedCount": 0, "error": null }
   ]
 }
 ```
+
+Herhangi bir kural SQL timeout veya benzeri bir sebeple tamamlanamazsa endpoint komple `500` donmez; ilgili kural `rules[].error` alaninda hata mesajiyla doner, diger kurallarin yakaladigi anomaliler yine kaydedilir.
 
 Durum guncelleme:
 

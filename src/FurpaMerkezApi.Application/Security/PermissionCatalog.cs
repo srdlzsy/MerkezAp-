@@ -41,6 +41,14 @@ public static class PermissionCatalog
         new("update", "Guncelle")
     ];
 
+    private static readonly PermissionActionDefinition[] ReadUpdateDeleteActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("update", "Guncelle"),
+        new("delete", "Sil")
+    ];
+
     private static readonly PermissionActionDefinition[] StockAnomalyActions =
     [
         new("list", "Listele"),
@@ -128,7 +136,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "depo-operasyon-paneli", "DepoOperasyonPaneli", ListActions),
-        ..CreateMenuPermissions("duzeltme-islemleri", "DuzeltmeIslemleri", "mikro-evrak-duzenleme", "MikroEvrakDuzenleme", ReadUpdateActions),
+        ..CreateMenuPermissions("duzeltme-islemleri", "DuzeltmeIslemleri", "mikro-evrak-duzenleme", "MikroEvrakDuzenleme", ReadUpdateDeleteActions),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "axata-senkronizasyonu", "AxataSenkronizasyonu"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "pos-muhasebe-aktarimi", "PosMuhasebeAktarimi"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "uyumsoft-e-fatura", "UyumsoftEFatura"),

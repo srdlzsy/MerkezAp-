@@ -15,6 +15,7 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     private const string ListPolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.list";
     private const string DetailPolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.detail";
     private const string UpdatePolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.update";
+    private const string DeletePolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.delete";
 
     [HttpGet("stok-kartlari")]
     [Authorize(Policy = ListPolicy)]
@@ -82,6 +83,22 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
                 stockCode,
                 warehouseNo,
                 request.ToApplicationRequest(),
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
+    [HttpDelete("stok-kartlari/{stockCode}/depolar/{warehouseNo:int}")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteStockCardWarehouseSettings(
+        string stockCode,
+        [Range(1, int.MaxValue)] int warehouseNo,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteStockCardWarehouseSettingsAsync(
+            new DeleteStockCardWarehouseSettingsRequest(
+                stockCode,
+                warehouseNo,
                 User.GetRequiredWarehouseNo()),
             cancellationToken));
 
@@ -199,6 +216,26 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
                 User.GetRequiredWarehouseNo()),
             cancellationToken));
 
+    [HttpDelete("stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo:int}")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteStockSalesPrice(
+        string stockCode,
+        [Range(1, int.MaxValue)] int warehouseNo,
+        [FromQuery] StockSalesPriceDeleteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteStockSalesPriceAsync(
+            new DeleteStockSalesPriceRequest(
+                stockCode,
+                warehouseNo,
+                request.PriceListNo,
+                request.PaymentPlanNo,
+                request.UnitPointer,
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
     [HttpGet("stok-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(StockMovementDocumentDto), StatusCodes.Status200OK)]
@@ -223,6 +260,21 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
             request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
             cancellationToken));
 
+    [HttpDelete("stok-hareketleri")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteStockMovementDocument(
+        [FromQuery] StockMovementDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteStockMovementDocumentAsync(
+            new DeleteStockMovementDocumentRequest(
+                request.ToApplicationRequest(),
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
     [HttpGet("cari-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(CustomerMovementDocumentDto), StatusCodes.Status200OK)]
@@ -245,6 +297,21 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
         CancellationToken cancellationToken) =>
         Ok(await service.UpdateCustomerMovementDocumentAsync(
             request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
+    [HttpDelete("cari-hareketleri")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteCustomerMovementDocument(
+        [FromQuery] CustomerMovementDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteCustomerMovementDocumentAsync(
+            new DeleteCustomerMovementDocumentRequest(
+                request.ToApplicationRequest(),
+                User.GetRequiredWarehouseNo()),
             cancellationToken));
 }
 
@@ -758,6 +825,18 @@ public sealed class StockSalesPriceUpsertHttpRequest
 
     [Range(0, byte.MaxValue)]
     public byte ChangeReason { get; init; } = 4;
+}
+
+public sealed class StockSalesPriceDeleteHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int PriceListNo { get; init; } = 1;
+
+    [Range(0, int.MaxValue)]
+    public int PaymentPlanNo { get; init; }
+
+    [Range(1, 4)]
+    public byte UnitPointer { get; init; } = 1;
 }
 
 public sealed class StockMovementDocumentLookupHttpRequest

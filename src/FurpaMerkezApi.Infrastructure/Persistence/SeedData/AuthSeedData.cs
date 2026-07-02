@@ -28,7 +28,8 @@ internal static class AuthSeedData
         ["kasa-islemleri.kunye-etiket-yazdirma.list"] = Guid.Parse("f1172502-9cf7-22b2-3362-8dbcfc8f2dcc"),
         ["kasa-islemleri.kunye-etiket-yazdirma.detail"] = Guid.Parse("c80495b3-55cf-b620-df21-3b052d3bfdcb"),
         ["kasa-islemleri.kunye-etiket-yazdirma.create"] = Guid.Parse("f27dae0a-72af-1ecd-5327-eeb1f44ad93a"),
-        ["kasa-islemleri.kunye-etiket-yazdirma.update"] = Guid.Parse("91f4518e-007d-ca11-e8b4-03967a2b4624")
+        ["kasa-islemleri.kunye-etiket-yazdirma.update"] = Guid.Parse("91f4518e-007d-ca11-e8b4-03967a2b4624"),
+        ["duzeltme-islemleri.mikro-evrak-duzenleme.delete"] = Guid.Parse("d68e59be-25fa-4ca2-b223-bd5ee887d732")
     };
 
     public static IReadOnlyCollection<AppPermission> Permissions { get; } =

@@ -115,6 +115,11 @@ public sealed record UpdateStockCardWarehouseSettingsRequest(
     StockCardWarehousePatchDto Patch,
     int CurrentUserWarehouseNo);
 
+public sealed record DeleteStockCardWarehouseSettingsRequest(
+    string StockCode,
+    int WarehouseNo,
+    int CurrentUserWarehouseNo);
+
 public sealed record WarehouseCardSearchRequest(
     string? SearchText,
     bool IncludePassive,
@@ -364,6 +369,14 @@ public sealed record UpsertStockSalesPriceRequest(
     byte ChangeReason,
     int CurrentUserWarehouseNo);
 
+public sealed record DeleteStockSalesPriceRequest(
+    string StockCode,
+    int WarehouseNo,
+    int PriceListNo,
+    int PaymentPlanNo,
+    byte UnitPointer,
+    int CurrentUserWarehouseNo);
+
 public sealed record StockSalesPriceUpsertResponse(
     MikroDocumentUpdateSummary Summary,
     bool Created,
@@ -506,6 +519,10 @@ public sealed record UpdateStockMovementDocumentRequest(
     IReadOnlyCollection<StockMovementLinePatchDto> Lines,
     int CurrentUserWarehouseNo);
 
+public sealed record DeleteStockMovementDocumentRequest(
+    StockMovementDocumentLookupRequest Lookup,
+    int CurrentUserWarehouseNo);
+
 public sealed record CustomerMovementDocumentLookupRequest(
     string DocumentSerie,
     int DocumentOrderNo,
@@ -623,11 +640,22 @@ public sealed record UpdateCustomerMovementDocumentRequest(
     IReadOnlyCollection<CustomerMovementLinePatchDto> Lines,
     int CurrentUserWarehouseNo);
 
+public sealed record DeleteCustomerMovementDocumentRequest(
+    CustomerMovementDocumentLookupRequest Lookup,
+    int CurrentUserWarehouseNo);
+
 public sealed record MikroDocumentUpdateSummary(
     string Target,
     int UpdatedRowCount,
     DateTime UpdatedAt,
     short UpdateUser);
+
+public sealed record MikroDocumentDeleteResponse(
+    string Target,
+    int DeletedRowCount,
+    DateTime DeletedAt,
+    short DeleteUser,
+    string DeletionMode);
 
 public sealed record StockCardUpdateResponse(
     MikroDocumentUpdateSummary Summary,

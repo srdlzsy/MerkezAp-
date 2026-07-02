@@ -23,6 +23,10 @@ public interface IMikroDocumentEditingService
         UpdateStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken);
 
+    Task<MikroDocumentDeleteResponse> DeleteStockCardWarehouseSettingsAsync(
+        DeleteStockCardWarehouseSettingsRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<WarehouseCardListItemDto>> SearchWarehouseCardsAsync(
         WarehouseCardSearchRequest request,
         CancellationToken cancellationToken);
@@ -56,6 +60,10 @@ public interface IMikroDocumentEditingService
         UpsertStockSalesPriceRequest request,
         CancellationToken cancellationToken);
 
+    Task<MikroDocumentDeleteResponse> DeleteStockSalesPriceAsync(
+        DeleteStockSalesPriceRequest request,
+        CancellationToken cancellationToken);
+
     Task<StockMovementDocumentDto> GetStockMovementDocumentAsync(
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);
@@ -64,11 +72,19 @@ public interface IMikroDocumentEditingService
         UpdateStockMovementDocumentRequest request,
         CancellationToken cancellationToken);
 
+    Task<MikroDocumentDeleteResponse> DeleteStockMovementDocumentAsync(
+        DeleteStockMovementDocumentRequest request,
+        CancellationToken cancellationToken);
+
     Task<CustomerMovementDocumentDto> GetCustomerMovementDocumentAsync(
         CustomerMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);
 
     Task<CustomerMovementDocumentUpdateResponse> UpdateCustomerMovementDocumentAsync(
         UpdateCustomerMovementDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<MikroDocumentDeleteResponse> DeleteCustomerMovementDocumentAsync(
+        DeleteCustomerMovementDocumentRequest request,
         CancellationToken cancellationToken);
 }
