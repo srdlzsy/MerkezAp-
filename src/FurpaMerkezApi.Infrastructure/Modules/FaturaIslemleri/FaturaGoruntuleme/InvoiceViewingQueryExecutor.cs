@@ -52,7 +52,7 @@ public sealed class InvoiceViewingQueryExecutor(
         var startDate = request.StartDate.Date;
         var endDateExclusive = request.EndDate.Date.AddDays(1);
 
-        return authDbContext.UyumsoftInboxInvoices
+        var query = authDbContext.UyumsoftInboxInvoices
             .AsNoTracking()
             .Where(item =>
                 (item.InvoiceDate.HasValue &&
@@ -62,6 +62,10 @@ public sealed class InvoiceViewingQueryExecutor(
                  item.CreateDate.HasValue &&
                  item.CreateDate.Value >= startDate &&
                  item.CreateDate.Value < endDateExclusive));
+
+        query = ApplyStructuredFilters(query, request);
+
+        return query;
     }
 
     public async Task<InvoiceViewingListItemDto> GetByDocumentIdAsync(
@@ -197,13 +201,105 @@ public sealed class InvoiceViewingQueryExecutor(
         {
             throw new ArgumentException("End date can not be earlier than start date.", nameof(request.EndDate));
         }
+
+        if (request.MinInvoiceTotal.HasValue &&
+            request.MaxInvoiceTotal.HasValue &&
+            request.MaxInvoiceTotal.Value < request.MinInvoiceTotal.Value)
+        {
+            throw new ArgumentException("Maximum invoice total can not be lower than minimum invoice total.", nameof(request.MaxInvoiceTotal));
+        }
     }
+
+    private static IQueryable<UyumsoftInboxInvoice> ApplyStructuredFilters(
+        IQueryable<UyumsoftInboxInvoice> query,
+        InvoiceViewingListRequest request)
+    {
+        query = ApplyTextFilter(query, request.InvoiceId, item => item.InvoiceId);
+        query = ApplyTextFilter(query, request.DespatchId, item => item.DespatchId);
+        query = ApplyTextFilter(query, request.CustomerTitle, item => item.CustomerTitle);
+        query = ApplyTextFilter(query, request.CustomerTcknVkn, item => item.CustomerTcknVkn);
+        query = ApplyTextFilter(query, request.OrderDocumentId, item => item.OrderDocumentId);
+        query = ApplyTextFilter(query, request.InvoiceType, item => item.InvoiceType);
+
+        if (!string.IsNullOrWhiteSpace(request.DocumentId))
+        {
+            var pattern = BuildLikePattern(request.DocumentId);
+            query = query.Where(item =>
+                EF.Functions.Like(item.DocumentId.ToUpper(), pattern) ||
+                (item.ServiceDocumentId != null && EF.Functions.Like(item.ServiceDocumentId.ToUpper(), pattern)) ||
+                (item.LocalDocumentId != null && EF.Functions.Like(item.LocalDocumentId.ToUpper(), pattern)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var pattern = BuildLikePattern(request.Status);
+            query = query.Where(item =>
+                EF.Functions.Like(item.Status.ToUpper(), pattern) ||
+                EF.Functions.Like(item.StatusCode.ToUpper(), pattern) ||
+                (item.EnvelopeStatusCode != null && EF.Functions.Like(item.EnvelopeStatusCode.ToUpper(), pattern)));
+        }
+
+        if (request.MinInvoiceTotal.HasValue)
+        {
+            query = query.Where(item => item.InvoiceTotal >= request.MinInvoiceTotal.Value);
+        }
+
+        if (request.MaxInvoiceTotal.HasValue)
+        {
+            query = query.Where(item => item.InvoiceTotal <= request.MaxInvoiceTotal.Value);
+        }
+
+        if (request.HasDespatchId.HasValue)
+        {
+            query = request.HasDespatchId.Value
+                ? query.Where(item =>
+                    item.DespatchId != string.Empty &&
+                    item.DespatchId != "-" &&
+                    item.DespatchId != "--" &&
+                    item.DespatchId != "---")
+                : query.Where(item =>
+                    item.DespatchId == string.Empty ||
+                    item.DespatchId == "-" ||
+                    item.DespatchId == "--" ||
+                    item.DespatchId == "---");
+        }
+
+        return query;
+    }
+
+    private static IQueryable<UyumsoftInboxInvoice> ApplyTextFilter(
+        IQueryable<UyumsoftInboxInvoice> query,
+        string? value,
+        System.Linq.Expressions.Expression<Func<UyumsoftInboxInvoice, string>> propertySelector)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return query;
+        }
+
+        var pattern = BuildLikePattern(value);
+        return query.Where(item => EF.Functions.Like(EF.Property<string>(item, GetPropertyName(propertySelector)).ToUpper(), pattern));
+    }
+
+    private static string GetPropertyName(
+        System.Linq.Expressions.Expression<Func<UyumsoftInboxInvoice, string>> propertySelector)
+    {
+        if (propertySelector.Body is System.Linq.Expressions.MemberExpression memberExpression)
+        {
+            return memberExpression.Member.Name;
+        }
+
+        throw new ArgumentException("Property selector must point to a string property.", nameof(propertySelector));
+    }
+
+    private static string BuildLikePattern(string value) =>
+        $"%{value.Trim().ToUpperInvariant()}%";
 
     private static List<InvoiceViewingListItemDto> ApplySearch(
         List<InvoiceViewingListItemDto> items,
         InvoiceViewingListRequest request)
     {
-        if (request.SearchField is null || string.IsNullOrWhiteSpace(request.SearchText))
+        if (string.IsNullOrWhiteSpace(request.SearchText))
         {
             return items;
         }
@@ -215,6 +311,9 @@ public sealed class InvoiceViewingQueryExecutor(
             InvoiceViewingSearchField.InvoiceDate => ApplyInvoiceDateSearch(items, searchText),
             InvoiceViewingSearchField.InvoiceId => items
                 .Where(item => ContainsIgnoreCase(item.InvoiceId, searchText))
+                .ToList(),
+            InvoiceViewingSearchField.DocumentId => items
+                .Where(item => ContainsIgnoreCase(item.DocumentId, searchText))
                 .ToList(),
             InvoiceViewingSearchField.CustomerTitle => items
                 .Where(item => ContainsIgnoreCase(item.CustomerTitle, searchText))
@@ -256,6 +355,7 @@ public sealed class InvoiceViewingQueryExecutor(
         var filteredItems = items
             .Where(item =>
                 ContainsIgnoreCase(item.InvoiceId, searchText) ||
+                ContainsIgnoreCase(item.DocumentId, searchText) ||
                 ContainsIgnoreCase(item.CustomerTitle, searchText) ||
                 ContainsIgnoreCase(item.CustomerTcknVkn, searchText) ||
                 ContainsIgnoreCase(item.InvoiceType, searchText) ||

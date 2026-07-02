@@ -7,6 +7,17 @@ public sealed record InvoiceViewingListRequest(
     DateTime EndDate,
     bool? IsProcessed,
     bool? IsPrinted,
+    string? InvoiceId,
+    string? DespatchId,
+    string? CustomerTitle,
+    string? CustomerTcknVkn,
+    string? DocumentId,
+    string? OrderDocumentId,
+    string? Status,
+    string? InvoiceType,
+    decimal? MinInvoiceTotal,
+    decimal? MaxInvoiceTotal,
+    bool? HasDespatchId,
     InvoiceViewingSearchField? SearchField,
     string? SearchText,
     int PageNumber,
@@ -84,5 +95,6 @@ public enum InvoiceViewingSearchField
     InvoiceType = 8,
     EnvelopeIdentifier = 9,
     OrderDocumentId = 10,
-    Message = 11
+    Message = 11,
+    DocumentId = 12
 }

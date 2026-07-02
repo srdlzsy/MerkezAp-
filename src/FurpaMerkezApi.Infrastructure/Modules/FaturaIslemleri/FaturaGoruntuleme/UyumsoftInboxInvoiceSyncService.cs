@@ -1,25 +1,35 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
+using FurpaMerkezApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using UyumsoftInvoice = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Invoice;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntuleme;
 
 public sealed class UyumsoftInboxInvoiceSyncService(
     AuthDbContext authDbContext,
     IUyumsoftConnectedQueryService queryService,
+    IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
     IClock clock,
     ILogger<UyumsoftInboxInvoiceSyncService> logger)
 {
     private const int SyncPageSize = 200;
+    private static readonly Regex InvoiceOpenTagRegex = new(
+        @"<(?:(?<prefix>[A-Za-z_][\w.-]*):)?Invoice(?:\s|>|/)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private static readonly IReadOnlyCollection<DateRangeQueryFilterMode> DateRangeQueryFilterModes =
     [
-        DateRangeQueryFilterMode.ExecutionDate,
-        DateRangeQueryFilterMode.CreateDate
+        DateRangeQueryFilterMode.ExecutionDate
     ];
 
     public async Task SynchronizeRangeAsync(
@@ -90,7 +100,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         string invoiceId,
         CancellationToken cancellationToken)
     {
-        var page = await InvokeInboxInvoiceListAsync(
+        var page = await InvokeInboxInvoicesAsync(
             BuildInvoiceIdPayloadCandidates(invoiceId),
             $"invoice lookup {invoiceId}",
             cancellationToken);
@@ -107,6 +117,8 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         IReadOnlyCollection<ParsedInboxInvoice> items,
         CancellationToken cancellationToken)
     {
+        items = await EnrichMissingDocumentReferencesAsync(items, cancellationToken);
+
         var syncTimestampUtc = clock.UtcNow;
         var documentIds = items
             .Select(item => item.DocumentId)
@@ -200,26 +212,35 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         return new SyncUpsertResult(insertedCount, updatedCount);
     }
 
-    private async Task<ParsedInboxInvoicePage?> InvokeInboxInvoiceListAsync(
+    private async Task<ParsedInboxInvoicePage?> InvokeInboxInvoicesAsync(
         IReadOnlyCollection<InboxInvoiceQueryPayload> payloadCandidates,
         string scenario,
         CancellationToken cancellationToken)
     {
         List<string>? failures = null;
         ParsedInboxInvoicePage? emptyPage = null;
+        var config = ResolveEInvoiceOptions();
 
         foreach (var candidate in payloadCandidates)
         {
+            var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+
             try
             {
-                var response = await queryService.InvokeGetOperationAsync(
-                    UyumsoftConnectedServiceKind.EInvoice,
-                    new UyumsoftOperationInvocationRequest(
-                        "GetInboxInvoiceList",
-                        candidate.Parameters),
-                    cancellationToken);
+                var response = await client.GetInboxInvoicesAsync(
+                        UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
+                        candidate.Query)
+                    .WaitAsync(cancellationToken);
 
-                var page = ParsePage(response);
+                if (!response.IsSucceded)
+                {
+                    throw new InvalidOperationException(
+                        string.IsNullOrWhiteSpace(response.Message)
+                            ? "Uyumsoft GetInboxInvoices request was rejected."
+                            : response.Message);
+                }
+
+                var page = ParseInvoiceInfoPage(response);
 
                 if (page.Items.Count > 0 || page.TotalPage > 0)
                 {
@@ -235,9 +256,10 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             }
             catch (HttpRequestException exception)
             {
+                UyumsoftWcfClientHelper.Abort(client);
                 logger.LogWarning(
                     exception,
-                    "Uyumsoft GetInboxInvoiceList transport failure for {Scenario} on payload {PayloadName}. Cache fallback will be used.",
+                    "Uyumsoft GetInboxInvoices transport failure for {Scenario} on payload {PayloadName}. Cache fallback will be used.",
                     scenario,
                     candidate.Name);
 
@@ -245,13 +267,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             }
             catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
+                UyumsoftWcfClientHelper.Abort(client);
                 logger.LogWarning(
                     exception,
-                    "Uyumsoft GetInboxInvoiceList timed out for {Scenario} on payload {PayloadName}. Cache fallback will be used.",
+                    "Uyumsoft GetInboxInvoices timed out for {Scenario} on payload {PayloadName}. Cache fallback will be used.",
                     scenario,
                     candidate.Name);
 
                 return emptyPage;
+            }
+            finally
+            {
+                await UyumsoftWcfClientHelper.CloseAsync(client);
             }
         }
 
@@ -263,7 +290,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         if (failures is not null)
         {
             logger.LogWarning(
-                "Uyumsoft GetInboxInvoiceList failed for {Scenario}. Attempts: {Attempts}",
+                "Uyumsoft GetInboxInvoices failed for {Scenario}. Attempts: {Attempts}",
                 scenario,
                 string.Join(" | ", failures));
         }
@@ -291,7 +318,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var page = await InvokeInboxInvoiceListAsync(
+            var page = await InvokeInboxInvoicesAsync(
                 BuildDateRangePayloadCandidates(startDate, endDate, pageIndex, SyncPageSize, filterMode),
                 $"{filterLabel} range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}",
                 cancellationToken);
@@ -377,7 +404,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             {
                 DateRangeQueryFilterMode.ExecutionDate => new InboxInvoiceQueryPayload(
                     "execution-date-ordered",
-                    BuildInboxInvoiceListQueryPayload(
+                    BuildInboxInvoiceQuery(
                         zeroBasedPageIndex,
                         pageSize,
                         onlyNewestInvoices: false,
@@ -387,7 +414,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                         sortMode: "Descending")),
                 DateRangeQueryFilterMode.CreateDate => new InboxInvoiceQueryPayload(
                     "create-date-ordered",
-                    BuildInboxInvoiceListQueryPayload(
+                    BuildInboxInvoiceQuery(
                         zeroBasedPageIndex,
                         pageSize,
                         onlyNewestInvoices: false,
@@ -409,14 +436,14 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         [
             new(
                 "invoice-ids",
-                BuildInboxInvoiceListQueryPayload(
+                BuildInboxInvoiceQuery(
                     pageIndex,
                     pageSize,
                     onlyNewestInvoices: false,
                     invoiceIds: [invoiceId])),
             new(
                 "invoice-numbers",
-                BuildInboxInvoiceListQueryPayload(
+                BuildInboxInvoiceQuery(
                     pageIndex,
                     pageSize,
                     onlyNewestInvoices: false,
@@ -424,7 +451,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         ];
     }
 
-    private static IReadOnlyCollection<UyumsoftOperationParameterRequest> BuildInboxInvoiceListQueryPayload(
+    private static UyumsoftInvoice.InboxInvoiceQueryModel BuildInboxInvoiceQuery(
         int pageIndex,
         int pageSize,
         bool onlyNewestInvoices,
@@ -443,58 +470,24 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         string? targetTitle = null,
         string? targetTcknVkn = null)
     {
-        var parameters = new List<UyumsoftOperationParameterRequest>
+        var query = new UyumsoftInvoice.InboxInvoiceQueryModel
         {
-            Parameter("PageIndex", pageIndex),
-            Parameter("PageSize", pageSize),
-            Parameter("OnlyNewestInvoices", onlyNewestInvoices)
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            OnlyNewestInvoices = onlyNewestInvoices,
+            ExecutionStartDate = executionStartDate,
+            ExecutionEndDate = executionEndDate,
+            InvoiceIds = invoiceIds?
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .ToArray(),
+            InvoiceNumbers = invoiceNumbers?
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .ToArray()
         };
 
-        AddParameter(parameters, "ExecutionStartDate", executionStartDate);
-        AddParameter(parameters, "ExecutionEndDate", executionEndDate);
-        AddParameter(parameters, "CreateStartDate", createStartDate);
-        AddParameter(parameters, "CreateEndDate", createEndDate);
-        AddParameter(parameters, "Status", status);
-
-        if (invoiceIds is not null)
-        {
-            parameters.AddRange(
-                invoiceIds
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => Parameter("InvoiceIds", value.Trim())));
-        }
-
-        if (invoiceNumbers is not null)
-        {
-            parameters.AddRange(
-                invoiceNumbers
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => Parameter("InvoiceNumbers", value.Trim())));
-        }
-
-        if (statusInList is not null)
-        {
-            parameters.AddRange(
-                statusInList
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => Parameter("StatusInList", value.Trim())));
-        }
-
-        if (statusNotInList is not null)
-        {
-            parameters.AddRange(
-                statusNotInList
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => Parameter("StatusNotInList", value.Trim())));
-        }
-
-        AddParameter(parameters, "SortColumn", sortColumn);
-        AddParameter(parameters, "SortMode", sortMode);
-        AddParameter(parameters, "IsArchived", isArchived);
-        AddParameter(parameters, "TargetTitle", targetTitle);
-        AddParameter(parameters, "TargetTcknVkn", targetTcknVkn);
-
-        return parameters;
+        return query;
     }
 
     private static UyumsoftOperationParameterRequest Parameter(string name, object value) =>
@@ -614,6 +607,84 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         return new ParsedInboxInvoicePage(totalPage, items);
     }
 
+    private static ParsedInboxInvoicePage ParseInvoiceInfoPage(UyumsoftInvoice.InvoicesResponse response)
+    {
+        var value = response.Value;
+        var items = value?.Items ?? [];
+        var mappedItems = items
+            .Select(MapInvoiceInfo)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .ToArray();
+
+        return new ParsedInboxInvoicePage(value?.TotalPages ?? 0, mappedItems);
+    }
+
+    private static ParsedInboxInvoice? MapInvoiceInfo(UyumsoftInvoice.InvoiceInfo invoiceInfo)
+    {
+        var invoice = invoiceInfo.Invoice;
+
+        if (invoice is null)
+        {
+            return null;
+        }
+
+        var invoiceId = NormalizeReferenceValue(invoice.ID?.Value);
+        var documentId = NormalizeReferenceValue(invoice.UUID?.Value);
+
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            documentId = invoiceId;
+        }
+
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            return null;
+        }
+
+        var despatchId = NormalizeReferenceValues(
+            invoice.DespatchDocumentReference?
+                .Select(reference => reference.ID?.Value)
+            ?? []);
+        var orderDocumentId = NormalizeReferenceValues(
+            invoice.OrderReference is null
+                ? []
+                : [invoice.OrderReference.ID?.Value]);
+        var taxTotal = invoice.TaxTotal?
+            .Select(tax => tax.TaxAmount?.Value ?? 0m)
+            .DefaultIfEmpty(0m)
+            .Sum() ?? 0m;
+
+        return new ParsedInboxInvoice(
+            documentId,
+            string.IsNullOrWhiteSpace(invoiceId) ? documentId : invoiceId,
+            documentId,
+            NormalizeOptional(invoiceInfo.LocalDocumentId),
+            NormalizeOptional(invoiceInfo.TargetCustomer?.Title) ?? ResolveInvoicePartyTitle(invoice.AccountingSupplierParty?.Party),
+            NormalizeOptional(invoiceInfo.TargetCustomer?.VknTckn) ?? ResolveInvoicePartyTaxNumber(invoice.AccountingSupplierParty?.Party),
+            invoiceInfo.CreateDateUtc == default ? null : invoiceInfo.CreateDateUtc,
+            invoice.IssueDate?.Value,
+            NormalizeOptional(invoice.InvoiceTypeCode?.Value) ?? string.Empty,
+            invoice.LegalMonetaryTotal?.PayableAmount?.Value ?? 0m,
+            string.Join(", ", despatchId),
+            false,
+            false,
+            string.Empty,
+            string.Empty,
+            null,
+            string.Empty,
+            NormalizeOptional(invoiceInfo.ExtraInformation) ?? string.Empty,
+            taxTotal,
+            invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.Value ?? 0m,
+            NormalizeOptional(invoice.DocumentCurrencyCode?.Value) ?? string.Empty,
+            invoice.PricingExchangeRate?.CalculationRate?.Value ?? 0m,
+            string.Join(", ", orderDocumentId),
+            false,
+            NormalizeOptional(invoice.InvoiceTypeCode?.Value) ?? string.Empty,
+            0,
+            null);
+    }
+
     private static IReadOnlyCollection<UyumsoftResponseNodeDto> ExtractItemNodes(
         IReadOnlyCollection<UyumsoftResponseNodeDto> nodes)
     {
@@ -622,7 +693,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         if (itemsNode is not null)
         {
             var directChildren = itemsNode.Children
-                .Where(IsInvoiceListItemNode)
+                .Where(IsInboxInvoiceItemNode)
                 .ToArray();
 
             if (directChildren.Length > 0)
@@ -632,7 +703,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         }
 
         return EnumerateNodes(nodes)
-            .Where(IsInvoiceListItemNode)
+            .Where(IsInboxInvoiceItemNode)
             .ToArray();
     }
 
@@ -641,6 +712,11 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         out ParsedInboxInvoice item)
     {
         item = default!;
+
+        if (TryParseInvoiceInfoItem(itemNode, out item))
+        {
+            return true;
+        }
 
         var rawInvoiceId = ReadString(itemNode, "InvoiceId");
         var rawDocumentId = ReadString(itemNode, "DocumentId");
@@ -668,14 +744,15 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var isSeen = TryReadBool(itemNode, out var parsedIsSeen, "IsSeen")
             ? parsedIsSeen
             : (bool?)null;
-        var orderDocumentId = ReadString(itemNode, "OrderDocumentId", "OrderId", "OrderNumber");
-        var despatchId = ReadString(
-            itemNode,
-            "DespatchId",
-            "DespatchDocumentId",
-            "DespatchNumber",
-            "DespatchDocumentReference",
-            "DespatchDocumentReferenceId");
+        var orderDocumentId = NormalizeReferenceValue(ReadString(itemNode, "OrderDocumentId", "OrderId", "OrderNumber"));
+        var despatchId = NormalizeReferenceValue(
+            ReadString(
+                itemNode,
+                "DespatchId",
+                "DespatchDocumentId",
+                "DespatchNumber",
+                "DespatchDocumentReference",
+                "DespatchDocumentReferenceId"));
 
         item = new ParsedInboxInvoice(
             documentId,
@@ -688,7 +765,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             ReadDateTime(itemNode, "InvoiceDate", "DocumentDate", "ExecutionDate", "Date"),
             ReadString(itemNode, "Type", "InvoiceType", "DocumentType"),
             ReadDecimal(itemNode, "PayableAmount", "InvoiceTotal", "TotalAmount"),
-            string.IsNullOrWhiteSpace(despatchId) ? orderDocumentId : despatchId,
+            despatchId,
             isNew.HasValue ? !isNew.Value : false,
             ReadBool(itemNode, "IsStandart", "IsStandard"),
             statusCode,
@@ -707,6 +784,393 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             isSeen);
 
         return true;
+    }
+
+    private static bool TryParseInvoiceInfoItem(
+        UyumsoftResponseNodeDto itemNode,
+        out ParsedInboxInvoice item)
+    {
+        item = default!;
+
+        var invoiceXml = ReadString(itemNode, "Invoice");
+
+        if (!TryParseInvoiceCandidate(invoiceXml, out var invoiceDocument) || invoiceDocument.Root is null)
+        {
+            return false;
+        }
+
+        var invoiceRoot = invoiceDocument.Root;
+        var invoiceId = GetChildValue(invoiceRoot, "ID");
+        var invoiceUuid = GetChildValue(invoiceRoot, "UUID");
+        var documentId = NormalizeReferenceValue(invoiceUuid);
+
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            documentId = NormalizeReferenceValue(invoiceId);
+        }
+
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            return false;
+        }
+
+        var issueDate = ReadDateTimeValue(GetChildValue(invoiceRoot, "IssueDate"));
+        var invoiceType = GetChildValue(invoiceRoot, "InvoiceTypeCode") ?? string.Empty;
+        var legalMonetaryTotal = FindChild(invoiceRoot, "LegalMonetaryTotal");
+        var supplierParty = FindChild(FindChild(invoiceRoot, "AccountingSupplierParty"), "Party");
+
+        var references = ReadInvoiceDocumentReferences(invoiceDocument);
+        var taxTotal = invoiceRoot
+            .Elements()
+            .Where(element => string.Equals(element.Name.LocalName, "TaxTotal", StringComparison.OrdinalIgnoreCase))
+            .Select(element => ReadDecimalValue(GetPathValue(element, "TaxAmount")))
+            .DefaultIfEmpty(0m)
+            .Sum();
+
+        item = new ParsedInboxInvoice(
+            documentId,
+            string.IsNullOrWhiteSpace(invoiceId) ? documentId : invoiceId,
+            null,
+            NormalizeOptional(ReadString(itemNode, "LocalDocumentId")),
+            ResolvePartyTitle(supplierParty),
+            ResolvePartyTaxNumber(supplierParty),
+            ReadDateTime(itemNode, "CreateDateUtc", "CreateDate"),
+            issueDate,
+            invoiceType,
+            ReadDecimalValue(GetPathValue(legalMonetaryTotal, "PayableAmount")),
+            references.DespatchId,
+            false,
+            false,
+            string.Empty,
+            string.Empty,
+            null,
+            string.Empty,
+            ReadString(itemNode, "ExtraInformation"),
+            taxTotal,
+            ReadDecimalValue(GetPathValue(legalMonetaryTotal, "TaxExclusiveAmount")),
+            GetChildValue(invoiceRoot, "DocumentCurrencyCode") ?? string.Empty,
+            ReadDecimalValue(GetPathValue(FindChild(invoiceRoot, "PricingExchangeRate"), "CalculationRate")),
+            references.OrderDocumentId,
+            false,
+            invoiceType,
+            0,
+            null);
+
+        return true;
+    }
+
+    private async Task<IReadOnlyCollection<ParsedInboxInvoice>> EnrichMissingDocumentReferencesAsync(
+        IReadOnlyCollection<ParsedInboxInvoice> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return items;
+        }
+
+        var enrichedItems = new List<ParsedInboxInvoice>(items.Count);
+
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var hasDespatchId = !IsMissingReference(item.DespatchId);
+            var hasOrderDocumentId = !IsMissingReference(item.OrderDocumentId);
+
+            if (hasDespatchId && hasOrderDocumentId)
+            {
+                enrichedItems.Add(item);
+                continue;
+            }
+
+            var references = await FetchInvoiceDocumentReferencesAsync(item, cancellationToken);
+
+            if (references is null)
+            {
+                enrichedItems.Add(item);
+                continue;
+            }
+
+            enrichedItems.Add(item with
+            {
+                DespatchId = hasDespatchId
+                    ? item.DespatchId
+                    : references.DespatchId,
+                OrderDocumentId = hasOrderDocumentId
+                    ? item.OrderDocumentId
+                    : references.OrderDocumentId
+            });
+        }
+
+        return enrichedItems;
+    }
+
+    private static bool IsMissingReference(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var normalized = value.Trim();
+        return normalized is "-" or "--" or "---" ||
+               string.Equals(normalized, "null", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "n/a", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "na", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "yok", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeReferenceValue(string? value) =>
+        IsMissingReference(value)
+            ? string.Empty
+            : value!.Trim();
+
+    private static IReadOnlyCollection<string> NormalizeReferenceValues(IEnumerable<string?> values) =>
+        values
+            .Select(NormalizeReferenceValue)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private async Task<InvoiceDocumentReferences?> FetchInvoiceDocumentReferencesAsync(
+        ParsedInboxInvoice item,
+        CancellationToken cancellationToken)
+    {
+        var lookupIds = NormalizeReferenceValues(
+            [
+                item.DocumentId,
+                item.ServiceDocumentId,
+                item.LocalDocumentId,
+                item.InvoiceId
+            ]);
+
+        foreach (var lookupId in lookupIds)
+        {
+            try
+            {
+                var response = await queryService.InvokeGetOperationAsync(
+                    UyumsoftConnectedServiceKind.EInvoice,
+                    new UyumsoftOperationInvocationRequest(
+                        "GetInboxInvoice",
+                        [new UyumsoftOperationParameterRequest("invoiceId", lookupId)]),
+                    cancellationToken);
+
+                if (TryReadInvoiceDocumentReferences(response, out var references))
+                {
+                    return references;
+                }
+            }
+            catch (InvalidOperationException exception)
+            {
+                logger.LogDebug(
+                    exception,
+                    "Uyumsoft GetInboxInvoice could not enrich document references for invoice {InvoiceId} with lookup {LookupId}.",
+                    item.InvoiceId,
+                    lookupId);
+            }
+            catch (HttpRequestException exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Uyumsoft GetInboxInvoice transport failure while enriching document references for invoice {InvoiceId}.",
+                    item.InvoiceId);
+                return null;
+            }
+            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Uyumsoft GetInboxInvoice timed out while enriching document references for invoice {InvoiceId}.",
+                    item.InvoiceId);
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryReadInvoiceDocumentReferences(
+        UyumsoftOperationResponseDto response,
+        out InvoiceDocumentReferences references)
+    {
+        references = default!;
+
+        if (!TryExtractInvoiceDocument(response, out var invoiceDocument))
+        {
+            return false;
+        }
+
+        references = ReadInvoiceDocumentReferences(invoiceDocument);
+        return !string.IsNullOrWhiteSpace(references.DespatchId) ||
+               !string.IsNullOrWhiteSpace(references.OrderDocumentId);
+    }
+
+    private static InvoiceDocumentReferences ReadInvoiceDocumentReferences(XDocument invoiceDocument)
+    {
+        var despatchIds = NormalizeReferenceValues(
+            invoiceDocument.Root?
+                .Descendants()
+                .Where(element => string.Equals(element.Name.LocalName, "DespatchDocumentReference", StringComparison.OrdinalIgnoreCase))
+                .Select(ReadReferenceId)
+            ?? []);
+
+        var orderIds = NormalizeReferenceValues(
+            invoiceDocument.Root?
+                .Descendants()
+                .Where(element => string.Equals(element.Name.LocalName, "OrderReference", StringComparison.OrdinalIgnoreCase))
+                .Select(ReadReferenceId)
+            ?? []);
+
+        return new InvoiceDocumentReferences(
+            string.Join(", ", despatchIds),
+            string.Join(", ", orderIds));
+    }
+
+    private static string ReadReferenceId(XElement reference) =>
+        NormalizeReferenceValue(
+            reference.Elements()
+                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "ID", StringComparison.OrdinalIgnoreCase))
+                ?.Value);
+
+    private static bool TryExtractInvoiceDocument(
+        UyumsoftOperationResponseDto response,
+        out XDocument invoiceDocument)
+    {
+        invoiceDocument = default!;
+        var candidates = new List<string?>(capacity: response.Nodes.Count + 2)
+        {
+            response.ResponsePayloadJson,
+            response.ScalarValue
+        };
+
+        candidates.AddRange(response.Nodes.SelectMany(FlattenNodeValues));
+
+        foreach (var candidate in candidates)
+        {
+            if (TryParseInvoiceCandidate(candidate, out invoiceDocument))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string?> FlattenNodeValues(UyumsoftResponseNodeDto node)
+    {
+        yield return node.Value;
+
+        foreach (var child in node.Children)
+        {
+            foreach (var value in FlattenNodeValues(child))
+            {
+                yield return value;
+            }
+        }
+    }
+
+    private static bool TryParseInvoiceCandidate(
+        string? candidate,
+        out XDocument invoiceDocument)
+    {
+        invoiceDocument = default!;
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return false;
+        }
+
+        var decoded = WebUtility.HtmlDecode(candidate.Trim());
+
+        if (TryParseInvoiceCandidateText(decoded, out invoiceDocument))
+        {
+            return true;
+        }
+
+        try
+        {
+            var unescaped = Regex.Unescape(decoded);
+            return !string.Equals(unescaped, decoded, StringComparison.Ordinal) &&
+                   TryParseInvoiceCandidateText(unescaped, out invoiceDocument);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseInvoiceCandidateText(
+        string candidate,
+        out XDocument invoiceDocument)
+    {
+        invoiceDocument = default!;
+
+        if (TryParseInvoiceXml(candidate, out invoiceDocument))
+        {
+            return true;
+        }
+
+        if (!TryExtractInvoiceXmlSnippet(candidate, out var snippet))
+        {
+            return false;
+        }
+
+        return TryParseInvoiceXml(snippet, out invoiceDocument);
+    }
+
+    private static bool TryExtractInvoiceXmlSnippet(
+        string candidate,
+        out string snippet)
+    {
+        snippet = string.Empty;
+
+        var match = InvoiceOpenTagRegex.Match(candidate);
+
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var prefix = match.Groups["prefix"].Success ? $"{match.Groups["prefix"].Value}:" : string.Empty;
+        var closingTag = $"</{prefix}Invoice>";
+        var endIndex = candidate.LastIndexOf(closingTag, StringComparison.OrdinalIgnoreCase);
+
+        if (endIndex <= match.Index)
+        {
+            return false;
+        }
+
+        snippet = candidate[match.Index..(endIndex + closingTag.Length)];
+        return true;
+    }
+
+    private static bool TryParseInvoiceXml(
+        string xmlContent,
+        out XDocument invoiceDocument)
+    {
+        invoiceDocument = default!;
+
+        try
+        {
+            var parsedDocument = XDocument.Parse(xmlContent, LoadOptions.PreserveWhitespace);
+            var invoiceElement = parsedDocument.Root?
+                .DescendantsAndSelf()
+                .FirstOrDefault(element =>
+                    string.Equals(element.Name.LocalName, "Invoice", StringComparison.OrdinalIgnoreCase) &&
+                    element.HasElements);
+
+            if (invoiceElement is null)
+            {
+                return false;
+            }
+
+            invoiceDocument = new XDocument(invoiceElement);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string ResolveLookupDocumentId(
@@ -809,6 +1273,27 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         }
     }
 
+    private static bool IsInboxInvoiceItemNode(UyumsoftResponseNodeDto node) =>
+        IsInvoiceListItemNode(node) || IsInvoiceInfoItemNode(node);
+
+    private static bool IsInvoiceInfoItemNode(UyumsoftResponseNodeDto node)
+    {
+        if (node.Children.Count == 0)
+        {
+            return false;
+        }
+
+        var childNames = node.Children
+            .Select(child => child.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return childNames.Contains("Invoice") &&
+               (childNames.Contains("CreateDateUtc") ||
+                childNames.Contains("LocalDocumentId") ||
+                childNames.Contains("TargetCustomer") ||
+                childNames.Contains("ExtraInformation"));
+    }
+
     private static bool IsInvoiceListItemNode(UyumsoftResponseNodeDto node)
     {
         if (node.Children.Count == 0)
@@ -829,6 +1314,127 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                childNames.Contains("DocumentId") ||
                childNames.Contains("TargetTitle") ||
                childNames.Contains("PayableAmount");
+    }
+
+    private static XElement? FindChild(XElement? parent, string localName) =>
+        parent?.Elements().FirstOrDefault(element =>
+            string.Equals(element.Name.LocalName, localName, StringComparison.OrdinalIgnoreCase));
+
+    private static string? GetChildValue(XElement? parent, string localName) =>
+        NormalizeReferenceValue(FindChild(parent, localName)?.Value) is { Length: > 0 } value
+            ? value
+            : null;
+
+    private static string? GetPathValue(XElement? parent, params string[] localNames)
+    {
+        var current = parent;
+
+        foreach (var localName in localNames)
+        {
+            current = FindChild(current, localName);
+
+            if (current is null)
+            {
+                return null;
+            }
+        }
+
+        return NormalizeReferenceValue(current!.Value) is { Length: > 0 } value
+            ? value
+            : null;
+    }
+
+    private static string ResolvePartyTitle(XElement? partyElement)
+    {
+        var title = GetPathValue(partyElement, "PartyName", "Name") ??
+                    GetPathValue(partyElement, "PartyLegalEntity", "RegistrationName");
+
+        return title ?? string.Empty;
+    }
+
+    private static string ResolvePartyTaxNumber(XElement? partyElement)
+    {
+        var taxNumber = GetPathValue(partyElement, "PartyIdentification", "ID") ??
+                        GetPathValue(partyElement, "PartyTaxScheme", "CompanyID") ??
+                        GetPathValue(partyElement, "PartyLegalEntity", "CompanyID");
+
+        return taxNumber ?? string.Empty;
+    }
+
+    private static string ResolveInvoicePartyTitle(UyumsoftInvoice.PartyType? party)
+    {
+        if (party is null)
+        {
+            return string.Empty;
+        }
+
+        return NormalizeOptional(party.PartyName?.Name?.Value) ??
+               NormalizeOptional(party.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value) ??
+               NormalizeOptional(party.PartyTaxScheme?.RegistrationName?.Value) ??
+               string.Empty;
+    }
+
+    private static string ResolveInvoicePartyTaxNumber(UyumsoftInvoice.PartyType? party)
+    {
+        if (party is null)
+        {
+            return string.Empty;
+        }
+
+        return NormalizeOptional(party.PartyIdentification?.FirstOrDefault()?.ID?.Value) ??
+               NormalizeOptional(party.PartyTaxScheme?.CompanyID?.Value) ??
+               NormalizeOptional(party.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value) ??
+               string.Empty;
+    }
+
+    private static DateTime? ReadDateTimeValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (DateTime.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var invariantDate))
+        {
+            return invariantDate;
+        }
+
+        return DateTime.TryParse(
+            value,
+            CultureInfo.GetCultureInfo("tr-TR"),
+            DateTimeStyles.AllowWhiteSpaces,
+            out var trDate)
+            ? trDate
+            : null;
+    }
+
+    private static decimal ReadDecimalValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0m;
+        }
+
+        if (decimal.TryParse(
+                value,
+                NumberStyles.Number | NumberStyles.AllowCurrencySymbol,
+                CultureInfo.InvariantCulture,
+                out var invariantDecimal))
+        {
+            return invariantDecimal;
+        }
+
+        return decimal.TryParse(
+            value,
+            NumberStyles.Number | NumberStyles.AllowCurrencySymbol,
+            CultureInfo.GetCultureInfo("tr-TR"),
+            out var trDecimal)
+            ? trDecimal
+            : 0m;
     }
 
     private static int ReadInt(UyumsoftResponseNodeDto node, params string[] fieldNames)
@@ -944,8 +1550,43 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         return string.Empty;
     }
 
-    private static string NormalizeOptional(string value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private UyumsoftServiceEndpointOptions ResolveEInvoiceOptions()
+    {
+        var catalog = UyumsoftConnectedServiceCatalog.GetService(UyumsoftConnectedServiceKind.EInvoice);
+        var configured = uyumsoftOptions.Value.EInvoice;
+        var resolved = configured with
+        {
+            EndpointUrl = string.IsNullOrWhiteSpace(configured.EndpointUrl)
+                ? catalog.DefaultEndpointUrl
+                : configured.EndpointUrl,
+            WsdlUrl = string.IsNullOrWhiteSpace(configured.WsdlUrl)
+                ? catalog.DefaultWsdlUrl
+                : configured.WsdlUrl,
+            ContractName = string.IsNullOrWhiteSpace(configured.ContractName)
+                ? catalog.ContractName
+                : configured.ContractName
+        };
+
+        if (string.IsNullOrWhiteSpace(resolved.EndpointUrl))
+        {
+            throw new InvalidOperationException($"{catalog.ServiceName} endpoint configuration is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(resolved.Username))
+        {
+            throw new InvalidOperationException($"{catalog.ServiceName} username configuration is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(resolved.Password))
+        {
+            throw new InvalidOperationException($"{catalog.ServiceName} password configuration is required.");
+        }
+
+        return resolved;
+    }
 
     private static string ResolveStatusText(string rawStatus, string statusCode)
     {
@@ -1003,6 +1644,10 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         int InvoiceTipTypeCode,
         bool? IsSeen);
 
+    private sealed record InvoiceDocumentReferences(
+        string DespatchId,
+        string OrderDocumentId);
+
     private sealed record SyncUpsertResult(
         int InsertedCount,
         int UpdatedCount)
@@ -1012,7 +1657,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
     private sealed record InboxInvoiceQueryPayload(
         string Name,
-        IReadOnlyCollection<UyumsoftOperationParameterRequest> Parameters);
+        UyumsoftInvoice.InboxInvoiceQueryModel Query);
 
     private enum DateRangeQueryFilterMode
     {

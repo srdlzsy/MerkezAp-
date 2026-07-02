@@ -43,6 +43,17 @@ public sealed class FaturaGoruntulemeController(
                 request.EndDate!.Value,
                 MapState(request.ResolveProcessedState()),
                 MapState(request.ResolvePrintedState()),
+                request.ResolveInvoiceId(),
+                request.ResolveDespatchId(),
+                request.CustomerTitle,
+                request.ResolveCustomerTcknVkn(),
+                request.ResolveDocumentId(),
+                request.OrderDocumentId,
+                request.Status,
+                request.InvoiceType,
+                request.MinInvoiceTotal,
+                request.MaxInvoiceTotal,
+                request.HasDespatchId,
                 request.SearchField,
                 request.SearchText,
                 request.ResolvePageNumber(),
@@ -162,6 +173,40 @@ public sealed class InvoiceViewingListHttpRequest
 
     public string? SearchText { get; init; }
 
+    public string? InvoiceId { get; init; }
+
+    [FromQuery(Name = "invoiceNo")]
+    public string? InvoiceNo { get; init; }
+
+    public string? DespatchId { get; init; }
+
+    [FromQuery(Name = "despatchNo")]
+    public string? DespatchNo { get; init; }
+
+    public string? CustomerTitle { get; init; }
+
+    public string? CustomerTcknVkn { get; init; }
+
+    [FromQuery(Name = "tcknVkn")]
+    public string? TcknVkn { get; init; }
+
+    public string? DocumentId { get; init; }
+
+    [FromQuery(Name = "ettn")]
+    public string? Ettn { get; init; }
+
+    public string? OrderDocumentId { get; init; }
+
+    public string? Status { get; init; }
+
+    public string? InvoiceType { get; init; }
+
+    public decimal? MinInvoiceTotal { get; init; }
+
+    public decimal? MaxInvoiceTotal { get; init; }
+
+    public bool? HasDespatchId { get; init; }
+
     [Range(1, int.MaxValue)]
     public int PageNumber { get; init; } = 1;
 
@@ -177,6 +222,14 @@ public sealed class InvoiceViewingListHttpRequest
     public int ResolvePrintedState() => IsPrinted ?? PrintedState;
 
     public int ResolvePageNumber() => Page ?? PageNumber;
+
+    public string? ResolveInvoiceId() => string.IsNullOrWhiteSpace(InvoiceId) ? InvoiceNo : InvoiceId;
+
+    public string? ResolveDespatchId() => string.IsNullOrWhiteSpace(DespatchId) ? DespatchNo : DespatchId;
+
+    public string? ResolveCustomerTcknVkn() => string.IsNullOrWhiteSpace(CustomerTcknVkn) ? TcknVkn : CustomerTcknVkn;
+
+    public string? ResolveDocumentId() => string.IsNullOrWhiteSpace(DocumentId) ? Ettn : DocumentId;
 }
 
 public sealed class InvoiceViewingPrintedStateHttpRequest

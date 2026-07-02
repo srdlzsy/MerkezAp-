@@ -7677,7 +7677,11 @@ Not:
 
 Kisa ornek:
 
-`GET /api/fatura-islemleri/fatura-goruntuleme?StartDate=2026-05-01&EndDate=2026-05-05&isProcessed=-1&isPrinted=-1&SearchField=InvoiceId&SearchText=INV-2026&page=1&PageSize=50`
+`GET /api/fatura-islemleri/fatura-goruntuleme?StartDate=2026-05-01&EndDate=2026-05-05&isProcessed=-1&isPrinted=-1&invoiceId=KEF2026&page=1&PageSize=50`
+
+Irsaliye no ile fatura bulma:
+
+`GET /api/fatura-islemleri/fatura-goruntuleme?StartDate=2026-07-01&EndDate=2026-07-31&despatchId=KEI2026000004237`
 
 Geriye uyumlu ornek:
 
@@ -7696,7 +7700,18 @@ isProcessed     opsiyonel; UI icin onerilen alias, -1=tumu, 1=true, 0=false
 ProcessedState  opsiyonel; legacy alias, -1=tumu, 1=true, 0=false
 isPrinted       opsiyonel; UI icin onerilen alias, -1=tumu, 1=true, 0=false
 PrintedState    opsiyonel; legacy alias, -1=tumu, 1=true, 0=false
-SearchField     opsiyonel; InvoiceDate, InvoiceId, CustomerTitle, CustomerTcknVkn, InvoiceTotal, DespatchId, Any, Status, InvoiceType, EnvelopeIdentifier, OrderDocumentId, Message
+invoiceId       opsiyonel; fatura no/resmi belge no contains arama. Alias: invoiceNo
+despatchId      opsiyonel; irsaliye no contains arama. Alias: despatchNo
+customerTitle   opsiyonel; musteri/tedarikci unvani contains arama
+customerTcknVkn opsiyonel; VKN/TCKN contains arama. Alias: tcknVkn
+documentId      opsiyonel; Uyumsoft teknik UUID/ETTN contains arama. Alias: ettn
+orderDocumentId opsiyonel; siparis/order referansi contains arama
+status          opsiyonel; status, statusCode veya envelopeStatusCode icinde contains arama
+invoiceType     opsiyonel; fatura tipi contains arama
+minInvoiceTotal opsiyonel; toplam tutar alt siniri
+maxInvoiceTotal opsiyonel; toplam tutar ust siniri
+hasDespatchId   opsiyonel; true=irsaliyeli faturalar, false=irsaliye no bos olanlar
+SearchField     opsiyonel; InvoiceDate, InvoiceId, DocumentId, CustomerTitle, CustomerTcknVkn, InvoiceTotal, DespatchId, Any, Status, InvoiceType, EnvelopeIdentifier, OrderDocumentId, Message
 SearchText      opsiyonel; SearchField verilmezse genel arama olarak uygulanir
 page            opsiyonel; UI icin onerilen alias, default 1
 PageNumber      opsiyonel; default 1
@@ -7708,6 +7723,10 @@ UI notu:
 - yeni UI gelistirmelerinde `isProcessed`, `isPrinted` ve `page` kullanilmasi tavsiye edilir
 - eski istemciler icin `ProcessedState`, `PrintedState` ve `PageNumber` hala desteklenir
 - ayni request'te hem yeni hem eski alias gonderilirse yeni aliaslar (`isProcessed`, `isPrinted`, `page`) oncelikli kabul edilir
+- filtreleme iki asamali dusunulmelidir:
+  - backend filtreleri tarih araligindaki genis veri setini daraltir ve DB/cache uzerinden calisir
+  - frontend/grid filtreleri backend'den donen aday set uzerinde anlik lokal filtreleme yapar
+- kullanici elindeki irsaliye, fatura no, VKN/TCKN veya unvanla fatura bulacaksa once backend'e ilgili net query parametresi gonderilmelidir; UI ekrani bunun uzerine lokal filtre uygulayabilir
 
 Response `InvoiceViewingListResponse`:
 
@@ -7753,7 +7772,7 @@ Liste davranisi:
 
 - temel kaynak Auth/PostgreSQL icindeki `uyumsoft_inbox_invoices` tablosudur
 - `GET /api/fatura-islemleri/fatura-goruntuleme` otomatik Uyumsoft cagrisi yapmaz; sadece lokal cache/DB sonucunu doner
-- yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i secilen tarih araligini Uyumsoft `GetInboxInvoiceList` operasyonu ile cache tabloya upsert eder
+- yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i secilen tarih araligini Uyumsoft `GetInboxInvoices` operasyonu ile cache tabloya upsert eder
 - legacy `GetInvoicesAsync(isProcessed, isPrinted)` akisindaki gibi tarih + islenme + yazdirilma filtresi uygulanir
 - tarih filtresi `invoiceDate` veya fallback olarak `createDate` alanina uygulanir
 - tarih araligi gun seviyesindedir; bitis tarihi SQL tarafinda `+1 gun exclusive` mantigi ile uygulanir
@@ -7763,7 +7782,8 @@ Liste davranisi:
 - `customerTitle` response'a buyuk harfe cevrilmis gelir
 - DB tarafindaki kolon `isStandart` olsa da API response'unda alan `isStandard` olarak gelir
 - `statusCode` ham DB degeridir; `status` ise UI'de direkt gosterebileceginiz aciklama metnidir
-- `despatchId` Uyumsoft liste cevabinda dogrudan irsaliye alani gelirse onu tasir; bos gelirse `orderDocumentId` fallback'i ile doldurulur
+- `despatchId` Uyumsoft `GetInboxInvoices` full UBL cevabinda `Invoice.DespatchDocumentReference[].ID` alanindan okunur; bos veya `-` gibi placeholder kalirsa backend ek olarak `GetInboxInvoice` full UBL detayindan `DespatchDocumentReference/ID` okuyup cache'i zenginlestirir
+- `orderDocumentId` ayri siparis/order referansi alanidir; irsaliye numarasi gibi kullanilmamalidir
 - `orderDocumentId`, `envelopeIdentifier`, `message`, vergi toplam/tutar, doviz, arsiv ve goruldu bilgileri Uyumsoft inbox cache tablosunda ayrica saklanir
 - `status` mapping'i:
   - `1000` -> `Onaylandi`
@@ -7772,10 +7792,21 @@ Liste davranisi:
   - `1300` -> `Iade Edildi`
   - `1400` -> `E-Arsiv Iptal`
   - diger -> `Bilinmiyor`
-- SQL tarafinda yalniz tarih + processed + printed filtreleri uygulanir
-- arama semantigi legacy ile uyumludur ve SQL'den gelen sonuc seti uzerinde, paging'den once bellek tarafinda uygulanir:
+- SQL tarafinda tarih + processed + printed + net query filtreleri uygulanir:
+  - `invoiceId` / `invoiceNo`
+  - `despatchId` / `despatchNo`
+  - `customerTitle`
+  - `customerTcknVkn` / `tcknVkn`
+  - `documentId` / `ettn`
+  - `orderDocumentId`
+  - `status`
+  - `invoiceType`
+  - `minInvoiceTotal`, `maxInvoiceTotal`
+  - `hasDespatchId`
+- `SearchField`/`SearchText` ikinci backend arama katmanidir; SQL'den gelen sonuc seti uzerinde, paging'den once bellek tarafinda uygulanir:
   - `InvoiceDate` -> exact date
   - `InvoiceId` -> contains, case-insensitive
+  - `DocumentId` -> contains, case-insensitive
   - `CustomerTitle` -> contains, case-insensitive
   - `CustomerTcknVkn` -> contains
   - `InvoiceTotal` -> exact decimal
@@ -7815,7 +7846,7 @@ Response:
 
 Davranis:
 
-- secilen tarih araligini Uyumsoft `GetInboxInvoiceList` ile okur
+- secilen tarih araligini Uyumsoft `GetInboxInvoices` ile okur
 - gelen sonuc `uyumsoft_inbox_invoices` cache tablosuna upsert edilir
 - tekrar eden veya degisiklik icermeyen sayfalar icin koruma vardir; sonsuz donguye girmez
 - sync tamamlandiktan sonra UI ayni tarih araligiyla `GET /api/fatura-islemleri/fatura-goruntuleme` cagirip DB sonucunu alabilir
