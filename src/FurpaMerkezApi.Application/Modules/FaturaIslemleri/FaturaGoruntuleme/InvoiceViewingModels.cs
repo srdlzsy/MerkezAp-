@@ -49,7 +49,19 @@ public sealed record InvoiceViewingListItemDto(
     bool IsPrinted,
     bool IsStandard,
     string StatusCode,
-    string Status);
+    string Status,
+    string EnvelopeIdentifier,
+    string EnvelopeStatusCode,
+    string Message,
+    decimal TaxTotal,
+    decimal TaxExclusiveAmount,
+    string DocumentCurrencyCode,
+    decimal ExchangeRate,
+    string OrderDocumentId,
+    bool IsArchived,
+    string InvoiceTipType,
+    int InvoiceTipTypeCode,
+    bool? IsSeen);
 
 public sealed record InvoiceViewingDetailDto(
     InvoiceViewingListItemDto Summary,
@@ -66,5 +78,11 @@ public enum InvoiceViewingSearchField
     CustomerTitle = 2,
     CustomerTcknVkn = 3,
     InvoiceTotal = 4,
-    DespatchId = 5
+    DespatchId = 5,
+    Any = 6,
+    Status = 7,
+    InvoiceType = 8,
+    EnvelopeIdentifier = 9,
+    OrderDocumentId = 10,
+    Message = 11
 }

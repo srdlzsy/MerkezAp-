@@ -16,8 +16,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     ILogger<UyumsoftInboxInvoiceSyncService> logger)
 {
     private const int SyncPageSize = 200;
-    private const int MaxSyncPageCount = 250;
-    private const int MaxConsecutiveNoChangePages = 2;
     private static readonly IReadOnlyCollection<DateRangeQueryFilterMode> DateRangeQueryFilterModes =
     [
         DateRangeQueryFilterMode.ExecutionDate,
@@ -147,6 +145,17 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     item.StatusCode,
                     item.Status,
                     item.EnvelopeStatusCode,
+                    item.EnvelopeIdentifier,
+                    item.Message,
+                    item.TaxTotal,
+                    item.TaxExclusiveAmount,
+                    item.DocumentCurrencyCode,
+                    item.ExchangeRate,
+                    item.OrderDocumentId,
+                    item.IsArchived,
+                    item.InvoiceTipType,
+                    item.InvoiceTipTypeCode,
+                    item.IsSeen,
                     syncTimestampUtc);
                 updatedCount++;
                 continue;
@@ -172,6 +181,17 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     item.StatusCode,
                     item.Status,
                     item.EnvelopeStatusCode,
+                    item.EnvelopeIdentifier,
+                    item.Message,
+                    item.TaxTotal,
+                    item.TaxExclusiveAmount,
+                    item.DocumentCurrencyCode,
+                    item.ExchangeRate,
+                    item.OrderDocumentId,
+                    item.IsArchived,
+                    item.InvoiceTipType,
+                    item.InvoiceTipTypeCode,
+                    item.IsSeen,
                     syncTimestampUtc),
                 cancellationToken);
             insertedCount++;
@@ -260,7 +280,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var pageIndex = 1;
         int? totalPage = null;
         var seenPageSignatures = new HashSet<string>(StringComparer.Ordinal);
-        var consecutiveNoChangePages = 0;
         var filterLabel = filterMode switch
         {
             DateRangeQueryFilterMode.ExecutionDate => "execution-date",
@@ -271,17 +290,6 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (pageIndex > MaxSyncPageCount)
-            {
-                logger.LogWarning(
-                    "Uyumsoft inbox invoice sync reached max page limit {MaxSyncPageCount} for {FilterLabel} range {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd}. Synchronization stopped to avoid a runaway loop.",
-                    MaxSyncPageCount,
-                    filterLabel,
-                    startDate,
-                    endDate);
-                break;
-            }
 
             var page = await InvokeInboxInvoiceListAsync(
                 BuildDateRangePayloadCandidates(startDate, endDate, pageIndex, SyncPageSize, filterMode),
@@ -315,32 +323,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 if (upsertResult.HasChanges)
                 {
                     await authDbContext.SaveChangesAsync(cancellationToken);
-                    consecutiveNoChangePages = 0;
                 }
                 else
                 {
-                    consecutiveNoChangePages++;
                     logger.LogInformation(
-                        "Uyumsoft inbox invoice sync found no data changes for {FilterLabel} range {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd} on page {PageIndex}. Consecutive no-change pages: {NoChangePageCount}.",
+                        "Uyumsoft inbox invoice sync found no data changes for {FilterLabel} range {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd} on page {PageIndex}.",
                         filterLabel,
                         startDate,
                         endDate,
-                        pageIndex,
-                        consecutiveNoChangePages);
+                        pageIndex);
                 }
 
                 authDbContext.ChangeTracker.Clear();
-
-                if (consecutiveNoChangePages >= MaxConsecutiveNoChangePages)
-                {
-                    logger.LogWarning(
-                        "Uyumsoft inbox invoice sync stopped after {NoChangePageCount} consecutive no-change pages for {FilterLabel} range {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd}. This usually means the upstream service is repeating or overlapping pages.",
-                        consecutiveNoChangePages,
-                        filterLabel,
-                        startDate,
-                        endDate);
-                    break;
-                }
             }
 
             totalPage ??= page.TotalPage > 0 ? page.TotalPage : null;
@@ -568,7 +562,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         existing.IsStandard != incoming.IsStandard ||
         !string.Equals(existing.StatusCode, NormalizeOptional(incoming.StatusCode, 80) ?? string.Empty, StringComparison.Ordinal) ||
         !string.Equals(existing.Status, NormalizeOptional(incoming.Status, 120) ?? string.Empty, StringComparison.Ordinal) ||
-        !string.Equals(existing.EnvelopeStatusCode, NormalizeOptional(incoming.EnvelopeStatusCode, 80), StringComparison.Ordinal);
+        !string.Equals(existing.EnvelopeStatusCode, NormalizeOptional(incoming.EnvelopeStatusCode, 80), StringComparison.Ordinal) ||
+        !string.Equals(existing.EnvelopeIdentifier, NormalizeOptional(incoming.EnvelopeIdentifier, 150) ?? string.Empty, StringComparison.Ordinal) ||
+        !string.Equals(existing.Message, NormalizeOptional(incoming.Message, 500) ?? string.Empty, StringComparison.Ordinal) ||
+        existing.TaxTotal != incoming.TaxTotal ||
+        existing.TaxExclusiveAmount != incoming.TaxExclusiveAmount ||
+        !string.Equals(existing.DocumentCurrencyCode, NormalizeOptional(incoming.DocumentCurrencyCode, 10) ?? string.Empty, StringComparison.Ordinal) ||
+        existing.ExchangeRate != incoming.ExchangeRate ||
+        !string.Equals(existing.OrderDocumentId, NormalizeOptional(incoming.OrderDocumentId, 150) ?? string.Empty, StringComparison.Ordinal) ||
+        existing.IsArchived != incoming.IsArchived ||
+        !string.Equals(existing.InvoiceTipType, NormalizeOptional(incoming.InvoiceTipType, 80) ?? string.Empty, StringComparison.Ordinal) ||
+        existing.InvoiceTipTypeCode != incoming.InvoiceTipTypeCode ||
+        existing.IsSeen != incoming.IsSeen;
 
     private static string NormalizeRequired(string value, int maxLength)
     {
@@ -660,6 +665,17 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var isNew = TryReadBool(itemNode, out var parsedIsNew, "IsNew")
             ? parsedIsNew
             : (bool?)null;
+        var isSeen = TryReadBool(itemNode, out var parsedIsSeen, "IsSeen")
+            ? parsedIsSeen
+            : (bool?)null;
+        var orderDocumentId = ReadString(itemNode, "OrderDocumentId", "OrderId", "OrderNumber");
+        var despatchId = ReadString(
+            itemNode,
+            "DespatchId",
+            "DespatchDocumentId",
+            "DespatchNumber",
+            "DespatchDocumentReference",
+            "DespatchDocumentReferenceId");
 
         item = new ParsedInboxInvoice(
             documentId,
@@ -672,12 +688,23 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             ReadDateTime(itemNode, "InvoiceDate", "DocumentDate", "ExecutionDate", "Date"),
             ReadString(itemNode, "Type", "InvoiceType", "DocumentType"),
             ReadDecimal(itemNode, "PayableAmount", "InvoiceTotal", "TotalAmount"),
-            ReadString(itemNode, "DespatchId", "DespatchDocumentId", "DespatchNumber"),
+            string.IsNullOrWhiteSpace(despatchId) ? orderDocumentId : despatchId,
             isNew.HasValue ? !isNew.Value : false,
             ReadBool(itemNode, "IsStandart", "IsStandard"),
             statusCode,
             status,
-            ReadString(itemNode, "EnvelopeStatus"));
+            ReadString(itemNode, "EnvelopeStatus"),
+            ReadString(itemNode, "EnvelopeIdentifier"),
+            ReadString(itemNode, "Message"),
+            ReadDecimal(itemNode, "TaxTotal"),
+            ReadDecimal(itemNode, "TaxExclusiveAmount"),
+            ReadString(itemNode, "DocumentCurrencyCode", "CurrencyCode"),
+            ReadDecimal(itemNode, "ExchangeRate"),
+            orderDocumentId,
+            ReadBool(itemNode, "IsArchived"),
+            ReadString(itemNode, "InvoiceTipType"),
+            ReadInt(itemNode, "InvoiceTipTypeCode"),
+            isSeen);
 
         return true;
     }
@@ -963,7 +990,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         bool IsStandard,
         string StatusCode,
         string Status,
-        string? EnvelopeStatusCode);
+        string? EnvelopeStatusCode,
+        string EnvelopeIdentifier,
+        string Message,
+        decimal TaxTotal,
+        decimal TaxExclusiveAmount,
+        string DocumentCurrencyCode,
+        decimal ExchangeRate,
+        string OrderDocumentId,
+        bool IsArchived,
+        string InvoiceTipType,
+        int InvoiceTipTypeCode,
+        bool? IsSeen);
 
     private sealed record SyncUpsertResult(
         int InsertedCount,

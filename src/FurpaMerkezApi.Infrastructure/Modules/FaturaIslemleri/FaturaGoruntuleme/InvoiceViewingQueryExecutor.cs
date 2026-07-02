@@ -39,16 +39,12 @@ public sealed class InvoiceViewingQueryExecutor(
         items = ApplySearch(items, request);
 
         var totalCount = items.Count;
-        var pagedItems = items
-            .Skip((request.PageNumber - 1) * request.PageSize)
-            .Take(request.PageSize)
-            .ToArray();
 
         return new InvoiceViewingListResponse(
             totalCount,
-            request.PageNumber,
-            request.PageSize,
-            pagedItems);
+            1,
+            totalCount,
+            items);
     }
 
     private IQueryable<UyumsoftInboxInvoice> BuildListQuery(InvoiceViewingListRequest request)
@@ -62,7 +58,8 @@ public sealed class InvoiceViewingQueryExecutor(
                 (item.InvoiceDate.HasValue &&
                  item.InvoiceDate.Value >= startDate &&
                  item.InvoiceDate.Value < endDateExclusive) ||
-                (item.CreateDate.HasValue &&
+                (!item.InvoiceDate.HasValue &&
+                 item.CreateDate.HasValue &&
                  item.CreateDate.Value >= startDate &&
                  item.CreateDate.Value < endDateExclusive));
     }
@@ -159,7 +156,19 @@ public sealed class InvoiceViewingQueryExecutor(
             item.IsPrinted,
             item.IsStandard,
             item.StatusCode,
-            string.IsNullOrWhiteSpace(item.Status) ? MapStatus(item.StatusCode) : item.Status);
+            string.IsNullOrWhiteSpace(item.Status) ? MapStatus(item.StatusCode) : item.Status,
+            item.EnvelopeIdentifier,
+            item.EnvelopeStatusCode ?? string.Empty,
+            item.Message,
+            item.TaxTotal,
+            item.TaxExclusiveAmount,
+            item.DocumentCurrencyCode,
+            item.ExchangeRate,
+            item.OrderDocumentId,
+            item.IsArchived,
+            item.InvoiceTipType,
+            item.InvoiceTipTypeCode,
+            item.IsSeen);
 
     private static IReadOnlyCollection<string> BuildLookupCandidates(
         string requestedDocumentId,
@@ -184,19 +193,9 @@ public sealed class InvoiceViewingQueryExecutor(
             throw new ArgumentException("Page number must be greater than zero.", nameof(request.PageNumber));
         }
 
-        if (request.PageSize <= 0)
-        {
-            throw new ArgumentException("Page size must be greater than zero.", nameof(request.PageSize));
-        }
-
         if (request.EndDate.Date < request.StartDate.Date)
         {
             throw new ArgumentException("End date can not be earlier than start date.", nameof(request.EndDate));
-        }
-
-        if (request.SearchField is null && !string.IsNullOrWhiteSpace(request.SearchText))
-        {
-            throw new ArgumentException("Search field is required when search text is provided.", nameof(request.SearchField));
         }
     }
 
@@ -211,7 +210,7 @@ public sealed class InvoiceViewingQueryExecutor(
 
         var searchText = request.SearchText.Trim();
 
-        return request.SearchField.Value switch
+        return request.SearchField switch
         {
             InvoiceViewingSearchField.InvoiceDate => ApplyInvoiceDateSearch(items, searchText),
             InvoiceViewingSearchField.InvoiceId => items
@@ -227,8 +226,66 @@ public sealed class InvoiceViewingQueryExecutor(
             InvoiceViewingSearchField.DespatchId => items
                 .Where(item => ContainsIgnoreCase(item.DespatchId, searchText))
                 .ToList(),
-            _ => items
+            InvoiceViewingSearchField.Status => items
+                .Where(item =>
+                    ContainsIgnoreCase(item.Status, searchText) ||
+                    ContainsIgnoreCase(item.StatusCode, searchText) ||
+                    ContainsIgnoreCase(item.EnvelopeStatusCode, searchText))
+                .ToList(),
+            InvoiceViewingSearchField.InvoiceType => items
+                .Where(item => ContainsIgnoreCase(item.InvoiceType, searchText))
+                .ToList(),
+            InvoiceViewingSearchField.EnvelopeIdentifier => items
+                .Where(item => ContainsIgnoreCase(item.EnvelopeIdentifier, searchText))
+                .ToList(),
+            InvoiceViewingSearchField.OrderDocumentId => items
+                .Where(item => ContainsIgnoreCase(item.OrderDocumentId, searchText))
+                .ToList(),
+            InvoiceViewingSearchField.Message => items
+                .Where(item => ContainsIgnoreCase(item.Message, searchText))
+                .ToList(),
+            InvoiceViewingSearchField.Any or null => ApplyAnySearch(items, searchText),
+            _ => ApplyAnySearch(items, searchText)
         };
+    }
+
+    private static List<InvoiceViewingListItemDto> ApplyAnySearch(
+        IEnumerable<InvoiceViewingListItemDto> items,
+        string searchText)
+    {
+        var filteredItems = items
+            .Where(item =>
+                ContainsIgnoreCase(item.InvoiceId, searchText) ||
+                ContainsIgnoreCase(item.CustomerTitle, searchText) ||
+                ContainsIgnoreCase(item.CustomerTcknVkn, searchText) ||
+                ContainsIgnoreCase(item.InvoiceType, searchText) ||
+                ContainsIgnoreCase(item.DespatchId, searchText) ||
+                ContainsIgnoreCase(item.OrderDocumentId, searchText) ||
+                ContainsIgnoreCase(item.Status, searchText) ||
+                ContainsIgnoreCase(item.StatusCode, searchText) ||
+                ContainsIgnoreCase(item.EnvelopeIdentifier, searchText) ||
+                ContainsIgnoreCase(item.EnvelopeStatusCode, searchText) ||
+                ContainsIgnoreCase(item.Message, searchText))
+            .ToList();
+
+        if (TryParseDate(searchText, out var invoiceDate))
+        {
+            filteredItems.AddRange(
+                items.Where(item =>
+                {
+                    var effectiveDate = item.InvoiceDate ?? item.CreateDate;
+                    return effectiveDate.HasValue && effectiveDate.Value.Date == invoiceDate.Date;
+                }));
+        }
+
+        if (TryParseDecimal(searchText, out var invoiceTotal))
+        {
+            filteredItems.AddRange(items.Where(item => item.InvoiceTotal == invoiceTotal));
+        }
+
+        return filteredItems
+            .DistinctBy(item => item.DocumentId)
+            .ToList();
     }
 
     private static List<InvoiceViewingListItemDto> ApplyInvoiceDateSearch(

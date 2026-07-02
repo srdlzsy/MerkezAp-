@@ -100,6 +100,57 @@ public sealed class UyumsoftInboxInvoiceConfiguration(bool useSqlServerTypes = f
             .HasColumnName("envelope_status_code")
             .HasMaxLength(80);
 
+        builder.Property(item => item.EnvelopeIdentifier)
+            .HasColumnName("envelope_identifier")
+            .HasMaxLength(150)
+            .IsRequired();
+
+        builder.Property(item => item.Message)
+            .HasColumnName("message")
+            .HasMaxLength(500)
+            .IsRequired();
+
+        builder.Property(item => item.TaxTotal)
+            .HasColumnName("tax_total")
+            .HasPrecision(18, 2)
+            .IsRequired();
+
+        builder.Property(item => item.TaxExclusiveAmount)
+            .HasColumnName("tax_exclusive_amount")
+            .HasPrecision(18, 2)
+            .IsRequired();
+
+        builder.Property(item => item.DocumentCurrencyCode)
+            .HasColumnName("document_currency_code")
+            .HasMaxLength(10)
+            .IsRequired();
+
+        builder.Property(item => item.ExchangeRate)
+            .HasColumnName("exchange_rate")
+            .HasPrecision(18, 6)
+            .IsRequired();
+
+        builder.Property(item => item.OrderDocumentId)
+            .HasColumnName("order_document_id")
+            .HasMaxLength(150)
+            .IsRequired();
+
+        builder.Property(item => item.IsArchived)
+            .HasColumnName("is_archived")
+            .IsRequired();
+
+        builder.Property(item => item.InvoiceTipType)
+            .HasColumnName("invoice_tip_type")
+            .HasMaxLength(80)
+            .IsRequired();
+
+        builder.Property(item => item.InvoiceTipTypeCode)
+            .HasColumnName("invoice_tip_type_code")
+            .IsRequired();
+
+        builder.Property(item => item.IsSeen)
+            .HasColumnName("is_seen");
+
         var createdAtUtc = builder.Property(item => item.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();
@@ -128,5 +179,8 @@ public sealed class UyumsoftInboxInvoiceConfiguration(bool useSqlServerTypes = f
 
         builder.HasIndex(item => new { item.IsProcessed, item.IsPrinted })
             .HasDatabaseName("ix_uyumsoft_inbox_invoices_processed_printed");
+
+        builder.HasIndex(item => item.OrderDocumentId)
+            .HasDatabaseName("ix_uyumsoft_inbox_invoices_order_document_id");
     }
 }

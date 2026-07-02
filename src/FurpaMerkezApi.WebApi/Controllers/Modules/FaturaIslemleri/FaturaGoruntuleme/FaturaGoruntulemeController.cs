@@ -69,17 +69,19 @@ public sealed class FaturaGoruntulemeController(
     [HttpGet("{documentId}")]
     [HttpGet("{documentId}/pdf")]
     [Authorize(Policy = DetailPolicy)]
-    [ProducesResponseType(typeof(UyumsoftOperationResponseDto), StatusCodes.Status200OK)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<UyumsoftOperationResponseDto>> GetPdf(
+    public async Task<IActionResult> GetPdf(
         string documentId,
-        CancellationToken cancellationToken) =>
-        Ok(await uyumsoftConnectedQueryService.InvokeGetOperationAsync(
-            UyumsoftConnectedServiceKind.EInvoice,
-            new UyumsoftOperationInvocationRequest(
-                "GetInboxInvoicePdf",
-                [new UyumsoftOperationParameterRequest("invoiceId", documentId)]),
-            cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        var pdfBytes = await uyumsoftConnectedQueryService.GetInboxInvoicePdfFileAsync(
+            documentId,
+            cancellationToken);
+
+        return File(pdfBytes, "application/pdf");
+    }
 
     [HttpGet("{documentId}/detail")]
     [Authorize(Policy = DetailPolicy)]
@@ -167,7 +169,7 @@ public sealed class InvoiceViewingListHttpRequest
     [Range(1, int.MaxValue)]
     public int? Page { get; init; }
 
-    [Range(1, 500)]
+    [Range(1, int.MaxValue)]
     public int PageSize { get; init; } = 50;
 
     public int ResolveProcessedState() => IsProcessed ?? ProcessedState;

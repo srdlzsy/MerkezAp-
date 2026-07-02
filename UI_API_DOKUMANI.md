@@ -7696,11 +7696,11 @@ isProcessed     opsiyonel; UI icin onerilen alias, -1=tumu, 1=true, 0=false
 ProcessedState  opsiyonel; legacy alias, -1=tumu, 1=true, 0=false
 isPrinted       opsiyonel; UI icin onerilen alias, -1=tumu, 1=true, 0=false
 PrintedState    opsiyonel; legacy alias, -1=tumu, 1=true, 0=false
-SearchField     opsiyonel; InvoiceDate, InvoiceId, CustomerTitle, CustomerTcknVkn, InvoiceTotal, DespatchId
-SearchText      opsiyonel; SearchField verildiyse legacy arama semantigiyle uygulanir
+SearchField     opsiyonel; InvoiceDate, InvoiceId, CustomerTitle, CustomerTcknVkn, InvoiceTotal, DespatchId, Any, Status, InvoiceType, EnvelopeIdentifier, OrderDocumentId, Message
+SearchText      opsiyonel; SearchField verilmezse genel arama olarak uygulanir
 page            opsiyonel; UI icin onerilen alias, default 1
 PageNumber      opsiyonel; default 1
-PageSize        opsiyonel; default 50, max 500
+PageSize        opsiyonel; geriye uyumluluk icin kabul edilir, liste sonucu artik PageSize ile kesilmez
 ```
 
 UI notu:
@@ -7715,7 +7715,7 @@ Response `InvoiceViewingListResponse`:
 {
   "totalCount": 245,
   "pageNumber": 1,
-  "pageSize": 50,
+  "pageSize": 245,
   "items": [
     {
       "documentId": "9d6e0f84-3d3c-4c58-a1b0-4c0f8f4fd999",
@@ -7731,7 +7731,19 @@ Response `InvoiceViewingListResponse`:
       "isPrinted": false,
       "isStandard": false,
       "statusCode": "1000",
-      "status": "Onaylandi"
+      "status": "Onaylandi",
+      "envelopeIdentifier": "urn:mail:...",
+      "envelopeStatusCode": "1000",
+      "message": "",
+      "taxTotal": 250.15,
+      "taxExclusiveAmount": 1000.60,
+      "documentCurrencyCode": "TRY",
+      "exchangeRate": 1,
+      "orderDocumentId": "IRS202600001",
+      "isArchived": false,
+      "invoiceTipType": "Temel",
+      "invoiceTipTypeCode": 0,
+      "isSeen": true
     }
   ]
 }
@@ -7751,6 +7763,8 @@ Liste davranisi:
 - `customerTitle` response'a buyuk harfe cevrilmis gelir
 - DB tarafindaki kolon `isStandart` olsa da API response'unda alan `isStandard` olarak gelir
 - `statusCode` ham DB degeridir; `status` ise UI'de direkt gosterebileceginiz aciklama metnidir
+- `despatchId` Uyumsoft liste cevabinda dogrudan irsaliye alani gelirse onu tasir; bos gelirse `orderDocumentId` fallback'i ile doldurulur
+- `orderDocumentId`, `envelopeIdentifier`, `message`, vergi toplam/tutar, doviz, arsiv ve goruldu bilgileri Uyumsoft inbox cache tablosunda ayrica saklanir
 - `status` mapping'i:
   - `1000` -> `Onaylandi`
   - `1100` -> `Onay Bekliyor`
@@ -7766,9 +7780,11 @@ Liste davranisi:
   - `CustomerTcknVkn` -> contains
   - `InvoiceTotal` -> exact decimal
   - `DespatchId` -> contains, case-insensitive
-- paging de legacy davranisa yakin olacak sekilde aramadan sonra uygulanir; su an SQL `OFFSET/FETCH` yerine API katmani `Skip/Take` kullanir
-- bu nedenle mevcut implementasyon "tam server-side paging" degil, "SQL filtre + memory search + memory page" davranisindadir
-- bu, WinUI'daki `invoiceList` / `filteredList` + `PagedList` mantiginin API karsiligidir
+  - `Status` -> `status`, `statusCode`, `envelopeStatusCode` icinde contains
+  - `InvoiceType`, `EnvelopeIdentifier`, `OrderDocumentId`, `Message` -> contains
+  - `Any` veya bos `SearchField` -> temel metin alanlari + tarih/toplam yakalarsa exact karsilastirma
+- paging limiti kaldirilmistir; endpoint tarih/processed/printed/search sonucunun tamamini doner, response'ta `pageNumber=1` ve `pageSize=totalCount` gelir
+- bu, WinUI'daki `invoiceList` / `filteredList` mantiginin API karsiligidir
 - eski WinUI'daki Excel export davranisi bu endpoint grubuna server-side olarak tasinmamistir; export ihtiyaci varsa UI kendi yukledigi veriyi kullanmali veya ayrica export endpoint'i tasarlanmalidir
 
 ### Fatura Goruntuleme Manuel Senkronizasyon
@@ -7818,18 +7834,9 @@ Yetki:
 
 Response:
 
-- `UyumsoftOperationResponseDto`
-- Backend Uyumsoft e-fatura `GetInboxInvoicePdf` operasyonunu `invoiceId = documentId` parametresiyle cagirir.
-- PDF payload Uyumsoft response yapisina gore `scalarValue`, `nodes` veya `responsePayloadJson` icinde gelir; UI mevcut entegrasyon endpointindeki `GetInboxInvoicePdf` cevabi gibi yorumlamalidir.
-
-Direkt PDF binary almak isteyen UI ekranlarinda liste satirindaki `documentId` teknik UUID olarak kullanilir:
-
-`GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/{documentId}/pdf-file`
-
-Response:
-
 - `Content-Type: application/pdf`
-- `Content-Disposition: inline`
+- Backend Uyumsoft e-fatura `GetInboxInvoicePdf` operasyonunu `invoiceId = documentId` parametresiyle cagirir.
+- Uyumsoft cevabindaki PDF byte dizisi normalize edilir; gecerli `%PDF` imzasi yoksa hata doner.
 - JSON beklenmemelidir; UI yeni sekme, iframe veya blob URL ile dogrudan PDF gosterebilir.
 
 UI uygulama kurali:
@@ -7849,8 +7856,8 @@ Frontend ornegi:
 
 ```ts
 const pdfPath =
-  `/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/` +
-  `${encodeURIComponent(row.documentId)}/pdf-file`;
+  `/api/fatura-islemleri/fatura-goruntuleme/` +
+  `${encodeURIComponent(row.documentId)}/pdf`;
 ```
 
 Bu endpoint ne yapmaz:
@@ -12671,7 +12678,19 @@ public sealed record InvoiceViewingListItemDto(
     bool IsPrinted,
     bool IsStandard,
     string StatusCode,
-    string Status);
+    string Status,
+    string EnvelopeIdentifier,
+    string EnvelopeStatusCode,
+    string Message,
+    decimal TaxTotal,
+    decimal TaxExclusiveAmount,
+    string DocumentCurrencyCode,
+    decimal ExchangeRate,
+    string OrderDocumentId,
+    bool IsArchived,
+    string InvoiceTipType,
+    int InvoiceTipTypeCode,
+    bool? IsSeen);
 
 public sealed record InvoiceViewingDetailDto(
     InvoiceViewingListItemDto Summary,

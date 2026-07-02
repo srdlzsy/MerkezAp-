@@ -12,6 +12,11 @@ public sealed class UyumsoftInboxInvoice
         DespatchId = string.Empty;
         StatusCode = string.Empty;
         Status = string.Empty;
+        EnvelopeIdentifier = string.Empty;
+        Message = string.Empty;
+        DocumentCurrencyCode = string.Empty;
+        OrderDocumentId = string.Empty;
+        InvoiceTipType = string.Empty;
     }
 
     public Guid Id { get; private set; }
@@ -50,6 +55,28 @@ public sealed class UyumsoftInboxInvoice
 
     public string? EnvelopeStatusCode { get; private set; }
 
+    public string EnvelopeIdentifier { get; private set; }
+
+    public string Message { get; private set; }
+
+    public decimal TaxTotal { get; private set; }
+
+    public decimal TaxExclusiveAmount { get; private set; }
+
+    public string DocumentCurrencyCode { get; private set; }
+
+    public decimal ExchangeRate { get; private set; }
+
+    public string OrderDocumentId { get; private set; }
+
+    public bool IsArchived { get; private set; }
+
+    public string InvoiceTipType { get; private set; }
+
+    public int InvoiceTipTypeCode { get; private set; }
+
+    public bool? IsSeen { get; private set; }
+
     public DateTime CreatedAtUtc { get; private set; }
 
     public DateTime UpdatedAtUtc { get; private set; }
@@ -75,6 +102,17 @@ public sealed class UyumsoftInboxInvoice
         string? statusCode,
         string? status,
         string? envelopeStatusCode,
+        string? envelopeIdentifier,
+        string? message,
+        decimal taxTotal,
+        decimal taxExclusiveAmount,
+        string? documentCurrencyCode,
+        decimal exchangeRate,
+        string? orderDocumentId,
+        bool isArchived,
+        string? invoiceTipType,
+        int invoiceTipTypeCode,
+        bool? isSeen,
         DateTime synchronizedAtUtc)
     {
         if (id == Guid.Empty)
@@ -100,6 +138,17 @@ public sealed class UyumsoftInboxInvoice
         StatusCode = NormalizeOptional(statusCode, 80) ?? string.Empty;
         Status = NormalizeOptional(status, 120) ?? string.Empty;
         EnvelopeStatusCode = NormalizeOptional(envelopeStatusCode, 80);
+        EnvelopeIdentifier = NormalizeOptional(envelopeIdentifier, 150) ?? string.Empty;
+        Message = NormalizeOptional(message, 500) ?? string.Empty;
+        TaxTotal = taxTotal;
+        TaxExclusiveAmount = taxExclusiveAmount;
+        DocumentCurrencyCode = NormalizeOptional(documentCurrencyCode, 10) ?? string.Empty;
+        ExchangeRate = exchangeRate;
+        OrderDocumentId = NormalizeOptional(orderDocumentId, 150) ?? string.Empty;
+        IsArchived = isArchived;
+        InvoiceTipType = NormalizeOptional(invoiceTipType, 80) ?? string.Empty;
+        InvoiceTipTypeCode = invoiceTipTypeCode;
+        IsSeen = isSeen;
         CreatedAtUtc = NormalizeUtc(synchronizedAtUtc);
         UpdatedAtUtc = CreatedAtUtc;
         LastSynchronizedAtUtc = CreatedAtUtc;
@@ -122,6 +171,17 @@ public sealed class UyumsoftInboxInvoice
         string? statusCode,
         string? status,
         string? envelopeStatusCode,
+        string? envelopeIdentifier,
+        string? message,
+        decimal taxTotal,
+        decimal taxExclusiveAmount,
+        string? documentCurrencyCode,
+        decimal exchangeRate,
+        string? orderDocumentId,
+        bool isArchived,
+        string? invoiceTipType,
+        int invoiceTipTypeCode,
+        bool? isSeen,
         DateTime synchronizedAtUtc)
     {
         DocumentId = NormalizeRequired(documentId, nameof(documentId), 150);
@@ -140,6 +200,17 @@ public sealed class UyumsoftInboxInvoice
         StatusCode = NormalizeOptional(statusCode, 80) ?? string.Empty;
         Status = NormalizeOptional(status, 120) ?? string.Empty;
         EnvelopeStatusCode = NormalizeOptional(envelopeStatusCode, 80);
+        EnvelopeIdentifier = NormalizeOptional(envelopeIdentifier, 150) ?? string.Empty;
+        Message = NormalizeOptional(message, 500) ?? string.Empty;
+        TaxTotal = taxTotal;
+        TaxExclusiveAmount = taxExclusiveAmount;
+        DocumentCurrencyCode = NormalizeOptional(documentCurrencyCode, 10) ?? string.Empty;
+        ExchangeRate = exchangeRate;
+        OrderDocumentId = NormalizeOptional(orderDocumentId, 150) ?? string.Empty;
+        IsArchived = isArchived;
+        InvoiceTipType = NormalizeOptional(invoiceTipType, 80) ?? string.Empty;
+        InvoiceTipTypeCode = invoiceTipTypeCode;
+        IsSeen = isSeen;
         LastSynchronizedAtUtc = NormalizeUtc(synchronizedAtUtc);
         UpdatedAtUtc = LastSynchronizedAtUtc;
     }

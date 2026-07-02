@@ -2827,10 +2827,27 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("nvarchar(150)")
                         .HasColumnName("document_id");
 
+                    b.Property<string>("DocumentCurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("document_currency_code");
+
+                    b.Property<string>("EnvelopeIdentifier")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasColumnName("envelope_identifier");
+
                     b.Property<string>("EnvelopeStatusCode")
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("envelope_status_code");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("exchange_rate");
 
                     b.Property<DateTime?>("InvoiceDate")
                         .HasColumnType("datetime2")
@@ -2853,6 +2870,20 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("invoice_type");
 
+                    b.Property<string>("InvoiceTipType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("invoice_tip_type");
+
+                    b.Property<int>("InvoiceTipTypeCode")
+                        .HasColumnType("int")
+                        .HasColumnName("invoice_tip_type_code");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_archived");
+
                     b.Property<bool>("IsPrinted")
                         .HasColumnType("bit")
                         .HasColumnName("is_printed");
@@ -2865,6 +2896,10 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("is_standard");
 
+                    b.Property<bool?>("IsSeen")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_seen");
+
                     b.Property<DateTime>("LastSynchronizedAtUtc")
                         .HasColumnType("datetime2")
                         .HasColumnName("last_synchronized_at_utc");
@@ -2873,6 +2908,18 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)")
                         .HasColumnName("local_document_id");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("message");
+
+                    b.Property<string>("OrderDocumentId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasColumnName("order_document_id");
 
                     b.Property<string>("ServiceDocumentId")
                         .HasMaxLength(150)
@@ -2891,6 +2938,16 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("status_code");
 
+                    b.Property<decimal>("TaxExclusiveAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("tax_exclusive_amount");
+
+                    b.Property<decimal>("TaxTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("tax_total");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("datetime2")
                         .HasColumnName("updated_at_utc");
@@ -2903,6 +2960,9 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
 
                     b.HasIndex("InvoiceDate")
                         .HasDatabaseName("ix_uyumsoft_inbox_invoices_invoice_date");
+
+                    b.HasIndex("OrderDocumentId")
+                        .HasDatabaseName("ix_uyumsoft_inbox_invoices_order_document_id");
 
                     b.HasIndex("IsProcessed", "IsPrinted")
                         .HasDatabaseName("ix_uyumsoft_inbox_invoices_processed_printed");
