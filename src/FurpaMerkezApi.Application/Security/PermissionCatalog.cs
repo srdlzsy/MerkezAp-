@@ -41,6 +41,14 @@ public static class PermissionCatalog
         new("update", "Guncelle")
     ];
 
+    private static readonly PermissionActionDefinition[] StockAnomalyActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("update", "Guncelle"),
+        new("scan", "Tara")
+    ];
+
     private static readonly PermissionActionDefinition[] FeedbackActions =
     [
         new("list", "Listele"),
@@ -115,6 +123,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "masraf-fisleri", "MasrafFisleri"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "sayim-sonuclari", "SayimSonuclari"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "virmanlar", "Virmanlar"),
+        ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "stok-anomali-merkezi", "StokAnomaliMerkezi", StockAnomalyActions),
         ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "satis-analizleri", "SatisAnalizleri", ListActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),

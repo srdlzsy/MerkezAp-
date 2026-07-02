@@ -25,6 +25,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<DocumentFlowEvent> DocumentFlowEvents => Set<DocumentFlowEvent>();
 
+    public DbSet<StockAnomaly> StockAnomalies => Set<StockAnomaly>();
+
+    public DbSet<StockAnomalyEvent> StockAnomalyEvents => Set<StockAnomalyEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(

@@ -5195,6 +5195,154 @@ Sayim sonucu offline UI akisi:
 - `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI gecici bekleme/guncelleme durumu gostermeli ve status endpoint'ini poll etmelidir.
 - `status = Completed` alindiginda local taslak artik server'da fis oldugu icin kapatilabilir; response icindeki `documentNo` ve `documentDate` ile detay ekranina gidilebilir.
 
+### Stok Anomali Merkezi
+
+Stok anomali merkezi, Mikro verisini tarayip supheli durumlari Auth veritabanindaki `stock_anomalies` tablosunda takip kaydi olarak saklar. Mikro'ya yazma yapmaz. Admin/Administrator tum depolari gorur; depo kullanicisi sadece kendi deposuyla iliskili anomalileri gorur ve tarar.
+
+Yakaladigi anomali tipleri:
+
+- `NegativeStock`: depo + stok bazinda bakiye eksiye dusmus
+- `DuplicateDocument`: ayni belge/stok/miktar/depo kombinasyonu tekrar etmis
+- `ReceivingDifference`: depolar arasi sevkte sevk miktari ile kabul miktari farkli
+- `HighQuantity`: hareket miktari son 30 gun ortalamasinin ve minimum limitin uzerinde
+- `DormantStock`: depoda stok var ama uzun suredir hareket yok
+- `PendingInterWarehouseTransfer`: depolar arasi sevk bekleme limitini asmis ama kabul edilmemis
+
+Endpointler:
+
+| Endpoint | Aciklama | Yetki |
+| --- | --- | --- |
+| `GET /api/stok-islemleri/stok-anomali-merkezi` | Anomali listesini getirir | `stok-islemleri.stok-anomali-merkezi.list` |
+| `GET /api/stok-islemleri/stok-anomali-merkezi/{id}` | Anomali detayini ve olay gecmisini getirir | `stok-islemleri.stok-anomali-merkezi.detail` |
+| `POST /api/stok-islemleri/stok-anomali-merkezi/tara` | Mikro verisini tarar ve anomali kayitlarini acar/gunceller | `stok-islemleri.stok-anomali-merkezi.scan` |
+| `POST /api/stok-islemleri/stok-anomali-merkezi/{id}/durum` | Anomali durumunu gunceller | `stok-islemleri.stok-anomali-merkezi.update` |
+
+Liste query:
+
+```text
+warehouseNo?: int
+type?: NegativeStock | DuplicateDocument | ReceivingDifference | HighQuantity | DormantStock | PendingInterWarehouseTransfer
+status?: Open | Acknowledged | Resolved | Ignored
+severity?: Low | Medium | High | Critical
+startDate?: yyyy-MM-dd
+endDate?: yyyy-MM-dd
+search?: string
+take?: 1..500, varsayilan 100
+```
+
+Liste response:
+
+```json
+{
+  "totalCount": 2,
+  "summary": {
+    "openCount": 2,
+    "acknowledgedCount": 0,
+    "resolvedCount": 0,
+    "ignoredCount": 0,
+    "criticalCount": 1,
+    "highCount": 1
+  },
+  "items": [
+    {
+      "id": "0aa4b4e1-c8bd-4b5b-9e39-5a9b51a2fba1",
+      "type": "NegativeStock",
+      "severity": "Critical",
+      "status": "Open",
+      "warehouseNo": 110,
+      "relatedWarehouseNo": null,
+      "warehouseName": "KESTEL 1",
+      "relatedWarehouseName": null,
+      "productCode": "015792",
+      "productName": "URUN ADI",
+      "documentSerie": null,
+      "documentOrderNo": null,
+      "documentNo": null,
+      "quantity": -12,
+      "expectedQuantity": 0,
+      "actualQuantity": -12,
+      "averageQuantity": null,
+      "occurredAtUtc": null,
+      "message": "Depo stok bakiyesi eksiye dusmus. Mevcut stok: -12.",
+      "firstDetectedAtUtc": "2026-07-02T08:30:00Z",
+      "lastDetectedAtUtc": "2026-07-02T08:30:00Z"
+    }
+  ]
+}
+```
+
+Tarama:
+
+`POST /api/stok-islemleri/stok-anomali-merkezi/tara`
+
+Request:
+
+```json
+{
+  "warehouseNo": 110,
+  "startDate": "2026-07-01",
+  "endDate": "2026-07-02",
+  "dormantDays": 90,
+  "pendingTransferHours": 24,
+  "highQuantityLookbackDays": 30,
+  "highQuantityMultiplier": 3,
+  "highQuantityMinimum": 100,
+  "takePerRule": 250
+}
+```
+
+Not:
+
+- Admin/Administrator `warehouseNo` bos gonderirse tum depolar taranir.
+- Depo kullanicisi `warehouseNo` gonderse bile backend JWT icindeki kendi deposunu kullanir.
+- `startDate/endDate` duplicate belge, mal kabul farki ve yuksek miktar kontrollerinde kullanilir.
+- Eksi stok ve hareketsiz stok kontrolleri mevcut bakiye uzerinden calisir.
+- `takePerRule`, her kuralin tek taramada en fazla kac sonuc yazacagini belirler.
+
+Response:
+
+```json
+{
+  "startedAtUtc": "2026-07-02T08:30:00Z",
+  "finishedAtUtc": "2026-07-02T08:30:04Z",
+  "detectedCount": 6,
+  "rules": [
+    { "type": "NegativeStock", "detectedCount": 1 },
+    { "type": "DuplicateDocument", "detectedCount": 0 },
+    { "type": "ReceivingDifference", "detectedCount": 2 },
+    { "type": "HighQuantity", "detectedCount": 1 },
+    { "type": "DormantStock", "detectedCount": 2 },
+    { "type": "PendingInterWarehouseTransfer", "detectedCount": 0 }
+  ]
+}
+```
+
+Durum guncelleme:
+
+`POST /api/stok-islemleri/stok-anomali-merkezi/{id}/durum`
+
+```json
+{
+  "status": "Acknowledged",
+  "note": "Depo sayim sonrasi kontrol edecek."
+}
+```
+
+Durumlar:
+
+- `Open`: yeni veya tekrar yakalandi
+- `Acknowledged`: kullanici gordu, inceleniyor
+- `Resolved`: cozuldu
+- `Ignored`: bilincli olarak yok sayildi
+
+UI oneri:
+
+1. Panel acilisinda once `GET /stok-anomali-merkezi?status=Open&take=100` cagir.
+2. Admin icin depo filtresi goster; depo kullanicisinda depo filtresini kilitle/gizle.
+3. "Tara" aksiyonu Admin'de tum depolar veya secili depo icin, depo kullanicisinda sadece kendi deposu icin calissin.
+4. Satir tiklaninca detay endpoint'i ile `evidence` ve `events` gosterilsin.
+5. Kullanici satiri inceledikten sonra durumunu `Acknowledged`, `Resolved` veya `Ignored` yapabilsin.
+
 ### Etiket Belgeleri Son Liste
 
 Secili depo icin son etiket belgelerini getirir.
