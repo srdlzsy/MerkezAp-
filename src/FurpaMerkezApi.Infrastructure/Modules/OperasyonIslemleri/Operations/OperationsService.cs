@@ -1,5 +1,7 @@
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.Operations;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
+using FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Operations;
@@ -36,20 +38,29 @@ internal sealed class OperationsService(
     public Task<OperationJobDetailDto> GetJobAsync(Guid jobId, CancellationToken cancellationToken) =>
         Task.FromResult(jobQueue.Get(jobId));
 
-    public async Task<IReadOnlyCollection<AuthorizationFileDto>> GetAuthorizationFilesAsync(CancellationToken cancellationToken) =>
-        await furpaDbContext.AuthorizationFiles
-            .AsNoTracking()
-            .OrderBy(item => item.Id)
-            .Select(item => new AuthorizationFileDto
-            {
-                Id = item.Id,
-                UpdateDate = item.UpdateDate,
-                Name = item.Name,
-                Z = item.Z,
-                R = item.R,
-                X = item.X
-            })
-            .ToArrayAsync(cancellationToken);
+    public async Task<IReadOnlyCollection<AuthorizationFileDto>> GetAuthorizationFilesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await furpaDbContext.AuthorizationFiles
+                .AsNoTracking()
+                .OrderBy(item => item.Id)
+                .Select(item => new AuthorizationFileDto
+                {
+                    Id = item.Id,
+                    UpdateDate = item.UpdateDate,
+                    Name = item.Name,
+                    Z = item.Z,
+                    R = item.R,
+                    X = item.X
+                })
+                .ToArrayAsync(cancellationToken);
+        }
+        catch (SqlException exception) when (IsMissingAuthorizationFilesTable(exception))
+        {
+            return Array.Empty<AuthorizationFileDto>();
+        }
+    }
 
     public async Task SaveAuthorizationFilesAsync(
         IReadOnlyCollection<SaveAuthorizationFileItemRequest> fileList,
@@ -74,9 +85,20 @@ internal sealed class OperationsService(
         }
 
         var fileIds = fileList.Select(item => item.Id).ToArray();
-        var existingFiles = await furpaDbContext.AuthorizationFiles
-            .Where(item => fileIds.Contains(item.Id))
-            .ToDictionaryAsync(item => item.Id, cancellationToken);
+        Dictionary<int, AuthorizationFileEntity> existingFiles;
+
+        try
+        {
+            existingFiles = await furpaDbContext.AuthorizationFiles
+                .Where(item => fileIds.Contains(item.Id))
+                .ToDictionaryAsync(item => item.Id, cancellationToken);
+        }
+        catch (SqlException exception) when (IsMissingAuthorizationFilesTable(exception))
+        {
+            throw new InvalidOperationException(
+                "AuthorizationFiles table was not found in Furpa database.",
+                exception);
+        }
 
         var missingIds = fileIds
             .Except(existingFiles.Keys)
@@ -122,4 +144,7 @@ internal sealed class OperationsService(
             throw new ArgumentException("Value must be greater than zero.", paramName);
         }
     }
+
+    private static bool IsMissingAuthorizationFilesTable(SqlException exception) =>
+        exception.Number == 208;
 }

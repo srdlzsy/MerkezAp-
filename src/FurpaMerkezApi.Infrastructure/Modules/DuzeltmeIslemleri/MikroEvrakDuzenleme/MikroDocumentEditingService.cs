@@ -984,24 +984,37 @@ public sealed class MikroDocumentEditingService(
 
                 EnsureSingleStockMovementDocument(rows);
 
-                foreach (var row in rows)
+                if (request.HardDelete)
                 {
-                    row.sth_iptal = true;
-                    row.sth_hidden = true;
-                    row.sth_degisti = true;
-                    row.sth_lastup_user = deleteUser;
-                    row.sth_lastup_date = deletedAt;
+                    var movementGuids = rows.Select(row => row.sth_Guid).ToArray();
+                    var extraRows = await mikroWriteDbContext.STOK_HAREKETLERI_EKs
+                        .Where(row => row.sthek_related_uid.HasValue && movementGuids.Contains(row.sthek_related_uid.Value))
+                        .ToArrayAsync(cancellationToken);
+
+                    mikroWriteDbContext.STOK_HAREKETLERI_EKs.RemoveRange(extraRows);
+                    mikroWriteDbContext.STOK_HAREKETLERIs.RemoveRange(rows);
+                }
+                else
+                {
+                    foreach (var row in rows)
+                    {
+                        row.sth_iptal = true;
+                        row.sth_hidden = true;
+                        row.sth_degisti = true;
+                        row.sth_lastup_user = deleteUser;
+                        row.sth_lastup_date = deletedAt;
+                    }
                 }
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
                 return new MikroDocumentDeleteResponse(
-                    "stok-hareketleri",
+                    $"stok-hareketleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}",
                     rows.Length,
                     deletedAt,
                     deleteUser,
-                    "soft-delete");
+                    request.HardDelete ? "hard-delete" : "soft-delete");
             }
             catch
             {
@@ -1154,24 +1167,31 @@ public sealed class MikroDocumentEditingService(
 
                 EnsureSingleCustomerMovementDocument(rows);
 
-                foreach (var row in rows)
+                if (request.HardDelete)
                 {
-                    row.cha_iptal = true;
-                    row.cha_hidden = true;
-                    row.cha_degisti = true;
-                    row.cha_lastup_user = deleteUser;
-                    row.cha_lastup_date = deletedAt;
+                    mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.RemoveRange(rows);
+                }
+                else
+                {
+                    foreach (var row in rows)
+                    {
+                        row.cha_iptal = true;
+                        row.cha_hidden = true;
+                        row.cha_degisti = true;
+                        row.cha_lastup_user = deleteUser;
+                        row.cha_lastup_date = deletedAt;
+                    }
                 }
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
                 return new MikroDocumentDeleteResponse(
-                    "cari-hareketleri",
+                    $"cari-hareketleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}",
                     rows.Length,
                     deletedAt,
                     deleteUser,
-                    "soft-delete");
+                    request.HardDelete ? "hard-delete" : "soft-delete");
             }
             catch
             {

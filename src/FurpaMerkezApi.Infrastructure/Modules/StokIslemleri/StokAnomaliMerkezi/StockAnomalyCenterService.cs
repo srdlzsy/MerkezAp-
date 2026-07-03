@@ -18,6 +18,7 @@ public sealed class StockAnomalyCenterService(
     : IStockAnomalyCenterService
 {
     private const double QuantityTolerance = 0.000001d;
+    private static readonly SemaphoreSlim UpsertLock = new(1, 1);
 
     public async Task<StockAnomalyListResponse> ListAsync(
         StockAnomalyListRequest request,
@@ -106,7 +107,7 @@ public sealed class StockAnomalyCenterService(
         await AddRuleAsync(detected, ruleResults, StockAnomalyType.DormantStock, () => FindDormantStockAsync(normalized, cancellationToken));
         await AddRuleAsync(detected, ruleResults, StockAnomalyType.PendingInterWarehouseTransfer, () => FindPendingInterWarehouseTransfersAsync(normalized, cancellationToken));
 
-        await UpsertDetectedAsync(detected, startedAt, cancellationToken);
+        await UpsertDetectedWithRetryAsync(detected, startedAt, cancellationToken);
 
         var finishedAt = clock.UtcNow;
         logger.LogInformation(
@@ -242,6 +243,35 @@ public sealed class StockAnomalyCenterService(
                 "Stock anomaly rule failed. Type={Type}",
                 type);
             ruleResults.Add(new StockAnomalyScanRuleResultDto(type.ToString(), 0, exception.Message));
+        }
+    }
+
+    private async Task UpsertDetectedWithRetryAsync(
+        IReadOnlyCollection<DetectedStockAnomaly> detected,
+        DateTime detectedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await UpsertLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            try
+            {
+                await UpsertDetectedAsync(detected, detectedAtUtc, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Stock anomaly upsert concurrency conflict. Retrying once.");
+
+                authDbContext.ChangeTracker.Clear();
+                await UpsertDetectedAsync(detected, detectedAtUtc, cancellationToken);
+            }
+        }
+        finally
+        {
+            UpsertLock.Release();
         }
     }
 

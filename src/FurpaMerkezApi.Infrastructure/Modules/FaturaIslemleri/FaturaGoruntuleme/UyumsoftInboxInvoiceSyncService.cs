@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
+using System.ServiceModel;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Time;
@@ -295,6 +296,17 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 logger.LogWarning(
                     exception,
                     "Uyumsoft GetInboxInvoices transport failure for {Scenario} on payload {PayloadName}. Cache fallback will be used.",
+                    scenario,
+                    candidate.Name);
+
+                return emptyPage;
+            }
+            catch (CommunicationException exception)
+            {
+                UyumsoftWcfClientHelper.Abort(client);
+                logger.LogWarning(
+                    exception,
+                    "Uyumsoft GetInboxInvoices communication failure for {Scenario} on payload {PayloadName}. Cache fallback will be used.",
                     scenario,
                     candidate.Name);
 

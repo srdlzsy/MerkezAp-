@@ -3896,7 +3896,10 @@ Genel kurallar:
 - Bu modul yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
 - Delete yalnizca silinmesi guvenli kayitlarda vardir: depo ozel stok ayari, depo bazli satis fiyati, stok hareket evraki ve cari hareket evraki.
 - Stok karti, depo karti ve cari karti icin delete yoktur; UI bu ana kartlarda sil butonu gostermemelidir.
-- Stok/cari hareket silme fiziksel delete degildir; Mikro `iptal/hidden` bayraklariyla soft-delete yapilir.
+- Stok/cari hareket silmede iki mod vardir:
+  - Varsayilan `soft-delete`: Mikro `iptal/hidden` bayraklariyla iptal eder.
+  - `hardDelete=true`: eslesen evrak satirlarini fiziksel olarak siler. Stok hareketinde bagli `STOK_HAREKETLERI_EK` satirlari da silinir.
+- UI hard delete icin ayri onay gostermelidir. Onerilen varsayilan davranis soft-delete'tir.
 - Stok satis fiyati endpoint'i istisna olarak eksik `STOK_SATIS_FIYAT_LISTELERI` kaydini olusturabilir.
 - Satis fiyati kaydi `stockCode + priceListNo + warehouseNo + unitPointer + paymentPlanNo` birlesimiyle bulunur. Kayit varsa guncellenir, yoksa olusturulur.
 - Satis fiyati upsert islemi `STOK_FIYAT_DEGISIKLIKLERI` tablosunda sentetik fiyat degisiklik evraki olusturmaz.
@@ -4706,27 +4709,37 @@ Response `StockMovementDocumentUpdateResponse` doner; `document` alaninda kaydin
 
 ### Stok Hareket Evraki Sil
 
-Evrakin tum satirlarini soft-delete yapar. Fiziksel delete yapilmaz; `sth_iptal`, `sth_hidden`, `sth_degisti`, `sth_lastup_user`, `sth_lastup_date` alanlari guncellenir.
+Evrakin tum satirlarini siler veya iptal eder. Varsayilan davranis soft-delete'tir.
 
 `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?documentSerie=F110&documentOrderNo=12&documentType=0&movementKind=4&normalReturn=0&warehouseNo=110`
+
+Hard delete:
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?documentSerie=F110&documentOrderNo=12&documentType=0&movementKind=4&normalReturn=0&warehouseNo=110&hardDelete=true`
 
 Kurallar:
 
 - Query alani `GET /stok-hareketleri` ile aynidir.
+- `hardDelete`: opsiyonel bool. Varsayilan `false`.
+- `hardDelete=false`: `sth_iptal`, `sth_hidden`, `sth_degisti`, `sth_lastup_user`, `sth_lastup_date` alanlari guncellenir.
+- `hardDelete=true`: `STOK_HAREKETLERI` satirlari fiziksel silinir; bagli `STOK_HAREKETLERI_EK` satirlari da silinir.
 - Filtre birden fazla evraka denk gelirse `409 Conflict` doner.
 - Eslesen aktif satir yoksa `404 Not Found` doner.
+- Basarili islem Belge Akis Takibi'ne `DocumentDeleted` olayi olarak yazilir. Mesaj soft modda "iptal edildi", hard modda "fiziksel olarak silindi" seklindedir.
 
 Response:
 
 ```json
 {
-  "target": "stok-hareketleri",
+  "target": "stok-hareketleri/F110/12",
   "deletedRowCount": 3,
   "deletedAt": "2026-07-02T12:46:00",
   "deleteUser": 110,
   "deletionMode": "soft-delete"
 }
 ```
+
+Hard delete response'unda `deletionMode` alani `hard-delete` gelir.
 
 ### Cari Hareket Evraki Getir
 
@@ -4842,27 +4855,37 @@ Guncellenebilir satir alanlari:
 
 ### Cari Hareket Evraki Sil
 
-Evrakin tum satirlarini soft-delete yapar. Fiziksel delete yapilmaz; `cha_iptal`, `cha_hidden`, `cha_degisti`, `cha_lastup_user`, `cha_lastup_date` alanlari guncellenir.
+Evrakin tum satirlarini siler veya iptal eder. Varsayilan davranis soft-delete'tir.
 
 `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?documentSerie=PS110&documentOrderNo=422&documentType=63&movementKind=6&normalReturn=0&customerCode=120.01.03106`
+
+Hard delete:
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?documentSerie=PS110&documentOrderNo=422&documentType=63&movementKind=6&normalReturn=0&customerCode=120.01.03106&hardDelete=true`
 
 Kurallar:
 
 - Query alani `GET /cari-hareketleri` ile aynidir.
+- `hardDelete`: opsiyonel bool. Varsayilan `false`.
+- `hardDelete=false`: `cha_iptal`, `cha_hidden`, `cha_degisti`, `cha_lastup_user`, `cha_lastup_date` alanlari guncellenir.
+- `hardDelete=true`: `CARI_HESAP_HAREKETLERI` satirlari fiziksel silinir.
 - Filtre birden fazla evraka denk gelirse `409 Conflict` doner.
 - Eslesen aktif satir yoksa `404 Not Found` doner.
+- Basarili islem Belge Akis Takibi'ne `DocumentDeleted` olayi olarak yazilir. Mesaj soft modda "iptal edildi", hard modda "fiziksel olarak silindi" seklindedir.
 
 Response:
 
 ```json
 {
-  "target": "cari-hareketleri",
+  "target": "cari-hareketleri/PS110/422",
   "deletedRowCount": 1,
   "deletedAt": "2026-07-02T12:46:00",
   "deleteUser": 110,
   "deletionMode": "soft-delete"
 }
 ```
+
+Hard delete response'unda `deletionMode` alani `hard-delete` gelir.
 
 UI is akisi onerisi:
 
@@ -4873,6 +4896,7 @@ UI is akisi onerisi:
 5. Kullanici sadece degisen alanlari gonderir; degismeyen alanlar `null` veya body disinda birakilir.
 6. `409 Conflict` gelirse filtreleri daraltma mesaji gosterilir.
 7. Basarili `PUT` response'u guncel belge/kart halini dondurdugu icin UI gridini bu response ile yeniler.
+8. Silme aksiyonunda varsayilan soft-delete kullanilmalidir. Hard delete icin ayri bir onay modalinda evrak seri/sira ve depo bilgisi tekrar gosterilip `hardDelete=true` gonderilmelidir.
 
 ## Stok Islemleri
 
@@ -9256,6 +9280,27 @@ Takip edilen isler:
 - Firma mal kabul olusturma
 - Depo mal kabul/kabul etme
 - E-irsaliye gonderimi basarili/basarisiz sonucu
+- Mikro evrak duzenleme islemleri:
+  - Stok karti guncelleme
+  - Stok depo ayari guncelleme/silme
+  - Depo karti guncelleme
+  - Cari karti guncelleme
+  - Satis fiyati ekleme/guncelleme/silme
+  - Stok hareket evraki guncelleme/silme
+  - Cari hareket evraki guncelleme/silme
+
+Mikro evrak duzenleme kaynakli akislar:
+
+- Kart ve fiyat islemleri `StockCard`, `WarehouseCard`, `CustomerCard`, `StockSalesPrice` belge tipleriyle gorunur.
+- Stok hareket evraki bilinen bir operasyon evrakiyse mevcut akis tipine baglanir:
+  - firma sevki: `CompanyShipment`
+  - firma iadesi: `CompanyReturn`
+  - firma mal kabul: `CompanyReceiving`
+  - depolar arasi sevk: `InterWarehouseShipment`
+  - depo iadesi: `WarehouseReturn`
+- Taninamayan stok/cari hareketleri `StockMovementDocument` veya `CustomerMovementDocument` olarak gorunur.
+- Soft delete ve hard delete ikisi de timeline'da `DocumentDeleted` adimi olarak gorunur; olay mesaji silme modunu aciklar.
+- Stok/cari hareket guncelleme timeline'da `DocumentUpdated` adimi olarak gorunur.
 
 #### Belge Akis Liste
 

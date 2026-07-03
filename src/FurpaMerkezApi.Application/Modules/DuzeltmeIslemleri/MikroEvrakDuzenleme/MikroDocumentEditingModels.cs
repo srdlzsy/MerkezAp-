@@ -521,7 +521,8 @@ public sealed record UpdateStockMovementDocumentRequest(
 
 public sealed record DeleteStockMovementDocumentRequest(
     StockMovementDocumentLookupRequest Lookup,
-    int CurrentUserWarehouseNo);
+    int CurrentUserWarehouseNo,
+    bool HardDelete = false);
 
 public sealed record CustomerMovementDocumentLookupRequest(
     string DocumentSerie,
@@ -642,7 +643,8 @@ public sealed record UpdateCustomerMovementDocumentRequest(
 
 public sealed record DeleteCustomerMovementDocumentRequest(
     CustomerMovementDocumentLookupRequest Lookup,
-    int CurrentUserWarehouseNo);
+    int CurrentUserWarehouseNo,
+    bool HardDelete = false);
 
 public sealed record MikroDocumentUpdateSummary(
     string Target,

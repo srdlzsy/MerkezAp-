@@ -409,13 +409,16 @@ public sealed class MikroEvrakDuzenlemeController(
         var response = await service.DeleteStockMovementDocumentAsync(
             new DeleteStockMovementDocumentRequest(
                 lookup,
-                User.GetRequiredWarehouseNo()),
+                User.GetRequiredWarehouseNo(),
+                request.HardDelete),
             cancellationToken);
 
         await RecordStockMovementFlowAsync(
             beforeDelete,
             DocumentFlowStep.DocumentDeleted,
-            $"Stok hareket evraki silindi. Silinen satir: {response.DeletedRowCount}.",
+            request.HardDelete
+                ? $"Stok hareket evraki fiziksel olarak silindi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, silinen satir: {response.DeletedRowCount}."
+                : $"Stok hareket evraki iptal edildi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, isaretlenen satir: {response.DeletedRowCount}.",
             cancellationToken);
 
         return Ok(response);
@@ -470,13 +473,16 @@ public sealed class MikroEvrakDuzenlemeController(
         var response = await service.DeleteCustomerMovementDocumentAsync(
             new DeleteCustomerMovementDocumentRequest(
                 lookup,
-                User.GetRequiredWarehouseNo()),
+                User.GetRequiredWarehouseNo(),
+                request.HardDelete),
             cancellationToken);
 
         await RecordCustomerMovementFlowAsync(
             beforeDelete,
             DocumentFlowStep.DocumentDeleted,
-            $"Cari hareket evraki silindi. Silinen satir: {response.DeletedRowCount}.",
+            request.HardDelete
+                ? $"Cari hareket evraki fiziksel olarak silindi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, silinen satir: {response.DeletedRowCount}."
+                : $"Cari hareket evraki iptal edildi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, isaretlenen satir: {response.DeletedRowCount}.",
             cancellationToken);
 
         return Ok(response);
@@ -1178,6 +1184,8 @@ public sealed class StockMovementDocumentLookupHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
+    public bool HardDelete { get; init; }
+
     public StockMovementDocumentLookupRequest ToApplicationRequest() =>
         new(
             DocumentSerie,
@@ -1417,6 +1425,8 @@ public sealed class CustomerMovementDocumentLookupHttpRequest
 
     [StringLength(25)]
     public string? CustomerCode { get; init; }
+
+    public bool HardDelete { get; init; }
 
     public CustomerMovementDocumentLookupRequest ToApplicationRequest() =>
         new(
