@@ -155,7 +155,13 @@ public enum DocumentFlowType
     WarehouseReturn = 4,
     CompanyReceiving = 5,
     IssuedCompanyOrder = 6,
-    IssuedWarehouseOrder = 7
+    IssuedWarehouseOrder = 7,
+    StockCard = 8,
+    WarehouseCard = 9,
+    CustomerCard = 10,
+    StockSalesPrice = 11,
+    StockMovementDocument = 12,
+    CustomerMovementDocument = 13
 }
 
 public enum DocumentFlowStatus
@@ -169,5 +175,10 @@ public enum DocumentFlowStep
     DocumentCreated = 1,
     EDespatchSubmission = 2,
     WarehouseReceivingAccepted = 3,
-    OrderCreated = 4
+    OrderCreated = 4,
+    DocumentUpdated = 5,
+    DocumentDeleted = 6,
+    MasterDataUpdated = 7,
+    PriceUpdated = 8,
+    PriceDeleted = 9
 }

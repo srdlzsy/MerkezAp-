@@ -100,4 +100,11 @@ public static class DocumentFlowKeys
         string documentSerie,
         int documentOrderNo) =>
         $"{documentType}:{sourceWarehouseNo}:{documentSerie.Trim().ToUpperInvariant()}:{documentOrderNo}";
+
+    public static string CreateEntity(
+        DocumentFlowType documentType,
+        int sourceWarehouseNo,
+        string entityKind,
+        string entityKey) =>
+        $"{documentType}:{sourceWarehouseNo}:{entityKind.Trim().ToUpperInvariant()}:{entityKey.Trim().ToUpperInvariant()}";
 }

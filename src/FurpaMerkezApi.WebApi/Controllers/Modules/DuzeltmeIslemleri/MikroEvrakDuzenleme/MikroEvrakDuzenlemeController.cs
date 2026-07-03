@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,8 +12,18 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.DuzeltmeIslemleri.MikroEvrak
 [Route("api/duzeltme-islemleri/mikro-evrak-duzenleme")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
-public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService service) : ControllerBase
+public sealed class MikroEvrakDuzenlemeController(
+    IMikroDocumentEditingService service,
+    IDocumentFlowService documentFlowService) : ControllerBase
 {
+    private const byte CompanyDispatchDocumentType = 1;
+    private const byte ReceivingReceiptDocumentType = 13;
+    private const byte InterWarehouseShipmentDocumentType = 17;
+    private const byte IncomingMovementType = 0;
+    private const byte OutgoingMovementType = 1;
+    private const byte InterWarehouseMovementType = 2;
+    private const byte NormalMovement = 0;
+    private const byte ReturnMovement = 1;
     private const string ListPolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.list";
     private const string DetailPolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.detail";
     private const string UpdatePolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.update";
@@ -49,13 +61,28 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     public async Task<ActionResult<StockCardUpdateResponse>> UpdateStockCard(
         string stockCode,
         [FromBody] StockCardPatchHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpdateStockCardAsync(
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.UpdateStockCardAsync(
             new UpdateStockCardRequest(
                 stockCode,
                 request.ToApplicationRequest(),
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                warehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.StockCard,
+            warehouseNo,
+            "STOKKARTI",
+            response.StockCard.StockCode,
+            DocumentFlowStep.MasterDataUpdated,
+            $"Stok karti duzenlendi. Guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            response.StockCard.StockCode,
+            cancellationToken);
+
+        return Ok(response);
+    }
 
     [HttpGet("stok-kartlari/{stockCode}/depolar")]
     [Authorize(Policy = DetailPolicy)]
@@ -77,14 +104,30 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
         string stockCode,
         [Range(1, int.MaxValue)] int warehouseNo,
         [FromBody] StockCardWarehousePatchHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpdateStockCardWarehouseSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.UpdateStockCardWarehouseSettingsAsync(
             new UpdateStockCardWarehouseSettingsRequest(
                 stockCode,
                 warehouseNo,
                 request.ToApplicationRequest(),
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.StockCard,
+            currentUserWarehouseNo,
+            "STOKDEPO",
+            $"{response.WarehouseSettings.StockCode}:{response.WarehouseSettings.WarehouseNo}",
+            DocumentFlowStep.MasterDataUpdated,
+            $"Stok depo ayari duzenlendi. Depo: {response.WarehouseSettings.WarehouseNo}, guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            response.WarehouseSettings.StockCode,
+            cancellationToken,
+            targetWarehouseNo: response.WarehouseSettings.WarehouseNo);
+
+        return Ok(response);
+    }
 
     [HttpDelete("stok-kartlari/{stockCode}/depolar/{warehouseNo:int}")]
     [Authorize(Policy = DeletePolicy)]
@@ -94,13 +137,29 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteStockCardWarehouseSettings(
         string stockCode,
         [Range(1, int.MaxValue)] int warehouseNo,
-        CancellationToken cancellationToken) =>
-        Ok(await service.DeleteStockCardWarehouseSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.DeleteStockCardWarehouseSettingsAsync(
             new DeleteStockCardWarehouseSettingsRequest(
                 stockCode,
                 warehouseNo,
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.StockCard,
+            currentUserWarehouseNo,
+            "STOKDEPO",
+            $"{stockCode}:{warehouseNo}",
+            DocumentFlowStep.DocumentDeleted,
+            $"Stok depo ayari silindi. Depo: {warehouseNo}, silinen satir: {response.DeletedRowCount}.",
+            stockCode,
+            cancellationToken,
+            targetWarehouseNo: warehouseNo);
+
+        return Ok(response);
+    }
 
     [HttpGet("depolar")]
     [Authorize(Policy = ListPolicy)]
@@ -134,13 +193,29 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     public async Task<ActionResult<WarehouseCardUpdateResponse>> UpdateWarehouseCard(
         [Range(1, int.MaxValue)] int warehouseNo,
         [FromBody] WarehouseCardPatchHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpdateWarehouseCardAsync(
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.UpdateWarehouseCardAsync(
             new UpdateWarehouseCardRequest(
                 warehouseNo,
                 request.ToApplicationRequest(),
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.WarehouseCard,
+            currentUserWarehouseNo,
+            "DEPO",
+            response.WarehouseCard.WarehouseNo.ToString(),
+            DocumentFlowStep.MasterDataUpdated,
+            $"Depo karti duzenlendi. Depo: {response.WarehouseCard.WarehouseNo}, guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            response.WarehouseCard.WarehouseNo.ToString(),
+            cancellationToken,
+            targetWarehouseNo: response.WarehouseCard.WarehouseNo);
+
+        return Ok(response);
+    }
 
     [HttpGet("cariler")]
     [Authorize(Policy = ListPolicy)]
@@ -174,13 +249,28 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     public async Task<ActionResult<CustomerCardUpdateResponse>> UpdateCustomerCard(
         string customerCode,
         [FromBody] CustomerCardPatchHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpdateCustomerCardAsync(
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.UpdateCustomerCardAsync(
             new UpdateCustomerCardRequest(
                 customerCode,
                 request.ToApplicationRequest(),
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                warehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.CustomerCard,
+            warehouseNo,
+            "CARI",
+            response.CustomerCard.CustomerCode,
+            DocumentFlowStep.MasterDataUpdated,
+            $"Cari karti duzenlendi. Guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            response.CustomerCard.CustomerCode,
+            cancellationToken);
+
+        return Ok(response);
+    }
 
     [HttpGet("stok-kartlari/{stockCode}/satis-fiyatlari")]
     [Authorize(Policy = DetailPolicy)]
@@ -202,8 +292,10 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
         string stockCode,
         [Range(1, int.MaxValue)] int warehouseNo,
         [FromBody] StockSalesPriceUpsertHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpsertStockSalesPriceAsync(
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.UpsertStockSalesPriceAsync(
             new UpsertStockSalesPriceRequest(
                 stockCode,
                 warehouseNo,
@@ -213,8 +305,24 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
                 request.Price,
                 request.CurrencyType,
                 request.ChangeReason,
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.StockSalesPrice,
+            currentUserWarehouseNo,
+            "SATISFIYATI",
+            $"{response.SalesPrice.StockCode}:{response.SalesPrice.WarehouseNo}:{response.SalesPrice.PriceListNo}:{response.SalesPrice.PaymentPlanNo}:{response.SalesPrice.UnitPointer}",
+            DocumentFlowStep.PriceUpdated,
+            response.Created
+                ? $"Satis fiyati olusturuldu. Depo: {response.SalesPrice.WarehouseNo}, fiyat: {response.SalesPrice.Price}."
+                : $"Satis fiyati guncellendi. Depo: {response.SalesPrice.WarehouseNo}, eski fiyat: {response.PreviousPrice}, yeni fiyat: {response.SalesPrice.Price}.",
+            response.SalesPrice.StockCode,
+            cancellationToken,
+            targetWarehouseNo: response.SalesPrice.WarehouseNo);
+
+        return Ok(response);
+    }
 
     [HttpDelete("stok-kartlari/{stockCode}/satis-fiyatlari/{warehouseNo:int}")]
     [Authorize(Policy = DeletePolicy)]
@@ -225,16 +333,32 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
         string stockCode,
         [Range(1, int.MaxValue)] int warehouseNo,
         [FromQuery] StockSalesPriceDeleteHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.DeleteStockSalesPriceAsync(
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.DeleteStockSalesPriceAsync(
             new DeleteStockSalesPriceRequest(
                 stockCode,
                 warehouseNo,
                 request.PriceListNo,
                 request.PaymentPlanNo,
                 request.UnitPointer,
-                User.GetRequiredWarehouseNo()),
-            cancellationToken));
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.StockSalesPrice,
+            currentUserWarehouseNo,
+            "SATISFIYATI",
+            $"{stockCode}:{warehouseNo}:{request.PriceListNo}:{request.PaymentPlanNo}:{request.UnitPointer}",
+            DocumentFlowStep.PriceDeleted,
+            $"Satis fiyati silindi. Depo: {warehouseNo}, silinen satir: {response.DeletedRowCount}.",
+            stockCode,
+            cancellationToken,
+            targetWarehouseNo: warehouseNo);
+
+        return Ok(response);
+    }
 
     [HttpGet("stok-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
@@ -255,10 +379,20 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<StockMovementDocumentUpdateResponse>> UpdateStockMovementDocument(
         [FromBody] UpdateStockMovementDocumentHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpdateStockMovementDocumentAsync(
+        CancellationToken cancellationToken)
+    {
+        var response = await service.UpdateStockMovementDocumentAsync(
             request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
-            cancellationToken));
+            cancellationToken);
+
+        await RecordStockMovementFlowAsync(
+            response.Document,
+            DocumentFlowStep.DocumentUpdated,
+            $"Stok hareket evraki duzenlendi. Guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
 
     [HttpDelete("stok-hareketleri")]
     [Authorize(Policy = DeletePolicy)]
@@ -268,12 +402,24 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteStockMovementDocument(
         [FromQuery] StockMovementDocumentLookupHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.DeleteStockMovementDocumentAsync(
+        CancellationToken cancellationToken)
+    {
+        var lookup = request.ToApplicationRequest();
+        var beforeDelete = await service.GetStockMovementDocumentAsync(lookup, cancellationToken);
+        var response = await service.DeleteStockMovementDocumentAsync(
             new DeleteStockMovementDocumentRequest(
-                request.ToApplicationRequest(),
+                lookup,
                 User.GetRequiredWarehouseNo()),
-            cancellationToken));
+            cancellationToken);
+
+        await RecordStockMovementFlowAsync(
+            beforeDelete,
+            DocumentFlowStep.DocumentDeleted,
+            $"Stok hareket evraki silindi. Silinen satir: {response.DeletedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
 
     [HttpGet("cari-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
@@ -294,10 +440,20 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CustomerMovementDocumentUpdateResponse>> UpdateCustomerMovementDocument(
         [FromBody] UpdateCustomerMovementDocumentHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.UpdateCustomerMovementDocumentAsync(
+        CancellationToken cancellationToken)
+    {
+        var response = await service.UpdateCustomerMovementDocumentAsync(
             request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
-            cancellationToken));
+            cancellationToken);
+
+        await RecordCustomerMovementFlowAsync(
+            response.Document,
+            DocumentFlowStep.DocumentUpdated,
+            $"Cari hareket evraki duzenlendi. Guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
 
     [HttpDelete("cari-hareketleri")]
     [Authorize(Policy = DeletePolicy)]
@@ -307,12 +463,171 @@ public sealed class MikroEvrakDuzenlemeController(IMikroDocumentEditingService s
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteCustomerMovementDocument(
         [FromQuery] CustomerMovementDocumentLookupHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.DeleteCustomerMovementDocumentAsync(
+        CancellationToken cancellationToken)
+    {
+        var lookup = request.ToApplicationRequest();
+        var beforeDelete = await service.GetCustomerMovementDocumentAsync(lookup, cancellationToken);
+        var response = await service.DeleteCustomerMovementDocumentAsync(
             new DeleteCustomerMovementDocumentRequest(
-                request.ToApplicationRequest(),
+                lookup,
                 User.GetRequiredWarehouseNo()),
-            cancellationToken));
+            cancellationToken);
+
+        await RecordCustomerMovementFlowAsync(
+            beforeDelete,
+            DocumentFlowStep.DocumentDeleted,
+            $"Cari hareket evraki silindi. Silinen satir: {response.DeletedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    private Task RecordReferenceFlowAsync(
+        DocumentFlowType documentType,
+        int sourceWarehouseNo,
+        string entityKind,
+        string entityKey,
+        DocumentFlowStep step,
+        string message,
+        string documentNo,
+        CancellationToken cancellationToken,
+        int? targetWarehouseNo = null) =>
+        documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.CreateEntity(documentType, sourceWarehouseNo, entityKind, entityKey),
+                documentType,
+                sourceWarehouseNo,
+                targetWarehouseNo,
+                entityKind,
+                0,
+                step,
+                DocumentFlowStatus.Succeeded,
+                message,
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: documentNo,
+                ExternalDocumentNo: entityKey),
+            cancellationToken);
+
+    private Task RecordStockMovementFlowAsync(
+        StockMovementDocumentDto document,
+        DocumentFlowStep step,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var identity = ResolveStockMovementFlowIdentity(document.Header);
+
+        return documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    identity.DocumentType,
+                    identity.SourceWarehouseNo,
+                    document.Header.DocumentSerie,
+                    document.Header.DocumentOrderNo),
+                identity.DocumentType,
+                identity.SourceWarehouseNo,
+                identity.TargetWarehouseNo,
+                document.Header.DocumentSerie,
+                document.Header.DocumentOrderNo,
+                step,
+                DocumentFlowStatus.Succeeded,
+                message,
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: document.Header.DocumentNo,
+                ExternalDocumentNo: document.Header.CustomerCode),
+            cancellationToken);
+    }
+
+    private Task RecordCustomerMovementFlowAsync(
+        CustomerMovementDocumentDto document,
+        DocumentFlowStep step,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var sourceWarehouseNo = User.GetRequiredWarehouseNo();
+
+        return documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.CustomerMovementDocument,
+                    sourceWarehouseNo,
+                    document.Header.DocumentSerie,
+                    document.Header.DocumentOrderNo),
+                DocumentFlowType.CustomerMovementDocument,
+                sourceWarehouseNo,
+                null,
+                document.Header.DocumentSerie,
+                document.Header.DocumentOrderNo,
+                step,
+                DocumentFlowStatus.Succeeded,
+                message,
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: document.Header.DocumentNo,
+                ExternalDocumentNo: document.Header.CustomerCode),
+            cancellationToken);
+    }
+
+    private DocumentFlowIdentity ResolveStockMovementFlowIdentity(StockMovementDocumentHeaderDto header)
+    {
+        var movementTypes = header.MovementTypes;
+
+        if (header.DocumentType == CompanyDispatchDocumentType &&
+            header.NormalReturn == NormalMovement &&
+            movementTypes.Contains(OutgoingMovementType))
+        {
+            return new DocumentFlowIdentity(
+                DocumentFlowType.CompanyShipment,
+                ResolveWarehouseNo(header.OutputWarehouseNo),
+                null);
+        }
+
+        if (header.DocumentType == CompanyDispatchDocumentType &&
+            header.NormalReturn == ReturnMovement &&
+            movementTypes.Contains(OutgoingMovementType))
+        {
+            return new DocumentFlowIdentity(
+                DocumentFlowType.CompanyReturn,
+                ResolveWarehouseNo(header.OutputWarehouseNo),
+                null);
+        }
+
+        if (header.DocumentType == ReceivingReceiptDocumentType &&
+            movementTypes.Contains(IncomingMovementType))
+        {
+            return new DocumentFlowIdentity(
+                DocumentFlowType.CompanyReceiving,
+                ResolveWarehouseNo(header.InputWarehouseNo),
+                null);
+        }
+
+        if (header.DocumentType == InterWarehouseShipmentDocumentType &&
+            movementTypes.Contains(InterWarehouseMovementType))
+        {
+            return new DocumentFlowIdentity(
+                header.NormalReturn == ReturnMovement
+                    ? DocumentFlowType.WarehouseReturn
+                    : DocumentFlowType.InterWarehouseShipment,
+                ResolveWarehouseNo(header.OutputWarehouseNo),
+                ResolveNullableWarehouseNo(header.InputWarehouseNo));
+        }
+
+        return new DocumentFlowIdentity(
+            DocumentFlowType.StockMovementDocument,
+            ResolveWarehouseNo(header.OutputWarehouseNo, header.InputWarehouseNo),
+            ResolveNullableWarehouseNo(header.InputWarehouseNo));
+    }
+
+    private int ResolveWarehouseNo(params int[] candidates) =>
+        candidates.FirstOrDefault(candidate => candidate > 0) is var warehouseNo && warehouseNo > 0
+            ? warehouseNo
+            : User.GetRequiredWarehouseNo();
+
+    private static int? ResolveNullableWarehouseNo(int warehouseNo) =>
+        warehouseNo > 0 ? warehouseNo : null;
+
+    private sealed record DocumentFlowIdentity(
+        DocumentFlowType DocumentType,
+        int SourceWarehouseNo,
+        int? TargetWarehouseNo);
 }
 
 public sealed class StockCardSearchHttpRequest
