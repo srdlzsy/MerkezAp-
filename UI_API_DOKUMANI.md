@@ -6501,6 +6501,188 @@ Response:
 
 ## Rapor Islemleri
 
+### Tedarikci Performans Karnesi
+
+Bu ekran satin alma tarafinda tedarikciyi tek kartta degerlendirmek icin eklendi. Kaynaklar ayri ekran olarak sunulmaz; UI tek `Tedarikci Performans Karnesi` ekraninda siparis, mal kabul, iade, zayiat/masraf etkisi ve fatura ozetlerini birlikte gosterir.
+
+Temel route:
+
+- `api/rapor-islemleri/tedarikci-performans-karnesi`
+
+Yetki kodlari:
+
+- `rapor-islemleri.tedarikci-performans-karnesi.list`
+- `rapor-islemleri.tedarikci-performans-karnesi.detail`
+
+Veri kaynaklari:
+
+- `SIPARISLER`: verilen firma siparisleri, siparis miktari, teslim miktari, planlanan teslim tarihi
+- `STOK_HAREKETLERI`: firma mal kabul, firma iade, zayiat/masraf hareketleri
+- `CARI_HESAPLAR`: tedarikci kodu, unvan, VKN/TCKN
+- Mal kabul fark mantigi: firma mal kabul satirlarinda `sth_miktar` ile `sth_FormulMiktar` farki varsa eksik/fazla kabul olarak okunur
+- Fatura ozeti: bizim kestigimiz fatura adaylari Mikro `CARI_HESAP_HAREKETLERI`, tedarikcinin bize kestigi gelen faturalar `uyumsoft_inbox_invoices` cache uzerinden ozetlenir
+- Satir bazli fiyat/fatura farki ikinci fazdir; ilk fazda fatura metrikleri `summary-only` durumuyla toplam tutar farki seviyesinde verilir
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/rapor-islemleri/tedarikci-performans-karnesi` | query | `SupplierPerformanceHttpRequest` | `SupplierPerformanceReportDto` | `list` |
+| `GET /api/rapor-islemleri/tedarikci-performans-karnesi/{customerCode}` | path + query | `SupplierPerformanceDetailHttpRequest` | `SupplierPerformanceDetailDto` | `detail` |
+
+Liste query:
+
+```text
+startDate     zorunlu, ISO tarih
+endDate       zorunlu, ISO tarih
+warehouseNo   opsiyonel; verilmezse tum depolar
+customerCode  opsiyonel; tek tedarikciye daraltir
+take          opsiyonel; default 100, max 500
+```
+
+Detay query:
+
+```text
+startDate   zorunlu
+endDate     zorunlu
+warehouseNo opsiyonel
+eventTake   opsiyonel; default 100, max 500
+```
+
+Skor mantigi:
+
+- Baslangic puani 100'dur.
+- Gec teslim ve acik gec siparisler teslimat cezasini olusturur.
+- Eksik/fazla mal kabul farki kalite cezasini olusturur.
+- Firma iade miktari iade cezasini olusturur.
+- Zayiat/masraf etkisi stok kartindaki varsayilan tedarikci uzerinden tedarikciye baglanir.
+- Fatura farki ilk fazda toplam gelen/giden fatura tutari olarak gosterilir ama skoru cezalandirmaz; satir fiyat farki ikinci fazda detaylandirilacaktir.
+- `riskLevel`: `Healthy`, `Warning`, `Critical`
+- `grade`: `A`, `B`, `C`, `D`, `E`
+
+Liste ornegi:
+
+`GET /api/rapor-islemleri/tedarikci-performans-karnesi?startDate=2026-07-01&endDate=2026-07-03&warehouseNo=110&take=100`
+
+Response:
+
+```json
+{
+  "warehouseNo": 110,
+  "startDate": "2026-07-01T00:00:00",
+  "endDate": "2026-07-03T00:00:00",
+  "generatedAtUtc": "2026-07-03T09:45:00Z",
+  "summary": {
+    "supplierCount": 2,
+    "averageScore": 82.5,
+    "criticalSupplierCount": 0,
+    "warningSupplierCount": 1,
+    "totalOrderedQuantity": 250,
+    "totalReceivedQuantity": 230,
+    "totalReturnedQuantity": 8,
+    "totalMissingQuantity": 2,
+    "totalExcessQuantity": 0,
+    "totalOutageImpactQuantity": 4,
+    "totalIssuedInvoiceAmount": 12500,
+    "totalIncomingInvoiceAmount": 12620,
+    "totalInvoiceDifferenceAmount": 120,
+    "invoiceMetricsState": "summary-only"
+  },
+  "items": [
+    {
+      "customerCode": "120.01.03106",
+      "customerTitle": "ORNEK TEDARIKCI A.S.",
+      "taxNoOrTckn": "1234567890",
+      "score": 91.71,
+      "grade": "A",
+      "riskLevel": "Warning",
+      "orders": {
+        "documentCount": 4,
+        "lineCount": 18,
+        "orderedQuantity": 120,
+        "deliveredQuantity": 112,
+        "remainingQuantity": 8,
+        "deliveryRate": 0.93,
+        "lateDeliveredLineCount": 1,
+        "openLateLineCount": 1,
+        "averageLateDays": 2
+      },
+      "receiving": {
+        "documentCount": 3,
+        "lineCount": 15,
+        "receivedQuantity": 112,
+        "receivedAmount": 8400,
+        "differenceLineCount": 1,
+        "missingQuantity": 2,
+        "excessQuantity": 0,
+        "differenceRate": 0.02
+      },
+      "returns": {
+        "documentCount": 1,
+        "lineCount": 1,
+        "returnedQuantity": 2,
+        "returnedAmount": 150,
+        "returnRate": 0.02
+      },
+      "outageImpact": {
+        "documentCount": 1,
+        "lineCount": 1,
+        "quantity": 4,
+        "amount": 0,
+        "quantityRate": 0.04,
+        "attribution": "stok-karti-varsayilan-tedarikci"
+      },
+      "invoices": {
+        "issuedInvoiceCount": 1,
+        "issuedInvoiceAmount": 150,
+        "incomingInvoiceCount": 2,
+        "incomingInvoiceAmount": 8550,
+        "invoiceDifferenceAmount": 8400,
+        "invoiceDifferenceRate": 0.98,
+        "state": "summary-only",
+        "note": "Giden fatura Mikro cari hareketlerinden, gelen fatura Uyumsoft cache ozetinden okunur. Satir bazli fiyat/fatura farki ikinci fazdir."
+      },
+      "scoreBreakdown": {
+        "deliveryPenalty": 6.5,
+        "differencePenalty": 0.54,
+        "returnPenalty": 0.54,
+        "outagePenalty": 0.71,
+        "invoicePenalty": 0,
+        "totalPenalty": 8.29
+      }
+    }
+  ]
+}
+```
+
+Detay ornegi:
+
+`GET /api/rapor-islemleri/tedarikci-performans-karnesi/120.01.03106?startDate=2026-07-01&endDate=2026-07-03&warehouseNo=110&eventTake=100`
+
+Response `card` alaninda liste satirindaki ayni karti, `events` alaninda bu karta kaynak olan olaylari doner.
+
+Olay tipleri:
+
+```text
+Order
+OpenLateOrder
+ReceivingDifference
+CompanyReturn
+OutageImpact
+ExpenseImpact
+IssuedInvoice
+IncomingInvoice
+```
+
+UI akisi:
+
+1. Ekran acilisinda liste endpoint'i cagrilir.
+2. Ustte ortalama skor, kritik/uyari sayisi, toplam siparis, kabul, iade, fark ve fatura farki ozetleri gosterilir.
+3. Gridde tedarikci, skor, risk, siparis/kabul oranlari, gec teslim, iade, mal kabul farki, zayiat etkisi ve fatura ozeti kolonlari yer alir.
+4. Satir secilince ayni ekranda detay paneli acilir ve detay endpoint'i cagrilir.
+5. Detay panelinde `events` zaman cizelgesi olarak gosterilir; kaynak alanlari teknik kanit olarak saklanir.
+6. Fatura alaninda `state = summary-only` ise UI bunu "fatura ozeti, satir fiyat farki sonraki faz" gibi gosterebilir.
+
 ### Satis Analizleri
 
 Eski `Furpa.SalesMvcCoreUI` dashboard tarafindaki ciro disi raporlar bu API modulunde toplandi. Tum endpointler `GET` calisir, query tarafinda ortak `WarehouseOrderDateRangeHttpRequest` modelini kullanir.

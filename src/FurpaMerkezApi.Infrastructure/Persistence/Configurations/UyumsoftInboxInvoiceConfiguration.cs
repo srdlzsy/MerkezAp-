@@ -4,8 +4,20 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace FurpaMerkezApi.Infrastructure.Persistence.Configurations;
 
-public sealed class UyumsoftInboxInvoiceConfiguration(bool useSqlServerTypes = false) : IEntityTypeConfiguration<UyumsoftInboxInvoice>
+public sealed class UyumsoftInboxInvoiceConfiguration : IEntityTypeConfiguration<UyumsoftInboxInvoice>
 {
+    private readonly bool useSqlServerTypes;
+
+    public UyumsoftInboxInvoiceConfiguration()
+        : this(false)
+    {
+    }
+
+    public UyumsoftInboxInvoiceConfiguration(bool useSqlServerTypes)
+    {
+        this.useSqlServerTypes = useSqlServerTypes;
+    }
+
     public void Configure(EntityTypeBuilder<UyumsoftInboxInvoice> builder)
     {
         builder.ToTable("uyumsoft_inbox_invoices");
