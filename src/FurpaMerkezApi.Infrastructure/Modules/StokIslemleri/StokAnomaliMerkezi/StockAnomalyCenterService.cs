@@ -107,15 +107,16 @@ public sealed class StockAnomalyCenterService(
         await AddRuleAsync(detected, ruleResults, StockAnomalyType.DormantStock, () => FindDormantStockAsync(normalized, cancellationToken));
         await AddRuleAsync(detected, ruleResults, StockAnomalyType.PendingInterWarehouseTransfer, () => FindPendingInterWarehouseTransfersAsync(normalized, cancellationToken));
 
-        await UpsertDetectedWithRetryAsync(detected, startedAt, cancellationToken);
+        var uniqueDetected = DeduplicateDetected(detected);
+        await UpsertDetectedWithRetryAsync(uniqueDetected, startedAt, cancellationToken);
 
         var finishedAt = clock.UtcNow;
         logger.LogInformation(
             "Stock anomaly scan finished. DetectedCount={DetectedCount}, ElapsedMs={ElapsedMs}",
-            detected.Count,
+            uniqueDetected.Count,
             (finishedAt - startedAt).TotalMilliseconds);
 
-        return new StockAnomalyScanResponse(startedAt, finishedAt, detected.Count, ruleResults);
+        return new StockAnomalyScanResponse(startedAt, finishedAt, uniqueDetected.Count, ruleResults);
     }
 
     public async Task<StockAnomalyDetailDto> ChangeStatusAsync(
@@ -285,11 +286,23 @@ public sealed class StockAnomalyCenterService(
             return;
         }
 
-        var sourceKeys = detected.Select(item => item.SourceKey).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var existing = await authDbContext.StockAnomalies
-            .Include(anomaly => anomaly.Events)
-            .Where(anomaly => sourceKeys.Contains(anomaly.SourceKey))
-            .ToDictionaryAsync(anomaly => anomaly.SourceKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var sourceKeys = detected
+            .Select(item => item.SourceKey)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var existing = new Dictionary<string, StockAnomaly>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var sourceKeyChunk in sourceKeys.Chunk(1000))
+        {
+            var anomalies = await authDbContext.StockAnomalies
+                .Where(anomaly => sourceKeyChunk.Contains(anomaly.SourceKey))
+                .ToListAsync(cancellationToken);
+
+            foreach (var anomaly in anomalies)
+            {
+                existing[anomaly.SourceKey] = anomaly;
+            }
+        }
 
         foreach (var item in detected)
         {
@@ -329,6 +342,13 @@ public sealed class StockAnomalyCenterService(
 
         await authDbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private static IReadOnlyCollection<DetectedStockAnomaly> DeduplicateDetected(
+        IEnumerable<DetectedStockAnomaly> detected) =>
+        detected
+            .GroupBy(item => item.SourceKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
 
     private Task<IReadOnlyCollection<DetectedStockAnomaly>> FindNegativeStockAsync(
         NormalizedScanRequest request,
