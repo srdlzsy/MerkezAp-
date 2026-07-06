@@ -1,4 +1,27 @@
 @baseUrl = http://localhost:5228
+@uyumsoftInvoiceUrl = http://efatura.uyumsoft.com.tr/Services/BasicIntegration
+@uyumsoftUsername = UYUMSOFT_KULLANICI_ADI
+@uyumsoftPassword = UYUMSOFT_SIFRE
+@retryInvoiceEttn = eb6379bf-d2d8-4f1d-ab02-7deb09dae8d4
+
+# Uyumsoft'ta kayitli faturayi gercekten yeniden gonderim kuyruguna alir.
+# Calistirmadan once kullanici adi ve sifre degiskenlerini doldurun.
+POST {{uyumsoftInvoiceUrl}}
+Content-Type: text/xml; charset=utf-8
+SOAPAction: "http://tempuri.org/IBasicIntegration/RetrySendInvoices"
+
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <RetrySendInvoices xmlns="http://tempuri.org/">
+      <userInfo Username="{{uyumsoftUsername}}" Password="{{uyumsoftPassword}}" />
+      <invoiceIds>
+        <string>{{retryInvoiceEttn}}</string>
+      </invoiceIds>
+    </RetrySendInvoices>
+  </s:Body>
+</s:Envelope>
+
+###
 
 GET {{baseUrl}}/
 Accept: application/json

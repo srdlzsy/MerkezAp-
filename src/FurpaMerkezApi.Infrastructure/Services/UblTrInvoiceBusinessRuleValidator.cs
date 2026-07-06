@@ -191,10 +191,29 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
             ?.Element(basic + "ElectronicMail")
             ?.Value
             ?.Trim() ?? string.Empty;
+        var taxIdentity = party
+            .Elements(aggregate + "PartyIdentification")
+            .Select(element => element.Element(basic + "ID"))
+            .FirstOrDefault(id => string.Equals(
+                id?.Attribute("schemeID")?.Value,
+                "TCKN",
+                StringComparison.OrdinalIgnoreCase));
 
         if (!IsValidTurkishTaxIdentity(taxNumber))
         {
             errors.Add($"{label} VKN/TCKN must contain 10 or 11 digits.");
+        }
+
+        if (taxIdentity is not null)
+        {
+            var person = party.Element(aggregate + "Person");
+            var firstName = person?.Element(basic + "FirstName")?.Value?.Trim();
+            var familyName = person?.Element(basic + "FamilyName")?.Value?.Trim();
+
+            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(familyName))
+            {
+                errors.Add($"{label} Person with FirstName and FamilyName is required for TCKN.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(title) || title == "-")

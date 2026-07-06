@@ -150,6 +150,9 @@ public sealed class InvoiceSendingService(
                     invoice.DocumentSerie,
                     invoice.DocumentOrderNo,
                     serviceResponse.ServiceDocumentNumber,
+                    string.IsNullOrWhiteSpace(serviceResponse.ServiceDocumentId)
+                        ? invoice.InvoiceGuid.ToString()
+                        : serviceResponse.ServiceDocumentId,
                     cancellationToken);
 
                 results.Add(new SendInvoiceDocumentResultDto(
@@ -1377,6 +1380,21 @@ public sealed class InvoiceSendingService(
         var aggregate = XNamespace.Get(AggregateNamespace);
         var basic = XNamespace.Get(BasicNamespace);
         var taxSchemeId = ResolveTaxSchemeId(supplier.TaxNumber);
+        var signatoryPartyChildren = new List<object>
+        {
+            new XElement(
+                aggregate + "PartyIdentification",
+                new XElement(
+                    basic + "ID",
+                    new XAttribute("schemeID", taxSchemeId),
+                    supplier.TaxNumber)),
+            BuildAddressElement("PostalAddress", supplier)
+        };
+
+        if (taxSchemeId == "TCKN")
+        {
+            signatoryPartyChildren.Add(BuildPersonElement(supplier.DisplayName));
+        }
 
         return new XElement(
             aggregate + "Signature",
@@ -1386,13 +1404,7 @@ public sealed class InvoiceSendingService(
                 supplier.TaxNumber),
             new XElement(
                 aggregate + "SignatoryParty",
-                new XElement(
-                    aggregate + "PartyIdentification",
-                    new XElement(
-                        basic + "ID",
-                        new XAttribute("schemeID", taxSchemeId),
-                        supplier.TaxNumber)),
-                BuildAddressElement("PostalAddress", supplier)),
+                signatoryPartyChildren),
             new XElement(
                 aggregate + "DigitalSignatureAttachment",
                 new XElement(
@@ -1557,7 +1569,37 @@ public sealed class InvoiceSendingService(
             children.Add(contact);
         }
 
+        if (ResolveTaxSchemeId(partyInfo.TaxNumber) == "TCKN")
+        {
+            children.Add(BuildPersonElement(partyInfo.DisplayName));
+        }
+
         return children;
+    }
+
+    private static XElement BuildPersonElement(string displayName)
+    {
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var (firstName, familyName) = SplitPersonName(displayName);
+
+        return new XElement(
+            aggregate + "Person",
+            new XElement(basic + "FirstName", firstName),
+            new XElement(basic + "FamilyName", familyName));
+    }
+
+    private static (string FirstName, string FamilyName) SplitPersonName(string value)
+    {
+        var parts = (value ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return parts.Length switch
+        {
+            0 => ("-", "-"),
+            1 => (parts[0], "-"),
+            _ => (string.Join(" ", parts[..^1]), parts[^1])
+        };
     }
 
     private static XElement BuildAddressElement(string elementName, PartyInfo partyInfo)
@@ -1890,6 +1932,7 @@ public sealed class InvoiceSendingService(
         string documentSerie,
         int documentOrderNo,
         string serviceDocumentNumber,
+        string ettn,
         CancellationToken cancellationToken)
     {
         var trackedRows = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
@@ -1911,6 +1954,7 @@ public sealed class InvoiceSendingService(
         foreach (var row in trackedRows)
         {
             row.cha_belge_no = serviceDocumentNumber;
+            row.cha_uuid = ettn;
             row.cha_kilitli = true;
             row.cha_degisti = true;
             row.cha_lastup_user = MikroUserNo;
