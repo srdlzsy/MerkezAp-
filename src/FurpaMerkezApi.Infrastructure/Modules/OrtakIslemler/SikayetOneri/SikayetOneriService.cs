@@ -96,7 +96,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
         var query = ApplyManagementScope(
             dbContext.FeedbackItems.AsNoTracking(),
             request.CanViewAll,
-            request.CurrentUserWarehouseNo);
+            request.CurrentUserId);
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
@@ -110,7 +110,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
             query = query.Where(item => item.Type == type);
         }
 
-        if (request.WarehouseNo is { } warehouseNo)
+        if (request.CanViewAll && request.WarehouseNo is { } warehouseNo)
         {
             if (warehouseNo <= 0)
             {
@@ -150,7 +150,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
         FeedbackManagementScope scope,
         CancellationToken cancellationToken)
     {
-        var item = await GetScopedItemAsync(feedbackId, scope.CanViewAll, scope.CurrentUserWarehouseNo, cancellationToken);
+        var item = await GetScopedItemAsync(feedbackId, scope.CanViewAll, scope.CurrentUserId, cancellationToken);
         return ToDto(item);
     }
 
@@ -161,7 +161,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
     {
         ValidateUserId(context.UserId);
 
-        var item = await GetScopedItemAsync(feedbackId, context.CanViewAll, context.CurrentUserWarehouseNo, cancellationToken);
+        var item = await GetScopedItemAsync(feedbackId, context.CanViewAll, context.UserId, cancellationToken);
         item.MarkAsRead(context.UserId, clock.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -176,7 +176,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
     {
         ValidateUserId(context.UserId);
 
-        var item = await GetScopedItemAsync(feedbackId, context.CanViewAll, context.CurrentUserWarehouseNo, cancellationToken);
+        var item = await GetScopedItemAsync(feedbackId, context.CanViewAll, context.UserId, cancellationToken);
         item.ChangeStatus(ParseStatus(request.Status), request.AdminNote, context.UserId, clock.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -186,7 +186,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
     private async Task<FeedbackItem> GetScopedItemAsync(
         Guid feedbackId,
         bool canViewAll,
-        int currentUserWarehouseNo,
+        Guid currentUserId,
         CancellationToken cancellationToken)
     {
         if (feedbackId == Guid.Empty)
@@ -197,7 +197,7 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
         var item = await ApplyManagementScope(
                 dbContext.FeedbackItems,
                 canViewAll,
-                currentUserWarehouseNo)
+                currentUserId)
             .FirstOrDefaultAsync(currentItem => currentItem.Id == feedbackId, cancellationToken);
 
         return item ?? throw new KeyNotFoundException("Feedback item was not found.");
@@ -206,19 +206,19 @@ public sealed class SikayetOneriService(AuthDbContext dbContext, IClock clock) :
     private static IQueryable<FeedbackItem> ApplyManagementScope(
         IQueryable<FeedbackItem> query,
         bool canViewAll,
-        int currentUserWarehouseNo)
+        Guid currentUserId)
     {
         if (canViewAll)
         {
             return query;
         }
 
-        if (currentUserWarehouseNo <= 0)
+        if (currentUserId == Guid.Empty)
         {
-            throw new UnauthorizedAccessException("Warehouse information was not found on the current user.");
+            throw new UnauthorizedAccessException("User information was not found on the current user.");
         }
 
-        return query.Where(item => item.WarehouseNo == currentUserWarehouseNo);
+        return query.Where(item => item.CreatedByUserId == currentUserId);
     }
 
     private static int NormalizeTake(int? take)

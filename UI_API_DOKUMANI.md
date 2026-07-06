@@ -26,11 +26,11 @@ Veri Auth DB tarafinda tutulur:
 Temel kural:
 
 - Home endpointleri icin sadece login olmak yeterlidir.
-- Kullanici kendi sikayet/onerisini olusturur, kendi gecmisini ve ozetini gorur.
-- Yonetim endpointleri icin `Administrator` rolu veya ilgili permission gerekir.
-- `Administrator` rolu tum kayitlari gorur ve tum yonetim aksiyonlarini kullanir.
-- `ortak-islemler.sikayet-oneri.list-all` yetkisi olan kullanici tum depolari gorur.
-- `list-all` yoksa yonetim listesi kullanicinin JWT deposu ile sinirlanir.
+- Kullanici kendi sikayet/onerisini olusturur, kendi gecmisini, detayini ve durumunu gorur.
+- Admin olmayan kullanici baska kullanicilarin veya ayni depodaki diger personelin kayitlarini goremez.
+- Admin olmayan kullanici okundu isaretleme, cevap/admin notu yazma veya durum degistirme yapamaz.
+- `Admin` veya `Administrator` rolu tum depolardaki kayitlari gorur, isterse `warehouseNo` ile depo filtreler.
+- `Admin` veya `Administrator` rolu okundu isaretler, cevap/admin notu yazar ve durum degistirir.
 
 Yetki kodlari:
 
@@ -38,6 +38,8 @@ Yetki kodlari:
 - `ortak-islemler.sikayet-oneri.detail`
 - `ortak-islemler.sikayet-oneri.update`
 - `ortak-islemler.sikayet-oneri.list-all`
+
+Not: Bu permission kodlari menu/buton gorunurlugu icin kullanilabilir; API tarafinda admin olmayan kullanicinin veri kapsami her zaman kendi olusturdugu kayitlarla sinirlidir. Durum guncelleme ve admin notu islemleri role gore sadece `Admin`/`Administrator` icindir.
 
 Deger kataloglari:
 
@@ -74,9 +76,9 @@ UI icin onerilen kullanim:
 - Modalda `type`, `title`, `message`, `priority` alanlari bulunur.
 - Kullanici bilgisi, depo no ve depo adi body'den alinmaz; JWT claim'lerinden backend tarafinda doldurulur.
 - "Gecmisim" veya detay paneli icin `GET /api/home/sikayet-oneri/benim` kullanilir.
-- Yonetim ekrani menu olarak `OrtakIslemler > SikayetOneri` altinda acilabilir.
+- Yonetim ekrani menu olarak `OrtakIslemler > SikayetOneri` altinda acilabilir; admin olmayan kullanicida bu ekran sadece kendi kayitlarini salt okunur liste/detay olarak gostermelidir.
 - Yonetim gridinde tip, durum, oncelik, depo, olusturan kullanici, tarih ve admin notu kolonlari yeterlidir.
-- Durum degisiminde `PATCH /durum`, sadece okunduya alma icin `PATCH /okundu` kullanilmalidir.
+- Durum degisiminde `PATCH /durum`, sadece okunduya alma icin `PATCH /okundu` kullanilmalidir; bu aksiyonlar UI'da sadece `Admin`/`Administrator` icin acilmalidir.
 
 Endpoint ozeti:
 
@@ -85,10 +87,10 @@ Endpoint ozeti:
 | `POST /api/home/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
 | `GET /api/home/sikayet-oneri/benim` | - | - | `FeedbackItemDto[]` | login |
 | `GET /api/home/sikayet-oneri/ozet` | - | - | `FeedbackSummaryDto` | login |
-| `GET /api/yonetim/sikayet-oneri` | query | `FeedbackManagementListHttpRequest` | `FeedbackItemDto[]` | `list` veya `list-all` veya `Administrator` |
-| `GET /api/yonetim/sikayet-oneri/{id}` | path | `id: guid` | `FeedbackItemDto` | `detail` veya `Administrator` |
-| `PATCH /api/yonetim/sikayet-oneri/{id}/okundu` | path | `id: guid` | `FeedbackItemDto` | `update` veya `Administrator` |
-| `PATCH /api/yonetim/sikayet-oneri/{id}/durum` | body | `ChangeFeedbackStatusHttpRequest` | `FeedbackItemDto` | `update` veya `Administrator` |
+| `GET /api/yonetim/sikayet-oneri` | query | `FeedbackManagementListHttpRequest` | `FeedbackItemDto[]` | login; admin tumu, digerleri kendi kayitlari |
+| `GET /api/yonetim/sikayet-oneri/{id}` | path | `id: guid` | `FeedbackItemDto` | login; admin tumu, digerleri kendi kaydi |
+| `PATCH /api/yonetim/sikayet-oneri/{id}/okundu` | path | `id: guid` | `FeedbackItemDto` | `Admin` veya `Administrator` |
+| `PATCH /api/yonetim/sikayet-oneri/{id}/durum` | body | `ChangeFeedbackStatusHttpRequest` | `FeedbackItemDto` | `Admin` veya `Administrator` |
 
 Yonetim endpointleri icin alias route:
 
@@ -227,7 +229,7 @@ Query:
 ```text
 status       opsiyonel; New/Read/InProgress/Resolved/Closed/Rejected
 type         opsiyonel; Complaint/Suggestion
-warehouseNo  opsiyonel; sadece canViewAll kullanicilarda tum depo filtreleme anlamlidir
+warehouseNo  opsiyonel; sadece Admin/Administrator icin tum depo filtreleme anlamlidir
 startDate    opsiyonel; createdAtUtc baslangic tarihi
 endDate      opsiyonel; createdAtUtc bitis tarihi, gun sonu dahil kabul edilir
 take         opsiyonel; default 100, max 500
@@ -235,9 +237,9 @@ take         opsiyonel; default 100, max 500
 
 Kapsam:
 
-- `Administrator` veya `list-all`: tum kayitlar uzerinden filtreleme yapar.
-- Sadece `list`: backend otomatik olarak kullanicinin JWT deposuna filtreler.
-- `warehouseNo` verilse bile `list-all` yoksa kullanicinin kendi depo kapsami disina cikilamaz.
+- `Admin` veya `Administrator`: tum kayitlar uzerinden filtreleme yapar.
+- Admin olmayan kullanici: backend otomatik olarak sadece `createdByUserId = current user` kayitlarini dondurur.
+- Admin olmayan kullanici `warehouseNo` gonderse bile baska kullanici veya depo kaydina erisemez; depo filtresi admin ekraninda anlamlidir.
 
 ### Yonetim Detay
 
@@ -5422,6 +5424,9 @@ Not:
 - `startDate/endDate` duplicate belge, mal kabul farki ve yuksek miktar kontrollerinde kullanilir.
 - Eksi stok ve hareketsiz stok kontrolleri mevcut bakiye uzerinden calisir.
 - `takePerRule`, her kuralin tek taramada en fazla kac sonuc yazacagini belirler.
+- Tarama sorgulari buyuk Mikro tablolarinda calistigi icin UI ayni anda birden fazla `tara` istegi baslatmamali; buton tarama bitene kadar disabled/loading durumda kalmalidir.
+- Admin tum depo taramasi yapabiliyor olsa da yogun sistemlerde UI varsayilan olarak secili depo veya kisa tarih araligi ile taramayi tesvik etmelidir.
+- Backend her kurali ayri calistirir ve sonuc kayitlarini kural bazinda sinirlar; `takePerRule` buyutuldukce Mikro sorgu suresi artabilir.
 
 Response:
 
@@ -5441,7 +5446,7 @@ Response:
 }
 ```
 
-Herhangi bir kural SQL timeout veya benzeri bir sebeple tamamlanamazsa endpoint komple `500` donmez; ilgili kural `rules[].error` alaninda hata mesajiyla doner, diger kurallarin yakaladigi anomaliler yine kaydedilir.
+Herhangi bir kural SQL timeout veya benzeri bir sebeple tamamlanamazsa endpoint komple `500` donmez; ilgili kural `rules[].error` alaninda hata mesajiyla doner, diger kurallarin yakaladigi anomaliler yine kaydedilir. UI `rules[].error` dolu olan kurallari kismi basarisiz olarak gostermeli, `detectedCount` ve hatasiz kurallardan gelen kayitlari gecersiz saymamalidir.
 
 Durum guncelleme:
 
@@ -5466,8 +5471,10 @@ UI oneri:
 1. Panel acilisinda once `GET /stok-anomali-merkezi?status=Open&take=100` cagir.
 2. Admin icin depo filtresi goster; depo kullanicisinda depo filtresini kilitle/gizle.
 3. "Tara" aksiyonu Admin'de tum depolar veya secili depo icin, depo kullanicisinda sadece kendi deposu icin calissin.
-4. Satir tiklaninca detay endpoint'i ile `evidence` ve `events` gosterilsin.
-5. Kullanici satiri inceledikten sonra durumunu `Acknowledged`, `Resolved` veya `Ignored` yapabilsin.
+4. Tarama sirasinda ikinci tarama istegini engelle, bitince `rules` sonucunu ozetle ve listeyi yenile.
+5. `rules[].error` doluysa sadece ilgili kurali uyari olarak goster; diger kurallarin kaydettigi anomaliler listede kalir.
+6. Satir tiklaninca detay endpoint'i ile `evidence` ve `events` gosterilsin.
+7. Kullanici satiri inceledikten sonra durumunu `Acknowledged`, `Resolved` veya `Ignored` yapabilsin.
 
 ### Etiket Belgeleri Son Liste
 
@@ -6521,7 +6528,8 @@ Veri kaynaklari:
 - `CARI_HESAPLAR`: tedarikci kodu, unvan, VKN/TCKN
 - Mal kabul fark mantigi: firma mal kabul satirlarinda `sth_miktar` ile `sth_FormulMiktar` farki varsa eksik/fazla kabul olarak okunur
 - Fatura ozeti: bizim kestigimiz fatura adaylari Mikro `CARI_HESAP_HAREKETLERI`, tedarikcinin bize kestigi gelen faturalar `uyumsoft_inbox_invoices` cache uzerinden ozetlenir
-- Satir bazli fiyat/fatura farki ikinci fazdir; ilk fazda fatura metrikleri `summary-only` durumuyla toplam tutar farki seviyesinde verilir
+- Gelen fatura toplami ile bizim kestigimiz fatura toplami dogrudan mutabakat farki olarak yorumlanmaz; bu alanlar yalnizca ayri fatura ozeti olarak verilir
+- Satir bazli fiyat/fatura kontrolu ikinci fazdir; ilk fazda fatura metrikleri `summary-only` durumundadir
 
 Endpoint ozeti:
 
@@ -6556,7 +6564,7 @@ Skor mantigi:
 - Eksik/fazla mal kabul farki kalite cezasini olusturur.
 - Firma iade miktari iade cezasini olusturur.
 - Zayiat/masraf etkisi stok kartindaki varsayilan tedarikci uzerinden tedarikciye baglanir.
-- Fatura farki ilk fazda toplam gelen/giden fatura tutari olarak gosterilir ama skoru cezalandirmaz; satir fiyat farki ikinci fazda detaylandirilacaktir.
+- Fatura ozeti skoru cezalandirmaz; gelen faturalar ve bizim kestigimiz faturalar ayri toplamlar olarak gosterilir.
 - `riskLevel`: `Healthy`, `Warning`, `Critical`
 - `grade`: `A`, `B`, `C`, `D`, `E`
 
@@ -6585,7 +6593,6 @@ Response:
     "totalOutageImpactQuantity": 4,
     "totalIssuedInvoiceAmount": 12500,
     "totalIncomingInvoiceAmount": 12620,
-    "totalInvoiceDifferenceAmount": 120,
     "invoiceMetricsState": "summary-only"
   },
   "items": [
@@ -6637,10 +6644,8 @@ Response:
         "issuedInvoiceAmount": 150,
         "incomingInvoiceCount": 2,
         "incomingInvoiceAmount": 8550,
-        "invoiceDifferenceAmount": 8400,
-        "invoiceDifferenceRate": 0.98,
         "state": "summary-only",
-        "note": "Giden fatura Mikro cari hareketlerinden, gelen fatura Uyumsoft cache ozetinden okunur. Satir bazli fiyat/fatura farki ikinci fazdir."
+        "note": "Giden fatura ve gelen fatura tutarlari ayri ozetlenir; bu iki toplam dogrudan mutabakat farki olarak yorumlanmaz. Satir bazli fiyat/fatura kontrolu ikinci fazdir."
       },
       "scoreBreakdown": {
         "deliveryPenalty": 6.5,
@@ -6677,11 +6682,11 @@ IncomingInvoice
 UI akisi:
 
 1. Ekran acilisinda liste endpoint'i cagrilir.
-2. Ustte ortalama skor, kritik/uyari sayisi, toplam siparis, kabul, iade, fark ve fatura farki ozetleri gosterilir.
+2. Ustte ortalama skor, kritik/uyari sayisi, toplam siparis, kabul, iade, mal kabul farki ve fatura ozeti gosterilir.
 3. Gridde tedarikci, skor, risk, siparis/kabul oranlari, gec teslim, iade, mal kabul farki, zayiat etkisi ve fatura ozeti kolonlari yer alir.
 4. Satir secilince ayni ekranda detay paneli acilir ve detay endpoint'i cagrilir.
 5. Detay panelinde `events` zaman cizelgesi olarak gosterilir; kaynak alanlari teknik kanit olarak saklanir.
-6. Fatura alaninda `state = summary-only` ise UI bunu "fatura ozeti, satir fiyat farki sonraki faz" gibi gosterebilir.
+6. Fatura alaninda `state = summary-only` ise UI gelen fatura ve bizim kestigimiz fatura toplamlarini ayri gostermeli; bu iki toplami "fark/uyumsuzluk" olarak vurgulamamalidir.
 
 ### Satis Analizleri
 
@@ -7780,13 +7785,14 @@ Home / Sikayet Oneri Kutusu
   -> body'ye kullanici/depo bilgisi koyma; backend JWT claim'lerinden doldurur
 
 Ortak Islemler / Sikayet Oneri Yonetimi
-  -> menu permission'i: ortak-islemler.sikayet-oneri.list veya list-all
-  -> Administrator rolu tum kayitlari ve aksiyonlari gorur
-  -> list-all yoksa liste/detay/guncelleme kullanicinin JWT deposuyla sinirlanir
+  -> menu permission'i: ortak-islemler.sikayet-oneri.list veya list-all kullanilabilir
+  -> Admin/Administrator rolu tum kayitlari ve aksiyonlari gorur
+  -> admin olmayan kullanici sadece kendi actigi kayitlari liste/detay olarak gorur
+  -> admin olmayan kullanici okundu, durum veya admin notu guncelleyemez
   -> liste icin GET /api/yonetim/sikayet-oneri veya /api/ortak-islemler/sikayet-oneri
   -> satir detay icin GET /api/yonetim/sikayet-oneri/{id}
-  -> okundu isareti icin PATCH /api/yonetim/sikayet-oneri/{id}/okundu
-  -> durum/not guncelleme icin PATCH /api/yonetim/sikayet-oneri/{id}/durum
+  -> admin okundu isareti icin PATCH /api/yonetim/sikayet-oneri/{id}/okundu
+  -> admin durum/not guncelleme icin PATCH /api/yonetim/sikayet-oneri/{id}/durum
 
 Arama Islemleri / Fiyat Gor
   -> barkod, stok kodu veya stok adi ile GET /api/arama-islemleri/fiyat-gor

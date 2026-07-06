@@ -69,10 +69,7 @@ public sealed class HomeSikayetOneriController(ISikayetOneriService service) : C
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class YonetimSikayetOneriController(ISikayetOneriService service) : ControllerBase
 {
-    private const string ListPolicy = "ortak-islemler.sikayet-oneri.list";
-    private const string DetailPolicy = "ortak-islemler.sikayet-oneri.detail";
-    private const string UpdatePolicy = "ortak-islemler.sikayet-oneri.update";
-    private const string ListAllPolicy = "ortak-islemler.sikayet-oneri.list-all";
+    private const string AdminRoleName = "Admin";
     private const string AdministratorRoleName = "Administrator";
 
     [HttpGet]
@@ -82,11 +79,6 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
         [FromQuery] FeedbackManagementListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        if (!CanUseManagementAction(ListPolicy))
-        {
-            return Forbid();
-        }
-
         return Ok(await service.ListForManagementAsync(
             new FeedbackManagementListRequest(
                 request.Status,
@@ -96,7 +88,7 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
                 request.EndDate,
                 request.Take,
                 CanViewAllFeedback(),
-                User.GetRequiredWarehouseNo()),
+                User.GetRequiredUserId()),
             cancellationToken));
     }
 
@@ -107,14 +99,9 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
         Guid id,
         CancellationToken cancellationToken)
     {
-        if (!CanUseManagementAction(DetailPolicy))
-        {
-            return Forbid();
-        }
-
         return Ok(await service.GetForManagementAsync(
             id,
-            new FeedbackManagementScope(CanViewAllFeedback(), User.GetRequiredWarehouseNo()),
+            new FeedbackManagementScope(CanViewAllFeedback(), User.GetRequiredUserId()),
             cancellationToken));
     }
 
@@ -125,14 +112,14 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
         Guid id,
         CancellationToken cancellationToken)
     {
-        if (!CanUseManagementAction(UpdatePolicy))
+        if (!CanManageFeedback())
         {
             return Forbid();
         }
 
         return Ok(await service.MarkAsReadAsync(
             id,
-            new FeedbackManagementActionContext(User.GetRequiredUserId(), CanViewAllFeedback(), User.GetRequiredWarehouseNo()),
+            new FeedbackManagementActionContext(User.GetRequiredUserId(), CanViewAllFeedback()),
             cancellationToken));
     }
 
@@ -145,7 +132,7 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
         [FromBody] ChangeFeedbackStatusHttpRequest request,
         CancellationToken cancellationToken)
     {
-        if (!CanUseManagementAction(UpdatePolicy))
+        if (!CanManageFeedback())
         {
             return Forbid();
         }
@@ -153,18 +140,16 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
         return Ok(await service.ChangeStatusAsync(
             id,
             new ChangeFeedbackStatusRequest(request.Status, request.AdminNote),
-            new FeedbackManagementActionContext(User.GetRequiredUserId(), CanViewAllFeedback(), User.GetRequiredWarehouseNo()),
+            new FeedbackManagementActionContext(User.GetRequiredUserId(), CanViewAllFeedback()),
             cancellationToken));
     }
 
     private bool CanViewAllFeedback() =>
-        User.IsInRole(AdministratorRoleName) ||
-        User.HasClaim("permission", ListAllPolicy);
+        CanManageFeedback();
 
-    private bool CanUseManagementAction(string permissionCode) =>
+    private bool CanManageFeedback() =>
         User.IsInRole(AdministratorRoleName) ||
-        User.HasClaim("permission", permissionCode) ||
-        (permissionCode == ListPolicy && User.HasClaim("permission", ListAllPolicy));
+        User.IsInRole(AdminRoleName);
 }
 
 public sealed class CreateFeedbackItemHttpRequest

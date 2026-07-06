@@ -18,6 +18,7 @@ public sealed class StockAnomalyCenterService(
     : IStockAnomalyCenterService
 {
     private const double QuantityTolerance = 0.000001d;
+    private const int UpsertRetryCount = 3;
     private static readonly SemaphoreSlim UpsertLock = new(1, 1);
 
     public async Task<StockAnomalyListResponse> ListAsync(
@@ -256,18 +257,34 @@ public sealed class StockAnomalyCenterService(
 
         try
         {
-            try
+            for (var attempt = 1; attempt <= UpsertRetryCount; attempt++)
             {
-                await UpsertDetectedAsync(detected, detectedAtUtc, cancellationToken);
-            }
-            catch (DbUpdateConcurrencyException exception)
-            {
-                logger.LogWarning(
-                    exception,
-                    "Stock anomaly upsert concurrency conflict. Retrying once.");
+                try
+                {
+                    await UpsertDetectedAsync(detected, detectedAtUtc, cancellationToken);
+                    return;
+                }
+                catch (DbUpdateConcurrencyException exception) when (attempt < UpsertRetryCount)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Stock anomaly upsert concurrency conflict. Attempt={Attempt}/{AttemptCount}",
+                        attempt,
+                        UpsertRetryCount);
 
-                authDbContext.ChangeTracker.Clear();
-                await UpsertDetectedAsync(detected, detectedAtUtc, cancellationToken);
+                    authDbContext.ChangeTracker.Clear();
+                    await Task.Delay(TimeSpan.FromMilliseconds(attempt * 100), cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Stock anomaly EF upsert still conflicts after retries. Falling back to atomic SQL upsert.");
+
+                    authDbContext.ChangeTracker.Clear();
+                    await UpsertDetectedAtomicallyAsync(detected, detectedAtUtc, cancellationToken);
+                    return;
+                }
             }
         }
         finally
@@ -343,6 +360,184 @@ public sealed class StockAnomalyCenterService(
         await authDbContext.SaveChangesAsync(cancellationToken);
     }
 
+    private async Task UpsertDetectedAtomicallyAsync(
+        IReadOnlyCollection<DetectedStockAnomaly> detected,
+        DateTime detectedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SET NOCOUNT ON;
+
+            DECLARE @anomalyId uniqueidentifier;
+            DECLARE @currentStatus nvarchar(20);
+
+            SELECT
+                @anomalyId = anomaly.id,
+                @currentStatus = anomaly.status
+            FROM dbo.stock_anomalies AS anomaly WITH (UPDLOCK, HOLDLOCK)
+            WHERE anomaly.source_key = @sourceKey;
+
+            IF @anomalyId IS NULL
+            BEGIN
+                SET @anomalyId = @newAnomalyId;
+                SET @currentStatus = N'Open';
+
+                INSERT INTO dbo.stock_anomalies (
+                    id,
+                    source_key,
+                    type,
+                    severity,
+                    status,
+                    warehouse_no,
+                    related_warehouse_no,
+                    warehouse_name,
+                    related_warehouse_name,
+                    product_code,
+                    product_name,
+                    document_serie,
+                    document_order_no,
+                    document_no,
+                    movement_guid,
+                    quantity,
+                    expected_quantity,
+                    actual_quantity,
+                    average_quantity,
+                    occurred_at_utc,
+                    message,
+                    evidence,
+                    last_changed_by_user_id,
+                    first_detected_at_utc,
+                    last_detected_at_utc,
+                    resolved_at_utc)
+                VALUES (
+                    @anomalyId,
+                    @sourceKey,
+                    @type,
+                    @severity,
+                    @currentStatus,
+                    @warehouseNo,
+                    @relatedWarehouseNo,
+                    @warehouseName,
+                    @relatedWarehouseName,
+                    @productCode,
+                    @productName,
+                    @documentSerie,
+                    @documentOrderNo,
+                    @documentNo,
+                    @movementGuid,
+                    @quantity,
+                    @expectedQuantity,
+                    @actualQuantity,
+                    @averageQuantity,
+                    @occurredAtUtc,
+                    @message,
+                    @evidence,
+                    NULL,
+                    @detectedAtUtc,
+                    @detectedAtUtc,
+                    NULL);
+            END
+            ELSE
+            BEGIN
+                UPDATE dbo.stock_anomalies
+                SET
+                    severity = @severity,
+                    status = CASE WHEN status = N'Resolved' THEN N'Open' ELSE status END,
+                    related_warehouse_no = @relatedWarehouseNo,
+                    warehouse_name = @warehouseName,
+                    related_warehouse_name = @relatedWarehouseName,
+                    product_code = @productCode,
+                    product_name = @productName,
+                    document_serie = @documentSerie,
+                    document_order_no = @documentOrderNo,
+                    document_no = @documentNo,
+                    movement_guid = @movementGuid,
+                    quantity = @quantity,
+                    expected_quantity = @expectedQuantity,
+                    actual_quantity = @actualQuantity,
+                    average_quantity = @averageQuantity,
+                    occurred_at_utc = @occurredAtUtc,
+                    message = @message,
+                    evidence = @evidence,
+                    last_detected_at_utc = @detectedAtUtc,
+                    resolved_at_utc = CASE WHEN status = N'Resolved' THEN NULL ELSE resolved_at_utc END
+                WHERE id = @anomalyId;
+
+                SELECT @currentStatus = status
+                FROM dbo.stock_anomalies
+                WHERE id = @anomalyId;
+            END
+
+            INSERT INTO dbo.stock_anomaly_events (
+                id,
+                stock_anomaly_id,
+                event_type,
+                status,
+                message,
+                changed_by_user_id,
+                occurred_at_utc)
+            VALUES (
+                @eventId,
+                @anomalyId,
+                N'Detected',
+                @currentStatus,
+                N'Anomali taramada yakalandi.',
+                NULL,
+                @detectedAtUtc);
+            """;
+
+        var connection = authDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            foreach (var item in detected)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.CommandTimeout = 60;
+
+                AddParameter(command, "@newAnomalyId", Guid.NewGuid());
+                AddParameter(command, "@eventId", Guid.NewGuid());
+                AddParameter(command, "@sourceKey", item.SourceKey);
+                AddParameter(command, "@type", item.Type.ToString());
+                AddParameter(command, "@severity", item.Severity.ToString());
+                AddParameter(command, "@warehouseNo", item.WarehouseNo);
+                AddParameter(command, "@relatedWarehouseNo", item.RelatedWarehouseNo);
+                AddParameter(command, "@warehouseName", item.WarehouseName);
+                AddParameter(command, "@relatedWarehouseName", item.RelatedWarehouseName);
+                AddParameter(command, "@productCode", item.ProductCode);
+                AddParameter(command, "@productName", item.ProductName);
+                AddParameter(command, "@documentSerie", item.DocumentSerie);
+                AddParameter(command, "@documentOrderNo", item.DocumentOrderNo);
+                AddParameter(command, "@documentNo", item.DocumentNo);
+                AddParameter(command, "@movementGuid", item.MovementGuid);
+                AddParameter(command, "@quantity", item.Quantity);
+                AddParameter(command, "@expectedQuantity", item.ExpectedQuantity);
+                AddParameter(command, "@actualQuantity", item.ActualQuantity);
+                AddParameter(command, "@averageQuantity", item.AverageQuantity);
+                AddParameter(command, "@occurredAtUtc", item.OccurredAtUtc);
+                AddParameter(command, "@message", item.Message);
+                AddParameter(command, "@evidence", item.Evidence);
+                AddParameter(command, "@detectedAtUtc", detectedAtUtc);
+
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
     private static IReadOnlyCollection<DetectedStockAnomaly> DeduplicateDetected(
         IEnumerable<DetectedStockAnomaly> detected) =>
         detected
@@ -355,23 +550,32 @@ public sealed class StockAnomalyCenterService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT TOP (@take)
-                summary.sho_Depo AS WarehouseNo,
+            WITH Balances AS (
+                SELECT TOP (@take)
+                    summary.sho_Depo AS WarehouseNo,
+                    summary.sho_StokKodu AS ProductCode,
+                    SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
+                      - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS Quantity
+                FROM dbo.STOK_HAREKETLERI_OZET AS summary WITH (NOLOCK)
+                WHERE summary.sho_Depo IS NOT NULL
+                  AND summary.sho_StokKodu IS NOT NULL
+                  AND (@warehouseNo IS NULL OR summary.sho_Depo = @warehouseNo)
+                GROUP BY summary.sho_Depo, summary.sho_StokKodu
+                HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
+                         - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) < -0.000001
+                ORDER BY Quantity ASC
+            )
+            SELECT
+                balances.WarehouseNo,
                 warehouse.dep_adi AS WarehouseName,
-                summary.sho_StokKodu AS ProductCode,
+                balances.ProductCode,
                 stock.sto_isim AS ProductName,
-                SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                  - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS Quantity
-            FROM dbo.STOK_HAREKETLERI_OZET AS summary WITH (NOLOCK)
-            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = summary.sho_Depo
-            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = summary.sho_StokKodu
-            WHERE summary.sho_Depo IS NOT NULL
-              AND summary.sho_StokKodu IS NOT NULL
-              AND (@warehouseNo IS NULL OR summary.sho_Depo = @warehouseNo)
-            GROUP BY summary.sho_Depo, warehouse.dep_adi, summary.sho_StokKodu, stock.sto_isim
-            HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                     - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) < -0.000001
-            ORDER BY Quantity ASC
+                balances.Quantity
+            FROM Balances AS balances
+            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = balances.WarehouseNo
+            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = balances.ProductCode
+            ORDER BY balances.Quantity ASC
+            OPTION (RECOMPILE)
             """;
 
         return ReadDetectedAsync(sql, request, reader =>
@@ -408,39 +612,57 @@ public sealed class StockAnomalyCenterService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT TOP (@take)
-                movement.sth_evraktip AS DocumentType,
-                movement.sth_tip AS MovementType,
-                movement.sth_cins AS MovementKind,
-                movement.sth_normal_iade AS NormalReturn,
-                movement.sth_evrakno_seri AS DocumentSerie,
-                movement.sth_evrakno_sira AS DocumentOrderNo,
-                movement.sth_belge_no AS DocumentNo,
-                movement.sth_stok_kod AS ProductCode,
+            WITH Duplicates AS (
+                SELECT TOP (@take)
+                    movement.sth_evraktip AS DocumentType,
+                    movement.sth_tip AS MovementType,
+                    movement.sth_cins AS MovementKind,
+                    movement.sth_normal_iade AS NormalReturn,
+                    movement.sth_evrakno_seri AS DocumentSerie,
+                    movement.sth_evrakno_sira AS DocumentOrderNo,
+                    movement.sth_belge_no AS DocumentNo,
+                    movement.sth_stok_kod AS ProductCode,
+                    ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no) AS WarehouseNo,
+                    movement.sth_giris_depo_no AS RelatedWarehouseNo,
+                    movement.sth_miktar AS Quantity,
+                    MIN(movement.sth_tarih) AS FirstMovementDate,
+                    COUNT_BIG(*) AS DuplicateCount
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                WHERE movement.sth_iptal <> 1
+                  AND movement.sth_tarih >= @startDate
+                  AND movement.sth_tarih < @endDateExclusive
+                  AND movement.sth_evrakno_seri IS NOT NULL
+                  AND movement.sth_evrakno_sira IS NOT NULL
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
+                GROUP BY movement.sth_evraktip, movement.sth_tip, movement.sth_cins, movement.sth_normal_iade,
+                    movement.sth_evrakno_seri, movement.sth_evrakno_sira, movement.sth_belge_no, movement.sth_stok_kod,
+                    ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no), movement.sth_giris_depo_no, movement.sth_miktar
+                HAVING COUNT_BIG(*) > 1
+                ORDER BY DuplicateCount DESC, FirstMovementDate DESC
+            )
+            SELECT
+                duplicate.DocumentType,
+                duplicate.MovementType,
+                duplicate.MovementKind,
+                duplicate.NormalReturn,
+                duplicate.DocumentSerie,
+                duplicate.DocumentOrderNo,
+                duplicate.DocumentNo,
+                duplicate.ProductCode,
                 stock.sto_isim AS ProductName,
-                ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no) AS WarehouseNo,
-                movement.sth_giris_depo_no AS RelatedWarehouseNo,
+                duplicate.WarehouseNo,
+                duplicate.RelatedWarehouseNo,
                 warehouse.dep_adi AS WarehouseName,
                 relatedWarehouse.dep_adi AS RelatedWarehouseName,
-                movement.sth_miktar AS Quantity,
-                MIN(movement.sth_tarih) AS FirstMovementDate,
-                COUNT_BIG(*) AS DuplicateCount
-            FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = movement.sth_stok_kod
-            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no)
-            LEFT JOIN dbo.DEPOLAR AS relatedWarehouse WITH (NOLOCK) ON relatedWarehouse.dep_no = movement.sth_giris_depo_no
-            WHERE movement.sth_iptal <> 1
-              AND movement.sth_tarih >= @startDate
-              AND movement.sth_tarih < @endDateExclusive
-              AND movement.sth_evrakno_seri IS NOT NULL
-              AND movement.sth_evrakno_sira IS NOT NULL
-              AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
-            GROUP BY movement.sth_evraktip, movement.sth_tip, movement.sth_cins, movement.sth_normal_iade,
-                movement.sth_evrakno_seri, movement.sth_evrakno_sira, movement.sth_belge_no, movement.sth_stok_kod,
-                stock.sto_isim, ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no), movement.sth_giris_depo_no,
-                warehouse.dep_adi, relatedWarehouse.dep_adi, movement.sth_miktar
-            HAVING COUNT_BIG(*) > 1
-            ORDER BY DuplicateCount DESC, FirstMovementDate DESC
+                duplicate.Quantity,
+                duplicate.FirstMovementDate,
+                duplicate.DuplicateCount
+            FROM Duplicates AS duplicate
+            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = duplicate.ProductCode
+            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = duplicate.WarehouseNo
+            LEFT JOIN dbo.DEPOLAR AS relatedWarehouse WITH (NOLOCK) ON relatedWarehouse.dep_no = duplicate.RelatedWarehouseNo
+            ORDER BY duplicate.DuplicateCount DESC, duplicate.FirstMovementDate DESC
+            OPTION (RECOMPILE)
             """;
 
         return ReadDetectedAsync(sql, request, reader =>
@@ -485,33 +707,49 @@ public sealed class StockAnomalyCenterService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT TOP (@take)
-                movement.sth_Guid AS MovementGuid,
-                movement.sth_tarih AS MovementDate,
-                movement.sth_belge_no AS DocumentNo,
-                movement.sth_evrakno_seri AS DocumentSerie,
-                movement.sth_evrakno_sira AS DocumentOrderNo,
-                movement.sth_stok_kod AS ProductCode,
+            WITH Differences AS (
+                SELECT TOP (@take)
+                    movement.sth_Guid AS MovementGuid,
+                    movement.sth_tarih AS MovementDate,
+                    movement.sth_belge_no AS DocumentNo,
+                    movement.sth_evrakno_seri AS DocumentSerie,
+                    movement.sth_evrakno_sira AS DocumentOrderNo,
+                    movement.sth_stok_kod AS ProductCode,
+                    movement.sth_cikis_depo_no AS WarehouseNo,
+                    movement.sth_giris_depo_no AS RelatedWarehouseNo,
+                    movement.sth_miktar AS Quantity,
+                    movement.sth_FormulMiktar AS ActualQuantity
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                WHERE movement.sth_iptal <> 1
+                  AND movement.sth_tarih >= @startDate
+                  AND movement.sth_tarih < @endDateExclusive
+                  AND movement.sth_evraktip = 17
+                  AND movement.sth_nakliyedurumu = 1
+                  AND movement.sth_FormulMiktar IS NOT NULL
+                  AND ABS(ISNULL(movement.sth_FormulMiktar, 0) - ISNULL(movement.sth_miktar, 0)) > 0.000001
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
+                ORDER BY movement.sth_tarih DESC
+            )
+            SELECT
+                difference.MovementGuid,
+                difference.MovementDate,
+                difference.DocumentNo,
+                difference.DocumentSerie,
+                difference.DocumentOrderNo,
+                difference.ProductCode,
                 stock.sto_isim AS ProductName,
-                movement.sth_cikis_depo_no AS WarehouseNo,
+                difference.WarehouseNo,
                 sourceWarehouse.dep_adi AS WarehouseName,
-                movement.sth_giris_depo_no AS RelatedWarehouseNo,
+                difference.RelatedWarehouseNo,
                 targetWarehouse.dep_adi AS RelatedWarehouseName,
-                movement.sth_miktar AS Quantity,
-                movement.sth_FormulMiktar AS ActualQuantity
-            FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = movement.sth_stok_kod
-            LEFT JOIN dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK) ON sourceWarehouse.dep_no = movement.sth_cikis_depo_no
-            LEFT JOIN dbo.DEPOLAR AS targetWarehouse WITH (NOLOCK) ON targetWarehouse.dep_no = movement.sth_giris_depo_no
-            WHERE movement.sth_iptal <> 1
-              AND movement.sth_tarih >= @startDate
-              AND movement.sth_tarih < @endDateExclusive
-              AND movement.sth_evraktip = 17
-              AND movement.sth_nakliyedurumu = 1
-              AND movement.sth_FormulMiktar IS NOT NULL
-              AND ABS(ISNULL(movement.sth_FormulMiktar, 0) - ISNULL(movement.sth_miktar, 0)) > 0.000001
-              AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
-            ORDER BY movement.sth_tarih DESC
+                difference.Quantity,
+                difference.ActualQuantity
+            FROM Differences AS difference
+            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = difference.ProductCode
+            LEFT JOIN dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK) ON sourceWarehouse.dep_no = difference.WarehouseNo
+            LEFT JOIN dbo.DEPOLAR AS targetWarehouse WITH (NOLOCK) ON targetWarehouse.dep_no = difference.RelatedWarehouseNo
+            ORDER BY difference.MovementDate DESC
+            OPTION (RECOMPILE)
             """;
 
         return ReadDetectedAsync(sql, request, reader =>
@@ -562,14 +800,9 @@ public sealed class StockAnomalyCenterService(
                     movement.sth_evrakno_sira,
                     movement.sth_belge_no,
                     movement.sth_stok_kod,
-                    stock.sto_isim,
                     CASE WHEN movement.sth_tip = 0 THEN movement.sth_giris_depo_no ELSE movement.sth_cikis_depo_no END AS WarehouseNo,
-                    warehouse.dep_adi AS WarehouseName,
                     ISNULL(movement.sth_miktar, 0) AS Quantity
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-                LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = movement.sth_stok_kod
-                LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK)
-                    ON warehouse.dep_no = CASE WHEN movement.sth_tip = 0 THEN movement.sth_giris_depo_no ELSE movement.sth_cikis_depo_no END
                 WHERE movement.sth_iptal <> 1
                   AND movement.sth_tarih >= @lookbackStartDate
                   AND movement.sth_tarih < @endDateExclusive
@@ -582,27 +815,44 @@ public sealed class StockAnomalyCenterService(
                 FROM MovementRows
                 WHERE WarehouseNo IS NOT NULL
                 GROUP BY WarehouseNo, sth_stok_kod
+            ),
+            HighRows AS (
+                SELECT TOP (@take)
+                    row.sth_Guid AS MovementGuid,
+                    row.sth_tarih AS MovementDate,
+                    row.sth_evrakno_seri AS DocumentSerie,
+                    row.sth_evrakno_sira AS DocumentOrderNo,
+                    row.sth_belge_no AS DocumentNo,
+                    row.sth_stok_kod AS ProductCode,
+                    row.WarehouseNo,
+                    row.Quantity,
+                    average.AverageQuantity
+                FROM MovementRows AS row
+                INNER JOIN Averages AS average ON average.WarehouseNo = row.WarehouseNo AND average.ProductCode = row.sth_stok_kod
+                WHERE row.sth_tarih >= @startDate
+                  AND row.sth_tarih < @endDateExclusive
+                  AND row.Quantity >= @highQuantityMinimum
+                  AND row.Quantity > average.AverageQuantity * @highQuantityMultiplier
+                  AND average.AverageQuantity > 0
+                ORDER BY row.Quantity DESC
             )
-            SELECT TOP (@take)
-                row.sth_Guid AS MovementGuid,
-                row.sth_tarih AS MovementDate,
-                row.sth_evrakno_seri AS DocumentSerie,
-                row.sth_evrakno_sira AS DocumentOrderNo,
-                row.sth_belge_no AS DocumentNo,
-                row.sth_stok_kod AS ProductCode,
-                row.sto_isim AS ProductName,
-                row.WarehouseNo,
-                row.WarehouseName,
-                row.Quantity,
-                average.AverageQuantity
-            FROM MovementRows AS row
-            INNER JOIN Averages AS average ON average.WarehouseNo = row.WarehouseNo AND average.ProductCode = row.sth_stok_kod
-            WHERE row.sth_tarih >= @startDate
-              AND row.sth_tarih < @endDateExclusive
-              AND row.Quantity >= @highQuantityMinimum
-              AND row.Quantity > average.AverageQuantity * @highQuantityMultiplier
-              AND average.AverageQuantity > 0
-            ORDER BY row.Quantity DESC
+            SELECT
+                highRow.MovementGuid,
+                highRow.MovementDate,
+                highRow.DocumentSerie,
+                highRow.DocumentOrderNo,
+                highRow.DocumentNo,
+                highRow.ProductCode,
+                stock.sto_isim AS ProductName,
+                highRow.WarehouseNo,
+                warehouse.dep_adi AS WarehouseName,
+                highRow.Quantity,
+                highRow.AverageQuantity
+            FROM HighRows AS highRow
+            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = highRow.ProductCode
+            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = highRow.WarehouseNo
+            ORDER BY highRow.Quantity DESC
+            OPTION (RECOMPILE)
             """;
 
         return ReadDetectedAsync(sql, request, reader =>
@@ -656,30 +906,49 @@ public sealed class StockAnomalyCenterService(
                 GROUP BY summary.sho_Depo, summary.sho_StokKodu
                 HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
                          - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) > 0.000001
+            ),
+            DormantBalances AS (
+                SELECT TOP (@take)
+                    balances.WarehouseNo,
+                    balances.ProductCode,
+                    balances.Quantity
+                FROM Balances AS balances
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.STOK_HAREKETLERI AS recentMovement WITH (NOLOCK)
+                    WHERE recentMovement.sth_iptal <> 1
+                      AND recentMovement.sth_tarih >= @dormantCutoffDate
+                      AND recentMovement.sth_stok_kod = balances.ProductCode
+                      AND (
+                          (recentMovement.sth_tip = 0 AND recentMovement.sth_giris_depo_no = balances.WarehouseNo) OR
+                          (recentMovement.sth_tip <> 0 AND recentMovement.sth_cikis_depo_no = balances.WarehouseNo)
+                      )
+                )
+                ORDER BY balances.Quantity DESC
             )
-            SELECT TOP (@take)
-                balances.WarehouseNo,
+            SELECT
+                dormant.WarehouseNo,
                 warehouse.dep_adi AS WarehouseName,
-                balances.ProductCode,
+                dormant.ProductCode,
                 stock.sto_isim AS ProductName,
-                balances.Quantity,
+                dormant.Quantity,
                 lastMovements.LastMovementDate
-            FROM Balances AS balances
+            FROM DormantBalances AS dormant
             OUTER APPLY (
                 SELECT TOP (1) movement.sth_tarih AS LastMovementDate
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
                 WHERE movement.sth_iptal <> 1
-                  AND movement.sth_stok_kod = balances.ProductCode
+                  AND movement.sth_stok_kod = dormant.ProductCode
                   AND (
-                      (movement.sth_tip = 0 AND movement.sth_giris_depo_no = balances.WarehouseNo) OR
-                      (movement.sth_tip <> 0 AND movement.sth_cikis_depo_no = balances.WarehouseNo)
+                      (movement.sth_tip = 0 AND movement.sth_giris_depo_no = dormant.WarehouseNo) OR
+                      (movement.sth_tip <> 0 AND movement.sth_cikis_depo_no = dormant.WarehouseNo)
                   )
                 ORDER BY movement.sth_tarih DESC
             ) AS lastMovements
-            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = balances.WarehouseNo
-            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = balances.ProductCode
-            WHERE lastMovements.LastMovementDate IS NULL OR lastMovements.LastMovementDate < @dormantCutoffDate
-            ORDER BY balances.Quantity DESC
+            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = dormant.WarehouseNo
+            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = dormant.ProductCode
+            ORDER BY dormant.Quantity DESC
+            OPTION (RECOMPILE)
             """;
 
         return ReadDetectedAsync(sql, request, reader =>
@@ -718,33 +987,48 @@ public sealed class StockAnomalyCenterService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT TOP (@take)
-                movement.sth_Guid AS MovementGuid,
-                movement.sth_tarih AS MovementDate,
-                movement.sth_evrakno_seri AS DocumentSerie,
-                movement.sth_evrakno_sira AS DocumentOrderNo,
-                movement.sth_belge_no AS DocumentNo,
-                movement.sth_stok_kod AS ProductCode,
+            WITH PendingTransfers AS (
+                SELECT TOP (@take)
+                    movement.sth_Guid AS MovementGuid,
+                    movement.sth_tarih AS MovementDate,
+                    movement.sth_evrakno_seri AS DocumentSerie,
+                    movement.sth_evrakno_sira AS DocumentOrderNo,
+                    movement.sth_belge_no AS DocumentNo,
+                    movement.sth_stok_kod AS ProductCode,
+                    movement.sth_cikis_depo_no AS WarehouseNo,
+                    ISNULL(movement.sth_nakliyedeposu, movement.sth_giris_depo_no) AS RelatedWarehouseNo,
+                    movement.sth_miktar AS Quantity,
+                    movement.sth_nakliyedurumu AS ShippingState
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                WHERE movement.sth_iptal <> 1
+                  AND movement.sth_evraktip = 17
+                  AND ISNULL(movement.sth_nakliyedurumu, 0) <> 1
+                  AND movement.sth_tarih >= @startDate
+                  AND movement.sth_tarih < @endDateExclusive
+                  AND movement.sth_tarih < @pendingTransferCutoffDate
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo OR movement.sth_nakliyedeposu = @warehouseNo)
+                ORDER BY movement.sth_tarih ASC
+            )
+            SELECT
+                pending.MovementGuid,
+                pending.MovementDate,
+                pending.DocumentSerie,
+                pending.DocumentOrderNo,
+                pending.DocumentNo,
+                pending.ProductCode,
                 stock.sto_isim AS ProductName,
-                movement.sth_cikis_depo_no AS WarehouseNo,
+                pending.WarehouseNo,
                 sourceWarehouse.dep_adi AS WarehouseName,
-                ISNULL(movement.sth_nakliyedeposu, movement.sth_giris_depo_no) AS RelatedWarehouseNo,
+                pending.RelatedWarehouseNo,
                 targetWarehouse.dep_adi AS RelatedWarehouseName,
-                movement.sth_miktar AS Quantity,
-                movement.sth_nakliyedurumu AS ShippingState
-            FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = movement.sth_stok_kod
-            LEFT JOIN dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK) ON sourceWarehouse.dep_no = movement.sth_cikis_depo_no
-            LEFT JOIN dbo.DEPOLAR AS targetWarehouse WITH (NOLOCK)
-                ON targetWarehouse.dep_no = ISNULL(movement.sth_nakliyedeposu, movement.sth_giris_depo_no)
-            WHERE movement.sth_iptal <> 1
-              AND movement.sth_evraktip = 17
-              AND ISNULL(movement.sth_nakliyedurumu, 0) <> 1
-              AND movement.sth_tarih >= @startDate
-              AND movement.sth_tarih < @endDateExclusive
-              AND movement.sth_tarih < @pendingTransferCutoffDate
-              AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo OR movement.sth_nakliyedeposu = @warehouseNo)
-            ORDER BY movement.sth_tarih ASC
+                pending.Quantity,
+                pending.ShippingState
+            FROM PendingTransfers AS pending
+            LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = pending.ProductCode
+            LEFT JOIN dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK) ON sourceWarehouse.dep_no = pending.WarehouseNo
+            LEFT JOIN dbo.DEPOLAR AS targetWarehouse WITH (NOLOCK) ON targetWarehouse.dep_no = pending.RelatedWarehouseNo
+            ORDER BY pending.MovementDate ASC
+            OPTION (RECOMPILE)
             """;
 
         return ReadDetectedAsync(sql, request, reader =>

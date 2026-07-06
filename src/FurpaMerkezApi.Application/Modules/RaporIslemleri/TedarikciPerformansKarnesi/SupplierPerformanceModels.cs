@@ -35,7 +35,6 @@ public sealed record SupplierPerformanceSummaryDto(
     double TotalOutageImpactQuantity,
     double TotalIssuedInvoiceAmount,
     double TotalIncomingInvoiceAmount,
-    double TotalInvoiceDifferenceAmount,
     string InvoiceMetricsState);
 
 public sealed record SupplierPerformanceCardDto(
@@ -93,8 +92,6 @@ public sealed record SupplierInvoicePerformanceDto(
     double IssuedInvoiceAmount,
     int IncomingInvoiceCount,
     double IncomingInvoiceAmount,
-    double InvoiceDifferenceAmount,
-    double InvoiceDifferenceRate,
     string State,
     string Note);
 

@@ -19,16 +19,15 @@ public sealed record FeedbackManagementListRequest(
     DateTime? EndDate,
     int? Take,
     bool CanViewAll,
-    int CurrentUserWarehouseNo);
+    Guid CurrentUserId);
 
 public sealed record FeedbackManagementScope(
     bool CanViewAll,
-    int CurrentUserWarehouseNo);
+    Guid CurrentUserId);
 
 public sealed record FeedbackManagementActionContext(
     Guid UserId,
-    bool CanViewAll,
-    int CurrentUserWarehouseNo);
+    bool CanViewAll);
 
 public sealed record ChangeFeedbackStatusRequest(
     string Status,

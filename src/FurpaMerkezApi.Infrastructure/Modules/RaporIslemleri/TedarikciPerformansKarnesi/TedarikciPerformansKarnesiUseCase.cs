@@ -677,8 +677,6 @@ public sealed class TedarikciPerformansKarnesiUseCase(
         var differenceRate = Ratio(differenceQuantity, row.ReceivedQuantity);
         var returnRate = Ratio(row.ReturnedQuantity, row.ReceivedQuantity);
         var outageRate = Ratio(row.OutageQuantity, row.ReceivedQuantity);
-        var invoiceDifferenceAmount = incomingInvoices.Amount - row.IssuedInvoiceAmount;
-        var invoiceDifferenceRate = Ratio(Math.Abs(invoiceDifferenceAmount), Math.Max(incomingInvoices.Amount, row.IssuedInvoiceAmount));
 
         var deliveryPenalty = Clamp(
             Ratio(row.LateDeliveredLineCount + row.OpenLateLineCount, row.OrderLineCount) * 25d +
@@ -744,10 +742,8 @@ public sealed class TedarikciPerformansKarnesiUseCase(
                 Round(row.IssuedInvoiceAmount),
                 incomingInvoices.Count,
                 Round(incomingInvoices.Amount),
-                Round(invoiceDifferenceAmount),
-                Round(invoiceDifferenceRate),
                 InvoiceMetricsState,
-                "Giden fatura Mikro cari hareketlerinden, gelen fatura Uyumsoft cache ozetinden okunur. Satir bazli fiyat/fatura farki ikinci fazdir."),
+                "Giden fatura ve gelen fatura tutarlari ayri ozetlenir; bu iki toplam dogrudan mutabakat farki olarak yorumlanmaz. Satir bazli fiyat/fatura kontrolu ikinci fazdir."),
             scoreBreakdown);
     }
 
@@ -768,7 +764,6 @@ public sealed class TedarikciPerformansKarnesiUseCase(
             Round(items.Sum(item => item.OutageImpact.Quantity)),
             Round(items.Sum(item => item.Invoices.IssuedInvoiceAmount)),
             Round(items.Sum(item => item.Invoices.IncomingInvoiceAmount)),
-            Round(items.Sum(item => item.Invoices.InvoiceDifferenceAmount)),
             InvoiceMetricsState);
     }
 
