@@ -8048,7 +8048,7 @@ Kasa Islemleri / Kasa Hareket Aktarimi
 
 ## Fatura Islemleri
 
-Bu bolum 2026-06-19 tarihinde kaynak kod uzerinden yeniden dogrulanmistir.
+Bu bolum 2026-07-06 tarihinde kaynak kod uzerinden yeniden dogrulanmistir.
 
 Kodla dogrulanan ana dosyalar:
 
@@ -8067,9 +8067,10 @@ Bu bolumde daha once karisiklik yaratan nokta, is kurali ile mevcut HTTP endpoin
 - `fatura-gonderimi`
   - Mikro tarafinda bekleyen e-fatura / e-arsiv kayitlarini listeler
   - secilen faturadan UBL invoice uretir
-  - onizleme icin HTML render eder
+  - gonderilmemis faturalarin onizlemesi icin lokal HTML render eder
+  - gonderilmis faturalarin resmi PDF'ini Uyumsoft outbox servisinden alir
   - secilen belgeleri Uyumsoft `SendInvoice` ile gonderir
-  - basarili cevapta donen belge numarasini tekrar Mikro `cha_belge_no` alanina yazar ve kaydi kilitler
+  - basarili cevapta donen belge numarasini Mikro `cha_belge_no`, ETTN degerini `cha_uuid` alanina yazar ve kaydi kilitler
 - `fatura-goruntuleme`
   - eski `Furpa.FaturaGoruntulemeWinUI` parity'sini korur; listeyi artik Auth/PostgreSQL icindeki `uyumsoft_inbox_invoices` cache tablosundan okur
   - varsayilan belge acmada Uyumsoft `GetInboxInvoicePdf` ile PDF datasini alir
@@ -8078,8 +8079,8 @@ Bu bolumde daha once karisiklik yaratan nokta, is kurali ile mevcut HTTP endpoin
 
 UI tarafinda karistirilmamasi gereken net kural:
 
-- `fatura-gonderimi`, giden faturalarin ekranidir. Satir `isSent = false` veya `isSent = true` olsa da UI sadece lokal HTML onizleme acar.
-- `fatura-gonderimi` listesinde Uyumsoft resmi PDF acma aksiyonu yoktur; Mikro kaynakta Uyumsoft teknik `invoiceId` kalici saklanmadigi icin gonderilmis giden faturalar Uyumsoft PDF endpointinden cozumlenmez.
+- `fatura-gonderimi`, giden faturalarin ekranidir. `isSent = false` satirlar lokal HTML onizleme, `isSent = true` satirlar Uyumsoft resmi PDF kullanir.
+- Gonderilmis satirin PDF lookup anahtari once Mikro `cha_uuid` (ETTN), bu alan bossa geriye uyumluluk icin `cha_Guid` degeridir.
 - `fatura-goruntuleme`, gelen/inbox faturalari ve cache listesidir. Giden fatura PDF aksiyonunun ana yolu degildir.
 
 `fatura-gonderimi` tarafinda eldeki herhangi bir XML'i manuel preview etme endpoint'i ayrica acik tutulmustur.
@@ -8090,12 +8091,12 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 
 1. Giden faturalari listelemek icin `GET /api/fatura-islemleri/fatura-gonderimi`
 2. Liste varsayilan olarak `isSent=0` ile gonderilmemisleri getirir. `isSent=1` gonderilmis giden faturalar icindir.
-3. Kullanici herhangi bir giden fatura satirinda lokal onizleme acmak istediginde:
+3. Kullanici gonderilmemis (`isSent = false`) giden fatura satirinda lokal onizleme acmak istediginde:
    - default davranis yeterliyse `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}?scenario=...`
    - XSLT secimini elle kontrol etmek istiyorsaniz `POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/render`
    - UI response icindeki yalnizca `document.htmlContent` alanini tek bir iframe/webview icinde render eder
    - UI ayrica QR/karekod uretmez; karekodun tek kaynagi secilen XSLT'nin urettigi HTML'dir
-4. Giden fatura satirinda resmi PDF butonu gosterilmez; Uyumsoft outbox/PDF endpoint'i cagrilmaz.
+4. Kullanici gonderilmis (`isSent = true`) giden fatura satirini actiginda `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/pdf?scenario=...` cagrilir ve `application/pdf` response blob olarak gosterilir.
 5. Secilen gonderilmemis faturalarin gonderime hazir olup olmadigini canli gonderim yapmadan kontrol etmek icin `POST /api/fatura-islemleri/fatura-gonderimi/validate`
 6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
 7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
@@ -8642,22 +8643,21 @@ Davranis:
 - `InvoiceSendingScenario` JSON response/body degeri sayisaldir: `0 = EFatura`, `1 = EArsiv`; query string tarafinda `EFatura` / `EArsiv` adlari da kullanilabilir
 - `isSent/SentState = 0` ise `cha_belge_no` bos olan kayitlar, `1` ise dolu olan kayitlar, `-1` ise tumu doner
 - `invoiceId` legacy WinForms mantigina uygun sekilde `seri + yil + 9 haneli sira` olarak uretilir
-- `invoiceId`, UBL icindeki `cbc:ID` degeridir; UI bunu PDF URL'si uretmek icin kullanmaz
+- `invoiceId`, UBL icindeki `cbc:ID` degeridir; PDF endpoint path'i icin bunun yerine `documentSerie` ve `documentOrderNo` kullanilir
 - `sentDocumentNo` Mikro `cha_belge_no` alanidir; gonderim sonrasi kullaniciya gosterilen resmi belge numarasidir
 - liste belge bazinda doner; ayni `cha_evrakno_seri` + `cha_evrakno_sira` altindaki birden fazla hizmet/cari hareket satiri tek fatura satirinda toplanir
 - `sourceLineCount`, belge altinda birlesen Mikro kaynak cari hareket satiri sayisidir; hizmet faturalarinda tek fatura icindeki hizmet kalemlerini anlamak icin kullanilir
 - `sourceLineSummary`, hizmet/demirbas kaynakli satirlarda `kod - ad` ozetidir; ornek: `0056 - CIRO PRIMI GELIRI % 20 | 0055 - CIRO PRIMI GELIRI % 10`
 - `taxRateSummary`, kaynak satirlarin Mikro vergi pointer'larindan cozulen KDV oran ozetidir; farkli KDV'li hizmet satirlari ayni faturada gorunebilir
-- `isSent = false` ise fatura henuz Uyumsoft'a gonderilmemistir; UI lokal onizleme acar
-- `isSent = true` ise fatura Uyumsoft'a gonderilmis giden faturadir; UI yine lokal onizleme acar
-- giden fatura listesinde resmi Uyumsoft PDF alani/URL'si donmez; mevcut Mikro kaynaginda Uyumsoft teknik `invoiceId` kalici tutulmadigi icin fatura numarasindan PDF cozumleme yapilmaz
-- UI giden fatura ekraninda PDF butonu gostermez ve `invoiceId` / `sentDocumentNo` degerlerinden Uyumsoft PDF URL'si uretmez
+- `isSent = false` ise UI lokal HTML onizleme endpoint'ini acar
+- `isSent = true` ise UI Uyumsoft outbox PDF endpoint'ini acar
+- PDF URL'si response alanindan uretilmez; secili satirin `documentSerie`, `documentOrderNo` ve `scenario` degerleriyle backend endpoint'i cagrilir
 - `invoiceProfileId` alani:
   - e-fatura icin `TICARIFATURA` veya `TEMELFATURA`
   - e-arsiv icin `EARSIVFATURA`
 - `invoiceTypeCode` alani:
   - `IADE`, `ISTISNA`, `OZELMATRAH`, `SATIS`
-- `serviceDocumentId`, sadece `send` response'unda anlik donen Uyumsoft teknik id'dir; Mikro liste kaynagi bunu kalici saklamadigi icin liste ekraninda bu alana bagimli UI yazilmamalidir
+- `serviceDocumentId`, `send` response'unda donen Uyumsoft ETTN degeridir ve backend bunu Mikro `cha_uuid` alanina yazar; liste DTO'su `cha_uuid` degerini ayrica acmadigi icin UI PDF lookup anahtarini kendisi kurmaz, belge bazli PDF endpoint'ini kullanir
 - iade faturalarinda Mikro `EBELGE_EVRAK_HAREKETLERI` kaydi `ebh_related_uid = CARI_HESAP_HAREKETLERI.cha_Guid` ile baglanir
 - `ebh_iade_fat_no1` ve `ebh_iade_fat_tarihi1` degerleri response'ta `returnInvoiceNo` / `returnInvoiceDate` olarak doner
 - iade referansi doluysa UBL'ye `cac:BillingReference/cac:InvoiceDocumentReference` eklenir; XSLT'deki `Iadeye Konu Olan Faturalar` tablosu bu alandan dolar
@@ -8670,11 +8670,11 @@ function canPreviewSendingInvoice(summary: InvoiceSendingListItemDto | null | un
 }
 ```
 
-Onizleme butonu `isSent` degerine bakmaz; giden faturanin HTML'i Mikro verisinden lokal uretilir. Bu ekranda PDF butonu yoktur.
+UI onizleme aksiyonu `isSent` degerine gore ikiye ayrilir: gonderilmemis satir lokal HTML, gonderilmis satir Uyumsoft PDF acar.
 
-#### Onizleme icin tek kaynak kurali
+#### Gonderilmemis fatura HTML onizlemesi
 
-Gonderilmemis ve gonderilmis giden faturalar ayni lokal onizleme endpoint'ini kullanir:
+Yalniz `isSent = false` satirlar lokal onizleme endpoint'ini kullanir:
 
 ```http
 GET /api/fatura-islemleri/fatura-gonderimi/FRP26/21791?scenario=EFatura
@@ -8699,6 +8699,43 @@ const detail = await api.get<InvoiceSendingDetailDto>(
 );
 
 previewFrame.srcdoc = detail.document.htmlContent;
+```
+
+#### Gonderilmis fatura Uyumsoft PDF
+
+`isSent = true` satirlar icin:
+
+```http
+GET /api/fatura-islemleri/fatura-gonderimi/FRP26/21791/pdf?scenario=EFatura
+Authorization: Bearer {accessToken}
+Accept: application/pdf
+```
+
+Davranis:
+
+- backend faturayi Mikro'dan `documentSerie + documentOrderNo` ile bulur
+- lookup icin once `cha_uuid`, bossa `cha_Guid` kullanilir
+- Uyumsoft `GetOutboxInvoicePdf` cagrilir
+- response JSON degil, `application/pdf` binary veridir
+- Uyumsoft'ta belge/PDF bulunamazsa UI lokal HTML'e sessizce gecmek yerine kullaniciya PDF'in alinamadigini bildirmelidir
+
+```ts
+if (invoice.isSent) {
+  const response = await api.get(
+    `/api/fatura-islemleri/fatura-gonderimi/${encodeURIComponent(invoice.documentSerie)}/${invoice.documentOrderNo}/pdf`,
+    { params: { scenario: invoice.scenario }, responseType: "blob" }
+  );
+
+  const pdfUrl = URL.createObjectURL(response.data);
+  window.open(pdfUrl, "_blank", "noopener,noreferrer");
+} else {
+  const detail = await api.get<InvoiceSendingDetailDto>(
+    `/api/fatura-islemleri/fatura-gonderimi/${encodeURIComponent(invoice.documentSerie)}/${invoice.documentOrderNo}`,
+    { params: { scenario: invoice.scenario } }
+  );
+
+  previewFrame.srcdoc = detail.document.htmlContent;
+}
 ```
 
 Karekod icin kesin UI kurali:
@@ -9175,14 +9212,14 @@ Bu endpoint ne zaman kullanilmali:
 
 Fatura modulu notlari:
 
-- is kurali tarafinda sade ozet sunudur: `fatura-gonderimi` giden faturayi lokal onizleme ve bekleyen kaydi Uyumsoft'a yollama akisidir, `fatura-goruntuleme` ise Uyumsoft gelen/inbox faturasini acma/yazdirma akisidir
-- bu repoda `fatura-gonderimi` icin artik dogrudan pending list, detay/render ve send endpointleri vardir
+- is kurali tarafinda sade ozet sunudur: `fatura-gonderimi` gonderilmemis giden faturayi lokal HTML ile, gonderilmis giden faturayi Uyumsoft outbox PDF ile acar; bekleyen kaydi Uyumsoft'a yollar. `fatura-goruntuleme` ise Uyumsoft gelen/inbox faturasini acma/yazdirma akisidir
+- bu repoda `fatura-gonderimi` icin pending list, detay/render, gonderilmis belge PDF ve send endpointleri vardir
 - `fatura-goruntuleme` tarafi artik `uyumsoft_inbox_invoices` cache tablosundan liste alir; varsayilan acista Uyumsoft `GetInboxInvoicePdf` ile PDF datasini, HTML detayda `GetInboxInvoice` ile render datasini alir
 - yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` ile secilen tarih araligi manuel olarak Uyumsoft'tan cache'e alinabilir
 - `fatura-goruntuleme` icinde legacy'deki "goruntule" ve "yazdirildi say" ayrimi artik ayri endpointlerle temsil edilir
 - `GET /{documentId}/detail` ile `POST render` ayni response tipini doner; fark, `POST render` ile XSLT davranisinin override edilebilmesidir
 - `fatura-gonderimi` detail/send akisinda invoice XML Mikro verisinden backend tarafinda yeniden uretilir; UI ham XML kurmak zorunda degildir
-- `fatura-gonderimi` send akisinda basarili sonuclarda Mikro `cha_belge_no` geri yazilir ve kayit kilitlenir
+- `fatura-gonderimi` send akisinda basarili sonuclarda Mikro `cha_belge_no` ve `cha_uuid` geri yazilir, kayit kilitlenir
 - render sirasinda once embedded XSLT denenir; yoksa WebApi icindeki `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olarak kullanilir
 - ortak renderer artik ek karekod uretmez; fatura-gonderimi ve fatura-goruntuleme HTML'inde karekodun tek kaynagi secilen XSLT'dir
 - `fatura-goruntuleme` PDF/detail lookup anahtari `documentId`'dir; `invoiceId` ise kullaniciya gosterilen numaradir
@@ -14014,6 +14051,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `InvoicePreviewHttpRequest`: `InvoiceId`, `XmlContent`, `Profile`, `PreferEmbeddedXslt`
 - `GET /api/fatura-islemleri/fatura-gonderimi` endpoint'i body almaz; query'de `StartDate`, `EndDate`, `Scenario` ve `isSent/SentState` kullanir
 - `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}` endpoint'i body almaz; `scenario` query parametresi kullanir
+- `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/pdf` endpoint'i body almaz; gonderilmis giden faturayi Uyumsoft outbox'tan PDF olarak alir ve `scenario` query parametresini kullanir
 - `POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/render` endpoint'i body'de `InvoiceSendingRenderHttpRequest` alir
 - `POST /api/fatura-islemleri/fatura-gonderimi/send` endpoint'i body'de `InvoiceSendingBatchHttpRequest` alir
 - `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i body'de `InvoiceViewingSynchronizationHttpRequest` alir

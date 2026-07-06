@@ -82,6 +82,10 @@ public sealed record InvoiceSendingDetailDto(
     InvoiceSendingListItemDto Summary,
     InvoiceRenderedDocumentDto Document);
 
+public sealed record InvoiceSendingPdfResult(
+    string InvoiceId,
+    byte[] Content);
+
 public sealed record SendInvoiceDocumentsResponse(
     InvoiceSendingScenario Scenario,
     int RequestedCount,

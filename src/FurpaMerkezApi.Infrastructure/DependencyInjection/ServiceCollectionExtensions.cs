@@ -463,6 +463,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetCompanyReceivingOfflineSyncStatusUseCase, GetCompanyReceivingOfflineSyncStatusUseCase>();
         services.AddScoped<IListInvoiceSendingDocumentsUseCase, ListInvoiceSendingDocumentsUseCase>();
         services.AddScoped<IGetInvoiceSendingDocumentUseCase, GetInvoiceSendingDocumentUseCase>();
+        services.AddScoped<IGetInvoiceSendingPdfUseCase, GetInvoiceSendingPdfUseCase>();
         services.AddScoped<IRenderInvoiceSendingDocumentUseCase, RenderInvoiceSendingDocumentUseCase>();
         services.AddScoped<IValidateInvoiceSendingDocumentsUseCase, ValidateInvoiceSendingDocumentsUseCase>();
         services.AddScoped<ISendInvoiceSendingDocumentsUseCase, SendInvoiceSendingDocumentsUseCase>();

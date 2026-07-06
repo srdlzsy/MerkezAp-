@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGonderimi;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -21,6 +22,7 @@ public sealed class InvoiceSendingService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IEInvoiceDocumentRenderer invoiceDocumentRenderer,
+    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService,
     UblTrInvoiceBusinessRuleValidator ublTrInvoiceBusinessRuleValidator,
     UblTrInvoiceXmlValidator ublTrInvoiceXmlValidator,
     IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
@@ -89,6 +91,42 @@ public sealed class InvoiceSendingService(
         return new InvoiceSendingDetailDto(
             MapListItem(invoice),
             renderedDocument with { InvoiceId = builtInvoice.InvoiceId });
+    }
+
+    public async Task<InvoiceSendingPdfResult> GetOutboxPdfAsync(
+        InvoiceSendingDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await LoadSingleInvoiceAsync(
+            request.Scenario,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
+        var lookupIds = new[] { invoice.Ettn, invoice.InvoiceGuid.ToString() }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var failures = new List<string>();
+
+        foreach (var lookupId in lookupIds)
+        {
+            try
+            {
+                var content = await uyumsoftConnectedQueryService.GetOutboxInvoicePdfFileAsync(
+                    lookupId,
+                    cancellationToken);
+
+                return new InvoiceSendingPdfResult(invoice.InvoiceId, content);
+            }
+            catch (InvalidOperationException exception)
+            {
+                failures.Add($"{lookupId}: {exception.Message}");
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Fatura Uyumsoft giden kutusunda bulunamadi veya PDF alinamadi. Attempts: {string.Join(" | ", failures)}");
     }
 
     public async Task<SendInvoiceDocumentsResponse> SendAsync(
@@ -411,6 +449,7 @@ public sealed class InvoiceSendingService(
             Faturalar AS (
                 SELECT
                     ch.cha_Guid AS FatGuid,
+                    ISNULL(ch.cha_uuid, N'') AS Ettn,
                     ch.cha_evrakno_seri AS DocumentSerie,
                     ch.cha_evrakno_sira AS DocumentOrderNo,
                     ch.cha_evrak_tip AS EvrakTip,
@@ -542,6 +581,7 @@ public sealed class InvoiceSendingService(
             )
             SELECT
                 MIN(FatGuid) AS FatGuid,
+                MAX(Ettn) AS Ettn,
                 DocumentSerie,
                 DocumentOrderNo,
                 MAX(EvrakTip) AS EvrakTip,
@@ -1982,6 +2022,7 @@ public sealed class InvoiceSendingService(
 
         return new PendingInvoiceRecord(
             ReadGuid(reader, "FatGuid"),
+            ReadString(reader, "Ettn"),
             documentSerie,
             documentOrderNo,
             BuildInvoiceId(documentSerie, documentOrderNo, documentDate.Year),
@@ -2598,6 +2639,7 @@ public sealed class InvoiceSendingService(
 
     private sealed record PendingInvoiceRecord(
         Guid InvoiceGuid,
+        string Ettn,
         string DocumentSerie,
         int DocumentOrderNo,
         string InvoiceId,

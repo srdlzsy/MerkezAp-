@@ -15,6 +15,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.FaturaIslemleri.FaturaGonder
 public sealed class FaturaGonderimiController(
     IListInvoiceSendingDocumentsUseCase listInvoiceSendingDocumentsUseCase,
     IGetInvoiceSendingDocumentUseCase getInvoiceSendingDocumentUseCase,
+    IGetInvoiceSendingPdfUseCase getInvoiceSendingPdfUseCase,
     IRenderInvoiceSendingDocumentUseCase renderInvoiceSendingDocumentUseCase,
     IValidateInvoiceSendingDocumentsUseCase validateInvoiceSendingDocumentsUseCase,
     ISendInvoiceSendingDocumentsUseCase sendInvoiceSendingDocumentsUseCase,
@@ -62,6 +63,25 @@ public sealed class FaturaGonderimiController(
                 documentOrderNo,
                 scenario),
             cancellationToken));
+
+    [HttpGet("{documentSerie}/{documentOrderNo:int}/pdf")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Pdf(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery] InvoiceSendingScenario scenario = InvoiceSendingScenario.EFatura,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await getInvoiceSendingPdfUseCase.ExecuteAsync(
+            new InvoiceSendingDocumentRequest(documentSerie, documentOrderNo, scenario),
+            cancellationToken);
+
+        Response.Headers.ContentDisposition = $"inline; filename=\"{result.InvoiceId}.pdf\"";
+        return File(result.Content, "application/pdf");
+    }
 
     [HttpPost("{documentSerie}/{documentOrderNo:int}/render")]
     [Authorize(Policy = DetailPolicy)]
