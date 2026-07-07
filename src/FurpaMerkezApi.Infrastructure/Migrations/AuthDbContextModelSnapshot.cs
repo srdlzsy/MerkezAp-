@@ -2969,6 +2969,16 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("product_code");
 
+                    b.Property<string>("ProductManagerCode")
+                        .HasMaxLength(25)
+                        .HasColumnType("nvarchar(25)")
+                        .HasColumnName("product_manager_code");
+
+                    b.Property<string>("ProductManagerName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("product_manager_name");
+
                     b.Property<string>("ProductName")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
@@ -3029,6 +3039,9 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.HasIndex("SourceKey")
                         .IsUnique()
                         .HasDatabaseName("ux_stock_anomalies_source_key");
+
+                    b.HasIndex("ProductManagerCode", "Status", "LastDetectedAtUtc")
+                        .HasDatabaseName("ix_stock_anomalies_manager_status_last_detected");
 
                     b.HasIndex("Type", "Status", "LastDetectedAtUtc")
                         .HasDatabaseName("ix_stock_anomalies_type_status_last_detected");
@@ -3253,6 +3266,9 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.HasIndex("DocumentId")
                         .IsUnique()
                         .HasDatabaseName("ux_uyumsoft_inbox_invoices_document_id");
+
+                    b.HasIndex("CreateDate")
+                        .HasDatabaseName("ix_uyumsoft_inbox_invoices_create_date");
 
                     b.HasIndex("InvoiceDate")
                         .HasDatabaseName("ix_uyumsoft_inbox_invoices_invoice_date");

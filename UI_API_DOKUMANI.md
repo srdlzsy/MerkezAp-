@@ -5339,6 +5339,7 @@ Endpointler:
 | Endpoint | Aciklama | Yetki |
 | --- | --- | --- |
 | `GET /api/stok-islemleri/stok-anomali-merkezi` | Anomali listesini getirir | `stok-islemleri.stok-anomali-merkezi.list` |
+| `GET /api/stok-islemleri/stok-anomali-merkezi/satin-almacilar` | Anomalilerdeki satin almacilari ve anomali sayilarini getirir | `stok-islemleri.stok-anomali-merkezi.list` |
 | `GET /api/stok-islemleri/stok-anomali-merkezi/{id}` | Anomali detayini ve olay gecmisini getirir | `stok-islemleri.stok-anomali-merkezi.detail` |
 | `POST /api/stok-islemleri/stok-anomali-merkezi/tara` | Mikro verisini tarar ve anomali kayitlarini acar/gunceller | `stok-islemleri.stok-anomali-merkezi.scan` |
 | `POST /api/stok-islemleri/stok-anomali-merkezi/{id}/durum` | Anomali durumunu gunceller | `stok-islemleri.stok-anomali-merkezi.update` |
@@ -5350,6 +5351,8 @@ warehouseNo?: int
 type?: NegativeStock | DuplicateDocument | ReceivingDifference | HighQuantity | DormantStock | PendingInterWarehouseTransfer
 status?: Open | Acknowledged | Resolved | Ignored
 severity?: Low | Medium | High | Critical
+productManagerCode?: string; satin almacinin Mikro personel/sorumlu kodu
+hasProductManager?: bool; true=atanmis, false=atanmamis urunler
 startDate?: yyyy-MM-dd
 endDate?: yyyy-MM-dd
 search?: string
@@ -5381,6 +5384,8 @@ Liste response:
       "relatedWarehouseName": null,
       "productCode": "015792",
       "productName": "URUN ADI",
+      "productManagerCode": "SA001",
+      "productManagerName": "AYSE YILMAZ",
       "documentSerie": null,
       "documentOrderNo": null,
       "documentNo": null,
@@ -5395,6 +5400,32 @@ Liste response:
     }
   ]
 }
+```
+
+Satin almacilar lookup:
+
+`GET /api/stok-islemleri/stok-anomali-merkezi/satin-almacilar?warehouseNo=110&status=Open`
+
+- `warehouseNo` depo yetki kapsamina tabidir; depo kullanicisi sadece kendi deposunu gorur.
+- `status` opsiyoneldir ve varsayilan `Open` degeridir.
+- sadece secilen kapsamdaki anomalilerde bulunan satin almacilar doner.
+- sorumlusu olmayan anomaliler `code=""`, `name="ATANMAMIS"`, `isAssigned=false` satirinda gruplanir.
+
+```json
+[
+  {
+    "code": "SA001",
+    "name": "AYSE YILMAZ",
+    "anomalyCount": 14,
+    "isAssigned": true
+  },
+  {
+    "code": "",
+    "name": "ATANMAMIS",
+    "anomalyCount": 3,
+    "isAssigned": false
+  }
+]
 ```
 
 Tarama:
@@ -5427,6 +5458,8 @@ Not:
 - Tarama sorgulari buyuk Mikro tablolarinda calistigi icin UI ayni anda birden fazla `tara` istegi baslatmamali; buton tarama bitene kadar disabled/loading durumda kalmalidir.
 - Admin tum depo taramasi yapabiliyor olsa da yogun sistemlerde UI varsayilan olarak secili depo veya kisa tarih araligi ile taramayi tesvik etmelidir.
 - Backend her kurali ayri calistirir ve sonuc kayitlarini kural bazinda sinirlar; `takePerRule` buyutuldukce Mikro sorgu suresi artabilir.
+- kurallar tamamlandiktan sonra urunler Mikro'dan toplu zenginlestirilir; once `STOK_DEPO_DETAYLARI.sdp_UrunSorumlusuKodu`, bos ise `STOKLAR.sto_urun_sorkod` kullanilir ve ad/soyad `CARI_PERSONEL_TANIMLARI` tablosundan alinir.
+- migration sonrasi eski anomalilerin satin almacisi ilk yeni taramada doldurulur.
 
 Response:
 
@@ -5470,11 +5503,12 @@ UI oneri:
 
 1. Panel acilisinda once `GET /stok-anomali-merkezi?status=Open&take=100` cagir.
 2. Admin icin depo filtresi goster; depo kullanicisinda depo filtresini kilitle/gizle.
-3. "Tara" aksiyonu Admin'de tum depolar veya secili depo icin, depo kullanicisinda sadece kendi deposu icin calissin.
-4. Tarama sirasinda ikinci tarama istegini engelle, bitince `rules` sonucunu ozetle ve listeyi yenile.
-5. `rules[].error` doluysa sadece ilgili kurali uyari olarak goster; diger kurallarin kaydettigi anomaliler listede kalir.
-6. Satir tiklaninca detay endpoint'i ile `evidence` ve `events` gosterilsin.
-7. Kullanici satiri inceledikten sonra durumunu `Acknowledged`, `Resolved` veya `Ignored` yapabilsin.
+3. `satin-almacilar` lookup sonucunu filtre dropdown'unda kullan; `ATANMAMIS` seciminde listeyi `hasProductManager=false` ile cagir.
+4. "Tara" aksiyonu Admin'de tum depolar veya secili depo icin, depo kullanicisinda sadece kendi deposu icin calissin.
+5. Tarama sirasinda ikinci tarama istegini engelle, bitince `rules` sonucunu ozetle ve listeyi yenile.
+6. `rules[].error` doluysa sadece ilgili kurali uyari olarak goster; diger kurallarin kaydettigi anomaliler listede kalir.
+7. Satir tiklaninca detay endpoint'i ile `evidence` ve `events` gosterilsin.
+8. Kullanici satiri inceledikten sonra durumunu `Acknowledged`, `Resolved` veya `Ignored` yapabilsin.
 
 ### Etiket Belgeleri Son Liste
 
@@ -8099,6 +8133,8 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 4. Kullanici gonderilmis (`isSent = true`) giden fatura satirini actiginda `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/pdf?scenario=...` cagrilir ve `application/pdf` response blob olarak gosterilir.
 5. Secilen gonderilmemis faturalarin gonderime hazir olup olmadigini canli gonderim yapmadan kontrol etmek icin `POST /api/fatura-islemleri/fatura-gonderimi/validate`
 6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
+   - `send` endpoint'i hiz icin `/validate` kontrolunu tekrar calistirmaz; UI "Kontrol Et" butonunu ayri aksiyon olarak sunmalidir
+   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruğa alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
 7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
 8. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
 9. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
@@ -8246,11 +8282,26 @@ Liste davranisi:
 - `ProcessedState` ve `PrintedState` legacy WinForms'taki gibi tri-state filtre davranisi saglar
 - `customerTitle` response'a buyuk harfe cevrilmis gelir
 - DB tarafindaki kolon `isStandart` olsa da API response'unda alan `isStandard` olarak gelir
-- `statusCode` ham DB degeridir; `status` ise UI'de direkt gosterebileceginiz aciklama metnidir
+- `statusCode`, `status`, `envelopeStatusCode` ve durum `message` alani senkronizasyon sirasinda Uyumsoft `GetInboxInvoiceStatusWithLogs` cevabindan cache'e yazilir
+- `statusCode` ham Uyumsoft durum kodudur; `status` ise Uyumsoft durum enum'undan Turkce UI metnine cevrilir ve ekranda direkt gosterilebilir
 - `despatchId` yalnizca Uyumsoft `GetInboxInvoices` full UBL cevabindaki `Invoice.DespatchDocumentReference[].ID` alanindan okunur; senkron sirasinda kayit basina ek `GetInboxInvoice` cagrisi yapilmaz
 - `orderDocumentId` ayri siparis/order referansi alanidir; irsaliye numarasi gibi kullanilmamalidir
 - `orderDocumentId`, `envelopeIdentifier`, `message`, vergi toplam/tutar, doviz, arsiv ve goruldu bilgileri Uyumsoft inbox cache tablosunda ayrica saklanir
-- `status` mapping'i:
+- temel `status` mapping'leri:
+  - `NotPrepared` -> `Hazirlanmadi`
+  - `NotSend` -> `Gonderilmedi`
+  - `Draft` -> `Taslak`
+  - `Canceled` -> `Iptal Edildi`
+  - `Queued` -> `Kuyrukta`
+  - `Processing` -> `Isleniyor`
+  - `SentToGib` -> `GIB'e Gonderildi`
+  - `Approved` / `1000` -> `Onaylandi`
+  - `WaitingForAprovement` / `1100` -> `Onay Bekliyor`
+  - `Declined` / `1200` -> `Reddedildi`
+  - `Return` / `1300` -> `Iade Edildi`
+  - `EArchivedCanceled` / `1400` -> `E-Arsiv Iptal`
+  - `Error` / `2000` -> `Hata`
+- eski/eksik cache kayitlarinda `status` bos ise kod tabanli fallback mapping'i kullanilir:
   - `1000` -> `Onaylandi`
   - `1100` -> `Onay Bekliyor`
   - `1200` -> `Reddedildi`
@@ -8268,7 +8319,7 @@ Liste davranisi:
   - `invoiceType`
   - `minInvoiceTotal`, `maxInvoiceTotal`
   - `hasDespatchId`
-- `SearchField`/`SearchText` ikinci backend arama katmanidir; SQL'den gelen sonuc seti uzerinde, paging'den once bellek tarafinda uygulanir:
+- `SearchField`/`SearchText` ikinci backend arama katmanidir; kayitlar materialize edilmeden once DB/SQL tarafinda uygulanir:
   - `InvoiceDate` -> exact date
   - `InvoiceId` -> contains, case-insensitive
   - `DocumentId` -> contains, case-insensitive
@@ -8322,12 +8373,16 @@ Davranis:
 
 - secilen tarih araligini Uyumsoft `GetInboxInvoices` ile okur
 - Uyumsoft sayfalari `PageIndex = 0, 1, 2...` ve `PageSize = 20` ile `TotalPages` tamamlanana kadar okunur
+- her 20 kayitlik sayfa icin fatura durumlari tek toplu `GetInboxInvoiceStatusWithLogs` istegiyle okunur; fatura basina ayri durum cagrisi yapilmaz
+- `statusCode`, `status`, `envelopeStatusCode` ve durum mesaji bu toplu durum cevabiyla cache'e yazilir; daha once bos kaydedilmis durumlar sonraki senkronizasyonda guncellenir
 - tum sayfalar eksiksiz alindiktan sonra DB upsert/save yapilir; eksik veya tekrar eden sayfada yarim senkron basarili sayilmaz
+- Uyumsoft bir faturaya ait durum bilgisini dondurmezse senkronizasyon eksik veriyi basarili saymaz ve hata response'u doner
 - gelen sonuc `uyumsoft_inbox_invoices` cache tablosuna upsert edilir
 - `sourceTotalCount` Uyumsoft'un bildirdigi toplam kayit, `fetchedCount` tum sayfalardan gercekten okunan kayit sayisidir
 - Uyumsoft cagrisi basarisiz olursa endpoint sessiz `204` donmez; hata response'u doner
 - tekrar eden veya degisiklik icermeyen sayfalar icin koruma vardir; sonsuz donguye girmez
 - sync tamamlandiktan sonra UI ayni tarih araligiyla `GET /api/fatura-islemleri/fatura-goruntuleme` cagirip DB sonucunu alabilir
+- durum sorgulari nedeniyle senkronizasyon yalnizca `GetInboxInvoices` kullanan onceki akistan daha uzun surebilir; UI `POST /senkronize` tamamlanana kadar loading/progress durumunu korumalidir
 
 ### Fatura Goruntuleme PDF
 
@@ -9055,12 +9110,14 @@ Request `send` endpoint'i ile aynidir.
 
 Davranis:
 
+- `scenario` zorunludur: `0 = EFatura`, `1 = EArsiv`; UI secili satirin `scenario` alanini aynen gondermelidir
 - secilen belgeler tekillestirilir
 - Mikro verisinden UBL XML uretilir
 - iade referansi gerekiyorsa fallback sadece simule edilir, Mikro'ya yazilmaz
 - UBL-TR is kurali ve XSD dogrulamalari calistirilir
 - Uyumsoft'a fatura gonderilmez
 - Mikro `cha_belge_no`, `cha_kilitli` veya baska alanlar guncellenmez
+- bu endpoint UI'daki "Kontrol Et" butonunun karsiligidir; `send` hiz icin bu dogrulamalari tekrar calistirmaz
 
 Response `ValidateInvoiceDocumentsResponse`:
 
@@ -9119,6 +9176,8 @@ Request:
 }
 ```
 
+Not: `scenario` zorunludur. UI e-Arsiv satiri icin `1`, e-Fatura satiri icin `0` gondermelidir; alan bos birakilirsa backend artik varsayilan EFatura kabul etmez.
+
 Response `SendInvoiceDocumentsResponse`:
 
 ```json
@@ -9159,9 +9218,10 @@ Davranis:
 - secimler duplicate ise backend tekilleştirir
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
+- hiz icin UBL-TR is kurali ve XSD dogrulamalari burada tekrar calistirilmaz; bu kontroller icin kullanici once `/validate` endpoint'ini cagirir
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
-- `serviceDocumentId` Uyumsoft'un teknik id'sidir ve send response'unda bilgilendirme icin doner; mevcut Mikro tabloya yazilmadigi icin sonraki liste response'unda garanti edilmez
-- sonraki liste ekraninda UI yine lokal onizleme kullanir; `serviceDocumentId` kalici saklanmadigi icin gonderilmis giden fatura PDF'i Uyumsoft'tan acilmaz
+- `serviceDocumentId` Uyumsoft'un teknik id'sidir; basarili gonderimde Mikro `cha_uuid` alanina yazilir, servis id bos donerse faturanin lokal UUID degeri fallback olarak saklanir
+- sonraki liste ekraninda gonderilmis fatura PDF ve tekrar gonderim aksiyonlari backend tarafinda bu UUID uzerinden cozulur; UI teknik UUID gondermek zorunda degildir
 - ayni anda `cha_kilitli = true`, `cha_degisti = true`, `cha_lastup_user = 39` ve `cha_lastup_date = now` set edilir
 - zaten gonderilmis kayitlar response'ta `isSucceeded = false` ile doner; genel request tamamen patlatilmaz
 
@@ -9180,6 +9240,60 @@ UBL / gonderim kurallari:
 - stok satirlarinda iskonto alanlari `AllowanceCharge` olarak satir bazinda XML'e yazilir
 - `AllowanceCharge/MultiplierFactorNumeric` ondalik katsayi olarak yazilir; ornegin `%3 = 0.03`, `%5 = 0.05`. XSLT ekranda bu degeri `100` ile carparak yuzdeyi gosterir.
 - e-arsiv gonderiminde `EArchiveInvoiceInfo DeliveryType="Electronic"` kullanilir
+
+### Fatura Gonderimi Retry
+
+`POST /api/fatura-islemleri/fatura-gonderimi/retry`
+
+Yetki:
+
+- `fatura-islemleri.fatura-gonderimi.create`
+
+Request, `/send` ile ayni belge secim yapisini kullanir ve tek istekte en fazla 20 belge kabul eder:
+
+```json
+{
+  "scenario": 0,
+  "documents": [
+    {
+      "documentSerie": "FAT",
+      "documentOrderNo": 12345
+    }
+  ]
+}
+```
+
+Response `RetryInvoiceDocumentsResponse`:
+
+```json
+{
+  "scenario": 0,
+  "requestedCount": 1,
+  "succeededCount": 1,
+  "failedCount": 0,
+  "items": [
+    {
+      "documentSerie": "FAT",
+      "documentOrderNo": 12345,
+      "invoiceId": "FAT2026000012345",
+      "serviceInvoiceId": "8f5f...",
+      "isSucceeded": true,
+      "message": "Uyumsoft tekrar gonderim istegini kabul etti."
+    }
+  ]
+}
+```
+
+Davranis:
+
+- bu endpoint ilk gonderim yapmaz ve `/send` akisinin yerine kullanilmaz
+- yalnizca Mikro'da `isSent = true` olan ve `cha_uuid`/Uyumsoft invoiceId bilgisi bulunan belgeler retry edilebilir
+- UI `Tekrar Gonder` aksiyonunu yalnizca `isSent = true` satirlarda gostermelidir
+- UI seri/sira gonderir; `serviceInvoiceId` backend tarafinda Mikro kaydindan cozulur
+- gecerli secimlerin UUID'leri tek toplu Uyumsoft `RetrySendInvoices` operasyonuna verilir
+- Uyumsoft operasyonu batch seviyesinde tek response dondurdugu icin servisin kabul/red sonucu batch icindeki tum gecerli satirlara uygulanir
+- bulunamayan, gonderilmemis veya UUID'si bos belgeler Uyumsoft'a gonderilmez ve item bazinda `isSucceeded = false` doner
+- retry sirasinda UBL yeniden uretilmez, `SendInvoice` cagrilmaz ve Mikro fatura alanlari tekrar guncellenmez
 
 ### Fatura Gonderimi XML Preview
 

@@ -32,6 +32,10 @@ public sealed class StockAnomaly
 
     public string? ProductName { get; private set; }
 
+    public string? ProductManagerCode { get; private set; }
+
+    public string? ProductManagerName { get; private set; }
+
     public string? DocumentSerie { get; private set; }
 
     public int? DocumentOrderNo { get; private set; }
@@ -95,6 +99,8 @@ public sealed class StockAnomaly
         string? relatedWarehouseName,
         string? productCode,
         string? productName,
+        string? productManagerCode,
+        string? productManagerName,
         string? documentSerie,
         int? documentOrderNo,
         string? documentNo,
@@ -116,6 +122,8 @@ public sealed class StockAnomaly
         RelatedWarehouseName = NormalizeOptional(relatedWarehouseName, 120);
         ProductCode = NormalizeOptional(productCode, 50);
         ProductName = NormalizeOptional(productName, 200);
+        ProductManagerCode = NormalizeOptional(productManagerCode, 25);
+        ProductManagerName = NormalizeOptional(productManagerName, 120);
         DocumentSerie = NormalizeOptional(documentSerie, 20);
         DocumentOrderNo = documentOrderNo;
         DocumentNo = NormalizeOptional(documentNo, 50);

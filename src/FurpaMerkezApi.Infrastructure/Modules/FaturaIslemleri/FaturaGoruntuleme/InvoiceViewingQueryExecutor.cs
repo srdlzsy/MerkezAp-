@@ -29,14 +29,56 @@ public sealed class InvoiceViewingQueryExecutor(
             query = query.Where(item => item.IsPrinted == request.IsPrinted.Value);
         }
 
-        var entities = await query
+        query = ApplySearchQuery(query, request);
+
+        var items = await query
             .OrderByDescending(item => item.InvoiceDate ?? item.CreateDate)
             .ThenByDescending(item => item.CreateDate)
             .ThenByDescending(item => item.DocumentId)
+            .Select(item => new InvoiceViewingListItemDto(
+                item.DocumentId,
+                item.InvoiceId,
+                item.CustomerTitle.ToUpper(),
+                item.CustomerTcknVkn,
+                item.CreateDate,
+                item.InvoiceDate,
+                item.InvoiceType,
+                item.InvoiceTotal,
+                item.DespatchId,
+                item.IsProcessed,
+                item.IsPrinted,
+                item.IsStandard,
+                item.StatusCode,
+                item.Status != string.Empty
+                    ? item.Status
+                    : item.StatusCode == "1000"
+                        ? "Onaylandi"
+                        : item.StatusCode == "1100"
+                            ? "Onay Bekliyor"
+                            : item.StatusCode == "1200"
+                                ? "Reddedildi"
+                                : item.StatusCode == "1300"
+                                    ? "Iade Edildi"
+                                    : item.StatusCode == "1400"
+                                        ? "E-Arsiv Iptal"
+                                        : item.StatusCode == "2000"
+                                            ? "Hata"
+                                            : item.StatusCode == string.Empty
+                                                ? "Bilinmiyor"
+                                                : item.StatusCode,
+                item.EnvelopeIdentifier,
+                item.EnvelopeStatusCode ?? string.Empty,
+                item.Message,
+                item.TaxTotal,
+                item.TaxExclusiveAmount,
+                item.DocumentCurrencyCode,
+                item.ExchangeRate,
+                item.OrderDocumentId,
+                item.IsArchived,
+                item.InvoiceTipType,
+                item.InvoiceTipTypeCode,
+                item.IsSeen))
             .ToListAsync(cancellationToken);
-        var items = entities.Select(MapItem).ToList();
-
-        items = ApplySearch(items, request);
 
         var totalCount = items.Count;
 
@@ -45,6 +87,99 @@ public sealed class InvoiceViewingQueryExecutor(
             1,
             totalCount,
             items);
+    }
+
+    private static IQueryable<UyumsoftInboxInvoice> ApplySearchQuery(
+        IQueryable<UyumsoftInboxInvoice> query,
+        InvoiceViewingListRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.SearchText))
+        {
+            return query;
+        }
+
+        var searchText = request.SearchText.Trim();
+        var pattern = BuildLikePattern(searchText);
+
+        return request.SearchField switch
+        {
+            InvoiceViewingSearchField.InvoiceDate =>
+                TryParseDate(searchText, out var invoiceDate)
+                    ? ApplyEffectiveDateFilter(query, invoiceDate)
+                    : query.Where(_ => false),
+            InvoiceViewingSearchField.InvoiceId =>
+                query.Where(item => EF.Functions.Like(item.InvoiceId.ToUpper(), pattern)),
+            InvoiceViewingSearchField.DocumentId =>
+                query.Where(item => EF.Functions.Like(item.DocumentId.ToUpper(), pattern)),
+            InvoiceViewingSearchField.CustomerTitle =>
+                query.Where(item => EF.Functions.Like(item.CustomerTitle.ToUpper(), pattern)),
+            InvoiceViewingSearchField.CustomerTcknVkn =>
+                query.Where(item => EF.Functions.Like(item.CustomerTcknVkn.ToUpper(), pattern)),
+            InvoiceViewingSearchField.InvoiceTotal =>
+                TryParseDecimal(searchText, out var invoiceTotal)
+                    ? query.Where(item => item.InvoiceTotal == invoiceTotal)
+                    : query.Where(_ => false),
+            InvoiceViewingSearchField.DespatchId =>
+                query.Where(item => EF.Functions.Like(item.DespatchId.ToUpper(), pattern)),
+            InvoiceViewingSearchField.Status =>
+                query.Where(item =>
+                    EF.Functions.Like(item.Status.ToUpper(), pattern) ||
+                    EF.Functions.Like(item.StatusCode.ToUpper(), pattern) ||
+                    (item.EnvelopeStatusCode != null &&
+                     EF.Functions.Like(item.EnvelopeStatusCode.ToUpper(), pattern))),
+            InvoiceViewingSearchField.InvoiceType =>
+                query.Where(item => EF.Functions.Like(item.InvoiceType.ToUpper(), pattern)),
+            InvoiceViewingSearchField.EnvelopeIdentifier =>
+                query.Where(item => EF.Functions.Like(item.EnvelopeIdentifier.ToUpper(), pattern)),
+            InvoiceViewingSearchField.OrderDocumentId =>
+                query.Where(item => EF.Functions.Like(item.OrderDocumentId.ToUpper(), pattern)),
+            InvoiceViewingSearchField.Message =>
+                query.Where(item => EF.Functions.Like(item.Message.ToUpper(), pattern)),
+            InvoiceViewingSearchField.Any or null => ApplyAnySearchQuery(query, searchText, pattern),
+            _ => ApplyAnySearchQuery(query, searchText, pattern)
+        };
+    }
+
+    private static IQueryable<UyumsoftInboxInvoice> ApplyAnySearchQuery(
+        IQueryable<UyumsoftInboxInvoice> query,
+        string searchText,
+        string pattern)
+    {
+        var hasDate = TryParseDate(searchText, out var invoiceDate);
+        var dateStart = invoiceDate.Date;
+        var dateEndExclusive = dateStart.AddDays(1);
+        var hasTotal = TryParseDecimal(searchText, out var invoiceTotal);
+
+        return query.Where(item =>
+            EF.Functions.Like(item.InvoiceId.ToUpper(), pattern) ||
+            EF.Functions.Like(item.DocumentId.ToUpper(), pattern) ||
+            EF.Functions.Like(item.CustomerTitle.ToUpper(), pattern) ||
+            EF.Functions.Like(item.CustomerTcknVkn.ToUpper(), pattern) ||
+            EF.Functions.Like(item.InvoiceType.ToUpper(), pattern) ||
+            EF.Functions.Like(item.DespatchId.ToUpper(), pattern) ||
+            EF.Functions.Like(item.OrderDocumentId.ToUpper(), pattern) ||
+            EF.Functions.Like(item.Status.ToUpper(), pattern) ||
+            EF.Functions.Like(item.StatusCode.ToUpper(), pattern) ||
+            EF.Functions.Like(item.EnvelopeIdentifier.ToUpper(), pattern) ||
+            (item.EnvelopeStatusCode != null &&
+             EF.Functions.Like(item.EnvelopeStatusCode.ToUpper(), pattern)) ||
+            EF.Functions.Like(item.Message.ToUpper(), pattern) ||
+            (hasDate &&
+             (item.InvoiceDate ?? item.CreateDate) >= dateStart &&
+             (item.InvoiceDate ?? item.CreateDate) < dateEndExclusive) ||
+            (hasTotal && item.InvoiceTotal == invoiceTotal));
+    }
+
+    private static IQueryable<UyumsoftInboxInvoice> ApplyEffectiveDateFilter(
+        IQueryable<UyumsoftInboxInvoice> query,
+        DateTime invoiceDate)
+    {
+        var dateStart = invoiceDate.Date;
+        var dateEndExclusive = dateStart.AddDays(1);
+
+        return query.Where(item =>
+            (item.InvoiceDate ?? item.CreateDate) >= dateStart &&
+            (item.InvoiceDate ?? item.CreateDate) < dateEndExclusive);
     }
 
     private IQueryable<UyumsoftInboxInvoice> BuildListQuery(InvoiceViewingListRequest request)
@@ -295,131 +430,6 @@ public sealed class InvoiceViewingQueryExecutor(
     private static string BuildLikePattern(string value) =>
         $"%{value.Trim().ToUpperInvariant()}%";
 
-    private static List<InvoiceViewingListItemDto> ApplySearch(
-        List<InvoiceViewingListItemDto> items,
-        InvoiceViewingListRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.SearchText))
-        {
-            return items;
-        }
-
-        var searchText = request.SearchText.Trim();
-
-        return request.SearchField switch
-        {
-            InvoiceViewingSearchField.InvoiceDate => ApplyInvoiceDateSearch(items, searchText),
-            InvoiceViewingSearchField.InvoiceId => items
-                .Where(item => ContainsIgnoreCase(item.InvoiceId, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.DocumentId => items
-                .Where(item => ContainsIgnoreCase(item.DocumentId, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.CustomerTitle => items
-                .Where(item => ContainsIgnoreCase(item.CustomerTitle, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.CustomerTcknVkn => items
-                .Where(item => ContainsIgnoreCase(item.CustomerTcknVkn, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.InvoiceTotal => ApplyInvoiceTotalSearch(items, searchText),
-            InvoiceViewingSearchField.DespatchId => items
-                .Where(item => ContainsIgnoreCase(item.DespatchId, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.Status => items
-                .Where(item =>
-                    ContainsIgnoreCase(item.Status, searchText) ||
-                    ContainsIgnoreCase(item.StatusCode, searchText) ||
-                    ContainsIgnoreCase(item.EnvelopeStatusCode, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.InvoiceType => items
-                .Where(item => ContainsIgnoreCase(item.InvoiceType, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.EnvelopeIdentifier => items
-                .Where(item => ContainsIgnoreCase(item.EnvelopeIdentifier, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.OrderDocumentId => items
-                .Where(item => ContainsIgnoreCase(item.OrderDocumentId, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.Message => items
-                .Where(item => ContainsIgnoreCase(item.Message, searchText))
-                .ToList(),
-            InvoiceViewingSearchField.Any or null => ApplyAnySearch(items, searchText),
-            _ => ApplyAnySearch(items, searchText)
-        };
-    }
-
-    private static List<InvoiceViewingListItemDto> ApplyAnySearch(
-        IEnumerable<InvoiceViewingListItemDto> items,
-        string searchText)
-    {
-        var filteredItems = items
-            .Where(item =>
-                ContainsIgnoreCase(item.InvoiceId, searchText) ||
-                ContainsIgnoreCase(item.DocumentId, searchText) ||
-                ContainsIgnoreCase(item.CustomerTitle, searchText) ||
-                ContainsIgnoreCase(item.CustomerTcknVkn, searchText) ||
-                ContainsIgnoreCase(item.InvoiceType, searchText) ||
-                ContainsIgnoreCase(item.DespatchId, searchText) ||
-                ContainsIgnoreCase(item.OrderDocumentId, searchText) ||
-                ContainsIgnoreCase(item.Status, searchText) ||
-                ContainsIgnoreCase(item.StatusCode, searchText) ||
-                ContainsIgnoreCase(item.EnvelopeIdentifier, searchText) ||
-                ContainsIgnoreCase(item.EnvelopeStatusCode, searchText) ||
-                ContainsIgnoreCase(item.Message, searchText))
-            .ToList();
-
-        if (TryParseDate(searchText, out var invoiceDate))
-        {
-            filteredItems.AddRange(
-                items.Where(item =>
-                {
-                    var effectiveDate = item.InvoiceDate ?? item.CreateDate;
-                    return effectiveDate.HasValue && effectiveDate.Value.Date == invoiceDate.Date;
-                }));
-        }
-
-        if (TryParseDecimal(searchText, out var invoiceTotal))
-        {
-            filteredItems.AddRange(items.Where(item => item.InvoiceTotal == invoiceTotal));
-        }
-
-        return filteredItems
-            .DistinctBy(item => item.DocumentId)
-            .ToList();
-    }
-
-    private static List<InvoiceViewingListItemDto> ApplyInvoiceDateSearch(
-        IEnumerable<InvoiceViewingListItemDto> items,
-        string searchText)
-    {
-        if (!TryParseDate(searchText, out var invoiceDate))
-        {
-            return [];
-        }
-
-        return items
-            .Where(item =>
-            {
-                var effectiveDate = item.InvoiceDate ?? item.CreateDate;
-                return effectiveDate.HasValue && effectiveDate.Value.Date == invoiceDate.Date;
-            })
-            .ToList();
-    }
-
-    private static List<InvoiceViewingListItemDto> ApplyInvoiceTotalSearch(
-        IEnumerable<InvoiceViewingListItemDto> items,
-        string searchText)
-    {
-        if (!TryParseDecimal(searchText, out var invoiceTotal))
-        {
-            return [];
-        }
-
-        return items
-            .Where(item => item.InvoiceTotal == invoiceTotal)
-            .ToList();
-    }
-
     private static string NormalizeCustomerTitle(string value) =>
         string.IsNullOrWhiteSpace(value)
             ? string.Empty
@@ -445,9 +455,6 @@ public sealed class InvoiceViewingQueryExecutor(
             ? "Bilinmiyor"
             : statusCode;
     }
-
-    private static bool ContainsIgnoreCase(string source, string value) =>
-        source.Contains(value, StringComparison.OrdinalIgnoreCase);
 
     private static bool TryParseDate(string value, out DateTime parsedDate) =>
         DateTime.TryParse(

@@ -189,6 +189,9 @@ public sealed class UyumsoftInboxInvoiceConfiguration : IEntityTypeConfiguration
         builder.HasIndex(item => item.InvoiceDate)
             .HasDatabaseName("ix_uyumsoft_inbox_invoices_invoice_date");
 
+        builder.HasIndex(item => item.CreateDate)
+            .HasDatabaseName("ix_uyumsoft_inbox_invoices_create_date");
+
         builder.HasIndex(item => new { item.IsProcessed, item.IsPrinted })
             .HasDatabaseName("ix_uyumsoft_inbox_invoices_processed_printed");
 

@@ -22,6 +22,8 @@ public sealed class StockAnomalyConfiguration : IEntityTypeConfiguration<StockAn
         builder.Property(anomaly => anomaly.RelatedWarehouseName).HasColumnName("related_warehouse_name").HasMaxLength(120);
         builder.Property(anomaly => anomaly.ProductCode).HasColumnName("product_code").HasMaxLength(50);
         builder.Property(anomaly => anomaly.ProductName).HasColumnName("product_name").HasMaxLength(200);
+        builder.Property(anomaly => anomaly.ProductManagerCode).HasColumnName("product_manager_code").HasMaxLength(25);
+        builder.Property(anomaly => anomaly.ProductManagerName).HasColumnName("product_manager_name").HasMaxLength(120);
         builder.Property(anomaly => anomaly.DocumentSerie).HasColumnName("document_serie").HasMaxLength(20);
         builder.Property(anomaly => anomaly.DocumentOrderNo).HasColumnName("document_order_no");
         builder.Property(anomaly => anomaly.DocumentNo).HasColumnName("document_no").HasMaxLength(50);
@@ -48,5 +50,7 @@ public sealed class StockAnomalyConfiguration : IEntityTypeConfiguration<StockAn
             .HasDatabaseName("ix_stock_anomalies_warehouse_status_last_detected");
         builder.HasIndex(anomaly => new { anomaly.Type, anomaly.Status, anomaly.LastDetectedAtUtc })
             .HasDatabaseName("ix_stock_anomalies_type_status_last_detected");
+        builder.HasIndex(anomaly => new { anomaly.ProductManagerCode, anomaly.Status, anomaly.LastDetectedAtUtc })
+            .HasDatabaseName("ix_stock_anomalies_manager_status_last_detected");
     }
 }

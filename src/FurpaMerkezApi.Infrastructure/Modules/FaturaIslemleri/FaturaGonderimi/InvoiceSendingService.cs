@@ -53,6 +53,7 @@ public sealed class InvoiceSendingService(
             null,
             null,
             request.SentState,
+            null,
             cancellationToken);
 
         var mappedItems = items
@@ -141,6 +142,11 @@ public sealed class InvoiceSendingService(
             .Select(document => new SendInvoiceDocumentSelection(document.DocumentSerie.Trim(), document.DocumentOrderNo))
             .Distinct()
             .ToArray();
+        var invoicesBySelection = await LoadSelectedInvoicesAsync(
+            request.Scenario,
+            deduplicatedDocuments,
+            cancellationToken);
+        PartyInfo? supplier = null;
         var results = new List<SendInvoiceDocumentResultDto>(deduplicatedDocuments.Length);
 
         foreach (var document in deduplicatedDocuments)
@@ -150,13 +156,15 @@ public sealed class InvoiceSendingService(
 
             try
             {
-                invoice = await LoadSingleInvoiceAsync(
-                    request.Scenario,
-                    document.DocumentSerie,
-                    document.DocumentOrderNo,
-                    cancellationToken);
+                invoice = GetSelectedInvoice(invoicesBySelection, document, request.Scenario);
+                var currentSentDocumentNo = invoice.IsSent
+                    ? invoice.SentDocumentNo
+                    : await GetCurrentSentDocumentNoAsync(
+                        invoice.DocumentSerie,
+                        invoice.DocumentOrderNo,
+                        cancellationToken);
 
-                if (invoice.IsSent)
+                if (!string.IsNullOrWhiteSpace(currentSentDocumentNo))
                 {
                     results.Add(new SendInvoiceDocumentResultDto(
                         invoice.DocumentSerie,
@@ -166,19 +174,17 @@ public sealed class InvoiceSendingService(
                         invoice.CustomerTitle,
                         false,
                         null,
-                        invoice.SentDocumentNo,
+                        currentSentDocumentNo,
                         "Belge zaten gonderilmis."));
                     continue;
                 }
 
                 invoice = await EnsureReturnReferenceBeforeSendAsync(invoice, cancellationToken);
-                var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
-                ublTrInvoiceBusinessRuleValidator.Validate(
-                    builtInvoice.XmlContent,
-                    builtInvoice.InvoiceId,
-                    request.Scenario,
-                    builtInvoice.TargetAlias);
-                ublTrInvoiceXmlValidator.Validate(builtInvoice.XmlContent, builtInvoice.InvoiceId);
+                supplier ??= await LoadSupplierAsync(cancellationToken);
+                var builtInvoice = await BuildInvoiceDocumentAsync(
+                    invoice,
+                    supplier,
+                    cancellationToken);
                 var serviceResponse = await SendToUyumsoftAsync(
                     builtInvoice,
                     request.Scenario,
@@ -249,6 +255,11 @@ public sealed class InvoiceSendingService(
             .Select(document => new SendInvoiceDocumentSelection(document.DocumentSerie.Trim(), document.DocumentOrderNo))
             .Distinct()
             .ToArray();
+        var invoicesBySelection = await LoadSelectedInvoicesAsync(
+            request.Scenario,
+            deduplicatedDocuments,
+            cancellationToken);
+        PartyInfo? supplier = null;
         var results = new List<ValidateInvoiceDocumentResultDto>(deduplicatedDocuments.Length);
 
         foreach (var document in deduplicatedDocuments)
@@ -258,13 +269,15 @@ public sealed class InvoiceSendingService(
 
             try
             {
-                invoice = await LoadSingleInvoiceAsync(
-                    request.Scenario,
-                    document.DocumentSerie,
-                    document.DocumentOrderNo,
-                    cancellationToken);
+                invoice = GetSelectedInvoice(invoicesBySelection, document, request.Scenario);
+                var currentSentDocumentNo = invoice.IsSent
+                    ? invoice.SentDocumentNo
+                    : await GetCurrentSentDocumentNoAsync(
+                        invoice.DocumentSerie,
+                        invoice.DocumentOrderNo,
+                        cancellationToken);
 
-                if (invoice.IsSent)
+                if (!string.IsNullOrWhiteSpace(currentSentDocumentNo))
                 {
                     results.Add(new ValidateInvoiceDocumentResultDto(
                         invoice.DocumentSerie,
@@ -278,7 +291,11 @@ public sealed class InvoiceSendingService(
                 }
 
                 invoice = await ResolveReturnReferenceForValidationAsync(invoice, cancellationToken);
-                var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
+                supplier ??= await LoadSupplierAsync(cancellationToken);
+                var builtInvoice = await BuildInvoiceDocumentAsync(
+                    invoice,
+                    supplier,
+                    cancellationToken);
                 ublTrInvoiceBusinessRuleValidator.Validate(
                     builtInvoice.XmlContent,
                     builtInvoice.InvoiceId,
@@ -324,6 +341,110 @@ public sealed class InvoiceSendingService(
             validCount,
             invalidCount,
             results);
+    }
+
+    public async Task<RetryInvoiceDocumentsResponse> RetryAsync(
+        RetryInvoiceDocumentsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateSendRequest(new SendInvoiceDocumentsRequest(request.Scenario, request.Documents));
+        ValidateUyumsoftConfiguration();
+
+        var documents = request.Documents
+            .Where(document => !string.IsNullOrWhiteSpace(document.DocumentSerie))
+            .Select(document => new SendInvoiceDocumentSelection(
+                document.DocumentSerie.Trim(),
+                document.DocumentOrderNo))
+            .Distinct()
+            .ToArray();
+
+        if (documents.Length > 20)
+        {
+            throw new ArgumentException(
+                "Tekrar gonderim tek istekte en fazla 20 fatura kabul eder.",
+                nameof(request.Documents));
+        }
+
+        var invoicesBySelection = await LoadSelectedInvoicesAsync(
+            request.Scenario,
+            documents,
+            cancellationToken);
+        var results = new RetryInvoiceDocumentResultDto?[documents.Length];
+        var retryCandidates = new List<(int Index, PendingInvoiceRecord Invoice)>();
+
+        for (var index = 0; index < documents.Length; index++)
+        {
+            var document = documents[index];
+
+            try
+            {
+                var invoice = GetSelectedInvoice(invoicesBySelection, document, request.Scenario);
+
+                if (!invoice.IsSent)
+                {
+                    throw new InvalidOperationException(
+                        "Belge daha once Uyumsoft'a gonderilmemis; tekrar gonderim uygulanamaz.");
+                }
+
+                if (string.IsNullOrWhiteSpace(invoice.Ettn))
+                {
+                    throw new InvalidOperationException(
+                        "Belgenin Uyumsoft invoiceId/UUID bilgisi bulunamadi.");
+                }
+
+                retryCandidates.Add((index, invoice));
+            }
+            catch (Exception exception)
+            {
+                results[index] = new RetryInvoiceDocumentResultDto(
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    BuildInvoiceId(document.DocumentSerie, document.DocumentOrderNo, DateTime.Today.Year),
+                    string.Empty,
+                    false,
+                    exception.Message);
+            }
+        }
+
+        if (retryCandidates.Count > 0)
+        {
+            var response = await RetrySendInvoicesAsync(
+                retryCandidates
+                    .Select(candidate => candidate.Invoice.Ettn.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                cancellationToken);
+            var isSucceeded = response.IsSucceded;
+            var message = string.IsNullOrWhiteSpace(response.Message)
+                ? isSucceeded
+                    ? "Uyumsoft tekrar gonderim istegini kabul etti."
+                    : "Uyumsoft tekrar gonderim istegini reddetti."
+                : response.Message.Trim();
+
+            foreach (var candidate in retryCandidates)
+            {
+                var invoice = candidate.Invoice;
+                results[candidate.Index] = new RetryInvoiceDocumentResultDto(
+                    invoice.DocumentSerie,
+                    invoice.DocumentOrderNo,
+                    invoice.InvoiceId,
+                    invoice.Ettn,
+                    isSucceeded,
+                    message);
+            }
+        }
+
+        var completedResults = results
+            .Select(result => result!)
+            .ToArray();
+        var succeededCount = completedResults.Count(result => result.IsSucceeded);
+
+        return new RetryInvoiceDocumentsResponse(
+            request.Scenario,
+            documents.Length,
+            succeededCount,
+            completedResults.Length - succeededCount,
+            completedResults);
     }
 
     public async Task<InvoiceReturnReferenceCandidatesResponse> ListReturnReferenceCandidatesAsync(
@@ -421,10 +542,18 @@ public sealed class InvoiceSendingService(
         string? documentSerie,
         int? documentOrderNo,
         int sentState,
+        IReadOnlyCollection<SendInvoiceDocumentSelection>? documentSelections,
         CancellationToken cancellationToken)
     {
         const string sql = """
-            WITH VergiOranlari AS (
+            WITH SelectedDocuments AS (
+                SELECT
+                    selected.Node.value('(@Serie)[1]', 'nvarchar(20)') AS DocumentSerie,
+                    selected.Node.value('(@OrderNo)[1]', 'int') AS DocumentOrderNo
+                FROM (SELECT CAST(@documentSelectionsXml AS xml) AS Value WHERE @documentSelectionsXml IS NOT NULL) selectionPayload
+                CROSS APPLY selectionPayload.Value.nodes('/Documents/Document') selected(Node)
+            ),
+            VergiOranlari AS (
                 SELECT
                     rateList.DepartmentNo,
                     MAX(rateList.Rate) AS Rate
@@ -434,9 +563,30 @@ public sealed class InvoiceSendingService(
             BaseFaturalar AS (
                 SELECT
                     ch.*
+                FROM SelectedDocuments selected
+                INNER JOIN CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                    ON ch.cha_evrakno_seri = selected.DocumentSerie
+                    AND ch.cha_evrakno_sira = selected.DocumentOrderNo
+                WHERE
+                    @documentSelectionsXml IS NOT NULL
+                    AND (@startDate IS NULL OR ch.cha_belge_tarih >= @startDate)
+                    AND (@endDateExclusive IS NULL OR ch.cha_belge_tarih < @endDateExclusive)
+                    AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
+                    AND (@documentOrderNo IS NULL OR ch.cha_evrakno_sira = @documentOrderNo)
+                    AND (@sentState = -1
+                        OR (@sentState = 0 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NULL)
+                        OR (@sentState = 1 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NOT NULL))
+                    AND ch.cha_tip = 0
+                    AND ISNULL(ch.cha_iptal, 0) = 0
+
+                UNION ALL
+
+                SELECT
+                    ch.*
                 FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
                 WHERE
-                    (@startDate IS NULL OR ch.cha_belge_tarih >= @startDate)
+                    @documentSelectionsXml IS NULL
+                    AND (@startDate IS NULL OR ch.cha_belge_tarih >= @startDate)
                     AND (@endDateExclusive IS NULL OR ch.cha_belge_tarih < @endDateExclusive)
                     AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
                     AND (@documentOrderNo IS NULL OR ch.cha_evrakno_sira = @documentOrderNo)
@@ -640,7 +790,8 @@ public sealed class InvoiceSendingService(
             ORDER BY
                 BelgeTarihi DESC,
                 DocumentSerie DESC,
-                DocumentOrderNo DESC;
+                DocumentOrderNo DESC
+            OPTION (RECOMPILE);
             """;
 
         var efatura = scenario == InvoiceSendingScenario.EFatura;
@@ -656,12 +807,87 @@ public sealed class InvoiceSendingService(
                 AddParameter(command, "@documentOrderNo", documentOrderNo);
                 AddParameter(command, "@sentState", sentState);
                 AddParameter(command, "@efatura", efatura);
+                AddParameter(
+                    command,
+                    "@documentSelectionsXml",
+                    documentSelections is null ? null : SerializeDocumentSelections(documentSelections));
             },
             reader => MapPendingInvoice(reader, scenario),
             cancellationToken);
 
         return items;
     }
+
+    private async Task<IReadOnlyDictionary<string, PendingInvoiceRecord>> LoadSelectedInvoicesAsync(
+        InvoiceSendingScenario scenario,
+        IReadOnlyCollection<SendInvoiceDocumentSelection> documents,
+        CancellationToken cancellationToken)
+    {
+        var lookupSelections = documents
+            .SelectMany(document => ResolveDocumentSerieLookupCandidates(document.DocumentSerie)
+                .Select(documentSerie => new SendInvoiceDocumentSelection(
+                    documentSerie,
+                    document.DocumentOrderNo)))
+            .Distinct()
+            .ToArray();
+        var invoices = await LoadPendingInvoicesAsync(
+            scenario,
+            null,
+            null,
+            null,
+            null,
+            -1,
+            lookupSelections,
+            cancellationToken);
+        var invoicesBySelection = new Dictionary<string, PendingInvoiceRecord>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var document in documents)
+        {
+            var lookupSeries = ResolveDocumentSerieLookupCandidates(document.DocumentSerie);
+            var invoice = lookupSeries
+                .Select(candidate => invoices.FirstOrDefault(item =>
+                    item.DocumentOrderNo == document.DocumentOrderNo &&
+                    string.Equals(item.DocumentSerie, candidate, StringComparison.OrdinalIgnoreCase)))
+                .FirstOrDefault(item => item is not null);
+
+            if (invoice is not null)
+            {
+                invoicesBySelection[BuildSelectionKey(document.DocumentSerie, document.DocumentOrderNo)] = invoice;
+            }
+        }
+
+        return invoicesBySelection;
+    }
+
+    private static PendingInvoiceRecord GetSelectedInvoice(
+        IReadOnlyDictionary<string, PendingInvoiceRecord> invoicesBySelection,
+        SendInvoiceDocumentSelection document,
+        InvoiceSendingScenario scenario)
+    {
+        if (invoicesBySelection.TryGetValue(
+                BuildSelectionKey(document.DocumentSerie, document.DocumentOrderNo),
+                out var invoice))
+        {
+            return invoice;
+        }
+
+        throw new KeyNotFoundException(
+            $"Pending invoice was not found for {document.DocumentSerie}/{document.DocumentOrderNo}. Scenario={scenario}.");
+    }
+
+    private static string BuildSelectionKey(string documentSerie, int documentOrderNo) =>
+        $"{documentSerie.Trim().ToUpperInvariant()}:{documentOrderNo}";
+
+    private static string SerializeDocumentSelections(
+        IEnumerable<SendInvoiceDocumentSelection> documentSelections) =>
+        new XElement(
+            "Documents",
+            documentSelections.Select(document =>
+                new XElement(
+                    "Document",
+                    new XAttribute("Serie", document.DocumentSerie),
+                    new XAttribute("OrderNo", document.DocumentOrderNo))))
+        .ToString(SaveOptions.DisableFormatting);
 
     private async Task<PendingInvoiceRecord> LoadSingleInvoiceAsync(
         InvoiceSendingScenario scenario,
@@ -685,6 +911,7 @@ public sealed class InvoiceSendingService(
                 lookupSerie,
                 documentOrderNo,
                 -1,
+                null,
                 cancellationToken);
 
             var invoice = items.FirstOrDefault();
@@ -1222,8 +1449,14 @@ public sealed class InvoiceSendingService(
         return rows;
     }
 
+    private Task<BuiltInvoiceDocument> BuildInvoiceDocumentAsync(
+        PendingInvoiceRecord invoice,
+        CancellationToken cancellationToken) =>
+        BuildInvoiceDocumentAsync(invoice, null, cancellationToken);
+
     private async Task<BuiltInvoiceDocument> BuildInvoiceDocumentAsync(
         PendingInvoiceRecord invoice,
+        PartyInfo? supplier,
         CancellationToken cancellationToken)
     {
         var invoiceLines = await LoadInvoiceLinesAsync(invoice, cancellationToken);
@@ -1234,7 +1467,7 @@ public sealed class InvoiceSendingService(
                 $"Fatura satirlari bulunamadi: {invoice.DocumentSerie}/{invoice.DocumentOrderNo}.");
         }
 
-        var supplier = await LoadSupplierAsync(cancellationToken);
+        supplier ??= await LoadSupplierAsync(cancellationToken);
         var invoiceDate = invoice.DocumentDate;
         var createdAt = DateTime.Now;
         var invoiceId = invoice.InvoiceId;
@@ -1939,6 +2172,31 @@ public sealed class InvoiceSendingService(
         }
     }
 
+    private async Task<UyumsoftInvoice.Response> RetrySendInvoicesAsync(
+        string[] invoiceIds,
+        CancellationToken cancellationToken)
+    {
+        var config = uyumsoftOptions.Value.EInvoice;
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+
+        try
+        {
+            return await client.RetrySendInvoicesAsync(
+                    UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
+                    invoiceIds)
+                .WaitAsync(cancellationToken);
+        }
+        catch
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
     private static UyumsoftInvoice.InvoiceInfo BuildInvoiceInfo(
         BuiltInvoiceDocument invoice,
         InvoiceSendingScenario scenario) =>
@@ -2002,6 +2260,26 @@ public sealed class InvoiceSendingService(
         }
 
         await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<string> GetCurrentSentDocumentNoAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var sentDocumentNo = await mikroDbContext.CARI_HESAP_HAREKETLERIs
+            .AsNoTracking()
+            .Where(row =>
+                row.cha_evrakno_seri == documentSerie &&
+                row.cha_evrakno_sira == documentOrderNo &&
+                row.cha_tip == 0 &&
+                row.cha_iptal != true &&
+                row.cha_belge_no != null &&
+                row.cha_belge_no.Trim() != string.Empty)
+            .Select(row => row.cha_belge_no!)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return sentDocumentNo?.Trim() ?? string.Empty;
     }
 
     private static PendingInvoiceRecord MapPendingInvoice(
@@ -2193,6 +2471,16 @@ public sealed class InvoiceSendingService(
 
     private void ValidateConfiguration()
     {
+        ValidateUyumsoftConfiguration();
+
+        if (string.IsNullOrWhiteSpace(eDesPatchOptionsValue.SupplierCustomerCode))
+        {
+            throw new InvalidOperationException("Supplier customer code configuration is required.");
+        }
+    }
+
+    private void ValidateUyumsoftConfiguration()
+    {
         var config = uyumsoftOptions.Value.EInvoice;
 
         if (string.IsNullOrWhiteSpace(config.EndpointUrl))
@@ -2210,10 +2498,6 @@ public sealed class InvoiceSendingService(
             throw new InvalidOperationException("EInvoice password configuration is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(eDesPatchOptionsValue.SupplierCustomerCode))
-        {
-            throw new InvalidOperationException("Supplier customer code configuration is required.");
-        }
     }
 
     private void ValidatePreflightConfiguration()

@@ -45,6 +45,8 @@ public sealed class StockAnomalyCenterService(
                 anomaly.RelatedWarehouseName,
                 anomaly.ProductCode,
                 anomaly.ProductName,
+                anomaly.ProductManagerCode,
+                anomaly.ProductManagerName,
                 anomaly.DocumentSerie,
                 anomaly.DocumentOrderNo,
                 anomaly.DocumentNo,
@@ -108,7 +110,9 @@ public sealed class StockAnomalyCenterService(
         await AddRuleAsync(detected, ruleResults, StockAnomalyType.DormantStock, () => FindDormantStockAsync(normalized, cancellationToken));
         await AddRuleAsync(detected, ruleResults, StockAnomalyType.PendingInterWarehouseTransfer, () => FindPendingInterWarehouseTransfersAsync(normalized, cancellationToken));
 
-        var uniqueDetected = DeduplicateDetected(detected);
+        var uniqueDetected = await EnrichProductManagersAsync(
+            DeduplicateDetected(detected),
+            cancellationToken);
         await UpsertDetectedWithRetryAsync(uniqueDetected, startedAt, cancellationToken);
 
         var finishedAt = clock.UtcNow;
@@ -145,6 +149,50 @@ public sealed class StockAnomalyCenterService(
         return ToDetail(anomaly);
     }
 
+    public async Task<IReadOnlyCollection<StockAnomalyProductManagerDto>> ListProductManagersAsync(
+        StockAnomalyProductManagerListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var query = authDbContext.StockAnomalies
+            .AsNoTracking()
+            .Where(anomaly => anomaly.ProductCode != null && anomaly.ProductCode != string.Empty);
+
+        if (request.WarehouseNo.HasValue)
+        {
+            var warehouseNo = request.WarehouseNo.Value;
+            query = query.Where(anomaly =>
+                anomaly.WarehouseNo == warehouseNo ||
+                anomaly.RelatedWarehouseNo == warehouseNo);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(anomaly => anomaly.Status == request.Status.Value);
+        }
+
+        var rows = await query
+            .GroupBy(anomaly => anomaly.ProductManagerCode ?? string.Empty)
+            .Select(group => new
+            {
+                Code = group.Key,
+                Name = group.Max(anomaly => anomaly.ProductManagerName),
+                AnomalyCount = group.Count()
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(row => new StockAnomalyProductManagerDto(
+                row.Code,
+                row.Code == string.Empty
+                    ? "ATANMAMIS"
+                    : string.IsNullOrWhiteSpace(row.Name) ? row.Code : row.Name,
+                row.AnomalyCount,
+                row.Code != string.Empty))
+            .OrderByDescending(item => item.IsAssigned)
+            .ThenBy(item => item.Name)
+            .ToArray();
+    }
+
     private static IQueryable<StockAnomaly> ApplyListFilters(
         IQueryable<StockAnomaly> query,
         StockAnomalyListRequest request)
@@ -170,6 +218,22 @@ public sealed class StockAnomalyCenterService(
         if (request.Severity.HasValue)
         {
             query = query.Where(anomaly => anomaly.Severity == request.Severity.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ProductManagerCode))
+        {
+            var productManagerCode = request.ProductManagerCode.Trim();
+            query = query.Where(anomaly => anomaly.ProductManagerCode == productManagerCode);
+        }
+
+        if (request.HasProductManager.HasValue)
+        {
+            query = request.HasProductManager.Value
+                ? query.Where(anomaly => anomaly.ProductManagerCode != null && anomaly.ProductManagerCode != string.Empty)
+                : query.Where(anomaly =>
+                    anomaly.ProductCode != null &&
+                    anomaly.ProductCode != string.Empty &&
+                    (anomaly.ProductManagerCode == null || anomaly.ProductManagerCode == string.Empty));
         }
 
         if (request.StartDate.HasValue)
@@ -247,6 +311,130 @@ public sealed class StockAnomalyCenterService(
             ruleResults.Add(new StockAnomalyScanRuleResultDto(type.ToString(), 0, exception.Message));
         }
     }
+
+    private async Task<IReadOnlyCollection<DetectedStockAnomaly>> EnrichProductManagersAsync(
+        IReadOnlyCollection<DetectedStockAnomaly> detected,
+        CancellationToken cancellationToken)
+    {
+        var candidates = detected
+            .Where(item => !string.IsNullOrWhiteSpace(item.ProductCode))
+            .Select(item => new
+            {
+                item.WarehouseNo,
+                ProductCode = item.ProductCode!.Trim()
+            })
+            .Distinct()
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            return detected;
+        }
+
+        var managerCodesByProduct = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var warehouseGroup in candidates.GroupBy(candidate => candidate.WarehouseNo))
+        {
+            foreach (var productCodeChunk in warehouseGroup
+                         .Select(candidate => candidate.ProductCode)
+                         .Distinct(StringComparer.OrdinalIgnoreCase)
+                         .Chunk(1000))
+            {
+                var stocks = await mikroDbContext.STOKLARs
+                    .AsNoTracking()
+                    .Where(stock => stock.sto_kod != null && productCodeChunk.Contains(stock.sto_kod))
+                    .Select(stock => new
+                    {
+                        ProductCode = stock.sto_kod!,
+                        ManagerCode = stock.sto_urun_sorkod
+                    })
+                    .ToListAsync(cancellationToken);
+                var warehouseDetails = await mikroDbContext.STOK_DEPO_DETAYLARIs
+                    .AsNoTracking()
+                    .Where(detail =>
+                        detail.sdp_depo_no == warehouseGroup.Key &&
+                        detail.sdp_depo_kod != null &&
+                        productCodeChunk.Contains(detail.sdp_depo_kod))
+                    .Select(detail => new
+                    {
+                        ProductCode = detail.sdp_depo_kod!,
+                        ManagerCode = detail.sdp_UrunSorumlusuKodu
+                    })
+                    .ToDictionaryAsync(
+                        detail => detail.ProductCode,
+                        detail => detail.ManagerCode,
+                        StringComparer.OrdinalIgnoreCase,
+                        cancellationToken);
+
+                foreach (var stock in stocks)
+                {
+                    warehouseDetails.TryGetValue(stock.ProductCode, out var warehouseManagerCode);
+                    var managerCode = NormalizeManagerValue(warehouseManagerCode)
+                                      ?? NormalizeManagerValue(stock.ManagerCode);
+
+                    if (managerCode is not null)
+                    {
+                        managerCodesByProduct[BuildProductManagerKey(warehouseGroup.Key, stock.ProductCode)] = managerCode;
+                    }
+                }
+            }
+        }
+
+        var managerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var managerCodeChunk in managerCodesByProduct.Values
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .Chunk(1000))
+        {
+            var personnel = await mikroDbContext.CARI_PERSONEL_TANIMLARIs
+                .AsNoTracking()
+                .Where(person =>
+                    person.cari_per_kod != null &&
+                    managerCodeChunk.Contains(person.cari_per_kod) &&
+                    person.cari_per_iptal != true)
+                .Select(person => new
+                {
+                    Code = person.cari_per_kod!,
+                    person.cari_per_adi,
+                    person.cari_per_soyadi
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var person in personnel)
+            {
+                var name = string.Join(
+                    " ",
+                    new[] { person.cari_per_adi, person.cari_per_soyadi }
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Select(value => value!.Trim()));
+                managerNames[person.Code] = string.IsNullOrWhiteSpace(name) ? person.Code : name;
+            }
+        }
+
+        return detected
+            .Select(item =>
+            {
+                if (string.IsNullOrWhiteSpace(item.ProductCode) ||
+                    !managerCodesByProduct.TryGetValue(
+                        BuildProductManagerKey(item.WarehouseNo, item.ProductCode),
+                        out var managerCode))
+                {
+                    return item;
+                }
+
+                return item with
+                {
+                    ProductManagerCode = managerCode,
+                    ProductManagerName = managerNames.GetValueOrDefault(managerCode, managerCode)
+                };
+            })
+            .ToArray();
+    }
+
+    private static string BuildProductManagerKey(int warehouseNo, string productCode) =>
+        $"{warehouseNo}:{productCode.Trim()}";
+
+    private static string? NormalizeManagerValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private async Task UpsertDetectedWithRetryAsync(
         IReadOnlyCollection<DetectedStockAnomaly> detected,
@@ -343,6 +531,8 @@ public sealed class StockAnomalyCenterService(
                 item.RelatedWarehouseName,
                 item.ProductCode,
                 item.ProductName,
+                item.ProductManagerCode,
+                item.ProductManagerName,
                 item.DocumentSerie,
                 item.DocumentOrderNo,
                 item.DocumentNo,
@@ -394,6 +584,8 @@ public sealed class StockAnomalyCenterService(
                     related_warehouse_name,
                     product_code,
                     product_name,
+                    product_manager_code,
+                    product_manager_name,
                     document_serie,
                     document_order_no,
                     document_no,
@@ -421,6 +613,8 @@ public sealed class StockAnomalyCenterService(
                     @relatedWarehouseName,
                     @productCode,
                     @productName,
+                    @productManagerCode,
+                    @productManagerName,
                     @documentSerie,
                     @documentOrderNo,
                     @documentNo,
@@ -448,6 +642,8 @@ public sealed class StockAnomalyCenterService(
                     related_warehouse_name = @relatedWarehouseName,
                     product_code = @productCode,
                     product_name = @productName,
+                    product_manager_code = @productManagerCode,
+                    product_manager_name = @productManagerName,
                     document_serie = @documentSerie,
                     document_order_no = @documentOrderNo,
                     document_no = @documentNo,
@@ -513,6 +709,8 @@ public sealed class StockAnomalyCenterService(
                 AddParameter(command, "@relatedWarehouseName", item.RelatedWarehouseName);
                 AddParameter(command, "@productCode", item.ProductCode);
                 AddParameter(command, "@productName", item.ProductName);
+                AddParameter(command, "@productManagerCode", item.ProductManagerCode);
+                AddParameter(command, "@productManagerName", item.ProductManagerName);
                 AddParameter(command, "@documentSerie", item.DocumentSerie);
                 AddParameter(command, "@documentOrderNo", item.DocumentOrderNo);
                 AddParameter(command, "@documentNo", item.DocumentNo);
@@ -1173,6 +1371,8 @@ public sealed class StockAnomalyCenterService(
             anomaly.RelatedWarehouseName,
             anomaly.ProductCode,
             anomaly.ProductName,
+            anomaly.ProductManagerCode,
+            anomaly.ProductManagerName,
             anomaly.DocumentSerie,
             anomaly.DocumentOrderNo,
             anomaly.DocumentNo,
@@ -1254,5 +1454,7 @@ public sealed class StockAnomalyCenterService(
         double? AverageQuantity,
         DateTime? OccurredAtUtc,
         string Message,
-        string? Evidence);
+        string? Evidence,
+        string? ProductManagerCode = null,
+        string? ProductManagerName = null);
 }

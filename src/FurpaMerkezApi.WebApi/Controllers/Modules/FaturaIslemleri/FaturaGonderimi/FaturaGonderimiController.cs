@@ -19,6 +19,7 @@ public sealed class FaturaGonderimiController(
     IRenderInvoiceSendingDocumentUseCase renderInvoiceSendingDocumentUseCase,
     IValidateInvoiceSendingDocumentsUseCase validateInvoiceSendingDocumentsUseCase,
     ISendInvoiceSendingDocumentsUseCase sendInvoiceSendingDocumentsUseCase,
+    IRetryInvoiceSendingDocumentsUseCase retryInvoiceSendingDocumentsUseCase,
     IListInvoiceReturnReferenceCandidatesUseCase listInvoiceReturnReferenceCandidatesUseCase,
     IUpdateInvoiceReturnReferenceUseCase updateInvoiceReturnReferenceUseCase,
     IEInvoiceDocumentRenderer invoiceDocumentRenderer)
@@ -151,7 +152,7 @@ public sealed class FaturaGonderimiController(
         CancellationToken cancellationToken) =>
         Ok(await sendInvoiceSendingDocumentsUseCase.ExecuteAsync(
             new SendInvoiceDocumentsRequest(
-                request.Scenario,
+                request.Scenario!.Value,
                 request.Documents
                     .Select(document => new SendInvoiceDocumentSelection(
                         document.DocumentSerie,
@@ -170,7 +171,26 @@ public sealed class FaturaGonderimiController(
         CancellationToken cancellationToken) =>
         Ok(await validateInvoiceSendingDocumentsUseCase.ExecuteAsync(
             new ValidateInvoiceDocumentsRequest(
-                request.Scenario,
+                request.Scenario!.Value,
+                request.Documents
+                    .Select(document => new SendInvoiceDocumentSelection(
+                        document.DocumentSerie,
+                        document.DocumentOrderNo!.Value))
+                    .ToArray()),
+            cancellationToken));
+
+    [HttpPost("retry")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(RetryInvoiceDocumentsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RetryInvoiceDocumentsResponse>> Retry(
+        [FromBody] InvoiceSendingBatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await retryInvoiceSendingDocumentsUseCase.ExecuteAsync(
+            new RetryInvoiceDocumentsRequest(
+                request.Scenario!.Value,
                 request.Documents
                     .Select(document => new SendInvoiceDocumentSelection(
                         document.DocumentSerie,
@@ -253,7 +273,8 @@ public sealed class UpdateInvoiceReturnReferenceHttpRequest
 
 public sealed class InvoiceSendingBatchHttpRequest
 {
-    public InvoiceSendingScenario Scenario { get; init; } = InvoiceSendingScenario.EFatura;
+    [Required]
+    public InvoiceSendingScenario? Scenario { get; init; }
 
     [Required]
     [MinLength(1)]

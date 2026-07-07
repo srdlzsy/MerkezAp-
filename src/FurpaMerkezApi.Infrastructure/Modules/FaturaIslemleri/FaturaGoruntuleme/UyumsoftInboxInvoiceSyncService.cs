@@ -278,6 +278,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
                 var page = ParseInvoiceInfoPage(response);
 
+                if (page.Items.Count > 0)
+                {
+                    page = page with
+                    {
+                        Items = await EnrichWithStatusesAsync(
+                            client,
+                            userInfo,
+                            page.Items,
+                            cancellationToken)
+                    };
+                }
+
                 if (page.Items.Count > 0 || page.TotalPage > 0)
                 {
                     return page;
@@ -340,6 +352,106 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
         return null;
     }
+
+    private static async Task<IReadOnlyCollection<ParsedInboxInvoice>> EnrichWithStatusesAsync(
+        UyumsoftInvoice.BasicIntegrationClient client,
+        UyumsoftInvoice.UserInformation userInfo,
+        IReadOnlyCollection<ParsedInboxInvoice> items,
+        CancellationToken cancellationToken)
+    {
+        var invoiceIds = items
+            .Select(item => item.DocumentId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var response = await client.GetInboxInvoiceStatusWithLogsAsync(userInfo, invoiceIds)
+            .WaitAsync(cancellationToken);
+
+        if (!response.IsSucceded)
+        {
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(response.Message)
+                    ? "Uyumsoft GetInboxInvoiceStatusWithLogs request was rejected."
+                    : response.Message);
+        }
+
+        var statusesByInvoiceId = (response.Value ?? [])
+            .Where(status => !string.IsNullOrWhiteSpace(status.InvoiceId))
+            .GroupBy(status => status.InvoiceId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+        var enrichedItems = new List<ParsedInboxInvoice>(items.Count);
+        var missingInvoiceIds = new List<string>();
+
+        foreach (var item in items)
+        {
+            var status = FindStatus(statusesByInvoiceId, item);
+
+            if (status is null)
+            {
+                missingInvoiceIds.Add(item.DocumentId);
+                continue;
+            }
+
+            enrichedItems.Add(item with
+            {
+                StatusCode = status.StatusCode.ToString(CultureInfo.InvariantCulture),
+                Status = MapInvoiceStatus(status.Status),
+                EnvelopeStatusCode = status.EnvelopeStatusCode.ToString(CultureInfo.InvariantCulture),
+                Message = NormalizeOptional(status.Message) ?? item.Message
+            });
+        }
+
+        if (missingInvoiceIds.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Uyumsoft did not return status information for {missingInvoiceIds.Count} invoice(s): " +
+                string.Join(", ", missingInvoiceIds));
+        }
+
+        return enrichedItems;
+    }
+
+    private static UyumsoftInvoice.InvoiceStatusWithLogInfo? FindStatus(
+        IReadOnlyDictionary<string, UyumsoftInvoice.InvoiceStatusWithLogInfo> statusesByInvoiceId,
+        ParsedInboxInvoice item)
+    {
+        foreach (var candidate in new[]
+                 {
+                     item.DocumentId,
+                     item.ServiceDocumentId,
+                     item.InvoiceId,
+                     item.LocalDocumentId
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) &&
+                statusesByInvoiceId.TryGetValue(candidate.Trim(), out var status))
+            {
+                return status;
+            }
+        }
+
+        return null;
+    }
+
+    private static string MapInvoiceStatus(UyumsoftInvoice.InvoiceStatus status) =>
+        status switch
+        {
+            UyumsoftInvoice.InvoiceStatus.NotPrepared => "Hazirlanmadi",
+            UyumsoftInvoice.InvoiceStatus.NotSend => "Gonderilmedi",
+            UyumsoftInvoice.InvoiceStatus.Draft => "Taslak",
+            UyumsoftInvoice.InvoiceStatus.Canceled => "Iptal Edildi",
+            UyumsoftInvoice.InvoiceStatus.Queued => "Kuyrukta",
+            UyumsoftInvoice.InvoiceStatus.Processing => "Isleniyor",
+            UyumsoftInvoice.InvoiceStatus.SentToGib => "GIB'e Gonderildi",
+            UyumsoftInvoice.InvoiceStatus.Approved => "Onaylandi",
+            UyumsoftInvoice.InvoiceStatus.WaitingForAprovement => "Onay Bekliyor",
+            UyumsoftInvoice.InvoiceStatus.Declined => "Reddedildi",
+            UyumsoftInvoice.InvoiceStatus.Return => "Iade Edildi",
+            UyumsoftInvoice.InvoiceStatus.EArchivedCanceled => "E-Arsiv Iptal",
+            UyumsoftInvoice.InvoiceStatus.Error => "Hata",
+            _ => status.ToString()
+        };
 
     private async Task<SyncRunResult> SynchronizeDateRangeAsync(
         DateTime startDate,

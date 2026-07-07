@@ -48,12 +48,26 @@ public sealed class StokAnomaliMerkeziController(IStockAnomalyCenterService stoc
                 request.Type,
                 request.Status,
                 request.Severity,
+                request.ProductManagerCode,
+                request.HasProductManager,
                 request.StartDate,
                 request.EndDate,
                 request.Search,
                 request.Take),
             cancellationToken));
     }
+
+    [HttpGet("satin-almacilar")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<StockAnomalyProductManagerDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<StockAnomalyProductManagerDto>>> ProductManagers(
+        [FromQuery] StockAnomalyProductManagerHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockAnomalyCenterService.ListProductManagersAsync(
+            new StockAnomalyProductManagerListRequest(
+                ResolveWarehouseScope(request.WarehouseNo),
+                request.Status),
+            cancellationToken));
 
     [HttpGet("{id:guid}")]
     [Authorize(Policy = DetailPolicy)]
@@ -145,6 +159,11 @@ public sealed class StockAnomalyListHttpRequest
 
     public StockAnomalySeverity? Severity { get; init; }
 
+    [StringLength(25)]
+    public string? ProductManagerCode { get; init; }
+
+    public bool? HasProductManager { get; init; }
+
     public DateTime? StartDate { get; init; }
 
     public DateTime? EndDate { get; init; }
@@ -154,6 +173,14 @@ public sealed class StockAnomalyListHttpRequest
 
     [Range(1, 500)]
     public int Take { get; init; } = 100;
+}
+
+public sealed class StockAnomalyProductManagerHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public StockAnomalyStatus? Status { get; init; } = StockAnomalyStatus.Open;
 }
 
 public sealed class StockAnomalyScanHttpRequest

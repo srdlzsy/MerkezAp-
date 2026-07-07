@@ -20,6 +20,10 @@ public interface IStockAnomalyCenterService
     Task<StockAnomalyDetailDto> ChangeStatusAsync(
         ChangeStockAnomalyStatusRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<StockAnomalyProductManagerDto>> ListProductManagersAsync(
+        StockAnomalyProductManagerListRequest request,
+        CancellationToken cancellationToken);
 }
 
 public sealed record StockAnomalyListRequest(
@@ -27,6 +31,8 @@ public sealed record StockAnomalyListRequest(
     StockAnomalyType? Type,
     StockAnomalyStatus? Status,
     StockAnomalySeverity? Severity,
+    string? ProductManagerCode,
+    bool? HasProductManager,
     DateTime? StartDate,
     DateTime? EndDate,
     string? Search,
@@ -56,6 +62,8 @@ public sealed record StockAnomalyListItemDto(
     string? RelatedWarehouseName,
     string? ProductCode,
     string? ProductName,
+    string? ProductManagerCode,
+    string? ProductManagerName,
     string? DocumentSerie,
     int? DocumentOrderNo,
     string? DocumentNo,
@@ -80,6 +88,8 @@ public sealed record StockAnomalyDetailDto(
     string? RelatedWarehouseName,
     string? ProductCode,
     string? ProductName,
+    string? ProductManagerCode,
+    string? ProductManagerName,
     string? DocumentSerie,
     int? DocumentOrderNo,
     string? DocumentNo,
@@ -133,3 +143,13 @@ public sealed record ChangeStockAnomalyStatusRequest(
     string? Note,
     Guid? ChangedByUserId,
     int? AllowedWarehouseNo);
+
+public sealed record StockAnomalyProductManagerListRequest(
+    int? WarehouseNo,
+    StockAnomalyStatus? Status);
+
+public sealed record StockAnomalyProductManagerDto(
+    string Code,
+    string Name,
+    int AnomalyCount,
+    bool IsAssigned);
