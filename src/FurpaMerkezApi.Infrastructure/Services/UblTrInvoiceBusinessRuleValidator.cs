@@ -139,13 +139,21 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
             .Element(aggregate + "AccountingCustomerParty")
             ?.Element(aggregate + "Party");
 
-        ValidateParty(supplierParty, aggregate, basic, "Supplier", requireContactEmail: false, errors);
+        ValidateParty(
+            supplierParty,
+            aggregate,
+            basic,
+            "Supplier",
+            requireContactEmail: false,
+            requireStreetAndCity: true,
+            errors);
         ValidateParty(
             customerParty,
             aggregate,
             basic,
             "Customer",
             requireContactEmail: false,
+            requireStreetAndCity: false,
             errors);
     }
 
@@ -155,6 +163,7 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
         XNamespace basic,
         string label,
         bool requireContactEmail,
+        bool requireStreetAndCity,
         List<string> errors)
     {
         if (party is null)
@@ -221,12 +230,12 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
             errors.Add($"{label} title is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(street) || street == "-")
+        if (requireStreetAndCity && (string.IsNullOrWhiteSpace(street) || street == "-"))
         {
             errors.Add($"{label} street address is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(city) || city == "-")
+        if (requireStreetAndCity && (string.IsNullOrWhiteSpace(city) || city == "-"))
         {
             errors.Add($"{label} city is required.");
         }

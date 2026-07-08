@@ -8134,6 +8134,7 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 5. Secilen gonderilmemis faturalarin gonderime hazir olup olmadigini canli gonderim yapmadan kontrol etmek icin `POST /api/fatura-islemleri/fatura-gonderimi/validate`
 6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
    - `send` endpoint'i hiz icin `/validate` kontrolunu tekrar calistirmaz; UI "Kontrol Et" butonunu ayri aksiyon olarak sunmalidir
+   - backend ayni belge icin eszamanli ikinci `send` istegini Uyumsoft'a gitmeden durdurur; UI bu durumda satir bazli hata mesajini gosterip ilk istegin sonucunu beklemelidir
    - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruğa alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
 7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
 8. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
@@ -8700,6 +8701,19 @@ Davranis:
 - `invoiceId` legacy WinForms mantigina uygun sekilde `seri + yil + 9 haneli sira` olarak uretilir
 - `invoiceId`, UBL icindeki `cbc:ID` degeridir; PDF endpoint path'i icin bunun yerine `documentSerie` ve `documentOrderNo` kullanilir
 - `sentDocumentNo` Mikro `cha_belge_no` alanidir; gonderim sonrasi kullaniciya gosterilen resmi belge numarasidir
+
+Performans notlari:
+
+- Liste endpoint'i hiz icin hafif modda calisir. Stok satiri istisna aramasi, iade referansi lookup'i, hizmet/demirbas satir ozeti ve KDV oran ozeti liste sirasinda hesaplanmaz.
+- Bu agir alanlar detay/render/validate/send gibi belge odakli akislar sirasinda tam modda hesaplanir.
+- UI liste ekraninda `sourceLineSummary`, `taxRateSummary`, `returnInvoiceNo` ve `returnInvoiceDate` alanlarini kesin kaynak gibi kullanmamalidir; kesin kontrol icin detay, iade adaylari veya validate akisi kullanilmalidir.
+- UI mumkunse bu endpoint'i kisa tarih araligi ile cagirmalidir; gunluk listeleme en hizli kullanimdir.
+- UI `isSent` ve `SentState` parametrelerinden sadece birini gondermelidir. Tercih edilen parametre `isSent`tir; ikisi birlikte gelirse backend `isSent` degerini esas alir.
+- `isSent=-1` tum kayitlari getirdigi icin en pahali moddur; ekran varsayilani `isSent=0` veya ihtiyaca gore `isSent=1` olmalidir.
+- Sorgu mevcut Mikro indeksinden yararlanmak icin once `CARI_HESAP_HAREKETLERI.cha_tarihi` ile daraltir, sonra dogruluk icin `cha_belge_tarih` filtresini de uygular.
+- Bu optimizasyon `cha_tarihi` ve `cha_belge_tarih` ayni gun oldugu fatura akisinda guvenlidir; canli kontrolde 2026-07-07 gonderilmis e-fatura setinde farkli tarihli satir bulunmamistir.
+- DBA ile kontrol edilmesi gereken mevcut indeks: `NDX_CARI_HESAP_HAREKETLERI_02 (cha_tarihi)`. Bu indeks kullanilmiyorsa istatistikler ve execution plan incelenmelidir.
+- `STOK_HAREKETLERI.sth_fat_uid` icin modelde indeks gorunuyor; sevkiyat/istisna apply'lari bu indeksten yararlanmalidir. Canli planda bu indeks kullanilmiyorsa istatistikler guncellenmelidir.
 - liste belge bazinda doner; ayni `cha_evrakno_seri` + `cha_evrakno_sira` altindaki birden fazla hizmet/cari hareket satiri tek fatura satirinda toplanir
 - `sourceLineCount`, belge altinda birlesen Mikro kaynak cari hareket satiri sayisidir; hizmet faturalarinda tek fatura icindeki hizmet kalemlerini anlamak icin kullanilir
 - `sourceLineSummary`, hizmet/demirbas kaynakli satirlarda `kod - ad` ozetidir; ornek: `0056 - CIRO PRIMI GELIRI % 20 | 0055 - CIRO PRIMI GELIRI % 10`
@@ -9219,6 +9233,7 @@ Davranis:
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - hiz icin UBL-TR is kurali ve XSD dogrulamalari burada tekrar calistirilmaz; bu kontroller icin kullanici once `/validate` endpoint'ini cagirir
+- ayni belge icin SQL application lock alinir; ayni belge baska bir istek tarafindan gonderiliyorsa ikinci istek Uyumsoft'a cagrilmaz ve ilgili satir hata mesaji ile doner
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
 - `serviceDocumentId` Uyumsoft'un teknik id'sidir; basarili gonderimde Mikro `cha_uuid` alanina yazilir, servis id bos donerse faturanin lokal UUID degeri fallback olarak saklanir
 - sonraki liste ekraninda gonderilmis fatura PDF ve tekrar gonderim aksiyonlari backend tarafinda bu UUID uzerinden cozulur; UI teknik UUID gondermek zorunda degildir

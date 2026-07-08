@@ -4,7 +4,12 @@ Bu dokuman, `fatura-gonderimi` modulunun nasil calistigini, hangi katmanlardan g
 
 ## Kisa Ozet
 
-Sistemde resmi fatura verisi **UBL Invoice XML** olarak uretilir. UI tarafindan secilen Mikro belgeleri backend'e gonderilir; backend bu belgelerden UBL-TR uyumlu XML olusturur, kurallari kontrol eder, XSD ile dogrular ve ancak bundan sonra Uyumsoft'a gonderir.
+Sistemde resmi fatura verisi **UBL Invoice XML** olarak uretilir. UI tarafindan secilen Mikro belgeleri backend'e gonderilir; backend bu belgelerden UBL-TR uyumlu XML olusturur.
+
+Onemli ayrim:
+
+- `/validate` akisi XML'i uretir, is kurallarini ve UBL-TR XSD kontrolunu calistirir, Uyumsoft'a gondermez.
+- `/send` akisi hiz icin business/XSD validator'larini tekrar calistirmaz; UBL XML'i uretir ve Uyumsoft'a gonderir. Bu nedenle UI toplu gonderimde once `/validate`, sadece basarili belgeler icin `/send` cagirmalidir.
 
 XSLT ise faturanin resmi verisi degildir. XSLT, faturanin HTML/PDF gibi goruntulendiginde nasil gorunecegini belirleyen sablondur. Karsi taraf ve entegrator asil olarak XML icindeki UBL alanlarini isler.
 
@@ -26,6 +31,53 @@ XSLT ise faturanin resmi verisi degildir. XSLT, faturanin HTML/PDF gibi goruntul
   - e-Arsiv gorunum sablonu.
 - `src/FurpaMerkezApi.WebApi/Assets/UblTr/xsdrt`
   - UBL-TR XSD sema dosyalari.
+
+## Endpoint Matrisi
+
+| Islem | Endpoint | Yetki | Ne yapar | Not |
+| --- | --- | --- | --- | --- |
+| Liste | `GET /api/fatura-islemleri/fatura-gonderimi` | `fatura-islemleri.fatura-gonderimi.list` | Mikro'dan gonderilecek/gonderilmis belgeleri listeler. | `isSent` tercih edilir, `SentState` legacy alias'tir. |
+| Detay | `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}` | `fatura-islemleri.fatura-gonderimi.detail` | Belgeden UBL XML uretir ve HTML onizleme dondurur. | Uyumsoft'a gondermez. |
+| PDF | `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/pdf` | `fatura-islemleri.fatura-gonderimi.detail` | Gonderilmis giden faturanin Uyumsoft outbox PDF dosyasini dondurur. | `application/pdf` doner. |
+| Render | `POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/render` | `fatura-islemleri.fatura-gonderimi.detail` | XSLT tercihiyle HTML onizleme uretir. | `fallbackToGeneral` default `true`. |
+| Iade adaylari | `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/return-reference-candidates` | `fatura-islemleri.fatura-gonderimi.detail` | Iade faturasi icin referans olabilecek faturalari listeler. | Mikro'ya yazmaz. |
+| Iade referansi | `PUT /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/return-reference` | `fatura-islemleri.fatura-gonderimi.create` | Secilen iade referansini `EBELGE_EVRAK_HAREKETLERI` tablosuna yazar. | Send oncesi manuel duzeltme icindir. |
+| Validate | `POST /api/fatura-islemleri/fatura-gonderimi/validate` | `fatura-islemleri.fatura-gonderimi.create` | Gonderim oncesi UBL/is kurali/XSD kontrolu yapar. | Uyumsoft'a gondermez, Mikro'yu guncellemez. |
+| Send | `POST /api/fatura-islemleri/fatura-gonderimi/send` | `fatura-islemleri.fatura-gonderimi.create` | Belgeyi Uyumsoft'a gonderir ve basariliysa Mikro'ya belge no/UUID yazar. | Hiz icin validate'i tekrar calistirmaz. |
+| Retry | `POST /api/fatura-islemleri/fatura-gonderimi/retry` | `fatura-islemleri.fatura-gonderimi.create` | Daha once gonderilmis faturayi Uyumsoft'ta yeniden kuyruya alir. | Ilk gonderim degildir, UBL yeniden uretilmez. |
+| XML preview | `POST /api/fatura-islemleri/fatura-gonderimi/preview` | `fatura-islemleri.fatura-gonderimi.create` | Disaridan verilen XML'i HTML olarak render eder. | Mikro veya Uyumsoft guncellemesi yapmaz. |
+
+## Uctan Uca Kullanim Akisi
+
+Normal toplu gonderim:
+
+1. UI tarih, senaryo ve `isSent=0` ile listeyi ceker.
+2. Kullanici gonderilecek belgeleri secer.
+3. UI `/validate` cagirir.
+4. Backend her belge icin UBL XML uretir, is kurali ve XSD kontrolu yapar.
+5. UI validate sonucunu satir bazinda gosterir.
+6. Hatali belge varsa kullanici Mikro verisini veya iade referansini duzeltir.
+7. Tum secili belgeler basariliysa UI `/send` cagirir.
+8. Backend belge bazinda SQL application lock alir.
+9. Backend UBL XML uretir ve Uyumsoft `SendInvoiceAsync` cagirir.
+10. Uyumsoft numara donerse Mikro `cha_belge_no` ve `cha_uuid` guncellenir.
+11. UI send sonucunu satir bazinda gosterir.
+12. UI listeyi yeniler; gonderilen belge artik `isSent=1` tarafinda gorunur.
+
+Gonderilmis fatura goruntuleme:
+
+1. UI `isSent=1` ile gonderilmisleri listeler.
+2. Kullanici satiri acar.
+3. PDF gerekiyorsa `/pdf` endpoint'i cagrilir.
+4. Backend Uyumsoft outbox'tan PDF alir ve `application/pdf` doner.
+
+Iade faturasi:
+
+1. UI iade belgeyi listeler.
+2. Kullanici veya sistem referans fatura adaylarini `/return-reference-candidates` ile kontrol eder.
+3. Gerekirse `/return-reference` ile referans kaydedilir.
+4. Validate/send akisi normal fatura gibi devam eder.
+5. Send sirasinda referans halen yoksa backend fallback aday arar; bulursa kaydeder, bulamazsa belgeyi durdurur.
 
 ## API Akisi
 
@@ -51,7 +103,20 @@ Bu endpoint Mikro'dan gonderime uygun belgeleri listeler. Senaryoya gore e-Fatur
 
 Onemli nokta: seri eslesmesi `FaturaSeries` uzerinden yapilir. Seri cakismalarinda toplamlar sismesin diye en uzun ve en spesifik seri secilir. Ornek: `FR` ve `FRP` varsa `FRP001` icin `FRP` tercih edilir.
 
-Liste belge bazinda doner. Ayni `cha_evrakno_seri` + `cha_evrakno_sira` altinda birden fazla hizmet/cari hareket satiri varsa tek fatura satirinda toplanir; `sourceLineCount`, `sourceLineSummary` ve `taxRateSummary` alanlari bu birlesen kaynak satirlari UI'a aciklar. XML/UBL uretilirken hizmet satirlari yine ayri kalem olarak kalir; farkli KDV oranlari tek satira ezilmez.
+Liste belge bazinda doner. Ayni `cha_evrakno_seri` + `cha_evrakno_sira` altinda birden fazla hizmet/cari hareket satiri varsa tek fatura satirinda toplanir. Hafif liste modunda agir satir ozetleri hesaplanmaz; detay/render/validate/send gibi tam mod akislarinda hizmet satirlari yine ayri kalem olarak kalir ve farkli KDV oranlari tek satira ezilmez.
+
+Liste performansi icin dikkat:
+
+- Liste endpoint'i hiz icin hafif modda calisir. Stok satiri istisna aramasi, iade referansi lookup'i, hizmet/demirbas satir ozeti ve KDV oran ozeti liste sirasinda hesaplanmaz.
+- Bu agir alanlar detay/render/validate/send gibi belge odakli akislar sirasinda tam modda hesaplanir.
+- UI liste ekraninda `sourceLineSummary`, `taxRateSummary` ve iade referansi alanlarini kesin kaynak gibi kullanmamalidir; kesin kontrol icin detay, iade adaylari veya validate akisi kullanilmalidir.
+- UI gunluk veya kisa tarih araligi ile sorgulamalidir.
+- UI `isSent` ve `SentState` parametrelerinden sadece birini gondermelidir; tercih edilen parametre `isSent`tir.
+- `isSent=-1` en pahali moddur; ekran varsayilani mumkunse `isSent=0`, gonderilenler sekmesi icin `isSent=1` olmalidir.
+- Sorgu mevcut Mikro indeksinden yararlanmak icin once `CARI_HESAP_HAREKETLERI.cha_tarihi` ile daraltir, sonra dogruluk icin `cha_belge_tarih` filtresini de uygular.
+- Bu optimizasyon `cha_tarihi` ve `cha_belge_tarih` ayni gun oldugu fatura akisinda guvenlidir; canli kontrolde 2026-07-07 gonderilmis e-fatura setinde farkli tarihli satir bulunmamistir.
+- DBA tarafinda kontrol edilecek mevcut indeks: `NDX_CARI_HESAP_HAREKETLERI_02 (cha_tarihi)`. Bu indeks kullanilmiyorsa istatistikler ve execution plan incelenmelidir.
+- `STOK_HAREKETLERI.sth_fat_uid` indeksi sevkiyat/istisna apply'lari icin kritiktir; modelde var gorunuyor, canli planda kullanildigi kontrol edilmelidir.
 
 ### 2. Detay ve Render
 
@@ -132,20 +197,94 @@ Gercek gonderim akisi:
 3. Secilen belgeler tekillestirilir.
 4. Belge Mikro'dan yuklenir.
 5. Daha once gonderildiyse tekrar gonderilmez.
-6. Iade faturasiysa iade referansi zorunlu hale gelir.
-7. UBL Invoice XML olusturulur.
-8. Is kurali validasyonu yapilir.
-9. UBL-TR XSD validasyonu yapilir.
-10. Uyumsoft `SendInvoiceAsync` servisine gonderilir.
-11. Uyumsoft belge numarasi donerse Mikro guncellenir.
+6. Ayni belge icin SQL application lock alinir; baska bir istek ayni belgeyi gonderiyorsa ikinci istek Uyumsoft'a gitmeden durdurulur.
+7. Iade faturasiysa iade referansi zorunlu hale gelir.
+8. UBL Invoice XML olusturulur.
+9. Uyumsoft `SendInvoiceAsync` servisine gonderilir.
+10. Uyumsoft belge numarasi donerse Mikro guncellenir.
+
+Performans nedeniyle gercek `/send` akisi business/XSD validator'larini yeniden calistirmaz. Bu kontroller `/validate` endpoint'inde yapilir; UI toplu gonderimde once `/validate`, sadece basarili belgeler icin `/send` cagirmalidir.
 
 Gonderim basarili olunca Mikro'da guncellenen alanlar:
 
 - `cha_belge_no`: Uyumsoft'un verdigi fatura numarasi
+- `cha_uuid`: Uyumsoft teknik invoice id/ETTN bilgisi; servis id bos donerse lokal fatura UUID degeri saklanir
 - `cha_kilitli`: `true`
 - `cha_degisti`: `true`
 - `cha_lastup_user`: sistemde sabit Mikro kullanicisi
 - `cha_lastup_date`: guncelleme zamani
+
+### 5. Gonderilmis Fatura PDF
+
+Endpoint:
+
+```http
+GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/pdf?scenario=EFatura
+```
+
+PDF akisi:
+
+1. Belge Mikro'dan yuklenir.
+2. Lookup icin once `cha_uuid`/ETTN, sonra lokal `cha_Guid` denenir.
+3. Uyumsoft outbox PDF servisi cagrilir.
+4. Ilk basarili PDF cevabi `application/pdf` olarak doner.
+5. Tum lookup denemeleri basarisiz olursa hangi id'lerin denendigi hata mesajina eklenir.
+
+Bu endpoint sadece gonderilmis giden fatura PDF'i icindir. Bekleyen fatura onizlemesi icin detay/render endpointleri kullanilir.
+
+### 6. Tekrar Gonderim
+
+Endpoint:
+
+```http
+POST /api/fatura-islemleri/fatura-gonderimi/retry
+```
+
+Retry akisi:
+
+1. Request dogrulanir.
+2. Tek istekte en fazla 20 belge kabul edilir.
+3. Belgeler Mikro'dan yuklenir.
+4. Belge daha once gonderilmemisse retry reddedilir.
+5. Belgenin `cha_uuid`/Uyumsoft invoice id bilgisi yoksa retry reddedilir.
+6. Uyumsoft `RetrySendInvoicesAsync` servisine invoice id listesi gonderilir.
+7. Mikro'da yeniden UBL uretilmez, `cha_belge_no` veya `cha_uuid` tekrar yazilmaz.
+
+Retry ilk gonderim yerine kullanilmaz. Sadece Uyumsoft'ta daha once olusmus/gonderilmis faturanin tekrar kuyruya alinmasi icindir.
+
+### 7. XML Preview
+
+Endpoint:
+
+```http
+POST /api/fatura-islemleri/fatura-gonderimi/preview
+```
+
+Bu endpoint eldeki herhangi bir UBL XML'i HTML olarak gormek icindir. Mikro'dan belge yuklemez, Uyumsoft'a gitmez, Mikro'da alan guncellemez. UI veya test araci tarafindan uretilecek XML'in gorunumunu kontrol etmek icin kullanilir.
+
+## Mikro Kaynaklari ve Kolon Haritasi
+
+Listeleme ve UBL uretimi agirlikli olarak su kaynaklari kullanir:
+
+| Kaynak | Amac | Kritik kolonlar |
+| --- | --- | --- |
+| `CARI_HESAP_HAREKETLERI` | Fatura basligi, hizmet satirlari, tutarlar, belge no, UUID | `cha_Guid`, `cha_evrakno_seri`, `cha_evrakno_sira`, `cha_tarihi`, `cha_belge_tarih`, `cha_belge_no`, `cha_uuid`, `cha_ciro_cari_kodu`, `cha_vergipntr`, `cha_vergi1..10` |
+| `CARI_HESAPLAR` | Alici/satici cari bilgisi | `cari_kod`, `cari_unvan1`, `cari_unvan2`, `cari_vdaire_no`, `cari_VergiKimlikNo`, `cari_efatura_fl`, `cari_EMail` |
+| `CARI_HESAP_ADRESLERI` | Adres, alias/e-posta, il/ilce | `adr_cari_kod`, `adr_adres_no`, `adr_efatura_alias`, `adr_cadde`, `adr_sokak`, `adr_ilce`, `adr_il`, `adr_posta_kodu` |
+| `CARI_HESAP_HAREKETLERI_EK` | Istisna, rusum, ozel matrah bilgileri | `chaek_related_uid`, `cha_Istisna1`, `cha_HalRusum`, `cha_ozel_matrah_kodu` |
+| `STOK_HAREKETLERI` | Stok satirlari, sevkiyat/irsaliye, stok KDV bilgileri | `sth_fat_uid`, `sth_stok_kod`, `sth_miktar`, `sth_tutar`, `sth_vergi`, `sth_vergi_pntr`, `sth_belge_no`, `sth_belge_tarih` |
+| `STOK_HAREKETLERI_EK` | Stok satiri istisna kodu | `sthek_related_uid`, `sth_istisna` |
+| `STOKLAR` | Stok adi ve birim | `sto_kod`, `sto_isim`, `sto_birim1_ad` |
+| `HIZMET_HESAPLARI` / `DEMIRBASLAR` | Hizmet/demirbas satir adi | `hiz_kod`, `hiz_isim`, `dem_kod`, `dem_isim` |
+| `DEPOLAR` | Sevkiyat deposu adi | `dep_no`, `dep_adi` |
+| `EBELGE_EVRAK_HAREKETLERI` | Iade fatura referansi | `ebh_related_uid`, `ebh_iade_fat_no1`, `ebh_iade_fat_tarihi1` |
+| `Furpa.dbo.FaturaSeries` | Seri e-fatura/e-arsiv ayrimi | `seri`, `efatura` |
+
+Kritik Mikro yazimlari:
+
+- Send basarili olursa `CARI_HESAP_HAREKETLERI` satirlarina `cha_belge_no`, `cha_uuid`, `cha_kilitli`, `cha_degisti`, `cha_lastup_user`, `cha_lastup_date` yazilir.
+- Iade referansi manuel veya send fallback ile secilirse `EBELGE_EVRAK_HAREKETLERI` update edilir; kayit yoksa insert edilir.
+- Validate, render, detail, PDF ve preview akislari Mikro fatura alanlarini guncellemez.
 
 ## UBL XML Nasil Olusuyor?
 
@@ -386,7 +525,7 @@ XSLT faturanin resmi muhasebe verisini degistirmez ama goruntuyu etkiler. XSLT d
 
 ## UI Icin Onerilen Kullanim
 
-Toplu gonderim icin onerilen akış:
+Toplu gonderim icin onerilen akis:
 
 1. Kullanici tarih ve senaryo ile fatura listesini ceker.
 2. Kullanici belgeleri secer.
@@ -396,7 +535,7 @@ Toplu gonderim icin onerilen akış:
 6. Tum belgeler basariliysa `/send` cagirir.
 7. Send sonucunda her belge icin basarili/basarisiz mesajini gosterir.
 
-Bu akış Uyumsoft'a hatali belge gonderme riskini azaltir.
+Bu akis Uyumsoft'a hatali belge gonderme riskini azaltir.
 
 ## Hata Ayiklama Rehberi
 
@@ -447,6 +586,59 @@ FROM dbo.fn_hs_vergi_oran_listesi()
 ORDER BY DepartmentNo
 ```
 
+## Operasyon Ayarlari
+
+Fatura gonderimi icin temel ayarlar:
+
+| Ayar | Kullanildigi yer | Aciklama |
+| --- | --- | --- |
+| `ConnectionStrings:MikroConnection` | Okuma akislari | Liste, detay, validate, render, PDF belge lookup icin Mikro okuma baglantisi. |
+| `ConnectionStrings:MikroWriteConnection` | Yazma akislari | Send sonrasi `cha_belge_no`/`cha_uuid` yazimi ve iade referansi kaydi. |
+| `EInvoice:EndpointUrl` | Uyumsoft e-fatura servisi | `SendInvoiceAsync`, `RetrySendInvoicesAsync`, outbox PDF sorgulari. |
+| `EInvoice:Username` | Uyumsoft user info | E-fatura WCF cagrilarinda kullanilir. |
+| `EInvoice:Password` | Uyumsoft user info | E-fatura WCF cagrilarinda kullanilir. |
+| `EDespatch:SupplierCustomerCode` | Satici firma bilgisi | Fatura XML'indeki supplier party Mikro'da bu cari koddan yuklenir. |
+| `Assets/Xslt/efatura.xslt` | e-Fatura gorunum | XML icine base64 XSLT olarak eklenir veya render fallback olur. |
+| `Assets/Xslt/earsiv.xslt` | e-Arsiv gorunum | XML icine base64 XSLT olarak eklenir veya render fallback olur. |
+| `Assets/UblTr/xsdrt` | XSD validate | `/validate` sirasinda UBL-TR sema kontrolu. |
+
+Notlar:
+
+- Aktif production servis yeni kodu ancak deploy/restart sonrasi kullanir.
+- `Axata` ayarlarindaki `MainEndpointUrl` fatura gonderimi icin kullanilmaz; Axata entegrasyon modulune aittir.
+- Uyumsoft endpoint/kullanici/sifre eksikse `/send` ve `/retry` durur.
+- `SupplierCustomerCode` eksikse `/validate` ve `/send` supplier bilgisi uretilemedigi icin durur.
+
+## Canli Kontrol ve Test Checklist
+
+Degisiklikten veya deploydan sonra onerilen hizli kontrol:
+
+1. Build:
+   ```bash
+   dotnet build FurpaMerkezApi.sln --no-restore
+   ```
+2. Liste:
+   ```http
+   GET /api/fatura-islemleri/fatura-gonderimi?StartDate=2026-07-07&EndDate=2026-07-07&Scenario=EFatura&isSent=1
+   ```
+3. Liste performansi:
+   - Tek gunluk sorgu kullan.
+   - `isSent` ve `SentState` parametrelerini birlikte gonderme.
+   - 2026-07-07 kontrolunde `cha_tarihi` ve `cha_belge_tarih` ayni gun cikti; bu yuzden mevcut `cha_tarihi` indeksiyle daraltma guvenli kabul edildi.
+4. Detay/render:
+   - Gonderilmemis bir belge icin detay HTML aciliyor mu kontrol et.
+5. Validate:
+   - Secili bir belge icin `/validate` basarili mi kontrol et.
+6. Send:
+   - Sadece validate basarili belge ile dene.
+   - Basariliysa Mikro'da `cha_belge_no`, `cha_uuid`, `cha_kilitli` yazildi mi kontrol et.
+7. PDF:
+   - Gonderilmis belge icin `/pdf` PDF blob donduruyor mu kontrol et.
+8. Iade:
+   - Iade belge varsa return-reference candidates ve validate akisi denenmeli.
+9. Retry:
+   - Sadece `isSent=true` ve `cha_uuid` dolu belgeyle denenmeli.
+
 ## Degisiklik Yaparken Dikkat
 
 - UBL XML alanlarina dokunurken mutlaka `/validate` ve build calistirilmali.
@@ -456,7 +648,8 @@ ORDER BY DepartmentNo
 - Hizmet faturalarinda KDV hesabi degisirse `cha_vergi1..cha_vergi10` secimi mutlaka tekrar test edilmeli.
 - `FaturaSeries` eslesmesi degistirilirse toplam tutarlar tekrar kontrol edilmeli.
 - Uyumsoft gonderiminden once validate katmanini atlayan bir UI akisina izin verilmemeli.
-- Sunucuya deploy/restart yapilmadan `10.0.0.100:7508` uzerindeki `/validate` yeni kodu yansitmaz.
+- Sunucuya deploy/restart yapilmadan `10.0.0.100:7508` uzerindeki endpointler yeni kodu yansitmaz.
+- `/send` performans nedeniyle validator calistirmadigi icin bu davranis degistirilecekse UI akisi ve operasyon suresi birlikte degerlendirilmelidir.
 
 ## Komutlar
 

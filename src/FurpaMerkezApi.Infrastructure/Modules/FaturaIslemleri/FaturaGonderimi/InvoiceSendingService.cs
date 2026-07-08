@@ -38,6 +38,7 @@ public sealed class InvoiceSendingService(
     private const short MikroUserNo = 39;
     private const string CurrencyCode = "TRY";
     private const string PreviewSource = "pending-send";
+    private const int InvoiceSendLockTimeoutMilliseconds = 0;
     private static readonly CultureInfo TurkishCulture = new("tr-TR");
 
     public async Task<InvoiceSendingListResponse> ListAsync(
@@ -54,6 +55,7 @@ public sealed class InvoiceSendingService(
             null,
             request.SentState,
             null,
+            InvoiceLoadShape.Lightweight,
             cancellationToken);
 
         var mappedItems = items
@@ -157,6 +159,11 @@ public sealed class InvoiceSendingService(
             try
             {
                 invoice = GetSelectedInvoice(invoicesBySelection, document, request.Scenario);
+                await using var invoiceSendLock = await AcquireInvoiceSendLockAsync(
+                    request.Scenario,
+                    invoice.DocumentSerie,
+                    invoice.DocumentOrderNo,
+                    cancellationToken);
                 var currentSentDocumentNo = invoice.IsSent
                     ? invoice.SentDocumentNo
                     : await GetCurrentSentDocumentNoAsync(
@@ -543,6 +550,7 @@ public sealed class InvoiceSendingService(
         int? documentOrderNo,
         int sentState,
         IReadOnlyCollection<SendInvoiceDocumentSelection>? documentSelections,
+        InvoiceLoadShape loadShape,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -558,6 +566,7 @@ public sealed class InvoiceSendingService(
                     rateList.DepartmentNo,
                     MAX(rateList.Rate) AS Rate
                 FROM dbo.fn_hs_vergi_oran_listesi() rateList
+                WHERE @includeFullDetails = 1
                 GROUP BY rateList.DepartmentNo
             ),
             BaseFaturalar AS (
@@ -569,6 +578,8 @@ public sealed class InvoiceSendingService(
                     AND ch.cha_evrakno_sira = selected.DocumentOrderNo
                 WHERE
                     @documentSelectionsXml IS NOT NULL
+                    AND (@startDate IS NULL OR ch.cha_tarihi >= @startDate)
+                    AND (@endDateExclusive IS NULL OR ch.cha_tarihi < @endDateExclusive)
                     AND (@startDate IS NULL OR ch.cha_belge_tarih >= @startDate)
                     AND (@endDateExclusive IS NULL OR ch.cha_belge_tarih < @endDateExclusive)
                     AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
@@ -586,6 +597,8 @@ public sealed class InvoiceSendingService(
                 FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
                 WHERE
                     @documentSelectionsXml IS NULL
+                    AND (@startDate IS NULL OR ch.cha_tarihi >= @startDate)
+                    AND (@endDateExclusive IS NULL OR ch.cha_tarihi < @endDateExclusive)
                     AND (@startDate IS NULL OR ch.cha_belge_tarih >= @startDate)
                     AND (@endDateExclusive IS NULL OR ch.cha_belge_tarih < @endDateExclusive)
                     AND (@documentSerie IS NULL OR ch.cha_evrakno_seri = @documentSerie)
@@ -638,16 +651,17 @@ public sealed class InvoiceSendingService(
                     c.cari_EMail AS Mail,
                     COALESCE(
                         NULLIF(LTRIM(RTRIM(ISNULL(ek.cha_Istisna1, N''))), N''),
-                        stokIstisna.IstisnaKodu,
+                        CASE WHEN @includeFullDetails = 1 THEN stokIstisna.IstisnaKodu ELSE NULL END,
                         N'') AS IstisnaKodu,
                     ISNULL(ek.cha_HalRusum, 0) AS Rusum,
                     ISNULL(ek.cha_ozel_matrah_kodu, N'') AS OzelMatrahKodu,
                     ISNULL(sevkiyat.IrsaliyeNo, N'') AS IrsaliyeNo,
                     sevkiyat.IrsaliyeTarihi,
-                    ISNULL(iadeRef.IadeFaturaNo, N'') AS IadeFaturaNo,
-                    iadeRef.IadeFaturaTarihi,
+                    CASE WHEN @includeFullDetails = 1 THEN ISNULL(iadeRef.IadeFaturaNo, N'') ELSE N'' END AS IadeFaturaNo,
+                    CASE WHEN @includeFullDetails = 1 THEN iadeRef.IadeFaturaTarihi ELSE NULL END AS IadeFaturaTarihi,
                     ISNULL(sevkiyat.Depo, N'') AS Depo,
                     CASE
+                        WHEN @includeFullDetails = 0 THEN N''
                         WHEN NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_kasa_hizkod, N''))), N'') IS NULL THEN N''
                         ELSE CONCAT(
                             LTRIM(RTRIM(ISNULL(ch.cha_kasa_hizkod, N''))),
@@ -659,6 +673,7 @@ public sealed class InvoiceSendingService(
                                 N''))
                     END AS SourceLineSummary,
                     CASE
+                        WHEN @includeFullDetails = 0 THEN N''
                         WHEN taxRate.Rate IS NULL THEN N''
                         ELSE CONCAT(N'%', CONVERT(nvarchar(32), CONVERT(decimal(9, 2), taxRate.Rate)))
                     END AS TaxRateSummary
@@ -666,9 +681,15 @@ public sealed class InvoiceSendingService(
                 INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
                 INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
-                LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK) ON ch.cha_kasa_hizkod = hiz.hiz_kod
-                LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK) ON ch.cha_kasa_hizkod = dm.dem_kod
-                LEFT JOIN VergiOranlari taxRate ON taxRate.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
+                LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK)
+                    ON @includeFullDetails = 1
+                    AND ch.cha_kasa_hizkod = hiz.hiz_kod
+                LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK)
+                    ON @includeFullDetails = 1
+                    AND ch.cha_kasa_hizkod = dm.dem_kod
+                LEFT JOIN VergiOranlari taxRate
+                    ON @includeFullDetails = 1
+                    AND taxRate.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
                 CROSS APPLY (
                     SELECT TOP (1)
                         fatSer.efatura
@@ -687,6 +708,8 @@ public sealed class InvoiceSendingService(
                     INNER JOIN dbo.STOK_HAREKETLERI_EK shek WITH (NOLOCK)
                         ON shek.sthek_related_uid = sh.sth_Guid
                     WHERE
+                        @includeFullDetails = 1
+                        AND
                         sh.sth_fat_uid = ch.cha_Guid
                         AND ISNULL(sh.sth_iptal, 0) = 0
                         AND ISNULL(shek.sthek_iptal, 0) = 0
@@ -717,7 +740,8 @@ public sealed class InvoiceSendingService(
                         ) AS IadeFaturaTarihi
                     FROM dbo.EBELGE_EVRAK_HAREKETLERI ebh WITH (NOLOCK)
                     WHERE
-                        ebh.ebh_related_uid = ch.cha_Guid
+                        @includeFullDetails = 1
+                        AND ebh.ebh_related_uid = ch.cha_Guid
                         AND ISNULL(ebh.ebh_iptal, 0) = 0
                         AND NULLIF(LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))), N'') IS NOT NULL
                     ORDER BY
@@ -807,6 +831,7 @@ public sealed class InvoiceSendingService(
                 AddParameter(command, "@documentOrderNo", documentOrderNo);
                 AddParameter(command, "@sentState", sentState);
                 AddParameter(command, "@efatura", efatura);
+                AddParameter(command, "@includeFullDetails", loadShape == InvoiceLoadShape.Full ? 1 : 0);
                 AddParameter(
                     command,
                     "@documentSelectionsXml",
@@ -838,6 +863,7 @@ public sealed class InvoiceSendingService(
             null,
             -1,
             lookupSelections,
+            InvoiceLoadShape.Full,
             cancellationToken);
         var invoicesBySelection = new Dictionary<string, PendingInvoiceRecord>(StringComparer.OrdinalIgnoreCase);
 
@@ -912,6 +938,7 @@ public sealed class InvoiceSendingService(
                 documentOrderNo,
                 -1,
                 null,
+                InvoiceLoadShape.Full,
                 cancellationToken);
 
             var invoice = items.FirstOrDefault();
@@ -2136,8 +2163,9 @@ public sealed class InvoiceSendingService(
         try
         {
             var response = await client.SendInvoiceAsync(
-                UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
-                [BuildInvoiceInfo(invoice, scenario)]);
+                    UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
+                    [BuildInvoiceInfo(invoice, scenario)])
+                .WaitAsync(cancellationToken);
 
             if (!response.IsSucceded)
             {
@@ -2169,6 +2197,63 @@ public sealed class InvoiceSendingService(
         finally
         {
             await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
+    private async Task<IAsyncDisposable> AcquireInvoiceSendLockAsync(
+        InvoiceSendingScenario scenario,
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var resource = BuildInvoiceSendLockResource(scenario, documentSerie, documentOrderNo);
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+
+        try
+        {
+            if (closeConnection)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DECLARE @result int;
+                EXEC @result = sys.sp_getapplock
+                    @Resource = @resource,
+                    @LockMode = 'Exclusive',
+                    @LockOwner = 'Session',
+                    @LockTimeout = @lockTimeout;
+                SELECT @result;
+                """;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = Math.Max(5, (InvoiceSendLockTimeoutMilliseconds / 1000) + 5);
+            AddParameter(command, "@resource", resource);
+            AddParameter(command, "@lockTimeout", InvoiceSendLockTimeoutMilliseconds);
+
+            var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+
+            if (result < 0)
+            {
+                throw new InvalidOperationException(
+                    "Bu belge icin gonderim su anda devam ediyor; lutfen islem sonucunu bekleyin.");
+            }
+
+            return new InvoiceSendLockLease(
+                connection,
+                closeConnection,
+                resource,
+                logger);
+        }
+        catch
+        {
+            if (closeConnection && connection.State != ConnectionState.Closed)
+            {
+                await connection.CloseAsync();
+            }
+
+            throw;
         }
     }
 
@@ -2649,6 +2734,12 @@ public sealed class InvoiceSendingService(
     private static string BuildLocalDocumentId(string invoiceId, InvoiceSendingScenario scenario) =>
         $"{scenario}:{invoiceId}";
 
+    private static string BuildInvoiceSendLockResource(
+        InvoiceSendingScenario scenario,
+        string documentSerie,
+        int documentOrderNo) =>
+        $"Furpa.InvoiceSending:{scenario}:{documentSerie.Trim().ToUpperInvariant()}:{documentOrderNo}";
+
     private static string ResolveUnitCode(string unitName)
     {
         var normalized = (unitName ?? string.Empty).Trim().ToUpperInvariant();
@@ -2919,6 +3010,52 @@ public sealed class InvoiceSendingService(
         }
 
         return Convert.ToDecimal(reader.GetValue(ordinal));
+    }
+
+    private enum InvoiceLoadShape
+    {
+        Lightweight,
+        Full
+    }
+
+    private sealed class InvoiceSendLockLease(
+        DbConnection connection,
+        bool closeConnection,
+        string resource,
+        ILogger<InvoiceSendingService> leaseLogger)
+        : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (connection.State == ConnectionState.Open)
+                {
+                    await using var command = connection.CreateCommand();
+                    command.CommandText = """
+                        EXEC sys.sp_releaseapplock
+                            @Resource = @resource,
+                            @LockOwner = 'Session';
+                        """;
+                    command.CommandType = CommandType.Text;
+                    AddParameter(command, "@resource", resource);
+                    await command.ExecuteNonQueryAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception exception)
+            {
+                leaseLogger.LogWarning(
+                    exception,
+                    "Invoice sending SQL application lock could not be released explicitly.");
+            }
+            finally
+            {
+                if (closeConnection && connection.State != ConnectionState.Closed)
+                {
+                    await connection.CloseAsync();
+                }
+            }
+        }
     }
 
     private sealed record PendingInvoiceRecord(
