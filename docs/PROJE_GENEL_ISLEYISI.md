@@ -2,6 +2,10 @@
 
 Bu dokuman, FurpaMerkezApi projesine yeni giren birinin sistemi hizli ama saglam sekilde anlamasi icin hazirlandi.
 
+Bu dosya `docs/` klasorundeki genel proje rehberidir. Kisa proje girisi icin
+repo kokundeki [README.md](../README.md), tum dokuman haritasi icin
+[docs/README.md](README.md) dosyasina bakilabilir.
+
 Temel sorular:
 
 ```text
@@ -504,9 +508,7 @@ DB'ye elle permission eklemek yeni modul/menu/API endpoint olusturmaz. Yeni menu
 
 Detayli rehber:
 
-```text
-YENI_MENU_YETKI_MIGRATION_REHBERI.md
-```
+[YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 
 ## 19. Rol ve Yetki Zinciri
 
@@ -649,7 +651,7 @@ warehouse_no
 warehouse_name
 ```
 
-Birçok endpoint depo bilgisini query'den almak yerine claim'den okuyabilir.
+Bircok endpoint depo bilgisini query'den almak yerine claim'den okuyabilir.
 
 Ornek:
 
@@ -775,9 +777,7 @@ Genel adimlar:
 
 Detayli permission/migration adimlari icin:
 
-```text
-YENI_MENU_YETKI_MIGRATION_REHBERI.md
-```
+[YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 
 ## 28. Migration Ne Zaman Gerekir?
 
@@ -873,34 +873,29 @@ HTTPS veya reverse proxy ayari zorunlu
 
 Projeyi ilk kez okuyacak biri icin tavsiye edilen sira:
 
-```text
-README.md
-PROJE_GENEL_ISLEYISI.md
-src/FurpaMerkezApi.WebApi/Program.cs
-src/FurpaMerkezApi.WebApi/Configuration/ServiceCollectionExtensions.cs
-src/FurpaMerkezApi.Infrastructure/DependencyInjection/ServiceCollectionExtensions.cs
-src/FurpaMerkezApi.Application/Security/PermissionCatalog.cs
-src/FurpaMerkezApi.Infrastructure/Services/AuthService.cs
-src/FurpaMerkezApi.Infrastructure/Authentication/JwtTokenFactory.cs
-Ilgili module controller'i
-Controller'in kullandigi Application interface'i
-Infrastructure implementation
-QueryExecutor veya WriteService
-```
+1. [../README.md](../README.md)
+2. [README.md](README.md)
+3. [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md)
+4. `src/FurpaMerkezApi.WebApi/Program.cs`
+5. `src/FurpaMerkezApi.WebApi/Configuration/ServiceCollectionExtensions.cs`
+6. `src/FurpaMerkezApi.Infrastructure/DependencyInjection/ServiceCollectionExtensions.cs`
+7. `src/FurpaMerkezApi.Application/Security/PermissionCatalog.cs`
+8. `src/FurpaMerkezApi.Infrastructure/Services/AuthService.cs`
+9. `src/FurpaMerkezApi.Infrastructure/Authentication/JwtTokenFactory.cs`
+10. Ilgili module controller'i
+11. Controller'in kullandigi Application interface'i
+12. Infrastructure implementation
+13. QueryExecutor veya WriteService
 
 Mikro REST API icin:
 
-```text
-src/FurpaMerkezApi.Infrastructure/Services/MikroApi
-MIKRO_REST_API_GECIS_ANALIZI.md
-MIKRO_API_POSTMAN_DOKUMANI.md
-```
+- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi`
+- [MIKRO_REST_API_GECIS_ANALIZI.md](MIKRO_REST_API_GECIS_ANALIZI.md)
+- [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md)
 
 Permission/migration icin:
 
-```text
-YENI_MENU_YETKI_MIGRATION_REHBERI.md
-```
+[YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 
 ## 31. Sik Yapilan Hatalar
 
@@ -1023,20 +1018,43 @@ Frontend'de menu/buton gorunurlugune bagla
 
 ## 33. Ilgili Dokumanlar
 
-Repo icindeki ek dokumanlar:
+Dokumanlar artik `docs/` klasoru altinda toplanir. Ana indeks:
 
-```text
-YENI_MENU_YETKI_MIGRATION_REHBERI.md
-UI_API_DOKUMANI.md
-MIKRO_REST_API_GECIS_ANALIZI.md
-MIKRO_API_POSTMAN_DOKUMANI.md
-AXATA_ENTEGRASYON_ALTYAPISI.md
-MIKRO_MUHASEBE_AKIS_REHBERI.md
-DEPO_MAL_KABUL_ISLEYIS.md
-FIRMA_MAL_KABUL_SENARYO.md
-FATURA_GONDERIM_SISTEMI.md
-UBL_FATURA_MANTIGI.md
-PRODUCTION_HAZIRLIK.md
-```
+[README.md](README.md)
 
-Bu dosya buyuk resmi anlatir. Modul veya entegrasyon bazli detaylar icin ilgili dokumana bakilmalidir.
+Genel ve yetki:
+
+- [../README.md](../README.md)
+- [README.md](README.md)
+- [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
+- [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md)
+- [PRODUCTION_HAZIRLIK.md](PRODUCTION_HAZIRLIK.md)
+
+Operasyon:
+
+- [OPERASYON_HIZLI_MUDAHALE.md](OPERASYON_HIZLI_MUDAHALE.md)
+- [OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md](OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md)
+- [STOK_ANOMALI_MERKEZI.md](STOK_ANOMALI_MERKEZI.md)
+
+Fatura ve muhasebe:
+
+- [FATURA_GONDERIM_SISTEMI.md](FATURA_GONDERIM_SISTEMI.md)
+- [UBL_FATURA_MANTIGI.md](UBL_FATURA_MANTIGI.md)
+- [MIKRO_MUHASEBE_AKIS_REHBERI.md](MIKRO_MUHASEBE_AKIS_REHBERI.md)
+
+Mal kabul, siparis ve stok:
+
+- [DEPO_MAL_KABUL_ISLEYIS.md](DEPO_MAL_KABUL_ISLEYIS.md)
+- [FIRMA_MAL_KABUL_SENARYO.md](FIRMA_MAL_KABUL_SENARYO.md)
+- [DEPO_ONERILEN_SIPARIS.md](DEPO_ONERILEN_SIPARIS.md)
+- [FIRMA_ONERILEN_SIPARIS.md](FIRMA_ONERILEN_SIPARIS.md)
+
+Mikro ve entegrasyon:
+
+- [MIKRO_PROSEDUR_ANALIZI.md](MIKRO_PROSEDUR_ANALIZI.md)
+- [MIKRO_REST_API_GECIS_ANALIZI.md](MIKRO_REST_API_GECIS_ANALIZI.md)
+- [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md)
+- [AXATA_ENTEGRASYON_ALTYAPISI.md](AXATA_ENTEGRASYON_ALTYAPISI.md)
+
+Bu dosya buyuk resmi anlatir. Modul veya entegrasyon bazli detaylar icin ilgili
+dokumana bakilmalidir.

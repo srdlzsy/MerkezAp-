@@ -1,6 +1,8 @@
 # Fatura Gonderim Sistemi
 
-Bu dokuman, `fatura-gonderimi` modulunun nasil calistigini, hangi katmanlardan gectigini ve ileride sorun cikarmamasi icin dikkat edilmesi gereken noktalarini anlatir.
+Bu dokuman, `fatura-gonderimi` modulunun 2026-07-08 itibariyla kodda gorulen
+durumunu, hangi katmanlardan gectigini ve ileride sorun cikarmamasi icin dikkat
+edilmesi gereken noktalarini anlatir.
 
 ## Kisa Ozet
 
@@ -16,11 +18,16 @@ XSLT ise faturanin resmi verisi degildir. XSLT, faturanin HTML/PDF gibi goruntul
 ## Ana Dosyalar
 
 - `src/FurpaMerkezApi.WebApi/Controllers/Modules/FaturaIslemleri/FaturaGonderimi/FaturaGonderimiController.cs`
-  - API endpoint'lerini acar.
+  - API endpoint'lerini acar ve her endpoint'i ilgili use-case interface'ine yonlendirir.
 - `src/FurpaMerkezApi.Application/Modules/FaturaIslemleri/FaturaGonderimi/InvoiceSendingModels.cs`
   - Request/response modellerini tutar.
+- `src/FurpaMerkezApi.Application/Modules/FaturaIslemleri/FaturaGonderimi/I*UseCase.cs`
+  - Controller'in bagli oldugu liste, detay, render, validate, send, retry, PDF ve iade referansi kontratlari.
+- `src/FurpaMerkezApi.Infrastructure/Modules/FaturaIslemleri/FaturaGonderimi/*UseCase.cs`
+  - Use-case implementasyonlari. Su an ince wrapper olarak `InvoiceSendingService` metodlarini cagirir.
 - `src/FurpaMerkezApi.Infrastructure/Modules/FaturaIslemleri/FaturaGonderimi/InvoiceSendingService.cs`
-  - Listeleme, render, validate, send, UBL XML olusturma ve Uyumsoft gonderimini yonetir.
+  - Ortak is mantiginin bulundugu ana servis. Listeleme, render, validate, send,
+    retry, PDF, iade referansi, UBL XML olusturma ve Uyumsoft cagrilarini yonetir.
 - `src/FurpaMerkezApi.Infrastructure/Services/UblTrInvoiceBusinessRuleValidator.cs`
   - GIB/XSD disinda kalan is kurali kontrollerini yapar.
 - `src/FurpaMerkezApi.Infrastructure/Services/UblTrInvoiceXmlValidator.cs`
@@ -46,6 +53,27 @@ XSLT ise faturanin resmi verisi degildir. XSLT, faturanin HTML/PDF gibi goruntul
 | Send | `POST /api/fatura-islemleri/fatura-gonderimi/send` | `fatura-islemleri.fatura-gonderimi.create` | Belgeyi Uyumsoft'a gonderir ve basariliysa Mikro'ya belge no/UUID yazar. | Hiz icin validate'i tekrar calistirmaz. |
 | Retry | `POST /api/fatura-islemleri/fatura-gonderimi/retry` | `fatura-islemleri.fatura-gonderimi.create` | Daha once gonderilmis faturayi Uyumsoft'ta yeniden kuyruya alir. | Ilk gonderim degildir, UBL yeniden uretilmez. |
 | XML preview | `POST /api/fatura-islemleri/fatura-gonderimi/preview` | `fatura-islemleri.fatura-gonderimi.create` | Disaridan verilen XML'i HTML olarak render eder. | Mikro veya Uyumsoft guncellemesi yapmaz. |
+
+## Guncel Katman Akisi
+
+Controller artik dogrudan tek bir servis interface'ine bagli degildir. Her endpoint
+ayri bir use-case kontrati uzerinden calisir:
+
+| Endpoint/Islem | Application kontrati | Infrastructure implementasyonu |
+| --- | --- | --- |
+| Liste | `IListInvoiceSendingDocumentsUseCase` | `ListInvoiceSendingDocumentsUseCase` |
+| Detay | `IGetInvoiceSendingDocumentUseCase` | `GetInvoiceSendingDocumentUseCase` |
+| PDF | `IGetInvoiceSendingPdfUseCase` | `GetInvoiceSendingPdfUseCase` |
+| Render | `IRenderInvoiceSendingDocumentUseCase` | `RenderInvoiceSendingDocumentUseCase` |
+| Validate | `IValidateInvoiceSendingDocumentsUseCase` | `ValidateInvoiceSendingDocumentsUseCase` |
+| Send | `ISendInvoiceSendingDocumentsUseCase` | `SendInvoiceSendingDocumentsUseCase` |
+| Retry | `IRetryInvoiceSendingDocumentsUseCase` | `RetryInvoiceSendingDocumentsUseCase` |
+| Iade adaylari | `IListInvoiceReturnReferenceCandidatesUseCase` | `ListInvoiceReturnReferenceCandidatesUseCase` |
+| Iade referansi | `IUpdateInvoiceReturnReferenceUseCase` | `UpdateInvoiceReturnReferenceUseCase` |
+
+Bu use-case siniflari DI tarafinda `ServiceCollectionExtensions` icinde register edilir.
+Mevcut implementasyonlar ortak `InvoiceSendingService` servisini kullanir; yani davranisin
+ana kaynagi hala `InvoiceSendingService.cs` dosyasidir.
 
 ## Uctan Uca Kullanim Akisi
 
@@ -99,6 +127,10 @@ Parametreler:
   - `1`: gonderilmisler
   - `-1`: hepsi
 
+Controller tarafinda `startDate` ve `endDate` zorunludur. `scenario` verilmezse
+varsayilan `EFatura` kabul edilir. `isSent` verilirse `sentState` degerinin onune
+gecer; bu nedenle yeni UI kodunda `isSent` kullanilmasi daha nettir.
+
 Bu endpoint Mikro'dan gonderime uygun belgeleri listeler. Senaryoya gore e-Fatura/e-Arsiv ayrimi yapilir.
 
 Onemli nokta: seri eslesmesi `FaturaSeries` uzerinden yapilir. Seri cakismalarinda toplamlar sismesin diye en uzun ve en spesifik seri secilir. Ornek: `FR` ve `FRP` varsa `FRP001` icin `FRP` tercih edilir.
@@ -129,6 +161,23 @@ POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/re
 
 Render akisi UBL XML'i olusturur ve XSLT ile HTML gorunum uretir. Bu islem Uyumsoft'a gonderim yapmaz ve Mikro'da belgeyi gonderilmis isaretlemez.
 
+Detay endpoint'inde `scenario` query parametresi vardir ve verilmezse `EFatura`
+kabul edilir.
+
+Render request ornegi:
+
+```json
+{
+  "scenario": 0,
+  "profile": 0,
+  "preferEmbeddedXslt": true,
+  "fallbackToGeneral": true
+}
+```
+
+Controller'da JSON alan adi `fallbackToGeneral` olarak gelir; application modelinde
+bu deger `FallbackToDefaultXslt` olarak tasinir.
+
 Render tarafinda XSLT siralamasi:
 
 1. `preferEmbeddedXslt = true` ise XML icindeki gomulu XSLT aranir.
@@ -156,6 +205,10 @@ Request ornegi:
   ]
 }
 ```
+
+`scenario` ve `documents` zorunludur. Her belge icin `documentSerie` bos olamaz,
+`documentOrderNo` ise `1` veya daha buyuk olmalidir. Servis secimleri trim edip
+tekillestirir; ayni belge iki kez gonderilirse tek islenir.
 
 Bu endpoint asil gonderimden once prova yapar.
 
@@ -260,7 +313,20 @@ Endpoint:
 POST /api/fatura-islemleri/fatura-gonderimi/preview
 ```
 
-Bu endpoint eldeki herhangi bir UBL XML'i HTML olarak gormek icindir. Mikro'dan belge yuklemez, Uyumsoft'a gitmez, Mikro'da alan guncellemez. UI veya test araci tarafindan uretilecek XML'in gorunumunu kontrol etmek icin kullanilir.
+Request ornegi:
+
+```json
+{
+  "invoiceId": "preview",
+  "xmlContent": "<Invoice>...</Invoice>",
+  "profile": 0,
+  "preferEmbeddedXslt": true
+}
+```
+
+Bu endpoint eldeki herhangi bir UBL XML'i HTML olarak gormek icindir. `xmlContent`
+zorunludur. Mikro'dan belge yuklemez, Uyumsoft'a gitmez, Mikro'da alan guncellemez.
+UI veya test araci tarafindan uretilecek XML'in gorunumunu kontrol etmek icin kullanilir.
 
 ## Mikro Kaynaklari ve Kolon Haritasi
 

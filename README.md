@@ -1,86 +1,11 @@
 # FurpaMerkezApi
 
-`.NET 9` ile kurulan bu API, Furpa merkez operasyonlari icin iki veritabaniyla calisir:
+Furpa merkez operasyonlari icin gelistirilen `.NET 9` Web API projesidir. Sistem
+kimlik/yetki ve merkez uygulama verileri icin `FurpaMerkezDb` veritabanini,
+operasyonel stok, cari, fatura, sevk ve siparis verileri icin Mikro SQL Server
+veritabanini kullanir.
 
-- `FurpaMerkezDb` (`PostgreSQL`): login, register, rol ve yetki yonetimi
-- `MikroDB_V16_FURPA_2024` (`SQL Server`): operasyonel is verileri
-
-## Katmanlar
-
-- `Domain`: auth ve yetki entity'leri
-- `Application`: servis abstraction'lari, DTO'lar ve permission katalogu
-- `Infrastructure`: `AuthDbContext`, `MikroDbContext`, auth servisleri ve Mikro sorgulari
-- `WebApi`: controller'lar, JWT auth, Swagger ve middleware
-
-## Yetki Yapisi
-
-Yetkiler hiyerarsik olarak tutulur:
-
-- `Module`
-- `Menu`
-- `Action`
-
-Ornek:
-
-- `siparis-islemleri.alinan-depo-siparisleri.list`
-- `siparis-islemleri.verilen-depo-siparisleri.update`
-- `kullanici-islemleri.users.manage`
-
-Frontend, `GET /api/auth/me` ve `GET /api/permissions/catalog` cevaplarindan menu agacini uretebilir.
-
-## Mevcut Moduller
-
-- `SiparisIslemleri`
-- `SevkIslemleri`
-- `MalKabulIslemleri`
-- `IadeIslemleri`
-- `KullaniciIslemleri`
-- `KasaIslemleri`
-
-## Gelistirme Standardi
-
-Yeni gelistirmeler `module > menu > action` standardi ile ilerler.
-
-Ornek klasor yapisi:
-
-```text
-Application/
-  Modules/
-    SiparisIslemleri/
-      AlinanDepoSiparisleri/
-        List/
-          IListReceivedWarehouseOrdersUseCase.cs
-      Common/
-        WarehouseOrderListRequest.cs
-        WarehouseOrderListItemDto.cs
-
-Infrastructure/
-  Modules/
-    SiparisIslemleri/
-      AlinanDepoSiparisleri/
-        List/
-          ListReceivedWarehouseOrdersUseCase.cs
-      Common/
-        WarehouseOrderListQueryExecutor.cs
-
-WebApi/
-  Controllers/
-    Modules/
-      SiparisIslemleri/
-        AlinanDepoSiparisleri/
-          AlinanDepoSiparisleriController.cs
-```
-
-Kurallar:
-
-- her menu kendi controller dosyasina sahiptir
-- her action kendi use-case klasorunden gelistirilir
-- `WebApi` sadece HTTP ve auth/permission katmanidir
-- is kurali ve use-case akisi `Application` abstraction'lari uzerinden ilerler
-- Mikro sorgulari `Infrastructure` tarafinda kalir
-- route, permission code ve menu yapisi birebir ayni mantigi izler
-
-## Calistirma
+## Hizli Baslangic
 
 ```powershell
 dotnet build FurpaMerkezApi.sln
@@ -93,39 +18,38 @@ Swagger:
 http://localhost:5228/swagger
 ```
 
-UI entegrasyon dokumani:
+## Dokumantasyon
 
-```text
-UI_API_DOKUMANI.md
-```
+Tum teknik ve operasyonel dokumanlar [docs](docs/README.md) klasorundedir.
 
-Auth/migration notu:
+Ilk bakilacak dosyalar:
 
-- `AuthDbContext` icin permission veya seed degisikligi yapilirsa yeni EF Core migration alinmalidir.
-- Uygulama acilisinda auth migration'lari otomatik uygulanir; model ile snapshot uyusmazsa `PendingModelChangesWarning` hatasi alinabilir.
+- [docs/PROJE_GENEL_ISLEYISI.md](docs/PROJE_GENEL_ISLEYISI.md)
+- [docs/UI_API_DOKUMANI.md](docs/UI_API_DOKUMANI.md)
+- [docs/YENI_MENU_YETKI_MIGRATION_REHBERI.md](docs/YENI_MENU_YETKI_MIGRATION_REHBERI.md)
+- [docs/OPERASYON_HIZLI_MUDAHALE.md](docs/OPERASYON_HIZLI_MUDAHALE.md)
 
-## Secret ve Config Kurali
+## Katmanlar
 
-- Repo icindeki `appsettings.json` ve `appsettings.Production.json` dosyalari secret template olarak kalmalidir.
-- Gercek sifre, connection string, JWT secret ve entegrasyon kullanici bilgileri GitHub'a push edilmemelidir.
-- Lokal makinede secret gerekiyorsa `src/FurpaMerkezApi.WebApi/appsettings.Local.json` kullanilir.
-- `appsettings.Local.json` `.gitignore` icindedir; normal `git add .` ile repoya gitmez.
-- Canli sunucuda secret'lar ya publish sonrasi server'daki `appsettings.Production.json` icine yazilmali ya da environment variable olarak verilmelidir.
-- Bir secret yanlislikla commit edildiyse sadece dosyadan silmek yetmez; secret rotate edilmeli ve gerekirse git history temizlenmelidir.
+- `Domain`: entity ve domain modelleri.
+- `Application`: use-case kontratlari, DTO'lar, servis abstraction'lari ve permission katalogu.
+- `Infrastructure`: EF DbContext'leri, Mikro sorgulari, dis servis entegrasyonlari ve use-case implementasyonlari.
+- `WebApi`: controller'lar, auth, Swagger ve HTTP middleware.
+
+## Gelistirme Notlari
+
+- Yeni moduller `module > menu > action` standardina gore eklenir.
+- Route, permission code ve menu yapisi ayni isimlendirme mantigini izler.
+- Mikro sorgulari ve dis servis cagrilari `Infrastructure` tarafinda kalir.
+- Secret, connection string, JWT key ve entegrasyon sifreleri repoya yazilmaz.
+- Lokal secret ihtiyaci icin `src/FurpaMerkezApi.WebApi/appsettings.Local.json` kullanilir.
 
 ## GitHub'a Gondermeden Once
 
-- `appsettings.Production.json` icinde bos veya placeholder secret oldugunu kontrol et
-- `appsettings.Local.json` dosyasinin staged olmadigini kontrol et
-- Gerekirse `git status` ile son kez dogrula
-- Server'a ozel degerleri repo icine degil, server tarafina yaz
+```powershell
+git status
+dotnet build FurpaMerkezApi.sln
+```
 
-## Ornek Endpoint'ler
-
-- `POST /api/auth/login`
-- `GET /api/auth/me`
-- `GET /api/permissions/catalog`
-- `GET /api/siparis-islemleri/alinan-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10`
-- `GET /api/siparis-islemleri/verilen-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10`
-- `GET /api/siparis-islemleri/verilen-depo-siparisleri/D110/1915?warehouseNo=110`
-- `GET /api/siparis-islemleri/verilen-depo-siparisleri/key/MTEwfEQxMTB8MTkxNQ`
+`appsettings.Local.json` veya gercek secret iceren herhangi bir dosyanin staged
+olmadigini kontrol et.
