@@ -50,7 +50,6 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
             by new
             {
                 movement.sth_belge_tarih,
-                movement.sth_create_date,
                 movement.sth_tarih,
                 movement.sth_belge_no,
                 movement.sth_evrakno_seri,
@@ -68,11 +67,14 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 movement.sth_aciklama
             }
             into grouped
-            orderby grouped.Key.sth_belge_tarih, grouped.Key.sth_create_date, grouped.Key.sth_evrakno_seri, grouped.Key.sth_evrakno_sira
+            orderby grouped.Key.sth_belge_tarih,
+                grouped.Min(item => item.sth_create_date),
+                grouped.Key.sth_evrakno_seri,
+                grouped.Key.sth_evrakno_sira
             select new
             {
                 grouped.Key.sth_belge_tarih,
-                grouped.Key.sth_create_date,
+                MovementCreateDate = grouped.Min(item => item.sth_create_date),
                 grouped.Key.sth_tarih,
                 grouped.Key.sth_belge_no,
                 grouped.Key.sth_evrakno_seri,
@@ -107,7 +109,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
 
                 return new CompanyMovementListItemDto(
                     document.sth_belge_tarih,
-                    document.sth_create_date,
+                    document.MovementCreateDate,
                     document.sth_tarih,
                     document.sth_belge_no ?? string.Empty,
                     document.sth_evrakno_seri ?? string.Empty,

@@ -1,11 +1,11 @@
-@baseUrl = http://localhost:5228
+﻿@baseUrl = http://localhost:5228
+@token = PASTE_ACCESS_TOKEN_HERE
 @uyumsoftInvoiceUrl = http://efatura.uyumsoft.com.tr/Services/BasicIntegration
 @uyumsoftUsername = UYUMSOFT_KULLANICI_ADI
 @uyumsoftPassword = UYUMSOFT_SIFRE
 @retryInvoiceEttn = eb6379bf-d2d8-4f1d-ab02-7deb09dae8d4
 
-# Uyumsoft'ta kayitli faturayi gercekten yeniden gonderim kuyruguna alir.
-# Calistirmadan once kullanici adi ve sifre degiskenlerini doldurun.
+# Uyumsoft RetrySendInvoices
 POST {{uyumsoftInvoiceUrl}}
 Content-Type: text/xml; charset=utf-8
 SOAPAction: "http://tempuri.org/IBasicIntegration/RetrySendInvoices"
@@ -23,436 +23,4110 @@ SOAPAction: "http://tempuri.org/IBasicIntegration/RetrySendInvoices"
 
 ###
 
+# FurpaMerkezApi.WebApi
 GET {{baseUrl}}/
-Accept: application/json
-
-###
-
-POST {{baseUrl}}/api/auth/login
-Content-Type: application/json
-
-{
-  "usernameOrEmail": "50.magazaci",
-  "password": "50.magazaci"
-}
-
-###
-
-@token =eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3YmZiZmI5MC0wYWRmLWQ5NzAtNzVlNS1kMWU4ZDY4OWMxN2IiLCJ1bmlxdWVfbmFtZSI6IjUwLm1hZ2F6YWNpIiwiZW1haWwiOiI1MC5tYWdhemFjaUBmdXJwYW1lcmtlei5sb2NhbCIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWVpZGVudGlmaWVyIjoiN2JmYmZiOTAtMGFkZi1kOTcwLTc1ZTUtZDFlOGQ2ODljMTdiIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IjUwLm1hZ2F6YWNpIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvZW1haWxhZGRyZXNzIjoiNTAubWFnYXphY2lAZnVycGFtZXJrZXoubG9jYWwiLCJmaXJzdF9uYW1lIjoiTUVSS0VaIERFUE8iLCJsYXN0X25hbWUiOiJNYWdhemFjaSIsIndhcmVob3VzZV9ubyI6IjUwIiwid2FyZWhvdXNlX25hbWUiOiJNRVJLRVogREVQTyIsImp0aSI6ImQwMTQzNzUyLTM3NjktNDc0NC1iNzc3LWU5OTFhYTRmOTM4MCIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6Ik1hZ2FjYWNpIiwicGVybWlzc2lvbiI6WyJzaXBhcmlzLWlzbGVtbGVyaS5hbGluYW4tZmlybWEtc2lwYXJpc2xlcmkubGlzdCIsImthc2EtaXNsZW1sZXJpLmt1bnllLWV0aWtldC15YXpkaXJtYS51cGRhdGUiLCJpYWRlLWlzbGVtbGVyaS5nZWxlbi1kZXBvLWlhZGVsZXJpLmRldGFpbCIsInNpcGFyaXMtaXNsZW1sZXJpLmFsaW5hbi1kZXBvLXNpcGFyaXNsZXJpLmRldGFpbCIsImthc2EtaXNsZW1sZXJpLmthc2EtaGFyZWtldC1ha3RhcmltaS5kZXRhaWwiLCJncmVlbi1ncm9jZXIucmVwb3J0cy51cGRhdGUiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkuYXhhdGEtc2Vua3Jvbml6YXN5b251LnVwZGF0ZSIsImVudGVncmFzeW9uLWlzbGVtbGVyaS51eXVtc29mdC1lLWZhdHVyYS5kZXRhaWwiLCJpYWRlLWlzbGVtbGVyaS5maXJtYS1pYWRlbGVyaS5kZXRhaWwiLCJzaXBhcmlzLWlzbGVtbGVyaS5hbGluYW4tZGVwby1zaXBhcmlzbGVyaS5jcmVhdGUiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkudXl1bXNvZnQtZS1pcnNhbGl5ZS5kZXRhaWwiLCJzZXZrLWlzbGVtbGVyaS5nZWxlbi1kZXBvbGFyLWFyYXNpLXNldmtsZXIudXBkYXRlIiwic2V2ay1pc2xlbWxlcmkuZ2lkZW4tZmlybWEtc2V2a2xlcmkudXBkYXRlIiwib3BlcmFzeW9uLWlzbGVtbGVyaS5vcGVyYXRpb25zLmRldGFpbCIsInN0b2staXNsZW1sZXJpLm1hc3JhZi1maXNsZXJpLnVwZGF0ZSIsInNldmstaXNsZW1sZXJpLmdpZGVuLWRlcG9sYXItYXJhc2ktc2V2a2xlci5kZXRhaWwiLCJzZXZrLWlzbGVtbGVyaS5naWRlbi1kZXBvbGFyLWFyYXNpLXNldmtsZXIudXBkYXRlIiwic3Rvay1pc2xlbWxlcmkuemF5aWF0LWZpc2xlcmkuZGV0YWlsIiwiZW50ZWdyYXN5b24taXNsZW1sZXJpLnV5dW1zb2Z0LWUtaXJzYWxpeWUubGlzdCIsInNpcGFyaXMtaXNsZW1sZXJpLmFsaW5hbi1kZXBvLXNpcGFyaXNsZXJpLnVwZGF0ZSIsInNpcGFyaXMtaXNsZW1sZXJpLnZlcmlsZW4tZGVwby1zaXBhcmlzbGVyaS5jcmVhdGUiLCJrYXNhLWlzbGVtbGVyaS5iYW5rbm90LXRha2lwbGVyaS5saXN0Iiwic2lwYXJpcy1pc2xlbWxlcmkudmVyaWxlbi1kZXBvLXNpcGFyaXNsZXJpLmRldGFpbCIsImthc2EtaXNsZW1sZXJpLmV0aWtldC1iZWxnZWxlcmkuY3JlYXRlIiwic2lwYXJpcy1pc2xlbWxlcmkudmVyaWxlbi1maXJtYS1zaXBhcmlzbGVyaS51cGRhdGUiLCJzZXZrLWlzbGVtbGVyaS5nZWxlbi1kZXBvbGFyLWFyYXNpLXNldmtsZXIubGlzdCIsInNldmstaXNsZW1sZXJpLmdpZGVuLWZpcm1hLXNldmtsZXJpLmNyZWF0ZSIsImFyYW1hLWlzbGVtbGVyaS5maXlhdC1nb3IubGlzdCIsInN0b2staXNsZW1sZXJpLnpheWlhdC1maXNsZXJpLmxpc3QiLCJvcnRhay1pc2xlbWxlci5zaWtheWV0LW9uZXJpLmxpc3QiLCJrYXNhLWlzbGVtbGVyaS5rdW55ZS1ldGlrZXQteWF6ZGlybWEuZGV0YWlsIiwibWFsLWthYnVsLWlzbGVtbGVyaS5tYWwta2FidWwtZmFya2xhcmkubGlzdCIsImZhdHVyYS1pc2xlbWxlcmkuZmF0dXJhLWdvbmRlcmltaS5jcmVhdGUiLCJzdG9rLWlzbGVtbGVyaS52aXJtYW5sYXIuZGV0YWlsIiwic2V2ay1pc2xlbWxlcmkuZ2lkZW4tZGVwb2xhci1hcmFzaS1zZXZrbGVyLmxpc3QiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkuYXhhdGEtc2Vua3Jvbml6YXN5b251Lmxpc3QiLCJzaXBhcmlzLWlzbGVtbGVyaS52ZXJpbGVuLWZpcm1hLXNpcGFyaXNsZXJpLmNyZWF0ZSIsInNldmstaXNsZW1sZXJpLmdlbGVuLWRlcG9sYXItYXJhc2ktc2V2a2xlci5jcmVhdGUiLCJrYXNhLWlzbGVtbGVyaS5rYXNhLWNpcm9sYXJpLmRldGFpbCIsImthc2EtaXNsZW1sZXJpLmthc2Etc2F5aW1sYXJpLmxpc3QiLCJmYXR1cmEtaXNsZW1sZXJpLmZhdHVyYS1nb3J1bnR1bGVtZS51cGRhdGUiLCJpYWRlLWlzbGVtbGVyaS5maXJtYS1pYWRlbGVyaS51cGRhdGUiLCJzaXBhcmlzLWlzbGVtbGVyaS52ZXJpbGVuLWRlcG8tc2lwYXJpc2xlcmkubGlzdCIsInNldmstaXNsZW1sZXJpLmdlbGVuLWZpcm1hLXNldmtsZXJpLmNyZWF0ZSIsInN0b2staXNsZW1sZXJpLnpheWlhdC1maXNsZXJpLnVwZGF0ZSIsInN0b2staXNsZW1sZXJpLnNheWltLXNvbnVjbGFyaS5saXN0IiwibWFsLWthYnVsLWlzbGVtbGVyaS5maXJtYS1tYWwta2FidWxsZXJpLmxpc3QiLCJrYXNhLWlzbGVtbGVyaS5rYXNhLXNheWltbGFyaS51cGRhdGUiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkucG9zLW11aGFzZWJlLWFrdGFyaW1pLmNyZWF0ZSIsImVudGVncmFzeW9uLWlzbGVtbGVyaS51eXVtc29mdC1lLWZhdHVyYS5saXN0IiwiaWFkZS1pc2xlbWxlcmkuZmlybWEtaWFkZWxlcmkubGlzdCIsIm9wZXJhc3lvbi1pc2xlbWxlcmkub3BlcmF0aW9ucy5saXN0Iiwic2lwYXJpcy1pc2xlbWxlcmkuYWxpbmFuLWZpcm1hLXNpcGFyaXNsZXJpLmRldGFpbCIsInN0b2staXNsZW1sZXJpLnNheWltLXNvbnVjbGFyaS5kZXRhaWwiLCJrYXNhLWlzbGVtbGVyaS5ldGlrZXQtYmVsZ2VsZXJpLmRldGFpbCIsIm1hbC1rYWJ1bC1pc2xlbWxlcmkuZGVwby1tYWwta2FidWxsZXJpLmNyZWF0ZSIsImthc2EtaXNsZW1sZXJpLmthc2EtaGFyZWtldC1ha3RhcmltaS51cGRhdGUiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkudXl1bXNvZnQtZS1mYXR1cmEudXBkYXRlIiwiZW50ZWdyYXN5b24taXNsZW1sZXJpLnBvcy1tdWhhc2ViZS1ha3RhcmltaS51cGRhdGUiLCJrYXNhLWlzbGVtbGVyaS5rYXNhLWhhcmVrZXQtYWt0YXJpbWkuY3JlYXRlIiwia2FzYS1pc2xlbWxlcmkua2FzYS1zYXlpbWxhcmkuZGV0YWlsIiwiaWFkZS1pc2xlbWxlcmkuZmlybWEtaWFkZWxlcmkuY3JlYXRlIiwib3J0YWstaXNsZW1sZXIuc2lrYXlldC1vbmVyaS5kZXRhaWwiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkuYXhhdGEtc2Vua3Jvbml6YXN5b251LmRldGFpbCIsInN0b2staXNsZW1sZXJpLm1hc3JhZi1maXNsZXJpLmxpc3QiLCJtYWwta2FidWwtaXNsZW1sZXJpLmRlcG8tbWFsLWthYnVsbGVyaS5saXN0Iiwic2V2ay1pc2xlbWxlcmkuZ2VsZW4tZmlybWEtc2V2a2xlcmkuZGV0YWlsIiwiZW50ZWdyYXN5b24taXNsZW1sZXJpLnV5dW1zb2Z0LWUtZmF0dXJhLmNyZWF0ZSIsImlhZGUtaXNsZW1sZXJpLmdpZGVuLWRlcG8taWFkZWxlcmkuZGV0YWlsIiwia2FzYS1pc2xlbWxlcmkua3VueWUtZXRpa2V0LXlhemRpcm1hLmxpc3QiLCJmYXR1cmEtaXNsZW1sZXJpLmZhdHVyYS1nb25kZXJpbWkubGlzdCIsImZhdHVyYS1pc2xlbWxlcmkuZmF0dXJhLWdvcnVudHVsZW1lLmRldGFpbCIsInNpcGFyaXMtaXNsZW1sZXJpLmFsaW5hbi1maXJtYS1zaXBhcmlzbGVyaS5jcmVhdGUiLCJpYWRlLWlzbGVtbGVyaS5naWRlbi1kZXBvLWlhZGVsZXJpLmNyZWF0ZSIsImlhZGUtaXNsZW1sZXJpLmdpZGVuLWRlcG8taWFkZWxlcmkubGlzdCIsImVudGVncmFzeW9uLWlzbGVtbGVyaS5wb3MtbXVoYXNlYmUtYWt0YXJpbWkubGlzdCIsIm1hbC1rYWJ1bC1pc2xlbWxlcmkuZGVwby1tYWwta2FidWxsZXJpLmRldGFpbCIsImthc2EtaXNsZW1sZXJpLmV0aWtldC1iZWxnZWxlcmkubGlzdCIsInNpcGFyaXMtaXNsZW1sZXJpLnZlcmlsZW4tZGVwby1zaXBhcmlzbGVyaS51cGRhdGUiLCJlbnRlZ3Jhc3lvbi1pc2xlbWxlcmkucG9zLW11aGFzZWJlLWFrdGFyaW1pLmRldGFpbCIsInN0b2staXNsZW1sZXJpLnZpcm1hbmxhci51cGRhdGUiLCJzZXZrLWlzbGVtbGVyaS5nZWxlbi1maXJtYS1zZXZrbGVyaS5saXN0Iiwic2lwYXJpcy1pc2xlbWxlcmkuYWxpbmFuLWZpcm1hLXNpcGFyaXNsZXJpLnVwZGF0ZSIsImthc2EtaXNsZW1sZXJpLmthc2EtY2lyb2xhcmkubGlzdCIsInNldmstaXNsZW1sZXJpLmdpZGVuLWZpcm1hLXNldmtsZXJpLmxpc3QiLCJzZXZrLWlzbGVtbGVyaS5nZWxlbi1maXJtYS1zZXZrbGVyaS51cGRhdGUiLCJpYWRlLWlzbGVtbGVyaS5naWRlbi1kZXBvLWlhZGVsZXJpLnVwZGF0ZSIsInN0b2staXNsZW1sZXJpLnNheWltLXNvbnVjbGFyaS5jcmVhdGUiLCJzZXZrLWlzbGVtbGVyaS5naWRlbi1maXJtYS1zZXZrbGVyaS5kZXRhaWwiLCJzaXBhcmlzLWlzbGVtbGVyaS52ZXJpbGVuLWZpcm1hLXNpcGFyaXNsZXJpLmRldGFpbCIsInNldmstaXNsZW1sZXJpLmdlbGVuLWRlcG9sYXItYXJhc2ktc2V2a2xlci5kZXRhaWwiLCJzZXZrLWlzbGVtbGVyaS5naWRlbi1kZXBvbGFyLWFyYXNpLXNldmtsZXIuY3JlYXRlIiwiZmF0dXJhLWlzbGVtbGVyaS5mYXR1cmEtZ29uZGVyaW1pLmRldGFpbCIsIm9wZXJhc3lvbi1pc2xlbWxlcmkub3BlcmF0aW9ucy51cGRhdGUiLCJhcmFtYS1pc2xlbWxlcmkuY2FyaS1idWwubGlzdCIsImthc2EtaXNsZW1sZXJpLmthc2EtaGFyZWtldC1ha3RhcmltaS5saXN0Iiwic2lwYXJpcy1pc2xlbWxlcmkudmVyaWxlbi1maXJtYS1zaXBhcmlzbGVyaS5saXN0Iiwia2FzYS1pc2xlbWxlcmkuYmFua25vdC10YWtpcGxlcmkuZGV0YWlsIiwic3Rvay1pc2xlbWxlcmkudmlybWFubGFyLmxpc3QiLCJncmVlbi1ncm9jZXIucmVwb3J0cy5saXN0Iiwib3BlcmFzeW9uLWlzbGVtbGVyaS5vcGVyYXRpb25zLmNyZWF0ZSIsInN0b2staXNsZW1sZXJpLnNheWltLXNvbnVjbGFyaS51cGRhdGUiLCJrYXNhLWlzbGVtbGVyaS5rYXNhLXNheWltbGFyaS5jcmVhdGUiLCJtYWwta2FidWwtaXNsZW1sZXJpLmZpcm1hLW1hbC1rYWJ1bGxlcmkudXBkYXRlIiwic3Rvay1pc2xlbWxlcmkudmlybWFubGFyLmNyZWF0ZSIsImVudGVncmFzeW9uLWlzbGVtbGVyaS51eXVtc29mdC1lLWlyc2FsaXllLnVwZGF0ZSIsImdyZWVuLWdyb2Nlci5yZXBvcnRzLmRldGFpbCIsImlhZGUtaXNsZW1sZXJpLmdlbGVuLWRlcG8taWFkZWxlcmkubGlzdCIsIm1hbC1rYWJ1bC1pc2xlbWxlcmkuZGVwby1tYWwta2FidWxsZXJpLnVwZGF0ZSIsImthc2EtaXNsZW1sZXJpLmt1bnllLWV0aWtldC15YXpkaXJtYS5jcmVhdGUiLCJzdG9rLWlzbGVtbGVyaS5tYXNyYWYtZmlzbGVyaS5jcmVhdGUiLCJzdG9rLWlzbGVtbGVyaS5tYXNyYWYtZmlzbGVyaS5kZXRhaWwiLCJtYWwta2FidWwtaXNsZW1sZXJpLmZpcm1hLW1hbC1rYWJ1bGxlcmkuY3JlYXRlIiwic3Rvay1pc2xlbWxlcmkuemF5aWF0LWZpc2xlcmkuY3JlYXRlIiwic2lwYXJpcy1pc2xlbWxlcmkuYWxpbmFuLWRlcG8tc2lwYXJpc2xlcmkubGlzdCIsImVudGVncmFzeW9uLWlzbGVtbGVyaS51eXVtc29mdC1lLWlyc2FsaXllLmNyZWF0ZSIsImVudGVncmFzeW9uLWlzbGVtbGVyaS5heGF0YS1zZW5rcm9uaXphc3lvbnUuY3JlYXRlIiwia2FzYS1pc2xlbWxlcmkuZXRpa2V0LWJlbGdlbGVyaS51cGRhdGUiLCJrYXNhLWlzbGVtbGVyaS5iYW5rbm90LXRha2lwbGVyaS5jcmVhdGUiLCJtYWwta2FidWwtaXNsZW1sZXJpLmZpcm1hLW1hbC1rYWJ1bGxlcmkuZGV0YWlsIiwiZmF0dXJhLWlzbGVtbGVyaS5mYXR1cmEtZ29ydW50dWxlbWUubGlzdCJdLCJuYmYiOjE3ODE4NTIyOTgsImV4cCI6MTc4MTg1OTQ5OCwiaXNzIjoiRnVycGFNZXJrZXpBcGkiLCJhdWQiOiJGdXJwYU1lcmtlekNsaWVudHMifQ.tMIFd3YKcBuQb5gz-xiwxEWkve54tfVhU4w1CtUP3jk
-
-
-GET {{baseUrl}}/api/auth/me
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
+# AramaIslemleri
+GET {{baseUrl}}/api/arama-islemleri/barkodlar/8690000000000/cariler?WarehouseNo=1&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/barkodlar/8690000000000/cozumle?WarehouseNo=1&ScreenCode=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/barkodlar/8690000000000/fiyat?WarehouseNo=1&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/cari-bul?Barcode=8690000000000&WarehouseNo=1&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/cariler?SearchText=sample&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/depolar?SearchText=sample&WarehouseNo=1&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/fiyat-gor?WarehouseNo=1&Barcode=8690000000000&StockCode=015550&StockName=015550&SupplierCode=120.01.03106&CompanyCode=sample&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/urunler?WarehouseNo=1&Barcode=8690000000000&StockCode=015550&StockName=015550&SupplierCode=120.01.03106&CompanyCode=sample&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/urunler/015550/cari-onerileri?Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/arama-islemleri/urunler/015550/son-kunye?WarehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# Auth
+POST {{baseUrl}}/api/auth/login
+Accept: application/json
+Content-Type: application/json
+
+{
+    "usernameOrEmail":  "50.magazaci",
+    "password":  "50.magazaci"
+}
+
+###
+GET {{baseUrl}}/api/auth/me
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/auth/register
+Accept: application/json
+Content-Type: application/json
+
+{
+    "username":  "sample",
+    "email":  "sample",
+    "password":  "sample",
+    "firstName":  "sample",
+    "lastName":  "sample",
+    "warehouseNo":  "50",
+    "warehouseName":  "50"
+}
+
+###
+
+# Cihazlar
+GET {{baseUrl}}/api/ayar-islemleri/cihazlar?branchNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/ayar-islemleri/cihazlar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "branchNo":  1,
+    "deviceTypeId":  1,
+    "ipAddress":  "sample",
+    "description":  "sample"
+}
+
+###
+DELETE {{baseUrl}}/api/ayar-islemleri/cihazlar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/cihazlar/durum?branchNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/cihazlar/subeler/1/durum
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/cihazlar/tipler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# KasaPosTerminalleri
+POST {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "branchNo":  1,
+    "cashNo":  1,
+    "cashType":  1,
+    "terminals":  [
+                      {
+                          "terminalNo":  "1",
+                          "bank":  "sample",
+                          "terminalId":  "11111111-1111-1111-1111-111111111111",
+                          "merchantNo":  "1"
+                      }
+                  ]
+}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri/kasalar/1/terminaller
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+DELETE {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri/subeler/1/kasalar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri/subeler/1/mesaj-durumlari
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+DELETE {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri/subeler/1/terminaller/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# Kasiyerler
+GET {{baseUrl}}/api/ayar-islemleri/kasiyerler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/ayar-islemleri/kasiyerler
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "cashierName":  "sample",
+    "cashierAuthorization":  "sample"
+}
+
+###
+PUT {{baseUrl}}/api/ayar-islemleri/kasiyerler/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "cashierName":  "sample",
+    "cashierAuthorization":  "sample",
+    "cashierState":  false
+}
+
+###
+POST {{baseUrl}}/api/ayar-islemleri/kasiyerler/1/sifre-sifirla
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# SubeAyarlari
+GET {{baseUrl}}/api/ayar-islemleri/sube-ayarlari
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/ayar-islemleri/sube-ayarlari
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "branchNo":  1,
+    "branchIpAddress":  "50",
+    "branchScalesFolderPath":  "50",
+    "scalesType":  1,
+    "poskonFolderPath":  "sample",
+    "posGenelFolderPath":  "sample",
+    "cashRegisters":  [
+                          {
+                              "cashNo":  1,
+                              "cashType":  1
+                          }
+                      ]
+}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/sube-ayarlari/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/ayar-islemleri/sube-ayarlari/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "branchIpAddress":  "50",
+    "branchScalesFolderPath":  "50",
+    "scalesType":  1,
+    "poskonFolderPath":  "sample",
+    "posGenelFolderPath":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/ayar-islemleri/sube-ayarlari/1/kasalar
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# MikroEvrakDuzenleme
+DELETE {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?DocumentSerie=F50&DocumentOrderNo=1&DocumentType=1&MovementType=1&MovementKind=1&NormalReturn=1&CustomerCode=120.01.03106&HardDelete=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri?DocumentSerie=F50&DocumentOrderNo=1&DocumentType=1&MovementType=1&MovementKind=1&NormalReturn=1&CustomerCode=120.01.03106&HardDelete=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "lookup":  {
+                   "documentSerie":  "F50",
+                   "documentOrderNo":  1,
+                   "documentType":  1,
+                   "movementType":  1,
+                   "movementKind":  1,
+                   "normalReturn":  1,
+                   "customerCode":  "120.01.03106",
+                   "hardDelete":  false
+               },
+    "header":  {
+                   "movementDate":  "2026-07-08",
+                   "documentDate":  "2026-07-08",
+                   "documentNo":  "1",
+                   "customerCode":  "120.01.03106",
+                   "turnoverCustomerCode":  "120.01.03106",
+                   "description":  "sample",
+                   "sellerCode":  "sample",
+                   "projectCode":  "sample",
+                   "responsibilityCenter":  "sample"
+               },
+    "lines":  [
+                  {
+                      "movementGuid":  "11111111-1111-1111-1111-111111111111",
+                      "rowNo":  1,
+                      "customerCode":  "120.01.03106",
+                      "turnoverCustomerCode":  "120.01.03106",
+                      "quantity":  1,
+                      "amount":  1,
+                      "subAmount":  1,
+                      "dueDay":  1,
+                      "discount1":  1,
+                      "discount2":  1,
+                      "discount3":  1,
+                      "discount4":  1,
+                      "discount5":  1,
+                      "discount6":  1,
+                      "expense1":  1,
+                      "expense2":  1,
+                      "expense3":  1,
+                      "expense4":  1,
+                      "tax1":  1,
+                      "tax2":  1,
+                      "tax3":  1,
+                      "tax4":  1,
+                      "tax5":  1,
+                      "description":  "sample",
+                      "sellerCode":  "sample",
+                      "projectCode":  "sample",
+                      "responsibilityCenter":  "sample"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler?SearchText=sample&IncludePassive=False&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/120.01.03106
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/120.01.03106
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "title1":  "sample",
+    "title2":  "sample",
+    "movementType":  1,
+    "connectionType":  1,
+    "purchaseStockType":  1,
+    "salesStockType":  1,
+    "accountingCode":  "sample",
+    "accountingCode1":  "sample",
+    "accountingCode2":  "sample",
+    "currencyType":  1,
+    "currencyType1":  1,
+    "currencyType2":  1,
+    "taxOffice":  "sample",
+    "taxOfficeNo":  "1",
+    "registryNo":  "1",
+    "taxNo":  "1",
+    "salesPriceListNo":  1,
+    "paymentType":  1,
+    "paymentDay":  1,
+    "paymentPlanNo":  1,
+    "optionDay":  1,
+    "invoiceAddressNo":  1,
+    "shippingAddressNo":  1,
+    "parentCustomerCode":  "120.01.03106",
+    "sectorCode":  "sample",
+    "regionCode":  "sample",
+    "groupCode":  "sample",
+    "representativeCode":  "sample",
+    "isClosed":  false,
+    "isLocked":  false,
+    "eInvoiceEnabled":  false,
+    "defaultEInvoiceType":  1,
+    "eDespatchEnabled":  false,
+    "defaultEDespatchType":  1,
+    "website":  "sample",
+    "email":  "sample",
+    "mobilePhone":  "sample",
+    "defaultInputWarehouseNo":  1,
+    "defaultOutputWarehouseNo":  1,
+    "kepAddress":  "sample",
+    "reconciliationEmail":  "sample",
+    "mersisNo":  "1",
+    "taxOfficeCode":  "sample",
+    "retailCustomer":  false
+}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar?SearchText=sample&IncludePassive=False&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name":  "sample",
+    "groupCode":  "sample",
+    "warehouseType":  1,
+    "shipmentAutoPriceType":  1,
+    "movementType":  1,
+    "accountingCode":  "sample",
+    "responsibilityCenter":  "sample",
+    "projectCode":  "sample",
+    "shipmentAppliedPriceNo":  1,
+    "lockDate":  "2026-07-08",
+    "street":  "sample",
+    "neighborhood":  "sample",
+    "avenue":  "sample",
+    "quarter":  "sample",
+    "apartmentNo":  "1",
+    "apartmentUnitNo":  "1",
+    "postalCode":  "sample",
+    "district":  "sample",
+    "city":  "sample",
+    "country":  "sample",
+    "addressCode":  "sample",
+    "latitude":  1,
+    "longitude":  1,
+    "authorizedEmail":  "sample",
+    "phoneCountryCode":  "sample",
+    "phoneAreaCode":  "sample",
+    "phoneNo1":  "sample",
+    "phoneNo2":  "sample",
+    "faxNo":  "1",
+    "excludedFromInventory":  false,
+    "detailTrackingType":  1,
+    "regionCode":  "sample",
+    "outgoingEDespatchEnabled":  false,
+    "incomingEDespatchEnabled":  false,
+    "isPassive":  false,
+    "isHidden":  false,
+    "isLocked":  false
+}
+
+###
+DELETE {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?DocumentSerie=F50&DocumentOrderNo=1&DocumentType=1&MovementType=1&MovementKind=1&NormalReturn=1&WarehouseNo=1&HardDelete=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri?DocumentSerie=F50&DocumentOrderNo=1&DocumentType=1&MovementType=1&MovementKind=1&NormalReturn=1&WarehouseNo=1&HardDelete=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "lookup":  {
+                   "documentSerie":  "F50",
+                   "documentOrderNo":  1,
+                   "documentType":  1,
+                   "movementType":  1,
+                   "movementKind":  1,
+                   "normalReturn":  1,
+                   "warehouseNo":  1,
+                   "hardDelete":  false
+               },
+    "header":  {
+                   "movementDate":  "2026-07-08",
+                   "documentDate":  "2026-07-08",
+                   "goodsAcceptanceDate":  "2026-07-08",
+                   "documentNo":  "1",
+                   "customerCode":  "120.01.03106",
+                   "inputWarehouseNo":  1,
+                   "outputWarehouseNo":  1,
+                   "shippingWarehouseNo":  1,
+                   "description":  "sample",
+                   "movementGroupCode1":  "sample",
+                   "movementGroupCode2":  "sample",
+                   "movementGroupCode3":  "sample",
+                   "customerResponsibilityCenter":  "120.01.03106",
+                   "stockResponsibilityCenter":  "015550",
+                   "projectCode":  "sample"
+               },
+    "lines":  [
+                  {
+                      "movementGuid":  "11111111-1111-1111-1111-111111111111",
+                      "rowNo":  1,
+                      "goodsAcceptanceDate":  "2026-07-08",
+                      "stockCode":  "015550",
+                      "unitPointer":  1,
+                      "quantity":  1,
+                      "secondaryQuantity":  1,
+                      "amount":  1,
+                      "discount1":  1,
+                      "discount2":  1,
+                      "discount3":  1,
+                      "discount4":  1,
+                      "discount5":  1,
+                      "discount6":  1,
+                      "expense1":  1,
+                      "expense2":  1,
+                      "expense3":  1,
+                      "expense4":  1,
+                      "taxPointer":  1,
+                      "taxAmount":  1,
+                      "netWeight":  1,
+                      "grossWeight":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "stockResponsibilityCenter":  "015550",
+                      "inputWarehouseNo":  1,
+                      "outputWarehouseNo":  1
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari?SearchText=sample&IncludePassive=False&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name":  "sample",
+    "shortName":  "sample",
+    "foreignName":  "sample",
+    "supplierCode":  "120.01.03106",
+    "stockType":  1,
+    "currencyType":  1,
+    "trackingType":  1,
+    "unit1Name":  "sample",
+    "unit2Name":  "sample",
+    "unit3Name":  "sample",
+    "unit4Name":  "sample",
+    "retailTaxPointer":  1,
+    "wholesaleTaxPointer":  1,
+    "categoryCode":  "sample",
+    "mainGroupCode":  "sample",
+    "subGroupCode":  "sample",
+    "brandCode":  "sample",
+    "sectorCode":  "sample",
+    "rayonCode":  "sample",
+    "manufacturerCode":  "sample",
+    "responsibilityCode":  "sample",
+    "shelfCode":  "sample",
+    "salesStopped":  false,
+    "orderStopped":  false,
+    "receivingStopped":  false,
+    "isPassive":  false,
+    "discountDisabled":  false
+}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+DELETE {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/depolar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "salesStopped":  false,
+    "orderStopped":  false,
+    "receivingStopped":  false,
+    "isPassive":  false,
+    "discountDisabled":  false,
+    "resetToGlobal":  false
+}
+
+###
+GET {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+DELETE {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari/1?PriceListNo=1&PaymentPlanNo=1&UnitPointer=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/015550/satis-fiyatlari/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "priceListNo":  1,
+    "paymentPlanNo":  1,
+    "unitPointer":  1,
+    "price":  1,
+    "currencyType":  1,
+    "changeReason":  1
+}
+
+###
+
+# PosMuhasebeAktarimi
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi?StartDate=2026-07-08&EndDate=2026-07-08&WarehouseNo=1&OnlyPending=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+DELETE {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentIds":  [
+                        1
+                    ],
+    "totalIds":  [
+                     1
+                 ],
+    "invoiceIds":  [
+                       1
+                   ],
+    "expenseIds":  [
+                       1
+                   ]
+}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari?StartDate=2026-07-08&EndDate=2026-07-08&WarehouseNo=1&OnlyPending=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "documentNo":  "1",
+    "customerTaxNo":  "1",
+    "paymentType":  "1",
+    "branchNo":  1,
+    "description":  "sample"
+}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/erpye-gonder
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentIds":  [
+                        1
+                    ],
+    "totalIds":  [
+                     1
+                 ],
+    "invoiceIds":  [
+                       1
+                   ],
+    "expenseIds":  [
+                       1
+                   ],
+    "continueOnError":  false
+}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/ice-aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "businessDate":  "2026-07-08",
+    "dateToGet":  "2026-07-08",
+    "includePreviouslyImported":  false,
+    "overwriteExisting":  false
+}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri?BranchNo=1&CashRegisterNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "cashRegisterNo":  "1",
+    "branchNo":  1,
+    "branchName":  "50",
+    "description":  "sample"
+}
+
+###
+PUT {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "cashRegisterNo":  "1",
+    "branchNo":  1,
+    "branchName":  "50",
+    "description":  "sample"
+}
+
+###
+DELETE {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentIds":  [
+                        1
+                    ],
+    "totalIds":  [
+                     1
+                 ],
+    "invoiceIds":  [
+                       1
+                   ],
+    "expenseIds":  [
+                       1
+                   ]
+}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar?StartDate=2026-07-08&EndDate=2026-07-08&WarehouseNo=1&OnlyPending=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "documentNo":  "1",
+    "customerTaxNo":  "1",
+    "paymentType":  "1",
+    "branchNo":  1,
+    "description":  "sample"
+}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/erpye-gonder
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentIds":  [
+                        1
+                    ],
+    "totalIds":  [
+                     1
+                 ],
+    "invoiceIds":  [
+                       1
+                   ],
+    "expenseIds":  [
+                       1
+                   ],
+    "continueOnError":  false
+}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/ice-aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "businessDate":  "2026-07-08",
+    "dateToGet":  "2026-07-08",
+    "includePreviouslyImported":  false,
+    "overwriteExisting":  false
+}
+
+###
+DELETE {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentIds":  [
+                        1
+                    ],
+    "totalIds":  [
+                     1
+                 ],
+    "invoiceIds":  [
+                       1
+                   ],
+    "expenseIds":  [
+                       1
+                   ]
+}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari?StartDate=2026-07-08&EndDate=2026-07-08&WarehouseNo=1&OnlyPending=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/erpye-gonder
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentIds":  [
+                        1
+                    ],
+    "totalIds":  [
+                     1
+                 ],
+    "invoiceIds":  [
+                       1
+                   ],
+    "expenseIds":  [
+                       1
+                   ],
+    "continueOnError":  false
+}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "businessDate":  "2026-07-08",
+    "reportPath":  "sample",
+    "importMode":  "sample",
+    "sourceCode":  "sample",
+    "overwriteExisting":  false
+}
+
+###
+
+# UyumsoftEFatura
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/get/sample?parameter=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/get/sample
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "parameters":  [
+                       {
+                           "name":  "sample",
+                           "value":  "sample"
+                       }
+                   ]
+}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/11111111-1111-1111-1111-111111111111/data
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/11111111-1111-1111-1111-111111111111/pdf
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/11111111-1111-1111-1111-111111111111/pdf-file
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/11111111-1111-1111-1111-111111111111/status-with-logs
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/inbox/invoices/11111111-1111-1111-1111-111111111111/view
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/invoices/11111111-1111-1111-1111-111111111111/envelope
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/operations
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111/data
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111/pdf
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111/pdf-file
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111/response-view
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111/status-with-logs
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/outbox/invoices/11111111-1111-1111-1111-111111111111/view
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/system/date
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/system/date/formatted?format=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# UyumsoftEIrsaliye
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/despatches/11111111-1111-1111-1111-111111111111/envelope?isInbox=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/get/sample?parameter=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/get/sample
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "parameters":  [
+                       {
+                           "name":  "sample",
+                           "value":  "sample"
+                       }
+                   ]
+}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/inbox/despatches/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/inbox/despatches/11111111-1111-1111-1111-111111111111/pdf
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/inbox/despatches/11111111-1111-1111-1111-111111111111/status-with-logs
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/inbox/despatches/11111111-1111-1111-1111-111111111111/view
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/operations
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/outbox/despatches/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/outbox/despatches/11111111-1111-1111-1111-111111111111/pdf
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/outbox/despatches/11111111-1111-1111-1111-111111111111/status-with-logs
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/outbox/despatches/11111111-1111-1111-1111-111111111111/view
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/receipt-advices/11111111-1111-1111-1111-111111111111/pdf
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/receipt-advices/11111111-1111-1111-1111-111111111111/view
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/system/date
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-irsaliye/system/date/formatted?format=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# FaturaGonderimi
+GET {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi?StartDate=2026-07-08&EndDate=2026-07-08&Scenario=sample&SentState=1&isSent=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/F50/1?scenario=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/F50/1/pdf?scenario=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/F50/1/render
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "scenario":  0,
+    "profile":  0,
+    "preferEmbeddedXslt":  false,
+    "fallbackToGeneral":  false
+}
+
+###
+PUT {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/F50/1/return-reference
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "scenario":  0,
+    "sourceDocumentSerie":  "F50",
+    "sourceDocumentOrderNo":  1,
+    "useFallbackWhenNotSelected":  false
+}
+
+###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/F50/1/return-reference-candidates?scenario=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/preview
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "invoiceId":  "11111111-1111-1111-1111-111111111111",
+    "xmlContent":  "sample",
+    "profile":  0,
+    "preferEmbeddedXslt":  false
+}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/retry
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "scenario":  0,
+    "documents":  [
+                      {
+                          "documentSerie":  "F50",
+                          "documentOrderNo":  1
+                      }
+                  ]
+}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/send
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "scenario":  0,
+    "documents":  [
+                      {
+                          "documentSerie":  "F50",
+                          "documentOrderNo":  1
+                      }
+                  ]
+}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-gonderimi/validate
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "scenario":  0,
+    "documents":  [
+                      {
+                          "documentSerie":  "F50",
+                          "documentOrderNo":  1
+                      }
+                  ]
+}
+
+###
+
+# FaturaGoruntuleme
+GET {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme?StartDate=2026-07-08&EndDate=2026-07-08&ProcessedState=1&isProcessed=1&PrintedState=1&isPrinted=1&SearchField=sample&SearchText=sample&InvoiceId=11111111-1111-1111-1111-111111111111&invoiceNo=1&DespatchId=11111111-1111-1111-1111-111111111111&despatchNo=1&CustomerTitle=120.01.03106&CustomerTcknVkn=120.01.03106&tcknVkn=sample&DocumentId=11111111-1111-1111-1111-111111111111&ettn=11111111-1111-1111-1111-111111111111&OrderDocumentId=11111111-1111-1111-1111-111111111111&Status=pending&InvoiceType=1&MinInvoiceTotal=1&MaxInvoiceTotal=1&HasDespatchId=False&PageNumber=1&page=1&PageSize=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/11111111-1111-1111-1111-111111111111/detail
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/11111111-1111-1111-1111-111111111111/pdf
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PATCH {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/11111111-1111-1111-1111-111111111111/printed
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "isPrinted":  false,
+    "source":  "sample"
+}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/11111111-1111-1111-1111-111111111111/render
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "profile":  0,
+    "preferEmbeddedXslt":  false,
+    "fallbackToGeneral":  false
+}
+
+###
+POST {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/senkronize
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "startDate":  "2026-07-08",
+    "endDate":  "2026-07-08"
+}
+
+###
+
+# GreenGrocerOrders
+DELETE {{baseUrl}}/api/green-grocer/orders?DocumentSerie=F50&DocumentOrderNo=1&WarehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# GreenGrocerReports
+GET {{baseUrl}}/api/green-grocer/reports?Date=2026-07-08&DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/green-grocer/reports/by-branch?Date=2026-07-08&DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/green-grocer/reports/by-product?Date=2026-07-08&DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/green-grocer/reports/greens?Date=2026-07-08&DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/green-grocer/reports/summary?Date=2026-07-08&DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# HomeSikayetOneri
+POST {{baseUrl}}/api/home/sikayet-oneri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "type":  "1",
+    "title":  "sample",
+    "message":  "sample",
+    "priority":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/home/sikayet-oneri/benim
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/home/sikayet-oneri/ozet
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# DepoIadeleri
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/iade-islemleri/depo-iadeleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "targetWarehouseNo":  1,
+    "transitWarehouseNo":  1,
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/iade-islemleri/depo-iadeleri/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/F50/1/e-irsaliye/pdf?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/iade-islemleri/depo-iadeleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/gelen?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/gelen/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "targetWarehouseNo":  1,
+    "transitWarehouseNo":  1,
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden/F50/1/e-irsaliye/pdf?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# FirmaIadeleri
+GET {{baseUrl}}/api/iade-islemleri/firma-iadeleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/iade-islemleri/firma-iadeleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/firma-iadeleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/iade-islemleri/firma-iadeleri/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/iade-islemleri/firma-iadeleri/F50/1/e-irsaliye/pdf?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/iade-islemleri/firma-iadeleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+
+# AxataSenkronizasyonu
+GET {{baseUrl}}/api/integrations/axata-sync
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/fetch-profiles
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/health
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/jobs
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "taskCode":  "sample",
+    "executionMode":  "sample",
+    "warehouseNo":  1
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/jobs/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/live/audit/overview?StartDate=2026-07-08&EndDate=2026-07-08&WarehouseNo=1&Take=1&DocumentSerie=F50&DocumentOrderNo=1&Statuses=pending
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/by-date?Date=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/F50/1/import
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "status":  "pending",
+    "acknowledge":  false
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/F50/1/preview?status=pending
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "take":  1,
+    "continueOnError":  false,
+    "acknowledge":  false
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview?Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/preview?MovementType=1&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/live/products/015550/dispatch
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/live/products/dispatch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "productCodes":  [
+                         "sample"
+                     ],
+    "take":  1,
+    "continueOnError":  false
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/live/products/preview?ProductCode=015550&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/axata/inbound-atf/company-receivings
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "axataOrderNo":  "1",
+    "invoiceNo":  "1",
+    "deliverer":  "sample",
+    "receiver":  "sample",
+    "description":  "sample",
+    "allowOrderOverReceiving":  false,
+    "lines":  [
+                  {
+                      "lineNo":  1,
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "lastConsumingDate":  "2026-07-08",
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/axata/inbound-atf/company-receivings/batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "continueOnError":  false,
+    "items":  [
+                  {
+                      "warehouseNo":  1,
+                      "customerCode":  "120.01.03106",
+                      "movementDate":  "2026-07-08",
+                      "documentDate":  "2026-07-08",
+                      "documentNo":  "1",
+                      "axataOrderNo":  "1",
+                      "invoiceNo":  "1",
+                      "deliverer":  "sample",
+                      "receiver":  "sample",
+                      "description":  "sample",
+                      "allowOrderOverReceiving":  false,
+                      "lines":  [
+                                    {
+                                        "lineNo":  1,
+                                        "stockCode":  "015550",
+                                        "quantity":  1,
+                                        "unitPrice":  1,
+                                        "unitPointer":  1,
+                                        "lastConsumingDate":  "2026-07-08",
+                                        "description":  "sample",
+                                        "partyCode":  "sample",
+                                        "lotNo":  1,
+                                        "projectCode":  "sample",
+                                        "customerResponsibilityCenter":  "120.01.03106",
+                                        "productResponsibilityCenter":  "015550"
+                                    }
+                                ]
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/axata/outbound-deliveries/inter-warehouse-shipments
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "sourceWarehouseNo":  1,
+    "targetWarehouseNo":  1,
+    "transitWarehouseNo":  1,
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "axataDeliveryNo":  "1",
+    "movementCode":  "sample",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "lineNo":  1,
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/axata/outbound-deliveries/inter-warehouse-shipments/batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "continueOnError":  false,
+    "items":  [
+                  {
+                      "sourceWarehouseNo":  1,
+                      "targetWarehouseNo":  1,
+                      "transitWarehouseNo":  1,
+                      "movementDate":  "2026-07-08",
+                      "documentDate":  "2026-07-08",
+                      "documentNo":  "1",
+                      "axataDeliveryNo":  "1",
+                      "movementCode":  "sample",
+                      "description":  "sample",
+                      "lines":  [
+                                    {
+                                        "lineNo":  1,
+                                        "stockCode":  "015550",
+                                        "quantity":  1,
+                                        "unitPrice":  1,
+                                        "unitPointer":  1,
+                                        "description":  "sample",
+                                        "partyCode":  "sample",
+                                        "lotNo":  1,
+                                        "projectCode":  "sample",
+                                        "customerResponsibilityCenter":  "120.01.03106",
+                                        "productResponsibilityCenter":  "015550"
+                                    }
+                                ]
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/incoming/company-receivings
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "deliverer":  "sample",
+    "receiver":  "sample",
+    "description":  "sample",
+    "allowOrderOverReceiving":  false,
+    "autoCreateReturnForPartialAcceptance":  false,
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "dispatchQuantity":  1,
+                      "acceptedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "lastConsumingDate":  "2026-07-08",
+                      "orderGuid":  "11111111-1111-1111-1111-111111111111",
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/incoming/company-receivings/batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "continueOnError":  false,
+    "items":  [
+                  {
+                      "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+                      "customerCode":  "120.01.03106",
+                      "movementDate":  "2026-07-08",
+                      "documentDate":  "2026-07-08",
+                      "documentNo":  "1",
+                      "deliverer":  "sample",
+                      "receiver":  "sample",
+                      "description":  "sample",
+                      "allowOrderOverReceiving":  false,
+                      "autoCreateReturnForPartialAcceptance":  false,
+                      "lines":  [
+                                    {
+                                        "stockCode":  "015550",
+                                        "quantity":  1,
+                                        "dispatchQuantity":  1,
+                                        "acceptedQuantity":  1,
+                                        "unitPrice":  1,
+                                        "unitPointer":  1,
+                                        "lastConsumingDate":  "2026-07-08",
+                                        "orderGuid":  "11111111-1111-1111-1111-111111111111",
+                                        "description":  "sample",
+                                        "partyCode":  "sample",
+                                        "lotNo":  1,
+                                        "projectCode":  "sample",
+                                        "customerResponsibilityCenter":  "120.01.03106",
+                                        "productResponsibilityCenter":  "015550"
+                                    }
+                                ]
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/incoming/inventory-counts
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+    "name":  "sample",
+    "documentDate":  "2026-07-08",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "barcode":  "8690000000000",
+                      "unitPointer":  1
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/incoming/inventory-counts/batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "continueOnError":  false,
+    "items":  [
+                  {
+                      "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+                      "name":  "sample",
+                      "documentDate":  "2026-07-08",
+                      "lines":  [
+                                    {
+                                        "stockCode":  "015550",
+                                        "quantity":  1,
+                                        "barcode":  "8690000000000",
+                                        "unitPointer":  1
+                                    }
+                                ]
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/manual/incoming/warehouse-receivings?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/manual/incoming/warehouse-receivings/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/incoming/warehouse-receivings/F50/1/accept
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "allowDiscrepancy":  false,
+    "lines":  [
+                  {
+                      "movementGuid":  "11111111-1111-1111-1111-111111111111",
+                      "receivedQuantity":  1
+                  }
+              ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/incoming/warehouse-receivings/accept-batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "continueOnError":  false,
+    "items":  [
+                  {
+                      "documentSerie":  "F50",
+                      "documentOrderNo":  1,
+                      "allowDiscrepancy":  false,
+                      "lines":  [
+                                    {
+                                        "movementGuid":  "11111111-1111-1111-1111-111111111111",
+                                        "receivedQuantity":  1
+                                    }
+                                ]
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/candidates?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&Skip=1&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/dispatch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentSerie":  "F50",
+    "documentOrderNo":  1,
+    "documentNo":  1,
+    "documentDate":  "2026-07-08"
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/dispatch-batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "continueOnError":  false,
+    "documents":  [
+                      {
+                          "documentSerie":  "F50",
+                          "documentOrderNo":  1,
+                          "documentNo":  1,
+                          "documentDate":  "2026-07-08"
+                      }
+                  ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/execute
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentSerie":  "F50",
+    "documentOrderNo":  1,
+    "documentNo":  1,
+    "documentDate":  "2026-07-08",
+    "executionMode":  "sample"
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/execute-batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "continueOnError":  false,
+    "documents":  [
+                      {
+                          "documentSerie":  "F50",
+                          "documentOrderNo":  1,
+                          "documentNo":  1,
+                          "documentDate":  "2026-07-08"
+                      }
+                  ],
+    "executionMode":  "sample"
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/preview
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "documentSerie":  "F50",
+    "documentOrderNo":  1,
+    "documentNo":  1,
+    "documentDate":  "2026-07-08"
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/manual/tasks/sample/documents/preview-batch
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "continueOnError":  false,
+    "documents":  [
+                      {
+                          "documentSerie":  "F50",
+                          "documentOrderNo":  1,
+                          "documentNo":  1,
+                          "documentDate":  "2026-07-08"
+                      }
+                  ]
+}
+
+###
+POST {{baseUrl}}/api/integrations/axata-sync/tasks/sample/execute
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "executionMode":  "sample",
+    "warehouseNo":  1
+}
+
+###
+GET {{baseUrl}}/api/integrations/axata-sync/tasks/sample/preview?warehouseNo=1&take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# BanknotTakipleri
+GET {{baseUrl}}/api/kasa-islemleri/banknot-takipleri?DateToGet=2026-07-08&WarehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/banknot-takipleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "banknoteTrackDate":  "2026-07-08",
+    "totalAmount":  1,
+    "deliveryTotalAmount":  1,
+    "deliverer":  "sample",
+    "receiver":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/banknot-takipleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# EtiketBelgeleri
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri?warehouseNo=1&take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "lines":  [
+                  {
+                      "productCode":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/etiketler?DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?DateTimeFilter=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/get-by-date-for-label?DateTimeFilter=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/son?warehouseNo=1&take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/tumu?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# KasaCiroAktarimi
+POST {{baseUrl}}/api/kasa-islemleri/kasa-ciro-aktarimi/metin/aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "startDate":  "2026-07-08",
+    "endDate":  "2026-07-08",
+    "branches":  [
+                     1
+                 ],
+    "movementRootPath":  "sample",
+    "dryRun":  false
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-ciro-aktarimi/subeler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# KasaCirolari
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/detay?WarehouseNo=1&BusinessDate=2026-07-08&ShiftNo=1&CashierCode=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/eski?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/eski/detay?WarehouseNo=1&BusinessDate=2026-07-08&ShiftNo=1&CashierCode=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/eski/ozet?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/ozet?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/toplam/detay?WarehouseNo=1&BusinessDate=2026-07-08&ShiftNo=1&CashierCode=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/toplam/ozet?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/yeni?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/yeni/detay?WarehouseNo=1&BusinessDate=2026-07-08&ShiftNo=1&CashierCode=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-cirolari/yeni/ozet?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# KasaHareketAktarimi
+POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "startDate":  "2026-07-08",
+    "endDate":  "2026-07-08",
+    "branches":  [
+                     1
+                 ],
+    "cashRegisters":  [
+                          1
+                      ],
+    "fileRootPath":  "sample",
+    "skipExisting":  false,
+    "dryRun":  false
+}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/iptal-belgeleri/aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "startDate":  "2026-07-08",
+    "endDate":  "2026-07-08",
+    "branches":  [
+                     1
+                 ],
+    "cashRegisters":  [
+                          1
+                      ],
+    "fileRootPath":  "sample",
+    "skipExisting":  false,
+    "dryRun":  false
+}
+
+###
+DELETE {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/mikro
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "date":  "2026-07-08",
+    "branchNo":  1
+}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "date":  "2026-07-08",
+    "branchNo":  1
+}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "startDate":  "2026-07-08",
+    "endDate":  "2026-07-08"
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/rapor?Date=2026-07-08&BranchNo=1&CashRegisterNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+DELETE {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/staging
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "date":  "2026-07-08",
+    "branchNo":  1,
+    "cashRegisterNo":  1
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/subeler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/subeler/1/kasalar
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "date":  "2026-07-08",
+    "addDay":  1,
+    "fileRootPath":  "sample",
+    "skipExisting":  false,
+    "dryRun":  false
+}
+
+###
+
+# KasaSayimlari
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari?DateToGet=2026-07-08&WarehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "cashNo":  1,
+    "zReportNo":  1,
+    "cashierNo":  1,
+    "managerNo":  1,
+    "zTotalValue":  1,
+    "total":  1,
+    "summaryDate":  "2026-07-08",
+    "giftCheckMovements":  [
+                               {
+                                   "giftCheckType":  1,
+                                   "quantity":  1,
+                                   "total":  1,
+                                   "value":  1
+                               }
+                           ],
+    "banknoteMovements":  [
+                              {
+                                  "banknoteType":  1,
+                                  "quantity":  1,
+                                  "total":  1,
+                                  "value":  1
+                              }
+                          ],
+    "paymentTypes":  [
+                         {
+                             "paymentName":  "sample",
+                             "paymentTypeNo":  1,
+                             "accountCode":  "sample",
+                             "terminalId":  "11111111-1111-1111-1111-111111111111",
+                             "slipNumber":  1,
+                             "amountValue":  1
+                         }
+                     ],
+    "storeExpenses":  [
+                          {
+                              "storeExpensesType":  1,
+                              "description":  "sample",
+                              "amountValue":  1
+                          }
+                      ]
+}
+
+###
+DELETE {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1/banknot-hareketleri?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1/banknot-hareketleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "banknoteMovements":  [
+                              {
+                                  "value":  1,
+                                  "banknoteType":  1,
+                                  "quantity":  1,
+                                  "total":  1
+                              }
+                          ]
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1/detaylar?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1/detaylar
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "details":  [
+                    {
+                        "typeName":  "1",
+                        "paymentTypeId":  1,
+                        "accountCode":  "sample",
+                        "slipNumber":  1,
+                        "amount":  1,
+                        "terminalId":  "11111111-1111-1111-1111-111111111111",
+                        "description":  "sample"
+                    }
+                ]
+}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/F50/1/hediye-ceki-hareketleri?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/banknot-tipleri
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/hediye-ceki-tipleri
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/kasa-detayi?CashNo=1&CashRegisterNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/kasalar?BranchNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/kasiyerler?FilterString=sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/kasiyerler/ikili?CashierCode=1&ManagerCode=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?CashRegisterNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/masraf-pusulasi
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/yemek-ceki
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/rapor?DateToGet=2026-07-08&WarehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?WarehouseNo=1&DocumentSerie=F50&ZReportNo=1&CashNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# KunyeEtiketYazdirma
+GET {{baseUrl}}/api/kasa-islemleri/kunye-etiket-yazdirma?DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# ManavKunyeEtiketYazdirma
+GET {{baseUrl}}/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?WarehouseNo=1&DateToGet=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# Users
+GET {{baseUrl}}/api/kullanici-islemleri/kullanicilar
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kullanici-islemleri/kullanicilar/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/kullanici-islemleri/kullanicilar/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "username":  "sample",
+    "email":  "sample",
+    "firstName":  "sample",
+    "lastName":  "sample",
+    "warehouseNo":  "50",
+    "warehouseName":  "50",
+    "isActive":  false
+}
+
+###
+POST {{baseUrl}}/api/kullanici-islemleri/kullanicilar/11111111-1111-1111-1111-111111111111/roles
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "roleIds":  [
+                    "11111111-1111-1111-1111-111111111111"
+                ]
+}
+
+###
+
+# Roles
+GET {{baseUrl}}/api/kullanici-islemleri/roller
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/kullanici-islemleri/roller
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name":  "sample",
+    "description":  "sample",
+    "isActive":  false
+}
+
+###
+PUT {{baseUrl}}/api/kullanici-islemleri/roller/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name":  "sample",
+    "description":  "sample",
+    "isActive":  false
+}
+
+###
+POST {{baseUrl}}/api/kullanici-islemleri/roller/11111111-1111-1111-1111-111111111111/permissions
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "permissionIds":  [
+                          "11111111-1111-1111-1111-111111111111"
+                      ]
+}
+
+###
+
+# Permissions
+GET {{baseUrl}}/api/kullanici-islemleri/yetkiler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/kullanici-islemleri/yetkiler
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "code":  "sample",
+    "name":  "sample",
+    "description":  "sample"
+}
+
+###
+PUT {{baseUrl}}/api/kullanici-islemleri/yetkiler/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "code":  "sample",
+    "name":  "sample",
+    "description":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/kullanici-islemleri/yetkiler/catalog
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# DepoMalKabulleri
+GET {{baseUrl}}/api/mal-kabul-islemleri/depo-mal-kabulleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/mal-kabul-islemleri/depo-mal-kabulleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/depo-mal-kabulleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/mal-kabul-islemleri/depo-mal-kabulleri/F50/1/kabul
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "allowDiscrepancy":  false,
+    "lines":  [
+                  {
+                      "movementGuid":  "11111111-1111-1111-1111-111111111111",
+                      "receivedQuantity":  1
+                  }
+              ]
+}
+
+###
+PUT {{baseUrl}}/api/mal-kabul-islemleri/depo-mal-kabulleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/depo-mal-kabulleri/e-irsaliye/ettn/11111111-1111-1111-1111-111111111111?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# FirmaMalKabulleri
+GET {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "deliverer":  "sample",
+    "receiver":  "sample",
+    "description":  "sample",
+    "allowOrderOverReceiving":  false,
+    "autoCreateReturnForPartialAcceptance":  false,
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "dispatchQuantity":  1,
+                      "acceptedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "lastConsumingDate":  "2026-07-08",
+                      "orderGuid":  "11111111-1111-1111-1111-111111111111",
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/11111111-1111-1111-1111-111111111111?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# MalKabulFarklari
+GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabul-farklari?Scope=sample&WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabul-farklari/accepted?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabul-farklari/created?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabul-farklari/kabul-ettigim?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabul-farklari/olusturdugum?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# DepoMalKabulleri
+GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/F50/1/kabul
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "allowDiscrepancy":  false,
+    "lines":  [
+                  {
+                      "movementGuid":  "11111111-1111-1111-1111-111111111111",
+                      "receivedQuantity":  1
+                  }
+              ]
+}
+
+###
+
+# FirmaMalKabulleri
+POST {{baseUrl}}/api/mal-kabul-islemleri/mal-kabuller/firma
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "deliverer":  "sample",
+    "receiver":  "sample",
+    "description":  "sample",
+    "allowOrderOverReceiving":  false,
+    "autoCreateReturnForPartialAcceptance":  false,
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "dispatchQuantity":  1,
+                      "acceptedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "lastConsumingDate":  "2026-07-08",
+                      "orderGuid":  "11111111-1111-1111-1111-111111111111",
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+
+# MobileSync
+GET {{baseUrl}}/api/mobile-sync/cari-katalogu?Since=2026-07-08&Cursor=0&PageSize=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mobile-sync/depo-katalogu?Since=2026-07-08&Cursor=0&PageSize=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/mobile-sync/urun-fiyat-katalogu?WarehouseNo=1&Since=2026-07-08&Cursor=0&PageSize=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# BelgeAkisTakibi
+GET {{baseUrl}}/api/operasyon-islemleri/belge-akis-takibi?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&DocumentType=1&Status=pending&Search=sample&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/operasyon-islemleri/belge-akis-takibi/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# DepoOperasyonPaneli
+GET {{baseUrl}}/api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# Operations
+GET {{baseUrl}}/api/operations/authorization-files
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/operations/authorization-files
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "id":  1,
+    "updateDate":  "2026-07-08",
+    "name":  "sample",
+    "z":  false,
+    "r":  false,
+    "x":  false
+}
+
+###
+GET {{baseUrl}}/api/operations/cashierfile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/operations/getauthorizationfile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/operations/jobs/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/operations/productbarcodeplonofile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/operations/productbarcodeplunofile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/operations/promofile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/operations/saveauthorizationfile
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "id":  1,
+    "updateDate":  "2026-07-08",
+    "name":  "sample",
+    "z":  false,
+    "r":  false,
+    "x":  false
+}
+
+###
+GET {{baseUrl}}/api/operations/scalesfile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# YonetimSikayetOneri
+GET {{baseUrl}}/api/ortak-islemler/sikayet-oneri?Status=pending&Type=1&WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/ortak-islemler/sikayet-oneri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PATCH {{baseUrl}}/api/ortak-islemler/sikayet-oneri/11111111-1111-1111-1111-111111111111/durum
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "status":  "pending",
+    "adminNote":  "sample"
+}
+
+###
+PATCH {{baseUrl}}/api/ortak-islemler/sikayet-oneri/11111111-1111-1111-1111-111111111111/okundu
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# Permissions
+GET {{baseUrl}}/api/permissions
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/permissions
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "code":  "sample",
+    "name":  "sample",
+    "description":  "sample"
+}
+
+###
+PUT {{baseUrl}}/api/permissions/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "code":  "sample",
+    "name":  "sample",
+    "description":  "sample"
+}
+
+###
 GET {{baseUrl}}/api/permissions/catalog
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-@axataStartDate = 2026-06-17
-@axataEndDate = 2026-06-17
-@axataDeliveryDate = 2026-06-19
-@axataWarehouseNo = 50
-@axataTake = 50
+# SatisAnalizleri
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/banka-hareketleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
 
-GET {{baseUrl}}/api/integrations/axata-sync/live/audit/overview?StartDate={{axataStartDate}}&EndDate={{axataEndDate}}&WarehouseNo={{axataWarehouseNo}}&Take={{axataTake}}
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/banka-hareketleri/sube?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/banka?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/merchant?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/valor?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/eksik-cirolar?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/indirim-kartlari?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/marketyo-satislari?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/marketyo-satislari/sube?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/genel-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/metropol-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/multinet-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/setcard-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/sodexo-kupon-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/sodexo-pos-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/ticket-kupon-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/ticket-pos-toplam?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/yemek-cekleri/toplamlar?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/satis-analizleri/z-rapor-banka-analizi?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{baseUrl}}/api/integrations/axata-sync/live/axata/outbound-deliveries/by-date?date={{axataDeliveryDate}}
+# TedarikciPerformansKarnesi
+GET {{baseUrl}}/api/rapor-islemleri/tedarikci-performans-karnesi?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&CustomerCode=120.01.03106&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/rapor-islemleri/tedarikci-performans-karnesi/120.01.03106?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&EventTake=1
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
 
-GET {{baseUrl}}/api/siparis-islemleri/alinan-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+# Roles
+GET {{baseUrl}}/api/roles
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+POST {{baseUrl}}/api/roles
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "outWarehouseNo": 50,
-  "orderDate": "2026-04-17",
-  "deliveryDate": "2026-04-17",
-  "description": "",
-  "lines": [
-    {
-      "stockCode": "015550",
-      "quantity": 10,
-      "recommendedQuantity": 0,
-      "unitPrice": 0,
-      "unitPointer": 1
-    }
-  ]
+    "name":  "sample",
+    "description":  "sample",
+    "isActive":  false
+}
+
+###
+PUT {{baseUrl}}/api/roles/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name":  "sample",
+    "description":  "sample",
+    "isActive":  false
+}
+
+###
+POST {{baseUrl}}/api/roles/11111111-1111-1111-1111-111111111111/permissions
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "permissionIds":  [
+                          "11111111-1111-1111-1111-111111111111"
+                      ]
 }
 
 ###
 
-GET {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri?WarehouseNo=50&StartDate=2026-04-01&EndDate=2026-04-10
+# DepolarArasiSevkler
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+POST {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "customerCode": "120.01.03106",
-  "orderDate": "2026-04-17",
-  "deliveryDate": "2026-04-18",
-  "description1": "",
-  "description2": "",
-  "deliverer": "Teslim Eden",
-  "receiver": "Teslim Alan",
-  "lines": [
-    {
-      "stockCode": "015550",
-      "quantity": 10,
-      "recommendedQuantity": 0,
-      "unitPrice": 0,
-      "unitPointer": 1
-    }
-  ]
+    "targetWarehouseNo":  1,
+    "transitWarehouseNo":  1,
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "warehouseOrderLineGuid":  "11111111-1111-1111-1111-111111111111",
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
 }
 
 ###
-
-GET {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri/A/1585?warehouseNo=50
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/F50/1?warehouseNo=1
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+POST {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
 
-GET {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri/F110/2841?warehouseNo=110
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/F50/1/e-irsaliye/pdf?warehouseNo=1
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+PUT {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
 
-GET {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri/D110/1915?warehouseNo=110
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/gelen?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri/key/MTEwfEQxMTB8MTkxNQ
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/gelen/F50/1?warehouseNo=1
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
 POST {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden
-Content-Type: application/json
+Accept: application/json
 Authorization: Bearer {{token}}
+Content-Type: application/json
 
 {
-  "targetWarehouseNo": 50,
-  "transitWarehouseNo": 60,
-  "movementDate": "2026-04-17",
-  "documentDate": "2026-04-17",
-  "documentNo": "",
-  "description": "",
-  "lines": [
-    {
-      "stockCode": "015550",
-      "quantity": 10,
-      "unitPrice": 0,
-      "unitPointer": 1
-    }
-  ]
+    "targetWarehouseNo":  1,
+    "transitWarehouseNo":  1,
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "warehouseOrderLineGuid":  "11111111-1111-1111-1111-111111111111",
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden/F50/1/e-irsaliye/pdf?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# FirmaSevkleri
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/sevk-islemleri/firma-sevkleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/F50/1/e-irsaliye/pdf?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/gelen?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/gelen/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "customerCode":  "120.01.03106",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden/F50/1/e-irsaliye?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "plaque":  "sample",
+    "driverNameSurname":  "sample",
+    "driverTckn":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden/F50/1/e-irsaliye/pdf?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# AlinanDepoSiparisleri
+GET {{baseUrl}}/api/siparis-islemleri/alinan-depo-siparisleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/siparis-islemleri/alinan-depo-siparisleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/alinan-depo-siparisleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/siparis-islemleri/alinan-depo-siparisleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/alinan-depo-siparisleri/key/sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# AlinanFirmaSiparisleri
+GET {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/alinan-firma-siparisleri/key/sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# OnerilenDepoSiparisleri
+GET {{baseUrl}}/api/siparis-islemleri/onerilen-depo-siparisleri?TargetWarehouseNo=1&SourceWarehouseNo=1&LookbackDays=1&FallbackRecommendedDay=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "sourceWarehouseNo":  1,
+    "orderDate":  "2026-07-08",
+    "deliveryDate":  "2026-07-08",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "recommendedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "packageCode":  "sample",
+                      "projectCode":  "sample",
+                      "responsibilityCenter":  "sample"
+                  }
+              ]
 }
 
 ###
 
-GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/gelen?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+# OnerilenFirmaSiparisleri
+GET {{baseUrl}}/api/siparis-islemleri/onerilen-firma-siparisleri?WarehouseNo=1&SupplierCode=120.01.03106&LookbackDays=1&FallbackRecommendedDay=1
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/giden/F110/3694?warehouseNo=110
+POST {{baseUrl}}/api/siparis-islemleri/onerilen-firma-siparisleri/convert-to-order
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/sevk-islemleri/depolar-arasi-sevkler/gelen/F50/185640?warehouseNo=110
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/giden/PS110/422?warehouseNo=110
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/gelen?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/sevk-islemleri/firma-sevkleri/gelen/BG/1665?warehouseNo=110
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/son?warehouseNo=110&take=10
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/tumu
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/1?warehouseNo=110
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=2026-04-24
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=110&dateToGet=2026-04-24
-Accept: application/json
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/kasa-islemleri/etiket-belgeleri
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "lines": [
-    {
-      "productCode": "015550"
-    },
-    {
-      "productCode": "015551"
-    }
-  ]
+    "supplierCode":  "120.01.03106",
+    "orderDate":  "2026-07-08",
+    "deliveryDate":  "2026-07-08",
+    "description1":  "sample",
+    "description2":  "sample",
+    "deliverer":  "sample",
+    "receiver":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "recommendedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description1":  "sample",
+                      "description2":  "sample",
+                      "packageCode":  "sample",
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
 }
 
 ###
 
-GET {{baseUrl}}/api/kasa-islemleri/banknot-takipleri?dateToGet=2026-04-24&warehouseNo=110
+# VerilenDepoSiparisleri
+GET {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/kasa-islemleri/banknot-takipleri/14d74fd4-1217-4056-9a0e-c45e3a25a456
+POST {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/kasa-islemleri/banknot-takipleri
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "banknoteTrackDate": "2026-04-24",
-  "totalAmount": 12000,
-  "deliveryTotalAmount": 11850,
-  "deliverer": "Teslim Eden",
-  "receiver": "Teslim Alan"
+    "outWarehouseNo":  1,
+    "orderDate":  "2026-07-08",
+    "deliveryDate":  "2026-07-08",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "recommendedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "packageCode":  "sample",
+                      "projectCode":  "sample",
+                      "responsibilityCenter":  "sample"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/verilen-depo-siparisleri/key/sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# VerilenFirmaSiparisleri
+GET {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&CustomerCode=120.01.03106&OnlyOpen=False
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "customerCode":  "120.01.03106",
+    "orderDate":  "2026-07-08",
+    "deliveryDate":  "2026-07-08",
+    "description1":  "sample",
+    "description2":  "sample",
+    "deliverer":  "sample",
+    "receiver":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "recommendedQuantity":  1,
+                      "unitPrice":  1,
+                      "unitPointer":  1,
+                      "description1":  "sample",
+                      "description2":  "sample",
+                      "packageCode":  "sample",
+                      "projectCode":  "sample",
+                      "customerResponsibilityCenter":  "120.01.03106",
+                      "productResponsibilityCenter":  "015550"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/siparis-islemleri/verilen-firma-siparisleri/key/sample
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# MasrafFisleri
+GET {{baseUrl}}/api/stok-islemleri/masraf-fisleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/stok-islemleri/masraf-fisleri
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "creator":  "sample",
+    "acceptor":  "sample",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/stok-islemleri/masraf-fisleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/stok-islemleri/masraf-fisleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
 }
 
 ###
 
-GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari?dateToGet=2026-04-24
+# SayimSonuclari
+GET {{baseUrl}}/api/stok-islemleri/sayim-sonuclari?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/rapor?dateToGet=2026-04-24
+POST {{baseUrl}}/api/stok-islemleri/sayim-sonuclari
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari/KS110/1
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/kasa-islemleri/kasa-sayimlari
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "cashNo": 1,
-  "zReportNo": 125,
-  "cashierNo": 1001,
-  "managerNo": 1002,
-  "zTotalValue": 15340.5,
-  "total": 15340.5,
-  "summaryDate": "2026-04-24",
-  "giftCheckMovements": [],
-  "banknoteMovements": [
-    {
-      "banknoteType": 1,
-      "quantity": 20,
-      "total": 4000,
-      "value": 200
-    }
-  ],
-  "paymentTypes": [
-    {
-      "paymentName": "Nakit",
-      "paymentTypeNo": 1,
-      "accountCode": "",
-      "terminalId": "",
-      "slipNumber": 0,
-      "amountValue": 11340.5
-    }
-  ],
-  "storeExpenses": []
+    "clientRequestId":  "11111111-1111-1111-1111-111111111111",
+    "name":  "sample",
+    "documentDate":  "2026-07-08",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "barcode":  "8690000000000",
+                      "unitPointer":  1
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/stok-islemleri/sayim-sonuclari/1?documentDate=2026-07-08&warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/stok-islemleri/sayim-sonuclari/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+GET {{baseUrl}}/api/stok-islemleri/sayim-sonuclari/offline-sync/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# StokAnomaliMerkezi
+GET {{baseUrl}}/api/stok-islemleri/stok-anomali-merkezi?WarehouseNo=1&Type=1&Status=pending&Severity=sample&ProductManagerCode=015550&HasProductManager=False&StartDate=2026-07-08&EndDate=2026-07-08&Search=sample&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/stok-islemleri/stok-anomali-merkezi/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/stok-islemleri/stok-anomali-merkezi/11111111-1111-1111-1111-111111111111/durum
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "status":  1,
+    "note":  "sample"
+}
+
+###
+GET {{baseUrl}}/api/stok-islemleri/stok-anomali-merkezi/satin-almacilar?WarehouseNo=1&Status=pending
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/stok-islemleri/stok-anomali-merkezi/tara
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "warehouseNo":  1,
+    "startDate":  "2026-07-08",
+    "endDate":  "2026-07-08",
+    "dormantDays":  1,
+    "pendingTransferHours":  1,
+    "highQuantityLookbackDays":  1,
+    "highQuantityMultiplier":  1,
+    "highQuantityMinimum":  1,
+    "takePerRule":  1
 }
 
 ###
 
-GET {{baseUrl}}/api/iade-islemleri/firma-iadeleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+# Virmanlar
+GET {{baseUrl}}/api/stok-islemleri/virmanlar?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/iade-islemleri/firma-iadeleri/F110/4651?warehouseNo=110
+POST {{baseUrl}}/api/stok-islemleri/virmanlar
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/iade-islemleri/firma-iadeleri/F110/4651/e-irsaliye?warehouseNo=110
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "plaque": "16 ABC 123",
-  "driverNameSurname": "Ad Soyad",
-  "driverTckn": "11111111111"
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "movementType":  1,
+                      "quantity":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample"
+                  }
+              ]
+}
+
+###
+GET {{baseUrl}}/api/stok-islemleri/virmanlar/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/stok-islemleri/virmanlar/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
 }
 
 ###
 
-GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+# ZayiatFisleri
+GET {{baseUrl}}/api/stok-islemleri/zayiat-fisleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-
-GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden?WarehouseNo=110&StartDate=2026-04-01&EndDate=2026-04-10
+POST {{baseUrl}}/api/stok-islemleri/zayiat-fisleri
 Accept: application/json
 Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/gelen?WarehouseNo=50&StartDate=2026-04-01&EndDate=2026-04-10
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/F110/42?warehouseNo=110
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/giden/F110/42?warehouseNo=110
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-GET {{baseUrl}}/api/iade-islemleri/depo-iadeleri/gelen/F110/42?warehouseNo=50
-Accept: application/json
-Authorization: Bearer {{token}}
-
-###
-
-POST {{baseUrl}}/api/iade-islemleri/depo-iadeleri/F110/42/e-irsaliye?warehouseNo=110
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "plaque": "16 ABC 123",
-  "driverNameSurname": "Ad Soyad",
-  "driverTckn": "11111111111"
+    "creator":  "sample",
+    "acceptor":  "sample",
+    "movementDate":  "2026-07-08",
+    "documentDate":  "2026-07-08",
+    "documentNo":  "1",
+    "description":  "sample",
+    "lines":  [
+                  {
+                      "stockCode":  "015550",
+                      "quantity":  1,
+                      "unitPointer":  1,
+                      "description":  "sample",
+                      "partyCode":  "sample",
+                      "lotNo":  1,
+                      "projectCode":  "sample"
+                  }
+              ]
 }
+
+###
+GET {{baseUrl}}/api/stok-islemleri/zayiat-fisleri/F50/1?warehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/stok-islemleri/zayiat-fisleri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "fields":  {
+
+               }
+}
+
+###
+
+# Users
+GET {{baseUrl}}/api/users
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/users/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PUT {{baseUrl}}/api/users/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "username":  "sample",
+    "email":  "sample",
+    "firstName":  "sample",
+    "lastName":  "sample",
+    "warehouseNo":  "50",
+    "warehouseName":  "50",
+    "isActive":  false
+}
+
+###
+POST {{baseUrl}}/api/users/11111111-1111-1111-1111-111111111111/roles
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "roleIds":  [
+                    "11111111-1111-1111-1111-111111111111"
+                ]
+}
+
+###
+
+# YonetimSikayetOneri
+GET {{baseUrl}}/api/yonetim/sikayet-oneri?Status=pending&Type=1&WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&Take=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/yonetim/sikayet-oneri/11111111-1111-1111-1111-111111111111
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+PATCH {{baseUrl}}/api/yonetim/sikayet-oneri/11111111-1111-1111-1111-111111111111/durum
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "status":  "pending",
+    "adminNote":  "sample"
+}
+
+###
+PATCH {{baseUrl}}/api/yonetim/sikayet-oneri/11111111-1111-1111-1111-111111111111/okundu
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
