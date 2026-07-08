@@ -197,7 +197,7 @@ public sealed class VirmanWriteService(
                 result.ErrorMessage ?? "Mikro API virman create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             documentSerie,
             documentOrderNo,
             request,
@@ -206,6 +206,12 @@ public sealed class VirmanWriteService(
             documentNo,
             options.ConnectionStringName,
             cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo,
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<CreateVirmanResponse> ExecuteDualShadowAsync(

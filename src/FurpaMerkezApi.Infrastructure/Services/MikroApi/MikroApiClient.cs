@@ -11,6 +11,7 @@ namespace FurpaMerkezApi.Infrastructure.Services.MikroApi;
 public sealed class MikroApiClient(
     HttpClient httpClient,
     MikroApiAuthBlockFactory authBlockFactory,
+    MikroApiWriteAuditService writeAuditService,
     IOptionsMonitor<MikroApiOptions> options,
     ILogger<MikroApiClient> logger)
 {
@@ -26,13 +27,13 @@ public sealed class MikroApiClient(
     public Task<MikroApiResult<TResponse>> GetAsync<TResponse>(
         string path,
         CancellationToken cancellationToken = default) =>
-        SendAsync<TResponse>(HttpMethod.Get, path, payload: null, cancellationToken);
+        SendAsync<TResponse>(HttpMethod.Get, path, payload: null, auditPayload: null, auditWrite: false, cancellationToken);
 
     public Task<MikroApiResult<TResponse>> PostAsync<TResponse>(
         string path,
         object? payload,
         CancellationToken cancellationToken = default) =>
-        SendAsync<TResponse>(HttpMethod.Post, path, payload, cancellationToken);
+        SendAsync<TResponse>(HttpMethod.Post, path, payload, payload, auditWrite: true, cancellationToken);
 
     public Task<MikroApiResult<TResponse>> PostWithMikroEnvelopeAsync<TResponse>(
         string path,
@@ -42,6 +43,8 @@ public sealed class MikroApiClient(
             HttpMethod.Post,
             path,
             authBlockFactory.CreateEnvelopePayload(payload),
+            payload,
+            auditWrite: true,
             cancellationToken);
 
     public Task<MikroApiResult<TResponse>> PostWithMikroPayloadAsync<TResponse>(
@@ -52,6 +55,8 @@ public sealed class MikroApiClient(
             HttpMethod.Post,
             path,
             authBlockFactory.CreateMikroPayload(mikroPayload),
+            mikroPayload,
+            auditWrite: true,
             cancellationToken);
 
     public Task<MikroApiResult<TResponse>> PostLoginAsync<TResponse>(
@@ -61,12 +66,16 @@ public sealed class MikroApiClient(
             HttpMethod.Post,
             path,
             authBlockFactory.CreateLoginPayload(),
+            auditPayload: null,
+            auditWrite: false,
             cancellationToken);
 
     private async Task<MikroApiResult<TResponse>> SendAsync<TResponse>(
         HttpMethod method,
         string path,
         object? payload,
+        object? auditPayload,
+        bool auditWrite,
         CancellationToken cancellationToken)
     {
         EnsureBaseUrlConfigured();
@@ -75,6 +84,12 @@ public sealed class MikroApiClient(
         var requestJson = payload is null
             ? null
             : JsonSerializer.Serialize(payload, JsonOptions);
+        var auditPayloadJson = auditPayload is null
+            ? null
+            : JsonSerializer.Serialize(auditPayload, JsonOptions);
+        var auditHandle = auditWrite
+            ? await writeAuditService.BeginAsync(normalizedPath, auditPayloadJson, cancellationToken)
+            : new MikroApiWriteAuditHandle(null, Guid.NewGuid());
         var currentOptions = options.CurrentValue;
         var maxAttempts = ResolveMaxAttempts(method, currentOptions);
         var stopwatch = Stopwatch.StartNew();
@@ -100,12 +115,18 @@ public sealed class MikroApiClient(
                     continue;
                 }
 
-                return CreateResult<TResponse>(
+                var result = CreateResult<TResponse>(
                     normalizedPath,
                     response.StatusCode,
                     rawResponse,
                     attempt,
                     elapsed);
+
+                return await CompleteAuditAsync(
+                    result,
+                    auditHandle,
+                    auditWrite,
+                    cancellationToken);
             }
             catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
@@ -145,7 +166,7 @@ public sealed class MikroApiClient(
 
         var failureMessage = lastException?.Message ?? "Mikro API request failed.";
 
-        return new MikroApiResult<TResponse>(
+        var failureResult = new MikroApiResult<TResponse>(
             true,
             0,
             0,
@@ -155,6 +176,45 @@ public sealed class MikroApiClient(
             normalizedPath,
             maxAttempts,
             stopwatch.Elapsed);
+
+        return await CompleteAuditAsync(
+            failureResult,
+            auditHandle,
+            auditWrite,
+            cancellationToken);
+    }
+
+    public Task MarkRecoveredAsync<TResponse>(
+        MikroApiResult<TResponse> result,
+        string? documentNo,
+        Guid? recoveredGuid = null,
+        Guid? documentFlowId = null,
+        CancellationToken cancellationToken = default) =>
+        writeAuditService.MarkRecoveredAsync(
+            result.AuditId,
+            documentNo,
+            recoveredGuid,
+            documentFlowId,
+            cancellationToken);
+
+    private async Task<MikroApiResult<TResponse>> CompleteAuditAsync<TResponse>(
+        MikroApiResult<TResponse> result,
+        MikroApiWriteAuditHandle auditHandle,
+        bool auditWrite,
+        CancellationToken cancellationToken)
+    {
+        var enrichedResult = result with
+        {
+            AuditId = auditHandle.AuditId,
+            RequestId = auditHandle.RequestId
+        };
+
+        if (auditWrite)
+        {
+            await writeAuditService.CompleteAsync(auditHandle, enrichedResult, cancellationToken);
+        }
+
+        return enrichedResult;
     }
 
     private void EnsureBaseUrlConfigured()

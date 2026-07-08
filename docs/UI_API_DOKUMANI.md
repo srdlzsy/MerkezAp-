@@ -9530,6 +9530,80 @@ Authorization file ekran akis onerisi:
 
 Bu ekran sevk, iade, mal kabul, siparis ve e-irsaliye adimlarini Auth DB tarafinda izlemek icin eklendi. Mikro semasina yazmaz; kayitlar `document_flows` ve `document_flow_events` tablolarinda tutulur.
 
+### Mikro API Yazma Audit Kayitlari
+
+Mikro API uzerinden yapilan teknik yazma cagrilari, Belge Akis Takibi'nden ayri olarak Auth DB icindeki `mikro_api_write_audits` tablosunda izlenir. Belge Akis Takibi is surecini, bu tablo ise Mikro HTTP isteginin teknik sonucunu kaydeder.
+
+Config:
+
+```json
+"MikroApiWriteAudit": {
+  "Enabled": true,
+  "MaxResponseLength": 8000
+}
+```
+
+- Ortam degiskeni ile acma/kapatma: `MikroApiWriteAudit__Enabled=true|false`
+- Response siniri: `MikroApiWriteAudit__MaxResponseLength=8000`
+- `Enabled=false` oldugunda audit servisi Auth DB'ye okuma veya yazma yapmaz.
+- Audit kaydi basarisiz olursa asil Mikro API yazma islemi durdurulmaz; backend warning log uretir.
+- Mikro login cagrisi audit kapsaminda degildir.
+- Yalnizca `MikroApiClient` uzerinden yapilan POST yazma cagrilari kaydedilir.
+- `MikroWriteRouting` ilgili islem icin `Database` ise Mikro API cagrisi yapilmayacagindan audit kaydi da olusmaz.
+- Mevcut config'te yazma rotalari `Database` oldugu icin audit ancak ilgili rota `MikroApi` olarak degistirildiginde kayit uretir.
+
+Kaydedilen temel alanlar:
+
+| Alan | Aciklama |
+|---|---|
+| `request_id` | Her Mikro API cagrisi icin uretilen benzersiz istek kimligi |
+| `correlation_id` | Gelen UI/API isteginin `X-Correlation-Id` degeri |
+| `endpoint` | Cagrilan Mikro API path'i |
+| `payload_hash` | Auth/sifre alani icermeyen is payload'inin SHA-256 ozeti; payload'in kendisi saklanmaz |
+| `status` | `Pending`, `Succeeded`, `Failed`, `Unknown` veya `Recovered` |
+| `http_status_code` | HTTP cevap kodu |
+| `mikro_status_code` | Mikro response icindeki uygulama durum kodu |
+| `response` | Config ile sinirlanan ham Mikro cevabi |
+| `error` | Teknik veya Mikro hata mesaji |
+| `attempt_count` | Retry dahil toplam deneme sayisi |
+| `elapsed_milliseconds` | Mikro cagrisi toplam suresi |
+| `recovered_document_no` | Mikro DB recovery sonrasinda bulunan belge no veya seri/sira referansi |
+| `recovered_guid` | Recovery sonucunda bulunabiliyorsa ana hareket GUID'i |
+| `document_flow_id` | Belge Akis kaydina opsiyonel baglanti; mevcut akislarda bos kalabilir |
+
+Status anlami:
+
+```text
+Pending    Audit acildi, Mikro cevabi henuz tamamlanmadi
+Succeeded  Mikro API basarili cevap verdi
+Failed     HTTP veya Mikro uygulama cevabi hata dondu
+Unknown    Timeout/baglanti hatasi nedeniyle sonuc kesinlestirilemedi
+Recovered  Mikro API cevabindan sonra belge Mikro DB'de bulundu
+```
+
+Recovery destegi su Mikro API yazma akislari icin baglidir:
+
+- sayim sonucu
+- verilen depo siparisi
+- verilen firma siparisi
+- stok giris/zayiat/masraf fisi
+- virman
+- depolar arasi sevk
+- depo iadesi
+- firma sevk/iade hareketi
+- firma mal kabul
+- depo mal kabul kabul islemi
+
+Bu kayitlar su anda backend operasyon/audit altyapisidir; UI icin ayrica bir liste veya detay endpoint'i yayinlanmamistir. Bu nedenle UI dogrudan tabloya baglanmamali ve Belge Akis ekraninin mevcut response modelinde audit alanlari beklememelidir.
+
+Migration:
+
+```text
+20260708080714_AddMikroApiWriteAudit
+```
+
+Production'da `StartupTasks__ApplyAuthMigrations=false` ise migration deploy sirasinda Auth DB'ye ayrica uygulanmalidir.
+
 ### Depo Operasyon Paneli
 
 Bu endpoint merkez yoneticisinin aktif depolari tek istekte izlemesi icindir. Depo numarasi ve adi Mikro `DEPOLAR` tablosundan okunur; operasyon sayilari yalnizca Furpa Merkez API'nin Auth DB'ye yazdigi belge akis kayitlarindan hesaplanir. Mikro veya baska bir uygulama uzerinden dogrudan yapilan islemler sayilara dahil edilmez.

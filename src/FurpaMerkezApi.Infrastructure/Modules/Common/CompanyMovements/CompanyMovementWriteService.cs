@@ -168,7 +168,7 @@ public sealed class CompanyMovementWriteService(
                 result.ErrorMessage ?? "Mikro API company movement create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             documentSerie,
             documentOrderNo,
             request,
@@ -179,6 +179,12 @@ public sealed class CompanyMovementWriteService(
             documentNo,
             options.ConnectionStringName,
             cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo,
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<CreateCompanyMovementResponse> ExecuteDualShadowAsync(

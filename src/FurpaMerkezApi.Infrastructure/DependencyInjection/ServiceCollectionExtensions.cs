@@ -247,9 +247,11 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromMinutes(5);
         });
         services.Configure<MikroApiOptions>(configuration.GetSection(MikroApiOptions.SectionName));
+        services.Configure<MikroApiWriteAuditOptions>(configuration.GetSection(MikroApiWriteAuditOptions.SectionName));
         services.Configure<MikroWriteRoutingOptions>(configuration.GetSection(MikroWriteRoutingOptions.SectionName));
         services.Configure<DocumentFlowTrackingOptions>(configuration.GetSection(DocumentFlowTrackingOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
+        services.AddSingleton<MikroApiWriteAuditService>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
         {
             var mikroApiOptions = serviceProvider.GetRequiredService<IOptionsMonitor<MikroApiOptions>>().CurrentValue;

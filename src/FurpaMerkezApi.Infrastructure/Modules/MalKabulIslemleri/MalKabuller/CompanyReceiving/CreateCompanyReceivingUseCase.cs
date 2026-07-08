@@ -765,7 +765,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 result.ErrorMessage ?? "Mikro API company receiving create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             documentSerie,
             documentOrderNo,
             request.WarehouseNo,
@@ -775,6 +775,14 @@ public sealed class CreateCompanyReceivingUseCase(
             documentDate,
             documentNo,
             cancellationToken);
+
+        var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo,
+            recoveredGuid == Guid.Empty ? null : recoveredGuid,
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<RecoveredCompanyReceivingCreate> RecoverMikroApiCreateResponseAsync(

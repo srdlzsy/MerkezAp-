@@ -225,6 +225,13 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             movementDate,
             cancellationToken);
 
+        var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo,
+            recoveredGuid == Guid.Empty ? null : recoveredGuid,
+            cancellationToken: cancellationToken);
+
         return new CreateInterWarehouseShipmentResponse(
             recovered.DocumentSerie,
             recovered.DocumentOrderNo,

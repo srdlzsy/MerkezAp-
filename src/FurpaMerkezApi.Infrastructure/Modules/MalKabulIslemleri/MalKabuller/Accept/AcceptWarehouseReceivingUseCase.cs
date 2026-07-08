@@ -173,6 +173,12 @@ public sealed class AcceptWarehouseReceivingUseCase(
             transitWarehouseNo,
             cancellationToken);
 
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{documentSerie}/{request.DocumentOrderNo}",
+            firstMovement.sth_Guid,
+            cancellationToken: cancellationToken);
+
         return new AcceptWarehouseReceivingResponse(
             documentSerie,
             request.DocumentOrderNo,

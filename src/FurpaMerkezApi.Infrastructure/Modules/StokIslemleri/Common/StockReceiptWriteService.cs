@@ -179,7 +179,7 @@ public sealed class StockReceiptWriteService(
                 result.ErrorMessage ?? "Mikro API stock receipt create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             documentSerie,
             documentOrderNo,
             request,
@@ -191,6 +191,12 @@ public sealed class StockReceiptWriteService(
             acceptor,
             options.ConnectionStringName,
             cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo,
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<CreateStockReceiptResponse> ExecuteDualShadowAsync(

@@ -204,11 +204,17 @@ public sealed class InventoryCountWriteService(
                 result.ErrorMessage ?? "Mikro API inventory count create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             request.WarehouseNo,
             traceKey,
             options.ConnectionStringName,
             cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo.ToString(),
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<CreateInventoryCountResponse> ExecuteDualShadowAsync(

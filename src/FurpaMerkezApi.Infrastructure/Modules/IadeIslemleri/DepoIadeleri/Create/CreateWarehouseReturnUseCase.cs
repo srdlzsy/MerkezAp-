@@ -204,6 +204,13 @@ public sealed class CreateWarehouseReturnUseCase(
             movementDate,
             cancellationToken);
 
+        var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            recovered.DocumentNo,
+            recoveredGuid == Guid.Empty ? null : recoveredGuid,
+            cancellationToken: cancellationToken);
+
         return new CreateWarehouseReturnResponse(
             recovered.DocumentSerie,
             recovered.DocumentOrderNo,

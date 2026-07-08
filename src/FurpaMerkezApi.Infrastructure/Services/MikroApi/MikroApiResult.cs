@@ -11,7 +11,9 @@ public sealed record MikroApiResult<TResponse>(
     TResponse? Data,
     string RequestPath,
     int AttemptCount,
-    TimeSpan Elapsed)
+    TimeSpan Elapsed,
+    Guid? AuditId = null,
+    Guid? RequestId = null)
 {
     public bool IsSuccess => !IsError;
 

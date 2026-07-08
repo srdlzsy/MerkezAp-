@@ -137,7 +137,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 result.ErrorMessage ?? "Mikro API issued warehouse order create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             documentSerie,
             documentOrderNo,
             request,
@@ -145,6 +145,12 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             deliveryDate,
             options.ConnectionStringName,
             cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<CreateIssuedWarehouseOrderResponse> ExecuteDualShadowAsync(

@@ -145,7 +145,7 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 result.ErrorMessage ?? "Mikro API issued company order create failed.");
         }
 
-        return await RecoverMikroApiCreateResponseAsync(
+        var recovered = await RecoverMikroApiCreateResponseAsync(
             documentSerie,
             documentOrderNo,
             request,
@@ -153,6 +153,12 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             deliveryDate,
             options.ConnectionStringName,
             cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
+            cancellationToken: cancellationToken);
+        return recovered;
     }
 
     private async Task<CreateIssuedCompanyOrderResponse> ExecuteDualShadowAsync(

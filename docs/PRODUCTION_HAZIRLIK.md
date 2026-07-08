@@ -26,6 +26,15 @@
 - `StartupTasks__SynchronizeWarehouseUsers=false`
 - Readiness endpoint artik temel veritabani bagimliliklarini gercekten test eder
 
+## Mikro API yazma audit
+
+- Mikro API yazma kayitlari varsayilan olarak aciktir: `MikroApiWriteAudit__Enabled=true`
+- Kapatmak icin: `MikroApiWriteAudit__Enabled=false`
+- Saklanan response uzunlugu en fazla 8000 karakterdir: `MikroApiWriteAudit__MaxResponseLength=8000`
+- Payload'in kendisi saklanmaz; SHA-256 hash'i kaydedilir
+- Audit kaydi basarisiz olursa asil Mikro yazma islemi durdurulmaz, warning log uretilir
+- Ozelligin acilmasindan once `mikro_api_write_audits` migration'i Auth veritabanina uygulanmalidir
+
 ## Acilista acmak istersen
 
 - Auth migration icin: `StartupTasks__ApplyAuthMigrations=true`
