@@ -9,6 +9,13 @@ public sealed record YeniKasaAnalizRequest(
     int Take,
     bool OnlyProblematic);
 
+public sealed record YeniKasaFisDetayRequest(
+    string? Uuid,
+    DateTime? BusinessDate,
+    int? WarehouseNo,
+    string? CashRegisterNo,
+    string? ReceiptNumber);
+
 public sealed record YeniKasaCiroOzetItemDto(
     DateTime BusinessDate,
     int WarehouseNo,
@@ -91,3 +98,71 @@ public sealed record YeniKasaPaymentMethodItemDto(
     int PaymentLineCount,
     double Amount,
     bool IsKnown);
+
+public sealed record YeniKasaSaglikOzetItemDto(
+    DateTime BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    int ReceiptCount,
+    int ProblemReceiptCount,
+    int CriticalProblemCount,
+    double SaleTotal,
+    double PaymentTotal,
+    double DifferenceTotal,
+    DateTime? LastSaleAt,
+    string RiskLevel,
+    IReadOnlyCollection<string> TopIssues);
+
+public sealed record YeniKasaFisDetayDto(
+    string Uuid,
+    string ReceiptNumber,
+    DateTime? BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    string CashierCode,
+    string CashierName,
+    double SaleTotal,
+    double ProductLineTotal,
+    double PaymentTotal,
+    double SalePaymentDifference,
+    double SaleLineDifference,
+    string Status,
+    IReadOnlyCollection<string> Issues,
+    IReadOnlyCollection<YeniKasaFisMutabakatItemDto> ReconciliationItems,
+    IReadOnlyCollection<YeniKasaFisSatisSatiriDto> SaleRows,
+    IReadOnlyCollection<YeniKasaFisUrunSatiriDto> ProductLines,
+    IReadOnlyCollection<YeniKasaFisOdemeSatiriDto> Payments);
+
+public sealed record YeniKasaFisSatisSatiriDto(
+    int Id,
+    string Uuid,
+    string ReceiptNumber,
+    DateTime ReceivedAt,
+    int WarehouseNo,
+    string WarehouseCode,
+    string CashRegisterNo,
+    string CashierCode,
+    double SaleTotal,
+    double RemainingAmount,
+    string MarketId,
+    string Status);
+
+public sealed record YeniKasaFisUrunSatiriDto(
+    int Id,
+    string SaleUuid,
+    decimal Quantity,
+    double TotalPrice);
+
+public sealed record YeniKasaFisOdemeSatiriDto(
+    int Id,
+    string SaleUuid,
+    string PaymentMethodCode,
+    string PaymentMethodName,
+    string Category,
+    int? PaymentMethodId,
+    int? PavoMediator,
+    int? PavoType,
+    double Amount,
+    bool IsIncludedInTotals);

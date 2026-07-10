@@ -65,6 +65,40 @@ public sealed class YeniKasaAnalizleriController(
         CancellationToken cancellationToken) =>
         Ok(await yeniKasaAnalizleriService.GetOdemeTipleriAsync(ToRequest(request), cancellationToken));
 
+    [HttpGet("saglik-ozeti")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<YeniKasaSaglikOzetItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<YeniKasaSaglikOzetItemDto>>> SaglikOzeti(
+        [FromQuery] YeniKasaAnalizHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await yeniKasaAnalizleriService.GetSaglikOzetiAsync(ToRequest(request), cancellationToken));
+
+    [HttpGet("fis-detay")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(YeniKasaFisDetayDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<YeniKasaFisDetayDto>> FisDetay(
+        [FromQuery] YeniKasaFisDetayHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!HasValidFisDetayLookup(request))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Gecersiz fis detay istegi.",
+                Detail = "Uuid verilmeli veya businessDate, warehouseNo, cashRegisterNo ve receiptNumber birlikte gonderilmelidir."
+            });
+        }
+
+        var result = await yeniKasaAnalizleriService.GetFisDetayiAsync(ToRequest(request), cancellationToken);
+
+        return result is null
+            ? NotFound()
+            : Ok(result);
+    }
+
     private static YeniKasaAnalizRequest ToRequest(YeniKasaAnalizHttpRequest request) =>
         new(
             request.WarehouseNo,
@@ -74,6 +108,21 @@ public sealed class YeniKasaAnalizleriController(
             request.CashierCode,
             request.Take ?? 500,
             request.OnlyProblematic ?? false);
+
+    private static YeniKasaFisDetayRequest ToRequest(YeniKasaFisDetayHttpRequest request) =>
+        new(
+            request.Uuid,
+            request.BusinessDate,
+            request.WarehouseNo,
+            request.CashRegisterNo,
+            request.ReceiptNumber);
+
+    private static bool HasValidFisDetayLookup(YeniKasaFisDetayHttpRequest request) =>
+        !string.IsNullOrWhiteSpace(request.Uuid) ||
+        (request.BusinessDate.HasValue &&
+            request.WarehouseNo is > 0 &&
+            !string.IsNullOrWhiteSpace(request.CashRegisterNo) &&
+            !string.IsNullOrWhiteSpace(request.ReceiptNumber));
 }
 
 public sealed class YeniKasaAnalizHttpRequest
@@ -97,4 +146,21 @@ public sealed class YeniKasaAnalizHttpRequest
     public int? Take { get; init; }
 
     public bool? OnlyProblematic { get; init; }
+}
+
+public sealed class YeniKasaFisDetayHttpRequest
+{
+    [StringLength(80)]
+    public string? Uuid { get; init; }
+
+    public DateTime? BusinessDate { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [StringLength(40)]
+    public string? CashRegisterNo { get; init; }
+
+    [StringLength(80)]
+    public string? ReceiptNumber { get; init; }
 }

@@ -2318,6 +2318,16 @@ Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/saglik-ozeti?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/fis-detay?Uuid=3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 
 # KasaHareketAktarimi
 POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar

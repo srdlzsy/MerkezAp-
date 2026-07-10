@@ -21,4 +21,12 @@ public interface IYeniKasaAnalizleriService
     Task<IReadOnlyCollection<YeniKasaPaymentMethodItemDto>> GetOdemeTipleriAsync(
         YeniKasaAnalizRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<YeniKasaSaglikOzetItemDto>> GetSaglikOzetiAsync(
+        YeniKasaAnalizRequest request,
+        CancellationToken cancellationToken);
+
+    Task<YeniKasaFisDetayDto?> GetFisDetayiAsync(
+        YeniKasaFisDetayRequest request,
+        CancellationToken cancellationToken);
 }

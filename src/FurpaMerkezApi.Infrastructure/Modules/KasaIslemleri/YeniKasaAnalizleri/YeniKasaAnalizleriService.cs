@@ -216,6 +216,216 @@ public sealed class YeniKasaAnalizleriService(
             .ToArray();
     }
 
+    public async Task<IReadOnlyCollection<YeniKasaSaglikOzetItemDto>> GetSaglikOzetiAsync(
+        YeniKasaAnalizRequest request,
+        CancellationToken cancellationToken)
+    {
+        var data = await LoadAnalysisDataAsync(NormalizeRequest(request), cancellationToken);
+
+        return CreateReconciliationItems(data)
+            .GroupBy(item => new
+            {
+                item.BusinessDate,
+                item.WarehouseNo,
+                item.WarehouseName,
+                item.CashRegisterNo
+            })
+            .Select(grouped =>
+            {
+                var rows = grouped.ToArray();
+                var problemReceiptCount = rows.Count(item => item.Issues.Count > 0);
+                var criticalProblemCount = rows.Count(item => item.Issues.Any(issue => ResolveSeverity(issue) == "High"));
+                var saleTotal = Round(rows.Sum(item => item.SaleTotal));
+                var paymentTotal = Round(rows.Sum(item => item.PaymentTotal));
+                var differenceTotal = Round(rows.Sum(item => Math.Abs(item.SalePaymentDifference)));
+                var topIssues = rows
+                    .SelectMany(item => item.Issues)
+                    .GroupBy(issue => issue, StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(issueGroup => issueGroup.Count())
+                    .ThenBy(issueGroup => issueGroup.Key, StringComparer.OrdinalIgnoreCase)
+                    .Take(5)
+                    .Select(issueGroup => issueGroup.Key)
+                    .ToArray();
+
+                return new YeniKasaSaglikOzetItemDto(
+                    grouped.Key.BusinessDate,
+                    grouped.Key.WarehouseNo,
+                    grouped.Key.WarehouseName,
+                    grouped.Key.CashRegisterNo,
+                    rows.Length,
+                    problemReceiptCount,
+                    criticalProblemCount,
+                    saleTotal,
+                    paymentTotal,
+                    differenceTotal,
+                    rows.Max(item => item.ReceivedAt),
+                    ResolveRiskLevel(problemReceiptCount, criticalProblemCount, differenceTotal),
+                    topIssues);
+            })
+            .OrderByDescending(item => RiskRank(item.RiskLevel))
+            .ThenBy(item => item.BusinessDate)
+            .ThenBy(item => item.WarehouseNo)
+            .ThenBy(item => item.CashRegisterNo, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public async Task<YeniKasaFisDetayDto?> GetFisDetayiAsync(
+        YeniKasaFisDetayRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalizedRequest = NormalizeFisDetayRequest(request);
+        var sales = await CreateFisDetaySalesQuery(normalizedRequest)
+            .Select(sale => new SaleRow(
+                sale.Id,
+                sale.Uuid ?? string.Empty,
+                sale.ReceiptNumber ?? string.Empty,
+                sale.Subeno ?? string.Empty,
+                sale.Kasano ?? string.Empty,
+                sale.InitiatedBy ?? string.Empty,
+                sale.ReceivedAt!.Value,
+                sale.TotalPrice ?? 0d,
+                sale.RemainingAmount ?? 0d,
+                sale.MarketId ?? string.Empty,
+                sale.Status ?? string.Empty))
+            .ToListAsync(cancellationToken);
+
+        if (sales.Count == 0)
+        {
+            return null;
+        }
+
+        var receipts = CreateReceipts(sales);
+        var saleUuids = receipts
+            .Select(receipt => receipt.Uuid)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var saleItems = await LoadSaleItemsAsync(saleUuids, cancellationToken);
+        var rawPayments = await LoadPaymentsAsync(saleUuids, cancellationToken);
+        var payments = ResolvePaymentRows(rawPayments, receipts);
+        var paymentMethodCodes = rawPayments
+            .Select(item => item.PaymentMethodCode)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var paymentMethodsByCode = await LoadPaymentMethodsAsync(paymentMethodCodes, cancellationToken);
+        var warehouseNos = receipts
+            .Select(item => item.WarehouseNo)
+            .Where(value => value > 0)
+            .Distinct()
+            .ToArray();
+        var branchNames = await LoadBranchNamesAsync(warehouseNos, cancellationToken);
+        var employeeNames = await LoadEmployeeNamesAsync(
+            receipts.Select(item => item.CashierCode),
+            cancellationToken);
+        var itemTotalsBySaleUuid = saleItems
+            .GroupBy(item => item.SaleUuid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                grouped => grouped.Key,
+                grouped => new ItemTotals(
+                    grouped.Count(),
+                    decimal.ToDouble(grouped.Sum(item => item.Quantity)),
+                    Round(grouped.Sum(item => item.TotalPrice))),
+                StringComparer.OrdinalIgnoreCase);
+        var paymentTotalsBySaleUuid = payments
+            .GroupBy(item => item.SaleUuid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                grouped => grouped.Key,
+                grouped => ToPaymentTotals(grouped, paymentMethodsByCode),
+                StringComparer.OrdinalIgnoreCase);
+        var data = new AnalysisData(
+            sales,
+            receipts,
+            saleItems,
+            payments,
+            itemTotalsBySaleUuid,
+            paymentTotalsBySaleUuid,
+            paymentMethodsByCode,
+            branchNames,
+            employeeNames);
+        var reconciliationItems = CreateReconciliationItems(data)
+            .OrderBy(item => item.BusinessDate)
+            .ThenBy(item => item.WarehouseNo)
+            .ThenBy(item => item.CashRegisterNo, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.CashierCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var firstReceipt = reconciliationItems.FirstOrDefault();
+        var saleTotal = Round(reconciliationItems.Sum(item => item.SaleTotal));
+        var productLineTotal = Round(saleItems.Sum(item => item.TotalPrice));
+        var paymentTotal = Round(payments.Sum(item => item.Amount));
+        var issues = reconciliationItems
+            .SelectMany(item => item.Issues)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var includedPaymentIds = payments
+            .Select(item => item.Id)
+            .ToHashSet();
+
+        return new YeniKasaFisDetayDto(
+            FirstNonEmpty(new[] { firstReceipt?.Uuid }.Concat(sales.Select(item => item.Uuid)).ToArray()),
+            FirstNonEmpty(new[] { firstReceipt?.ReceiptNumber }.Concat(sales.Select(item => item.ReceiptNumber)).ToArray()),
+            firstReceipt?.BusinessDate,
+            firstReceipt?.WarehouseNo ?? 0,
+            firstReceipt?.WarehouseName ?? string.Empty,
+            firstReceipt?.CashRegisterNo ?? string.Empty,
+            firstReceipt?.CashierCode ?? string.Empty,
+            firstReceipt?.CashierName ?? string.Empty,
+            saleTotal,
+            productLineTotal,
+            paymentTotal,
+            Round(saleTotal - paymentTotal),
+            Round(saleTotal - productLineTotal),
+            issues.Length == 0 ? "OK" : "Problem",
+            issues,
+            reconciliationItems,
+            sales
+                .OrderBy(item => item.ReceivedAt)
+                .ThenBy(item => item.Id)
+                .Select(item => new YeniKasaFisSatisSatiriDto(
+                    item.Id,
+                    item.Uuid,
+                    item.ReceiptNumber,
+                    item.ReceivedAt,
+                    item.WarehouseNo,
+                    item.WarehouseCode,
+                    item.CashRegisterNo,
+                    item.CashierCode,
+                    item.SaleTotal,
+                    item.RemainingAmount,
+                    item.MarketId,
+                    item.Status))
+                .ToArray(),
+            saleItems
+                .OrderBy(item => item.Id)
+                .Select(item => new YeniKasaFisUrunSatiriDto(
+                    item.Id,
+                    item.SaleUuid,
+                    item.Quantity,
+                    item.TotalPrice))
+                .ToArray(),
+            rawPayments
+                .OrderBy(item => item.Id)
+                .Select(item =>
+                {
+                    var paymentMethod = ResolvePaymentMethod(paymentMethodsByCode, item.PaymentMethodCode);
+                    var category = ClassifyPaymentMethod(paymentMethod, item.PaymentMethodCode);
+
+                    return new YeniKasaFisOdemeSatiriDto(
+                        item.Id,
+                        item.SaleUuid,
+                        item.PaymentMethodCode,
+                        FirstNonEmpty(paymentMethod?.Name, item.PaymentMethodCode),
+                        category.ToString(),
+                        paymentMethod?.Id,
+                        paymentMethod?.PavoMediator,
+                        paymentMethod?.PavoType,
+                        item.Amount,
+                        includedPaymentIds.Contains(item.Id));
+                })
+                .ToArray());
+    }
+
     private async Task<AnalysisData> LoadAnalysisDataAsync(
         YeniKasaAnalizRequest request,
         CancellationToken cancellationToken)
@@ -229,7 +439,10 @@ public sealed class YeniKasaAnalizleriService(
                 sale.Kasano ?? string.Empty,
                 sale.InitiatedBy ?? string.Empty,
                 sale.ReceivedAt!.Value,
-                sale.TotalPrice ?? 0d))
+                sale.TotalPrice ?? 0d,
+                sale.RemainingAmount ?? 0d,
+                sale.MarketId ?? string.Empty,
+                sale.Status ?? string.Empty))
             .ToListAsync(cancellationToken);
         var receipts = CreateReceipts(sales);
         var saleUuids = receipts
@@ -314,6 +527,34 @@ public sealed class YeniKasaAnalizleriService(
         return query;
     }
 
+    private IQueryable<Persistence.Shopigo.Models.ShopigoReceivedSale> CreateFisDetaySalesQuery(
+        YeniKasaFisDetayRequest request)
+    {
+        var query = shopigoCiroDbContext.ReceivedSales.AsNoTracking()
+            .Where(sale =>
+                sale.DeletedAt == null &&
+                sale.Status == CompletedReceivedSaleStatus &&
+                sale.ReceivedAt.HasValue);
+
+        if (!string.IsNullOrWhiteSpace(request.Uuid))
+        {
+            var uuid = NormalizeCode(request.Uuid);
+            return query.Where(sale => (sale.Uuid ?? string.Empty) == uuid);
+        }
+
+        var businessDate = request.BusinessDate!.Value.Date;
+        var warehouseCode = request.WarehouseNo!.Value.ToString(CultureInfo.InvariantCulture);
+        var cashRegisterNo = NormalizeCode(request.CashRegisterNo);
+        var receiptNumber = NormalizeCode(request.ReceiptNumber);
+
+        return query.Where(sale =>
+            sale.ReceivedAt!.Value >= businessDate &&
+            sale.ReceivedAt.Value < businessDate.AddDays(1) &&
+            (sale.Subeno ?? string.Empty) == warehouseCode &&
+            (sale.Kasano ?? string.Empty) == cashRegisterNo &&
+            (sale.ReceiptNumber ?? string.Empty) == receiptNumber);
+    }
+
     private async Task<IReadOnlyCollection<SaleItemRow>> LoadSaleItemsAsync(
         IReadOnlyCollection<string> saleUuids,
         CancellationToken cancellationToken)
@@ -330,6 +571,7 @@ public sealed class YeniKasaAnalizleriService(
                     item.SaleUuid != null &&
                     currentChunk.Contains(item.SaleUuid))
                 .Select(item => new SaleItemRow(
+                    item.Id,
                     item.SaleUuid ?? string.Empty,
                     item.Quantity ?? 0m,
                     item.TotalPrice ?? 0d))
@@ -917,6 +1159,27 @@ public sealed class YeniKasaAnalizleriService(
             _ => 2
         };
 
+    private static string ResolveRiskLevel(
+        int problemReceiptCount,
+        int criticalProblemCount,
+        double differenceTotal)
+    {
+        if (criticalProblemCount > 0 || !AmountsMatch(differenceTotal, 0d))
+        {
+            return "Critical";
+        }
+
+        return problemReceiptCount > 0 ? "Warning" : "Healthy";
+    }
+
+    private static int RiskRank(string riskLevel) =>
+        riskLevel switch
+        {
+            "Critical" => 3,
+            "Warning" => 2,
+            _ => 1
+        };
+
     private static YeniKasaAnalizRequest NormalizeRequest(YeniKasaAnalizRequest request)
     {
         if (request.StartDate == default)
@@ -949,6 +1212,49 @@ public sealed class YeniKasaAnalizleriService(
             CashRegisterNo = NormalizeCode(request.CashRegisterNo),
             CashierCode = NormalizeCode(request.CashierCode),
             Take = Math.Clamp(request.Take <= 0 ? 500 : request.Take, 1, MaxTake)
+        };
+    }
+
+    private static YeniKasaFisDetayRequest NormalizeFisDetayRequest(YeniKasaFisDetayRequest request)
+    {
+        var uuid = NormalizeCode(request.Uuid);
+
+        if (!string.IsNullOrWhiteSpace(uuid))
+        {
+            return request with
+            {
+                Uuid = uuid,
+                CashRegisterNo = NormalizeCode(request.CashRegisterNo),
+                ReceiptNumber = NormalizeCode(request.ReceiptNumber)
+            };
+        }
+
+        if (!request.BusinessDate.HasValue)
+        {
+            throw new ArgumentException("Business date is required when uuid is empty.", nameof(request.BusinessDate));
+        }
+
+        if (request.WarehouseNo is null or <= 0)
+        {
+            throw new ArgumentException("Warehouse no is required when uuid is empty.", nameof(request.WarehouseNo));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CashRegisterNo))
+        {
+            throw new ArgumentException("Cash register no is required when uuid is empty.", nameof(request.CashRegisterNo));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ReceiptNumber))
+        {
+            throw new ArgumentException("Receipt number is required when uuid is empty.", nameof(request.ReceiptNumber));
+        }
+
+        return request with
+        {
+            Uuid = string.Empty,
+            BusinessDate = request.BusinessDate.Value.Date,
+            CashRegisterNo = NormalizeCode(request.CashRegisterNo),
+            ReceiptNumber = NormalizeCode(request.ReceiptNumber)
         };
     }
 
@@ -1015,7 +1321,10 @@ public sealed class YeniKasaAnalizleriService(
         string CashRegisterNo,
         string CashierCode,
         DateTime ReceivedAt,
-        double SaleTotal)
+        double SaleTotal,
+        double RemainingAmount,
+        string MarketId,
+        string Status)
     {
         public DateTime BusinessDate => ReceivedAt.Date;
 
@@ -1037,6 +1346,7 @@ public sealed class YeniKasaAnalizleriService(
         DateTime LastReceivedAt);
 
     private sealed record SaleItemRow(
+        int Id,
         string SaleUuid,
         decimal Quantity,
         double TotalPrice);

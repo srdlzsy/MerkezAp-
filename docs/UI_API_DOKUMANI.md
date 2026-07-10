@@ -6573,6 +6573,8 @@ Endpoint ozeti:
 | `GET /api/kasa-islemleri/yeni-kasa-analizleri/fis-mutabakat` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaFisMutabakatItemDto[]` | `list` |
 | `GET /api/kasa-islemleri/yeni-kasa-analizleri/anomaliler` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaAnomalyItemDto[]` | `list` |
 | `GET /api/kasa-islemleri/yeni-kasa-analizleri/odeme-tipleri` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaPaymentMethodItemDto[]` | `list` |
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/saglik-ozeti` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaSaglikOzetItemDto[]` | `list` |
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/fis-detay` | query | `YeniKasaFisDetayHttpRequest` | `YeniKasaFisDetayDto` | `list` |
 
 #### Yeni Kasa Ciro Ozeti
 
@@ -6772,6 +6774,124 @@ Response:
     "isKnown": true
   }
 ]
+```
+
+#### Yeni Kasa Saglik Ozeti
+
+Secilen tarih araliginda sube/kasa bazinda fiş sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/saglik-ozeti?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
+
+Risk:
+
+- `Healthy`: problemli fis yok
+- `Warning`: teknik/veri kalitesi problemi var, kritik tutar problemi yok
+- `Critical`: eksik/fazla odeme veya toplam farki var
+
+Response:
+
+```json
+[
+  {
+    "businessDate": "2026-07-08T00:00:00",
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "cashRegisterNo": "1",
+    "receiptCount": 242,
+    "problemReceiptCount": 3,
+    "criticalProblemCount": 1,
+    "saleTotal": 185430.25,
+    "paymentTotal": 185420.25,
+    "differenceTotal": 10,
+    "lastSaleAt": "2026-07-08T22:45:10",
+    "riskLevel": "Critical",
+    "topIssues": [
+      "MissingPaymentAmount",
+      "DuplicateSaleRow"
+    ]
+  }
+]
+```
+
+#### Yeni Kasa Fis Detay
+
+Fis mutabakat veya anomali listesinden secilen fisin detayini acar. UI icin tek response icinde fis ust bilgisi, mutabakat sonucu, ham satis satirlari, urun satirlari ve odeme satirlari doner.
+
+UUID ile kullanim:
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/fis-detay?uuid=3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11`
+
+UUID bos olan kayitlar icin fallback kullanim:
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/fis-detay?businessDate=2026-07-08&warehouseNo=110&cashRegisterNo=1&receiptNumber=000123`
+
+Not:
+
+- `payments[].isIncludedInTotals = false` ise satir ham odeme kaydinda vardir fakat duplicate temizleme nedeniyle mutabakat toplaminda dikkate alinmamistir.
+- `reconciliationItems` ayni UUID altinda birden fazla kasa/kasiyer grubu olusursa hepsini gosterir.
+- `productLines` Shopigo `sale_items` alanlariyla sinirlidir; mevcut tabloda urun adi/barkod kolonlari yoktur.
+
+Response:
+
+```json
+{
+  "uuid": "3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11",
+  "receiptNumber": "000123",
+  "businessDate": "2026-07-08T00:00:00",
+  "warehouseNo": 110,
+  "warehouseName": "KESTEL 1",
+  "cashRegisterNo": "1",
+  "cashierCode": "1001",
+  "cashierName": "MEHMET YILMAZ",
+  "saleTotal": 1250.75,
+  "productLineTotal": 1250.75,
+  "paymentTotal": 1240.75,
+  "salePaymentDifference": 10,
+  "saleLineDifference": 0,
+  "status": "Problem",
+  "issues": [
+    "MissingPaymentAmount"
+  ],
+  "reconciliationItems": [],
+  "saleRows": [
+    {
+      "id": 991122,
+      "uuid": "3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11",
+      "receiptNumber": "000123",
+      "receivedAt": "2026-07-08T15:22:10",
+      "warehouseNo": 110,
+      "warehouseCode": "110",
+      "cashRegisterNo": "1",
+      "cashierCode": "1001",
+      "saleTotal": 1250.75,
+      "remainingAmount": 0,
+      "marketId": "110",
+      "status": "4"
+    }
+  ],
+  "productLines": [
+    {
+      "id": 456,
+      "saleUuid": "3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11",
+      "quantity": 2,
+      "totalPrice": 250
+    }
+  ],
+  "payments": [
+    {
+      "id": 789,
+      "saleUuid": "3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11",
+      "paymentMethodCode": "1",
+      "paymentMethodName": "Nakit",
+      "category": "Cash",
+      "paymentMethodId": 1,
+      "pavoMediator": 1,
+      "pavoType": 1,
+      "amount": 1240.75,
+      "isIncludedInTotals": true
+    }
+  ]
+}
 ```
 
 ## Rapor Islemleri
@@ -13669,6 +13789,74 @@ public sealed record YeniKasaPaymentMethodItemDto(
     double Amount,
     bool IsKnown);
 
+public sealed record YeniKasaSaglikOzetItemDto(
+    DateTime BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    int ReceiptCount,
+    int ProblemReceiptCount,
+    int CriticalProblemCount,
+    double SaleTotal,
+    double PaymentTotal,
+    double DifferenceTotal,
+    DateTime? LastSaleAt,
+    string RiskLevel,
+    IReadOnlyCollection<string> TopIssues);
+
+public sealed record YeniKasaFisDetayDto(
+    string Uuid,
+    string ReceiptNumber,
+    DateTime? BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    string CashierCode,
+    string CashierName,
+    double SaleTotal,
+    double ProductLineTotal,
+    double PaymentTotal,
+    double SalePaymentDifference,
+    double SaleLineDifference,
+    string Status,
+    IReadOnlyCollection<string> Issues,
+    IReadOnlyCollection<YeniKasaFisMutabakatItemDto> ReconciliationItems,
+    IReadOnlyCollection<YeniKasaFisSatisSatiriDto> SaleRows,
+    IReadOnlyCollection<YeniKasaFisUrunSatiriDto> ProductLines,
+    IReadOnlyCollection<YeniKasaFisOdemeSatiriDto> Payments);
+
+public sealed record YeniKasaFisSatisSatiriDto(
+    int Id,
+    string Uuid,
+    string ReceiptNumber,
+    DateTime ReceivedAt,
+    int WarehouseNo,
+    string WarehouseCode,
+    string CashRegisterNo,
+    string CashierCode,
+    double SaleTotal,
+    double RemainingAmount,
+    string MarketId,
+    string Status);
+
+public sealed record YeniKasaFisUrunSatiriDto(
+    int Id,
+    string SaleUuid,
+    decimal Quantity,
+    double TotalPrice);
+
+public sealed record YeniKasaFisOdemeSatiriDto(
+    int Id,
+    string SaleUuid,
+    string PaymentMethodCode,
+    string PaymentMethodName,
+    string Category,
+    int? PaymentMethodId,
+    int? PavoMediator,
+    int? PavoType,
+    double Amount,
+    bool IsIncludedInTotals);
+
 public sealed record KasaCiroBranchDto(
     int BranchNo,
     string BranchName,
@@ -14535,6 +14723,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `WarehouseOrderDateRangeHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`
 - `CashTurnoverDetailHttpRequest`: `WarehouseNo`, `BusinessDate`, `ShiftNo`, `CashierCode`
 - `YeniKasaAnalizHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `CashRegisterNo`, `CashierCode`, `Take`, `OnlyProblematic`
+- `YeniKasaFisDetayHttpRequest`: `Uuid` veya `BusinessDate`, `WarehouseNo`, `CashRegisterNo`, `ReceiptNumber`
 - `CashierPairHttpRequest`: `CashierCode`, `ManagerCode`
 - `CashRegistryHttpRequest`: `BranchNo`
 - `CashRegisterLookupHttpRequest`: `CashNo`, `CashRegisterNo`
