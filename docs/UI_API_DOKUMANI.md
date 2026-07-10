@@ -6540,6 +6540,240 @@ Response:
 }
 ```
 
+### Yeni Kasa Analizleri
+
+Yeni kasa sisteminden gelen gercek satis verilerini denetim, mutabakat ve operasyonel analiz amaciyla listeler. Bu modul yalnizca `ShopigoCiroConnection` kaynagini kullanir; eski kasa `TurnoverTotals`/`TurnoverDetails` verileriyle karismaz. `Kasa Cirolari` rapor ekranindan farki, ciroyu gostermenin yaninda duplicate, fis-odeme farki, satir toplami farki, bilinmeyen odeme tipi ve bos kasa/kasiyer gibi veri kalitesi sorunlarini da gorunur hale getirmesidir.
+
+Temel route:
+
+- `api/kasa-islemleri/yeni-kasa-analizleri`
+
+Yetki:
+
+- `kasa-islemleri.yeni-kasa-analizleri.list`
+
+Ortak query:
+
+```text
+startDate       zorunlu, ISO tarih
+endDate         zorunlu, ISO tarih
+warehouseNo     opsiyonel; verilirse tek sube
+cashRegisterNo  opsiyonel; SHOPIGO `kasano` degeri
+cashierCode     opsiyonel; SHOPIGO `initiated_by` degeri
+take            opsiyonel; default 500, max 2000
+onlyProblematic opsiyonel; fis-mutabakat icin sadece problemli fisleri dondurur
+```
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/ciro-ozeti` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaCiroOzetItemDto[]` | `list` |
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/kasa-ozeti` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaKasaOzetItemDto[]` | `list` |
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/fis-mutabakat` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaFisMutabakatItemDto[]` | `list` |
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/anomaliler` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaAnomalyItemDto[]` | `list` |
+| `GET /api/kasa-islemleri/yeni-kasa-analizleri/odeme-tipleri` | query | `YeniKasaAnalizHttpRequest` | `YeniKasaPaymentMethodItemDto[]` | `list` |
+
+#### Yeni Kasa Ciro Ozeti
+
+Sube, kasa ve kasiyer bazinda yeni kasa ciro ozetini verir.
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/ciro-ozeti?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
+
+Not:
+
+- Yalniz tamamlanmis (`status = 4`) ve silinmemis `received_sales` satirlari dikkate alinir.
+- Tarih filtresi `received_at` uzerinden uygulanir.
+- Fis tekillestirme once `uuid`, yoksa `receipt_number`, o da yoksa satir `id` uzerinden yapilir.
+- `saleTotal` satis header toplamidir.
+- `productLineCount` ve `productQuantity` silinmemis/iade edilmemis `sale_items` satirlarindan gelir.
+- `paymentTotal` silinmemis/iade edilmemis `payments` satirlarindan gelir.
+- `difference = saleTotal - paymentTotal` olarak hesaplanir.
+
+Response:
+
+```json
+[
+  {
+    "businessDate": "2026-07-08T00:00:00",
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "cashRegisterNo": "1",
+    "cashierCode": "1001",
+    "cashierName": "MEHMET YILMAZ",
+    "saleRowCount": 245,
+    "receiptCount": 242,
+    "productLineCount": 1834,
+    "productQuantity": 2210.5,
+    "saleTotal": 185430.25,
+    "paymentLineCount": 248,
+    "paymentTotal": 185430.25,
+    "difference": 0,
+    "firstSaleAt": "2026-07-08T08:12:03",
+    "lastSaleAt": "2026-07-08T22:45:10"
+  }
+]
+```
+
+#### Yeni Kasa Kasa Ozeti
+
+Sube ve kasa bazinda gunluk toplam satis, odeme ve odeme kategori kirilimini verir.
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/kasa-ozeti?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
+
+Odeme kategorileri:
+
+- `cashTotal`: nakit odemeler
+- `creditCardTotal`: kredi/banka karti odemeleri
+- `giftCardTotal`: yemek karti/gift card benzeri odemeler
+- `otherPaymentTotal`: odemesiz, kapali hesap veya baska kategoriye dusen odemeler
+- `unknownPaymentTotal`: `payment_methods` ile eslesmeyen odemeler
+
+Response:
+
+```json
+[
+  {
+    "businessDate": "2026-07-08T00:00:00",
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "cashRegisterNo": "1",
+    "saleRowCount": 245,
+    "receiptCount": 242,
+    "saleTotal": 185430.25,
+    "paymentTotal": 185430.25,
+    "cashTotal": 62100,
+    "creditCardTotal": 103250.25,
+    "giftCardTotal": 20080,
+    "otherPaymentTotal": 0,
+    "unknownPaymentTotal": 0,
+    "difference": 0,
+    "cashierCount": 4,
+    "lastSaleAt": "2026-07-08T22:45:10"
+  }
+]
+```
+
+#### Yeni Kasa Fis Mutabakat
+
+Her fis icin satis header toplami, urun satir toplami ve odeme toplamini karsilastirir.
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/fis-mutabakat?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110&onlyProblematic=true&take=200`
+
+Uretilen issue kodlari:
+
+- `MissingUuid`: fis uuid alani bos
+- `MissingWarehouseMapping`: sube kodu sayisal depo numarasina donusturulemedi
+- `EmptyCashRegisterNo`: kasa no bos
+- `MissingCashier`: kasiyer kodu bos
+- `DuplicateSaleRow`: ayni satis anahtari birden fazla satirda geldi
+- `MissingSaleItems`: satis toplami var fakat urun satiri yok
+- `MissingPayment`: satis toplami var fakat odeme satiri yok
+- `MissingPaymentAmount`: fis toplami odeme toplamindan buyuk
+- `OverPaymentAmount`: odeme toplami fis toplamindan buyuk
+- `SaleLineTotalMismatch`: fis toplami ile urun satirlari toplami uyusmuyor
+
+Response:
+
+```json
+[
+  {
+    "businessDate": "2026-07-08T00:00:00",
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "cashRegisterNo": "1",
+    "cashierCode": "1001",
+    "cashierName": "MEHMET YILMAZ",
+    "uuid": "3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11",
+    "receiptNumber": "000123",
+    "saleRowCount": 1,
+    "productLineCount": 7,
+    "paymentLineCount": 2,
+    "saleTotal": 1250.75,
+    "productLineTotal": 1250.75,
+    "paymentTotal": 1240.75,
+    "salePaymentDifference": 10,
+    "saleLineDifference": 0,
+    "status": "Problem",
+    "issues": [
+      "MissingPaymentAmount"
+    ],
+    "receivedAt": "2026-07-08T15:22:10"
+  }
+]
+```
+
+#### Yeni Kasa Anomaliler
+
+Fis mutabakatinda bulunan sorunlari ve toplu duplicate/odeme tipi anomalilerini tek liste olarak doner.
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/anomaliler?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110&take=200`
+
+Anomali tipleri:
+
+- `DuplicateUuid`
+- `DuplicateReceiptNumber`
+- `UnknownPaymentMethod`
+- Fis mutabakat issue kodlari (`MissingPayment`, `SaleLineTotalMismatch`, vb.)
+
+Severity:
+
+- `High`: tutarsal mutabakat veya kritik satis/odeme sorunu
+- `Medium`: duplicate veya eksik teknik satir sorunu
+- `Low`: bos teknik alanlar ve dusuk riskli veri kalitesi sorunlari
+
+Response:
+
+```json
+[
+  {
+    "type": "MissingPaymentAmount",
+    "severity": "High",
+    "businessDate": "2026-07-08T00:00:00",
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "cashRegisterNo": "1",
+    "cashierCode": "1001",
+    "uuid": "3f0f6f4a-74d4-4f8f-84f1-2e8d2f2d1d11",
+    "receiptNumber": "000123",
+    "saleTotal": 1250.75,
+    "paymentTotal": 1240.75,
+    "difference": 10,
+    "description": "Fis toplami odeme toplamindan buyuk."
+  }
+]
+```
+
+#### Yeni Kasa Odeme Tipleri
+
+Secilen tarih araligindaki yeni kasa odeme tiplerini, `payment_methods` eslesmesini ve kategori bilgisini listeler.
+
+`GET /api/kasa-islemleri/yeni-kasa-analizleri/odeme-tipleri?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
+
+Not:
+
+- `paymentMethodCode`, `payments.payment_method` alanidir.
+- `isKnown = false` ise kod `payment_methods.id` veya `payment_methods.pavo_mediator` ile eslesmemistir.
+- `category`: `Cash`, `CreditCard`, `GiftCard`, `Other`, `Unknown`
+
+Response:
+
+```json
+[
+  {
+    "paymentMethodCode": "1",
+    "paymentMethodName": "Nakit",
+    "category": "Cash",
+    "paymentMethodId": 1,
+    "pavoMediator": 1,
+    "pavoType": 1,
+    "paymentLineCount": 820,
+    "amount": 62100,
+    "isKnown": true
+  }
+]
+```
+
 ## Rapor Islemleri
 
 ### Tedarikci Performans Karnesi
@@ -13352,6 +13586,89 @@ public sealed record CashTurnoverBranchOverviewItemDto(
     int FuturesSalesCount,
     double AverageBasketAmount);
 
+public sealed record YeniKasaCiroOzetItemDto(
+    DateTime BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    string CashierCode,
+    string CashierName,
+    int SaleRowCount,
+    int ReceiptCount,
+    int ProductLineCount,
+    double ProductQuantity,
+    double SaleTotal,
+    int PaymentLineCount,
+    double PaymentTotal,
+    double Difference,
+    DateTime? FirstSaleAt,
+    DateTime? LastSaleAt);
+
+public sealed record YeniKasaKasaOzetItemDto(
+    DateTime BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    int SaleRowCount,
+    int ReceiptCount,
+    double SaleTotal,
+    double PaymentTotal,
+    double CashTotal,
+    double CreditCardTotal,
+    double GiftCardTotal,
+    double OtherPaymentTotal,
+    double UnknownPaymentTotal,
+    double Difference,
+    int CashierCount,
+    DateTime? LastSaleAt);
+
+public sealed record YeniKasaFisMutabakatItemDto(
+    DateTime BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    string CashierCode,
+    string CashierName,
+    string Uuid,
+    string ReceiptNumber,
+    int SaleRowCount,
+    int ProductLineCount,
+    int PaymentLineCount,
+    double SaleTotal,
+    double ProductLineTotal,
+    double PaymentTotal,
+    double SalePaymentDifference,
+    double SaleLineDifference,
+    string Status,
+    IReadOnlyCollection<string> Issues,
+    DateTime? ReceivedAt);
+
+public sealed record YeniKasaAnomalyItemDto(
+    string Type,
+    string Severity,
+    DateTime? BusinessDate,
+    int WarehouseNo,
+    string WarehouseName,
+    string CashRegisterNo,
+    string CashierCode,
+    string Uuid,
+    string ReceiptNumber,
+    double SaleTotal,
+    double PaymentTotal,
+    double Difference,
+    string Description);
+
+public sealed record YeniKasaPaymentMethodItemDto(
+    string PaymentMethodCode,
+    string PaymentMethodName,
+    string Category,
+    int? PaymentMethodId,
+    int? PavoMediator,
+    int? PavoType,
+    int PaymentLineCount,
+    double Amount,
+    bool IsKnown);
+
 public sealed record KasaCiroBranchDto(
     int BranchNo,
     string BranchName,
@@ -14217,6 +14534,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CashSummaryDateHttpRequest`: `DateToGet`, `WarehouseNo`
 - `WarehouseOrderDateRangeHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`
 - `CashTurnoverDetailHttpRequest`: `WarehouseNo`, `BusinessDate`, `ShiftNo`, `CashierCode`
+- `YeniKasaAnalizHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `CashRegisterNo`, `CashierCode`, `Take`, `OnlyProblematic`
 - `CashierPairHttpRequest`: `CashierCode`, `ManagerCode`
 - `CashRegistryHttpRequest`: `BranchNo`
 - `CashRegisterLookupHttpRequest`: `CashNo`, `CashRegisterNo`

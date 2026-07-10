@@ -147,6 +147,7 @@ public static class PermissionCatalog
 
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-sayimlari", "KasaSayimlari"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-cirolari", "KasaCirolari", ReadActions),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "yeni-kasa-analizleri", "YeniKasaAnalizleri", ListActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-ciro-aktarimi", "KasaCiroAktarimi", ReadCreateActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-hareket-aktarimi", "KasaHareketAktarimi"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-belgeleri", "EtiketBelgeleri"),

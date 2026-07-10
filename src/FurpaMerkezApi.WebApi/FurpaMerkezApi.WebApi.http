@@ -2292,6 +2292,33 @@ Authorization: Bearer {{token}}
 
 ###
 
+# YeniKasaAnalizleri
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/ciro-ozeti?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/kasa-ozeti?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/fis-mutabakat?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&OnlyProblematic=true&Take=200
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/anomaliler?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&Take=200
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/yeni-kasa-analizleri/odeme-tipleri?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+
 # KasaHareketAktarimi
 POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar
 Accept: application/json
