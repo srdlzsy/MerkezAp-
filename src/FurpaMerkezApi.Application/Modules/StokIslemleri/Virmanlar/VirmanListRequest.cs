@@ -1,6 +1,6 @@
 namespace FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 
 public sealed record VirmanListRequest(
-    int WarehouseNo,
+    int? WarehouseNo,
     DateTime StartDate,
     DateTime EndDate);

@@ -40,7 +40,7 @@ public sealed class VerilenFirmaSiparisleriController(
         [FromQuery] IssuedCompanyOrderListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await listIssuedCompanyOrdersUseCase.ExecuteAsync(
             new CompanyOrderListRequest(

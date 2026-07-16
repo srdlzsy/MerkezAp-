@@ -191,7 +191,7 @@ public sealed class CashTurnoverQueryExecutor(
                 FROM TurnoverTotals tt
                 WHERE tt.TurnoverDate >= @startDate
                   AND tt.TurnoverDate < @endDateExclusive
-                  AND tt.BranchNo = @warehouseNo
+                  AND (@warehouseNo IS NULL OR tt.BranchNo = @warehouseNo)
                 GROUP BY
                     CAST(tt.TurnoverDate AS date),
                     tt.BranchNo
@@ -578,19 +578,19 @@ public sealed class CashTurnoverQueryExecutor(
     }
 
     private async Task<IReadOnlyCollection<SalesSummaryRow>> GetNewSalesSummaryRowsAsync(
-        int warehouseNo,
+        int? warehouseNo,
         DateTime startDate,
         DateTime endDateExclusive,
         CancellationToken cancellationToken)
     {
-        var warehouseCode = warehouseNo.ToString(CultureInfo.InvariantCulture);
+        var warehouseCode = warehouseNo?.ToString(CultureInfo.InvariantCulture);
         var rows = await (
             from sale in CreateCompletedReceivedSalesQuery(startDate, endDateExclusive)
             join saleItem in shopigoCiroDbContext.SaleItems.AsNoTracking()
                 on sale.Uuid equals saleItem.SaleUuid
             where saleItem.DeletedAt == null &&
                   saleItem.Refunded == 0 &&
-                  sale.Subeno == warehouseCode
+                  (warehouseCode == null || sale.Subeno == warehouseCode)
             group saleItem by new
             {
                 BusinessDate = sale.ReceivedAt!.Value.Date,
@@ -613,12 +613,12 @@ public sealed class CashTurnoverQueryExecutor(
     }
 
     private async Task<IReadOnlyCollection<CollectionSummaryRow>> GetNewCollectionSummaryRowsAsync(
-        int warehouseNo,
+        int? warehouseNo,
         DateTime startDate,
         DateTime endDateExclusive,
         CancellationToken cancellationToken)
     {
-        var warehouseCode = warehouseNo.ToString(CultureInfo.InvariantCulture);
+        var warehouseCode = warehouseNo?.ToString(CultureInfo.InvariantCulture);
         var paymentRows = await LoadResolvedNewPaymentRowsAsync(
             startDate,
             endDateExclusive,
@@ -1158,11 +1158,11 @@ public sealed class CashTurnoverQueryExecutor(
     }
 
     private static (DateTime StartDate, DateTime EndDateExclusive) NormalizeDateRange(
-        int warehouseNo,
+        int? warehouseNo,
         DateTime startDate,
         DateTime endDate)
     {
-        if (warehouseNo <= 0)
+        if (warehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(warehouseNo));
         }

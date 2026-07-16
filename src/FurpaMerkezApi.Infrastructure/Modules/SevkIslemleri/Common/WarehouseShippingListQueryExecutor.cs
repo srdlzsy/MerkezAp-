@@ -40,7 +40,7 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
         bool onlyPending,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -65,10 +65,12 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                   (!returnType.HasValue || movement.sth_normal_iade == returnType.Value) &&
                   (!onlyPending ||
                       movement.sth_nakliyedurumu != DeliveredToTargetWarehouseState &&
-                      movement.sth_nakliyedeposu == request.WarehouseNo) &&
-                  (isOutgoing
-                      ? movement.sth_cikis_depo_no == request.WarehouseNo
-                      : movement.sth_nakliyedeposu == request.WarehouseNo || movement.sth_giris_depo_no == request.WarehouseNo)
+                      (!request.WarehouseNo.HasValue || movement.sth_nakliyedeposu == request.WarehouseNo.Value)) &&
+                  (!request.WarehouseNo.HasValue ||
+                      (isOutgoing
+                          ? movement.sth_cikis_depo_no == request.WarehouseNo.Value
+                          : movement.sth_nakliyedeposu == request.WarehouseNo.Value ||
+                            movement.sth_giris_depo_no == request.WarehouseNo.Value))
             join movementExtra in mikroDbContext.STOK_HAREKETLERI_EKs.AsNoTracking()
                 on movement.sth_Guid equals movementExtra.sthek_related_uid into movementExtraGroup
             from movementExtra in movementExtraGroup.DefaultIfEmpty()
@@ -148,7 +150,7 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 shipment.sth_belge_no ?? string.Empty,
                 shipment.sth_evrakno_seri ?? string.Empty,
                 shipment.sth_evrakno_sira ?? 0,
-                shipment.sth_cikis_depo_no ?? request.WarehouseNo,
+                shipment.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
                 shipment.SourceWarehouseName ?? string.Empty,
                 shipment.ResolvedTargetWarehouseNo ?? 0,
                 shipment.TargetWarehouseName ?? string.Empty,

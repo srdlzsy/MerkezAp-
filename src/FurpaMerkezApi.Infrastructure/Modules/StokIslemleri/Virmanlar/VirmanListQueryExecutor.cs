@@ -14,7 +14,7 @@ public sealed class VirmanListQueryExecutor(MikroDbContext mikroDbContext)
         VirmanListRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -37,7 +37,7 @@ public sealed class VirmanListQueryExecutor(MikroDbContext mikroDbContext)
                   movement.sth_evraktip == VirmanDocumentType &&
                   movement.sth_normal_iade == NormalMovement &&
                   movement.sth_cins == VirmanMovementGenre &&
-                  movement.sth_cikis_depo_no == request.WarehouseNo
+                  (!request.WarehouseNo.HasValue || movement.sth_cikis_depo_no == request.WarehouseNo.Value)
             join warehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on movement.sth_cikis_depo_no equals warehouse.dep_no into warehouseGroup
             from warehouse in warehouseGroup.DefaultIfEmpty()
@@ -64,7 +64,7 @@ public sealed class VirmanListQueryExecutor(MikroDbContext mikroDbContext)
             {
                 DocumentSerie = row.sth_evrakno_seri ?? string.Empty,
                 DocumentOrderNo = row.sth_evrakno_sira ?? 0,
-                WarehouseNo = row.sth_cikis_depo_no ?? request.WarehouseNo,
+                WarehouseNo = row.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
                 WarehouseName = row.WarehouseName ?? string.Empty,
                 DocumentType = row.sth_evraktip ?? 0,
                 MovementGenre = row.sth_cins ?? 0

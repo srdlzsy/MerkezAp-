@@ -39,7 +39,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] CashSummaryDateHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
         var response = await cashSummaryQueriesUseCase.ListAsync(
             new CashSummaryDateRequest(
                 request.DateToGet!.Value,
@@ -57,7 +57,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] CashSummaryDateHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
         var response = await cashSummaryQueriesUseCase.GetReportAsync(
             new CashSummaryDateRequest(
                 request.DateToGet!.Value,
@@ -101,7 +101,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
         var response = await cashSummaryQueriesUseCase.GetBanknoteMovementsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -122,7 +122,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
         var response = await cashSummaryQueriesUseCase.GetGiftCheckMovementsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -276,7 +276,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] ZReportValueHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await getCashSummaryZReportTotalUseCase.ExecuteAsync(
             new ZReportValueRequest(
                 resolvedWarehouseNo,
@@ -411,7 +411,7 @@ public sealed class KasaSayimlariController(
         int documentOrderNo,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo();
         var response = await cashSummaryCommandsUseCase.DeleteAsync(
             new DeleteCashSummaryRequest(
                 warehouseNo,
@@ -428,7 +428,7 @@ public sealed class KasaSayimlariController(
         int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
         var response = await cashSummaryQueriesUseCase.GetDetailsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,

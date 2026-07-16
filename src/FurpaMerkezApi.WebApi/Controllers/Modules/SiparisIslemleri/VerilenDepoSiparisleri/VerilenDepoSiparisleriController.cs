@@ -40,7 +40,7 @@ public sealed class VerilenDepoSiparisleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await listIssuedWarehouseOrdersUseCase.ExecuteAsync(
             new WarehouseOrderListRequest(

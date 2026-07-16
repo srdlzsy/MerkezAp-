@@ -16,7 +16,7 @@ public sealed class ListWarehouseReceivingDifferencesUseCase(MikroDbContext mikr
         WarehouseReceivingDifferenceListRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -45,9 +45,10 @@ public sealed class ListWarehouseReceivingDifferencesUseCase(MikroDbContext mikr
                   movement.sth_FormulMiktar.HasValue &&
                   (receivedQuantity > quantity + QuantityTolerance ||
                    receivedQuantity < quantity - QuantityTolerance) &&
-                  (showCreatedDocuments
-                      ? movement.sth_cikis_depo_no == request.WarehouseNo
-                      : movement.sth_giris_depo_no == request.WarehouseNo)
+                  (!request.WarehouseNo.HasValue ||
+                   (showCreatedDocuments
+                       ? movement.sth_cikis_depo_no == request.WarehouseNo.Value
+                       : movement.sth_giris_depo_no == request.WarehouseNo.Value))
             join sourceWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on movement.sth_cikis_depo_no equals sourceWarehouse.dep_no into sourceWarehouseGroup
             from sourceWarehouse in sourceWarehouseGroup.DefaultIfEmpty()

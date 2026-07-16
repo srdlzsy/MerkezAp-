@@ -19,7 +19,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
         CompanyMovementKind kind,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -101,8 +101,8 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
             .Select(document =>
             {
                 var warehouseNo = kind == CompanyMovementKind.IncomingShipment
-                    ? document.sth_giris_depo_no ?? request.WarehouseNo
-                    : document.sth_cikis_depo_no ?? request.WarehouseNo;
+                    ? document.sth_giris_depo_no ?? request.WarehouseNo ?? 0
+                    : document.sth_cikis_depo_no ?? request.WarehouseNo ?? 0;
                 var warehouseName = kind == CompanyMovementKind.IncomingShipment
                     ? document.InputWarehouseName ?? string.Empty
                     : document.OutputWarehouseName ?? string.Empty;
@@ -136,7 +136,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
     }
 
     private IQueryable<STOK_HAREKETLERI> CreateFilteredMovementQuery(
-        int warehouseNo,
+        int? warehouseNo,
         DateTime startDate,
         DateTime endDateExclusive,
         CompanyMovementKind kind)
@@ -152,7 +152,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 movement.sth_evraktip == CompanyDispatchDocumentType &&
                 movement.sth_tip == OutgoingMovementType &&
                 movement.sth_normal_iade == NormalMovement &&
-                movement.sth_cikis_depo_no == warehouseNo),
+                (!warehouseNo.HasValue || movement.sth_cikis_depo_no == warehouseNo.Value)),
 
             CompanyMovementKind.IncomingShipment => movements.Where(movement =>
                 movement.sth_create_date >= startDate &&
@@ -160,7 +160,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 movement.sth_evraktip == ReceivingReceiptDocumentType &&
                 movement.sth_tip == IncomingMovementType &&
                 movement.sth_normal_iade == NormalMovement &&
-                movement.sth_giris_depo_no == warehouseNo),
+                (!warehouseNo.HasValue || movement.sth_giris_depo_no == warehouseNo.Value)),
 
             CompanyMovementKind.PurchaseReturn => movements.Where(movement =>
                 movement.sth_belge_tarih.HasValue &&
@@ -169,7 +169,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 movement.sth_evraktip == CompanyDispatchDocumentType &&
                 movement.sth_tip == OutgoingMovementType &&
                 movement.sth_normal_iade == ReturnMovement &&
-                movement.sth_cikis_depo_no == warehouseNo),
+                (!warehouseNo.HasValue || movement.sth_cikis_depo_no == warehouseNo.Value)),
 
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown company movement kind.")
         };

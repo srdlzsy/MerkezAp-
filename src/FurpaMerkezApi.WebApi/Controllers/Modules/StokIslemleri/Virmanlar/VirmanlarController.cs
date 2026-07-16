@@ -37,7 +37,7 @@ public sealed class VirmanlarController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await listVirmansUseCase.ExecuteAsync(
             new VirmanListRequest(

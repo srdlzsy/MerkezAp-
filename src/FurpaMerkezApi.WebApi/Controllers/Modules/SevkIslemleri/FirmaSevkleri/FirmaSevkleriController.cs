@@ -257,7 +257,7 @@ public sealed class FirmaSevkleriController(
         CompanyMovementKind kind,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await listCompanyShipmentsUseCase.ExecuteAsync(
             new CompanyMovementListRequest(

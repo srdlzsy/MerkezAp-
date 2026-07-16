@@ -1,6 +1,6 @@
 namespace FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 
 public sealed record WarehouseShippingListRequest(
-    int WarehouseNo,
+    int? WarehouseNo,
     DateTime StartDate,
     DateTime EndDate);

@@ -11,7 +11,7 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
         WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -34,9 +34,12 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
                 order.ssip_tarih.Value >= startDate &&
                 order.ssip_tarih.Value < endDateExclusive);
 
-        baseQuery = isIssued
-            ? baseQuery.Where(order => order.ssip_girdepo == request.WarehouseNo)
-            : baseQuery.Where(order => order.ssip_cikdepo == request.WarehouseNo);
+        if (request.WarehouseNo.HasValue)
+        {
+            baseQuery = isIssued
+                ? baseQuery.Where(order => order.ssip_girdepo == request.WarehouseNo.Value)
+                : baseQuery.Where(order => order.ssip_cikdepo == request.WarehouseNo.Value);
+        }
 
         var query =
             from order in baseQuery

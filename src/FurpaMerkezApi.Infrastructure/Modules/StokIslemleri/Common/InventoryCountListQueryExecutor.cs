@@ -10,7 +10,7 @@ public sealed class InventoryCountListQueryExecutor(MikroDbContext mikroDbContex
         InventoryCountListRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -30,7 +30,7 @@ public sealed class InventoryCountListQueryExecutor(MikroDbContext mikroDbContex
             where result.sym_tarihi.HasValue &&
                   result.sym_tarihi.Value >= startDate &&
                   result.sym_tarihi.Value < endDateExclusive &&
-                  result.sym_depono == request.WarehouseNo
+                  (!request.WarehouseNo.HasValue || result.sym_depono == request.WarehouseNo.Value)
             join warehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on result.sym_depono equals warehouse.dep_no into warehouseGroup
             from warehouse in warehouseGroup.DefaultIfEmpty()
@@ -48,7 +48,7 @@ public sealed class InventoryCountListQueryExecutor(MikroDbContext mikroDbContex
                 grouped.Key.sym_tarihi,
                 grouped.Min(item => item.sym_create_date),
                 grouped.Key.sym_evrakno ?? 0,
-                grouped.Key.sym_depono ?? request.WarehouseNo,
+                grouped.Key.sym_depono ?? request.WarehouseNo ?? 0,
                 grouped.Key.WarehouseName ?? string.Empty,
                 grouped
                     .Select(item => item.sym_parti_kodu ?? string.Empty)

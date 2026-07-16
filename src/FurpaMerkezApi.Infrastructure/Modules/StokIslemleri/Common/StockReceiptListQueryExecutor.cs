@@ -17,7 +17,7 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
         StockReceiptKind kind,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -42,7 +42,7 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
                   movement.sth_tip == OutgoingMovementType &&
                   movement.sth_normal_iade == NormalMovement &&
                   movement.sth_cins == movementGenre &&
-                  movement.sth_cikis_depo_no == request.WarehouseNo
+                  (!request.WarehouseNo.HasValue || movement.sth_cikis_depo_no == request.WarehouseNo.Value)
             join outputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on movement.sth_cikis_depo_no equals outputWarehouse.dep_no into outputWarehouseGroup
             from outputWarehouse in outputWarehouseGroup.DefaultIfEmpty()
@@ -74,7 +74,7 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
                 grouped.Key.sth_belge_no ?? string.Empty,
                 grouped.Key.sth_evrakno_seri ?? string.Empty,
                 grouped.Key.sth_evrakno_sira ?? 0,
-                grouped.Key.sth_cikis_depo_no ?? request.WarehouseNo,
+                grouped.Key.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
                 grouped.Key.OutputWarehouseName ?? string.Empty,
                 grouped.Key.sth_HareketGrupKodu1 ?? string.Empty,
                 grouped.Key.sth_HareketGrupKodu2 ?? string.Empty,

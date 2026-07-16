@@ -42,7 +42,7 @@ public sealed class FirmaIadeleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await listCompanyReturnsUseCase.ExecuteAsync(
             new CompanyMovementListRequest(

@@ -36,7 +36,7 @@ public sealed class BanknotTakipleriController(
         [FromQuery] BanknoteTrackDateHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
         var response = await listBanknoteTracksUseCase.ExecuteAsync(
             new BanknoteTrackListRequest(
                 request.DateToGet!.Value,
@@ -58,7 +58,7 @@ public sealed class BanknotTakipleriController(
         var response = await getBanknoteTrackDetailUseCase.ExecuteAsync(
             new BanknoteTrackDetailRequest(
                 banknoteTrackId,
-                User.GetRequiredWarehouseNo()),
+                User.ResolveWarehouseNo()),
             cancellationToken);
 
         return Ok(response);

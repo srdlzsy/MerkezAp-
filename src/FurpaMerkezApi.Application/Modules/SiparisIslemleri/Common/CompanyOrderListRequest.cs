@@ -1,7 +1,7 @@
 namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 
 public sealed record CompanyOrderListRequest(
-    int WarehouseNo,
+    int? WarehouseNo,
     DateTime StartDate,
     DateTime EndDate,
     string? CustomerCode = null,

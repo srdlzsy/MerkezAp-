@@ -30,7 +30,7 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
             LEFT JOIN DEPOLAR w ON t.WarehouseNo = w.dep_no
             WHERE t.BanknoteTrackDate >= @date
               AND t.BanknoteTrackDate < @nextDate
-              AND (@warehouseNo = 1 OR t.WarehouseNo = @warehouseNo)
+              AND (@warehouseNo IS NULL OR t.WarehouseNo = @warehouseNo)
             ORDER BY
                 t.BanknoteTrackDate,
                 t.WarehouseNo,
@@ -157,7 +157,7 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
             throw new ArgumentException("Banknote track date is required.", nameof(request.DateToGet));
         }
 
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -176,11 +176,11 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
         }
     }
 
-    private static void AddParameter(DbCommand command, string name, object value)
+    private static void AddParameter(DbCommand command, string name, object? value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
-        parameter.Value = value;
+        parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
 

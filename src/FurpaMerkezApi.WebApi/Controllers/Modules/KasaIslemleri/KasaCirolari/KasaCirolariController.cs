@@ -144,7 +144,7 @@ public sealed class KasaCirolariController(
         CashTurnoverSource source,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
         return await listCashTurnoversUseCase.ExecuteAsync(
             new CashTurnoverListRequest(
                 warehouseNo,
@@ -160,7 +160,7 @@ public sealed class KasaCirolariController(
         CancellationToken cancellationToken) =>
         getCashTurnoverOverviewUseCase.ExecuteAsync(
             new CashTurnoverOverviewRequest(
-                request.WarehouseNo,
+                User.ResolveWarehouseScope(request.WarehouseNo),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 source),
@@ -171,7 +171,7 @@ public sealed class KasaCirolariController(
         CashTurnoverSource source,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         return await getCashTurnoverDetailUseCase.ExecuteAsync(
             new CashTurnoverDetailRequest(
                 warehouseNo,

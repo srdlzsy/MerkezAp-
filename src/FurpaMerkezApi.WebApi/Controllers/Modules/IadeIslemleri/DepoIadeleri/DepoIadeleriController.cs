@@ -256,7 +256,7 @@ public sealed class DepoIadeleriController(
         WarehouseShippingDirection direction,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await listWarehouseReturnsUseCase.ExecuteAsync(
             new WarehouseShippingListRequest(

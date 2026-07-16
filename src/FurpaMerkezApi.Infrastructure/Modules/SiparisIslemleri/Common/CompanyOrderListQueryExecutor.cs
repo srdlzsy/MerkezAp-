@@ -13,7 +13,7 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
         CompanyOrderListDirection direction,
         CancellationToken cancellationToken)
     {
-        if (request.WarehouseNo <= 0)
+        if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
@@ -35,7 +35,7 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
                 order.sip_tarih.HasValue &&
                 order.sip_tarih.Value >= startDate &&
                 order.sip_tarih.Value < endDateExclusive &&
-                order.sip_depono == request.WarehouseNo &&
+                (!request.WarehouseNo.HasValue || order.sip_depono == request.WarehouseNo.Value) &&
                 order.sip_cins == 0 &&
                 order.sip_tip == orderType);
 
@@ -134,7 +134,7 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
         return documents
             .Select(document => new CompanyOrderListItemDto(
                 CompanyOrderDocumentKey.CreateOrNull(
-                    document.sip_depono ?? request.WarehouseNo,
+                    document.sip_depono ?? request.WarehouseNo ?? 0,
                     document.sip_evrakno_seri,
                     document.sip_evrakno_sira ?? 0),
                 document.sip_tarih ?? DateTime.MinValue,
@@ -142,7 +142,7 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
                 document.sip_evrakno_seri ?? string.Empty,
                 document.sip_evrakno_sira ?? 0,
                 document.sip_belgeno ?? string.Empty,
-                document.sip_depono ?? request.WarehouseNo,
+                document.sip_depono ?? request.WarehouseNo ?? 0,
                 document.sip_musteri_kod ?? string.Empty,
                 document.CustomerName ?? string.Empty,
                 document.CustomerTitle ?? string.Empty,

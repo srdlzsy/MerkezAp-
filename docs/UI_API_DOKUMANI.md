@@ -11,7 +11,7 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - UI menu agaci ve buton gorunurlugu `me` cevabindan uretilmelidir.
 - Depo yetkisi backend tarafinda merkezi uygulanir: `Admin` veya `Administrator` rolu tum depolar icin islem yapabilir; diger kullanicilar sadece JWT icindeki kendi deposu icin islem yapabilir.
 - UI normal kullaniciya depo secimi sormamalidir. Liste/create/update isteklerinde depo alani bos birakilabilir; backend normal kullanici icin kullanici deposunu uygular.
-- UI yalnizca `Admin` veya `Administrator` rolunde depo secici/filtresi gostermelidir. Admin depo secmezse endpoint davranisina gore tum depolar veya token deposu varsayimi kullanilabilir; tek depo gerektiren create islemlerinde admin secili depoyu body/query ile gondermelidir.
+- UI yalnizca `Admin` veya `Administrator` rolunde depo secici/filtresi gostermelidir. Liste/rapor endpointlerinde admin `WarehouseNo`/`warehouseNo` alanini bos veya `null` gonderirse backend tum depolari getirir; admin belirli depo secmek isterse depo no gondermelidir. Tek depo gerektiren create/update/detail islemlerinde `null` tum depo anlamina gelmez; backend token deposunu varsayar veya ilgili islem icin secili depo bekler.
 - Normal kullanici farkli `WarehouseNo`, `BranchNo` veya islem deposu gonderirse API `403 Forbidden` doner.
 - Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; normal kullanicida `WarehouseNo` verilmezse JWT icindeki depo kullanilir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
