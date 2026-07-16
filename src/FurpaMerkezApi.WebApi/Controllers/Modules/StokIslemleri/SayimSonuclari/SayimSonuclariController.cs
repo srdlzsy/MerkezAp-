@@ -81,7 +81,7 @@ public sealed class SayimSonuclariController(
         [FromBody] CreateInventoryCountHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createInventoryCountUseCase.ExecuteAsync(
             new CreateInventoryCountRequest(
                 warehouseNo,

@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -16,7 +15,6 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.OperasyonIslemleri;
 public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
-    private const string AdministratorRoleName = "Administrator";
     private const string ModuleCode = "operasyon-islemleri";
     private const string ModuleName = "OperasyonIslemleri";
     private const string MenuCode = "belge-akis-takibi";
@@ -37,9 +35,7 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
             throw new ArgumentException("Start date can not be later than end date.");
         }
 
-        var warehouseNo = CanViewAllWarehouses(User)
-            ? request.WarehouseNo
-            : User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
 
         return Ok(await documentFlowService.ListAsync(
             new DocumentFlowListRequest(
@@ -61,15 +57,12 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
         Guid id,
         CancellationToken cancellationToken)
     {
-        int? allowedWarehouseNo = CanViewAllWarehouses(User)
+        int? allowedWarehouseNo = User.IsAdministrator()
             ? null
             : User.GetRequiredWarehouseNo();
 
         return Ok(await documentFlowService.GetAsync(id, allowedWarehouseNo, cancellationToken));
     }
-
-    private static bool CanViewAllWarehouses(ClaimsPrincipal user) =>
-        user.IsInRole(AdministratorRoleName) || user.IsInRole("Admin");
 }
 
 public sealed class DocumentFlowListHttpRequest

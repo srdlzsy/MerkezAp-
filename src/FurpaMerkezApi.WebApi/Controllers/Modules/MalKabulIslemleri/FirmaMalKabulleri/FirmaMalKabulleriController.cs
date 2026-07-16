@@ -88,7 +88,7 @@ public sealed class FirmaMalKabulleriController(
         [FromBody] CreateCompanyReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createCompanyReceivingUseCase.ExecuteAsync(
             new CreateCompanyReceivingRequest(
                 warehouseNo,
@@ -199,6 +199,9 @@ public sealed class FirmaMalKabulleriController(
 public sealed class CreateCompanyReceivingHttpRequest
 {
     private const int MaxCompanyReceivingDocumentNoLength = 29;
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
 
     public Guid? ClientRequestId { get; init; }
 

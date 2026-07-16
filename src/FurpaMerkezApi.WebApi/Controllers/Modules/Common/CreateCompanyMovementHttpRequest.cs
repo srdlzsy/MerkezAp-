@@ -4,6 +4,9 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 
 public sealed class CreateCompanyMovementHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     [StringLength(25)]
     public string CustomerCode { get; init; } = string.Empty;

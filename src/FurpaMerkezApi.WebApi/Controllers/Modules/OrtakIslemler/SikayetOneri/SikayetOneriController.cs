@@ -10,6 +10,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.OrtakIslemler.SikayetOneri;
 [ApiController]
 [Authorize]
 [Route("api/home/sikayet-oneri")]
+[Route("api/ortak-islemler/sikayet-oneri")]
+[Route("api/yonetim/sikayet-oneri")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 public sealed class HomeSikayetOneriController(ISikayetOneriService service) : ControllerBase
 {

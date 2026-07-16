@@ -200,7 +200,7 @@ public sealed class FirmaSevkleriController(
         [FromBody] CreateCompanyMovementHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createCompanyShipmentUseCase.ExecuteAsync(
             new CreateCompanyMovementRequest(
                 warehouseNo,

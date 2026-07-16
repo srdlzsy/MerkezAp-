@@ -94,7 +94,7 @@ public sealed class VerilenFirmaSiparisleriController(
         [FromBody] CreateIssuedCompanyOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createIssuedCompanyOrderUseCase.ExecuteAsync(
             new CreateIssuedCompanyOrderRequest(
                 warehouseNo,
@@ -168,6 +168,9 @@ public sealed class IssuedCompanyOrderListHttpRequest
 
 public sealed class CreateIssuedCompanyOrderHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     [StringLength(25)]
     public string CustomerCode { get; init; } = string.Empty;

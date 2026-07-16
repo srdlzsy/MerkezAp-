@@ -4,6 +4,9 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 
 public sealed class CreateInventoryCountHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     public Guid? ClientRequestId { get; init; }
 
     [StringLength(25)]

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using FurpaMerkezApi.WebApi.Configuration;
+using FurpaMerkezApi.WebApi.Filters;
 using FurpaMerkezApi.WebApi.HealthChecks;
 using FurpaMerkezApi.WebApi.Logging;
 using FurpaMerkezApi.WebApi.Middleware;
@@ -35,7 +36,10 @@ if (builder.Environment.IsDevelopment())
 
 // -------------------- SERVICES --------------------
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<WarehouseAccessFilter>();
+});
 builder.Services.AddHealthChecks()
     .AddCheck<CoreDependenciesHealthCheck>(
         "core_dependencies",

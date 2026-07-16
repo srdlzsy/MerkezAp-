@@ -94,7 +94,7 @@ public sealed class DepoMalKabulleriController(
         [FromBody] AcceptWarehouseReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
 
         var response = await acceptWarehouseReceivingUseCase.ExecuteAsync(
             new AcceptWarehouseReceivingRequest(
@@ -162,6 +162,9 @@ public sealed class DepoMalKabulleriController(
 
 public sealed class AcceptWarehouseReceivingHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     public bool AllowDiscrepancy { get; init; }
 
     [Required]

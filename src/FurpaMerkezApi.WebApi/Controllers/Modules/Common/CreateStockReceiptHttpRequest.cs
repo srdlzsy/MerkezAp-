@@ -4,6 +4,9 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 
 public sealed class CreateStockReceiptHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     [StringLength(25)]
     public string Creator { get; init; } = string.Empty;

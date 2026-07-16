@@ -76,7 +76,7 @@ public sealed class VirmanlarController(
         [FromBody] CreateVirmanHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createVirmanUseCase.ExecuteAsync(
             new CreateVirmanRequest(
                 warehouseNo,

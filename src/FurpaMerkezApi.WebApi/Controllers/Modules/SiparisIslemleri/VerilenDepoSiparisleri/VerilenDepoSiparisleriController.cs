@@ -91,7 +91,7 @@ public sealed class VerilenDepoSiparisleriController(
         [FromBody] CreateIssuedWarehouseOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var inWarehouseNo = User.GetRequiredWarehouseNo();
+        var inWarehouseNo = User.ResolveWarehouseNo(request.InWarehouseNo);
         var response = await createIssuedWarehouseOrderUseCase.ExecuteAsync(
             new CreateIssuedWarehouseOrderRequest(
                 inWarehouseNo,
@@ -143,6 +143,9 @@ public sealed class VerilenDepoSiparisleriController(
 
 public sealed class CreateIssuedWarehouseOrderHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? InWarehouseNo { get; init; }
+
     [Range(1, int.MaxValue)]
     public int OutWarehouseNo { get; init; }
 

@@ -78,7 +78,7 @@ public sealed class EtiketBelgeleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
         var response = await getLabelDocumentProductsUseCase.ExecuteAsync(
             new LabelDocumentDetailRequest(
                 resolvedWarehouseNo,
@@ -101,7 +101,7 @@ public sealed class EtiketBelgeleriController(
         LabelTagListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await listLabelTagsUseCase.ExecuteAsync(
             new LabelTagListRequest(warehouseNo, request.DateToGet!.Value),
             cancellationToken);
@@ -118,7 +118,7 @@ public sealed class EtiketBelgeleriController(
         [FromQuery] LabelPriceChangedProductListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await listLabelPriceChangedProductsUseCase.ExecuteAsync(
             new LabelPriceChangedProductRequest(
                 warehouseNo,
@@ -136,7 +136,7 @@ public sealed class EtiketBelgeleriController(
         [FromBody] CreateLabelDocumentHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createLabelDocumentUseCase.ExecuteAsync(
             new CreateLabelDocumentRequest(
                 warehouseNo,
@@ -159,7 +159,7 @@ public sealed class EtiketBelgeleriController(
         int? take,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
         var response = await listLabelDocumentsUseCase.ExecuteAsync(
             new LabelDocumentListRequest(
                 resolvedWarehouseNo,
@@ -172,12 +172,18 @@ public sealed class EtiketBelgeleriController(
 
 public sealed class LabelTagListHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     public DateTime? DateToGet { get; init; }
 }
 
 public sealed class LabelPriceChangedProductListHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     public string? DateTimeFilter { get; init; }
 
@@ -206,6 +212,9 @@ public sealed class LabelPriceChangedProductListHttpRequest
 
 public sealed class CreateLabelDocumentHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     [MinLength(1)]
     public IReadOnlyCollection<CreateLabelDocumentLineHttpRequest> Lines { get; init; } =

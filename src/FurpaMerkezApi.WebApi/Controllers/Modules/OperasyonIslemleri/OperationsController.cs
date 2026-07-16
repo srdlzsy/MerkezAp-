@@ -28,10 +28,12 @@ public sealed class OperationsController(IOperationsService operationsService)
     [ProducesResponseType(typeof(OperationJobDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<OperationJobDto>> CreateScalesFileJob(CancellationToken cancellationToken)
+    public async Task<ActionResult<OperationJobDto>> CreateScalesFileJob(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
     {
         var response = await operationsService.QueueScalesFileAsync(
-            User.GetRequiredWarehouseNo(),
+            User.ResolveWarehouseNo(warehouseNo),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -43,10 +45,12 @@ public sealed class OperationsController(IOperationsService operationsService)
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(OperationJobDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<OperationJobDto>> CreateProductBarcodePluNoFileJob(CancellationToken cancellationToken)
+    public async Task<ActionResult<OperationJobDto>> CreateProductBarcodePluNoFileJob(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
     {
         var response = await operationsService.QueueProductBarcodePluNoFileAsync(
-            User.GetRequiredWarehouseNo(),
+            User.ResolveWarehouseNo(warehouseNo),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -57,10 +61,12 @@ public sealed class OperationsController(IOperationsService operationsService)
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(OperationJobDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<OperationJobDto>> CashierFileJob(CancellationToken cancellationToken)
+    public async Task<ActionResult<OperationJobDto>> CashierFileJob(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
     {
         var response = await operationsService.QueueCashierFileAsync(
-            User.GetRequiredWarehouseNo(),
+            User.ResolveWarehouseNo(warehouseNo),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -71,10 +77,12 @@ public sealed class OperationsController(IOperationsService operationsService)
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(OperationJobDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<OperationJobDto>> PromoFile(CancellationToken cancellationToken)
+    public async Task<ActionResult<OperationJobDto>> PromoFile(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
     {
         var response = await operationsService.QueuePromoFileAsync(
-            User.GetRequiredWarehouseNo(),
+            User.ResolveWarehouseNo(warehouseNo),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -85,8 +93,13 @@ public sealed class OperationsController(IOperationsService operationsService)
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(OperationJobDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<OperationJobDetailDto>> GetJob(Guid jobId, CancellationToken cancellationToken) =>
-        Ok(await operationsService.GetJobAsync(jobId, cancellationToken));
+    public async Task<ActionResult<OperationJobDetailDto>> GetJob(Guid jobId, CancellationToken cancellationToken)
+    {
+        var response = await operationsService.GetJobAsync(jobId, cancellationToken);
+        _ = User.ResolveWarehouseNo(response.WarehouseNo);
+
+        return Ok(response);
+    }
 
     [HttpGet("getauthorizationfile")]
     [HttpGet("authorization-files")]

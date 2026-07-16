@@ -9,7 +9,11 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Tarihler `ISO 8601` formatindadir.
 - Yetki sistemi `module > menu > action` mantigindadir.
 - UI menu agaci ve buton gorunurlugu `me` cevabindan uretilmelidir.
-- Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; `WarehouseNo` verilmezse JWT icindeki depo kullanilir.
+- Depo yetkisi backend tarafinda merkezi uygulanir: `Admin` veya `Administrator` rolu tum depolar icin islem yapabilir; diger kullanicilar sadece JWT icindeki kendi deposu icin islem yapabilir.
+- UI normal kullaniciya depo secimi sormamalidir. Liste/create/update isteklerinde depo alani bos birakilabilir; backend normal kullanici icin kullanici deposunu uygular.
+- UI yalnizca `Admin` veya `Administrator` rolunde depo secici/filtresi gostermelidir. Admin depo secmezse endpoint davranisina gore tum depolar veya token deposu varsayimi kullanilabilir; tek depo gerektiren create islemlerinde admin secili depoyu body/query ile gondermelidir.
+- Normal kullanici farkli `WarehouseNo`, `BranchNo` veya islem deposu gonderirse API `403 Forbidden` doner.
+- Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; normal kullanicida `WarehouseNo` verilmezse JWT icindeki depo kullanilir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
 
 ## Home / Ortak Sikayet Oneri
@@ -75,6 +79,7 @@ UI icin onerilen kullanim:
 - "Sikayet / Oneri Gonder" butonu modal acar.
 - Modalda `type`, `title`, `message`, `priority` alanlari bulunur.
 - Kullanici bilgisi, depo no ve depo adi body'den alinmaz; JWT claim'lerinden backend tarafinda doldurulur.
+- Ayni create formu home disinda kullanicinin kendi sayfasinda da acilabilir; UI `POST /api/home/sikayet-oneri`, `POST /api/ortak-islemler/sikayet-oneri` veya `POST /api/yonetim/sikayet-oneri` route'larindan birini kullanabilir.
 - "Gecmisim" veya detay paneli icin `GET /api/home/sikayet-oneri/benim` kullanilir.
 - Yonetim ekrani menu olarak `OrtakIslemler > SikayetOneri` altinda acilabilir; admin olmayan kullanicida bu ekran sadece kendi kayitlarini salt okunur liste/detay olarak gostermelidir.
 - Yonetim gridinde tip, durum, oncelik, depo, olusturan kullanici, tarih ve admin notu kolonlari yeterlidir.
@@ -85,6 +90,8 @@ Endpoint ozeti:
 | Endpoint | Request kaynagi | Request modeli | Response | Yetki |
 |---|---|---|---|---|
 | `POST /api/home/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
+| `POST /api/ortak-islemler/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
+| `POST /api/yonetim/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
 | `GET /api/home/sikayet-oneri/benim` | - | - | `FeedbackItemDto[]` | login |
 | `GET /api/home/sikayet-oneri/ozet` | - | - | `FeedbackSummaryDto` | login |
 | `GET /api/yonetim/sikayet-oneri` | query | `FeedbackManagementListHttpRequest` | `FeedbackItemDto[]` | login; admin tumu, digerleri kendi kayitlari |
@@ -2075,9 +2082,9 @@ Onemli not:
 - Bu endpoint su an canli `MikroConnection` yerine write icin ayrilan `testMikroConnection` uzerinden `MikroDB_V16_SOPHIGET` veritabanina yazar.
 - Kod yapisi ileride canliya gecmeye hazirdir; canliya geciste `MikroWriteConnection` connection string'i eklenerek yazma hedefi degistirilebilir.
 - Yazma islemi EF Core uzerinden ayri `MikroWriteDbContext` ile yapilir; okuma tarafindaki `MikroDbContext` ile karismaz.
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir.
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri icin test DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
-- `inWarehouseNo` JWT icindeki kullanici deposundan gelir; body icinde gonderilmez.
+- Normal kullanici icin `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `inWarehouseNo` gonderebilir.
 - `outWarehouseNo` siparis verilen/karsi depo numarasidir.
 
 Request:
@@ -2185,7 +2192,7 @@ Yetki:
 Not:
 
 - Bu endpoint mevcut `Verilen Depo Siparisi Olustur` altyapisini kullanir.
-- `inWarehouseNo` JWT icindeki kullanici deposundan gelir.
+- Normal kullanici icin `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `targetWarehouseNo` gonderebilir.
 - `sourceWarehouseNo`, olusacak depo siparisindeki `outWarehouseNo` olarak kullanilir.
 
 Request:
@@ -2313,9 +2320,9 @@ Onemli not:
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - Su an write hedefi canli `MikroConnection` degil; `MikroWriteConnection` yoksa `testMikroConnection` kullanilir.
 - `SIPARISLER` tablosuna `sip_tip = 1`, `sip_cins = 0` olarak verilen firma siparisi yazar.
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir.
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri/tip/cins icin write DB'deki maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
-- `warehouseNo` JWT icindeki kullanici deposundan gelir; body icinde gonderilmez.
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Cari bilgisi write DB'de `CARI_HESAPLAR` icinden okunur; `cari_odemeplan_no` -> `sip_opno`, `cari_pasaport_no == "1"` -> `sip_cagrilabilir_fl`.
 
 Request:
@@ -2433,7 +2440,7 @@ Yetki:
 Not:
 
 - Bu endpoint mevcut `Verilen Firma Siparisi Olustur` altyapisini kullanir.
-- `warehouseNo` JWT icindeki kullanici deposundan gelir.
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - `supplierCode`, olusacak firma siparisindeki `customerCode` olarak kullanilir.
 
 Request:
@@ -2740,10 +2747,10 @@ Onemli not:
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - Su an write hedefi canli `MikroConnection` degil; `MikroWriteConnection` yoksa `testMikroConnection` kullanilir.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 17`, `sth_tip = 2`, `sth_cins = 6` olarak depolar arasi sevk yazar.
-- `sourceWarehouseNo` JWT icindeki kullanici deposundan gelir; body icinde gonderilmez.
+- Normal kullanici icin `sourceWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska kaynak depodan sevk olusturacaksa body'de opsiyonel `sourceWarehouseNo` gonderebilir.
 - `targetWarehouseNo` UI'da secilen hedef depodur ve `sth_nakliyedeposu` alanina yazilir.
 - `transitWarehouseNo` verilmezse `60` kullanilir ve `sth_giris_depo_no` alanina yazilir.
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir.
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri ve `sth_evraktip = 17` icin write DB'deki maksimum sira okunarak uretilir.
 - Satirda `warehouseOrderLineGuid` verilirse `STOK_HAREKETLERI_EK.sth_subesip_uid` ile depo siparis satirina baglanir.
 - `warehouseOrderLineGuid` verilmezse satir siparissiz sevk olarak olusur.
@@ -3022,9 +3029,9 @@ Onemli not:
 
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 1`, `sth_tip = 1`, `sth_normal_iade = 0` olarak firma giden sevki yazar.
-- `warehouseNo` JWT icindeki kullanici deposundan gelir; body icinde gonderilmez.
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina sevk olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - `customerCode` zorunludur ve write DB'de `CARI_HESAPLAR` icinde kontrol edilir.
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir.
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri, evrak tipi ve iade tipi icin write DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - Plaka, sofor adi ve TCKN bu create request'inde gonderilmez. Bu alanlar e-irsaliye gonderim request'inde zorunludur.
 - Satir bazinda `unitPrice` verilirse `totalAmount` `quantity * unitPrice` toplamindan olusur; verilmezse `0` olur.
@@ -3342,7 +3349,7 @@ Onemli not:
 
 - Bu endpoint yeni ana stok hareketi olusturmaz; gonderen deponun olusturdugu mevcut `sth_evraktip = 17`, `sth_normal_iade = 0 veya 1` satirlarini gunceller.
 - `isReturn = false` normal gelen depo sevkini, `isReturn = true` gelen depo iadesini ifade eder.
-- `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir.
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo icin kabul yapacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Bekleyen kabul icin hareketlerde `sth_nakliyedeposu = kullaniciDeposu` ve `sth_nakliyedurumu != 1` olmalidir.
 - `sth_miktar` degistirilmez; resmi sevk/e-irsaliye miktari olarak korunur.
 - UI'dan gelen sayilan miktar `sth_FormulMiktar` alanina yazilir.
@@ -3645,7 +3652,7 @@ Yetki:
 Onemli not:
 
 - Tek endpoint hem siparisli hem siparissiz mal kabul icin kullanilir.
-- `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir.
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina firma mal kabul olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Mobil offline pilotta request'e `clientRequestId` eklenmelidir.
 - Backend `sth_evraktip = 13`, `sth_tip = 0`, `sth_normal_iade = 0` olarak yeni giris hareketi olusturur.
 - Mal kabul giris hareketinde `sth_miktar` irsaliye/gelen miktari olan `dispatchQuantity` ile yazilir.
@@ -4949,11 +4956,11 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina fis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 0`, `sth_tip = 1`, `sth_normal_iade = 0`, `sth_cins = 4` olarak kayit yazar
 - `sth_cari_kodu` bos yazilir; bu fislerde cari baglantisi yoktur
 - `creator` ve `acceptor` alanlari sirasiyla `sth_HareketGrupKodu1` ve `sth_HareketGrupKodu2` kolonlarina yazilir
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir
 - `documentOrderNo` ayni seri ve zayiat fis turu icin write DB'deki mevcut maksimum sira okunarak uretilir
 - `totalAmount` su an satir tutarlari `0` yazildigi icin `0` doner
 
@@ -5047,12 +5054,12 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina fis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 0`, `sth_tip = 1`, `sth_normal_iade = 0`, `sth_cins = 5` olarak kayit yazar
 - `sth_isemri_gider_kodu` alanina sabit olarak `0032` yazilir
 - `sth_cari_kodu` bos yazilir; bu fislerde cari baglantisi yoktur
 - `creator` ve `acceptor` alanlari sirasiyla `sth_HareketGrupKodu1` ve `sth_HareketGrupKodu2` kolonlarina yazilir
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir
 - `documentOrderNo` ayni seri ve masraf fis turu icin write DB'deki mevcut maksimum sira okunarak uretilir
 - `totalAmount` su an satir tutarlari `0` yazildigi icin `0` doner
 
@@ -5193,7 +5200,7 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina sayim sonucu olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - Mobil offline pilotta request'e `clientRequestId` eklenmelidir.
 - backend `SAYIM_SONUCLARI` tablosuna yeni satirlar yazar
 - `documentNo` ayni depo icin `sym_evrakno` maksimum degerinin bir fazlasi olarak uretilir
@@ -5601,9 +5608,9 @@ Response:
 
 ### Etiketler
 
-Belirli bir tarih icin kullanicinin deposuna ait tag/view kayitlarini getirir.
+Belirli bir tarih icin depo bazli tag/view kayitlarini getirir. Normal kullanici icin depo sorulmaz; `Admin`/`Administrator` query'de opsiyonel `warehouseNo` gonderebilir.
 
-`GET /api/kasa-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24`
+`GET /api/kasa-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24&warehouseNo=110`
 
 Yetki:
 
@@ -5737,13 +5744,13 @@ Response:
 
 ### Fiyati Degisen Etiket Urunleri
 
-Belirli bir zaman bilgisinden sonra fiyati degisen ve etikete uygun urunleri getirir.
+Belirli bir zaman bilgisinden sonra fiyati degisen ve etikete uygun urunleri getirir. Normal kullanici icin depo sorulmaz; `Admin`/`Administrator` query'de opsiyonel `warehouseNo` gonderebilir.
 
-`GET /api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00`
+`GET /api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00&warehouseNo=110`
 
 Uyumluluk icin eski route alias'i da desteklenir:
 
-`GET /api/kasa-islemleri/etiket-belgeleri/get-by-date-for-label?dateTimeFilter=24.04.2026%2008:00:00`
+`GET /api/kasa-islemleri/etiket-belgeleri/get-by-date-for-label?dateTimeFilter=24.04.2026%2008:00:00&warehouseNo=110`
 
 Yetki:
 
@@ -5789,7 +5796,7 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body icinde gonderilmez; JWT icindeki kullanici deposu kullanilir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo icin etiket belgesi olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - en az bir satir zorunludur
 - her satir yalnizca `productCode` alanini ister
 - backend Furpa veritabaninda `LabelDocuments` ve `LabelDocumentDetails` tablolarina transaction ile yazar
@@ -5872,12 +5879,12 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body icinden alinmaz; JWT icindeki kullanici deposu kullanilir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina virman olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 6`, `sth_normal_iade = 0`, `sth_cins = 3` olacak sekilde kayit yazar
 - `movementType` alaninin karsiligi satir bazinda `sth_tip` kolonuna yazilir; `2` gonderilirse backend Mikro uyumu icin satiri `1` cikis ve `0` giris olarak iki stok hareketine acar
-- eski yapiya uygun olarak `sth_giris_depo_no` ve `sth_cikis_depo_no` ayni kullanici deposuna yazilir
+- eski yapiya uygun olarak `sth_giris_depo_no` ve `sth_cikis_depo_no` ayni islem deposuna yazilir
 - eski yapiya uygun olarak `sth_fiyat_liste_no = -1` ve `sth_teslim_tarihi = 1900-01-01` degerleri kullanilir
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir
 - `documentOrderNo` ayni seri ve virman turu icin write DB'deki mevcut maksimum sira okunarak uretilir
 - `totalAmount` su an satir tutarlari `0` yazildigi icin `0` doner
 
@@ -6086,10 +6093,10 @@ Onemli not:
 
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 17`, `sth_tip = 2`, `sth_cins = 6`, `sth_normal_iade = 1` olarak depo iadesi yazar.
-- `sourceWarehouseNo` JWT icindeki kullanici deposundan gelir; body icinde gonderilmez.
+- Normal kullanici icin `sourceWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska kaynak depodan iade olusturacaksa body'de opsiyonel `sourceWarehouseNo` gonderebilir.
 - `targetWarehouseNo` iadenin donecegi/hedef depodur ve `sth_nakliyedeposu` alanina yazilir.
 - `transitWarehouseNo` verilmezse `60` kullanilir ve `sth_giris_depo_no` alanina yazilir.
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir.
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri, evrak tipi ve iade tipi icin write DB'deki mevcut maksimum sira okunarak uretilir.
 - Depolar arasi sevkten farki: `warehouseOrderLineGuid` yoktur, siparis baglama yapilmaz.
 - Plaka, sofor adi ve TCKN bu create request'inde gonderilmez. Bu alanlar e-irsaliye gonderim request'inde zorunludur.
@@ -6229,9 +6236,9 @@ Onemli not:
 
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 1`, `sth_tip = 1`, `sth_normal_iade = 1` olarak firma iadesi yazar.
-- `warehouseNo` JWT icindeki kullanici deposundan gelir; body icinde gonderilmez.
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina iade olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - `customerCode` zorunludur ve write DB'de `CARI_HESAPLAR` icinde kontrol edilir.
-- `documentSerie` backend tarafinda `F{loginKullaniciDepoNo}` olarak uretilir.
+- `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri, evrak tipi ve iade tipi icin write DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - Plaka, sofor adi ve TCKN bu create request'inde gonderilmez. Bu alanlar e-irsaliye gonderim request'inde zorunludur.
 - Request/response modeli firma giden sevk create ile aynidir; tek fark kaydin `returnType = 1` olarak yazilmasidir.
@@ -6931,7 +6938,7 @@ Liste query:
 ```text
 startDate     zorunlu, ISO tarih
 endDate       zorunlu, ISO tarih
-warehouseNo   opsiyonel; verilmezse tum depolar
+warehouseNo   opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular; Admin/Administrator bos birakirsa tum depolar
 customerCode  opsiyonel; tek tedarikciye daraltir
 take          opsiyonel; default 100, max 500
 ```
@@ -6941,7 +6948,7 @@ Detay query:
 ```text
 startDate   zorunlu
 endDate     zorunlu
-warehouseNo opsiyonel
+warehouseNo opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular; Admin/Administrator secili depo icin gonderebilir
 eventTake   opsiyonel; default 100, max 500
 ```
 
@@ -7098,8 +7105,8 @@ warehouseNo  opsiyonel
 
 Not:
 
-- `warehouseNo` verilirse tek sube filtrelenir.
-- `warehouseNo` verilmezse tum subeler icin rapor doner.
+- Normal kullanicida UI `warehouseNo` sormaz; backend JWT icindeki kullanici deposunu uygular.
+- `Admin`/`Administrator` icin `warehouseNo` verilirse tek sube filtrelenir, verilmezse tum subeler icin rapor doner.
 - Tarih filtresi gun bazinda calisir; backend `endDate` degerini dahil kabul edip sorguda ertesi gunun basina kadar okur.
 - Tum tutar alanlari backend tarafinda 2 ondaliga yuvarlanir.
 - Indirim karti raporu kullanim adedini Mikro `TurnoverDiscountCardDetails` kaynagindan, kullanim tutarini Furpa `PosFaturas` kaynagindan eslestirir.
@@ -7817,7 +7824,7 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body'de gonderilirse mevcut JWT deposu ile ayni olmak zorundadir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina banknot takip kaydi acacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - ayni depo ve ayni gun icin kayit varsa yeni insert yapmaz, `200 OK` ve `created = false` doner
 - yeni kayit acilirse `201 Created` ve `created = true` doner
 
@@ -7936,10 +7943,10 @@ Yetki:
 
 Onemli not:
 
-- `warehouseNo` body'de opsiyoneldir; gonderilirse JWT deposu ile ayni olmalidir
+- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina kasa sayimi olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - en az bir `paymentTypes` veya `storeExpenses` satiri zorunludur
 - backend `Summaries`, `BanknoteMovements`, `GiftCheckMovements` ve `CARI_HESAP_HAREKETLERI` tarafina yazar
-- `documentSerie` backend tarafinda `KS{loginKullaniciDepoNo}` olarak uretilir
+- `documentSerie` backend tarafinda `KS{islemDepoNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
 
 Request:
@@ -9772,6 +9779,7 @@ Legacy farklarini okurken su noktalari esas alinmalidir:
 
 - Hangfire ve SignalR beklentisi yoktur; bu modul application icindeki hosted queue + polling modeliyle calisir
 - `warehouseNo` artik `ClaimTypes.Name` degil, `warehouse_no` claim'inden okunur
+- Normal kullanicida dosya olusturma aksiyonlari icin depo sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo icin job baslatacaksa query'de opsiyonel `warehouseNo` gonderebilir.
 - `promofile` de yeni kuyruk/polling modeliyle calisir; eski yardimci dosya zinciri job icinde uretilir
 
 Temel route:
@@ -9780,23 +9788,24 @@ Temel route:
 
 Mevcut endpointler:
 
-- `GET /api/operations/scalesfile`
+- `GET /api/operations/scalesfile?warehouseNo=110`
   - terazi dosyasi isi kuyruga alinir
   - response `202 Accepted`
   - body `OperationJobDto`
-- `GET /api/operations/productbarcodeplunofile`
+- `GET /api/operations/productbarcodeplunofile?warehouseNo=110`
   - urun/barcode/PLU dosya isi kuyruga alinir
   - eski uyumluluk icin `GET /api/operations/productbarcodeplonofile` da ayni isi yapar
   - response `202 Accepted`
-- `GET /api/operations/cashierfile`
+- `GET /api/operations/cashierfile?warehouseNo=110`
   - kasiyer ve yetki dosyalari isi kuyruga alinir
   - response `202 Accepted`
-- `GET /api/operations/promofile`
+- `GET /api/operations/promofile?warehouseNo=110`
   - promosyon ve yardimci POS dosyalari isi kuyruga alinir
   - response `202 Accepted`
   - Mayday/UYUM connection stringleri eksikse job `Failed` durumuna duser ve `errorMessage` ile sebep doner
 - `GET /api/operations/jobs/{jobId}`
   - kuyruga atilan isin durumunu dondurur
+  - admin olmayan kullanici baska deponun job detayini okuyamaz
   - response `OperationJobDetailDto`
 - `GET /api/operations/getauthorizationfile`
   - authorization kayitlarini getirir
@@ -10212,6 +10221,7 @@ Operasyon modulu notlari:
 - bu modul Hangfire yerine uygulama ici hosted queue kullanir
 - UI canli progress stream beklememelidir; polling yeterlidir
 - `scalesfile` icin `BranchDetails` kaydi ve `ScalesType` bilgisi zorunludur
+- `scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointlerinde `warehouseNo` query parametresi opsiyoneldir; yalniz `Admin`/`Administrator` icin depo secimi anlamlidir
 - `productbarcodeplunofile` ve `cashierfile` lokal export uretebilir; branch network path varsa ek olarak paylasima da kopyalanir
 - `promofile` `PROMO.DAT`, `NOPROMO.DAT`, `NOCEK.DAT`, `NOYEMEK.DAT`, `GRUP.DAT`, `OZELKOD.DAT`, `EFATVNO.DAT` ve kasa bazli `MESAJ.xxx` dosyalarini uretir
 - export klasoru config'deki `OperationsExport:BasePath` ile verilebilir; bos ise uygulama altindaki `App_Data/OperationsExports` kullanilir
@@ -14640,13 +14650,13 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CreateFeedbackItemHttpRequest`: `Type`, `Title`, `Message`, `Priority`
 - `FeedbackManagementListHttpRequest`: `Status`, `Type`, `WarehouseNo`, `StartDate`, `EndDate`, `Take`
 - `ChangeFeedbackStatusHttpRequest`: `Status`, `AdminNote`
-- `CreateCompanyMovementHttpRequest`: `CustomerCode`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
+- `CreateCompanyMovementHttpRequest`: `WarehouseNo`, `CustomerCode`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateCompanyMovementLineHttpRequest`: `StockCode`, `Quantity`, `UnitPrice`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
-- `CreateStockReceiptHttpRequest`: `Creator`, `Acceptor`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
+- `CreateStockReceiptHttpRequest`: `WarehouseNo`, `Creator`, `Acceptor`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateStockReceiptLineHttpRequest`: `StockCode`, `Quantity`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`
-- `CreateInventoryCountHttpRequest`: `Name`, `DocumentDate`, `Lines`
+- `CreateInventoryCountHttpRequest`: `WarehouseNo`, `ClientRequestId`, `Name`, `DocumentDate`, `Lines`
 - `CreateInventoryCountLineHttpRequest`: `StockCode`, `Quantity`, `Barcode`, `UnitPointer`
-- `CreateVirmanHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
+- `CreateVirmanHttpRequest`: `WarehouseNo`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateVirmanLineHttpRequest`: `StockCode`, `MovementType`, `Quantity`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`
 
 ### Arama Request Modelleri
@@ -14663,34 +14673,34 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Siparis Request Modelleri
 
 - `IssuedCompanyOrderListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `CustomerCode`, `OnlyOpen`
-- `CreateIssuedCompanyOrderHttpRequest`: `CustomerCode`, `OrderDate`, `DeliveryDate`, `Description1`, `Description2`, `Deliverer`, `Receiver`, `Lines`
+- `CreateIssuedCompanyOrderHttpRequest`: `WarehouseNo`, `CustomerCode`, `OrderDate`, `DeliveryDate`, `Description1`, `Description2`, `Deliverer`, `Receiver`, `Lines`
 - `CreateIssuedCompanyOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description1`, `Description2`, `PackageCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
-- `CreateIssuedWarehouseOrderHttpRequest`: `OutWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
+- `CreateIssuedWarehouseOrderHttpRequest`: `InWarehouseNo`, `OutWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
 - `CreateIssuedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
 - `SuggestedWarehouseOrderListHttpRequest`: `TargetWarehouseNo`, `SourceWarehouseNo`, `LookbackDays`, `FallbackRecommendedDay`
-- `ConvertSuggestedWarehouseOrderHttpRequest`: `SourceWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
+- `ConvertSuggestedWarehouseOrderHttpRequest`: `TargetWarehouseNo`, `SourceWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
 - `ConvertSuggestedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
 - `SuggestedCompanyOrderListHttpRequest`: `WarehouseNo`, `SupplierCode`, `LookbackDays`, `FallbackRecommendedDay`
-- `ConvertSuggestedCompanyOrderHttpRequest`: `SupplierCode`, `OrderDate`, `DeliveryDate`, `Description1`, `Description2`, `Deliverer`, `Receiver`, `Lines`
+- `ConvertSuggestedCompanyOrderHttpRequest`: `WarehouseNo`, `SupplierCode`, `OrderDate`, `DeliveryDate`, `Description1`, `Description2`, `Deliverer`, `Receiver`, `Lines`
 - `ConvertSuggestedCompanyOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description1`, `Description2`, `PackageCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
 
 ### Sevk, Iade ve Mal Kabul Request Modelleri
 
-- `CreateInterWarehouseShipmentHttpRequest`: `TargetWarehouseNo`, `TransitWarehouseNo`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
+- `CreateInterWarehouseShipmentHttpRequest`: `SourceWarehouseNo`, `TargetWarehouseNo`, `TransitWarehouseNo`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateInterWarehouseShipmentLineHttpRequest`: `StockCode`, `Quantity`, `WarehouseOrderLineGuid`, `UnitPrice`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
-- `CreateWarehouseReturnHttpRequest`: `TargetWarehouseNo`, `TransitWarehouseNo`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
+- `CreateWarehouseReturnHttpRequest`: `SourceWarehouseNo`, `TargetWarehouseNo`, `TransitWarehouseNo`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateWarehouseReturnLineHttpRequest`: `StockCode`, `Quantity`, `UnitPrice`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
-- `AcceptWarehouseReceivingHttpRequest`: `AllowDiscrepancy`, `Lines`
+- `AcceptWarehouseReceivingHttpRequest`: `WarehouseNo`, `AllowDiscrepancy`, `Lines`
 - `AcceptWarehouseReceivingLineHttpRequest`: `MovementGuid`, `ReceivedQuantity`
-- `CreateCompanyReceivingHttpRequest`: `ClientRequestId`, `CustomerCode`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Deliverer`, `Receiver`, `Description`, `AllowOrderOverReceiving`, `AutoCreateReturnForPartialAcceptance`, `Lines`
+- `CreateCompanyReceivingHttpRequest`: `WarehouseNo`, `ClientRequestId`, `CustomerCode`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Deliverer`, `Receiver`, `Description`, `AllowOrderOverReceiving`, `AutoCreateReturnForPartialAcceptance`, `Lines`
 - `CreateCompanyReceivingLineHttpRequest`: `StockCode`, `Quantity`, `DispatchQuantity`, `AcceptedQuantity`, `UnitPrice`, `UnitPointer`, `LastConsumingDate`, `OrderGuid`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
 
 ### Stok ve Etiket Request Modelleri
 
-- `LabelTagListHttpRequest`: `DateToGet`
+- `LabelTagListHttpRequest`: `WarehouseNo`, `DateToGet`
 - `ManavKunyeDetailedLabelTagListHttpRequest`: `WarehouseNo`, `DateToGet` opsiyonel
-- `LabelPriceChangedProductListHttpRequest`: `DateTimeFilter`
-- `CreateLabelDocumentHttpRequest`: `Lines`
+- `LabelPriceChangedProductListHttpRequest`: `WarehouseNo`, `DateTimeFilter`
+- `CreateLabelDocumentHttpRequest`: `WarehouseNo`, `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`
 
 ### Mikro Evrak Duzenleme Request Modelleri
@@ -14773,6 +14783,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Operasyon Request Modelleri
 
 - `SaveAuthorizationFileHttpRequest`: `Id`, `UpdateDate`, `Name`, `Z`, `R`, `X`
+- `GET /api/operations/scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointleri body almaz; opsiyonel `warehouseNo` query parametresi yalniz admin depo secimi icindir.
 - `POST /api/operations/saveauthorizationfile` ve `POST /api/operations/authorization-files` body modeli tek obje degil, `IReadOnlyCollection<SaveAuthorizationFileHttpRequest>` dizisidir.
 - `DocumentFlowListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `DocumentType`, `Status`, `Search`, `Take`
 - `GET /api/operasyon-islemleri/belge-akis-takibi` body almaz; filtreleri query parametresi olarak alir.

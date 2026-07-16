@@ -200,7 +200,7 @@ public sealed class DepolarArasiSevklerController(
         [FromBody] CreateInterWarehouseShipmentHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var sourceWarehouseNo = User.GetRequiredWarehouseNo();
+        var sourceWarehouseNo = User.ResolveWarehouseNo(request.SourceWarehouseNo);
         var response = await createInterWarehouseShipmentUseCase.ExecuteAsync(
             new CreateInterWarehouseShipmentRequest(
                 sourceWarehouseNo,
@@ -291,6 +291,9 @@ public sealed class DepolarArasiSevklerController(
 
 public sealed class CreateInterWarehouseShipmentHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? SourceWarehouseNo { get; init; }
+
     [Range(1, int.MaxValue)]
     public int TargetWarehouseNo { get; init; }
 

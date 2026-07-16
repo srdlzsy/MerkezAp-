@@ -76,7 +76,7 @@ public sealed class ZayiatFisleriController(
         [FromBody] CreateStockReceiptHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createOutageReceiptUseCase.ExecuteAsync(
             new CreateStockReceiptRequest(
                 warehouseNo,

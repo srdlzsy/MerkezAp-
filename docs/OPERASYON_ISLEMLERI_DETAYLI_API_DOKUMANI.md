@@ -2,7 +2,7 @@
 
 Bu dokuman operasyon modulunde kullanicinin "dosya olustur/gonder" dediginde API tarafinda ne oldugunu anlatir.
 
-Depo numarasi request body veya query'den alinmaz. Login olan kullanicinin JWT token'indaki `warehouse_no` claim'i kullanilir. Bu yuzden asagidaki akislar depo no 135 icin de, baska bir depo icin de aynidir; sadece token'dan gelen depo numarasi degisir.
+Normal kullanicida depo numarasi request body veya query'den istenmez; login olan kullanicinin JWT token'indaki `warehouse_no` claim'i kullanilir. `Admin`/`Administrator` baska depo icin dosya isi baslatacaksa dosya olusturma endpointlerinde opsiyonel `warehouseNo` query parametresi gonderebilir.
 
 ## Ortak Isleyis
 
@@ -10,11 +10,11 @@ Operasyon dosya aksiyonlari `api/operations` route'u altindadir.
 
 Endpointler:
 
-- `GET /api/operations/scalesfile`
-- `GET /api/operations/productbarcodeplunofile`
-- `GET /api/operations/productbarcodeplonofile`
-- `GET /api/operations/cashierfile`
-- `GET /api/operations/promofile`
+- `GET /api/operations/scalesfile?warehouseNo=135`
+- `GET /api/operations/productbarcodeplunofile?warehouseNo=135`
+- `GET /api/operations/productbarcodeplonofile?warehouseNo=135`
+- `GET /api/operations/cashierfile?warehouseNo=135`
+- `GET /api/operations/promofile?warehouseNo=135`
 - `GET /api/operations/jobs/{jobId}`
 
 Dosya olusturma endpointleri `operasyon-islemleri.operations.create` yetkisi ister. Job detayini okumak icin `operasyon-islemleri.operations.detail` yetkisi gerekir.
@@ -22,7 +22,7 @@ Dosya olusturma endpointleri `operasyon-islemleri.operations.create` yetkisi ist
 Akis:
 
 1. UI ilgili endpointi cagirir.
-2. API kullanicinin token'indan `warehouse_no` ve kullanici id bilgisini okur.
+2. API islem deposunu cozer: normal kullanicida token deposu, admin query'de `warehouseNo` gonderdiyse secili depo kullanilir.
 3. Yapilacak is `OperationsJobQueue` icine atilir.
 4. API hemen `202 Accepted` doner.
 5. Response icinde `jobId`, `operation`, `status`, `warehouseNo`, `createdAtUtc` vardir.
@@ -80,7 +80,7 @@ Lokal dosya olustuktan sonra sistem, sube konfigrasyonu varsa dosyayi ag paylasi
 
 Sube bilgisi `FurpaDbContext.BranchDetails` tablosundan okunur:
 
-- `BranchNo`: token'daki depo numarasi ile eslesir
+- `BranchNo`: cozulmus islem deposu ile eslesir
 - `BranchIpAddress`: sube IP adresi
 - `BranchScalesFolderPath`: terazi dosyasi hedef klasoru
 - `PosGenelFolderPath`: POS genel dosyalari hedef klasoru
@@ -117,7 +117,7 @@ ScalesFile
 
 Ne yapar:
 
-1. Token'dan gelen depo numarasina gore `BranchDetails` kaydi aranir.
+1. Cozulmus islem deposuna gore `BranchDetails` kaydi aranir.
 2. Terazi dosyasi icin branch kaydi zorunludur.
 3. Mikro'dan teraziye gidecek urunler cekilir.
 4. `ScalesType` degerine gore dosya formati secilir.
@@ -130,7 +130,7 @@ Mikro urun filtresi:
 - Barkod `27` veya `29` ile baslayacak.
 - Barkod uzunlugu 7 olacak.
 - Barkod birim pointer degeri 1 olacak.
-- Fiyat deposu token'daki depo olacak.
+- Fiyat deposu cozulmus islem deposu olacak.
 - Fiyat liste sirasi 1 olacak.
 - Fiyat 0'dan buyuk olacak.
 - Stok pasif olmayacak.
@@ -197,7 +197,7 @@ ProductBarcodePluNoFile
 
 Ne yapar:
 
-1. Token'dan gelen depo numarasina gore branch kaydi opsiyonel okunur.
+1. Cozulmus islem deposuna gore branch kaydi opsiyonel okunur.
 2. Depoya ait kasalar `CashRegistryDetails` tablosundan okunur.
 3. Mikro'dan urun, barkod, PLU ve fiyat bilgileri cekilir.
 4. `URUN.DAT`, `BARKOD.IDX`, `PLUNO.IDX` dosyalari olusturulur.
@@ -208,7 +208,7 @@ Mikro urun filtresi:
 
 - Barkod bos olmayacak.
 - Barkod birim pointer degeri 1 olacak.
-- Fiyat deposu token'daki depo olacak.
+- Fiyat deposu cozulmus islem deposu olacak.
 - Fiyat liste sirasi 1 olacak.
 - Fiyat 0'dan buyuk olacak.
 - Stok pasif olmayacak.
@@ -284,7 +284,7 @@ CashierFile
 
 Ne yapar:
 
-1. Token'dan gelen depo numarasina gore branch kaydi opsiyonel okunur.
+1. Cozulmus islem deposuna gore branch kaydi opsiyonel okunur.
 2. Depoya ait kasalar `CashRegistryDetails` tablosundan okunur.
 3. Aktif kasiyerler `Cashiers` tablosundan okunur.
 4. Yetki satirlari `AuthorizationFiles` tablosundan okunur.
@@ -366,7 +366,7 @@ PromoFile
 
 Ne yapar:
 
-1. Token'dan gelen depo numarasina gore branch kaydi opsiyonel okunur.
+1. Cozulmus islem deposuna gore branch kaydi opsiyonel okunur.
 2. Depoya ait kasalar `CashRegistryDetails` tablosundan okunur.
 3. Mikro'dan promosyon disi PLU listeleri okunur.
 4. Mikro'dan grup/ozel kod urun listesi okunur.
@@ -406,7 +406,7 @@ Kaynak:
 
 Sube filtresi:
 
-- `PROMOSYON_SUBELER` tablosunda kayit varsa sadece token'daki depo numarasiyla eslesen promosyon kodlari alinir.
+- `PROMOSYON_SUBELER` tablosunda kayit varsa sadece cozulmus islem deposuyla eslesen promosyon kodlari alinir.
 - `PROMOSYON_SUBELER` bos ise promosyonlar sube filtresi olmadan degerlendirilir.
 
 Promosyon filtresi:

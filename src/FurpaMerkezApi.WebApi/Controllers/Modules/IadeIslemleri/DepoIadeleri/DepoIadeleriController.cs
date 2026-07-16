@@ -116,7 +116,7 @@ public sealed class DepoIadeleriController(
         [FromBody] CreateWarehouseReturnHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var sourceWarehouseNo = User.GetRequiredWarehouseNo();
+        var sourceWarehouseNo = User.ResolveWarehouseNo(request.SourceWarehouseNo);
         var response = await createWarehouseReturnUseCase.ExecuteAsync(
             new CreateWarehouseReturnRequest(
                 sourceWarehouseNo,
@@ -288,6 +288,9 @@ public sealed class DepoIadeleriController(
 
 public sealed class CreateWarehouseReturnHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? SourceWarehouseNo { get; init; }
+
     [Range(1, int.MaxValue)]
     public int TargetWarehouseNo { get; init; }
 

@@ -56,7 +56,7 @@ public sealed class OnerilenFirmaSiparisleriController(
         [FromBody] ConvertSuggestedCompanyOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createIssuedCompanyOrderUseCase.ExecuteAsync(
             new CreateIssuedCompanyOrderRequest(
                 warehouseNo,
@@ -123,6 +123,9 @@ public sealed class SuggestedCompanyOrderListHttpRequest
 
 public sealed class ConvertSuggestedCompanyOrderHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Required]
     [StringLength(25)]
     public string SupplierCode { get; init; } = string.Empty;

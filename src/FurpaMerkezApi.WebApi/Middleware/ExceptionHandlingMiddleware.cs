@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using FurpaMerkezApi.WebApi.Security;
 
 namespace FurpaMerkezApi.WebApi.Middleware;
 
@@ -21,6 +22,11 @@ public sealed class ExceptionHandlingMiddleware(
         {
             logger.LogInformation(exception, "An authentication error occurred.");
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status401Unauthorized, exception.Message);
+        }
+        catch (ForbiddenAccessException exception)
+        {
+            logger.LogInformation(exception, "An authorization error occurred.");
+            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status403Forbidden, exception.Message);
         }
         catch (InvalidOperationException exception)
         {
@@ -70,6 +76,7 @@ public sealed class ExceptionHandlingMiddleware(
         {
             StatusCodes.Status400BadRequest => "Bad Request",
             StatusCodes.Status401Unauthorized => "Unauthorized",
+            StatusCodes.Status403Forbidden => "Forbidden",
             StatusCodes.Status409Conflict => "Conflict",
             StatusCodes.Status404NotFound => "Not Found",
             _ => "Internal Server Error"

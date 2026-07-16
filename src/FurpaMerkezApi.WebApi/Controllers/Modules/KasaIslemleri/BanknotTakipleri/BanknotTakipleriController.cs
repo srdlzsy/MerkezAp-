@@ -90,16 +90,7 @@ public sealed class BanknotTakipleriController(
     }
 
     private int ResolveWriteWarehouseNo(int? warehouseNo)
-    {
-        var currentWarehouseNo = User.GetRequiredWarehouseNo();
-
-        if (warehouseNo.HasValue && warehouseNo.Value != currentWarehouseNo)
-        {
-            throw new ArgumentException("Warehouse no must match the current user warehouse.", nameof(warehouseNo));
-        }
-
-        return currentWarehouseNo;
-    }
+        => User.ResolveWarehouseNo(warehouseNo);
 }
 
 public sealed class BanknoteTrackDateHttpRequest

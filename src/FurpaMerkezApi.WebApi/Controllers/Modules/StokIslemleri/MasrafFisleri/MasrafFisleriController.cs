@@ -76,7 +76,7 @@ public sealed class MasrafFisleriController(
         [FromBody] CreateStockReceiptHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
         var response = await createExpenseReceiptUseCase.ExecuteAsync(
             new CreateStockReceiptRequest(
                 warehouseNo,
