@@ -155,6 +155,11 @@ Authorization: Bearer {{token}}
 ###
 
 # KasaPosTerminalleri
+GET {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri/secenekler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 POST {{baseUrl}}/api/ayar-islemleri/kasa-pos-terminalleri
 Accept: application/json
 Authorization: Bearer {{token}}
@@ -237,6 +242,11 @@ Authorization: Bearer {{token}}
 ###
 
 # SubeAyarlari
+GET {{baseUrl}}/api/ayar-islemleri/sube-ayarlari/secenekler
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 GET {{baseUrl}}/api/ayar-islemleri/sube-ayarlari
 Accept: application/json
 Authorization: Bearer {{token}}

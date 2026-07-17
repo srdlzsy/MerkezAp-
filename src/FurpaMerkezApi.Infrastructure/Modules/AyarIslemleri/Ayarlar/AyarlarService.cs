@@ -20,6 +20,46 @@ public sealed class AyarlarService(
 {
     private const int DevicePingTimeoutMilliseconds = 1000;
     private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");
+    private static readonly IReadOnlyCollection<SettingsTypeOptionDto> ScalesTypeOptions =
+    [
+        new(
+            0,
+            "cas-16",
+            "CAS 16",
+            "Terazi.plu formatinda CAS 16 terazi dosyasi uretir.",
+            true),
+        new(
+            1,
+            "cas-500",
+            "CAS 500",
+            "ART_STM.txt formatinda CAS 500 terazi dosyasi uretir.",
+            true)
+    ];
+    private static readonly IReadOnlyCollection<SettingsTypeOptionDto> CashTypeOptions =
+    [
+        new(
+            0,
+            "cash-type-0",
+            "Kasa Tipi 0",
+            "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
+            false),
+        new(
+            1,
+            "cash-type-1",
+            "Kasa Tipi 1",
+            "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
+            false)
+    ];
+
+    public async Task<BranchSettingsLookupsDto> GetBranchSettingsLookupsAsync(
+        CancellationToken cancellationToken) =>
+        new(
+            await ListScalesTypeOptionsAsync(cancellationToken),
+            await ListCashTypeOptionsAsync(cancellationToken));
+
+    public async Task<CashRegisterSettingsLookupsDto> GetCashRegisterSettingsLookupsAsync(
+        CancellationToken cancellationToken) =>
+        new(await ListCashTypeOptionsAsync(cancellationToken));
 
     public async Task<IReadOnlyCollection<DeviceTypeDto>> ListDeviceTypesAsync(
         CancellationToken cancellationToken) =>
@@ -177,18 +217,17 @@ public sealed class AyarlarService(
     }
 
     public async Task<IReadOnlyCollection<BranchDetailDto>> ListBranchesAsync(
-        CancellationToken cancellationToken) =>
-        await furpaDbContext.BranchDetails
+        CancellationToken cancellationToken)
+    {
+        var branches = await furpaDbContext.BranchDetails
             .AsNoTracking()
             .OrderBy(item => item.BranchNo)
-            .Select(item => new BranchDetailDto(
-                item.BranchNo,
-                item.BranchIpAddress,
-                item.BranchScalesFolderPath,
-                item.ScalesType,
-                item.PoskonFolderPath,
-                item.PosGenelFolderPath))
             .ToArrayAsync(cancellationToken);
+
+        return branches
+            .Select(ToBranchDto)
+            .ToArray();
+    }
 
     public async Task<BranchDetailDto> GetBranchAsync(
         int branchNo,
@@ -259,6 +298,7 @@ public sealed class AyarlarService(
         CancellationToken cancellationToken)
     {
         ValidatePositive(branchNo, nameof(branchNo));
+        ValidateScalesType(request.ScalesType, nameof(request.ScalesType));
 
         var entity = await furpaDbContext.BranchDetails
             .FirstOrDefaultAsync(item => item.BranchNo == branchNo, cancellationToken)
@@ -280,16 +320,15 @@ public sealed class AyarlarService(
     {
         ValidatePositive(branchNo, nameof(branchNo));
 
-        return await furpaDbContext.CashRegistryDetails
+        var cashRegisters = await furpaDbContext.CashRegistryDetails
             .AsNoTracking()
             .Where(item => item.BranchNo == branchNo)
             .OrderBy(item => item.CashRegisterNo)
-            .Select(item => new CashRegistryDto(
-                item.DetailId,
-                item.BranchNo,
-                item.CashRegisterNo,
-                item.CashRegisterType))
             .ToArrayAsync(cancellationToken);
+
+        return cashRegisters
+            .Select(ToCashRegistryDto)
+            .ToArray();
     }
 
     public async Task<CashRegisterResponse> CreateCashRegisterAsync(
@@ -388,6 +427,8 @@ public sealed class AyarlarService(
             request.BranchNo,
             request.CashNo,
             request.CashType,
+            ResolveCashTypeName(request.CashType),
+            ResolveCashTypeDescription(request.CashType),
             terminalEntities
                 .OrderBy(item => item.CashRegisterNo)
                 .Select(ToTerminalDto)
@@ -693,6 +734,9 @@ public sealed class AyarlarService(
                 branch.BranchNo,
                 cashRegister.CashRegisterNo,
                 cashRegister.CashRegisterType,
+                ResolveCashTypeName(cashRegister.CashRegisterType),
+                ResolveCashTypeDescription(cashRegister.CashRegisterType),
+                null,
                 null,
                 filePath,
                 "Branch IP address or POSKON folder path is empty.");
@@ -715,7 +759,10 @@ public sealed class AyarlarService(
                 branch.BranchNo,
                 cashRegister.CashRegisterNo,
                 cashRegister.CashRegisterType,
+                ResolveCashTypeName(cashRegister.CashRegisterType),
+                ResolveCashTypeDescription(cashRegister.CashRegisterType),
                 state,
+                ResolveMessageStateName(state),
                 filePath,
                 null);
         }
@@ -725,6 +772,9 @@ public sealed class AyarlarService(
                 branch.BranchNo,
                 cashRegister.CashRegisterNo,
                 cashRegister.CashRegisterType,
+                ResolveCashTypeName(cashRegister.CashRegisterType),
+                ResolveCashTypeDescription(cashRegister.CashRegisterType),
+                null,
                 null,
                 filePath,
                 exception.Message);
@@ -738,12 +788,38 @@ public sealed class AyarlarService(
         return $@"\\{host}\{folder}\MESAJ.{cashNo.ToString("000", CultureInfo.InvariantCulture)}";
     }
 
+    private async Task<IReadOnlyCollection<SettingsTypeOptionDto>> ListScalesTypeOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var configuredValues = await furpaDbContext.BranchDetails
+            .AsNoTracking()
+            .Select(item => item.ScalesType)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        return MergeTypeOptions(ScalesTypeOptions, configuredValues, ResolveScalesTypeOption);
+    }
+
+    private async Task<IReadOnlyCollection<SettingsTypeOptionDto>> ListCashTypeOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var configuredValues = await furpaDbContext.CashRegistryDetails
+            .AsNoTracking()
+            .Select(item => item.CashRegisterType)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        return MergeTypeOptions(CashTypeOptions, configuredValues, ResolveCashTypeOption);
+    }
+
     private static BranchDetailDto ToBranchDto(BranchDetailEntity item) =>
         new(
             item.BranchNo,
             item.BranchIpAddress,
             item.BranchScalesFolderPath,
             item.ScalesType,
+            ResolveScalesTypeName(item.ScalesType),
+            ResolveScalesTypeDescription(item.ScalesType),
             item.PoskonFolderPath,
             item.PosGenelFolderPath);
 
@@ -752,7 +828,9 @@ public sealed class AyarlarService(
             item.DetailId,
             item.BranchNo,
             item.CashRegisterNo,
-            item.CashRegisterType);
+            item.CashRegisterType,
+            ResolveCashTypeName(item.CashRegisterType),
+            ResolveCashTypeDescription(item.CashRegisterType));
 
     private static CashRegisterTerminalDto ToTerminalDto(CashRegisterDetailEntity item) =>
         new(
@@ -775,6 +853,7 @@ public sealed class AyarlarService(
         ValidatePositive(request.BranchNo, nameof(request.BranchNo));
         _ = NormalizeText(request.BranchIpAddress, 100, nameof(request.BranchIpAddress));
         _ = NormalizeText(request.BranchScalesFolderPath, 255, nameof(request.BranchScalesFolderPath));
+        ValidateScalesType(request.ScalesType, nameof(request.ScalesType));
         _ = NormalizeText(request.PoskonFolderPath, 255, nameof(request.PoskonFolderPath));
         _ = NormalizeText(request.PosGenelFolderPath, 255, nameof(request.PosGenelFolderPath));
     }
@@ -881,6 +960,64 @@ public sealed class AyarlarService(
             throw new ArgumentException("Value can not be negative.", parameterName);
         }
     }
+
+    private static void ValidateScalesType(byte value, string parameterName)
+    {
+        if (!ScalesTypeOptions.Any(item => item.Value == value))
+        {
+            throw new ArgumentException("Scales type must be 0 (CAS 16) or 1 (CAS 500).", parameterName);
+        }
+    }
+
+    private static string ResolveScalesTypeName(byte value) =>
+        ResolveScalesTypeOption(value).Name;
+
+    private static string ResolveScalesTypeDescription(byte value) =>
+        ResolveScalesTypeOption(value).Description;
+
+    private static string ResolveCashTypeName(byte value) =>
+        ResolveCashTypeOption(value).Name;
+
+    private static string ResolveCashTypeDescription(byte value) =>
+        ResolveCashTypeOption(value).Description;
+
+    private static SettingsTypeOptionDto ResolveScalesTypeOption(byte value) =>
+        ScalesTypeOptions.FirstOrDefault(item => item.Value == value)
+        ?? new SettingsTypeOptionDto(
+            value,
+            $"scales-type-{value.ToString(CultureInfo.InvariantCulture)}",
+            $"Terazi Tipi {value.ToString(CultureInfo.InvariantCulture)}",
+            "Tanimlanmamis terazi tipi.",
+            false);
+
+    private static SettingsTypeOptionDto ResolveCashTypeOption(byte value) =>
+        CashTypeOptions.FirstOrDefault(item => item.Value == value)
+        ?? new SettingsTypeOptionDto(
+            value,
+            $"cash-type-{value.ToString(CultureInfo.InvariantCulture)}",
+            $"Kasa Tipi {value.ToString(CultureInfo.InvariantCulture)}",
+            "Tanimlanmamis kasa tipi.",
+            false);
+
+    private static IReadOnlyCollection<SettingsTypeOptionDto> MergeTypeOptions(
+        IReadOnlyCollection<SettingsTypeOptionDto> defaultOptions,
+        IEnumerable<byte> configuredValues,
+        Func<byte, SettingsTypeOptionDto> resolveOption) =>
+        defaultOptions
+            .Select(item => item.Value)
+            .Concat(configuredValues)
+            .Distinct()
+            .OrderBy(item => item)
+            .Select(resolveOption)
+            .ToArray();
+
+    private static string? ResolveMessageStateName(int? state) =>
+        state switch
+        {
+            0 => "1071 bulundu",
+            1 => "1071 bulunmadi",
+            _ => null
+        };
 
     private static string GenerateNumericPassword()
     {

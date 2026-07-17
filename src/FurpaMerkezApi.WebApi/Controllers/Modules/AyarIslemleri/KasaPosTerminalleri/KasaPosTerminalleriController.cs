@@ -22,6 +22,13 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
     private const string CreatePolicy = "ayar-islemleri.kasa-pos-terminalleri.create";
     private const string UpdatePolicy = "ayar-islemleri.kasa-pos-terminalleri.update";
 
+    [HttpGet("secenekler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(CashRegisterSettingsLookupsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<CashRegisterSettingsLookupsDto>> Lookups(
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.GetCashRegisterSettingsLookupsAsync(cancellationToken));
+
     [HttpGet("kasalar/{cashNo:int}/terminaller")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterTerminalDto>), StatusCodes.Status200OK)]

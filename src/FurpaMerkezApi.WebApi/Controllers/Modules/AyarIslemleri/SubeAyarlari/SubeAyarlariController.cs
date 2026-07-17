@@ -22,6 +22,13 @@ public sealed class SubeAyarlariController(IAyarlarService ayarlarService)
     private const string CreatePolicy = "ayar-islemleri.sube-ayarlari.create";
     private const string UpdatePolicy = "ayar-islemleri.sube-ayarlari.update";
 
+    [HttpGet("secenekler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(BranchSettingsLookupsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BranchSettingsLookupsDto>> Lookups(
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.GetBranchSettingsLookupsAsync(cancellationToken));
+
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<BranchDetailDto>), StatusCodes.Status200OK)]
@@ -110,7 +117,7 @@ public sealed class CreateBranchSettingsHttpRequest
     public string? BranchScalesFolderPath { get; init; }
 
     [Required]
-    [Range(0, byte.MaxValue)]
+    [Range(0, 1)]
     public byte? ScalesType { get; init; }
 
     [Required(AllowEmptyStrings = false)]
@@ -135,7 +142,7 @@ public sealed class UpdateBranchSettingsHttpRequest
     public string? BranchScalesFolderPath { get; init; }
 
     [Required]
-    [Range(0, byte.MaxValue)]
+    [Range(0, 1)]
     public byte? ScalesType { get; init; }
 
     [Required(AllowEmptyStrings = false)]

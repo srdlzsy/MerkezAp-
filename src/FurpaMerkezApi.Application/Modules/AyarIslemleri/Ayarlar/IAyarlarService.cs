@@ -2,6 +2,10 @@ namespace FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 
 public interface IAyarlarService
 {
+    Task<BranchSettingsLookupsDto> GetBranchSettingsLookupsAsync(CancellationToken cancellationToken);
+
+    Task<CashRegisterSettingsLookupsDto> GetCashRegisterSettingsLookupsAsync(CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<DeviceTypeDto>> ListDeviceTypesAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<DeviceDto>> ListDevicesAsync(int? branchNo, CancellationToken cancellationToken);

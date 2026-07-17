@@ -1,5 +1,19 @@
 namespace FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 
+public sealed record SettingsTypeOptionDto(
+    byte Value,
+    string Code,
+    string Name,
+    string Description,
+    bool IsKnown);
+
+public sealed record BranchSettingsLookupsDto(
+    IReadOnlyCollection<SettingsTypeOptionDto> ScalesTypes,
+    IReadOnlyCollection<SettingsTypeOptionDto> CashTypes);
+
+public sealed record CashRegisterSettingsLookupsDto(
+    IReadOnlyCollection<SettingsTypeOptionDto> CashTypes);
+
 public sealed record DeviceTypeDto(
     int Id,
     string DeviceName);
@@ -33,6 +47,8 @@ public sealed record BranchDetailDto(
     string BranchIpAddress,
     string BranchScalesFolderPath,
     byte ScalesType,
+    string ScalesTypeName,
+    string ScalesTypeDescription,
     string PoskonFolderPath,
     string PosGenelFolderPath);
 
@@ -60,7 +76,9 @@ public sealed record CashRegistryDto(
     int DetailId,
     int BranchNo,
     int CashNo,
-    byte CashType);
+    byte CashType,
+    string CashTypeName,
+    string CashTypeDescription);
 
 public sealed record CreateCashRegisterRequest(
     int BranchNo,
@@ -78,6 +96,8 @@ public sealed record CashRegisterResponse(
     int BranchNo,
     int CashNo,
     byte CashType,
+    string CashTypeName,
+    string CashTypeDescription,
     IReadOnlyCollection<CashRegisterTerminalDto> Terminals);
 
 public sealed record CashRegisterTerminalDto(
@@ -92,7 +112,10 @@ public sealed record CashRegisterMessageStatusDto(
     int BranchNo,
     int CashNo,
     byte CashType,
+    string CashTypeName,
+    string CashTypeDescription,
     int? State,
+    string? StateName,
     string FilePath,
     string? Error);
 
