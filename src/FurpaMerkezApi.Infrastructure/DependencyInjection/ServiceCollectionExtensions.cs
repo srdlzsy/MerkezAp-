@@ -293,13 +293,15 @@ public static class ServiceCollectionExtensions
                 configuration["EInvoice:WsdlUrl"] ?? string.Empty,
                 string.IsNullOrWhiteSpace(eInvoiceUsername) ? eDespatchUsername : eInvoiceUsername,
                 string.IsNullOrWhiteSpace(eInvoicePassword) ? eDespatchPassword : eInvoicePassword,
-                configuration["EInvoice:ContractName"] ?? "IBasicIntegration"),
+                configuration["EInvoice:ContractName"] ?? "IBasicIntegration",
+                configuration.GetValue<int?>("EInvoice:TimeoutSeconds")),
             new UyumsoftServiceEndpointOptions(
                 eDespatchEndpointUrl,
                 eDespatchWsdlUrl,
                 eDespatchUsername,
                 eDespatchPassword,
-                configuration["EDespatch:ContractName"] ?? "IBasicDespatchIntegration"))));
+                configuration["EDespatch:ContractName"] ?? "IBasicDespatchIntegration",
+                configuration.GetValue<int?>("EDespatch:TimeoutSeconds")))));
         services.AddSingleton(Options.Create(new OperationsExportOptions(
             configuration["OperationsExport:BasePath"] ?? string.Empty)));
 

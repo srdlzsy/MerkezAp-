@@ -72,7 +72,8 @@ public sealed class FaturaGoruntulemeController(
         var response = await synchronizeInvoiceViewingDocumentsUseCase.ExecuteAsync(
             new InvoiceViewingSynchronizationRequest(
                 request.StartDate!.Value,
-                request.EndDate!.Value),
+                request.EndDate!.Value,
+                request.IncludeStatuses ?? false),
             cancellationToken);
 
         return Ok(response);
@@ -248,6 +249,8 @@ public sealed class InvoiceViewingSynchronizationHttpRequest
 
     [Required]
     public DateTime? EndDate { get; init; }
+
+    public bool? IncludeStatuses { get; init; }
 }
 
 public sealed class InvoiceViewingRenderHttpRequest

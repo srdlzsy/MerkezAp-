@@ -25,11 +25,13 @@ public sealed record InvoiceViewingListRequest(
 
 public sealed record InvoiceViewingSynchronizationRequest(
     DateTime StartDate,
-    DateTime EndDate);
+    DateTime EndDate,
+    bool IncludeStatuses);
 
 public sealed record InvoiceViewingSynchronizationResponse(
     DateTime StartDate,
     DateTime EndDate,
+    bool IncludeStatuses,
     int SourceTotalCount,
     int FetchedCount,
     int InsertedCount,

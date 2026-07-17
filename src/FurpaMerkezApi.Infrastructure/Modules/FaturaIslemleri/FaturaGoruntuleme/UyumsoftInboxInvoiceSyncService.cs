@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
@@ -36,6 +37,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     public async Task<InvoiceViewingSynchronizationResponse> SynchronizeRangeAsync(
         DateTime startDate,
         DateTime endDate,
+        bool includeStatuses,
         CancellationToken cancellationToken)
     {
         if (endDate.Date < startDate.Date)
@@ -54,6 +56,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 startDate,
                 endDate,
                 filterMode,
+                includeStatuses,
                 cancellationToken);
 
             fetchedCount += result.FetchedCount;
@@ -65,6 +68,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         return new InvoiceViewingSynchronizationResponse(
             startDate.Date,
             endDate.Date,
+            includeStatuses,
             sourceTotalCount,
             fetchedCount,
             insertedCount,
@@ -100,7 +104,10 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             return;
         }
 
-        var upsertResult = await UpsertAsync(items, cancellationToken);
+        var upsertResult = await UpsertAsync(
+            items,
+            updateStatuses: true,
+            cancellationToken);
 
         if (upsertResult.HasChanges)
         {
@@ -117,6 +124,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var page = await InvokeInboxInvoicesAsync(
             BuildInvoiceIdPayloadCandidates(invoiceId),
             $"invoice lookup {invoiceId}",
+            includeStatuses: true,
             cancellationToken);
 
         if (page is null)
@@ -129,6 +137,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
     private async Task<SyncUpsertResult> UpsertAsync(
         IReadOnlyCollection<ParsedInboxInvoice> items,
+        bool updateStatuses,
         CancellationToken cancellationToken)
     {
         if (items.Count == 0)
@@ -152,39 +161,43 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         {
             if (existingItems.TryGetValue(item.DocumentId, out var existing))
             {
-                if (!NeedsSynchronization(existing, item))
+                var itemToApply = updateStatuses
+                    ? item
+                    : KeepExistingStatusValues(existing, item);
+
+                if (!NeedsSynchronization(existing, itemToApply))
                 {
                     continue;
                 }
 
                 existing.ApplySynchronization(
-                    item.DocumentId,
-                    item.InvoiceId,
-                    item.ServiceDocumentId,
-                    item.LocalDocumentId,
-                    item.CustomerTitle,
-                    item.CustomerTcknVkn,
-                    item.CreateDate,
-                    item.InvoiceDate,
-                    item.InvoiceType,
-                    item.InvoiceTotal,
-                    item.DespatchId,
-                    item.IsProcessed,
-                    item.IsStandard,
-                    item.StatusCode,
-                    item.Status,
-                    item.EnvelopeStatusCode,
-                    item.EnvelopeIdentifier,
-                    item.Message,
-                    item.TaxTotal,
-                    item.TaxExclusiveAmount,
-                    item.DocumentCurrencyCode,
-                    item.ExchangeRate,
-                    item.OrderDocumentId,
-                    item.IsArchived,
-                    item.InvoiceTipType,
-                    item.InvoiceTipTypeCode,
-                    item.IsSeen,
+                    itemToApply.DocumentId,
+                    itemToApply.InvoiceId,
+                    itemToApply.ServiceDocumentId,
+                    itemToApply.LocalDocumentId,
+                    itemToApply.CustomerTitle,
+                    itemToApply.CustomerTcknVkn,
+                    itemToApply.CreateDate,
+                    itemToApply.InvoiceDate,
+                    itemToApply.InvoiceType,
+                    itemToApply.InvoiceTotal,
+                    itemToApply.DespatchId,
+                    itemToApply.IsProcessed,
+                    itemToApply.IsStandard,
+                    itemToApply.StatusCode,
+                    itemToApply.Status,
+                    itemToApply.EnvelopeStatusCode,
+                    itemToApply.EnvelopeIdentifier,
+                    itemToApply.Message,
+                    itemToApply.TaxTotal,
+                    itemToApply.TaxExclusiveAmount,
+                    itemToApply.DocumentCurrencyCode,
+                    itemToApply.ExchangeRate,
+                    itemToApply.OrderDocumentId,
+                    itemToApply.IsArchived,
+                    itemToApply.InvoiceTipType,
+                    itemToApply.InvoiceTipTypeCode,
+                    itemToApply.IsSeen,
                     syncTimestampUtc);
                 updatedCount++;
                 continue;
@@ -231,10 +244,11 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     private async Task<ParsedInboxInvoicePage?> InvokeInboxInvoicesAsync(
         IReadOnlyCollection<InboxInvoiceQueryPayload> payloadCandidates,
         string scenario,
+        bool includeStatuses,
         CancellationToken cancellationToken)
     {
         var config = ResolveEInvoiceOptions();
-        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
 
         try
         {
@@ -243,6 +257,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config),
                 payloadCandidates,
                 scenario,
+                includeStatuses,
                 cancellationToken);
         }
         finally
@@ -256,6 +271,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         UyumsoftInvoice.UserInformation userInfo,
         IReadOnlyCollection<InboxInvoiceQueryPayload> payloadCandidates,
         string scenario,
+        bool includeStatuses,
         CancellationToken cancellationToken)
     {
         List<string>? failures = null;
@@ -263,6 +279,8 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
         foreach (var candidate in payloadCandidates)
         {
+            var stopwatch = Stopwatch.StartNew();
+
             try
             {
                 var response = await client.GetInboxInvoicesAsync(userInfo, candidate.Query)
@@ -278,7 +296,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
                 var page = ParseInvoiceInfoPage(response);
 
-                if (page.Items.Count > 0)
+                if (includeStatuses && page.Items.Count > 0)
                 {
                     page = page with
                     {
@@ -289,6 +307,19 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                             cancellationToken)
                     };
                 }
+
+                stopwatch.Stop();
+                logger.LogInformation(
+                    "Uyumsoft GetInboxInvoices completed for {Scenario} on payload {PayloadName}. PageIndex={PageIndex}, PageSize={PageSize}, Items={ItemCount}, TotalCount={TotalCount}, TotalPage={TotalPage}, IncludeStatuses={IncludeStatuses}, ElapsedMs={ElapsedMs}.",
+                    scenario,
+                    candidate.Name,
+                    candidate.Query.PageIndex,
+                    candidate.Query.PageSize,
+                    page.Items.Count,
+                    page.TotalCount,
+                    page.TotalPage,
+                    includeStatuses,
+                    stopwatch.ElapsedMilliseconds);
 
                 if (page.Items.Count > 0 || page.TotalPage > 0)
                 {
@@ -323,6 +354,25 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     candidate.Name);
 
                 return emptyPage;
+            }
+            catch (TimeoutException exception)
+            {
+                stopwatch.Stop();
+                UyumsoftWcfClientHelper.Abort(client);
+                logger.LogWarning(
+                    exception,
+                    "Uyumsoft GetInboxInvoices timeout for {Scenario} on payload {PayloadName}. PageIndex={PageIndex}, PageSize={PageSize}, IncludeStatuses={IncludeStatuses}, ElapsedMs={ElapsedMs}, SendTimeoutSeconds={SendTimeoutSeconds}.",
+                    scenario,
+                    candidate.Name,
+                    candidate.Query.PageIndex,
+                    candidate.Query.PageSize,
+                    includeStatuses,
+                    stopwatch.ElapsedMilliseconds,
+                    client.Endpoint.Binding.SendTimeout.TotalSeconds);
+
+                throw new TimeoutException(
+                    "Uyumsoft zaman asimi: senkronizasyon sirasinda Uyumsoft yaniti beklenen surede donmedi. Daha kucuk tarih araligi deneyin.",
+                    exception);
             }
             catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
@@ -457,6 +507,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         DateTime startDate,
         DateTime endDate,
         DateRangeQueryFilterMode filterMode,
+        bool includeStatuses,
         CancellationToken cancellationToken)
     {
         var pageIndex = 1;
@@ -472,7 +523,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             _ => "unknown"
         };
         var config = ResolveEInvoiceOptions();
-        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
         var userInfo = UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config);
 
         try
@@ -486,6 +537,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     userInfo,
                     BuildDateRangePayloadCandidates(startDate, endDate, pageIndex, SyncPageSize, filterMode),
                     $"{filterLabel} range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}",
+                    includeStatuses,
                     cancellationToken);
 
                 if (page is null)
@@ -560,7 +612,10 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             .GroupBy(item => item.DocumentId, StringComparer.Ordinal)
             .Select(group => group.Last())
             .ToArray();
-        var upsertResult = await UpsertAsync(uniqueItems, cancellationToken);
+        var upsertResult = await UpsertAsync(
+            uniqueItems,
+            includeStatuses,
+            cancellationToken);
 
         if (upsertResult.HasChanges)
         {
@@ -728,6 +783,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
         return $"{items.Count}:{hash.ToHashCode()}";
     }
+
+    private static ParsedInboxInvoice KeepExistingStatusValues(
+        UyumsoftInboxInvoice existing,
+        ParsedInboxInvoice incoming) =>
+        incoming with
+        {
+            StatusCode = existing.StatusCode,
+            Status = existing.Status,
+            EnvelopeStatusCode = existing.EnvelopeStatusCode,
+            EnvelopeIdentifier = existing.EnvelopeIdentifier,
+            Message = existing.Message
+        };
 
     private static bool NeedsSynchronization(UyumsoftInboxInvoice existing, ParsedInboxInvoice incoming) =>
         !string.Equals(existing.InvoiceId, NormalizeRequired(incoming.InvoiceId, 150), StringComparison.Ordinal) ||

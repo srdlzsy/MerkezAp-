@@ -2,6 +2,7 @@ using System.Collections;
 using System.Globalization;
 using System.Reflection;
 using System.ServiceModel;
+using System.ServiceModel.Channels;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Xml.Serialization;
@@ -13,6 +14,7 @@ namespace FurpaMerkezApi.Infrastructure.Services;
 
 internal static class UyumsoftWcfClientHelper
 {
+    private const int DefaultTimeoutSeconds = 60;
     private const string InvoiceNamespace = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
     private const string DespatchNamespace = "urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2";
     private const int MaxNodeDepth = 8;
@@ -28,10 +30,28 @@ internal static class UyumsoftWcfClientHelper
             UyumsoftInvoice.BasicIntegrationClient.EndpointConfiguration.BasicHttpBinding_IBasicIntegration,
             endpointUrl);
 
+    public static UyumsoftInvoice.BasicIntegrationClient CreateInvoiceClient(UyumsoftServiceEndpointOptions options)
+    {
+        var client = CreateInvoiceClient(options.EndpointUrl);
+        ApplyTimeout(client.Endpoint.Binding, options.TimeoutSeconds);
+        return client;
+    }
+
     public static UyumsoftDespatch.BasicDespatchIntegrationClient CreateDespatchClient(string endpointUrl) =>
         new(
             UyumsoftDespatch.BasicDespatchIntegrationClient.EndpointConfiguration.BasicHttpBinding_IBasicDespatchIntegration,
             endpointUrl);
+
+    private static void ApplyTimeout(Binding binding, int? timeoutSeconds)
+    {
+        var seconds = timeoutSeconds.GetValueOrDefault(DefaultTimeoutSeconds);
+        var timeout = TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 600));
+
+        binding.OpenTimeout = timeout;
+        binding.CloseTimeout = timeout;
+        binding.SendTimeout = timeout;
+        binding.ReceiveTimeout = timeout;
+    }
 
     public static UyumsoftInvoice.UserInformation CreateInvoiceUserInfo(UyumsoftServiceEndpointOptions options) =>
         new()

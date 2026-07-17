@@ -38,6 +38,11 @@ public sealed class ExceptionHandlingMiddleware(
             logger.LogInformation(exception, "A requested resource was not found.");
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status404NotFound, exception.Message);
         }
+        catch (TimeoutException exception)
+        {
+            logger.LogWarning(exception, "An upstream timeout occurred.");
+            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status504GatewayTimeout, exception.Message);
+        }
         catch (Exception exception)
         {
             logger.LogError(exception, "An unexpected error occurred.");
@@ -79,6 +84,7 @@ public sealed class ExceptionHandlingMiddleware(
             StatusCodes.Status403Forbidden => "Forbidden",
             StatusCodes.Status409Conflict => "Conflict",
             StatusCodes.Status404NotFound => "Not Found",
+            StatusCodes.Status504GatewayTimeout => "Gateway Timeout",
             _ => "Internal Server Error"
         };
 }

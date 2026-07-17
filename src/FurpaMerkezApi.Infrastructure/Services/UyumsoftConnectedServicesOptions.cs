@@ -9,4 +9,5 @@ public sealed record UyumsoftServiceEndpointOptions(
     string WsdlUrl,
     string Username,
     string Password,
-    string ContractName);
+    string ContractName,
+    int? TimeoutSeconds = null);

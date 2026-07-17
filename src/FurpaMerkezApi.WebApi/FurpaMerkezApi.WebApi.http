@@ -1309,7 +1309,8 @@ Content-Type: application/json
 
 {
     "startDate":  "2026-07-08",
-    "endDate":  "2026-07-08"
+    "endDate":  "2026-07-08",
+    "includeStatuses":  false
 }
 
 ###

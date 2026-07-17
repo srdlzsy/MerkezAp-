@@ -8738,7 +8738,7 @@ Liste davranisi:
 - `ProcessedState` ve `PrintedState` legacy WinForms'taki gibi tri-state filtre davranisi saglar
 - `customerTitle` response'a buyuk harfe cevrilmis gelir
 - DB tarafindaki kolon `isStandart` olsa da API response'unda alan `isStandard` olarak gelir
-- `statusCode`, `status`, `envelopeStatusCode` ve durum `message` alani senkronizasyon sirasinda Uyumsoft `GetInboxInvoiceStatusWithLogs` cevabindan cache'e yazilir
+- `statusCode`, `status`, `envelopeStatusCode` ve durum `message` alani `includeStatuses=true` senkronizasyonunda Uyumsoft `GetInboxInvoiceStatusWithLogs` cevabindan cache'e yazilir
 - `statusCode` ham Uyumsoft durum kodudur; `status` ise Uyumsoft durum enum'undan Turkce UI metnine cevrilir ve ekranda direkt gosterilebilir
 - `despatchId` yalnizca Uyumsoft `GetInboxInvoices` full UBL cevabindaki `Invoice.DespatchDocumentReference[].ID` alanindan okunur; senkron sirasinda kayit basina ek `GetInboxInvoice` cagrisi yapilmaz
 - `orderDocumentId` ayri siparis/order referansi alanidir; irsaliye numarasi gibi kullanilmamalidir
@@ -8808,9 +8808,12 @@ Request body:
 ```json
 {
   "startDate": "2026-05-01",
-  "endDate": "2026-05-05"
+  "endDate": "2026-05-05",
+  "includeStatuses": false
 }
 ```
+
+Not: `includeStatuses` gonderilmezse varsayilan `false` kabul edilir.
 
 Response `200 OK`:
 
@@ -8818,6 +8821,7 @@ Response `200 OK`:
 {
   "startDate": "2026-05-01T00:00:00",
   "endDate": "2026-05-05T00:00:00",
+  "includeStatuses": false,
   "sourceTotalCount": 29,
   "fetchedCount": 29,
   "insertedCount": 29,
@@ -8829,16 +8833,21 @@ Davranis:
 
 - secilen tarih araligini Uyumsoft `GetInboxInvoices` ile okur
 - Uyumsoft sayfalari `PageIndex = 0, 1, 2...` ve `PageSize = 20` ile `TotalPages` tamamlanana kadar okunur
-- her 20 kayitlik sayfa icin fatura durumlari tek toplu `GetInboxInvoiceStatusWithLogs` istegiyle okunur; fatura basina ayri durum cagrisi yapilmaz
-- `statusCode`, `status`, `envelopeStatusCode` ve durum mesaji bu toplu durum cevabiyla cache'e yazilir; daha once bos kaydedilmis durumlar sonraki senkronizasyonda guncellenir
+- `includeStatuses=false` ise hizli mod kullanilir; sayfa basina ek `GetInboxInvoiceStatusWithLogs` cagrisi yapilmaz
+- `includeStatuses=false` hizli modunda mevcut cache kaydindaki `statusCode`, `status`, `envelopeStatusCode`, `envelopeIdentifier` ve `message` alanlari bos veriyle ezilmez
+- `includeStatuses=true` ise her 20 kayitlik sayfa icin fatura durumlari tek toplu `GetInboxInvoiceStatusWithLogs` istegiyle okunur; fatura basina ayri durum cagrisi yapilmaz
+- `includeStatuses=true` iken `statusCode`, `status`, `envelopeStatusCode` ve durum mesaji bu toplu durum cevabiyla cache'e yazilir; daha once bos kaydedilmis durumlar sonraki senkronizasyonda guncellenir
 - tum sayfalar eksiksiz alindiktan sonra DB upsert/save yapilir; eksik veya tekrar eden sayfada yarim senkron basarili sayilmaz
-- Uyumsoft bir faturaya ait durum bilgisini dondurmezse senkronizasyon eksik veriyi basarili saymaz ve hata response'u doner
+- `includeStatuses=true` iken Uyumsoft bir faturaya ait durum bilgisini dondurmezse senkronizasyon eksik veriyi basarili saymaz ve hata response'u doner
 - gelen sonuc `uyumsoft_inbox_invoices` cache tablosuna upsert edilir
 - `sourceTotalCount` Uyumsoft'un bildirdigi toplam kayit, `fetchedCount` tum sayfalardan gercekten okunan kayit sayisidir
 - Uyumsoft cagrisi basarisiz olursa endpoint sessiz `204` donmez; hata response'u doner
+- Uyumsoft zaman asiminda endpoint 500 yerine `504 Gateway Timeout` problem response doner; UI kullaniciya daha kucuk tarih araligi denemesini onermelidir
+- Uyumsoft e-fatura WCF timeout degeri `EInvoice:TimeoutSeconds` konfigurasyonuyla yonetilir; varsayilan appsettings degeri `180` saniyedir
+- backend her Uyumsoft sayfasi icin page index, page size, item count, total count, total page ve sure bilgisini loglar; timeout logunda hangi sayfada patladigi gorulur
 - tekrar eden veya degisiklik icermeyen sayfalar icin koruma vardir; sonsuz donguye girmez
 - sync tamamlandiktan sonra UI ayni tarih araligiyla `GET /api/fatura-islemleri/fatura-goruntuleme` cagirip DB sonucunu alabilir
-- durum sorgulari nedeniyle senkronizasyon yalnizca `GetInboxInvoices` kullanan onceki akistan daha uzun surebilir; UI `POST /senkronize` tamamlanana kadar loading/progress durumunu korumalidir
+- hizli liste yenileme icin UI `includeStatuses=false` kullanmali; kesin durum/log yenilemesi gereken aksiyonlarda `includeStatuses=true` tercih edilmelidir
 
 ### Fatura Goruntuleme PDF
 
