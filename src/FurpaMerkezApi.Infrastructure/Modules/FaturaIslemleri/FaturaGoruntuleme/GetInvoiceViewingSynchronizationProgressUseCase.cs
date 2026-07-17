@@ -2,11 +2,10 @@ using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntuleme;
 
-internal sealed class SynchronizeInvoiceViewingDocumentsUseCase(InvoiceViewingSynchronizationJobQueue queue)
-    : ISynchronizeInvoiceViewingDocumentsUseCase
+public sealed class GetInvoiceViewingSynchronizationProgressUseCase(InvoiceViewingService invoiceViewingService)
+    : IGetInvoiceViewingSynchronizationProgressUseCase
 {
     public Task<InvoiceViewingSynchronizationProgressResponse> ExecuteAsync(
-        InvoiceViewingSynchronizationRequest request,
         CancellationToken cancellationToken) =>
-        Task.FromResult(queue.Enqueue(request));
+        Task.FromResult(invoiceViewingService.GetSynchronizationProgress());
 }

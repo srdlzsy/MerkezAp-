@@ -16,6 +16,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.FaturaIslemleri.FaturaGorunt
 public sealed class FaturaGoruntulemeController(
     IListInvoiceViewingDocumentsUseCase listInvoiceViewingDocumentsUseCase,
     ISynchronizeInvoiceViewingDocumentsUseCase synchronizeInvoiceViewingDocumentsUseCase,
+    IGetInvoiceViewingSynchronizationProgressUseCase getInvoiceViewingSynchronizationProgressUseCase,
     IGetInvoiceViewingDocumentUseCase getInvoiceViewingDocumentUseCase,
     IRenderInvoiceViewingDocumentUseCase renderInvoiceViewingDocumentUseCase,
     ISetInvoiceViewingPrintedStateUseCase setInvoiceViewingPrintedStateUseCase,
@@ -62,10 +63,10 @@ public sealed class FaturaGoruntulemeController(
 
     [HttpPost("senkronize")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(InvoiceViewingSynchronizationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(InvoiceViewingSynchronizationProgressResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<InvoiceViewingSynchronizationResponse>> Synchronize(
+    public async Task<ActionResult<InvoiceViewingSynchronizationProgressResponse>> Synchronize(
         [FromBody] InvoiceViewingSynchronizationHttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -76,8 +77,15 @@ public sealed class FaturaGoruntulemeController(
                 request.IncludeStatuses ?? false),
             cancellationToken);
 
-        return Ok(response);
+        return AcceptedAtAction(nameof(SynchronizationProgress), routeValues: null, value: response);
     }
+
+    [HttpGet("senkronize/progress")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(InvoiceViewingSynchronizationProgressResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<InvoiceViewingSynchronizationProgressResponse>> SynchronizationProgress(
+        CancellationToken cancellationToken) =>
+        Ok(await getInvoiceViewingSynchronizationProgressUseCase.ExecuteAsync(cancellationToken));
 
     [HttpGet("{documentId}")]
     [HttpGet("{documentId}/pdf")]

@@ -8730,6 +8730,7 @@ Liste davranisi:
 - yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i secilen tarih araligini Uyumsoft `GetInboxInvoices` operasyonu ile cache tabloya upsert eder
 - legacy `GetInvoicesAsync(isProcessed, isPrinted)` akisindaki gibi tarih + islenme + yazdirilma filtresi uygulanir
 - `invoiceDate` Uyumsoft full UBL icindeki `Invoice.IssueDate` (Fatura Tarihi) alanindan, `createDate` ise `InvoiceInfo.CreateDateUtc` alanindan doldurulur
+- Uyumsoft kaynak sorgusu teknik olarak `ExecutionStartDate` / `ExecutionEndDate` ile calisir; bu nedenle senkronizasyon Uyumsoft'u secilen bitis tarihinden sonra da konfigurasyon kadar ileri tarar, cache'e alinacak asil is kaydi ise sonradan `invoiceDate` / Fatura Tarihi ile daraltilir
 - senkron request'indeki tarih araligi Uyumsoft'tan cekilen kayitlara `invoiceDate` uzerinden tekrar uygulanir; bu nedenle DB'ye yalnizca Fatura Tarihi secilen aralikta olan belgeler yazilir
 - liste tarih filtresi `invoiceDate` veya bu alan yoksa fallback olarak `createDate` alanina uygulanir
 - tarih araligi gun seviyesindedir; bitis tarihi SQL tarafinda `+1 gun exclusive` mantigi ile uygulanir
@@ -8795,7 +8796,8 @@ Liste davranisi:
 Yeni eklendi:
 
 - bu endpoint listeyi donmez; yalnizca secilen tarih araligini Uyumsoft'tan cache tabloya senkronize eder
-- UI tarafinda tipik akis `POST /senkronize` sonra `GET /fatura-goruntuleme` seklinde olmalidir
+- UI tarafinda tipik akis `POST /senkronize`, `GET /senkronize/progress` ile izleme, tamamlaninca `GET /fatura-goruntuleme` seklinde olmalidir
+- `POST /senkronize` uzun HTTP istegi olarak beklemez; isi arka plana alir ve hemen `202 Accepted` doner
 
 `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
 
@@ -8815,36 +8817,109 @@ Request body:
 
 Not: `includeStatuses` gonderilmezse varsayilan `false` kabul edilir.
 
+Response `202 Accepted`:
+
+```json
+{
+  "isRunning": true,
+  "status": "queued",
+  "startDate": "2026-05-01T00:00:00",
+  "endDate": "2026-05-05T00:00:00",
+  "includeStatuses": false,
+  "queryStartDate": null,
+  "queryEndDate": null,
+  "pageIndex": 0,
+  "pageNumber": 0,
+  "pageSize": 20,
+  "totalCount": 0,
+  "totalPage": 0,
+  "fetchedCount": 0,
+  "matchedCount": 0,
+  "insertedCount": 0,
+  "updatedCount": 0,
+  "lastPageItemCount": 0,
+  "lastPageMatchedCount": 0,
+  "lastPageInsertedCount": 0,
+  "lastPageUpdatedCount": 0,
+  "progressPercent": 0,
+  "startedAtUtc": "2026-07-17T12:30:00Z",
+  "lastUpdatedAtUtc": "2026-07-17T12:30:00Z",
+  "finishedAtUtc": null,
+  "elapsedMs": 0,
+  "message": "Senkronizasyon siraya alindi."
+}
+```
+
+Progress endpoint:
+
+`GET /api/fatura-islemleri/fatura-goruntuleme/senkronize/progress`
+
+Yetki:
+
+- `fatura-islemleri.fatura-goruntuleme.list`
+
 Response `200 OK`:
 
 ```json
 {
-  "startDate": "2026-05-01T00:00:00",
-  "endDate": "2026-05-05T00:00:00",
+  "isRunning": true,
+  "status": "running",
+  "startDate": "2026-07-16T00:00:00",
+  "endDate": "2026-07-16T00:00:00",
   "includeStatuses": false,
-  "sourceTotalCount": 29,
-  "fetchedCount": 29,
-  "insertedCount": 29,
-  "updatedCount": 0
+  "queryStartDate": "2026-07-16T00:00:00",
+  "queryEndDate": "2026-07-17T00:00:00",
+  "pageIndex": 18,
+  "pageNumber": 19,
+  "pageSize": 20,
+  "totalCount": 445,
+  "totalPage": 23,
+  "fetchedCount": 380,
+  "matchedCount": 130,
+  "insertedCount": 3,
+  "updatedCount": 127,
+  "lastPageItemCount": 20,
+  "lastPageMatchedCount": 6,
+  "lastPageInsertedCount": 0,
+  "lastPageUpdatedCount": 6,
+  "progressPercent": 82.61,
+  "startedAtUtc": "2026-07-17T08:30:00Z",
+  "lastUpdatedAtUtc": "2026-07-17T08:31:15Z",
+  "finishedAtUtc": null,
+  "elapsedMs": 75000,
+  "message": "Sayfa 19/23 islendi."
 }
 ```
 
+UI akis onerisi:
+
+- `POST /senkronize` `202 Accepted` donunce ekranda loading/progress paneli acilir
+- UI her 1-2 saniyede bir `GET /senkronize/progress` cagirir
+- `status=queued` veya `status=running` iken `progressPercent`, `pageNumber/totalPage`, `fetchedCount`, `matchedCount`, `insertedCount`, `updatedCount` gosterilebilir
+- `status=completed` veya `status=failed` oldugunda polling durdurulur
+- final `sourceTotalCount/fetchedCount/matchedCount/insertedCount/updatedCount` bilgisi artik progress response'undaki `completed` durumunda okunur
+- progress bilgisi API process hafizasinda tutulur; API yeniden baslarsa `idle` durumuna doner
+
 Davranis:
 
-- secilen tarih araligini Uyumsoft `GetInboxInvoices` ile okur
+- secilen tarih araligi UI ve DB icin Fatura Tarihi araligidir; Uyumsoft sorgusu ise `ExecutionStartDate = startDate`, `ExecutionEndDate = min(endDate + FaturaGoruntuleme:SynchronizationExecutionLookAheadDays, bugun)` olarak calisir
+- varsayilan ileri bakis degeri `15` gundur; maksimum `60` gunle sinirlandirilir
+- bunun sebebi Uyumsoft'ta Fatura Tarihi 16.07.2026 olan kaydin, `CreateDateUtc` veya SOAP execution sayfasi 17.07.2026 icinde donebilmesidir
 - Uyumsoft sayfalari `PageIndex = 0, 1, 2...` ve `PageSize = 20` ile `TotalPages` tamamlanana kadar okunur
+- her Uyumsoft sayfasi alindiginda kayitlar once `invoiceDate` / Fatura Tarihi araligina gore suzulur, sonra ilgili sayfa hemen cache tabloya upsert edilir
 - `includeStatuses=false` ise hizli mod kullanilir; sayfa basina ek `GetInboxInvoiceStatusWithLogs` cagrisi yapilmaz
 - `includeStatuses=false` hizli modunda mevcut cache kaydindaki `statusCode`, `status`, `envelopeStatusCode`, `envelopeIdentifier` ve `message` alanlari bos veriyle ezilmez
 - `includeStatuses=true` ise her 20 kayitlik sayfa icin fatura durumlari tek toplu `GetInboxInvoiceStatusWithLogs` istegiyle okunur; fatura basina ayri durum cagrisi yapilmaz
 - `includeStatuses=true` iken `statusCode`, `status`, `envelopeStatusCode` ve durum mesaji bu toplu durum cevabiyla cache'e yazilir; daha once bos kaydedilmis durumlar sonraki senkronizasyonda guncellenir
-- tum sayfalar eksiksiz alindiktan sonra DB upsert/save yapilir; eksik veya tekrar eden sayfada yarim senkron basarili sayilmaz
-- `includeStatuses=true` iken Uyumsoft bir faturaya ait durum bilgisini dondurmezse senkronizasyon eksik veriyi basarili saymaz ve hata response'u doner
+- tum sayfalar eksiksiz alindiginda progress `status=completed` olur; Uyumsoft timeout olursa progress `status=failed` olur ama onceki sayfalarda Fatura Tarihi araligina uyan kayitlar cache'e yazilmis olabilir
+- `includeStatuses=true` iken Uyumsoft bir faturaya ait durum bilgisini dondurmezse senkronizasyon eksik veriyi basarili saymaz ve progress `status=failed` olur
 - gelen sonuc `uyumsoft_inbox_invoices` cache tablosuna upsert edilir
-- `sourceTotalCount` Uyumsoft'un bildirdigi toplam kayit, `fetchedCount` tum sayfalardan gercekten okunan kayit sayisidir
-- Uyumsoft cagrisi basarisiz olursa endpoint sessiz `204` donmez; hata response'u doner
-- Uyumsoft zaman asiminda endpoint 500 yerine `504 Gateway Timeout` problem response doner; UI kullaniciya daha kucuk tarih araligi denemesini onermelidir
+- `sourceTotalCount` Uyumsoft'un genisletilmis execution penceresinde bildirdigi toplam kayit, `fetchedCount` tum sayfalardan gercekten okunan kayit sayisi, `matchedCount` ise secilen Fatura Tarihi araligina uyup cache'e aday olan tekil kayit sayisidir
+- Uyumsoft cagrisi basarisiz olursa progress `status=failed` olur; sessiz basarili sayilmaz
+- Uyumsoft zaman asiminda progress `status=failed` olur; UI kullaniciya daha kucuk tarih araligi denemesini onermelidir
 - Uyumsoft e-fatura WCF timeout degeri `EInvoice:TimeoutSeconds` konfigurasyonuyla yonetilir; varsayilan appsettings degeri `180` saniyedir
-- backend her Uyumsoft sayfasi icin page index, page size, item count, total count, total page ve sure bilgisini loglar; timeout logunda hangi sayfada patladigi gorulur
+- backend her Uyumsoft sayfasi icin page index, page size, item count, total count, total page ve sure bilgisini loglar; ayrica Fatura Tarihi araligina uyan `MatchedItems` / `MatchedTotal` ve sayfa upsert sayilari loglanir
+- timeout durumunda ayni tarih araligiyla tekrar `POST /senkronize` calistirilirse onceki denemede cache'e yazilmis sayfalar korunur, eksik kalan sayfalardan gelen kayitlar guncellenerek devam eder
 - tekrar eden veya degisiklik icermeyen sayfalar icin koruma vardir; sonsuz donguye girmez
 - sync tamamlandiktan sonra UI ayni tarih araligiyla `GET /api/fatura-islemleri/fatura-goruntuleme` cagirip DB sonucunu alabilir
 - hizli liste yenileme icin UI `includeStatuses=false` kullanmali; kesin durum/log yenilemesi gereken aksiyonlarda `includeStatuses=true` tercih edilmelidir
@@ -14891,7 +14966,8 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `InvoiceSendingBatchHttpRequest`: `Scenario`, `Documents[]`
 - `InvoiceSendingBatchDocumentHttpRequest`: `DocumentSerie`, `DocumentOrderNo`
 - `InvoiceViewingListHttpRequest`: `StartDate`, `EndDate`, `ProcessedState`, `IsProcessed`, `PrintedState`, `IsPrinted`, `SearchField`, `SearchText`, `PageNumber`, `Page`, `PageSize`
-- `InvoiceViewingSynchronizationHttpRequest`: `StartDate`, `EndDate`
+- `InvoiceViewingSynchronizationHttpRequest`: `StartDate`, `EndDate`, `IncludeStatuses`
+- `InvoiceViewingSynchronizationProgressResponse`: `IsRunning`, `Status`, `StartDate`, `EndDate`, `IncludeStatuses`, `QueryStartDate`, `QueryEndDate`, `PageIndex`, `PageNumber`, `PageSize`, `TotalCount`, `TotalPage`, `FetchedCount`, `MatchedCount`, `InsertedCount`, `UpdatedCount`, `LastPageItemCount`, `LastPageMatchedCount`, `LastPageInsertedCount`, `LastPageUpdatedCount`, `ProgressPercent`, `StartedAtUtc`, `LastUpdatedAtUtc`, `FinishedAtUtc`, `ElapsedMs`, `Message`
 - `InvoiceViewingRenderHttpRequest`: `Profile`, `PreferEmbeddedXslt`, `FallbackToDefaultXslt` (JSON body'de `fallbackToGeneral` olarak gonderilir)
 - `InvoiceViewingPrintedStateHttpRequest`: `IsPrinted`, `Source`
 - `InvoicePreviewHttpRequest`: `InvoiceId`, `XmlContent`, `Profile`, `PreferEmbeddedXslt`
@@ -14901,6 +14977,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `POST /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/render` endpoint'i body'de `InvoiceSendingRenderHttpRequest` alir
 - `POST /api/fatura-islemleri/fatura-gonderimi/send` endpoint'i body'de `InvoiceSendingBatchHttpRequest` alir
 - `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i body'de `InvoiceViewingSynchronizationHttpRequest` alir
+- `GET /api/fatura-islemleri/fatura-goruntuleme/senkronize/progress` endpoint'i body almaz; son/aktif senkronizasyon durumunu doner
 - `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` ve `/pdf` endpointleri body almaz; `documentId` path parametresiyle Uyumsoft `GetInboxInvoicePdf` cagirir
 - `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/detail` endpoint'i body almaz; HTML detay icin `documentId` path parametresi kullanir
 - `POST /api/fatura-islemleri/fatura-goruntuleme/{documentId}/render` endpoint'i body'de `InvoiceViewingRenderHttpRequest` alir

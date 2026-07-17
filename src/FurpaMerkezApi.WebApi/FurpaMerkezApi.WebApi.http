@@ -1314,6 +1314,11 @@ Content-Type: application/json
 }
 
 ###
+GET {{baseUrl}}/api/fatura-islemleri/fatura-goruntuleme/senkronize/progress
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 
 # GreenGrocerOrders
 DELETE {{baseUrl}}/api/green-grocer/orders?DocumentSerie=F50&DocumentOrderNo=1&WarehouseNo=1

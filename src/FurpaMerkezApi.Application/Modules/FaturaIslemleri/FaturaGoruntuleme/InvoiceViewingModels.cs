@@ -34,8 +34,37 @@ public sealed record InvoiceViewingSynchronizationResponse(
     bool IncludeStatuses,
     int SourceTotalCount,
     int FetchedCount,
+    int MatchedCount,
     int InsertedCount,
     int UpdatedCount);
+
+public sealed record InvoiceViewingSynchronizationProgressResponse(
+    bool IsRunning,
+    string Status,
+    DateTime? StartDate,
+    DateTime? EndDate,
+    bool? IncludeStatuses,
+    DateTime? QueryStartDate,
+    DateTime? QueryEndDate,
+    int PageIndex,
+    int PageNumber,
+    int PageSize,
+    int TotalCount,
+    int TotalPage,
+    int FetchedCount,
+    int MatchedCount,
+    int InsertedCount,
+    int UpdatedCount,
+    int LastPageItemCount,
+    int LastPageMatchedCount,
+    int LastPageInsertedCount,
+    int LastPageUpdatedCount,
+    decimal ProgressPercent,
+    DateTime? StartedAtUtc,
+    DateTime? LastUpdatedAtUtc,
+    DateTime? FinishedAtUtc,
+    long ElapsedMs,
+    string Message);
 
 public sealed record InvoiceViewingDetailRequest(string DocumentId);
 

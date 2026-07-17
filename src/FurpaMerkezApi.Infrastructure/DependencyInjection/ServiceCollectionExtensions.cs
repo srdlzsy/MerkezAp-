@@ -414,6 +414,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CompanyMovementListQueryExecutor>();
         services.AddScoped<CompanyMovementWriteService>();
         services.AddScoped<InvoiceSendingService>();
+        services.AddSingleton<InvoiceViewingSynchronizationProgressStore>();
+        services.AddSingleton<InvoiceViewingSynchronizationJobQueue>();
         services.AddScoped<InvoiceViewingService>();
         services.AddScoped<UyumsoftInboxInvoiceSyncService>();
         services.AddScoped<InvoiceViewingQueryExecutor>();
@@ -478,6 +480,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUpdateInvoiceReturnReferenceUseCase, UpdateInvoiceReturnReferenceUseCase>();
         services.AddScoped<IListInvoiceViewingDocumentsUseCase, ListInvoiceViewingDocumentsUseCase>();
         services.AddScoped<ISynchronizeInvoiceViewingDocumentsUseCase, SynchronizeInvoiceViewingDocumentsUseCase>();
+        services.AddScoped<IGetInvoiceViewingSynchronizationProgressUseCase, GetInvoiceViewingSynchronizationProgressUseCase>();
         services.AddScoped<IRenderInvoiceViewingDocumentUseCase, RenderInvoiceViewingDocumentUseCase>();
         services.AddScoped<IGetInvoiceViewingDocumentUseCase, GetInvoiceViewingDocumentUseCase>();
         services.AddScoped<ISetInvoiceViewingPrintedStateUseCase, SetInvoiceViewingPrintedStateUseCase>();
@@ -540,6 +543,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<AxataSynchronizationScheduler>();
         services.AddSingleton<OperationsJobQueue>();
         services.AddHostedService<OperationsJobWorker>();
+        services.AddHostedService<InvoiceViewingSynchronizationWorker>();
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();

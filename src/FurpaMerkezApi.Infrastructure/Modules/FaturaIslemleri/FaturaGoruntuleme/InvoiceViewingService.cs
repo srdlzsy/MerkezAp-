@@ -7,7 +7,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntulem
 public sealed class InvoiceViewingService(
     UyumsoftInboxInvoiceSyncService syncService,
     InvoiceViewingQueryExecutor queryExecutor,
-    IEInvoiceDocumentRenderer invoiceDocumentRenderer)
+    IEInvoiceDocumentRenderer invoiceDocumentRenderer,
+    InvoiceViewingSynchronizationProgressStore synchronizationProgressStore)
 {
     public async Task<InvoiceViewingListResponse> ListAsync(
         InvoiceViewingListRequest request,
@@ -22,6 +23,9 @@ public sealed class InvoiceViewingService(
             request.EndDate,
             request.IncludeStatuses,
             cancellationToken);
+
+    public InvoiceViewingSynchronizationProgressResponse GetSynchronizationProgress() =>
+        synchronizationProgressStore.Get();
 
     public Task<InvoiceViewingDetailDto> GetAsync(
         InvoiceViewingDetailRequest request,

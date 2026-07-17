@@ -12,6 +12,7 @@ using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UyumsoftInvoice = FurpaMerkezApi.Infrastructure.Services.ServiceReferences.Uyumsoft.Invoice;
@@ -22,9 +23,13 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     AuthDbContext authDbContext,
     IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
     IClock clock,
+    IConfiguration configuration,
+    InvoiceViewingSynchronizationProgressStore synchronizationProgressStore,
     ILogger<UyumsoftInboxInvoiceSyncService> logger)
 {
     private const int SyncPageSize = 20;
+    private const int DefaultExecutionLookAheadDays = 15;
+    private const int MaxExecutionLookAheadDays = 60;
     private static readonly Regex InvoiceOpenTagRegex = new(
         @"<(?:(?<prefix>[A-Za-z_][\w.-]*):)?Invoice(?:\s|>|/)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -48,32 +53,56 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var fetchedCount = 0;
         var insertedCount = 0;
         var updatedCount = 0;
+        var matchedCount = 0;
         var sourceTotalCount = 0;
 
-        foreach (var filterMode in DateRangeQueryFilterModes)
+        try
         {
-            var result = await SynchronizeDateRangeAsync(
-                startDate,
-                endDate,
-                filterMode,
+            foreach (var filterMode in DateRangeQueryFilterModes)
+            {
+                var result = await SynchronizeDateRangeAsync(
+                    startDate,
+                    endDate,
+                    filterMode,
+                    includeStatuses,
+                    cancellationToken);
+
+                fetchedCount += result.FetchedCount;
+                matchedCount += result.MatchedCount;
+                insertedCount += result.InsertedCount;
+                updatedCount += result.UpdatedCount;
+                sourceTotalCount = Math.Max(sourceTotalCount, result.SourceTotalCount);
+            }
+
+            var response = new InvoiceViewingSynchronizationResponse(
+                startDate.Date,
+                endDate.Date,
                 includeStatuses,
-                cancellationToken);
+                sourceTotalCount,
+                fetchedCount,
+                matchedCount,
+                insertedCount,
+                updatedCount);
 
-            fetchedCount += result.FetchedCount;
-            insertedCount += result.InsertedCount;
-            updatedCount += result.UpdatedCount;
-            sourceTotalCount = Math.Max(sourceTotalCount, result.SourceTotalCount);
+            synchronizationProgressStore.Complete(
+                response.SourceTotalCount,
+                response.FetchedCount,
+                response.MatchedCount,
+                response.InsertedCount,
+                response.UpdatedCount);
+
+            return response;
         }
-
-        return new InvoiceViewingSynchronizationResponse(
-            startDate.Date,
-            endDate.Date,
-            includeStatuses,
-            sourceTotalCount,
-            fetchedCount,
-            insertedCount,
-            updatedCount);
+        catch (Exception exception)
+        {
+            synchronizationProgressStore.Fail(exception.Message);
+            throw;
+        }
     }
+
+    public InvoiceViewingSynchronizationProgressResponse GetProgress() =>
+        synchronizationProgressStore.Get();
+
 
     public async Task EnsureInvoiceExistsAsync(
         string documentId,
@@ -514,8 +543,15 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         int? totalPage = null;
         var fetchedCount = 0;
         var sourceTotalCount = 0;
-        var fetchedItems = new List<ParsedInboxInvoice>();
+        var insertedCount = 0;
+        var updatedCount = 0;
+        var matchedCount = 0;
+        var processedDocumentIds = new HashSet<string>(StringComparer.Ordinal);
         var seenPageSignatures = new HashSet<string>(StringComparer.Ordinal);
+        var invoiceDateStart = startDate.Date;
+        var invoiceDateEndExclusive = endDate.Date.AddDays(1);
+        var queryStartDate = startDate.Date;
+        var queryEndDate = ResolveExecutionQueryEndDate(endDate);
         var filterLabel = filterMode switch
         {
             DateRangeQueryFilterMode.ExecutionDate => "execution-date",
@@ -526,6 +562,14 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
         var userInfo = UyumsoftWcfClientHelper.CreateInvoiceUserInfo(config);
 
+        synchronizationProgressStore.Start(
+            startDate,
+            endDate,
+            includeStatuses,
+            queryStartDate,
+            queryEndDate,
+            SyncPageSize);
+
         try
         {
             while (true)
@@ -535,8 +579,9 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 var page = await InvokeInboxInvoicesAsync(
                     client,
                     userInfo,
-                    BuildDateRangePayloadCandidates(startDate, endDate, pageIndex, SyncPageSize, filterMode),
-                    $"{filterLabel} range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, page {pageIndex}",
+                    BuildDateRangePayloadCandidates(queryStartDate, queryEndDate, pageIndex, SyncPageSize, filterMode),
+                    $"{filterLabel} invoice range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, " +
+                    $"query range {queryStartDate:yyyy-MM-dd} - {queryEndDate:yyyy-MM-dd}, page {pageIndex}",
                     includeStatuses,
                     cancellationToken);
 
@@ -548,6 +593,9 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                 }
 
                 sourceTotalCount = Math.Max(sourceTotalCount, page.TotalCount);
+                var pageMatchedCount = 0;
+                var pageInsertedCount = 0;
+                var pageUpdatedCount = 0;
 
                 if (page.Items.Count > 0)
                 {
@@ -561,10 +609,70 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     }
 
                     fetchedCount += page.Items.Count;
-                    fetchedItems.AddRange(page.Items);
+
+                    var uniquePageItems = page.Items
+                        .Where(item =>
+                            item.InvoiceDate.HasValue &&
+                            item.InvoiceDate.Value >= invoiceDateStart &&
+                            item.InvoiceDate.Value < invoiceDateEndExclusive)
+                        .GroupBy(item => item.DocumentId, StringComparer.Ordinal)
+                        .Select(group => group.Last())
+                        .Where(item => processedDocumentIds.Add(item.DocumentId))
+                        .ToArray();
+                    var upsertResult = await UpsertAsync(
+                        uniquePageItems,
+                        includeStatuses,
+                        cancellationToken);
+
+                    if (upsertResult.HasChanges)
+                    {
+                        await authDbContext.SaveChangesAsync(cancellationToken);
+                    }
+
+                    authDbContext.ChangeTracker.Clear();
+
+                    pageMatchedCount = uniquePageItems.Length;
+                    pageInsertedCount = upsertResult.InsertedCount;
+                    pageUpdatedCount = upsertResult.UpdatedCount;
+
+                    matchedCount += pageMatchedCount;
+                    insertedCount += pageInsertedCount;
+                    updatedCount += pageUpdatedCount;
+
+                    logger.LogInformation(
+                        "Uyumsoft inbox invoice sync page persisted for {FilterLabel} invoice range {StartDate} - {EndDate}, query range {QueryStartDate} - {QueryEndDate}. PageIndex={PageIndex}, PageSize={PageSize}, Items={ItemCount}, MatchedItems={MatchedItemCount}, MatchedTotal={MatchedTotal}, TotalCount={TotalCount}, TotalPage={TotalPage}, Inserted={InsertedCount}, Updated={UpdatedCount}.",
+                        filterLabel,
+                        startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        queryStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        queryEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        pageIndex - 1,
+                        SyncPageSize,
+                        page.Items.Count,
+                        pageMatchedCount,
+                        matchedCount,
+                        page.TotalCount,
+                        page.TotalPage,
+                        pageInsertedCount,
+                        pageUpdatedCount);
                 }
 
                 totalPage ??= page.TotalPage > 0 ? page.TotalPage : null;
+
+                synchronizationProgressStore.ReportPage(
+                    pageIndex - 1,
+                    pageIndex,
+                    SyncPageSize,
+                    page.TotalCount,
+                    page.TotalPage,
+                    fetchedCount,
+                    matchedCount,
+                    insertedCount,
+                    updatedCount,
+                    page.Items.Count,
+                    pageMatchedCount,
+                    pageInsertedCount,
+                    pageUpdatedCount);
 
                 if (page.Items.Count == 0)
                 {
@@ -599,36 +707,33 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             throw new InvalidOperationException(
                 $"Uyumsoft GetInboxInvoices reported {sourceTotalCount} item(s), but " +
                 $"{fetchedCount} item(s) were fetched for {filterLabel} range " +
-                $"{startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}.");
+                $"{queryStartDate:yyyy-MM-dd} - {queryEndDate:yyyy-MM-dd}.");
         }
-
-        var invoiceDateStart = startDate.Date;
-        var invoiceDateEndExclusive = endDate.Date.AddDays(1);
-        var uniqueItems = fetchedItems
-            .Where(item =>
-                item.InvoiceDate.HasValue &&
-                item.InvoiceDate.Value >= invoiceDateStart &&
-                item.InvoiceDate.Value < invoiceDateEndExclusive)
-            .GroupBy(item => item.DocumentId, StringComparer.Ordinal)
-            .Select(group => group.Last())
-            .ToArray();
-        var upsertResult = await UpsertAsync(
-            uniqueItems,
-            includeStatuses,
-            cancellationToken);
-
-        if (upsertResult.HasChanges)
-        {
-            await authDbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        authDbContext.ChangeTracker.Clear();
 
         return new SyncRunResult(
             sourceTotalCount,
             fetchedCount,
-            upsertResult.InsertedCount,
-            upsertResult.UpdatedCount);
+            matchedCount,
+            insertedCount,
+            updatedCount);
+    }
+
+    private DateTime ResolveExecutionQueryEndDate(DateTime endDate)
+    {
+        var configuredLookAheadDays =
+            configuration.GetValue<int?>("FaturaGoruntuleme:SynchronizationExecutionLookAheadDays") ??
+            configuration.GetValue<int?>("InvoiceViewingSynchronization:ExecutionLookAheadDays");
+        var lookAheadDays = Math.Clamp(
+            configuredLookAheadDays.GetValueOrDefault(DefaultExecutionLookAheadDays),
+            0,
+            MaxExecutionLookAheadDays);
+
+        var lookAheadEndDate = endDate.Date.AddDays(lookAheadDays);
+        var today = DateTime.Today;
+
+        return lookAheadEndDate > today
+            ? today
+            : lookAheadEndDate;
     }
 
     private static IReadOnlyCollection<InboxInvoiceQueryPayload> BuildDateRangePayloadCandidates(
@@ -1813,6 +1918,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     private sealed record SyncRunResult(
         int SourceTotalCount,
         int FetchedCount,
+        int MatchedCount,
         int InsertedCount,
         int UpdatedCount);
 
