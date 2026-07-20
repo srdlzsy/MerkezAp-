@@ -2,6 +2,7 @@ using System.Text;
 using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.DependencyInjection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -71,6 +72,10 @@ public static class ServiceCollectionExtensions
 
         services.AddAuthorization(options =>
         {
+            options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build();
+
             foreach (var permissionCode in PermissionCatalog.Codes)
             {
                 options.AddPolicy(permissionCode, policy => policy.RequireClaim("permission", permissionCode));

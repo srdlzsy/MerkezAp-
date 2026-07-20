@@ -2,13 +2,18 @@ namespace FurpaMerkezApi.WebApi.Configuration;
 
 public sealed class ApiHostingOptions
 {
-    public bool EnableSwagger { get; init; } = true;
+    public bool EnableSwagger { get; init; }
 
-    public bool ExposeDiagnosticsOnRoot { get; init; } = true;
+    public bool ExposeDiagnosticsOnRoot { get; init; }
 
-    public bool EnforceHttps { get; init; }
+    public bool EnforceHttps { get; init; } = true;
 
     public bool UseHsts { get; init; } = true;
+}
+
+public sealed class ApiAuthOptions
+{
+    public bool AllowSelfRegistration { get; init; }
 }
 
 public sealed class ReverseProxyOptions
@@ -36,9 +41,9 @@ public sealed class DataProtectionOptions
 
 public sealed class StartupTasksOptions
 {
-    public bool ApplyAuthMigrations { get; init; } = true;
+    public bool ApplyAuthMigrations { get; init; }
 
-    public bool SynchronizePermissionCatalog { get; init; } = true;
+    public bool SynchronizePermissionCatalog { get; init; }
 
-    public bool SynchronizeWarehouseUsers { get; init; } = true;
+    public bool SynchronizeWarehouseUsers { get; init; }
 }

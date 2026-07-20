@@ -36,6 +36,7 @@ if (builder.Environment.IsDevelopment())
 
 // -------------------- SERVICES --------------------
 
+builder.Services.Configure<ApiAuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<WarehouseAccessFilter>();
@@ -195,18 +196,21 @@ app.MapGet("/", () =>
         swagger = hostingOptions.EnableSwagger ? "/swagger" : string.Empty,
         status = "Running"
     });
-});
+})
+.AllowAnonymous();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = _ => false,
     ResponseWriter = WriteHealthCheckResponseAsync
-});
+})
+.AllowAnonymous();
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = registration => registration.Tags.Contains("ready"),
     ResponseWriter = WriteHealthCheckResponseAsync
-});
+})
+.AllowAnonymous();
 
 // Controllers
 app.MapControllers();
@@ -310,3 +314,5 @@ static Task WriteHealthCheckResponseAsync(HttpContext httpContext, HealthReport 
 
     return httpContext.Response.WriteAsJsonAsync(response);
 }
+
+public partial class Program;

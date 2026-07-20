@@ -3,22 +3,32 @@ using System.Security.Claims;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Authentication.Contracts;
 using FurpaMerkezApi.Application.Identity.Contracts;
+using FurpaMerkezApi.WebApi.Configuration;
+using FurpaMerkezApi.WebApi.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.WebApi.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IAuthService authService) : ControllerBase
+public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOptions> authOptions) : ControllerBase
 {
     [AllowAnonymous]
     [HttpPost("register")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public Task<AuthResponse> Register([FromBody] RegisterUserRequest request, CancellationToken cancellationToken) =>
-        authService.RegisterAsync(
+    public Task<AuthResponse> Register([FromBody] RegisterUserRequest request, CancellationToken cancellationToken)
+    {
+        if (!authOptions.Value.AllowSelfRegistration)
+        {
+            throw new ForbiddenAccessException("Self registration is disabled.");
+        }
+
+        return authService.RegisterAsync(
             new RegisterRequest(
                 request.Username,
                 request.Email,
@@ -28,17 +38,15 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
                 request.WarehouseNo,
                 request.WarehouseName),
             cancellationToken);
+    }
 
     [AllowAnonymous]
     [HttpPost("login")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     public Task<AuthResponse> Login([FromBody] LoginUserRequest request, CancellationToken cancellationToken)
-      {
-              var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-           
-             
-    
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
         return authService.LoginAsync(new LoginRequest(request.UsernameOrEmail, request.Password, ip), cancellationToken);
     }
 

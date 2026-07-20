@@ -8,6 +8,7 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.SeedData;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
@@ -16,7 +17,8 @@ public sealed class AuthService(
     FurpaDbContext furpaDbContext,
     IPasswordHasher passwordHasher,
     IJwtTokenFactory jwtTokenFactory,
-    IClock clock) : IAuthService
+    IClock clock,
+    ILogger<AuthService> logger) : IAuthService
 {
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
     {
@@ -83,7 +85,7 @@ public sealed class AuthService(
     {
         var ip = request.IpAddress;
 
-        Console.WriteLine($"Terminal login IP: {ip}");
+        logger.LogInformation("Validating terminal user login network for user {UserId}.", user.Id);
 
         if (string.IsNullOrWhiteSpace(ip))
         {
@@ -110,14 +112,17 @@ public sealed class AuthService(
         }
 
       
-        if (int.Parse(user.WarehouseNo) != branch.BranchNo)
+        if (!int.TryParse(user.WarehouseNo, out var userWarehouseNo) ||
+            userWarehouseNo != branch.BranchNo)
         {
             throw new UnauthorizedAccessException("Bu kullanıcı bu şubeden giriş yapamaz.");
         }
     }
 
     return CreateAuthResponse(user);
-}    public async Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
+}
+
+    public async Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
     {
         var user = await LoadUserAsync(userId, cancellationToken);
         return user.ToDto();

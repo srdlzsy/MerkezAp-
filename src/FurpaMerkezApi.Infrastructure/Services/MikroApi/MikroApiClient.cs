@@ -444,7 +444,9 @@ public sealed class MikroApiClient(
         int maxAttempts,
         TimeSpan elapsed)
     {
-        var sanitizedBody = SanitizeForLog(rawResponse, options.CurrentValue.MaxLoggedBodyLength);
+        var sanitizedBody = SensitiveDataRedactor.RedactJsonValues(
+            rawResponse,
+            options.CurrentValue.MaxLoggedBodyLength);
 
         if (response.IsSuccessStatusCode)
         {
@@ -470,26 +472,6 @@ public sealed class MikroApiClient(
             attempt,
             maxAttempts,
             sanitizedBody);
-    }
-
-    private static string SanitizeForLog(string rawResponse, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(rawResponse))
-        {
-            return string.Empty;
-        }
-
-        var value = rawResponse
-            .Replace("\"Sifre\"", "\"Sifre(REDACTED)\"", StringComparison.OrdinalIgnoreCase)
-            .Replace("\"ApiKey\"", "\"ApiKey(REDACTED)\"", StringComparison.OrdinalIgnoreCase)
-            .Replace("\"Token\"", "\"Token(REDACTED)\"", StringComparison.OrdinalIgnoreCase)
-            .Replace("\"Password\"", "\"Password(REDACTED)\"", StringComparison.OrdinalIgnoreCase);
-
-        var safeMaxLength = Math.Clamp(maxLength, 256, 32768);
-
-        return value.Length <= safeMaxLength
-            ? value
-            : string.Concat(value.AsSpan(0, safeMaxLength), "...[truncated]");
     }
 
     private static bool IsHttpSuccess(HttpStatusCode statusCode)

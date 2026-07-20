@@ -72,7 +72,11 @@ public sealed class MikroApiWriteAuditService(
                 result.HttpStatusCode == 0,
                 result.HttpStatusCode == 0 ? null : (int)result.HttpStatusCode,
                 result.StatusCode == 0 ? null : result.StatusCode,
-                Limit(result.RawResponse, options.CurrentValue.MaxResponseLength),
+                Limit(
+                    SensitiveDataRedactor.RedactJsonValues(
+                        result.RawResponse,
+                        options.CurrentValue.MaxResponseLength),
+                    options.CurrentValue.MaxResponseLength),
                 result.ErrorMessage,
                 result.AttemptCount,
                 (long)result.Elapsed.TotalMilliseconds,
