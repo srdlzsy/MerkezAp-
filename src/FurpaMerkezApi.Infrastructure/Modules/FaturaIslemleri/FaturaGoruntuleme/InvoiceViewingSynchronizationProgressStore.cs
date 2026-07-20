@@ -76,7 +76,7 @@ public sealed class InvoiceViewingSynchronizationProgressStore
                 endDate.Date,
                 includeStatuses,
                 queryStartDate.Date,
-                queryEndDate.Date,
+                queryEndDate,
                 0,
                 0,
                 pageSize,

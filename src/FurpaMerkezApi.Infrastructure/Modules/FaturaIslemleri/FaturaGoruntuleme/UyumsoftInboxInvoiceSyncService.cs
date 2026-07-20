@@ -371,7 +371,14 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     scenario,
                     candidate.Name);
 
-                return emptyPage;
+                if (emptyPage is not null)
+                {
+                    return emptyPage;
+                }
+
+                throw new InvalidOperationException(
+                    $"Uyumsoft GetInboxInvoices transport failure for {scenario}: {exception.Message}",
+                    exception);
             }
             catch (CommunicationException exception)
             {
@@ -382,7 +389,14 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     scenario,
                     candidate.Name);
 
-                return emptyPage;
+                if (emptyPage is not null)
+                {
+                    return emptyPage;
+                }
+
+                throw new InvalidOperationException(
+                    $"Uyumsoft GetInboxInvoices communication failure for {scenario}: {exception.Message}",
+                    exception);
             }
             catch (TimeoutException exception)
             {
@@ -412,7 +426,14 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     scenario,
                     candidate.Name);
 
-                return emptyPage;
+                if (emptyPage is not null)
+                {
+                    return emptyPage;
+                }
+
+                throw new TimeoutException(
+                    "Uyumsoft zaman asimi: senkronizasyon sirasinda Uyumsoft yaniti beklenen surede donmedi. Daha kucuk tarih araligi deneyin.",
+                    exception);
             }
         }
 
@@ -423,10 +444,14 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
         if (failures is not null)
         {
+            var failureMessage =
+                $"Uyumsoft GetInboxInvoices failed for {scenario}. Attempts: {string.Join(" | ", failures)}";
+
             logger.LogWarning(
-                "Uyumsoft GetInboxInvoices failed for {Scenario}. Attempts: {Attempts}",
-                scenario,
-                string.Join(" | ", failures));
+                "{FailureMessage}",
+                failureMessage);
+
+            throw new InvalidOperationException(failureMessage);
         }
 
         return null;
@@ -581,7 +606,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     userInfo,
                     BuildDateRangePayloadCandidates(queryStartDate, queryEndDate, pageIndex, SyncPageSize, filterMode),
                     $"{filterLabel} invoice range {startDate:yyyy-MM-dd} - {endDate:yyyy-MM-dd}, " +
-                    $"query range {queryStartDate:yyyy-MM-dd} - {queryEndDate:yyyy-MM-dd}, page {pageIndex}",
+                    $"query range {queryStartDate:yyyy-MM-dd HH:mm:ss} - {queryEndDate:yyyy-MM-dd HH:mm:ss}, page {pageIndex}",
                     includeStatuses,
                     cancellationToken);
 
@@ -644,8 +669,8 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                         filterLabel,
                         startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        queryStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        queryEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        queryStartDate.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        queryEndDate.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                         pageIndex - 1,
                         SyncPageSize,
                         page.Items.Count,
@@ -707,7 +732,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             throw new InvalidOperationException(
                 $"Uyumsoft GetInboxInvoices reported {sourceTotalCount} item(s), but " +
                 $"{fetchedCount} item(s) were fetched for {filterLabel} range " +
-                $"{queryStartDate:yyyy-MM-dd} - {queryEndDate:yyyy-MM-dd}.");
+                $"{queryStartDate:yyyy-MM-dd HH:mm:ss} - {queryEndDate:yyyy-MM-dd HH:mm:ss}.");
         }
 
         return new SyncRunResult(
@@ -728,12 +753,21 @@ public sealed class UyumsoftInboxInvoiceSyncService(
             0,
             MaxExecutionLookAheadDays);
 
-        var lookAheadEndDate = endDate.Date.AddDays(lookAheadDays);
-        var today = DateTime.Today;
+        var lookAheadEndDate = endDate.Date.AddDays(lookAheadDays + 1).AddMilliseconds(-1);
+        var nowLocal = ResolveLocalNow();
 
-        return lookAheadEndDate > today
-            ? today
+        return lookAheadEndDate > nowLocal
+            ? nowLocal
             : lookAheadEndDate;
+    }
+
+    private DateTime ResolveLocalNow()
+    {
+        var utcNow = clock.UtcNow.Kind == DateTimeKind.Utc
+            ? clock.UtcNow
+            : DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+
+        return utcNow.ToLocalTime();
     }
 
     private static IReadOnlyCollection<InboxInvoiceQueryPayload> BuildDateRangePayloadCandidates(
@@ -745,7 +779,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
     {
         var zeroBasedPageIndex = Math.Max(pageNumber - 1, 0);
         var rangeStart = startDate.Date;
-        var rangeEnd = endDate.Date.AddDays(1).AddMilliseconds(-1);
+        var rangeEnd = endDate;
 
         return
         [

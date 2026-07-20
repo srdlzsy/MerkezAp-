@@ -8902,7 +8902,7 @@ UI akis onerisi:
 
 Davranis:
 
-- secilen tarih araligi UI ve DB icin Fatura Tarihi araligidir; Uyumsoft sorgusu ise `ExecutionStartDate = startDate`, `ExecutionEndDate = min(endDate + FaturaGoruntuleme:SynchronizationExecutionLookAheadDays, bugun)` olarak calisir
+- secilen tarih araligi UI ve DB icin Fatura Tarihi araligidir; Uyumsoft sorgusu ise `ExecutionStartDate = startDate`, `ExecutionEndDate = min(endDate + FaturaGoruntuleme:SynchronizationExecutionLookAheadDays gun sonu, API sunucusunun su anki zamani)` olarak calisir
 - varsayilan ileri bakis degeri `15` gundur; maksimum `60` gunle sinirlandirilir
 - bunun sebebi Uyumsoft'ta Fatura Tarihi 16.07.2026 olan kaydin, `CreateDateUtc` veya SOAP execution sayfasi 17.07.2026 icinde donebilmesidir
 - Uyumsoft sayfalari `PageIndex = 0, 1, 2...` ve `PageSize = 20` ile `TotalPages` tamamlanana kadar okunur
