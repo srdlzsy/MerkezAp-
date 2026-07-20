@@ -8900,6 +8900,15 @@ UI akis onerisi:
 - final `sourceTotalCount/fetchedCount/matchedCount/insertedCount/updatedCount` bilgisi artik progress response'undaki `completed` durumunda okunur
 - progress bilgisi API process hafizasinda tutulur; API yeniden baslarsa `idle` durumuna doner
 
+UI hata yonetimi notu:
+
+- Uyumsoft'a giden senkronizasyon, PDF, detail/render, gonderim/retry ve e-irsaliye PDF isteklerinde dis servis hatalari standart `ProblemDetails` olarak doner
+- `502 Bad Gateway`: API Uyumsoft servisine baglanti kuramadi veya upstream HTTP istegi basarisiz oldu; UI bunu genel backend hatasi gibi degil "Uyumsoft servisine ulasilamiyor" olarak gostermelidir
+- `504 Gateway Timeout`: Uyumsoft istegi zaman asimina ugradi; UI kullaniciya tekrar deneme, daha kucuk tarih araligi secme veya daha sonra deneme mesaji vermelidir
+- `500 Internal Server Error`: beklenmeyen backend hatasi olarak ele alinmalidir; Uyumsoft baglanti/zaman asimi icin birincil durum artik 502/504'tur
+- UI hata mesajini `ProblemDetails.detail` alanindan okumali, destek/log takibi icin `ProblemDetails.extensions.correlationId` degerini saklamali veya ekranda kopyalanabilir gostermelidir
+- `GET /senkronize/progress` response'unda `status=failed` ise UI `message` alanini kullaniciya gostermeli ve polling'i durdurmalidir
+
 Davranis:
 
 - secilen tarih araligi UI ve DB icin Fatura Tarihi araligidir; Uyumsoft sorgusu ise `ExecutionStartDate = startDate`, `ExecutionEndDate = min(endDate + FaturaGoruntuleme:SynchronizationExecutionLookAheadDays gun sonu, API sunucusunun su anki zamani)` olarak calisir

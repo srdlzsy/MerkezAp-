@@ -42,6 +42,13 @@ internal static class UyumsoftWcfClientHelper
             UyumsoftDespatch.BasicDespatchIntegrationClient.EndpointConfiguration.BasicHttpBinding_IBasicDespatchIntegration,
             endpointUrl);
 
+    public static UyumsoftDespatch.BasicDespatchIntegrationClient CreateDespatchClient(UyumsoftServiceEndpointOptions options)
+    {
+        var client = CreateDespatchClient(options.EndpointUrl);
+        ApplyTimeout(client.Endpoint.Binding, options.TimeoutSeconds);
+        return client;
+    }
+
     private static void ApplyTimeout(Binding binding, int? timeoutSeconds)
     {
         var seconds = timeoutSeconds.GetValueOrDefault(DefaultTimeoutSeconds);

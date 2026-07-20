@@ -2158,7 +2158,7 @@ public sealed class InvoiceSendingService(
         CancellationToken cancellationToken)
     {
         var config = uyumsoftOptions.Value.EInvoice;
-        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
 
         try
         {
@@ -2262,7 +2262,7 @@ public sealed class InvoiceSendingService(
         CancellationToken cancellationToken)
     {
         var config = uyumsoftOptions.Value.EInvoice;
-        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
 
         try
         {

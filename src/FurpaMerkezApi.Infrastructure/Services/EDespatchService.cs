@@ -1151,7 +1151,7 @@ public sealed class EDespatchService(
         string eDespatchDocumentNo,
         CancellationToken cancellationToken)
     {
-        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(ToEndpointOptions(config));
 
         try
         {
@@ -1209,7 +1209,7 @@ public sealed class EDespatchService(
         EDespatchOptions config,
         CancellationToken cancellationToken)
     {
-        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(ToEndpointOptions(config));
 
         try
         {
@@ -1243,7 +1243,7 @@ public sealed class EDespatchService(
         string despatchId,
         CancellationToken cancellationToken)
     {
-        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(ToEndpointOptions(config));
 
         try
         {

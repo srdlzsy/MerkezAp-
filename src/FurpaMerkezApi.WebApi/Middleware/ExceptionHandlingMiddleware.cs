@@ -1,3 +1,4 @@
+using System.ServiceModel;
 using Microsoft.AspNetCore.Mvc;
 using FurpaMerkezApi.WebApi.Security;
 
@@ -38,10 +39,38 @@ public sealed class ExceptionHandlingMiddleware(
             logger.LogInformation(exception, "A requested resource was not found.");
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status404NotFound, exception.Message);
         }
+        catch (CommunicationException exception)
+        {
+            logger.LogWarning(exception, "An upstream communication error occurred.");
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status502BadGateway,
+                BuildUpstreamErrorDetail("Dis servis baglantisi kurulamadi.", exception));
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(exception, "An upstream HTTP error occurred.");
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status502BadGateway,
+                BuildUpstreamErrorDetail("Dis servis HTTP istegi basarisiz oldu.", exception));
+        }
         catch (TimeoutException exception)
         {
             logger.LogWarning(exception, "An upstream timeout occurred.");
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status504GatewayTimeout, exception.Message);
+        }
+        catch (TaskCanceledException exception) when (!httpContext.RequestAborted.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "An upstream request was canceled or timed out.");
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status504GatewayTimeout,
+                BuildUpstreamErrorDetail("Dis servis istegi zaman asimina ugradi.", exception));
+        }
+        catch (OperationCanceledException exception) when (httpContext.RequestAborted.IsCancellationRequested)
+        {
+            logger.LogInformation(exception, "The client aborted the request.");
         }
         catch (Exception exception)
         {
@@ -84,7 +113,20 @@ public sealed class ExceptionHandlingMiddleware(
             StatusCodes.Status403Forbidden => "Forbidden",
             StatusCodes.Status409Conflict => "Conflict",
             StatusCodes.Status404NotFound => "Not Found",
+            StatusCodes.Status502BadGateway => "Bad Gateway",
             StatusCodes.Status504GatewayTimeout => "Gateway Timeout",
             _ => "Internal Server Error"
         };
+
+    private static string BuildUpstreamErrorDetail(string prefix, Exception exception)
+    {
+        var rootCause = exception.GetBaseException();
+        var message = string.IsNullOrWhiteSpace(rootCause.Message)
+            ? exception.Message
+            : rootCause.Message;
+
+        return string.IsNullOrWhiteSpace(message)
+            ? prefix
+            : $"{prefix} {message}";
+    }
 }

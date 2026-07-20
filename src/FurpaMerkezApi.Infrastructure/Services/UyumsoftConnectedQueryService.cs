@@ -145,7 +145,7 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
         IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters,
         CancellationToken cancellationToken)
     {
-        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
 
         try
         {
@@ -183,7 +183,7 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
 
         var catalog = UyumsoftConnectedServiceCatalog.GetService(UyumsoftConnectedServiceKind.EInvoice);
         var config = ResolveServiceOptions(UyumsoftConnectedServiceKind.EInvoice, catalog);
-        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateInvoiceClient(config);
 
         try
         {
@@ -229,7 +229,7 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
         IReadOnlyCollection<UyumsoftOperationParameterRequest> parameters,
         CancellationToken cancellationToken)
     {
-        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config.EndpointUrl);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(config);
 
         try
         {
