@@ -35,6 +35,8 @@ public sealed record InvoiceViewingSynchronizationResponse(
     int SourceTotalCount,
     int FetchedCount,
     int MatchedCount,
+    int SkippedInvoiceDateOutOfRangeCount,
+    int SkippedDuplicateDocumentCount,
     int InsertedCount,
     int UpdatedCount);
 
@@ -53,10 +55,14 @@ public sealed record InvoiceViewingSynchronizationProgressResponse(
     int TotalPage,
     int FetchedCount,
     int MatchedCount,
+    int SkippedInvoiceDateOutOfRangeCount,
+    int SkippedDuplicateDocumentCount,
     int InsertedCount,
     int UpdatedCount,
     int LastPageItemCount,
     int LastPageMatchedCount,
+    int LastPageSkippedInvoiceDateOutOfRangeCount,
+    int LastPageSkippedDuplicateDocumentCount,
     int LastPageInsertedCount,
     int LastPageUpdatedCount,
     decimal ProgressPercent,

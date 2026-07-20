@@ -328,6 +328,10 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
             values = bag.GetMany(ToSingular(parameterName));
         }
 
+        values = values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
         var array = Array.CreateInstance(elementType, values.Count);
 
         for (var i = 0; i < values.Count; i++)
@@ -358,6 +362,10 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
                 {
                     values = bag.GetMany(ToSingular(property.Name));
                 }
+
+                values = values
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .ToArray();
 
                 if (values.Count == 0)
                 {

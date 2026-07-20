@@ -28,6 +28,7 @@ public sealed class FurpaWebApplicationFactory : WebApplicationFactory<Program>
                 ["Hosting:ExposeDiagnosticsOnRoot"] = "false",
                 ["Hosting:EnforceHttps"] = "false",
                 ["Hosting:UseHsts"] = "false",
+                ["Logging:File:Enabled"] = "false",
                 ["StartupTasks:ApplyAuthMigrations"] = "false",
                 ["StartupTasks:SynchronizePermissionCatalog"] = "false",
                 ["StartupTasks:SynchronizeWarehouseUsers"] = "false",

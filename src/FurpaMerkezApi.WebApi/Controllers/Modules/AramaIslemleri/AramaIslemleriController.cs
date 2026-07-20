@@ -134,7 +134,7 @@ public sealed class AramaIslemleriController(
         Ok(await searchWarehousesUseCase.ExecuteAsync(
             new WarehouseSearchRequest(
                 request.SearchText,
-                request.WarehouseNo,
+                request.LookupWarehouseNo,
                 request.Take),
             cancellationToken));
 
@@ -316,8 +316,9 @@ public sealed class WarehouseSearchHttpRequest
 {
     public string? SearchText { get; init; }
 
+    [FromQuery(Name = "WarehouseNo")]
     [Range(1, int.MaxValue)]
-    public int? WarehouseNo { get; init; }
+    public int? LookupWarehouseNo { get; init; }
 
     [Range(1, 200)]
     public int Take { get; init; } = 100;

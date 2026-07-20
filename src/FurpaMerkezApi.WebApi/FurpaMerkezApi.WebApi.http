@@ -3,7 +3,31 @@
 @uyumsoftInvoiceUrl = http://efatura.uyumsoft.com.tr/Services/BasicIntegration
 @uyumsoftUsername = UYUMSOFT_KULLANICI_ADI
 @uyumsoftPassword = UYUMSOFT_SIFRE
+
 @retryInvoiceEttn = eb6379bf-d2d8-4f1d-ab02-7deb09dae8d4
+
+# Uyumsoft GetInboxInvoices parameter notes
+# Uyumsoft portalindaki sEcho/iTotalRecords/aaData payload'u DataTables web ekranidir.
+# Reference GetInboxInvoices bu DataTables alanlarini almaz.
+# Portaldaki iTotalRecords ExecutionDate listesine denk gelir; sync progress'te TotalCount/FetchedCount buna yakindir.
+# Sync'teki Eslesen ise fatura InvoiceDate araligindan gecen ve tekrar DocumentId olmayan kayittir.
+# IsNewFilter, IsSeenFilter, ShowOlderThanOneYear portal filtresidir; reference modelinde kullanilmaz.
+# ExecutionStartDate: Uyumsoft gelen fatura islem/tetiklenme baslangic tarihi.
+# ExecutionEndDate: Uyumsoft gelen fatura islem/tetiklenme bitis tarihi.
+# PageIndex: 0 tabanli sayfa numarasi. 0 ilk sayfa, 1 ikinci sayfa.
+# PageSize: Bir istekte alinacak kayit sayisi. Sync kodu 20 kullaniyor.
+# SetTaken: true olursa Uyumsoft tarafinda "alindi/okundu" isaretleme davranisi tetiklenebilir; testte false kullan.
+# OnlyNewestInvoices: true olursa ayni faturanin sadece en yeni versiyonunu getirmeye calisir; sync akisi false kullaniyor.
+# InvoiceIds: ETTN/UUID ile tekil fatura filtrelemek icin. Ornek: eb6379bf-d2d8-4f1d-ab02-7deb09dae8d4
+# InvoiceNumbers: Fatura numarasi ile filtrelemek icin. Ornek: GIB2026000000123
+@uyumsoftInboxExecutionStartDate = 2026-07-01T00:00:00
+@uyumsoftInboxExecutionEndDate = 2026-07-20T23:59:59
+@uyumsoftInboxPageIndex = 0
+@uyumsoftInboxPageSize = 20
+@uyumsoftInboxSetTaken = false
+@uyumsoftInboxOnlyNewestInvoices = false
+@uyumsoftInboxInvoiceId =
+@uyumsoftInboxInvoiceNumber =
 
 # Uyumsoft RetrySendInvoices
 POST {{uyumsoftInvoiceUrl}}
@@ -951,18 +975,50 @@ Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-POST {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/get/sample
+# UyumsoftEFatura - GetInboxInvoices reference uzerinden
+# Bu istek SOAP envelope yazmadan bizim API'yi cagirir.
+# API iceride Uyumsoft service reference ile GetInboxInvoicesAsync(userInfo, query) calistirir.
+# Bos InvoiceIds/InvoiceNumbers helper tarafinda yok sayilir; dolu olursa tarih araligini ayrica daraltir.
+POST {{baseUrl}}/api/entegrasyon-islemleri/uyumsoft/e-fatura/get/GetInboxInvoices
 Accept: application/json
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-    "parameters":  [
-                       {
-                           "name":  "sample",
-                           "value":  "sample"
-                       }
-                   ]
+  "parameters": [
+    {
+      "name": "ExecutionStartDate",
+      "value": "{{uyumsoftInboxExecutionStartDate}}"
+    },
+    {
+      "name": "ExecutionEndDate",
+      "value": "{{uyumsoftInboxExecutionEndDate}}"
+    },
+    {
+      "name": "PageIndex",
+      "value": "{{uyumsoftInboxPageIndex}}"
+    },
+    {
+      "name": "PageSize",
+      "value": "{{uyumsoftInboxPageSize}}"
+    },
+    {
+      "name": "SetTaken",
+      "value": "{{uyumsoftInboxSetTaken}}"
+    },
+    {
+      "name": "OnlyNewestInvoices",
+      "value": "{{uyumsoftInboxOnlyNewestInvoices}}"
+    },
+    {
+      "name": "InvoiceIds",
+      "value": "{{uyumsoftInboxInvoiceId}}"
+    },
+    {
+      "name": "InvoiceNumbers",
+      "value": "{{uyumsoftInboxInvoiceNumber}}"
+    }
+  ]
 }
 
 ###
