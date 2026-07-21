@@ -36,7 +36,7 @@ public sealed class OnerilenFirmaSiparisleriController(
         [FromQuery] SuggestedCompanyOrderListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
 
         return Ok(await listSuggestedCompanyOrdersUseCase.ExecuteAsync(
             new SuggestedCompanyOrderListRequest(
