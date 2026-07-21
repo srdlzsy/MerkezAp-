@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(options =>
         {
+            options.CustomSchemaIds(CreateSwaggerSchemaId);
             options.SwaggerDoc("v1", new OpenApiInfo
             {
                 Title = "FurpaMerkezApi",
@@ -83,5 +84,23 @@ public static class ServiceCollectionExtensions
         });
 
         return services;
+    }
+
+    private static string CreateSwaggerSchemaId(Type type)
+    {
+        if (!type.IsGenericType)
+        {
+            return (type.FullName ?? type.Name).Replace('+', '.');
+        }
+
+        var typeName = type.GetGenericTypeDefinition().FullName ?? type.Name;
+        var backtickIndex = typeName.IndexOf('`', StringComparison.Ordinal);
+        if (backtickIndex >= 0)
+        {
+            typeName = typeName[..backtickIndex];
+        }
+
+        var argumentNames = string.Join(".", type.GetGenericArguments().Select(CreateSwaggerSchemaId));
+        return $"{typeName.Replace('+', '.')}.Of.{argumentNames}";
     }
 }
