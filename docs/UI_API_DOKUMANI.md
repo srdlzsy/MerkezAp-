@@ -7177,6 +7177,181 @@ UI akisi:
 5. Detay panelinde `events` zaman cizelgesi olarak gosterilir; kaynak alanlari teknik kanit olarak saklanir.
 6. Fatura alaninda `state = summary-only` ise UI gelen fatura ve bizim kestigimiz fatura toplamlarini ayri gostermeli; bu iki toplami "fark/uyumsuzluk" olarak vurgulamamalidir.
 
+### Stok Raporlari
+
+WinForms `Depo Stok Listeleme` envanterinden bu projeye read-only ve Mikro kaynaklariyla guvenle entegre edilebilen stok, hareket, satis, iade, karlilik ve sayim raporlari bu modul altinda toplandi. Bu modul yeni evrak olusturmaz, Mikro verisini degistirmez; UI tarafinda rapor/grid/ozet ekranlari icin kullanilir.
+
+Temel route:
+
+- `api/rapor-islemleri/stok-raporlari`
+
+Yetki kodu:
+
+- `rapor-islemleri.stok-raporlari.list`
+
+Veri kaynaklari:
+
+- Mikro tablolar: `STOKLAR`, `STOK_DEPO_DETAYLARI`, `DEPOLAR`, `BARKOD_TANIMLARI`, `CARI_HESAPLAR`, `CARI_PERSONEL_TANIMLARI`, `STOK_HAREKETLERI`, `SAYIM_SONUCLARI`, `SATINALMA_SARTLARI`
+- Mikro fonksiyonlari: `dbo.fn_DepodakiMiktar`, `dbo.fn_StokSatisFiyati`
+- `SATINALMA_SARTLARI` yalniz tedarikci stok filtresinde yardimci eslestirme olarak okunur.
+- Karlilik raporu maliyet icin `STOK_HAREKETLERI.sth_maliyet_ana` alanini kullanir; SAS fiyat/maliyet modu bu fazda yoktur.
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/rapor-islemleri/stok-raporlari/son-stok` | query | `StockOnHandReportHttpRequest` | `StockOnHandReportDto` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/tedarikci-son-stok` | query | `SupplierStockOnHandHttpRequest` | `StockOnHandReportDto` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/kategori-son-stok` | query | `CategoryStockOnHandHttpRequest` | `StockOnHandReportDto` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/uretici-son-stok` | query | `ProducerStockOnHandHttpRequest` | `StockOnHandReportDto` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/envanter-degeri` | query | `StockOnHandReportHttpRequest` | `StockOnHandReportDto` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/urun-depo-durum` | query | `ProductWarehouseStockHttpRequest` | `ProductWarehouseStockDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/stok-kartlari` | query | `StockCardDetailHttpRequest` | `StockCardDetailDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/depoda-var-subede-yok` | query | `WarehouseMissingStockHttpRequest` | `WarehouseMissingStockDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/depo-sifir-stok` | query | `WarehouseZeroStockHttpRequest` | `WarehouseZeroStockDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/hareketler` | query | `StockMovementReportHttpRequest` | `StockMovementReportItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/giris-cikis-karsilastirma` | query | `FilteredDateRangeReportHttpRequest` | `MovementInOutComparisonDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/satislar/sube-detay` | query | `FilteredDateRangeReportHttpRequest` | `BranchSalesReportItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/satislar/yil-karsilastirma` | query | `FilteredDateRangeReportHttpRequest` | `YearSalesComparisonItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/iadeler/subeler` | query | `ReturnBranchReportHttpRequest` | `ReturnBranchReportItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/satislar/satmayan-urunler` | query | `NotSoldProductReportHttpRequest` | `NotSoldProductReportItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/karlilik` | query | `ProfitabilityReportHttpRequest` | `ProfitabilityReportItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/sayim-karsilastirma` | query | `CountingComparisonReportHttpRequest` | `CountingComparisonReportItemDto[]` | `list` |
+
+Ortak query kurallari:
+
+```text
+warehouseNo   opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular
+reportDate    opsiyonel; stok anlik raporlarinda verilmezse bugun
+startDate     tarih araligi raporlarinda zorunlu
+endDate       tarih araligi raporlarinda zorunlu; backend gunu dahil kabul eder
+take          opsiyonel; max 1000
+```
+
+Depo kapsami:
+
+- `son-stok`, `tedarikci-son-stok`, `kategori-son-stok`, `uretici-son-stok`, `envanter-degeri`, `depoda-var-subede-yok`, `depo-sifir-stok` ve `sayim-karsilastirma` tek depo raporudur.
+- `urun-depo-durum`, `stok-kartlari`, `hareketler`, `giris-cikis-karsilastirma`, satis, iade, satmayan urun ve karlilik raporlarinda Admin/Administrator `warehouseNo` bos birakirsa tum depolar okunabilir.
+- Normal kullanicida backend token deposunu uygular; UI depo secimi gostermemelidir.
+
+Filtre alanlari:
+
+```text
+filterType  stock, category, producer, supplier, product-manager, model
+scope       karlilik icin producer, supplier, product-manager, category, stock
+filterValue filterType/scope ile eslesen kod veya arama degeri
+```
+
+Notlar:
+
+- `filterType` icin Turkce aliaslar da kabul edilir: `stok`, `kategori`, `uretici`, `tedarikci`, `satin-almaci`, `satinalmaci`, `model`.
+- `scope` bos verilirse karlilik raporu `producer` kirilimi ile doner.
+- Sayisal toplamlar backend tarafinda 2 ondaliga yuvarlanir.
+- Barkod alanlari master/birim-1 barkod onceligiyle secilir.
+- `OnlyWithStock=true` varsayilan davranistir; sifir stoklarin da gelmesi istenirse `false` gonderilir.
+
+UI akisi:
+
+1. Menu `Rapor Islemleri / Stok Raporlari` olarak acilir.
+2. Ekranda tab veya sol filtreyle `Son Stok`, `Urun Depo Durum`, `Stok Kartlari`, `Hareketler`, `Satis`, `Iade`, `Karlilik`, `Sayim` gorunumleri ayrilabilir.
+3. `son-stok` response icindeki `totalQuantity`, `totalSalesValue`, `returnedCount` ust ozet kartlarinda; `items` gridde gosterilir.
+4. `envanter-degeri` ayni response modelini kullanan deger odakli kisayoldur; UI ayni endpoint ailesini kullanip toplam satis degerini one cikarabilir.
+5. `urun-depo-durum` tek urunun subeler/depolar bazinda miktar ve satis degerini gosterir; arama icin `stockCodeOrBarcode` zorunludur.
+6. `depoda-var-subede-yok` kaynak depoda mevcut, hedef subede olmayan urunleri listeler; kaynak depo UI tarafinda zorunlu secilmelidir.
+7. `depo-sifir-stok` secili depoda sistem miktari sifir olan urunleri listeler.
+8. `giris-cikis-karsilastirma`, `satislar/sube-detay`, `satislar/yil-karsilastirma`, `iadeler/subeler`, `satislar/satmayan-urunler` tarih araligi ile calisir.
+9. `karlilik` raporunda UI `scope` icin segmented control veya select kullanmali; sonuc `groupCode/groupName` bazli ozetlenir.
+10. `sayim-karsilastirma` sayim gunu, opsiyonel belge no ve paket kodu ile sistem miktari/sayim miktari farkini gosterir.
+
+Ornekler:
+
+`GET /api/rapor-islemleri/stok-raporlari/son-stok?warehouseNo=110&reportDate=2026-07-21&search=ELMA&take=100`
+
+`GET /api/rapor-islemleri/stok-raporlari/karlilik?startDate=2026-07-01&endDate=2026-07-21&scope=producer&take=250`
+
+`GET /api/rapor-islemleri/stok-raporlari/sayim-karsilastirma?warehouseNo=110&countDate=2026-07-21&take=500`
+
+### Promosyon Raporlari
+
+Promosyon/bulten tarafinda rapor ihtiyaci bu modul altinda toplandi. Modul bulten tanimlarini listeler, gerceklesen POS promosyon kullanimlarini okur ve satis/marj etkisini gosterir.
+
+Bu modul salt-okunurdur. Bulten/promosyon tanim CRUD islemleri rapor degildir; ayri admin/yonetim modulu olarak ele alinmalidir.
+
+Temel route:
+
+- `api/rapor-islemleri/promosyon-raporlari`
+
+Yetki kodu:
+
+- `rapor-islemleri.promosyon-raporlari.list`
+
+Veri kaynaklari:
+
+- Mayday `PROMOSYON_TANIMLARI`: bulten/promosyon tanim listesi
+- Mayday `PROMOSYON_SUBELER`: promosyonun hangi subelerde gecerli oldugu
+- Furpa `PosFaturaPromosyons`: POS fislerinde gerceklesen promosyon kullanimi
+- Furpa `PosFaturaSatirs`: promosyon satirinin miktar, net satis, KDV ve urun bilgisi
+- Mikro `STOKLAR`: standart maliyet ile tahmini marj hesabi
+- Mikro `DEPOLAR`: sube adlari
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/rapor-islemleri/promosyon-raporlari/bultenler` | query | `PromotionBulletinListHttpRequest` | `PromotionBulletinListItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/promosyon-raporlari/performans` | query | `PromotionPerformanceHttpRequest` | `PromotionPerformanceReportDto` | `list` |
+| `GET /api/rapor-islemleri/promosyon-raporlari/satis-marj-etkisi` | query | `PromotionPerformanceHttpRequest` | `PromotionPerformanceReportDto` | `list` |
+| `GET /api/rapor-islemleri/promosyon-raporlari/performans/sube` | query | `PromotionPerformanceHttpRequest` | `PromotionBranchPerformanceItemDto[]` | `list` |
+
+Bulten listesi query:
+
+```text
+warehouseNo  opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular
+activeOn     opsiyonel; verilmezse bugun
+onlyActive   opsiyonel; true ise activeOn tarihinde aktif olan bultenler
+search       opsiyonel; kod, ad veya aciklama arar
+take         opsiyonel; default 100, max 1000
+```
+
+Performans query:
+
+```text
+startDate      zorunlu
+endDate        zorunlu; backend gunu dahil kabul eder
+warehouseNo    opsiyonel; Admin/Administrator bos birakirsa tum subeler
+promotionCode  opsiyonel; tek bulten/promosyon kodu
+search         opsiyonel; kod, ad veya aciklama arar
+take           opsiyonel; default 250, max 1000
+```
+
+Response notlari:
+
+- `PromotionPerformanceReportDto` ust ozet ve promosyon bazli `items` listesini birlikte doner.
+- `performans/sube` ayni hesaplari promosyon + sube kiriliminda verir.
+- `netSalesAmount` POS satir net tutaridir.
+- `grossSalesAmount` net tutar + KDV toplamidir.
+- `discountAmount` POS promosyon satirindaki indirim/etki tutaridir.
+- `estimatedCostAmount` urun miktari x Mikro `STOKLAR.sto_standartmaliyet` olarak hesaplanir.
+- `marginAmount` net satis - tahmini maliyet; `marginPercent` bu tutarin net satis icindeki oranidir.
+- Maliyet kartta yoksa tahmini maliyet 0 okunur; UI bu durumda marji "tahmini" olarak degerlendirmelidir.
+
+UI akisi:
+
+1. Menu `Rapor Islemleri / Promosyon Raporlari` olarak acilir.
+2. Ilk sekmede `bultenler` endpoint'i ile aktif/pasif bulten listesi gosterilir.
+3. Bulten satiri secilirse `promotionCode` ile `performans` endpoint'i cagrilir.
+4. Ustte kullanim adedi, fis sayisi, net/brut satis, indirim tutari ve marj kartlari gosterilir.
+5. Detay gridinde promosyon bazli satirlar; sube sekmesinde `performans/sube` sonucu gosterilir.
+6. Bulten tanimi olusturma/duzenleme/silme bu ekranda yapilmaz; ayri admin modulu gerekir.
+
+Ornekler:
+
+`GET /api/rapor-islemleri/promosyon-raporlari/bultenler?warehouseNo=110&onlyActive=true&take=100`
+
+`GET /api/rapor-islemleri/promosyon-raporlari/performans?startDate=2026-07-01&endDate=2026-07-21&warehouseNo=110&take=250`
+
+`GET /api/rapor-islemleri/promosyon-raporlari/performans/sube?startDate=2026-07-01&endDate=2026-07-21&promotionCode=1234`
+
 ### Satis Analizleri
 
 Eski `Furpa.SalesMvcCoreUI` dashboard tarafindaki ciro disi raporlar bu API modulunde toplandi. Tum endpointler `GET` calisir, query tarafinda ortak `WarehouseOrderDateRangeHttpRequest` modelini kullanir.
@@ -14912,6 +15087,28 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `LabelPriceChangedProductListHttpRequest`: `WarehouseNo`, `DateTimeFilter`
 - `CreateLabelDocumentHttpRequest`: `WarehouseNo`, `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`
+
+### Rapor Request Modelleri
+
+- `StockOnHandReportHttpRequest`: `WarehouseNo`, `ReportDate`, `Search`, `SupplierCode`, `CategoryCode`, `ProducerCode`, `ProductManagerCode`, `ModelCode`, `OnlyWithStock`, `Take`
+- `SupplierStockOnHandHttpRequest`: `WarehouseNo`, `ReportDate`, `SupplierCode` zorunlu, `Search`, `OnlyWithStock`, `Take`
+- `CategoryStockOnHandHttpRequest`: `WarehouseNo`, `ReportDate`, `CategoryCode` zorunlu, `Search`, `OnlyWithStock`, `Take`
+- `ProducerStockOnHandHttpRequest`: `WarehouseNo`, `ReportDate`, `ProducerCode` zorunlu, `Search`, `OnlyWithStock`, `Take`
+- `ProductWarehouseStockHttpRequest`: `WarehouseNo`, `ReportDate`, `StockCodeOrBarcode` zorunlu, `OnlyWithStock`, `Take`
+- `StockCardDetailHttpRequest`: `WarehouseNo`, `Barcode`, `StockCode`, `StockName`, `SupplierCode`, `ProductManagerCode`, `Take`
+- `WarehouseMissingStockHttpRequest`: `SourceWarehouseNo` zorunlu, `TargetWarehouseNo`, `ReportDate`, `Search`, `ModelCode`, `Take`
+- `WarehouseZeroStockHttpRequest`: `WarehouseNo`, `ReportDate`, `ModelCode`, `Take`
+- `StockMovementReportHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `StockCode`, `Take`
+- `FilteredDateRangeReportHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `FilterType`, `FilterValue`, `Take`
+- `ReturnBranchReportHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `StockCode` zorunlu, `Take`
+- `NotSoldProductReportHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `ProductManagerCode`, `IncludeDls`, `Take`
+- `ProfitabilityReportHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `Scope`, `FilterValue`, `Take`
+- `CountingComparisonReportHttpRequest`: `WarehouseNo`, `CountDate` zorunlu, `DocumentNo`, `PackageCode`, `Take`
+- `GET /api/rapor-islemleri/stok-raporlari/*` endpointleri body almaz; filtreler query parametresi olarak gonderilir.
+- `Take` tum stok raporlari icin 1-1000 araligindadir; default endpoint bazinda 100, 250 veya 500 olabilir.
+- `PromotionBulletinListHttpRequest`: `WarehouseNo`, `ActiveOn`, `OnlyActive`, `Search`, `Take`
+- `PromotionPerformanceHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `PromotionCode`, `Search`, `Take`
+- `GET /api/rapor-islemleri/promosyon-raporlari/*` endpointleri body almaz; filtreler query parametresi olarak gonderilir.
 
 ### Mikro Evrak Duzenleme Request Modelleri
 
