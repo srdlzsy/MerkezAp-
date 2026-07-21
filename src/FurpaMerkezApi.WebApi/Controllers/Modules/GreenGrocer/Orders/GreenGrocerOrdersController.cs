@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -34,7 +35,7 @@ public sealed class GreenGrocerOrdersController(
             new DeleteGreenGrocerOrderRequest(
                 request.DocumentSerie!,
                 request.DocumentOrderNo!.Value,
-                request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo)),
             cancellationToken);
 
         return Ok(response);

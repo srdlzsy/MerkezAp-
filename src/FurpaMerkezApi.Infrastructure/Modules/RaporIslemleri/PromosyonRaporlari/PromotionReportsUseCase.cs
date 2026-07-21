@@ -92,6 +92,30 @@ public sealed class PromotionReportsUseCase(
             .ToArray();
     }
 
+    public async Task<IReadOnlyCollection<PromotionBulletinOptionDto>> GetBulletinOptionsAsync(
+        PromotionBulletinListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalized = Normalize(request);
+        var definitions = await ListPromotionDefinitionsAsync(normalized.WarehouseNo, cancellationToken);
+
+        return definitions
+            .Where(item => !normalized.OnlyActive || IsActive(item, normalized.ActiveOn))
+            .Where(item => MatchesSearch(item, normalized.Search))
+            .OrderByDescending(item => IsActive(item, normalized.ActiveOn))
+            .ThenBy(item => item.EndDate ?? DateTime.MaxValue)
+            .ThenBy(item => item.PromotionCode, StringComparer.OrdinalIgnoreCase)
+            .Take(normalized.Take)
+            .Select(item => new PromotionBulletinOptionDto(
+                item.PromotionCode,
+                item.PromotionName,
+                item.PromotionType,
+                IsActive(item, normalized.ActiveOn),
+                item.StartDate,
+                item.EndDate))
+            .ToArray();
+    }
+
     public async Task<PromotionPerformanceReportDto> GetPerformanceAsync(
         PromotionPerformanceRequest request,
         CancellationToken cancellationToken)
@@ -100,9 +124,7 @@ public sealed class PromotionReportsUseCase(
         var rows = await ListPromotionUsageRowsAsync(normalized, cancellationToken);
         var receiptCounts = await ListPromotionReceiptCountsAsync(normalized, cancellationToken);
         var definitions = await ListPromotionDefinitionsAsync(normalized.WarehouseNo, cancellationToken);
-        var definitionByCode = definitions.ToDictionary(
-            item => item.PromotionCode,
-            StringComparer.OrdinalIgnoreCase);
+        var definitionByCode = CreateDefinitionLookup(definitions);
         var costs = await ListStandardCostsAsync(rows.Select(item => item.ProductCode), cancellationToken);
 
         var items = rows
@@ -174,9 +196,7 @@ public sealed class PromotionReportsUseCase(
         var rows = await ListPromotionUsageRowsAsync(normalized, cancellationToken);
         var receiptCounts = await ListPromotionReceiptCountsAsync(normalized, cancellationToken);
         var definitions = await ListPromotionDefinitionsAsync(normalized.WarehouseNo, cancellationToken);
-        var definitionByCode = definitions.ToDictionary(
-            item => item.PromotionCode,
-            StringComparer.OrdinalIgnoreCase);
+        var definitionByCode = CreateDefinitionLookup(definitions);
         var costs = await ListStandardCostsAsync(rows.Select(item => item.ProductCode), cancellationToken);
         var branchNames = await ListBranchNamesAsync(rows.Select(item => item.BranchNo), cancellationToken);
 
@@ -306,7 +326,7 @@ public sealed class PromotionReportsUseCase(
                 branchNos));
         }
 
-        return definitions;
+        return MergeDuplicateDefinitions(definitions);
     }
 
     private async Task<IReadOnlyCollection<PromotionUsageAggregateRow>> ListPromotionUsageRowsAsync(
@@ -640,10 +660,71 @@ public sealed class PromotionReportsUseCase(
         (!definition.StartDate.HasValue || definition.StartDate.Value.Date <= activeOn) &&
         (!definition.EndDate.HasValue || definition.EndDate.Value.Date >= activeOn);
 
+    private static Dictionary<string, PromotionDefinition> CreateDefinitionLookup(
+        IEnumerable<PromotionDefinition> definitions) =>
+        MergeDuplicateDefinitions(definitions)
+            .ToDictionary(
+                item => item.PromotionCode,
+                item => item,
+                StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyCollection<PromotionDefinition> MergeDuplicateDefinitions(
+        IEnumerable<PromotionDefinition> definitions) =>
+        definitions
+            .GroupBy(item => item.PromotionCode, StringComparer.OrdinalIgnoreCase)
+            .Select(MergeDefinitionGroup)
+            .ToArray();
+
+    private static PromotionDefinition MergeDefinitionGroup(
+        IGrouping<string, PromotionDefinition> grouped)
+    {
+        var items = grouped.ToArray();
+        var startDates = items
+            .Where(item => item.StartDate.HasValue)
+            .Select(item => item.StartDate!.Value)
+            .ToArray();
+        var endDates = items
+            .Where(item => item.EndDate.HasValue)
+            .Select(item => item.EndDate!.Value)
+            .ToArray();
+        var primary = items
+            .OrderBy(item => item.IsPassive)
+            .ThenByDescending(item => item.EndDate ?? DateTime.MaxValue)
+            .ThenByDescending(item => item.StartDate ?? DateTime.MinValue)
+            .First();
+        var branchNos = items
+            .SelectMany(item => item.BranchNos)
+            .Distinct()
+            .OrderBy(item => item)
+            .ToArray();
+
+        return primary with
+        {
+            PromotionName = FirstNonEmpty(items.Select(item => item.PromotionName)),
+            PromotionType = FirstNonEmpty(items.Select(item => item.PromotionType)),
+            Description = FirstNonEmpty(items.Select(item => item.Description)),
+            StartDate = startDates.Length == 0 ? null : startDates.Min(),
+            EndDate = endDates.Length == 0 ? null : endDates.Max(),
+            IsPassive = items.All(item => item.IsPassive),
+            CustomerCode = FirstNonEmpty(items.Select(item => item.CustomerCode)),
+            PluNo = primary.PluNo ?? items.Select(item => item.PluNo).FirstOrDefault(item => item.HasValue),
+            ProductPluNo = primary.ProductPluNo ?? items.Select(item => item.ProductPluNo).FirstOrDefault(item => item.HasValue),
+            LimitAmount = primary.LimitAmount ?? items.Select(item => item.LimitAmount).FirstOrDefault(item => item.HasValue),
+            DiscountRate = primary.DiscountRate ?? items.Select(item => item.DiscountRate).FirstOrDefault(item => item.HasValue),
+            DiscountAmount = primary.DiscountAmount ?? items.Select(item => item.DiscountAmount).FirstOrDefault(item => item.HasValue),
+            BranchNos = branchNos
+        };
+    }
+
+    private static string FirstNonEmpty(IEnumerable<string> values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+
     private static bool MatchesSearch(PromotionDefinition definition, string? search) =>
         string.IsNullOrWhiteSpace(search) ||
         definition.PromotionCode.Contains(search, StringComparison.OrdinalIgnoreCase) ||
         definition.PromotionName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+        definition.PromotionType.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+        definition.CustomerCode.Contains(search, StringComparison.OrdinalIgnoreCase) ||
         definition.Description.Contains(search, StringComparison.OrdinalIgnoreCase);
 
     private static bool MatchesSearch(

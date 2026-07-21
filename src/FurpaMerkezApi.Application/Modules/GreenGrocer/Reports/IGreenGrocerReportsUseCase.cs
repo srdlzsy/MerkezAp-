@@ -2,6 +2,10 @@ namespace FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 
 public interface IGreenGrocerReportsUseCase
 {
+    Task<GreenGrocerDashboardDto> GetDashboardAsync(
+        GreenGrocerReportDateRequest request,
+        CancellationToken cancellationToken);
+
     Task<GreenGrocerBranchReportDto> GetByBranchAsync(
         GreenGrocerReportDateRequest request,
         CancellationToken cancellationToken);
@@ -17,4 +21,6 @@ public interface IGreenGrocerReportsUseCase
     Task<IReadOnlyCollection<GreenGrocerProductReportGroupDto>> GetByProductAsync(
         GreenGrocerReportDateRequest request,
         CancellationToken cancellationToken);
+
+    IReadOnlyCollection<GreenGrocerTypeOptionDto> GetTypeOptions();
 }

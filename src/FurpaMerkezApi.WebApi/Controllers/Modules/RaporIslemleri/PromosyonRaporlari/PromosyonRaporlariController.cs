@@ -36,6 +36,23 @@ public sealed class PromosyonRaporlariController(IPromotionReportsUseCase promot
                 request.Take),
             cancellationToken));
 
+    [HttpGet("bulten-secenekleri")]
+    [HttpGet("bultenler/secenekler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<PromotionBulletinOptionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<PromotionBulletinOptionDto>>> BulletinOptions(
+        [FromQuery] PromotionBulletinOptionHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await promotionReportsUseCase.GetBulletinOptionsAsync(
+            new PromotionBulletinListRequest(
+                User.ResolveWarehouseScope(request.WarehouseNo),
+                request.ActiveOn,
+                request.OnlyActive,
+                request.Search,
+                request.Take),
+            cancellationToken));
+
     [HttpGet("performans")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(PromotionPerformanceReportDto), StatusCodes.Status200OK)]
@@ -67,14 +84,19 @@ public sealed class PromosyonRaporlariController(IPromotionReportsUseCase promot
             ToPerformanceRequest(request),
             cancellationToken));
 
-    private PromotionPerformanceRequest ToPerformanceRequest(PromotionPerformanceHttpRequest request) =>
-        new(
+    private PromotionPerformanceRequest ToPerformanceRequest(PromotionPerformanceHttpRequest request)
+    {
+        var endDate = request.EndDate?.Date ?? DateTime.Today;
+        var startDate = request.StartDate?.Date ?? endDate.AddDays(-30);
+
+        return new(
             User.ResolveWarehouseScope(request.WarehouseNo),
-            request.StartDate!.Value,
-            request.EndDate!.Value,
+            startDate,
+            endDate,
             request.PromotionCode,
             request.Search,
             request.Take);
+    }
 }
 
 public sealed class PromotionBulletinListHttpRequest
@@ -84,7 +106,7 @@ public sealed class PromotionBulletinListHttpRequest
 
     public DateTime? ActiveOn { get; init; }
 
-    public bool OnlyActive { get; init; }
+    public bool OnlyActive { get; init; } = true;
 
     [StringLength(100)]
     public string? Search { get; init; }
@@ -93,15 +115,29 @@ public sealed class PromotionBulletinListHttpRequest
     public int Take { get; init; } = 100;
 }
 
+public sealed class PromotionBulletinOptionHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public DateTime? ActiveOn { get; init; }
+
+    public bool OnlyActive { get; init; } = true;
+
+    [StringLength(100)]
+    public string? Search { get; init; }
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 50;
+}
+
 public sealed class PromotionPerformanceHttpRequest
 {
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Required]
     public DateTime? StartDate { get; init; }
 
-    [Required]
     public DateTime? EndDate { get; init; }
 
     [StringLength(25)]

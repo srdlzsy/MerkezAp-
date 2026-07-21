@@ -83,6 +83,20 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
                 request.Take),
             cancellationToken));
 
+    [HttpGet("kategori-secenekleri")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<StockCategoryOptionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<StockCategoryOptionDto>>> CategoryOptions(
+        [FromQuery] StockCategoryOptionHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetCategoryOptionsAsync(
+            new StockCategoryOptionRequest(
+                request.Search,
+                request.OnlyActive,
+                request.Take),
+            cancellationToken));
+
     [HttpGet("uretici-son-stok")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(StockOnHandReportDto), StatusCodes.Status200OK)]
@@ -129,6 +143,23 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
                 request.Take),
             cancellationToken));
 
+    [HttpGet("urun/{stockCodeOrBarcode}/depo-durum")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProductWarehouseStockDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<ProductWarehouseStockDto>>> ProductWarehouseStockByPath(
+        [FromRoute, Required, StringLength(50)] string stockCodeOrBarcode,
+        [FromQuery] ProductWarehouseStockByPathHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetProductWarehouseStockAsync(
+            new ProductWarehouseStockRequest(
+                User.ResolveWarehouseScope(request.WarehouseNo),
+                request.ReportDate ?? DateTime.Today,
+                stockCodeOrBarcode,
+                request.OnlyWithStock,
+                request.Take),
+            cancellationToken));
+
     [HttpGet("stok-kartlari")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<StockCardDetailDto>), StatusCodes.Status200OK)]
@@ -146,6 +177,15 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
                 request.ProductManagerCode,
                 request.Take),
             cancellationToken));
+
+    [HttpGet("urun-ara")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<StockCardDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public Task<ActionResult<IReadOnlyCollection<StockCardDetailDto>>> ProductSearch(
+        [FromQuery] StockCardDetailHttpRequest request,
+        CancellationToken cancellationToken) =>
+        StockCards(request, cancellationToken);
 
     [HttpGet("depoda-var-subede-yok")]
     [Authorize(Policy = ListPolicy)]
@@ -404,6 +444,17 @@ public sealed class ProducerStockOnHandHttpRequest
     public int Take { get; init; } = 100;
 }
 
+public sealed class StockCategoryOptionHttpRequest
+{
+    [StringLength(100)]
+    public string? Search { get; init; }
+
+    public bool OnlyActive { get; init; } = true;
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 200;
+}
+
 public sealed class ProductWarehouseStockHttpRequest
 {
     [Range(1, int.MaxValue)]
@@ -414,6 +465,19 @@ public sealed class ProductWarehouseStockHttpRequest
     [Required]
     [StringLength(50)]
     public string? StockCodeOrBarcode { get; init; }
+
+    public bool OnlyWithStock { get; init; } = true;
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 250;
+}
+
+public sealed class ProductWarehouseStockByPathHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public DateTime? ReportDate { get; init; }
 
     public bool OnlyWithStock { get; init; } = true;
 

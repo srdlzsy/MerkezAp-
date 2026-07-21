@@ -32,6 +32,14 @@ public sealed record PromotionBulletinListItemDto(
     double? DiscountAmount,
     IReadOnlyCollection<int> BranchNos);
 
+public sealed record PromotionBulletinOptionDto(
+    string PromotionCode,
+    string PromotionName,
+    string PromotionType,
+    bool IsActive,
+    DateTime? StartDate,
+    DateTime? EndDate);
+
 public sealed record PromotionPerformanceReportDto(
     DateTime StartDate,
     DateTime EndDate,

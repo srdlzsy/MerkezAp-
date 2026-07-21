@@ -6,6 +6,10 @@ public interface IPromotionReportsUseCase
         PromotionBulletinListRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<PromotionBulletinOptionDto>> GetBulletinOptionsAsync(
+        PromotionBulletinListRequest request,
+        CancellationToken cancellationToken);
+
     Task<PromotionPerformanceReportDto> GetPerformanceAsync(
         PromotionPerformanceRequest request,
         CancellationToken cancellationToken);

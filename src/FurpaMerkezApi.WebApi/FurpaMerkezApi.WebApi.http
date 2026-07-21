@@ -1389,17 +1389,27 @@ Authorization: Bearer {{token}}
 ###
 
 # GreenGrocerReports
-GET {{baseUrl}}/api/green-grocer/reports?Date=2026-07-08&DateToGet=2026-07-08
+GET {{baseUrl}}/api/green-grocer/reports/dashboard?Date=2026-07-08&WarehouseNo=1&Take=1000
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-GET {{baseUrl}}/api/green-grocer/reports/by-branch?Date=2026-07-08&DateToGet=2026-07-08
+GET {{baseUrl}}/api/green-grocer/reports/type-options
 Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
-GET {{baseUrl}}/api/green-grocer/reports/by-product?Date=2026-07-08&DateToGet=2026-07-08
+GET {{baseUrl}}/api/green-grocer/reports?Date=2026-07-08&DateToGet=2026-07-08&Search=ELMA
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/green-grocer/reports/by-branch?Date=2026-07-08&DateToGet=2026-07-08&WarehouseNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/green-grocer/reports/by-product?Date=2026-07-08&DateToGet=2026-07-08&TypeCode=12
 Accept: application/json
 Authorization: Bearer {{token}}
 

@@ -14,6 +14,10 @@ public interface IStockReportsUseCase
         StockCardDetailRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<StockCategoryOptionDto>> GetCategoryOptionsAsync(
+        StockCategoryOptionRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<WarehouseMissingStockDto>> GetWarehouseHasBranchMissingAsync(
         WarehouseMissingStockRequest request,
         CancellationToken cancellationToken);

@@ -349,6 +349,48 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<StockCategoryOptionDto>> GetCategoryOptionsAsync(
+        StockCategoryOptionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var search = NormalizeOrNull(request.Search);
+        var take = NormalizeTake(request.Take);
+
+        const string sql = """
+            SELECT TOP (@take)
+                LTRIM(RTRIM(COALESCE(stock.sto_kategori_kodu, ''))) AS CategoryCode,
+                LTRIM(RTRIM(COALESCE(stock.sto_kategori_kodu, ''))) AS CategoryName,
+                COUNT(1) AS ProductCount
+            FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+            WHERE NULLIF(LTRIM(RTRIM(COALESCE(stock.sto_kategori_kodu, ''))), '') IS NOT NULL
+              AND (
+                    @onlyActive = 0
+                    OR (
+                        COALESCE(stock.sto_iptal, 0) = 0
+                        AND COALESCE(stock.sto_pasif_fl, 0) = 0
+                    )
+              )
+              AND (
+                    @search IS NULL
+                    OR stock.sto_kategori_kodu LIKE @searchLike
+              )
+            GROUP BY LTRIM(RTRIM(COALESCE(stock.sto_kategori_kodu, '')))
+            ORDER BY CategoryCode;
+            """;
+
+        return await ExecuteReaderAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@search", search, DbType.String);
+                AddParameter(command, "@searchLike", ToLike(search), DbType.String);
+                AddParameter(command, "@onlyActive", request.OnlyActive, DbType.Boolean);
+                AddParameter(command, "@take", take, DbType.Int32);
+            },
+            ReadStockCategoryOption,
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<WarehouseMissingStockDto>> GetWarehouseHasBranchMissingAsync(
         WarehouseMissingStockRequest request,
         CancellationToken cancellationToken)
@@ -1457,6 +1499,12 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             ReadNullableInt(reader, "GoodsAcceptanceBlockCode"),
             ReadBool(reader, "IsPassive"),
             ReadBool(reader, "IsDeleted"));
+
+    private static StockCategoryOptionDto ReadStockCategoryOption(DbDataReader reader) =>
+        new(
+            ReadString(reader, "CategoryCode"),
+            ReadString(reader, "CategoryName"),
+            ReadInt(reader, "ProductCount"));
 
     private static WarehouseMissingStockDto ReadWarehouseMissingStock(DbDataReader reader) =>
         new(

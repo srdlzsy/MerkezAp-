@@ -1587,10 +1587,88 @@ Tarih query alani:
 
 - `date` onerilir.
 - Geriye uyum icin `dateToGet` de kabul edilir.
+- Ikisi de verilmezse backend bugunu kullanir.
+
+Ortak query:
+
+```text
+date                 opsiyonel; rapor tarihi, verilmezse bugun
+dateToGet            opsiyonel; date icin geriye uyum alias'i
+warehouseNo          opsiyonel; normal kullanicida backend JWT deposunu uygular, Admin/Administrator bos birakirsa tum subeler
+typeCode             opsiyonel; 10, 11, 12, yesillik veya all/tum
+search               opsiyonel; urun kodu, urun adi, sube adi veya evrak serisinde arar
+includeLazyBranches  opsiyonel; default true, siparis girmeyen subeleri de dondurur
+take                 opsiyonel; default 1000, max 5000
+```
+
+Tip secenekleri:
+
+`GET /api/green-grocer/reports/type-options`
+
+Alias:
+
+`GET /api/green-grocer/reports/tip-secenekleri`
+
+Response:
+
+```json
+[
+  {
+    "typeCode": "10",
+    "typeName": "Manav Tip 10",
+    "isGreens": false
+  },
+  {
+    "typeCode": "12",
+    "typeName": "Yesillik",
+    "isGreens": true
+  }
+]
+```
+
+### Dashboard / Ozet
+
+`GET /api/green-grocer/reports/dashboard?date=2026-06-04`
+
+Alias:
+
+`GET /api/green-grocer/reports/ozet?date=2026-06-04`
+
+Amac:
+
+- Tek cagrida ust KPI, tip ozetleri, sube ozetleri, en yuksek miktarli urunler ve siparis girmeyen subeleri dondurur.
+- Ekran acilisinda ilk cagrilacak endpoint olarak onerilir.
+
+Response:
+
+```json
+{
+  "reportDate": "2026-06-04T00:00:00",
+  "warehouseNo": null,
+  "branchCount": 18,
+  "lazyBranchCount": 2,
+  "documentCount": 18,
+  "productCount": 42,
+  "totalQuantity": 1250.75,
+  "typeSummaries": [
+    {
+      "typeCode": "12",
+      "typeName": "Yesillik",
+      "branchCount": 12,
+      "documentCount": 12,
+      "productCount": 8,
+      "totalQuantity": 210.5
+    }
+  ],
+  "branches": [],
+  "topProducts": [],
+  "lazyBranches": []
+}
+```
 
 ### Genel Manav Raporu
 
-`GET /api/green-grocer/reports/summary?date=2026-06-04`
+`GET /api/green-grocer/reports/summary?date=2026-06-04&typeCode=12&search=MARUL`
 
 Alias:
 
@@ -1605,6 +1683,7 @@ Response item:
 ```json
 {
   "typeCode": "10",
+  "typeName": "Manav Tip 10",
   "productCode": "016201",
   "productName": "ELMA",
   "quantity": 42.5
@@ -1613,7 +1692,11 @@ Response item:
 
 ### Sube/Evrak Bazli Manav Raporu
 
-`GET /api/green-grocer/reports/by-branch?date=2026-06-04`
+`GET /api/green-grocer/reports/by-branch?date=2026-06-04&warehouseNo=110`
+
+Alias:
+
+`GET /api/green-grocer/reports/sube?date=2026-06-04&warehouseNo=110`
 
 Response:
 
@@ -1627,9 +1710,12 @@ Response:
       "documentSerie": "F110",
       "documentOrderNo": 1234,
       "typeCode": "10",
+      "typeName": "Manav Tip 10",
       "productCode": "016201",
       "productName": "ELMA",
-      "quantity": 12
+      "quantity": 12,
+      "latestCreateDate": "2026-06-04T09:15:10",
+      "canDelete": true
     }
   ],
   "lazyBranches": [
@@ -1646,17 +1732,27 @@ Response:
 
 `GET /api/green-grocer/reports/by-product?date=2026-06-04`
 
+Alias:
+
+`GET /api/green-grocer/reports/urun?date=2026-06-04`
+
 Amac:
 
 - Urunleri toplam miktar ve sube/evrak kirilimiyle dondurur.
+- `branches` kiriliminda `latestCreateDate` ve `canDelete` alanlari bulunur; UI sil butonunu `canDelete=true` ve kullanicida `green-grocer.reports.update` yetkisi varsa gostermelidir.
 
 ### Yesillik Raporu
 
 `GET /api/green-grocer/reports/greens?date=2026-06-04`
 
+Alias:
+
+`GET /api/green-grocer/reports/yesillik?date=2026-06-04`
+
 Amac:
 
 - Yalnizca `STOKLAR.sto_model_kodu = '12'` olan satirlari sube ve evrak bilgisiyle listeler.
+- `typeCode` query verilse bile bu endpoint yesillik tipine sabitlenir.
 
 ### Manav Siparisi Sil
 
@@ -1671,6 +1767,8 @@ Kural:
 - Sadece son 24 saat icinde olusturulan evraklar silinebilir.
 - Eski WebUI'deki `TimeSpan.Hours` davranisi yerine `TotalHours` kullanilir.
 - Kayit yoksa `404`, 24 saat penceresi gecmisse `409 Conflict` doner.
+- Normal kullanicida `warehouseNo` gonderilmezse backend JWT deposunu uygular; baska depo gonderirse `403` doner.
+- Admin/Administrator `warehouseNo` bos birakirsa evrak no ile eslesen tum sube satirlari silinebilir; UI'da admin icin de secili sube ile silme onerilir.
 
 Response:
 
@@ -7203,10 +7301,13 @@ Endpoint ozeti:
 | `GET /api/rapor-islemleri/stok-raporlari/son-stok` | query | `StockOnHandReportHttpRequest` | `StockOnHandReportDto` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/tedarikci-son-stok` | query | `SupplierStockOnHandHttpRequest` | `StockOnHandReportDto` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/kategori-son-stok` | query | `CategoryStockOnHandHttpRequest` | `StockOnHandReportDto` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/kategori-secenekleri` | query | `StockCategoryOptionHttpRequest` | `StockCategoryOptionDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/uretici-son-stok` | query | `ProducerStockOnHandHttpRequest` | `StockOnHandReportDto` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/envanter-degeri` | query | `StockOnHandReportHttpRequest` | `StockOnHandReportDto` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/urun-depo-durum` | query | `ProductWarehouseStockHttpRequest` | `ProductWarehouseStockDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/urun/{stockCodeOrBarcode}/depo-durum` | path + query | `ProductWarehouseStockByPathHttpRequest` | `ProductWarehouseStockDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/stok-kartlari` | query | `StockCardDetailHttpRequest` | `StockCardDetailDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/urun-ara` | query | `StockCardDetailHttpRequest` | `StockCardDetailDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/depoda-var-subede-yok` | query | `WarehouseMissingStockHttpRequest` | `WarehouseMissingStockDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/depo-sifir-stok` | query | `WarehouseZeroStockHttpRequest` | `WarehouseZeroStockDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/hareketler` | query | `StockMovementReportHttpRequest` | `StockMovementReportItemDto[]` | `list` |
@@ -7249,23 +7350,30 @@ Notlar:
 - Sayisal toplamlar backend tarafinda 2 ondaliga yuvarlanir.
 - Barkod alanlari master/birim-1 barkod onceligiyle secilir.
 - `OnlyWithStock=true` varsayilan davranistir; sifir stoklarin da gelmesi istenirse `false` gonderilir.
+- Kategori secimi icin UI `kategori-secenekleri` endpoint'ini kullanabilir; response `categoryCode`, `categoryName`, `productCount` alanlarini doner.
 
 UI akisi:
 
 1. Menu `Rapor Islemleri / Stok Raporlari` olarak acilir.
 2. Ekranda tab veya sol filtreyle `Son Stok`, `Urun Depo Durum`, `Stok Kartlari`, `Hareketler`, `Satis`, `Iade`, `Karlilik`, `Sayim` gorunumleri ayrilabilir.
-3. `son-stok` response icindeki `totalQuantity`, `totalSalesValue`, `returnedCount` ust ozet kartlarinda; `items` gridde gosterilir.
-4. `envanter-degeri` ayni response modelini kullanan deger odakli kisayoldur; UI ayni endpoint ailesini kullanip toplam satis degerini one cikarabilir.
-5. `urun-depo-durum` tek urunun subeler/depolar bazinda miktar ve satis degerini gosterir; arama icin `stockCodeOrBarcode` zorunludur.
-6. `depoda-var-subede-yok` kaynak depoda mevcut, hedef subede olmayan urunleri listeler; kaynak depo UI tarafinda zorunlu secilmelidir.
-7. `depo-sifir-stok` secili depoda sistem miktari sifir olan urunleri listeler.
-8. `giris-cikis-karsilastirma`, `satislar/sube-detay`, `satislar/yil-karsilastirma`, `iadeler/subeler`, `satislar/satmayan-urunler` tarih araligi ile calisir.
-9. `karlilik` raporunda UI `scope` icin segmented control veya select kullanmali; sonuc `groupCode/groupName` bazli ozetlenir.
-10. `sayim-karsilastirma` sayim gunu, opsiyonel belge no ve paket kodu ile sistem miktari/sayim miktari farkini gosterir.
+3. Kategori filtrelerinde dropdown `kategori-secenekleri` ile dolar; secilen `categoryCode`, `kategori-son-stok` veya genel `son-stok` filtresine yazilir.
+4. `son-stok` response icindeki `totalQuantity`, `totalSalesValue`, `returnedCount` ust ozet kartlarinda; `items` gridde gosterilir.
+5. `envanter-degeri` ayni response modelini kullanan deger odakli kisayoldur; UI ayni endpoint ailesini kullanip toplam satis degerini one cikarabilir.
+6. `urun-depo-durum` tek urunun subeler/depolar bazinda miktar ve satis degerini gosterir; arama icin `stockCodeOrBarcode` zorunludur. Barkod okutma veya urun kartindan gecis icin `urun/{stockCodeOrBarcode}/depo-durum` path kisayolu da kullanilabilir.
+7. `urun-ara`, `stok-kartlari` ile ayni response'u donen kolay okunur arama alias'idir.
+8. `depoda-var-subede-yok` kaynak depoda mevcut, hedef subede olmayan urunleri listeler; kaynak depo UI tarafinda zorunlu secilmelidir.
+9. `depo-sifir-stok` secili depoda sistem miktari sifir olan urunleri listeler.
+10. `giris-cikis-karsilastirma`, `satislar/sube-detay`, `satislar/yil-karsilastirma`, `iadeler/subeler`, `satislar/satmayan-urunler` tarih araligi ile calisir.
+11. `karlilik` raporunda UI `scope` icin segmented control veya select kullanmali; sonuc `groupCode/groupName` bazli ozetlenir.
+12. `sayim-karsilastirma` sayim gunu, opsiyonel belge no ve paket kodu ile sistem miktari/sayim miktari farkini gosterir.
 
 Ornekler:
 
 `GET /api/rapor-islemleri/stok-raporlari/son-stok?warehouseNo=110&reportDate=2026-07-21&search=ELMA&take=100`
+
+`GET /api/rapor-islemleri/stok-raporlari/kategori-secenekleri?search=MEYVE&take=50`
+
+`GET /api/rapor-islemleri/stok-raporlari/urun/8690000000000/depo-durum?onlyWithStock=true`
 
 `GET /api/rapor-islemleri/stok-raporlari/karlilik?startDate=2026-07-01&endDate=2026-07-21&scope=producer&take=250`
 
@@ -7299,6 +7407,7 @@ Endpoint ozeti:
 | Endpoint | Request kaynagi | Request modeli | Response | Yetki |
 |---|---|---|---|---|
 | `GET /api/rapor-islemleri/promosyon-raporlari/bultenler` | query | `PromotionBulletinListHttpRequest` | `PromotionBulletinListItemDto[]` | `list` |
+| `GET /api/rapor-islemleri/promosyon-raporlari/bulten-secenekleri` | query | `PromotionBulletinOptionHttpRequest` | `PromotionBulletinOptionDto[]` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/performans` | query | `PromotionPerformanceHttpRequest` | `PromotionPerformanceReportDto` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/satis-marj-etkisi` | query | `PromotionPerformanceHttpRequest` | `PromotionPerformanceReportDto` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/performans/sube` | query | `PromotionPerformanceHttpRequest` | `PromotionBranchPerformanceItemDto[]` | `list` |
@@ -7308,7 +7417,7 @@ Bulten listesi query:
 ```text
 warehouseNo  opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular
 activeOn     opsiyonel; verilmezse bugun
-onlyActive   opsiyonel; true ise activeOn tarihinde aktif olan bultenler
+onlyActive   opsiyonel; default true, activeOn tarihinde aktif olan bultenleri getirir
 search       opsiyonel; kod, ad veya aciklama arar
 take         opsiyonel; default 100, max 1000
 ```
@@ -7316,8 +7425,8 @@ take         opsiyonel; default 100, max 1000
 Performans query:
 
 ```text
-startDate      zorunlu
-endDate        zorunlu; backend gunu dahil kabul eder
+startDate      opsiyonel; verilmezse endDate - 30 gun
+endDate        opsiyonel; verilmezse bugun, backend gunu dahil kabul eder
 warehouseNo    opsiyonel; Admin/Administrator bos birakirsa tum subeler
 promotionCode  opsiyonel; tek bulten/promosyon kodu
 search         opsiyonel; kod, ad veya aciklama arar
@@ -7339,16 +7448,21 @@ UI akisi:
 
 1. Menu `Rapor Islemleri / Promosyon Raporlari` olarak acilir.
 2. Ilk sekmede `bultenler` endpoint'i ile aktif/pasif bulten listesi gosterilir.
-3. Bulten satiri secilirse `promotionCode` ile `performans` endpoint'i cagrilir.
-4. Ustte kullanim adedi, fis sayisi, net/brut satis, indirim tutari ve marj kartlari gosterilir.
-5. Detay gridinde promosyon bazli satirlar; sube sekmesinde `performans/sube` sonucu gosterilir.
-6. Bulten tanimi olusturma/duzenleme/silme bu ekranda yapilmaz; ayri admin modulu gerekir.
+3. Performans filtrelerindeki bulten/promosyon dropdown'u `bulten-secenekleri` endpoint'i ile doldurulur.
+4. Bulten satiri veya dropdown secimi yapilirse `promotionCode` ile `performans` endpoint'i cagrilir.
+5. Ustte kullanim adedi, fis sayisi, net/brut satis, indirim tutari ve marj kartlari gosterilir.
+6. Detay gridinde promosyon bazli satirlar; sube sekmesinde `performans/sube` sonucu gosterilir.
+7. Bulten tanimi olusturma/duzenleme/silme bu ekranda yapilmaz; ayri admin modulu gerekir.
 
 Ornekler:
 
 `GET /api/rapor-islemleri/promosyon-raporlari/bultenler?warehouseNo=110&onlyActive=true&take=100`
 
+`GET /api/rapor-islemleri/promosyon-raporlari/bulten-secenekleri?search=12&take=50`
+
 `GET /api/rapor-islemleri/promosyon-raporlari/performans?startDate=2026-07-01&endDate=2026-07-21&warehouseNo=110&take=250`
+
+`GET /api/rapor-islemleri/promosyon-raporlari/performans?promotionCode=1234`
 
 `GET /api/rapor-islemleri/promosyon-raporlari/performans/sube?startDate=2026-07-01&endDate=2026-07-21&promotionCode=1234`
 
@@ -15044,6 +15158,11 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CreateVirmanHttpRequest`: `WarehouseNo`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateVirmanLineHttpRequest`: `StockCode`, `MovementType`, `Quantity`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`
 
+### GreenGrocer Request Modelleri
+
+- `GreenGrocerReportHttpRequest`: `Date`, `DateToGet`, `WarehouseNo`, `TypeCode`, `Search`, `IncludeLazyBranches`, `Take`
+- `DeleteGreenGrocerOrderHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `WarehouseNo`
+
 ### Arama Request Modelleri
 
 - `ProductSearchHttpRequest`: `WarehouseNo`, `Barcode`, `StockCode`, `StockName`, `SupplierCode`, `CompanyCode`, `Take`
@@ -15093,8 +15212,10 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `StockOnHandReportHttpRequest`: `WarehouseNo`, `ReportDate`, `Search`, `SupplierCode`, `CategoryCode`, `ProducerCode`, `ProductManagerCode`, `ModelCode`, `OnlyWithStock`, `Take`
 - `SupplierStockOnHandHttpRequest`: `WarehouseNo`, `ReportDate`, `SupplierCode` zorunlu, `Search`, `OnlyWithStock`, `Take`
 - `CategoryStockOnHandHttpRequest`: `WarehouseNo`, `ReportDate`, `CategoryCode` zorunlu, `Search`, `OnlyWithStock`, `Take`
+- `StockCategoryOptionHttpRequest`: `Search`, `OnlyActive`, `Take`
 - `ProducerStockOnHandHttpRequest`: `WarehouseNo`, `ReportDate`, `ProducerCode` zorunlu, `Search`, `OnlyWithStock`, `Take`
 - `ProductWarehouseStockHttpRequest`: `WarehouseNo`, `ReportDate`, `StockCodeOrBarcode` zorunlu, `OnlyWithStock`, `Take`
+- `ProductWarehouseStockByPathHttpRequest`: path `stockCodeOrBarcode`, query `WarehouseNo`, `ReportDate`, `OnlyWithStock`, `Take`
 - `StockCardDetailHttpRequest`: `WarehouseNo`, `Barcode`, `StockCode`, `StockName`, `SupplierCode`, `ProductManagerCode`, `Take`
 - `WarehouseMissingStockHttpRequest`: `SourceWarehouseNo` zorunlu, `TargetWarehouseNo`, `ReportDate`, `Search`, `ModelCode`, `Take`
 - `WarehouseZeroStockHttpRequest`: `WarehouseNo`, `ReportDate`, `ModelCode`, `Take`
@@ -15107,7 +15228,8 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GET /api/rapor-islemleri/stok-raporlari/*` endpointleri body almaz; filtreler query parametresi olarak gonderilir.
 - `Take` tum stok raporlari icin 1-1000 araligindadir; default endpoint bazinda 100, 250 veya 500 olabilir.
 - `PromotionBulletinListHttpRequest`: `WarehouseNo`, `ActiveOn`, `OnlyActive`, `Search`, `Take`
-- `PromotionPerformanceHttpRequest`: `WarehouseNo`, `StartDate` zorunlu, `EndDate` zorunlu, `PromotionCode`, `Search`, `Take`
+- `PromotionBulletinOptionHttpRequest`: `WarehouseNo`, `ActiveOn`, `OnlyActive`, `Search`, `Take`
+- `PromotionPerformanceHttpRequest`: `WarehouseNo`, `StartDate` opsiyonel, `EndDate` opsiyonel, `PromotionCode`, `Search`, `Take`
 - `GET /api/rapor-islemleri/promosyon-raporlari/*` endpointleri body almaz; filtreler query parametresi olarak gonderilir.
 
 ### Mikro Evrak Duzenleme Request Modelleri

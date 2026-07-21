@@ -28,6 +28,11 @@ public sealed record StockCardDetailRequest(
     string? ProductManagerCode,
     int Take);
 
+public sealed record StockCategoryOptionRequest(
+    string? Search,
+    bool OnlyActive,
+    int Take);
+
 public sealed record WarehouseMissingStockRequest(
     int SourceWarehouseNo,
     int TargetWarehouseNo,
@@ -175,6 +180,11 @@ public sealed record StockCardDetailDto(
     int? GoodsAcceptanceBlockCode,
     bool IsPassive,
     bool IsDeleted);
+
+public sealed record StockCategoryOptionDto(
+    string CategoryCode,
+    string CategoryName,
+    int ProductCount);
 
 public sealed record WarehouseMissingStockDto(
     int SourceWarehouseNo,
