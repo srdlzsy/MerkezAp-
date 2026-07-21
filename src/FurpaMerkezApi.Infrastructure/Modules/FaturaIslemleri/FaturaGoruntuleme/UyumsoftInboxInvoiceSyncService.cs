@@ -582,6 +582,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
         var skippedInvoiceDateOutOfRangeCount = 0;
         var skippedDuplicateDocumentCount = 0;
         var processedDocumentIds = new HashSet<string>(StringComparer.Ordinal);
+        var processedInvoiceDateMatchedDocumentIds = new HashSet<string>(StringComparer.Ordinal);
         var seenPageSignatures = new HashSet<string>(StringComparer.Ordinal);
         var invoiceDateStart = startDate.Date;
         var invoiceDateEndExclusive = endDate.Date.AddDays(1);
@@ -629,6 +630,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
                 sourceTotalCount = Math.Max(sourceTotalCount, page.TotalCount);
                 var pageMatchedCount = 0;
+                var pagePersistedCount = 0;
                 var pageSkippedInvoiceDateOutOfRangeCount = 0;
                 var pageSkippedDuplicateDocumentCount = 0;
                 var pageInsertedCount = 0;
@@ -653,13 +655,18 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                             item.InvoiceDate.Value >= invoiceDateStart &&
                             item.InvoiceDate.Value < invoiceDateEndExclusive)
                         .ToArray();
-                    var uniquePageItems = invoiceDateMatchedItems
+                    var uniqueInvoiceDateMatchedItems = invoiceDateMatchedItems
+                        .GroupBy(item => item.DocumentId, StringComparer.Ordinal)
+                        .Select(group => group.Last())
+                        .Where(item => processedInvoiceDateMatchedDocumentIds.Add(item.DocumentId))
+                        .ToArray();
+                    var uniquePageItems = page.Items
                         .GroupBy(item => item.DocumentId, StringComparer.Ordinal)
                         .Select(group => group.Last())
                         .Where(item => processedDocumentIds.Add(item.DocumentId))
                         .ToArray();
                     pageSkippedInvoiceDateOutOfRangeCount = page.Items.Count - invoiceDateMatchedItems.Length;
-                    pageSkippedDuplicateDocumentCount = invoiceDateMatchedItems.Length - uniquePageItems.Length;
+                    pageSkippedDuplicateDocumentCount = page.Items.Count - uniquePageItems.Length;
                     var upsertResult = await UpsertAsync(
                         uniquePageItems,
                         includeStatuses,
@@ -672,7 +679,8 @@ public sealed class UyumsoftInboxInvoiceSyncService(
 
                     authDbContext.ChangeTracker.Clear();
 
-                    pageMatchedCount = uniquePageItems.Length;
+                    pageMatchedCount = uniqueInvoiceDateMatchedItems.Length;
+                    pagePersistedCount = uniquePageItems.Length;
                     pageInsertedCount = upsertResult.InsertedCount;
                     pageUpdatedCount = upsertResult.UpdatedCount;
 
@@ -683,7 +691,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                     updatedCount += pageUpdatedCount;
 
                     logger.LogInformation(
-                        "Uyumsoft inbox invoice sync page persisted for {FilterLabel} invoice range {StartDate} - {EndDate}, query range {QueryStartDate} - {QueryEndDate}. PageIndex={PageIndex}, PageSize={PageSize}, Items={ItemCount}, MatchedItems={MatchedItemCount}, SkippedInvoiceDateOutOfRange={SkippedInvoiceDateOutOfRangeCount}, SkippedDuplicateDocument={SkippedDuplicateDocumentCount}, MatchedTotal={MatchedTotal}, TotalCount={TotalCount}, TotalPage={TotalPage}, Inserted={InsertedCount}, Updated={UpdatedCount}.",
+                        "Uyumsoft inbox invoice sync page persisted for {FilterLabel} invoice range {StartDate} - {EndDate}, query range {QueryStartDate} - {QueryEndDate}. PageIndex={PageIndex}, PageSize={PageSize}, Items={ItemCount}, MatchedItems={MatchedItemCount}, PersistedItems={PersistedItemCount}, SkippedInvoiceDateOutOfRange={SkippedInvoiceDateOutOfRangeCount}, SkippedDuplicateDocument={SkippedDuplicateDocumentCount}, MatchedTotal={MatchedTotal}, TotalCount={TotalCount}, TotalPage={TotalPage}, Inserted={InsertedCount}, Updated={UpdatedCount}.",
                         filterLabel,
                         startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -693,6 +701,7 @@ public sealed class UyumsoftInboxInvoiceSyncService(
                         SyncPageSize,
                         page.Items.Count,
                         pageMatchedCount,
+                        pagePersistedCount,
                         pageSkippedInvoiceDateOutOfRangeCount,
                         pageSkippedDuplicateDocumentCount,
                         matchedCount,
