@@ -14,17 +14,27 @@ internal sealed class InvoiceViewingSynchronizationJobQueue(
 
     public InvoiceViewingSynchronizationProgressResponse Enqueue(InvoiceViewingSynchronizationRequest request)
     {
+        TryEnqueue(request, out var progress);
+
+        return progress;
+    }
+
+    public bool TryEnqueue(
+        InvoiceViewingSynchronizationRequest request,
+        out InvoiceViewingSynchronizationProgressResponse progress)
+    {
         lock (gate)
         {
             var currentProgress = progressStore.Get();
 
             if (hasActiveWork || currentProgress.IsRunning)
             {
-                return currentProgress;
+                progress = currentProgress;
+                return false;
             }
 
             hasActiveWork = true;
-            var queuedProgress = progressStore.Queue(
+            progress = progressStore.Queue(
                 request.StartDate,
                 request.EndDate,
                 request.IncludeStatuses,
@@ -32,7 +42,7 @@ internal sealed class InvoiceViewingSynchronizationJobQueue(
 
             channel.Writer.TryWrite(request);
 
-            return queuedProgress;
+            return true;
         }
     }
 

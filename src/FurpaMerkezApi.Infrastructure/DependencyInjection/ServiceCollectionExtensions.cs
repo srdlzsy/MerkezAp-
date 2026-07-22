@@ -256,6 +256,8 @@ public static class ServiceCollectionExtensions
         services.Configure<MikroApiWriteAuditOptions>(configuration.GetSection(MikroApiWriteAuditOptions.SectionName));
         services.Configure<MikroWriteRoutingOptions>(configuration.GetSection(MikroWriteRoutingOptions.SectionName));
         services.Configure<DocumentFlowTrackingOptions>(configuration.GetSection(DocumentFlowTrackingOptions.SectionName));
+        services.Configure<InvoiceViewingAutomaticSynchronizationOptions>(
+            configuration.GetSection(InvoiceViewingAutomaticSynchronizationOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddSingleton<MikroApiWriteAuditService>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
@@ -550,6 +552,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<OperationsJobQueue>();
         services.AddHostedService<OperationsJobWorker>();
         services.AddHostedService<InvoiceViewingSynchronizationWorker>();
+        services.AddHostedService<InvoiceViewingAutomaticSynchronizationScheduler>();
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();
