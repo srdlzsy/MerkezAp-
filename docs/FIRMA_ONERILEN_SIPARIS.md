@@ -27,7 +27,8 @@ Canli kontrolde gorulen onemli noktalar:
   sonra global `STOKLAR.sto_sat_cari_kod` uzerinden okunur.
 - Secili firma varsa `SATINALMA_SARTLARI.sas_stok_kod + sas_cari_kod` eslesmesi
   de kabul edilir.
-- Acik verilen firma siparisleri ihtiyactan dusulur.
+- Acik verilen firma siparisleri, teslim miktari takibi guvenilir tedarikciler icin
+  ihtiyactan dusulur.
 - Firma dis kaynak oldugu icin depo sorgusundaki gibi kaynak stok limiti yoktur.
 
 Kisa formul:
@@ -37,7 +38,7 @@ onerilen stok seviyesi = gunluk ortalama satis * onerilen gun
 
 ihtiyac = onerilen stok seviyesi
         - depodaki mevcut stok
-        - firmaya acik verilen siparis miktari
+        - ayar izin veriyorsa firmaya acik verilen siparis miktari
 
 onerilen firma siparisi = ihtiyac
 ```
@@ -52,6 +53,7 @@ DECLARE @WarehouseNo int = 110;              -- siparis isteyen magaza/depo
 DECLARE @SupplierCode nvarchar(25) = N'32000999'; -- zorunlu firma/tedarikci
 DECLARE @LookbackDays int = 43;              -- Mikro prosedurleriyle uyumlu donem
 DECLARE @FallbackRecommendedDay int = 7;     -- kartta onerilen gun yoksa varsayilan
+DECLARE @DeductOpenCompanyOrders bit = 0;    -- ayardan gelir
 
 ;WITH StockBase AS (
     SELECT
@@ -121,7 +123,8 @@ OpenCompanyOrders AS (
     INNER JOIN StockBase AS stock
         ON stock.sto_kod = orders.sip_stok_kod
        AND stock.EffectiveSupplierCode = orders.sip_musteri_kod
-    WHERE orders.sip_tip = 1
+    WHERE @DeductOpenCompanyOrders = 1
+      AND orders.sip_tip = 1
       AND orders.sip_cins = 0
       AND orders.sip_depono = @WarehouseNo
       AND ISNULL(orders.sip_iptal, 0) = 0
@@ -253,7 +256,21 @@ SET @WarehouseNo = 110;
 - Sorgu read-only'dir; Mikro'ya veri yazmaz.
 - `@SupplierCode` zorunludur; firma secilmeden liste uretilmez.
 - `SATINALMA_SARTLARI` eslesmesi secili firmaya ait urunu listeye alabilir.
-- Acik verilen firma siparisi varsa ihtiyactan dusulur.
+- Acik verilen firma siparisi, sadece ayardaki guvenilir tedarikciler icin
+  ihtiyactan dusulur.
+- Varsayilan ayarda acik firma siparisi dusumu kapalidir; cunku firma mal kabul
+  ve diger hareketler cogu zaman siparis GUID'ine baglanmadiginda
+  `sip_teslim_miktar` ilerlemez.
+- Acik firma siparisi dusumu ayari:
+
+```json
+"SuggestedCompanyOrders": {
+  "OpenIssuedOrderDeduction": {
+    "Enabled": false,
+    "TrustedSupplierCodes": []
+  }
+}
+```
 - `sas_asgari_miktar` ihtiyactan buyukse onerilen miktar asgari miktara tamamlanir.
 - Firma dis kaynak oldugu icin kaynak depo stogu gibi bir limit uygulanmaz.
 

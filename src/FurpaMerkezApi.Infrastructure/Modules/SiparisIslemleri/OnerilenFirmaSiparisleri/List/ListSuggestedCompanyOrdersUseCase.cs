@@ -4,10 +4,13 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
 
-public sealed class ListSuggestedCompanyOrdersUseCase(MikroDbContext mikroDbContext)
+public sealed class ListSuggestedCompanyOrdersUseCase(
+    MikroDbContext mikroDbContext,
+    IOptionsMonitor<SuggestedCompanyOrderOptions> options)
     : IListSuggestedCompanyOrdersUseCase
 {
     public async Task<IReadOnlyCollection<SuggestedCompanyOrderListItemDto>> ExecuteAsync(
@@ -15,6 +18,8 @@ public sealed class ListSuggestedCompanyOrdersUseCase(MikroDbContext mikroDbCont
         CancellationToken cancellationToken)
     {
         Validate(request);
+        var supplierCode = NormalizeOrNull(request.SupplierCode) ?? string.Empty;
+        var deductOpenCompanyOrders = ShouldDeductOpenCompanyOrders(supplierCode);
 
         const string sql = """
             ;WITH StockBase AS (
@@ -85,7 +90,8 @@ public sealed class ListSuggestedCompanyOrdersUseCase(MikroDbContext mikroDbCont
                 INNER JOIN StockBase AS stock
                     ON stock.sto_kod = orders.sip_stok_kod
                    AND stock.EffectiveSupplierCode = orders.sip_musteri_kod
-                WHERE orders.sip_tip = 1
+                WHERE @deductOpenCompanyOrders = 1
+                  AND orders.sip_tip = 1
                   AND orders.sip_cins = 0
                   AND orders.sip_depono = @warehouseNo
                   AND ISNULL(orders.sip_iptal, 0) = 0
@@ -203,12 +209,22 @@ public sealed class ListSuggestedCompanyOrdersUseCase(MikroDbContext mikroDbCont
             command =>
             {
                 AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
-                AddParameter(command, "@supplierCode", NormalizeOrNull(request.SupplierCode), DbType.String);
+                AddParameter(command, "@supplierCode", supplierCode, DbType.String);
                 AddParameter(command, "@lookbackDays", request.LookbackDays, DbType.Int32);
                 AddParameter(command, "@fallbackRecommendedDay", request.FallbackRecommendedDay, DbType.Int32);
+                AddParameter(command, "@deductOpenCompanyOrders", deductOpenCompanyOrders, DbType.Boolean);
             },
             ReadItem,
             cancellationToken);
+    }
+
+    private bool ShouldDeductOpenCompanyOrders(string supplierCode)
+    {
+        var deductionOptions = options.CurrentValue.OpenIssuedOrderDeduction;
+
+        return deductionOptions.Enabled &&
+               deductionOptions.TrustedSupplierCodes.Any(code =>
+                   string.Equals(NormalizeOrNull(code), supplierCode, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<IReadOnlyCollection<T>> ExecuteReaderAsync<T>(

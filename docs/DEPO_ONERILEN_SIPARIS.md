@@ -11,7 +11,8 @@ kullanilmasi onerilen sorgu mantigini anlatir.
 - Urun ailesi `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kodlarindan okunur.
 - Statik min/sip/max stok seviyeleri canli veride bos oldugu icin onerilen miktar
   son satis/tuketim ortalamasindan hesaplanir.
-- Acik gelen depo siparisleri ihtiyactan dusulur.
+- Acik gelen depo siparisleri, teslim miktari takibi guvenilir kaynak depolar icin
+  ihtiyactan dusulur.
 - Kaynak depoda elde olmayan miktar onerilmez.
 
 ## Kaynak Depo Model Kodlari
@@ -249,8 +250,19 @@ SET @SourceWarehouseNo = 58;
 
 - Kaynak deponun `dep_barkod_yazici_yolu` alani bos ise sorgu bilerek hata verir.
 - Bu hata, kaynak deponun urun ailesi tanimli degil demektir.
-- `openIncomingOrderQuantity` yuksekse onerilen miktar sifirlanabilir; bu normaldir.
+- `openIncomingOrderQuantity` sadece ayardaki guvenilir kaynak depolar icin hesaplanir.
+  Kaynak depo guvenilir listede degilse veya ayar kapaliysa bu miktar `0` kabul edilir.
 - Sorgu read-only'dir; Mikro'ya veri yazmaz.
+- Acik siparis dusumu ayari:
+
+```json
+"SuggestedWarehouseOrders": {
+  "OpenIncomingOrderDeduction": {
+    "Enabled": true,
+    "TrustedSourceWarehouseNos": [50]
+  }
+}
+```
 
 ## Temel Mantik Ozeti
 
@@ -281,8 +293,8 @@ gerektigini hesaplamaktir. Hesaplama su sirayla ilerler:
 
    Depoda zaten yeterli stok varsa yeni siparis onerilmez.
 
-6. Hedef depoya daha once acilmis ama henuz tam teslim edilmemis depo siparisleri
-   ihtiyactan dusulur.
+6. Hedef depoya daha once acilmis ama henuz tam teslim edilmemis depo siparisleri,
+   sadece kaynak depo ayardaki guvenilir listede ise ihtiyactan dusulur.
 
    Boylece ayni urun icin gereksiz ikinci siparis onerisi uretilmez.
 
@@ -297,7 +309,7 @@ onerilen stok seviyesi = gunluk ortalama satis * onerilen gun
 
 ihtiyac = onerilen stok seviyesi
         - hedef depodaki mevcut stok
-        - hedef depoya acik gelen siparis miktari
+        - ayar izin veriyorsa hedef depoya acik gelen siparis miktari
 
 onerilen siparis = ihtiyac ile kaynak depodaki elde stok miktarinin kucugu
 ```

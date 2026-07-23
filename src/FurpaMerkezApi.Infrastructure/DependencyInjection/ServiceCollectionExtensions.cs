@@ -256,6 +256,10 @@ public static class ServiceCollectionExtensions
         services.Configure<MikroApiWriteAuditOptions>(configuration.GetSection(MikroApiWriteAuditOptions.SectionName));
         services.Configure<MikroWriteRoutingOptions>(configuration.GetSection(MikroWriteRoutingOptions.SectionName));
         services.Configure<DocumentFlowTrackingOptions>(configuration.GetSection(DocumentFlowTrackingOptions.SectionName));
+        services.Configure<SuggestedWarehouseOrderOptions>(
+            configuration.GetSection(SuggestedWarehouseOrderOptions.SectionName));
+        services.Configure<SuggestedCompanyOrderOptions>(
+            configuration.GetSection(SuggestedCompanyOrderOptions.SectionName));
         services.Configure<InvoiceViewingAutomaticSynchronizationOptions>(
             configuration.GetSection(InvoiceViewingAutomaticSynchronizationOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();

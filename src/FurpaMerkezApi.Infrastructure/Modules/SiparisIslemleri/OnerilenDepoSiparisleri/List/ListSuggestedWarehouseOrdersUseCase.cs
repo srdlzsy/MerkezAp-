@@ -4,10 +4,13 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
 
-public sealed class ListSuggestedWarehouseOrdersUseCase(MikroDbContext mikroDbContext)
+public sealed class ListSuggestedWarehouseOrdersUseCase(
+    MikroDbContext mikroDbContext,
+    IOptionsMonitor<SuggestedWarehouseOrderOptions> options)
     : IListSuggestedWarehouseOrdersUseCase
 {
     public async Task<IReadOnlyCollection<SuggestedWarehouseOrderListItemDto>> ExecuteAsync(
@@ -15,6 +18,7 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(MikroDbContext mikroDbCo
         CancellationToken cancellationToken)
     {
         Validate(request);
+        var deductOpenIncomingOrders = ShouldDeductOpenIncomingOrders(request.SourceWarehouseNo);
 
         const string sql = """
             DECLARE @SourceModelCodes nvarchar(100);
@@ -89,7 +93,8 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(MikroDbContext mikroDbCo
                 FROM dbo.DEPOLAR_ARASI_SIPARISLER AS warehouseOrder WITH (NOLOCK)
                 INNER JOIN StockBase AS stock
                     ON stock.sto_kod = warehouseOrder.ssip_stok_kod
-                WHERE warehouseOrder.ssip_girdepo = @targetWarehouseNo
+                WHERE @deductOpenIncomingOrders = 1
+                  AND warehouseOrder.ssip_girdepo = @targetWarehouseNo
                   AND warehouseOrder.ssip_cikdepo = @sourceWarehouseNo
                   AND ISNULL(warehouseOrder.ssip_iptal, 0) = 0
                   AND ISNULL(warehouseOrder.ssip_kapat_fl, 0) = 0
@@ -196,9 +201,18 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(MikroDbContext mikroDbCo
                 AddParameter(command, "@sourceWarehouseNo", request.SourceWarehouseNo, DbType.Int32);
                 AddParameter(command, "@lookbackDays", request.LookbackDays, DbType.Int32);
                 AddParameter(command, "@fallbackRecommendedDay", request.FallbackRecommendedDay, DbType.Int32);
+                AddParameter(command, "@deductOpenIncomingOrders", deductOpenIncomingOrders, DbType.Boolean);
             },
             ReadItem,
             cancellationToken);
+    }
+
+    private bool ShouldDeductOpenIncomingOrders(int sourceWarehouseNo)
+    {
+        var deductionOptions = options.CurrentValue.OpenIncomingOrderDeduction;
+
+        return deductionOptions.Enabled &&
+               deductionOptions.TrustedSourceWarehouseNos.Contains(sourceWarehouseNo);
     }
 
     private async Task<IReadOnlyCollection<T>> ExecuteReaderAsync<T>(

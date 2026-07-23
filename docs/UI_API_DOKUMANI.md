@@ -2340,7 +2340,8 @@ Not:
 
 - Bu endpoint read-only calisir, Mikro'ya veri yazmaz.
 - Kaynak depo `DEPOLAR.dep_barkod_yazici_yolu` alanindaki model kodlariyla urun ailesini belirler.
-- Acik gelen depo siparisleri ihtiyactan dusulur.
+- Acik gelen depo siparisleri, `SuggestedWarehouseOrders:OpenIncomingOrderDeduction`
+  ayari acik ve kaynak depo `TrustedSourceWarehouseNos` icindeyse ihtiyactan dusulur.
 - Kaynak depoda elde olmayan miktar onerilmez.
 - Kaynak depo model kodlari bos ise backend `400 ProblemDetails` dondurebilir.
 
@@ -2585,7 +2586,8 @@ Not:
 - Bu endpoint read-only calisir, Mikro'ya veri yazmaz.
 - Firma siparisleri firma bazli oldugu icin `SupplierCode` zorunludur; firma secilmeden liste getirilmez.
 - Depo bazli tedarikci, stok karti tedarikcisi ve satinalma sartlari eslesmeleri secili firmaya gore dikkate alinir.
-- Acik verilen firma siparisleri ihtiyactan dusulur.
+- Acik verilen firma siparisleri, `SuggestedCompanyOrders:OpenIssuedOrderDeduction`
+  ayari acik ve tedarikci `TrustedSupplierCodes` icindeyse ihtiyactan dusulur.
 - Satinalma sartinda asgari miktar varsa onerilen miktar asgari miktara tamamlanabilir.
 
 Liste satiri modeli:
