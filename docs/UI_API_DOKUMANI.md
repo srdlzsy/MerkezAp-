@@ -10737,6 +10737,250 @@ Endpoint ozeti:
 | `POST /api/operasyon-islemleri/urun-dagilimlari/{documentNo}/kesinlestir` | body | `ProductDistributionFinalizeHttpRequest` | `ProductDistributionFinalizeDto` | `update` |
 | `DELETE /api/operasyon-islemleri/urun-dagilimlari/{documentNo}` | path | - | `ProductDistributionDeleteDto` | `delete` |
 
+Route notu:
+
+- `/docs/api/urun-dagilimlari` UI dokuman/yardim sayfasi olabilir; veri ceken backend route degildir.
+- Backend veri route ailesi yalniz `api/operasyon-islemleri/urun-dagilimlari` kokundedir.
+
+Request modelleri:
+
+`ProductDistributionListHttpRequest` query:
+
+```text
+status                         int?       0, 1, 2
+documentNo                     string?    max 50
+stockCode                      string?    max 25
+distributionCenterWarehouseNo  int?
+createdFrom                    DateTime?
+createdTo                      DateTime?
+take                           int?       1..500
+```
+
+`ProductDistributionProposalHttpRequest` body:
+
+```text
+stockCode                      string     zorunlu, max 25
+distributionCenterWarehouseNo  int        zorunlu
+totalCaseQuantity              int        zorunlu, 1+
+salesDayCount                  int?       1..365, bos ise 42
+referenceDate                  DateTime?  bos ise bugun
+includeBranchesWithoutSales    bool
+```
+
+`ProductDistributionSaveHttpRequest` body:
+
+```text
+stockCode                      string     zorunlu, max 25
+distributionCenterWarehouseNo  int        zorunlu
+totalCaseQuantity              int        0+
+distributedBy                  string?    max 100
+lines                          ProductDistributionSaveLineHttpRequest[] zorunlu, min 1
+```
+
+`ProductDistributionSaveLineHttpRequest` body:
+
+```text
+warehouseNo                    int        zorunlu
+caseQuantity                   int        0+
+unitQuantity                   int?
+lastSalesQuantity              double?
+companyAverageDailySales       double?
+branchAverageDailySales        double?
+```
+
+`ProductDistributionNotifyHttpRequest` body:
+
+```text
+notifyBy                       string?    max 100
+markStockOrderingStopped       bool       default true
+```
+
+`ProductDistributionFinalizeHttpRequest` body:
+
+```text
+finalizeBy                     string?    max 100
+orderDate                      DateTime?
+deliveryDate                   DateTime?
+allowFinalizeWithoutNotification bool
+```
+
+Response DTO katalogu:
+
+`ProductDistributionCenterDto`
+
+```text
+warehouseNo                    int
+warehouseName                  string
+regionCode                     string?
+```
+
+`ProductDistributionProposalDto`
+
+```text
+stock                          ProductDistributionStockDto
+distributionCenter             ProductDistributionWarehouseDto
+summary                        ProductDistributionSummaryDto
+lines                          ProductDistributionLineDto[]
+warnings                       string[]
+```
+
+`ProductDistributionListItemDto`
+
+```text
+documentNo                     string
+status                         ProductDistributionStatusDto
+createdAt                      DateTime
+finalizedAt                    DateTime?
+stock                          ProductDistributionStockDto
+distributionCenter             ProductDistributionWarehouseDto
+distributedBy                  string?
+lineCount                      int
+totalCaseQuantity              int
+totalUnitQuantity              int
+```
+
+`ProductDistributionDetailDto`
+
+```text
+header                         ProductDistributionHeaderDto
+summary                        ProductDistributionSummaryDto
+lines                          ProductDistributionLineDto[]
+availableActions               ProductDistributionActionDto[]
+```
+
+`ProductDistributionHeaderDto`
+
+```text
+documentNo                     string
+status                         ProductDistributionStatusDto
+createdAt                      DateTime
+finalizedAt                    DateTime?
+stock                          ProductDistributionStockDto
+distributionCenter             ProductDistributionWarehouseDto
+distributedBy                  string?
+```
+
+`ProductDistributionStockDto`
+
+```text
+stockCode                      string
+stockName                      string
+barcode                        string?
+packageFactor                  int
+unitName                       string?
+```
+
+`ProductDistributionWarehouseDto`
+
+```text
+warehouseNo                    int
+warehouseName                  string
+regionCode                     string?
+```
+
+`ProductDistributionLineDto`
+
+```text
+warehouseNo                    int
+warehouseName                  string
+regionCode                     string?
+lastSalesQuantity              double
+currentStockQuantity           double
+companyAverageDailySales       double
+branchAverageDailySales        double
+caseQuantity                   int
+unitQuantity                   int
+reason                         string
+```
+
+`ProductDistributionSummaryDto`
+
+```text
+salesDayCount                  int
+referenceDate                  DateTime
+lineCount                      int
+totalCaseQuantity              int
+allocatedCaseQuantity          int
+caseDifference                 int
+totalUnitQuantity              int
+isBalanced                     bool
+message                        string
+```
+
+`ProductDistributionStatusDto`
+
+```text
+code                           int
+name                           string
+severity                       string
+```
+
+`ProductDistributionActionDto`
+
+```text
+code                           string     update, delete, notify, finalize
+label                          string
+enabled                        bool
+reason                         string?
+```
+
+`ProductDistributionNotificationDto`
+
+```text
+documentNo                     string
+status                         ProductDistributionStatusDto
+statusChanged                  bool
+stockOrderingStopped           bool
+recipients                     ProductDistributionNotificationRecipientDto[]
+subject                        string
+message                        string
+```
+
+`ProductDistributionNotificationRecipientDto`
+
+```text
+regionCode                     string?
+managerName                    string?
+email                          string?
+lineCount                      int
+totalCaseQuantity              int
+totalUnitQuantity              int
+```
+
+`ProductDistributionFinalizeDto`
+
+```text
+documentNo                     string
+status                         ProductDistributionStatusDto
+finalizedAt                    DateTime
+createdDocumentCount           int
+existingDocumentCount          int
+totalUnitQuantity              int
+orders                         ProductDistributionWarehouseOrderDto[]
+```
+
+`ProductDistributionWarehouseOrderDto`
+
+```text
+documentSerie                  string
+documentOrderNo                int
+inWarehouseNo                  int
+inWarehouseName                string
+outWarehouseNo                 int
+outWarehouseName               string
+lineCount                      int
+totalUnitQuantity              int
+alreadyExisted                 bool
+```
+
+`ProductDistributionDeleteDto`
+
+```text
+documentNo                     string
+deleted                        bool
+message                        string
+```
+
 Onerilen UI akisi:
 
 1. Ekran acilisinda `GET .../dagitim-merkezleri` ile cikis depolari yuklenir.
@@ -10842,6 +11086,8 @@ Kesinlestirme sonucu:
 Teknik notlar:
 
 - `STOK_DAGILIM.Evrak_No` uretimi transaction icinde `UPDLOCK/HOLDLOCK` ile yapilir; eski `max()+1` yarisi azaltildi.
+- Eski `STOK_DAGILIM` kayitlarinda sayisal alanlar `nvarchar` ve virgullu ondalik (`1,6`) gelebilir; liste, detay ve bilgilendirme okumalari bu alanlari `TRY_CONVERT` + virgulu noktaya cevirme ile toleransli okur.
+- `GET .../{documentNo}` detayinda Mikro stok karti artik yoksa response yine doner; `stockName` stok kodu fallback'iyle doldurulur.
 - Kesinlestirme Mikro tarafinda `ssip_aciklama = "Dagilim {documentNo}"` ile izlenir ve tekrar cagrida cift siparis uretilmez.
 - Bu endpointlerde depo scope claim'i uygulanmaz; merkezi operasyon kullanimi icin gorunurluk/yazma kontrolu permission setiyle yonetilir.
 

@@ -622,6 +622,11 @@ Bilgilendirme:
 - `Bolge_Yoneticileri` tablosundan bolge muduru/e-posta bilgilerini ve dagilim ozetini doner.
 - UI veya dis entegrasyon bu response ile mail/outbox adimini baglamalidir.
 
+Teknik not:
+
+- Eski `STOK_DAGILIM` kayitlarinda sayisal alanlar `nvarchar` ve virgullu ondalik (`1,6`) gelebilir; liste, detay ve bilgilendirme okumalari bu alanlari toleransli okuyacak sekilde normalize eder.
+- Detay response'unda Mikro stok karti bulunamazsa evrak yine doner; stok adi stok kodu fallback'iyle doldurulur.
+
 ## Sik Karsilasilan Sonuclar
 
 `202 Accepted`:

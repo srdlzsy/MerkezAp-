@@ -404,7 +404,9 @@ public sealed class ProductDistributionService(
         CancellationToken cancellationToken)
     {
         var first = rows.First();
-        var stock = await GetStockAsync(first.StockCode, cancellationToken);
+        var stocks = await GetStocksAsync([first.StockCode], cancellationToken);
+        var stock = stocks.GetValueOrDefault(first.StockCode)
+            ?? new ProductDistributionStockDto(first.StockCode, first.StockCode, null, 1, null);
         var warehouseNos = rows
             .Select(row => row.WarehouseNo)
             .Append(first.DistributionCenterWarehouseNo)
@@ -635,19 +637,19 @@ public sealed class ProductDistributionService(
             SELECT TOP (@take)
                 Evrak_No AS DocumentNo,
                 Stok_Kodu AS StockCode,
-                COALESCE(Dagitim_Merkezi, 0) AS DistributionCenterWarehouseNo,
-                COALESCE(MAX(Durum), 0) AS Status,
+                COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagitim_Merkezi))), '')), 0) AS DistributionCenterWarehouseNo,
+                COALESCE(MAX(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Durum))), ''))), 0) AS Status,
                 MIN(Kayit_Tarihi) AS CreatedAt,
                 MAX(TRY_CONVERT(datetime, NULLIF(Kesinlestirme_Tarihi, ''))) AS FinalizedAt,
                 MAX(Dagilimi_Yapan) AS DistributedBy,
                 COUNT(1) AS LineCount,
-                COALESCE(SUM(CONVERT(int, Dagilim_Koli_Miktar)), 0) AS TotalCaseQuantity,
-                COALESCE(SUM(CONVERT(int, Dagilim_Adet_Miktar)), 0) AS TotalUnitQuantity
+                COALESCE(SUM(TRY_CONVERT(int, TRY_CONVERT(decimal(18, 4), REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagilim_Koli_Miktar))), ''), ',', '.')))), 0) AS TotalCaseQuantity,
+                COALESCE(SUM(TRY_CONVERT(int, TRY_CONVERT(decimal(18, 4), REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagilim_Adet_Miktar))), ''), ',', '.')))), 0) AS TotalUnitQuantity
             FROM dbo.STOK_DAGILIM WITH (NOLOCK)
-            WHERE (@status IS NULL OR Durum = @status)
+            WHERE (@status IS NULL OR COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Durum))), '')), 0) = @status)
               AND (@documentNo IS NULL OR Evrak_No = @documentNo)
               AND (@stockCode IS NULL OR Stok_Kodu = @stockCode)
-              AND (@distributionCenterWarehouseNo IS NULL OR Dagitim_Merkezi = @distributionCenterWarehouseNo)
+              AND (@distributionCenterWarehouseNo IS NULL OR COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagitim_Merkezi))), '')), 0) = @distributionCenterWarehouseNo)
               AND (@createdFrom IS NULL OR Kayit_Tarihi >= @createdFrom)
               AND (@createdToExclusive IS NULL OR Kayit_Tarihi < @createdToExclusive)
             GROUP BY Evrak_No, Stok_Kodu, Dagitim_Merkezi
@@ -694,16 +696,16 @@ public sealed class ProductDistributionService(
                 Kayit_Tarihi AS CreatedAt,
                 Stok_Kodu AS StockCode,
                 Bolge AS RegionCode,
-                Sube_Kodu AS WarehouseNo,
-                COALESCE(Toplam_Satis_42_Gun, 0) AS LastSalesQuantity,
-                COALESCE(Sirket_Ortalama_Satisi, 0) AS CompanyAverageDailySales,
-                COALESCE(Sube_Ortalama_Satisi, 0) AS BranchAverageDailySales,
-                COALESCE(Dagilim_Koli_Miktar, 0) AS CaseQuantity,
-                COALESCE(Dagilim_Adet_Miktar, 0) AS UnitQuantity,
+                COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Sube_Kodu))), '')), 0) AS WarehouseNo,
+                COALESCE(TRY_CONVERT(float, REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Toplam_Satis_42_Gun))), ''), ',', '.')), 0) AS LastSalesQuantity,
+                COALESCE(TRY_CONVERT(float, REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Sirket_Ortalama_Satisi))), ''), ',', '.')), 0) AS CompanyAverageDailySales,
+                COALESCE(TRY_CONVERT(float, REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Sube_Ortalama_Satisi))), ''), ',', '.')), 0) AS BranchAverageDailySales,
+                COALESCE(TRY_CONVERT(int, TRY_CONVERT(decimal(18, 4), REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagilim_Koli_Miktar))), ''), ',', '.'))), 0) AS CaseQuantity,
+                COALESCE(TRY_CONVERT(int, TRY_CONVERT(decimal(18, 4), REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagilim_Adet_Miktar))), ''), ',', '.'))), 0) AS UnitQuantity,
                 Dagilimi_Yapan AS DistributedBy,
-                COALESCE(Durum, 0) AS Status,
+                COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Durum))), '')), 0) AS Status,
                 TRY_CONVERT(datetime, NULLIF(Kesinlestirme_Tarihi, '')) AS FinalizedAt,
-                COALESCE(Dagitim_Merkezi, 0) AS DistributionCenterWarehouseNo
+                COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Dagitim_Merkezi))), '')), 0) AS DistributionCenterWarehouseNo
             FROM dbo.STOK_DAGILIM WITH (NOLOCK)
             WHERE Evrak_No = @documentNo
             ORDER BY Bolge, Sube_Kodu;
@@ -747,8 +749,8 @@ public sealed class ProductDistributionService(
                 MAX(manager.bolge_muduru) AS ManagerName,
                 MAX(manager.bolge_muduru_eposta) AS Email,
                 COUNT(1) AS LineCount,
-                COALESCE(SUM(CONVERT(int, distribution.Dagilim_Koli_Miktar)), 0) AS TotalCaseQuantity,
-                COALESCE(SUM(CONVERT(int, distribution.Dagilim_Adet_Miktar)), 0) AS TotalUnitQuantity
+                COALESCE(SUM(TRY_CONVERT(int, TRY_CONVERT(decimal(18, 4), REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), distribution.Dagilim_Koli_Miktar))), ''), ',', '.')))), 0) AS TotalCaseQuantity,
+                COALESCE(SUM(TRY_CONVERT(int, TRY_CONVERT(decimal(18, 4), REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), distribution.Dagilim_Adet_Miktar))), ''), ',', '.')))), 0) AS TotalUnitQuantity
             FROM dbo.STOK_DAGILIM AS distribution WITH (NOLOCK)
             LEFT JOIN dbo.Bolge_Yoneticileri AS manager WITH (NOLOCK)
                 ON CONVERT(nvarchar(25), manager.bolge_kodu) = CONVERT(nvarchar(25), distribution.Bolge)
@@ -951,8 +953,8 @@ public sealed class ProductDistributionService(
             UPDATE dbo.STOK_DAGILIM
             SET Durum = @status
             WHERE Evrak_No = @documentNo
-              AND COALESCE(Durum, 0) <> 2
-              AND COALESCE(Durum, 0) <> @status;
+              AND COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Durum))), '')), 0) <> 2
+              AND COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Durum))), '')), 0) <> @status;
             """;
         AddParameter(command, "@documentNo", documentNo);
         AddParameter(command, "@status", status);
@@ -973,7 +975,7 @@ public sealed class ProductDistributionService(
             SET Durum = 2,
                 Kesinlestirme_Tarihi = @finalizedAt
             WHERE Evrak_No = @documentNo
-              AND COALESCE(Durum, 0) <> 2;
+              AND COALESCE(TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50), Durum))), '')), 0) <> 2;
             """;
         AddParameter(command, "@documentNo", documentNo);
         AddParameter(command, "@finalizedAt", finalizedAt.Date);
@@ -1314,23 +1316,55 @@ public sealed class ProductDistributionService(
 
     private static int GetInt32(IDataRecord reader, string name)
     {
-        if (reader[name] is DBNull)
+        var value = reader[name];
+        if (value is DBNull)
         {
             return 0;
         }
 
-        return Convert.ToInt32(reader[name], CultureInfo.InvariantCulture);
+        if (value is string text)
+        {
+            var normalized = NormalizeNumericText(text);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return 0;
+            }
+
+            if (int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            {
+                return intValue;
+            }
+
+            if (double.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var doubleValue))
+            {
+                return Convert.ToInt32(doubleValue);
+            }
+        }
+
+        return Convert.ToInt32(value, CultureInfo.InvariantCulture);
     }
 
     private static double GetDouble(IDataRecord reader, string name)
     {
-        if (reader[name] is DBNull)
+        var value = reader[name];
+        if (value is DBNull)
         {
             return 0d;
         }
 
-        return Convert.ToDouble(reader[name], CultureInfo.InvariantCulture);
+        if (value is string text)
+        {
+            var normalized = NormalizeNumericText(text);
+            return string.IsNullOrWhiteSpace(normalized)
+                ? 0d
+                : Convert.ToDouble(normalized, CultureInfo.InvariantCulture);
+        }
+
+        return Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }
+
+    private static string NormalizeNumericText(string value) =>
+        value.Trim().Replace(',', '.');
 
     private static DateTime? GetDateTime(IDataRecord reader, string name) =>
         reader[name] is DBNull ? null : Convert.ToDateTime(reader[name], CultureInfo.InvariantCulture);
