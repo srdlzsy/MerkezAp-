@@ -34,17 +34,30 @@ Canli kontrolde gorulen onemli noktalar:
 Kisa formul:
 
 ```text
-onerilen stok seviyesi = gunluk ortalama satis * onerilen gun
+minimum stok seviyesi = gunluk ortalama satis * min stok gunu
+                     (min stok gunu yoksa onerilen gun kullanilir)
 
-ihtiyac = onerilen stok seviyesi
-        - depodaki mevcut stok
-        - ayar izin veriyorsa firmaya acik verilen siparis miktari
+onerilen/hedef stok seviyesi = gunluk ortalama satis * onerilen gun
 
-onerilen firma siparisi = ihtiyac
+maksimum stok seviyesi = gunluk ortalama satis * max stok gunu
+                       (max stok gunu doluysa)
+
+minimum ihtiyac = minimum stok seviyesi
+                - depodaki mevcut stok
+                - ayar izin veriyorsa firmaya acik verilen siparis miktari
+
+onerilen firma siparisi = minimum ihtiyac
+                         + asgari alim miktari kontrolu
+                         + koli katina yukari yuvarlama
+                         + varsa max stok siniri
 ```
 
-Satinalma sartinda `sas_asgari_miktar` doluysa ve ihtiyac bu miktardan dusukse,
-onerilen miktar asgari miktara tamamlanir.
+Siparis sadece stok minimum esigin altina dustugunde onerilir. Satinalma sartinda
+`sas_asgari_miktar` doluysa ve minimum ihtiyac bu miktardan dusukse, miktar once
+asgari alima tamamlanir. Sonra `sto_birim2_katsayi` 1'den buyukse miktar koli
+katina yukari yuvarlanir. `sto_max_stok_belirleme_gun` doluysa son miktar maksimum
+stok seviyesini asmamalidir; limit devreye girerse miktar asagi dogru en yakin
+koli katina iner.
 
 ## Optimize Ana Sorgu
 
@@ -93,7 +106,11 @@ DECLARE @DeductOpenCompanyOrders bit = 0;    -- ayardan gelir
                 AND ISNULL(term.sas_iptal, 0) = 0
                 AND (term.sas_depo_no IN (0, @WarehouseNo) OR term.sas_depo_no IS NULL)
                 AND (term.sas_basla_tarih IS NULL OR term.sas_basla_tarih <= GETDATE())
-                AND (term.sas_bitis_tarih IS NULL OR term.sas_bitis_tarih >= CONVERT(date, GETDATE()))
+                AND (
+                    term.sas_bitis_tarih IS NULL
+                    OR term.sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                    OR term.sas_bitis_tarih >= CONVERT(date, GETDATE())
+                )
           )
       )
 ),
@@ -120,6 +137,8 @@ OpenCompanyOrders AS (
         orders.sip_musteri_kod AS SupplierCode,
         SUM(ISNULL(orders.sip_miktar, 0) - ISNULL(orders.sip_teslim_miktar, 0)) AS OpenOrderQuantity
     FROM dbo.SIPARISLER AS orders
+    INNER JOIN Consumption AS consumption
+        ON consumption.StockCode = orders.sip_stok_kod
     INNER JOIN StockBase AS stock
         ON stock.sto_kod = orders.sip_stok_kod
        AND stock.EffectiveSupplierCode = orders.sip_musteri_kod
@@ -134,14 +153,31 @@ OpenCompanyOrders AS (
 ),
 TargetStock AS (
     SELECT
-        summary.sho_StokKodu AS StockCode,
-        SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-          - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS TargetOnHand
-    FROM dbo.STOK_HAREKETLERI_OZET AS summary
-    INNER JOIN StockBase AS stock
-        ON stock.sto_kod = summary.sho_StokKodu
-    WHERE summary.sho_Depo = @WarehouseNo
-    GROUP BY summary.sho_StokKodu
+        movement.sth_stok_kod AS StockCode,
+        ROUND(SUM(CASE
+            WHEN movement.sth_tip = 0
+                OR (movement.sth_tip = 2 AND movement.sth_giris_depo_no = @WarehouseNo)
+                THEN ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 1
+                OR (movement.sth_tip = 2 AND movement.sth_cikis_depo_no = @WarehouseNo)
+                THEN -1 * ISNULL(movement.sth_miktar, 0)
+            ELSE 0
+        END), 8) AS TargetOnHand
+    FROM dbo.STOK_HAREKETLERI AS movement
+    INNER JOIN Consumption AS consumption
+        ON consumption.StockCode = movement.sth_stok_kod
+    WHERE movement.sth_tarih <= GETDATE()
+      AND NOT (movement.sth_cins IN (9, 15))
+      AND (
+          (movement.sth_tip = 0 AND (movement.sth_giris_depo_no = @WarehouseNo OR @WarehouseNo = 0))
+          OR (movement.sth_tip = 1 AND (movement.sth_cikis_depo_no = @WarehouseNo OR @WarehouseNo = 0))
+          OR (
+              movement.sth_tip = 2
+              AND movement.sth_giris_depo_no <> movement.sth_cikis_depo_no
+              AND (movement.sth_giris_depo_no = @WarehouseNo OR movement.sth_cikis_depo_no = @WarehouseNo)
+          )
+      )
+    GROUP BY movement.sth_stok_kod
 ),
 Calculated AS (
     SELECT
@@ -165,7 +201,7 @@ Calculated AS (
     FROM StockBase AS stock
     LEFT JOIN dbo.CARI_HESAPLAR AS supplier
         ON supplier.cari_kod = stock.EffectiveSupplierCode
-    LEFT JOIN Consumption AS consumption
+    INNER JOIN Consumption AS consumption
         ON consumption.StockCode = stock.sto_kod
     LEFT JOIN OpenCompanyOrders AS openOrders
         ON openOrders.StockCode = stock.sto_kod
@@ -190,7 +226,11 @@ Calculated AS (
           AND ISNULL(term.sas_iptal, 0) = 0
           AND (term.sas_depo_no IN (0, @WarehouseNo) OR term.sas_depo_no IS NULL)
           AND (term.sas_basla_tarih IS NULL OR term.sas_basla_tarih <= GETDATE())
-          AND (term.sas_bitis_tarih IS NULL OR term.sas_bitis_tarih >= CONVERT(date, GETDATE()))
+          AND (
+              term.sas_bitis_tarih IS NULL
+              OR term.sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+              OR term.sas_bitis_tarih >= CONVERT(date, GETDATE())
+          )
         ORDER BY
             CASE WHEN term.sas_depo_no = @WarehouseNo THEN 0 ELSE 1 END,
             term.sas_belge_tarih DESC,
@@ -212,22 +252,66 @@ SELECT
     calc.RecommendedDay AS recommendedDay,
     calc.sto_max_stok_belirleme_gun AS maxDay,
     recommended.RecommendedStockQuantity AS recommendedStockQuantity,
-    recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS needQuantity,
+    threshold.MinimumNeedQuantity AS needQuantity,
     recommended.SuggestedOrderQuantity AS suggestedOrderQuantity,
     calc.sas_brut_fiyat AS purchasePrice,
     calc.sas_asgari_miktar AS minimumPurchaseQuantity,
     calc.sas_teslim_sure AS deliveryDay
 FROM Calculated AS calc
 CROSS APPLY (
-    SELECT CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) * calc.RecommendedDay) AS RecommendedStockQuantity
+    SELECT
+        CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) *
+            ISNULL(NULLIF(calc.sto_min_stok_belirleme_gun, 0), calc.RecommendedDay)) AS MinimumStockQuantity,
+        CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) * calc.RecommendedDay) AS RecommendedStockQuantity,
+        CASE
+            WHEN ISNULL(calc.sto_max_stok_belirleme_gun, 0) > 0
+                THEN CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) * calc.sto_max_stok_belirleme_gun)
+            ELSE NULL
+        END AS MaximumStockQuantity,
+        CASE
+            WHEN ABS(ISNULL(calc.sto_birim2_katsayi, 0)) > 1 THEN ABS(calc.sto_birim2_katsayi)
+            ELSE 0
+        END AS PackageQuantity
 ) AS targetQuantity
 CROSS APPLY (
     SELECT
+        targetQuantity.MinimumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS MinimumNeedQuantity,
         CASE
-            WHEN targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity <= 0 THEN 0
-            WHEN ISNULL(calc.sas_asgari_miktar, 0) > targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+            WHEN targetQuantity.MaximumStockQuantity IS NULL THEN NULL
+            ELSE targetQuantity.MaximumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+        END AS MaximumAllowedQuantity
+) AS threshold
+CROSS APPLY (
+    SELECT
+        CASE
+            WHEN threshold.MinimumNeedQuantity <= 0 THEN 0
+            WHEN ISNULL(calc.sas_asgari_miktar, 0) > threshold.MinimumNeedQuantity
                 THEN calc.sas_asgari_miktar
-            ELSE targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+            ELSE threshold.MinimumNeedQuantity
+        END AS BaseOrderQuantity
+) AS baseOrder
+CROSS APPLY (
+    SELECT
+        CASE
+            WHEN baseOrder.BaseOrderQuantity <= 0 THEN 0
+            WHEN targetQuantity.PackageQuantity > 0
+                THEN CEILING(baseOrder.BaseOrderQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+            ELSE baseOrder.BaseOrderQuantity
+        END AS RoundedOrderQuantity
+) AS roundedOrder
+CROSS APPLY (
+    SELECT
+        CASE
+            WHEN roundedOrder.RoundedOrderQuantity <= 0 THEN 0
+            WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND threshold.MaximumAllowedQuantity <= 0 THEN 0
+            WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND roundedOrder.RoundedOrderQuantity > threshold.MaximumAllowedQuantity
+                THEN
+                    CASE
+                        WHEN targetQuantity.PackageQuantity > 0
+                            THEN FLOOR(threshold.MaximumAllowedQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+                        ELSE threshold.MaximumAllowedQuantity
+                    END
+            ELSE roundedOrder.RoundedOrderQuantity
         END AS SuggestedOrderQuantity,
         targetQuantity.RecommendedStockQuantity
 ) AS recommended
@@ -271,7 +355,11 @@ SET @WarehouseNo = 110;
   }
 }
 ```
-- `sas_asgari_miktar` ihtiyactan buyukse onerilen miktar asgari miktara tamamlanir.
+- Oneri minimum stok esigine gore tetiklenir; miktar hedef stoga kadar degil,
+  minimum stok acigina gore baslar.
+- `sas_asgari_miktar` minimum ihtiyactan buyukse onerilen miktar asgari miktara tamamlanir.
+- `sto_birim2_katsayi` 1'den buyukse miktar koli katina yukari yuvarlanir.
+- `sto_max_stok_belirleme_gun` doluysa onerilen miktar maksimum stok seviyesini asmayacak sekilde sinirlanir; koli kati korunur.
 - Firma dis kaynak oldugu icin kaynak depo stogu gibi bir limit uygulanmaz.
 
 ## API ve UI Akisi
@@ -297,7 +385,7 @@ UI tek sayfa akisi:
 1. Kullanici firma/tedarikci secer.
 2. Sayfa `GET /onerilen-firma-siparisleri` ile secilen firmaya ait onerilen kalemleri getirir.
 3. Grid firma, stok kodu, stok adi, barkod, mevcut stok, son satis, acik firma siparisi,
-   ihtiyac, asgari alim miktari, alis fiyati ve onerilen siparis miktarini gosterir.
+   ihtiyac, koli katsayisi, asgari alim miktari, alis fiyati ve onerilen siparis miktarini gosterir.
 4. Kullanici satirlari secer ve gerekirse miktari duzenler.
 5. Secilen satirlar `POST /convert-to-order` ile verilen firma siparisine cevrilir.
 

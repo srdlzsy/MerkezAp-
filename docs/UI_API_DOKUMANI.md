@@ -2343,6 +2343,10 @@ Not:
 - Acik gelen depo siparisleri, `SuggestedWarehouseOrders:OpenIncomingOrderDeduction`
   ayari acik ve kaynak depo `TrustedSourceWarehouseNos` icindeyse ihtiyactan dusulur.
 - Kaynak depoda elde olmayan miktar onerilmez.
+- Oneri minimum stok esigine gore tetiklenir; `needQuantity` minimum stok acigidir.
+- `packageFactor` 1'den buyukse `suggestedOrderQuantity` koli katina yukari yuvarlanir.
+- `maxDay` doluysa onerilen miktar maksimum stok seviyesini asmadan sinirlanir; koli kati korunur.
+- Kaynak stok siniri devreye girerse son miktar yine koli kati korunarak asagi kirpilir.
 - Kaynak depo model kodlari bos ise backend `400 ProblemDetails` dondurebilir.
 
 Liste satiri modeli:
@@ -2357,20 +2361,20 @@ Liste satiri modeli:
   "sourceOnHand": 120,
   "salesQuantity": 86,
   "openIncomingOrderQuantity": 3,
-  "packageFactor": 1,
-  "minDay": 0,
+  "packageFactor": 5,
+  "minDay": 7,
   "recommendedDay": 7,
   "maxDay": 0,
   "recommendedStockQuantity": 14,
   "needQuantity": 9,
-  "suggestedOrderQuantity": 9
+  "suggestedOrderQuantity": 10
 }
 ```
 
 UI akisi:
 
 - Tek sayfada kullanici once kaynak depo secer.
-- UI listeyi getirir ve stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis, ihtiyac ve onerilen siparis miktarini gosterir.
+- UI listeyi getirir ve stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis, ihtiyac, koli katsayisi ve onerilen siparis miktarini gosterir.
 - Kullanici satirlari secer, `quantity` alanini varsayilan olarak `suggestedOrderQuantity` ile doldurur.
 - Kullanici miktari degistirebilir; `recommendedQuantity` alanina orijinal `suggestedOrderQuantity` yazilmasi onerilir.
 
@@ -2588,7 +2592,10 @@ Not:
 - Depo bazli tedarikci, stok karti tedarikcisi ve satinalma sartlari eslesmeleri secili firmaya gore dikkate alinir.
 - Acik verilen firma siparisleri, `SuggestedCompanyOrders:OpenIssuedOrderDeduction`
   ayari acik ve tedarikci `TrustedSupplierCodes` icindeyse ihtiyactan dusulur.
-- Satinalma sartinda asgari miktar varsa onerilen miktar asgari miktara tamamlanabilir.
+- Oneri minimum stok esigine gore tetiklenir; `needQuantity` minimum stok acigidir.
+- Satinalma sartinda asgari miktar varsa onerilen miktar once asgari miktara tamamlanabilir.
+- `packageFactor` 1'den buyukse `suggestedOrderQuantity` koli katina yukari yuvarlanir.
+- `maxDay` doluysa onerilen miktar maksimum stok seviyesini asmadan sinirlanir; koli kati korunur.
 
 Liste satiri modeli:
 
@@ -2603,13 +2610,13 @@ Liste satiri modeli:
   "targetOnHand": 4,
   "salesQuantity": 86,
   "openCompanyOrderQuantity": 2,
-  "packageFactor": 1,
-  "minDay": 0,
+  "packageFactor": 5,
+  "minDay": 7,
   "recommendedDay": 7,
   "maxDay": 0,
   "recommendedStockQuantity": 14,
   "needQuantity": 8,
-  "suggestedOrderQuantity": 24,
+  "suggestedOrderQuantity": 25,
   "purchasePrice": 15.75,
   "minimumPurchaseQuantity": 24,
   "deliveryDay": 2
@@ -2619,7 +2626,7 @@ Liste satiri modeli:
 UI akisi:
 
 - Tek sayfada kullanici firma/tedarikci secer.
-- UI listeyi getirir ve firma, stok kodu, stok adi, barkod, mevcut stok, son satis, acik firma siparisi, ihtiyac, asgari alim, alis fiyati ve onerilen siparis miktarini gosterir.
+- UI listeyi getirir ve firma, stok kodu, stok adi, barkod, mevcut stok, son satis, acik firma siparisi, ihtiyac, koli katsayisi, asgari alim, alis fiyati ve onerilen siparis miktarini gosterir.
 - Kullanici satirlari secer, `quantity` alanini varsayilan olarak `suggestedOrderQuantity` ile doldurur.
 - Kullanici miktari degistirebilir; `recommendedQuantity` alanina orijinal `suggestedOrderQuantity` yazilmasi onerilir.
 

@@ -60,7 +60,11 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
                             AND ISNULL(term.sas_iptal, 0) = 0
                             AND (term.sas_depo_no IN (0, @warehouseNo) OR term.sas_depo_no IS NULL)
                             AND (term.sas_basla_tarih IS NULL OR term.sas_basla_tarih <= GETDATE())
-                            AND (term.sas_bitis_tarih IS NULL OR term.sas_bitis_tarih >= CONVERT(date, GETDATE()))
+                            AND (
+                                term.sas_bitis_tarih IS NULL
+                                OR term.sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                                OR term.sas_bitis_tarih >= CONVERT(date, GETDATE())
+                            )
                       )
                   )
             ),
@@ -87,6 +91,8 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
                     orders.sip_musteri_kod AS SupplierCode,
                     SUM(ISNULL(orders.sip_miktar, 0) - ISNULL(orders.sip_teslim_miktar, 0)) AS OpenOrderQuantity
                 FROM dbo.SIPARISLER AS orders WITH (NOLOCK)
+                INNER JOIN Consumption AS consumption
+                    ON consumption.StockCode = orders.sip_stok_kod
                 INNER JOIN StockBase AS stock
                     ON stock.sto_kod = orders.sip_stok_kod
                    AND stock.EffectiveSupplierCode = orders.sip_musteri_kod
@@ -101,14 +107,31 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
             ),
             TargetStock AS (
                 SELECT
-                    summary.sho_StokKodu AS StockCode,
-                    SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                      - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS TargetOnHand
-                FROM dbo.STOK_HAREKETLERI_OZET AS summary WITH (NOLOCK)
-                INNER JOIN StockBase AS stock
-                    ON stock.sto_kod = summary.sho_StokKodu
-                WHERE summary.sho_Depo = @warehouseNo
-                GROUP BY summary.sho_StokKodu
+                    movement.sth_stok_kod AS StockCode,
+                    ROUND(SUM(CASE
+                        WHEN movement.sth_tip = 0
+                            OR (movement.sth_tip = 2 AND movement.sth_giris_depo_no = @warehouseNo)
+                            THEN ISNULL(movement.sth_miktar, 0)
+                        WHEN movement.sth_tip = 1
+                            OR (movement.sth_tip = 2 AND movement.sth_cikis_depo_no = @warehouseNo)
+                            THEN -1 * ISNULL(movement.sth_miktar, 0)
+                        ELSE 0
+                    END), 8) AS TargetOnHand
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                INNER JOIN Consumption AS consumption
+                    ON consumption.StockCode = movement.sth_stok_kod
+                WHERE movement.sth_tarih <= GETDATE()
+                  AND NOT (movement.sth_cins IN (9, 15))
+                  AND (
+                      (movement.sth_tip = 0 AND (movement.sth_giris_depo_no = @warehouseNo OR @warehouseNo = 0))
+                      OR (movement.sth_tip = 1 AND (movement.sth_cikis_depo_no = @warehouseNo OR @warehouseNo = 0))
+                      OR (
+                          movement.sth_tip = 2
+                          AND movement.sth_giris_depo_no <> movement.sth_cikis_depo_no
+                          AND (movement.sth_giris_depo_no = @warehouseNo OR movement.sth_cikis_depo_no = @warehouseNo)
+                      )
+                  )
+                GROUP BY movement.sth_stok_kod
             ),
             Calculated AS (
                 SELECT
@@ -132,7 +155,7 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
                 FROM StockBase AS stock
                 LEFT JOIN dbo.CARI_HESAPLAR AS supplier WITH (NOLOCK)
                     ON supplier.cari_kod = stock.EffectiveSupplierCode
-                LEFT JOIN Consumption AS consumption
+                INNER JOIN Consumption AS consumption
                     ON consumption.StockCode = stock.sto_kod
                 LEFT JOIN OpenCompanyOrders AS openOrders
                     ON openOrders.StockCode = stock.sto_kod
@@ -157,7 +180,11 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
                       AND ISNULL(term.sas_iptal, 0) = 0
                       AND (term.sas_depo_no IN (0, @warehouseNo) OR term.sas_depo_no IS NULL)
                       AND (term.sas_basla_tarih IS NULL OR term.sas_basla_tarih <= GETDATE())
-                      AND (term.sas_bitis_tarih IS NULL OR term.sas_bitis_tarih >= CONVERT(date, GETDATE()))
+                      AND (
+                          term.sas_bitis_tarih IS NULL
+                          OR term.sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                          OR term.sas_bitis_tarih >= CONVERT(date, GETDATE())
+                      )
                     ORDER BY
                         CASE WHEN term.sas_depo_no = @warehouseNo THEN 0 ELSE 1 END,
                         term.sas_belge_tarih DESC,
@@ -179,22 +206,66 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
                 calc.RecommendedDay,
                 calc.sto_max_stok_belirleme_gun AS MaxDay,
                 recommended.RecommendedStockQuantity,
-                recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS NeedQuantity,
+                threshold.MinimumNeedQuantity AS NeedQuantity,
                 recommended.SuggestedOrderQuantity,
                 calc.sas_brut_fiyat AS PurchasePrice,
                 calc.sas_asgari_miktar AS MinimumPurchaseQuantity,
                 calc.sas_teslim_sure AS DeliveryDay
             FROM Calculated AS calc
             CROSS APPLY (
-                SELECT CEILING((calc.SalesQuantity / NULLIF(@lookbackDays, 0)) * calc.RecommendedDay) AS RecommendedStockQuantity
+                SELECT
+                    CEILING((calc.SalesQuantity / NULLIF(@lookbackDays, 0)) *
+                        ISNULL(NULLIF(calc.sto_min_stok_belirleme_gun, 0), calc.RecommendedDay)) AS MinimumStockQuantity,
+                    CEILING((calc.SalesQuantity / NULLIF(@lookbackDays, 0)) * calc.RecommendedDay) AS RecommendedStockQuantity,
+                    CASE
+                        WHEN ISNULL(calc.sto_max_stok_belirleme_gun, 0) > 0
+                            THEN CEILING((calc.SalesQuantity / NULLIF(@lookbackDays, 0)) * calc.sto_max_stok_belirleme_gun)
+                        ELSE NULL
+                    END AS MaximumStockQuantity,
+                    CASE
+                        WHEN ABS(ISNULL(calc.sto_birim2_katsayi, 0)) > 1 THEN ABS(calc.sto_birim2_katsayi)
+                        ELSE 0
+                    END AS PackageQuantity
             ) AS targetQuantity
             CROSS APPLY (
                 SELECT
+                    targetQuantity.MinimumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS MinimumNeedQuantity,
                     CASE
-                        WHEN targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity <= 0 THEN 0
-                        WHEN ISNULL(calc.sas_asgari_miktar, 0) > targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+                        WHEN targetQuantity.MaximumStockQuantity IS NULL THEN NULL
+                        ELSE targetQuantity.MaximumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+                    END AS MaximumAllowedQuantity
+            ) AS threshold
+            CROSS APPLY (
+                SELECT
+                    CASE
+                        WHEN threshold.MinimumNeedQuantity <= 0 THEN 0
+                        WHEN ISNULL(calc.sas_asgari_miktar, 0) > threshold.MinimumNeedQuantity
                             THEN calc.sas_asgari_miktar
-                        ELSE targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+                        ELSE threshold.MinimumNeedQuantity
+                    END AS BaseOrderQuantity
+            ) AS baseOrder
+            CROSS APPLY (
+                SELECT
+                    CASE
+                        WHEN baseOrder.BaseOrderQuantity <= 0 THEN 0
+                        WHEN targetQuantity.PackageQuantity > 0
+                            THEN CEILING(baseOrder.BaseOrderQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+                        ELSE baseOrder.BaseOrderQuantity
+                    END AS RoundedOrderQuantity
+            ) AS roundedOrder
+            CROSS APPLY (
+                SELECT
+                    CASE
+                        WHEN roundedOrder.RoundedOrderQuantity <= 0 THEN 0
+                        WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND threshold.MaximumAllowedQuantity <= 0 THEN 0
+                        WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND roundedOrder.RoundedOrderQuantity > threshold.MaximumAllowedQuantity
+                            THEN
+                                CASE
+                                    WHEN targetQuantity.PackageQuantity > 0
+                                        THEN FLOOR(threshold.MaximumAllowedQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+                                    ELSE threshold.MaximumAllowedQuantity
+                                END
+                        ELSE roundedOrder.RoundedOrderQuantity
                     END AS SuggestedOrderQuantity,
                     targetQuantity.RecommendedStockQuantity
             ) AS recommended

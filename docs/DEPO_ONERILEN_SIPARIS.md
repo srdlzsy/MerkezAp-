@@ -15,6 +15,33 @@ kullanilmasi onerilen sorgu mantigini anlatir.
   ihtiyactan dusulur.
 - Kaynak depoda elde olmayan miktar onerilmez.
 
+Kisa formul:
+
+```text
+minimum stok seviyesi = gunluk ortalama satis * min stok gunu
+                     (min stok gunu yoksa onerilen gun kullanilir)
+
+onerilen/hedef stok seviyesi = gunluk ortalama satis * onerilen gun
+
+maksimum stok seviyesi = gunluk ortalama satis * max stok gunu
+                       (max stok gunu doluysa)
+
+minimum ihtiyac = minimum stok seviyesi
+                - hedef depodaki mevcut stok
+                - ayar izin veriyorsa hedef depoya acik gelen siparis miktari
+
+onerilen depo siparisi = minimum ihtiyac
+                        + koli katina yukari yuvarlama
+                        + varsa max stok siniri
+                        + kaynak depo stok siniri
+```
+
+Siparis sadece stok minimum esigin altina dustugunde onerilir. `sto_birim2_katsayi`
+1'den buyukse miktar koli katina yukari yuvarlanir. `sto_max_stok_belirleme_gun`
+doluysa son miktar maksimum stok seviyesini asmamalidir; limit devreye girerse
+miktar asagi dogru en yakin koli katina iner. Kaynak depoda elde stok daha dusukse
+son miktar yine koli kati korunarak kaynak stokla sinirlanir.
+
 ## Kaynak Depo Model Kodlari
 
 Canli Mikro kontrolunde gorulen kaynak depo eslesmeleri:
@@ -126,8 +153,8 @@ OpenIncoming AS (
         warehouseOrder.ssip_stok_kod AS StockCode,
         SUM(ISNULL(warehouseOrder.ssip_miktar, 0) - ISNULL(warehouseOrder.ssip_teslim_miktar, 0)) AS OpenOrderQuantity
     FROM dbo.DEPOLAR_ARASI_SIPARISLER AS warehouseOrder
-    INNER JOIN StockBase AS stock
-        ON stock.sto_kod = warehouseOrder.ssip_stok_kod
+    INNER JOIN Consumption AS consumption
+        ON consumption.StockCode = warehouseOrder.ssip_stok_kod
     WHERE warehouseOrder.ssip_girdepo = @TargetWarehouseNo
       AND warehouseOrder.ssip_cikdepo = @SourceWarehouseNo
       AND ISNULL(warehouseOrder.ssip_iptal, 0) = 0
@@ -135,27 +162,49 @@ OpenIncoming AS (
       AND ISNULL(warehouseOrder.ssip_miktar, 0) > ISNULL(warehouseOrder.ssip_teslim_miktar, 0)
     GROUP BY warehouseOrder.ssip_stok_kod
 ),
-TargetStock AS (
+StockBalance AS (
     SELECT
-        summary.sho_StokKodu AS StockCode,
-        SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-          - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS TargetOnHand
-    FROM dbo.STOK_HAREKETLERI_OZET AS summary
-    INNER JOIN StockBase AS stock
-        ON stock.sto_kod = summary.sho_StokKodu
-    WHERE summary.sho_Depo = @TargetWarehouseNo
-    GROUP BY summary.sho_StokKodu
-),
-SourceStock AS (
-    SELECT
-        summary.sho_StokKodu AS StockCode,
-        SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-          - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS SourceOnHand
-    FROM dbo.STOK_HAREKETLERI_OZET AS summary
-    INNER JOIN StockBase AS stock
-        ON stock.sto_kod = summary.sho_StokKodu
-    WHERE summary.sho_Depo = @SourceWarehouseNo
-    GROUP BY summary.sho_StokKodu
+        movement.sth_stok_kod AS StockCode,
+        ROUND(SUM(CASE
+            WHEN movement.sth_tip = 0 AND (movement.sth_giris_depo_no = @TargetWarehouseNo OR @TargetWarehouseNo = 0)
+                THEN ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 1 AND (movement.sth_cikis_depo_no = @TargetWarehouseNo OR @TargetWarehouseNo = 0)
+                THEN -1 * ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 2 AND movement.sth_giris_depo_no = @TargetWarehouseNo
+                THEN ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 2 AND movement.sth_cikis_depo_no = @TargetWarehouseNo
+                THEN -1 * ISNULL(movement.sth_miktar, 0)
+            ELSE 0
+        END), 8) AS TargetOnHand,
+        ROUND(SUM(CASE
+            WHEN movement.sth_tip = 0 AND (movement.sth_giris_depo_no = @SourceWarehouseNo OR @SourceWarehouseNo = 0)
+                THEN ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 1 AND (movement.sth_cikis_depo_no = @SourceWarehouseNo OR @SourceWarehouseNo = 0)
+                THEN -1 * ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 2 AND movement.sth_giris_depo_no = @SourceWarehouseNo
+                THEN ISNULL(movement.sth_miktar, 0)
+            WHEN movement.sth_tip = 2 AND movement.sth_cikis_depo_no = @SourceWarehouseNo
+                THEN -1 * ISNULL(movement.sth_miktar, 0)
+            ELSE 0
+        END), 8) AS SourceOnHand
+    FROM dbo.STOK_HAREKETLERI AS movement
+    INNER JOIN Consumption AS consumption
+        ON consumption.StockCode = movement.sth_stok_kod
+    WHERE movement.sth_tarih <= GETDATE()
+      AND NOT (movement.sth_cins IN (9, 15))
+      AND (
+          (movement.sth_tip = 0 AND (movement.sth_giris_depo_no IN (@TargetWarehouseNo, @SourceWarehouseNo) OR @TargetWarehouseNo = 0 OR @SourceWarehouseNo = 0))
+          OR (movement.sth_tip = 1 AND (movement.sth_cikis_depo_no IN (@TargetWarehouseNo, @SourceWarehouseNo) OR @TargetWarehouseNo = 0 OR @SourceWarehouseNo = 0))
+          OR (
+              movement.sth_tip = 2
+              AND movement.sth_giris_depo_no <> movement.sth_cikis_depo_no
+              AND (
+                  movement.sth_giris_depo_no IN (@TargetWarehouseNo, @SourceWarehouseNo)
+                  OR movement.sth_cikis_depo_no IN (@TargetWarehouseNo, @SourceWarehouseNo)
+              )
+          )
+      )
+    GROUP BY movement.sth_stok_kod
 ),
 Calculated AS (
     SELECT
@@ -163,8 +212,8 @@ Calculated AS (
         stock.sto_isim,
         stock.sto_model_kodu,
         barcode.bar_kodu,
-        ISNULL(targetStock.TargetOnHand, 0) AS TargetOnHand,
-        ISNULL(sourceStock.SourceOnHand, 0) AS SourceOnHand,
+        ISNULL(stockBalance.TargetOnHand, 0) AS TargetOnHand,
+        ISNULL(stockBalance.SourceOnHand, 0) AS SourceOnHand,
         ISNULL(consumption.SalesQuantity, 0) AS SalesQuantity,
         ISNULL(openIncoming.OpenOrderQuantity, 0) AS OpenOrderQuantity,
         stock.sto_birim2_katsayi,
@@ -172,14 +221,12 @@ Calculated AS (
         ISNULL(NULLIF(stock.sto_sip_stok_belirleme_gun, 0), @FallbackRecommendedDay) AS RecommendedDay,
         stock.sto_max_stok_belirleme_gun
     FROM StockBase AS stock
-    LEFT JOIN Consumption AS consumption
+    INNER JOIN Consumption AS consumption
         ON consumption.StockCode = stock.sto_kod
     LEFT JOIN OpenIncoming AS openIncoming
         ON openIncoming.StockCode = stock.sto_kod
-    LEFT JOIN TargetStock AS targetStock
-        ON targetStock.StockCode = stock.sto_kod
-    LEFT JOIN SourceStock AS sourceStock
-        ON sourceStock.StockCode = stock.sto_kod
+    LEFT JOIN StockBalance AS stockBalance
+        ON stockBalance.StockCode = stock.sto_kod
     OUTER APPLY (
         SELECT TOP 1 barcode.bar_kodu
         FROM dbo.BARKOD_TANIMLARI AS barcode
@@ -202,28 +249,75 @@ SELECT
     calc.RecommendedDay AS recommendedDay,
     calc.sto_max_stok_belirleme_gun AS maxDay,
     recommended.RecommendedStockQuantity AS recommendedStockQuantity,
-    recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS needQuantity,
-    CASE
-        WHEN calc.SourceOnHand <= 0 THEN 0
-        WHEN recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity > calc.SourceOnHand
-            THEN calc.SourceOnHand
-        ELSE recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
-    END AS suggestedOrderQuantity
+    threshold.MinimumNeedQuantity AS needQuantity,
+    recommended.SuggestedOrderQuantity AS suggestedOrderQuantity
 FROM Calculated AS calc
 CROSS APPLY (
-    SELECT CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) * calc.RecommendedDay) AS RecommendedStockQuantity
+    SELECT
+        CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) *
+            ISNULL(NULLIF(calc.sto_min_stok_belirleme_gun, 0), calc.RecommendedDay)) AS MinimumStockQuantity,
+        CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) * calc.RecommendedDay) AS RecommendedStockQuantity,
+        CASE
+            WHEN ISNULL(calc.sto_max_stok_belirleme_gun, 0) > 0
+                THEN CEILING((calc.SalesQuantity / NULLIF(@LookbackDays, 0)) * calc.sto_max_stok_belirleme_gun)
+            ELSE NULL
+        END AS MaximumStockQuantity,
+        CASE
+            WHEN ABS(ISNULL(calc.sto_birim2_katsayi, 0)) > 1 THEN ABS(calc.sto_birim2_katsayi)
+            ELSE 0
+        END AS PackageQuantity
+) AS targetQuantity
+CROSS APPLY (
+    SELECT
+        targetQuantity.MinimumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS MinimumNeedQuantity,
+        CASE
+            WHEN targetQuantity.MaximumStockQuantity IS NULL THEN NULL
+            ELSE targetQuantity.MaximumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
+        END AS MaximumAllowedQuantity
+) AS threshold
+CROSS APPLY (
+    SELECT
+        CASE
+            WHEN threshold.MinimumNeedQuantity <= 0 THEN 0
+            WHEN targetQuantity.PackageQuantity > 0
+                THEN CEILING(threshold.MinimumNeedQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+            ELSE threshold.MinimumNeedQuantity
+        END AS RoundedOrderQuantity
+) AS roundedOrder
+CROSS APPLY (
+    SELECT
+        CASE
+            WHEN roundedOrder.RoundedOrderQuantity <= 0 THEN 0
+            WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND threshold.MaximumAllowedQuantity <= 0 THEN 0
+            WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND roundedOrder.RoundedOrderQuantity > threshold.MaximumAllowedQuantity
+                THEN
+                    CASE
+                        WHEN targetQuantity.PackageQuantity > 0
+                            THEN FLOOR(threshold.MaximumAllowedQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+                        ELSE threshold.MaximumAllowedQuantity
+                    END
+            ELSE roundedOrder.RoundedOrderQuantity
+        END AS MaxLimitedOrderQuantity
+) AS maxLimited
+CROSS APPLY (
+    SELECT
+        CASE
+            WHEN maxLimited.MaxLimitedOrderQuantity <= 0 THEN 0
+            WHEN calc.SourceOnHand <= 0 THEN 0
+            WHEN maxLimited.MaxLimitedOrderQuantity > calc.SourceOnHand
+                THEN
+                    CASE
+                        WHEN targetQuantity.PackageQuantity > 0
+                            THEN FLOOR(calc.SourceOnHand / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
+                        ELSE calc.SourceOnHand
+                    END
+            ELSE maxLimited.MaxLimitedOrderQuantity
+        END AS SuggestedOrderQuantity,
+        targetQuantity.RecommendedStockQuantity
 ) AS recommended
 WHERE calc.SalesQuantity > 0
   AND ISNULL(calc.bar_kodu, '') <> ''
-  AND recommended.RecommendedStockQuantity > calc.TargetOnHand + calc.OpenOrderQuantity
-  AND (
-      CASE
-          WHEN calc.SourceOnHand <= 0 THEN 0
-          WHEN recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity > calc.SourceOnHand
-              THEN calc.SourceOnHand
-          ELSE recommended.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
-      END
-  ) > 0
+  AND recommended.SuggestedOrderQuantity > 0
 ORDER BY suggestedOrderQuantity DESC, calc.sto_isim;
 ```
 
@@ -252,6 +346,11 @@ SET @SourceWarehouseNo = 58;
 - Bu hata, kaynak deponun urun ailesi tanimli degil demektir.
 - `openIncomingOrderQuantity` sadece ayardaki guvenilir kaynak depolar icin hesaplanir.
   Kaynak depo guvenilir listede degilse veya ayar kapaliysa bu miktar `0` kabul edilir.
+- Oneri minimum stok esigine gore tetiklenir; miktar hedef stoga kadar degil,
+  minimum stok acigina gore baslar.
+- `sto_birim2_katsayi` 1'den buyukse miktar koli katina yukari yuvarlanir.
+- `sto_max_stok_belirleme_gun` doluysa onerilen miktar maksimum stok seviyesini asmayacak sekilde sinirlanir; koli kati korunur.
+- Kaynak depodaki stok daha azsa son miktar kaynak stokla sinirlanir; koli kati korunur.
 - Sorgu read-only'dir; Mikro'ya veri yazmaz.
 - Acik siparis dusumu ayari:
 
@@ -287,7 +386,7 @@ gerektigini hesaplamaktir. Hesaplama su sirayla ilerler:
 
    Canli veride min/sip/max stok seviyeleri dolu olmadigi icin statik stok
    seviyesine gore degil, son `@LookbackDays` gunluk satis/tuketim ortalamasina
-   gore ihtiyac hesaplanir.
+   gore minimum, onerilen ve varsa maksimum stok seviyeleri hesaplanir.
 
 5. Hedef deponun mevcut stogu hesaba katilir.
 
@@ -298,20 +397,35 @@ gerektigini hesaplamaktir. Hesaplama su sirayla ilerler:
 
    Boylece ayni urun icin gereksiz ikinci siparis onerisi uretilmez.
 
-7. Kaynak deponun eldeki stogu kontrol edilir.
+7. Minimum stok acigi koli katina yuvarlanir ve varsa maksimum stok seviyesiyle sinirlanir.
+
+   Boylece 5'lik koliyle satilan urunde 13 adet gibi boluk siparis yerine koli
+   katina uygun miktar uretilir; ancak max stok seviyesi doluysa miktar max stogu
+   asmayacak sekilde asagi dogru koli katina kirpilir.
+
+8. Kaynak deponun eldeki stogu kontrol edilir.
 
    Ihtiyac daha fazla olsa bile kaynak depoda olmayan miktar onerilmez.
 
 Kisa formul:
 
 ```text
-onerilen stok seviyesi = gunluk ortalama satis * onerilen gun
+minimum stok seviyesi = gunluk ortalama satis * min stok gunu
+                     (min stok gunu yoksa onerilen gun kullanilir)
 
-ihtiyac = onerilen stok seviyesi
-        - hedef depodaki mevcut stok
-        - ayar izin veriyorsa hedef depoya acik gelen siparis miktari
+onerilen/hedef stok seviyesi = gunluk ortalama satis * onerilen gun
 
-onerilen siparis = ihtiyac ile kaynak depodaki elde stok miktarinin kucugu
+maksimum stok seviyesi = gunluk ortalama satis * max stok gunu
+                       (max stok gunu doluysa)
+
+minimum ihtiyac = minimum stok seviyesi
+                - hedef depodaki mevcut stok
+                - ayar izin veriyorsa hedef depoya acik gelen siparis miktari
+
+onerilen siparis = minimum ihtiyac
+                 + koli katina yukari yuvarlama
+                 + varsa max stok siniri
+                 + kaynak depo stok siniri
 ```
 
 Sonuc olarak sorgu, hem urun ailesini dogru kaynak depoya gore filtreler hem de
@@ -340,7 +454,7 @@ UI tek sayfa akisi:
 1. Kullanici kaynak depo secer.
 2. Sayfa `GET /onerilen-depo-siparisleri` ile onerilen kalemleri getirir.
 3. Grid stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis,
-   ihtiyac ve onerilen siparis miktarini gosterir.
+   ihtiyac, koli katsayisi ve onerilen siparis miktarini gosterir.
 4. Kullanici satirlari secer ve gerekirse miktari duzenler.
 5. Secilen satirlar `POST /convert-to-order` ile verilen depo siparisine cevrilir.
 
