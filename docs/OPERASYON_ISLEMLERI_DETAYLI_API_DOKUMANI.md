@@ -558,6 +558,70 @@ POST akis:
 6. `updateDate` server saatine gore set edilir.
 7. Basarili olursa `201 Created` doner, response body yoktur.
 
+## Urun Dagilimlari Workflow
+
+Bu kisim dosya olusturma job'i degildir. `FrmDagilim` ekraninin yeni API karsiligidir ve kalici veri degistirir:
+
+- Furpa `STOK_DAGILIM` kaydi olusturur/gunceller/siler.
+- Bilgilendirme adiminda dagilim durumunu `1` yapar.
+- Opsiyonel olarak Mikro `STOKLAR.sto_siparis_dursun = 1` isaretler.
+- Kesinlestirmede Mikro `DEPOLAR_ARASI_SIPARISLER` satirlari olusturur.
+
+Route:
+
+```http
+GET    /api/operasyon-islemleri/urun-dagilimlari/dagitim-merkezleri
+POST   /api/operasyon-islemleri/urun-dagilimlari/oneri
+GET    /api/operasyon-islemleri/urun-dagilimlari
+GET    /api/operasyon-islemleri/urun-dagilimlari/{documentNo}
+POST   /api/operasyon-islemleri/urun-dagilimlari
+PUT    /api/operasyon-islemleri/urun-dagilimlari/{documentNo}
+POST   /api/operasyon-islemleri/urun-dagilimlari/{documentNo}/bilgilendir
+POST   /api/operasyon-islemleri/urun-dagilimlari/{documentNo}/kesinlestir
+DELETE /api/operasyon-islemleri/urun-dagilimlari/{documentNo}
+```
+
+Yetkiler:
+
+```text
+operasyon-islemleri.urun-dagilimlari.list
+operasyon-islemleri.urun-dagilimlari.detail
+operasyon-islemleri.urun-dagilimlari.create
+operasyon-islemleri.urun-dagilimlari.update
+operasyon-islemleri.urun-dagilimlari.delete
+```
+
+Durumlar:
+
+```text
+0 Kaydedildi       Guncelle/sil/bilgilendir acik
+1 Bilgilendirildi  Kesinlestir acik
+2 Dagilim Yapildi  Yazma aksiyonlari kapali
+```
+
+Oneri hesaplama:
+
+- Varsayilan satis periyodu 42 gundur.
+- Aktif subeler Mikro `DEPOLAR` tablosundan okunur.
+- Satislar `STOK_HAREKETLERI` uzerinden, `sth_tip = 1`, `sth_cins = 1`, `sth_normal_iade = 0` filtresiyle hesaplanir.
+- Mevcut stok `dbo.fn_DepodakiMiktar(stok, depo, tarih)` ile doner.
+- Toplam koli satis payina gore satirlara dagitilir; kalan kusurat en yuksek payli subelere verilir.
+- Donen `summary.caseDifference` sifir degilse UI kaydetmeden once dagilimi duzeltmelidir.
+
+Kesinlestirme:
+
+- Sadece `Dagilim_Adet_Miktar > 0` satirlar Mikro siparisine donusur.
+- Siparis serisi `D{subeDepoNo}` olarak uretilir.
+- Cikis depo `Dagitim_Merkezi`, giris depo satirdaki `Sube_Kodu` olur.
+- `ssip_aciklama = "Dagilim {documentNo}"` yazilir.
+- Ayni evrak tekrar kesinlestirilirse bu aciklama, stok, cikis depo ve giris depo uzerinden mevcut siparisler bulunur; cift siparis uretilmez.
+
+Bilgilendirme:
+
+- API senkron SMTP gondermez.
+- `Bolge_Yoneticileri` tablosundan bolge muduru/e-posta bilgilerini ve dagilim ozetini doner.
+- UI veya dis entegrasyon bu response ile mail/outbox adimini baglamalidir.
+
 ## Sik Karsilasilan Sonuclar
 
 `202 Accepted`:

@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -211,9 +212,9 @@ public sealed class SatisAnalizleriController(
             totalKind,
             cancellationToken));
 
-    private static SalesAnalysisDateRangeRequest ToDateRangeRequest(WarehouseOrderDateRangeHttpRequest request) =>
+    private SalesAnalysisDateRangeRequest ToDateRangeRequest(WarehouseOrderDateRangeHttpRequest request) =>
         new(
-            request.WarehouseNo,
+            User.ResolveWarehouseScope(request.WarehouseNo),
             request.StartDate!.Value,
             request.EndDate!.Value);
 }

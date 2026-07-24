@@ -35,6 +35,7 @@ using FurpaMerkezApi.Application.Modules.MobileSync.ProductPriceCatalog;
 using FurpaMerkezApi.Application.Modules.MobileSync.WarehouseCatalog;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Create;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.List;
@@ -49,6 +50,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Queries;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCiroAktarimi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
@@ -563,6 +565,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();
+        services.AddScoped<IProductDistributionService, ProductDistributionService>();
         services.AddScoped<OperationsFileGenerationService>();
 
         return services;

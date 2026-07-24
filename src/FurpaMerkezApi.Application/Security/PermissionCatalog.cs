@@ -73,6 +73,15 @@ public static class PermissionCatalog
         new("delete", "Sil")
     ];
 
+    private static readonly PermissionActionDefinition[] ProductDistributionActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("create", "Ekle"),
+        new("update", "Guncelle"),
+        new("delete", "Sil")
+    ];
+
     public static IReadOnlyCollection<PermissionDefinition> Definitions { get; } =
     [
         new(
@@ -147,6 +156,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "depo-operasyon-paneli", "DepoOperasyonPaneli", ListActions),
+        ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "urun-dagilimlari", "UrunDagilimlari", ProductDistributionActions),
         ..CreateMenuPermissions("duzeltme-islemleri", "DuzeltmeIslemleri", "mikro-evrak-duzenleme", "MikroEvrakDuzenleme", ReadUpdateDeleteActions),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "axata-senkronizasyonu", "AxataSenkronizasyonu"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "pos-muhasebe-aktarimi", "PosMuhasebeAktarimi"),

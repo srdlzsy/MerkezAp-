@@ -10705,6 +10705,146 @@ Response ornegi:
 
 UI ekraninda ustte `summary` sayaclari, altta `warehouses` tablosu gosterilebilir. Depo satirina tiklandiginda ayni depo numarasiyla belge akis liste endpointine gidilerek ilgili belgeler acilabilir.
 
+### Urun Dagilimlari
+
+Bu ekran `docs/rapor-modulu-envanter.md` icindeki `FrmDagilim` workflow'unun API karsiligidir. Rapor degildir; satis verisine gore dagilim onerisi uretir, `Furpa.dbo.STOK_DAGILIM` kaydi acar, bolge bilgilendirme durumunu yonetir ve kesinlestirmede Mikro `DEPOLAR_ARASI_SIPARISLER` satirlari olusturur.
+
+Menu:
+
+- Modul: `OperasyonIslemleri`
+- Menu: `UrunDagilimlari`
+- Route kok: `api/operasyon-islemleri/urun-dagilimlari`
+
+Yetki kodlari:
+
+- `operasyon-islemleri.urun-dagilimlari.list`
+- `operasyon-islemleri.urun-dagilimlari.detail`
+- `operasyon-islemleri.urun-dagilimlari.create`
+- `operasyon-islemleri.urun-dagilimlari.update`
+- `operasyon-islemleri.urun-dagilimlari.delete`
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/operasyon-islemleri/urun-dagilimlari/dagitim-merkezleri` | - | - | `ProductDistributionCenterDto[]` | `list` |
+| `POST /api/operasyon-islemleri/urun-dagilimlari/oneri` | body | `ProductDistributionProposalHttpRequest` | `ProductDistributionProposalDto` | `create` |
+| `GET /api/operasyon-islemleri/urun-dagilimlari` | query | `ProductDistributionListHttpRequest` | `ProductDistributionListItemDto[]` | `list` |
+| `GET /api/operasyon-islemleri/urun-dagilimlari/{documentNo}` | path | - | `ProductDistributionDetailDto` | `detail` |
+| `POST /api/operasyon-islemleri/urun-dagilimlari` | body | `ProductDistributionSaveHttpRequest` | `ProductDistributionDetailDto` | `create` |
+| `PUT /api/operasyon-islemleri/urun-dagilimlari/{documentNo}` | body | `ProductDistributionSaveHttpRequest` | `ProductDistributionDetailDto` | `update` |
+| `POST /api/operasyon-islemleri/urun-dagilimlari/{documentNo}/bilgilendir` | body | `ProductDistributionNotifyHttpRequest` | `ProductDistributionNotificationDto` | `update` |
+| `POST /api/operasyon-islemleri/urun-dagilimlari/{documentNo}/kesinlestir` | body | `ProductDistributionFinalizeHttpRequest` | `ProductDistributionFinalizeDto` | `update` |
+| `DELETE /api/operasyon-islemleri/urun-dagilimlari/{documentNo}` | path | - | `ProductDistributionDeleteDto` | `delete` |
+
+Onerilen UI akisi:
+
+1. Ekran acilisinda `GET .../dagitim-merkezleri` ile cikis depolari yuklenir.
+2. Kullanici stok, dagitim merkezi ve toplam koli girer.
+3. `POST .../oneri` cagrilir; API son 42 gun satisini varsayilan alir ve toplam koliyi satis payina gore tam dagitir.
+4. UI `summary.isBalanced = true` beklemeli; kullanici satir degistirirse toplam koli farki sifirlanmadan kaydet butonu aktif olmamalidir.
+5. `POST .../urun-dagilimlari` ile `STOK_DAGILIM` kaydi olusur ve `status.code = 0` doner.
+6. `POST .../{documentNo}/bilgilendir` statusu `1` yapar, stok kartinda `sto_siparis_dursun = 1` isaretler ve bolge bazli alici/ozet bilgisini doner.
+7. UI mail gonderimini kendi mail/outbox katmanina baglamalidir; API su an senkron SMTP gondermez, gonderilecek alici ve ozet bilgisini hazirlar.
+8. `POST .../{documentNo}/kesinlestir` statusu `2` yapar ve her pozitif adetli sube icin Mikro depo siparisi uretir. Ayni evrak tekrar cagrilirsa aciklama/evrak kontroluyle mevcut siparisleri tekrar uretmez.
+
+`POST .../oneri` request:
+
+```json
+{
+  "stockCode": "153.01.0001",
+  "distributionCenterWarehouseNo": 50,
+  "totalCaseQuantity": 120,
+  "salesDayCount": 42,
+  "referenceDate": "2026-07-24",
+  "includeBranchesWithoutSales": false
+}
+```
+
+Oneri response alanlari:
+
+- `stock.packageFactor`: koli ici katsayi; adet = koli * katsayi.
+- `summary.totalCaseQuantity`: kullanicinin girdigi toplam koli.
+- `summary.allocatedCaseQuantity`: satirlara dagitilan koli.
+- `summary.caseDifference`: kaydetmeden once `0` olmalidir.
+- `lines[].lastSalesQuantity`: secili donemde subenin satis adedi.
+- `lines[].currentStockQuantity`: referans tarihte subedeki mevcut stok.
+- `lines[].caseQuantity`: UI gridinde duzenlenebilir koli.
+- `lines[].unitQuantity`: Mikro siparisine gidecek adet.
+- `lines[].reason`: `sales-share`, `equal-share`, `rounded-to-zero`, `no-period-sales` gibi UI ipucu.
+
+`POST/PUT .../urun-dagilimlari` request:
+
+```json
+{
+  "stockCode": "153.01.0001",
+  "distributionCenterWarehouseNo": 50,
+  "totalCaseQuantity": 120,
+  "distributedBy": "MERKEZ",
+  "lines": [
+    {
+      "warehouseNo": 110,
+      "caseQuantity": 12,
+      "unitQuantity": 144,
+      "lastSalesQuantity": 84,
+      "companyAverageDailySales": 1.45,
+      "branchAverageDailySales": 2
+    }
+  ]
+}
+```
+
+Kayit kurallari:
+
+- `lines[].caseQuantity` toplami `totalCaseQuantity` ile ayni olmalidir.
+- `unitQuantity` bos gonderilirse API `caseQuantity * stock.packageFactor` hesaplar.
+- Ayni sube/depo iki satirda gonderilemez.
+- Dagitim merkezi satir deposu olarak gonderilemez.
+- Sadece `status.code = 0` olan kayitlar guncellenebilir veya silinebilir.
+
+Durumlar:
+
+| Kod | Ad | UI davranisi |
+|---|---|---|
+| `0` | `Kaydedildi` | Guncelle, sil ve bilgilendir acik; kesinlestir kapali |
+| `1` | `Bilgilendirildi` | Kesinlestir acik; guncelle/sil kapali |
+| `2` | `Dagilim Yapildi` | Tum yazma aksiyonlari kapali |
+
+`POST .../{documentNo}/bilgilendir` request:
+
+```json
+{
+  "notifyBy": "MERKEZ",
+  "markStockOrderingStopped": true
+}
+```
+
+Response `recipients` alaninda bolge kodu, bolge muduru e-postasi, satir sayisi, toplam koli ve toplam adet doner. E-posta kaydi yoksa response basarili gelebilir ama `message` alaninda alici bulunamadigi belirtilir; UI bu durumda uyari gostermelidir.
+
+`POST .../{documentNo}/kesinlestir` request:
+
+```json
+{
+  "finalizeBy": "MERKEZ",
+  "orderDate": "2026-07-24",
+  "deliveryDate": "2026-07-24",
+  "allowFinalizeWithoutNotification": false
+}
+```
+
+Kesinlestirme sonucu:
+
+- `orders[].documentSerie`: API `D{subeDepoNo}` serisi uretir.
+- `orders[].documentOrderNo`: Mikro `DEPOLAR_ARASI_SIPARISLER` sira numarasi.
+- `orders[].alreadyExisted`: ayni dagilim evraki icin daha once uretilmis siparis yeniden kullanildiysa `true`.
+- `createdDocumentCount` ve `existingDocumentCount` UI toast/ozet icin kullanilabilir.
+
+Teknik notlar:
+
+- `STOK_DAGILIM.Evrak_No` uretimi transaction icinde `UPDLOCK/HOLDLOCK` ile yapilir; eski `max()+1` yarisi azaltildi.
+- Kesinlestirme Mikro tarafinda `ssip_aciklama = "Dagilim {documentNo}"` ile izlenir ve tekrar cagrida cift siparis uretilmez.
+- Bu endpointlerde depo scope claim'i uygulanmaz; merkezi operasyon kullanimi icin gorunurluk/yazma kontrolu permission setiyle yonetilir.
+
 Temel route:
 
 - `api/operasyon-islemleri/belge-akis-takibi`
