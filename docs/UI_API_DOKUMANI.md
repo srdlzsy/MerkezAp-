@@ -17,6 +17,132 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; normal kullanicida `WarehouseNo` verilmezse JWT icindeki depo kullanilir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
 
+## Home / Depo Oncelikleri
+
+Bu endpoint home acilisinda eski hizli erisim menusu yerine "bugun neye bakmaliyim?" paneli icin eklendi. Amac, giris yapan depo kullanicisinin kendi deposundaki acil operasyon konularini tek kartta gormesidir.
+
+Kaynaklar:
+
+- `document_flows`: bugunku sevk, bugunku depo kabul, bekleyen depo kabul ve basarisiz e-irsaliye sayilari
+- `stock_anomalies`: acik veya kabul edilmis stok anomalileri
+- `feedback_items`: giris yapan kullanicinin kapanmamis sikayet/onerileri
+
+Kapsam:
+
+- Sadece login olmak yeterlidir.
+- Normal kullanici `warehouseNo` gondermez; backend JWT icindeki depoyu uygular.
+- Normal kullanici baska depo icin `warehouseNo` gonderirse `403 Forbidden` doner.
+- `Admin` veya `Administrator` rolu `warehouseNo` gondererek depo secebilir.
+- Admin `warehouseNo` gondermezse tum depolar ozetlenir ve `warehouseNo: null` doner.
+- Endpoint sadece mevcut izleme tablolarindan okur; pahali tarama/senkronizasyon tetiklemez.
+
+Endpoint ozeti:
+
+| Endpoint | Request kaynagi | Request modeli | Response | Yetki |
+|---|---|---|---|---|
+| `GET /api/home/depo-oncelikleri` | query | `HomeWarehousePrioritiesHttpRequest` | `HomeWarehousePrioritiesDto` | login |
+
+Query:
+
+```text
+date         opsiyonel; yyyy-MM-dd, bos ise bugun
+warehouseNo  opsiyonel; sadece Admin/Administrator icin tum depo filtreleme anlamlidir
+```
+
+Ornek:
+
+`GET /api/home/depo-oncelikleri?date=2026-07-24&warehouseNo=110`
+
+Response:
+
+```json
+{
+  "date": "2026-07-24",
+  "generatedAtUtc": "2026-07-24T09:10:00Z",
+  "warehouseNo": 110,
+  "warehouseName": "KESTEL 1",
+  "overallStatus": "critical",
+  "headline": "Bugun 3 oncelikli konu var",
+  "metrics": [
+    {
+      "code": "failedEDespatch",
+      "label": "E-Irsaliye Hatasi",
+      "value": 2,
+      "severity": "critical",
+      "route": "/operasyon-islemleri/belge-akis-takibi?status=Failed&warehouseNo=110"
+    },
+    {
+      "code": "pendingReceiving",
+      "label": "Bekleyen Kabul",
+      "value": 7,
+      "severity": "warning",
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110"
+    },
+    {
+      "code": "openStockAnomaly",
+      "label": "Acik Stok Anomalisi",
+      "value": 4,
+      "severity": "warning",
+      "route": "/stok-islemleri/stok-anomali-merkezi?status=Open&warehouseNo=110"
+    },
+    {
+      "code": "myOpenFeedback",
+      "label": "Acik Talebim",
+      "value": 1,
+      "severity": "info",
+      "route": "/home/sikayet-oneri/benim"
+    }
+  ],
+  "priorities": [
+    {
+      "code": "failedEDespatch",
+      "severity": "critical",
+      "title": "E-irsaliye gonderimi basarisiz",
+      "description": "2 belge tekrar kontrol bekliyor.",
+      "count": 2,
+      "route": "/operasyon-islemleri/belge-akis-takibi?status=Failed&warehouseNo=110"
+    },
+    {
+      "code": "pendingReceiving",
+      "severity": "warning",
+      "title": "Depo kabul bekliyor",
+      "description": "7 depo hareketi henuz kabul edilmemis.",
+      "count": 7,
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110"
+    }
+  ],
+  "quickActions": [
+    {
+      "code": "documentFlow",
+      "label": "Belge Akisina Git",
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110",
+      "permissionCode": "operasyon-islemleri.belge-akis-takibi.list"
+    },
+    {
+      "code": "feedback",
+      "label": "Sikayet/Oneri Gonder",
+      "route": "/home/sikayet-oneri",
+      "permissionCode": null
+    }
+  ]
+}
+```
+
+Alan notlari:
+
+- `overallStatus` ve `metrics[].severity`: `critical`, `warning`, `info`, `healthy`
+- `metrics`: sayisal ozet kartlari icindir; sifir degerler de doner.
+- `priorities`: sadece aksiyon gerektiren konulari doner; kritik maddeler once gelir.
+- `quickActions`: home butonlari icindir. `permissionCode` doluysa UI bu butonu `me.permissions` icinde ilgili kod varsa gostermelidir; `null` ise login olan herkes gorebilir.
+
+UI onerisi:
+
+- Home ilk ekranda ustte `headline` ve depo adini goster.
+- Altinda 4-6 kompakt metrik karti kullan; eski sabit hizli erisim menusu yerine bu kartlardan gelen `route` ile yonlendir.
+- `priorities` listesini "once bunu yap" sirasi gibi kullan; `critical` maddeleri daha belirgin renkle ayir.
+- `priorities` bos ise pozitif bos durum goster: `headline` zaten "Bugun acil oncelik yok" doner.
+- Admin kullanicida depo filtresi eklenebilir; normal kullanicida depo secici gosterilmemelidir.
+
 ## Home / Ortak Sikayet Oneri
 
 Bu modul home sayfasinda kucuk bir "Sikayet / Oneri" kutusu acmak ve yonetim tarafinda gelen kayitlari rol/yetkiye gore izlemek icin eklendi.
@@ -7106,7 +7232,7 @@ Response:
 
 ### Tedarikci Performans Karnesi
 
-Bu ekran satin alma tarafinda tedarikciyi tek kartta degerlendirmek icin eklendi. Kaynaklar ayri ekran olarak sunulmaz; UI tek `Tedarikci Performans Karnesi` ekraninda siparis, mal kabul, iade, zayiat/masraf etkisi ve fatura ozetlerini birlikte gosterir.
+Bu ekran satin alma tarafinda tedarikciyi tek kartta degerlendirmek icin eklendi. Kaynaklar ayri ekran olarak sunulmaz; UI tek `Tedarikci Performans Karnesi` ekraninda siparis, mal kabul, iade, zayiat/masraf etkisi ve fatura ozetlerini birlikte gosterir. API ayrica ekranin ust bandi icin kisa karar ozeti (`headline`), genel durum (`overallStatus`), onemli bulgular (`insights`) ve her tedarikci satiri icin okunabilir sinyaller (`signals`) doner.
 
 Temel route:
 
@@ -7126,6 +7252,7 @@ Veri kaynaklari:
 - Fatura ozeti: bizim kestigimiz fatura adaylari Mikro `CARI_HESAP_HAREKETLERI`, tedarikcinin bize kestigi gelen faturalar `uyumsoft_inbox_invoices` cache uzerinden ozetlenir
 - Gelen fatura toplami ile bizim kestigimiz fatura toplami dogrudan mutabakat farki olarak yorumlanmaz; bu alanlar yalnizca ayri fatura ozeti olarak verilir
 - Satir bazli fiyat/fatura kontrolu ikinci fazdir; ilk fazda fatura metrikleri `summary-only` durumundadir
+- Depo filtresi backend tarafinda JWT depo kapsami ile zorlanir; normal kullanici kendi deposu disinda veri alamaz, Admin/Administrator bos depo filtresiyle tum depolari gorebilir
 
 Endpoint ozeti:
 
@@ -7143,6 +7270,8 @@ warehouseNo   opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uy
 customerCode  opsiyonel; tek tedarikciye daraltir
 take          opsiyonel; default 100, max 500
 ```
+
+`summary` filtreye giren tum tedarikci setini ozetler. `take` sadece `items` listesini sinirlar; toplam tedarikci sayisi ile ekrana donen satir sayisini ayirmak icin `supplierCount` ve `returnedSupplierCount` birlikte doner.
 
 Detay query:
 
@@ -7189,8 +7318,27 @@ Response:
     "totalOutageImpactQuantity": 4,
     "totalIssuedInvoiceAmount": 12500,
     "totalIncomingInvoiceAmount": 12620,
-    "invoiceMetricsState": "summary-only"
+    "invoiceMetricsState": "summary-only",
+    "returnedSupplierCount": 1,
+    "overallStatus": "Warning",
+    "headline": "2 tedarikci icinde 1 uyari seviyesinde tedarikci var; ortalama skor 82.5."
   },
+  "insights": [
+    {
+      "code": "warning-suppliers",
+      "severity": "Warning",
+      "title": "Uyari seviyesinde tedarikci var",
+      "description": "1 tedarikci uyari seviyesinde. Ilk kontrol: ORNEK TEDARIKCI A.S. (91.71 puan).",
+      "customerCode": "120.01.03106"
+    },
+    {
+      "code": "best-supplier",
+      "severity": "Info",
+      "title": "En guclu tedarikci",
+      "description": "ORNEK TEDARIKCI A.S. 91.71 puan ile bu donemin en guclu karti.",
+      "customerCode": "120.01.03106"
+    }
+  ],
   "items": [
     {
       "customerCode": "120.01.03106",
@@ -7250,7 +7398,21 @@ Response:
         "outagePenalty": 0.71,
         "invoicePenalty": 0,
         "totalPenalty": 8.29
-      }
+      },
+      "signals": [
+        {
+          "code": "open-late-orders",
+          "severity": "Warning",
+          "title": "Acik gec siparis",
+          "description": "1 satir planlanan teslim tarihini gecmis ve kapanmamis."
+        },
+        {
+          "code": "receiving-difference",
+          "severity": "Warning",
+          "title": "Mal kabul farki",
+          "description": "2 eksik, 0 fazla kabul gorundu."
+        }
+      ]
     }
   ]
 }
@@ -7278,11 +7440,26 @@ IncomingInvoice
 UI akisi:
 
 1. Ekran acilisinda liste endpoint'i cagrilir.
-2. Ustte ortalama skor, kritik/uyari sayisi, toplam siparis, kabul, iade, mal kabul farki ve fatura ozeti gosterilir.
-3. Gridde tedarikci, skor, risk, siparis/kabul oranlari, gec teslim, iade, mal kabul farki, zayiat etkisi ve fatura ozeti kolonlari yer alir.
-4. Satir secilince ayni ekranda detay paneli acilir ve detay endpoint'i cagrilir.
-5. Detay panelinde `events` zaman cizelgesi olarak gosterilir; kaynak alanlari teknik kanit olarak saklanir.
-6. Fatura alaninda `state = summary-only` ise UI gelen fatura ve bizim kestigimiz fatura toplamlarini ayri gostermeli; bu iki toplami "fark/uyumsuzluk" olarak vurgulamamalidir.
+2. Ustte `summary.headline`, `overallStatus`, ortalama skor, kritik/uyari sayisi, toplam siparis, kabul, iade, mal kabul farki ve fatura ozeti gosterilir.
+3. `insights` alani ustte kisa bulgu listesi olarak kullanilir; kritik/uyari bulgulari once, bilgi bulgulari sonra gosterilir.
+4. Gridde tedarikci, skor, risk, siparis/kabul oranlari, gec teslim, iade, mal kabul farki, zayiat etkisi ve fatura ozeti kolonlari yer alir.
+5. Her satirda `signals` rozetleri/kisa uyari listesi olarak gosterilir; kullanici detaya girmeden skorun neden dustugunu gorebilir.
+6. Satir secilince ayni ekranda detay paneli acilir ve detay endpoint'i cagrilir.
+7. Detay panelinde `events` zaman cizelgesi olarak gosterilir; kaynak alanlari teknik kanit olarak saklanir.
+8. Fatura alaninda `state = summary-only` ise UI gelen fatura ve bizim kestigimiz fatura toplamlarini ayri gostermeli; bu iki toplami "fark/uyumsuzluk" olarak vurgulamamalidir.
+
+Yeni response alanlari:
+
+```text
+summary.overallStatus       NoData, Healthy, Warning, Critical
+summary.headline            Ust bant icin kisa yorum
+summary.returnedSupplierCount  take sonrasi donen kart sayisi
+insights[].code             Bulgu tipi: critical-suppliers, warning-suppliers, late-orders, receiving-differences, company-returns, outage-impact, best-supplier, no-data
+insights[].severity         Info, Healthy, Warning, Critical
+insights[].customerCode     Bulgu belirli bir tedarikciye baglaniyorsa cari kodu
+items[].signals[].code      Satir ici sinyal tipi
+items[].signals[].severity  Info, Healthy, Warning, Critical
+```
 
 ### Stok Raporlari
 
@@ -8004,6 +8181,12 @@ Not:
 - backend belge bazli tek satir doner
 - `total` alani `paymentTypeId < 100` veya `paymentTypeId = 500` olan hareketlerin toplamini verir
 
+UI/menu ayrimi:
+
+- `KasaSayimlari` artik okuma/goruntuleme gorevidir; sadece `list` ve `detail` yetkileri vardir.
+- Yeni icmal girisi icin UI ayri gorev/menu gostermelidir: `IcmalKaydiGirisi`.
+- Icmal giris ekraninin route'lari geriye uyumluluk icin halen `/api/kasa-islemleri/kasa-sayimlari` altindadir; yetki kodlari ayridir.
+
 Response:
 
 ```json
@@ -8249,7 +8432,7 @@ Bu endpointler kasa sayim formundaki secim kutulari ve yardimci alanlar icindir.
 
 Yetki:
 
-- tumu icin `kasa-islemleri.kasa-sayimlari.list`
+- tumu icin `kasa-islemleri.icmal-kaydi-girisi.list`
 
 Route'lar:
 
@@ -8315,7 +8498,7 @@ Paylasim klasorundeki Z rapor dosyasindan `NET CIRO` degerini okumaya calisir.
 
 Yetki:
 
-- `kasa-islemleri.kasa-sayimlari.detail`
+- `kasa-islemleri.icmal-kaydi-girisi.list`
 
 Not:
 
@@ -8323,7 +8506,7 @@ Not:
 - dosya bulunamazsa, config bos ise veya `NET CIRO` parse edilemezse `-1` doner
 - backend `KasaSayimlari:ZReportBasePath` konfigurasyonunu kullanir
 
-### Kasa Sayimi Olustur
+### Icmal Kaydi Girisi / Olustur
 
 Secili kullanici deposu icin yeni kasa sayimi yazar.
 
@@ -8331,7 +8514,7 @@ Secili kullanici deposu icin yeni kasa sayimi yazar.
 
 Yetki:
 
-- `kasa-islemleri.kasa-sayimlari.create`
+- `kasa-islemleri.icmal-kaydi-girisi.create`
 
 Onemli not:
 
@@ -8389,7 +8572,7 @@ Response:
 }
 ```
 
-### Kasa Sayimi Guncelleme ve Silme
+### Icmal Kaydi Girisi / Guncelleme ve Silme
 
 Belge uzerindeki satirlari ve fiziksel para detaylarini guncellemek icin ayri endpointler kullanilir.
 
@@ -8401,7 +8584,8 @@ Route'lar:
 
 Yetki:
 
-- uc endpoint icin de `kasa-islemleri.kasa-sayimlari.update`
+- detay ve banknot update icin `kasa-islemleri.icmal-kaydi-girisi.update`
+- silme icin `kasa-islemleri.icmal-kaydi-girisi.delete`
 
 Not:
 
@@ -8786,14 +8970,17 @@ Iade Islemleri / Depo Iadeleri
 Kasa Islemleri / Kasa Sayimlari
   -> ekran acilisinda o gunun belge listesi icin GET /api/kasa-islemleri/kasa-sayimlari?dateToGet=...
   -> ust rapor kartlari icin GET /api/kasa-islemleri/kasa-sayimlari/rapor?dateToGet=...
-  -> lookup alanlari icin kasiyer, kasa, odeme tipi ve banknot tipi endpointlerini paralel cagir
+  -> bu gorev sadece goruntuleme/listeleme icindir; icmal girisi butonu burada permission olarak cizilmemelidir
   -> kullanici satira tiklar
   -> GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
   -> gerekiyorsa banknot ve hediye ceki detaylarini ayri sekmelerde
   -> GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
   -> GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/hediye-ceki-hareketleri
+
+Kasa Islemleri / Icmal Kaydi Girisi
+  -> UI bu gorevi Kasa Sayimlari'ndan ayri menu/task olarak gostermelidir
+  -> lookup alanlari icin kasiyer, kasa, odeme tipi ve banknot tipi endpointlerini paralel cagir
   -> Z rapor karsilastirmasi icin GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?... 
-  -> kullanici 'Yeni Kasa Sayimi' derse create ekranina gecer
   -> kaydetmek icin POST /api/kasa-islemleri/kasa-sayimlari
   -> detay duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/detaylar
   -> banknot duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
@@ -12751,6 +12938,38 @@ public sealed record ModuleActionScaffoldResponse(
     bool IsImplemented,
     string Message);
 
+public sealed record HomeWarehousePrioritiesDto(
+    DateOnly Date,
+    DateTime GeneratedAtUtc,
+    int? WarehouseNo,
+    string WarehouseName,
+    string OverallStatus,
+    string Headline,
+    IReadOnlyCollection<HomePriorityMetricDto> Metrics,
+    IReadOnlyCollection<HomePriorityItemDto> Priorities,
+    IReadOnlyCollection<HomeQuickActionDto> QuickActions);
+
+public sealed record HomePriorityMetricDto(
+    string Code,
+    string Label,
+    int Value,
+    string Severity,
+    string? Route);
+
+public sealed record HomePriorityItemDto(
+    string Code,
+    string Severity,
+    string Title,
+    string Description,
+    int Count,
+    string Route);
+
+public sealed record HomeQuickActionDto(
+    string Code,
+    string Label,
+    string Route,
+    string? PermissionCode);
+
 public sealed record FeedbackItemDto(
     Guid Id,
     string Type,
@@ -15152,6 +15371,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 
 ### Ortak Request Modelleri
 
+- `HomeWarehousePrioritiesHttpRequest`: `Date`, `WarehouseNo`
 - `WarehouseOrderDateRangeHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`
 - `SendEDespatchHttpRequest`: `Plaque`, `DriverNameSurname`, `DriverTckn`
 - `ModuleActionRequest`: `Fields`

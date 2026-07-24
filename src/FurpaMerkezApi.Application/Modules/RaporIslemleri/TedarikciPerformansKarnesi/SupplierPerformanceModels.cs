@@ -20,6 +20,7 @@ public sealed record SupplierPerformanceReportDto(
     DateTime EndDate,
     DateTime GeneratedAtUtc,
     SupplierPerformanceSummaryDto Summary,
+    IReadOnlyCollection<SupplierPerformanceInsightDto> Insights,
     IReadOnlyCollection<SupplierPerformanceCardDto> Items);
 
 public sealed record SupplierPerformanceSummaryDto(
@@ -35,7 +36,17 @@ public sealed record SupplierPerformanceSummaryDto(
     double TotalOutageImpactQuantity,
     double TotalIssuedInvoiceAmount,
     double TotalIncomingInvoiceAmount,
-    string InvoiceMetricsState);
+    string InvoiceMetricsState,
+    int ReturnedSupplierCount,
+    string OverallStatus,
+    string Headline);
+
+public sealed record SupplierPerformanceInsightDto(
+    string Code,
+    string Severity,
+    string Title,
+    string Description,
+    string? CustomerCode);
 
 public sealed record SupplierPerformanceCardDto(
     string CustomerCode,
@@ -49,7 +60,14 @@ public sealed record SupplierPerformanceCardDto(
     SupplierReturnPerformanceDto Returns,
     SupplierOutageImpactDto OutageImpact,
     SupplierInvoicePerformanceDto Invoices,
-    SupplierPerformanceScoreBreakdownDto ScoreBreakdown);
+    SupplierPerformanceScoreBreakdownDto ScoreBreakdown,
+    IReadOnlyCollection<SupplierPerformanceSignalDto> Signals);
+
+public sealed record SupplierPerformanceSignalDto(
+    string Code,
+    string Severity,
+    string Title,
+    string Description);
 
 public sealed record SupplierOrderPerformanceDto(
     int DocumentCount,

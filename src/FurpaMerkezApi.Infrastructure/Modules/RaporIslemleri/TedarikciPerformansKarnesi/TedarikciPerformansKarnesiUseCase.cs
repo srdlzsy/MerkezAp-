@@ -34,8 +34,10 @@ public sealed class TedarikciPerformansKarnesiUseCase(
             normalized.EndDateExclusive,
             cancellationToken);
 
-        var items = rows
+        var allItems = rows
             .Select(row => MapCard(row, incomingInvoicesByTaxNo))
+            .ToArray();
+        var items = allItems
             .OrderBy(item => item.Score)
             .ThenByDescending(item => item.Receiving.ReceivedQuantity)
             .ThenBy(item => item.CustomerTitle, StringComparer.OrdinalIgnoreCase)
@@ -48,7 +50,8 @@ public sealed class TedarikciPerformansKarnesiUseCase(
             normalized.StartDate,
             normalized.EndDate,
             DateTime.UtcNow,
-            CreateSummary(items),
+            CreateSummary(allItems, items.Length),
+            CreateInsights(allItems),
             items);
     }
 
@@ -689,6 +692,7 @@ public sealed class TedarikciPerformansKarnesiUseCase(
         var invoicePenalty = 0d;
         var totalPenalty = deliveryPenalty + differencePenalty + returnPenalty + outagePenalty + invoicePenalty;
         var score = Clamp(100d - totalPenalty, 0d, 100d);
+        var riskLevel = ResolveRiskLevel(score, differenceRate, returnRate, row.OpenLateLineCount);
 
         var scoreBreakdown = new SupplierPerformanceScoreBreakdownDto(
             Round(deliveryPenalty),
@@ -704,7 +708,7 @@ public sealed class TedarikciPerformansKarnesiUseCase(
             row.TaxNoOrTckn,
             Round(score),
             ResolveGrade(score),
-            ResolveRiskLevel(score, differenceRate, returnRate, row.OpenLateLineCount),
+            riskLevel,
             new SupplierOrderPerformanceDto(
                 row.OrderDocumentCount,
                 row.OrderLineCount,
@@ -744,18 +748,24 @@ public sealed class TedarikciPerformansKarnesiUseCase(
                 Round(incomingInvoices.Amount),
                 InvoiceMetricsState,
                 "Giden fatura ve gelen fatura tutarlari ayri ozetlenir; bu iki toplam dogrudan mutabakat farki olarak yorumlanmaz. Satir bazli fiyat/fatura kontrolu ikinci fazdir."),
-            scoreBreakdown);
+            scoreBreakdown,
+            BuildSignals(row, score, differenceRate, returnRate, outageRate));
     }
 
-    private static SupplierPerformanceSummaryDto CreateSummary(IReadOnlyCollection<SupplierPerformanceCardDto> items)
+    private static SupplierPerformanceSummaryDto CreateSummary(
+        IReadOnlyCollection<SupplierPerformanceCardDto> items,
+        int returnedSupplierCount)
     {
         var supplierCount = items.Count;
+        var averageScore = supplierCount == 0 ? 0d : items.Average(item => item.Score);
+        var criticalSupplierCount = items.Count(item => string.Equals(item.RiskLevel, "Critical", StringComparison.OrdinalIgnoreCase));
+        var warningSupplierCount = items.Count(item => string.Equals(item.RiskLevel, "Warning", StringComparison.OrdinalIgnoreCase));
 
         return new SupplierPerformanceSummaryDto(
             supplierCount,
-            Round(supplierCount == 0 ? 0d : items.Average(item => item.Score)),
-            items.Count(item => string.Equals(item.RiskLevel, "Critical", StringComparison.OrdinalIgnoreCase)),
-            items.Count(item => string.Equals(item.RiskLevel, "Warning", StringComparison.OrdinalIgnoreCase)),
+            Round(averageScore),
+            criticalSupplierCount,
+            warningSupplierCount,
             Round(items.Sum(item => item.Orders.OrderedQuantity)),
             Round(items.Sum(item => item.Receiving.ReceivedQuantity)),
             Round(items.Sum(item => item.Returns.ReturnedQuantity)),
@@ -764,7 +774,237 @@ public sealed class TedarikciPerformansKarnesiUseCase(
             Round(items.Sum(item => item.OutageImpact.Quantity)),
             Round(items.Sum(item => item.Invoices.IssuedInvoiceAmount)),
             Round(items.Sum(item => item.Invoices.IncomingInvoiceAmount)),
-            InvoiceMetricsState);
+            InvoiceMetricsState,
+            returnedSupplierCount,
+            ResolveOverallStatus(supplierCount, averageScore, criticalSupplierCount, warningSupplierCount),
+            CreateHeadline(supplierCount, averageScore, criticalSupplierCount, warningSupplierCount));
+    }
+
+    private static IReadOnlyCollection<SupplierPerformanceInsightDto> CreateInsights(
+        IReadOnlyCollection<SupplierPerformanceCardDto> items)
+    {
+        if (items.Count == 0)
+        {
+            return
+            [
+                new SupplierPerformanceInsightDto(
+                    "no-data",
+                    "Info",
+                    "Veri yok",
+                    "Secili donem ve depo filtresi icin tedarikci hareketi bulunamadi.",
+                    null)
+            ];
+        }
+
+        var insights = new List<SupplierPerformanceInsightDto>();
+        var criticalSupplierCount = items.Count(item => string.Equals(item.RiskLevel, "Critical", StringComparison.OrdinalIgnoreCase));
+        var warningSupplierCount = items.Count(item => string.Equals(item.RiskLevel, "Warning", StringComparison.OrdinalIgnoreCase));
+        var worst = items
+            .OrderBy(item => item.Score)
+            .ThenByDescending(item => item.Receiving.ReceivedQuantity)
+            .First();
+
+        if (criticalSupplierCount > 0)
+        {
+            insights.Add(new SupplierPerformanceInsightDto(
+                "critical-suppliers",
+                "Critical",
+                "Kritik tedarikci var",
+                $"{criticalSupplierCount} tedarikci kritik seviyede. Ilk kontrol: {FormatSupplier(worst)} ({FormatNumber(worst.Score)} puan).",
+                worst.CustomerCode));
+        }
+        else if (warningSupplierCount > 0)
+        {
+            insights.Add(new SupplierPerformanceInsightDto(
+                "warning-suppliers",
+                "Warning",
+                "Uyari seviyesinde tedarikci var",
+                $"{warningSupplierCount} tedarikci uyari seviyesinde. Ilk kontrol: {FormatSupplier(worst)} ({FormatNumber(worst.Score)} puan).",
+                worst.CustomerCode));
+        }
+
+        var lateLineCount = items.Sum(item => item.Orders.LateDeliveredLineCount + item.Orders.OpenLateLineCount);
+        if (lateLineCount > 0)
+        {
+            insights.Add(new SupplierPerformanceInsightDto(
+                "late-orders",
+                "Warning",
+                "Teslimat gecikmesi",
+                $"{lateLineCount} siparis satirinda gec teslim ya da kapanmamis gecikme sinyali var.",
+                null));
+        }
+
+        var differenceQuantity = items.Sum(item => Math.Abs(item.Receiving.MissingQuantity) + Math.Abs(item.Receiving.ExcessQuantity));
+        if (differenceQuantity > QuantityTolerance)
+        {
+            insights.Add(new SupplierPerformanceInsightDto(
+                "receiving-differences",
+                "Warning",
+                "Mal kabul farki",
+                $"{FormatNumber(differenceQuantity)} miktar eksik/fazla kabul sinyali uretildi.",
+                null));
+        }
+
+        var returnedQuantity = items.Sum(item => item.Returns.ReturnedQuantity);
+        if (returnedQuantity > QuantityTolerance)
+        {
+            insights.Add(new SupplierPerformanceInsightDto(
+                "company-returns",
+                "Warning",
+                "Firma iadesi",
+                $"{FormatNumber(returnedQuantity)} miktar firma iadesi karneye yansidi.",
+                null));
+        }
+
+        var outageQuantity = items.Sum(item => item.OutageImpact.Quantity);
+        if (outageQuantity > QuantityTolerance)
+        {
+            insights.Add(new SupplierPerformanceInsightDto(
+                "outage-impact",
+                "Warning",
+                "Zayiat/masraf etkisi",
+                $"{FormatNumber(outageQuantity)} miktar zayiat/masraf hareketi varsayilan tedarikciye baglandi.",
+                null));
+        }
+
+        var best = items
+            .OrderByDescending(item => item.Score)
+            .ThenByDescending(item => item.Receiving.ReceivedQuantity)
+            .First();
+        insights.Add(new SupplierPerformanceInsightDto(
+            "best-supplier",
+            "Info",
+            "En guclu tedarikci",
+            $"{FormatSupplier(best)} {FormatNumber(best.Score)} puan ile bu donemin en guclu karti.",
+            best.CustomerCode));
+
+        return insights.Take(6).ToArray();
+    }
+
+    private static IReadOnlyCollection<SupplierPerformanceSignalDto> BuildSignals(
+        SupplierPerformanceRow row,
+        double score,
+        double differenceRate,
+        double returnRate,
+        double outageRate)
+    {
+        var signals = new List<SupplierPerformanceSignalDto>();
+
+        if (row.OpenLateLineCount > 0)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                "open-late-orders",
+                row.OpenLateLineCount >= 10 ? "Critical" : "Warning",
+                "Acik gec siparis",
+                $"{row.OpenLateLineCount} satir planlanan teslim tarihini gecmis ve kapanmamis."));
+        }
+
+        if (row.LateDeliveredLineCount > 0)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                "late-deliveries",
+                "Warning",
+                "Gec teslim",
+                $"{row.LateDeliveredLineCount} satir gec teslim edildi; ortalama gecikme {FormatNumber(row.AverageLateDays)} gun."));
+        }
+
+        var differenceQuantity = Math.Abs(row.MissingQuantity) + Math.Abs(row.ExcessQuantity);
+        if (differenceQuantity > QuantityTolerance)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                "receiving-difference",
+                differenceRate >= 0.15d ? "Critical" : "Warning",
+                "Mal kabul farki",
+                $"{FormatNumber(row.MissingQuantity)} eksik, {FormatNumber(row.ExcessQuantity)} fazla kabul gorundu."));
+        }
+
+        if (row.ReturnedQuantity > QuantityTolerance)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                "company-return",
+                returnRate >= 0.2d ? "Critical" : "Warning",
+                "Firma iadesi",
+                $"{FormatNumber(row.ReturnedQuantity)} miktar firma iadesi var."));
+        }
+
+        if (row.OutageQuantity > QuantityTolerance)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                "outage-impact",
+                outageRate >= 0.1d ? "Critical" : "Warning",
+                "Zayiat/masraf etkisi",
+                $"{FormatNumber(row.OutageQuantity)} miktar zayiat/masraf hareketi bu tedarikciye baglandi."));
+        }
+
+        if (row.OrderedQuantity <= QuantityTolerance && row.ReceivedQuantity > QuantityTolerance)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                "receiving-without-order",
+                "Info",
+                "Siparis disi kabul",
+                "Bu donemde siparis satiri olmadan mal kabul hareketi gorunuyor."));
+        }
+
+        if (signals.Count == 0)
+        {
+            signals.Add(new SupplierPerformanceSignalDto(
+                score >= 90d ? "strong-performance" : "no-clear-risk",
+                "Healthy",
+                score >= 90d ? "Guclu performans" : "Belirgin risk yok",
+                score >= 90d
+                    ? "Gecikme, fark, iade ve zayiat sinyalleri dusuk seviyede."
+                    : "Bu filtrede skoru dusuren belirgin operasyonel sinyal olusmadi."));
+        }
+
+        return signals.ToArray();
+    }
+
+    private static string ResolveOverallStatus(
+        int supplierCount,
+        double averageScore,
+        int criticalSupplierCount,
+        int warningSupplierCount)
+    {
+        if (supplierCount == 0)
+        {
+            return "NoData";
+        }
+
+        if (criticalSupplierCount > 0 || averageScore < 60d)
+        {
+            return "Critical";
+        }
+
+        if (warningSupplierCount > 0 || averageScore < 80d)
+        {
+            return "Warning";
+        }
+
+        return "Healthy";
+    }
+
+    private static string CreateHeadline(
+        int supplierCount,
+        double averageScore,
+        int criticalSupplierCount,
+        int warningSupplierCount)
+    {
+        if (supplierCount == 0)
+        {
+            return "Secili donem icin tedarikci hareketi bulunamadi.";
+        }
+
+        if (criticalSupplierCount > 0)
+        {
+            return $"{supplierCount} tedarikci icinde {criticalSupplierCount} kritik tedarikci var; once en dusuk skorlu kartlari inceleyin.";
+        }
+
+        if (warningSupplierCount > 0)
+        {
+            return $"{supplierCount} tedarikci icinde {warningSupplierCount} uyari seviyesinde tedarikci var; ortalama skor {FormatNumber(averageScore)}.";
+        }
+
+        return $"{supplierCount} tedarikci saglikli gorunuyor; ortalama skor {FormatNumber(averageScore)}.";
     }
 
     private static NormalizedSupplierPerformanceRequest NormalizeRequest(SupplierPerformanceRequest request)
@@ -840,6 +1080,14 @@ public sealed class TedarikciPerformansKarnesiUseCase(
         string.IsNullOrWhiteSpace(value)
             ? string.Empty
             : value.Trim();
+
+    private static string FormatSupplier(SupplierPerformanceCardDto item) =>
+        string.IsNullOrWhiteSpace(item.CustomerTitle)
+            ? item.CustomerCode
+            : item.CustomerTitle;
+
+    private static string FormatNumber(double value) =>
+        Round(value).ToString("0.##", CultureInfo.InvariantCulture);
 
     private static double Round(double value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);

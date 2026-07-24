@@ -28,8 +28,10 @@ public sealed class KasaSayimlariController(
     private const string MenuName = "KasaSayimlari";
     private const string ListPolicy = "kasa-islemleri.kasa-sayimlari.list";
     private const string DetailPolicy = "kasa-islemleri.kasa-sayimlari.detail";
-    private const string CreatePolicy = "kasa-islemleri.kasa-sayimlari.create";
-    private const string UpdatePolicy = "kasa-islemleri.kasa-sayimlari.update";
+    private const string EntryListPolicy = "kasa-islemleri.icmal-kaydi-girisi.list";
+    private const string EntryCreatePolicy = "kasa-islemleri.icmal-kaydi-girisi.create";
+    private const string EntryUpdatePolicy = "kasa-islemleri.icmal-kaydi-girisi.update";
+    private const string EntryDeletePolicy = "kasa-islemleri.icmal-kaydi-girisi.delete";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -134,7 +136,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpGet("kasiyerler/ikili")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashierItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<CashierItemDto>>> GetCashierAndManager(
@@ -151,7 +153,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpGet("kasalar")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashRegistryItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<CashRegistryItemDto>>> GetCashRegistries(
@@ -167,7 +169,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpGet("kasa-detayi")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(CashRegisterDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -190,7 +192,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpGet("kasiyerler")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashierSearchItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<CashierSearchItemDto>>> SearchCashiers(
@@ -205,21 +207,21 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpGet("banknot-tipleri")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<BanknoteTypeItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<BanknoteTypeItemDto>>> BanknoteTypes(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListBanknoteTypesAsync(cancellationToken));
 
     [HttpGet("hediye-ceki-tipleri")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<GiftCheckTypeItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<GiftCheckTypeItemDto>>> GiftCheckTypes(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListGiftCheckTypesAsync(cancellationToken));
 
     [HttpGet("odeme-tipleri/banka")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<PaymentTypeItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<PaymentTypeItemDto>>> BankPaymentTypes(
@@ -234,42 +236,42 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpGet("odeme-tipleri/yemek-ceki")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<PaymentTypeItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<PaymentTypeItemDto>>> FoodCheckPaymentTypes(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListFoodCheckPaymentTypesAsync(cancellationToken));
 
     [HttpGet("odeme-tipleri/online")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<PaymentTypeItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<PaymentTypeItemDto>>> OnlinePaymentTypes(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListOnlineSalesPaymentTypesAsync(cancellationToken));
 
     [HttpGet("odeme-tipleri/masraf-pusulasi")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<PaymentTypeItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<PaymentTypeItemDto>>> ExpenseCompassPaymentTypes(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListExpenseCompassPaymentTypesAsync(cancellationToken));
 
     [HttpGet("odeme-tipleri/magaza-masrafi")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<PaymentTypeItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<PaymentTypeItemDto>>> StoreExpensePaymentTypes(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListStoreExpensePaymentTypesAsync(cancellationToken));
 
     [HttpGet("online-kasa-detaylari")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterDetailDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<CashRegisterDetailDto>>> OnlineCashRegisters(
         CancellationToken cancellationToken) =>
         Ok(await cashSummaryLookupsUseCase.ListOnlineCashRegistersAsync(cancellationToken));
 
     [HttpGet("z-rapor-toplam")]
-    [Authorize(Policy = DetailPolicy)]
+    [Authorize(Policy = EntryListPolicy)]
     [ProducesResponseType(typeof(double), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<double>> GetZReportTotal(
@@ -289,7 +291,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPost]
-    [Authorize(Policy = CreatePolicy)]
+    [Authorize(Policy = EntryCreatePolicy)]
     [ProducesResponseType(typeof(CreateCashSummaryResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CreateCashSummaryResponse>> Create(
@@ -342,7 +344,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPut("{documentSerie}/{documentOrderNo:int}/detaylar")]
-    [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = EntryUpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryDetailsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -374,7 +376,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPut("{documentSerie}/{documentOrderNo:int}/banknot-hareketleri")]
-    [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = EntryUpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryBanknotesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -403,7 +405,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpDelete("{documentSerie}/{documentOrderNo:int}")]
-    [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = EntryDeletePolicy)]
     [ProducesResponseType(typeof(DeleteCashSummaryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DeleteCashSummaryResponse>> Delete(

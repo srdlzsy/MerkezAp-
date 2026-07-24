@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.RaporIslemleri.TedarikciPerformansKarnesi;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,8 +28,12 @@ public sealed class TedarikciPerformansKarnesiController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<SupplierPerformanceReportDto>> List(
         [FromQuery] SupplierPerformanceHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await useCase.GetReportAsync(ToApplicationRequest(request, request.CustomerCode), cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+
+        return Ok(await useCase.GetReportAsync(ToApplicationRequest(request, warehouseNo, request.CustomerCode), cancellationToken));
+    }
 
     [HttpGet("{customerCode}")]
     [Authorize(Policy = DetailPolicy)]
@@ -38,21 +43,26 @@ public sealed class TedarikciPerformansKarnesiController(
     public async Task<ActionResult<SupplierPerformanceDetailDto>> Detail(
         [FromRoute] string customerCode,
         [FromQuery] SupplierPerformanceDetailHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await useCase.GetDetailAsync(
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+
+        return Ok(await useCase.GetDetailAsync(
             new SupplierPerformanceDetailRequest(
-                request.WarehouseNo,
+                warehouseNo,
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 customerCode,
                 request.EventTake ?? 100),
             cancellationToken));
+    }
 
     private static SupplierPerformanceRequest ToApplicationRequest(
         SupplierPerformanceHttpRequest request,
+        int? warehouseNo,
         string? customerCode) =>
         new(
-            request.WarehouseNo,
+            warehouseNo,
             request.StartDate!.Value,
             request.EndDate!.Value,
             customerCode,

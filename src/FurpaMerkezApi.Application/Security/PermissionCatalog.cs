@@ -65,6 +65,14 @@ public static class PermissionCatalog
         new("list-all", "Tumunu Listele")
     ];
 
+    private static readonly PermissionActionDefinition[] CashSummaryEntryActions =
+    [
+        new("list", "Listele"),
+        new("create", "Ekle"),
+        new("update", "Guncelle"),
+        new("delete", "Sil")
+    ];
+
     public static IReadOnlyCollection<PermissionDefinition> Definitions { get; } =
     [
         new(
@@ -147,7 +155,8 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("fatura-islemleri", "FaturaIslemleri", "fatura-goruntuleme", "FaturaGoruntuleme", ReadUpdateActions),
         ..CreateMenuPermissions("fatura-islemleri", "FaturaIslemleri", "fatura-gonderimi", "FaturaGonderimi", ReadCreateActions),
 
-        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-sayimlari", "KasaSayimlari"),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-sayimlari", "KasaSayimlari", ReadActions),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "icmal-kaydi-girisi", "IcmalKaydiGirisi", CashSummaryEntryActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-cirolari", "KasaCirolari", ReadActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "yeni-kasa-analizleri", "YeniKasaAnalizleri", ListActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-ciro-aktarimi", "KasaCiroAktarimi", ReadCreateActions),

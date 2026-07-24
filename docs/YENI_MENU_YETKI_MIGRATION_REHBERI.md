@@ -666,9 +666,12 @@ Duzenle butonu icin update permission kontrol edilir.
 Ornek:
 
 ```text
-kasa-islemleri.kasa-sayimlari.list   -> menu/list gorunur
-kasa-islemleri.kasa-sayimlari.create -> yeni kayit butonu gorunur
-kasa-islemleri.kasa-sayimlari.update -> duzenle butonu gorunur
+kasa-islemleri.kasa-sayimlari.list           -> Kasa Sayimlari goruntuleme menu/list gorunur
+kasa-islemleri.kasa-sayimlari.detail         -> Kasa Sayimlari detay gorunur
+kasa-islemleri.icmal-kaydi-girisi.list       -> Icmal Kaydi Girisi menu/form lookup gorunur
+kasa-islemleri.icmal-kaydi-girisi.create     -> icmal kaydetme butonu gorunur
+kasa-islemleri.icmal-kaydi-girisi.update     -> icmal duzenleme butonu gorunur
+kasa-islemleri.icmal-kaydi-girisi.delete     -> icmal silme butonu gorunur
 ```
 
 Frontend menuyu gizlese bile gercek guvenlik backend `[Authorize]` kontroludur. UI kontrolu sadece kullanici deneyimi icindir.
