@@ -21,7 +21,10 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         const string sql = """
             SELECT TOP (@take)
                 @warehouseNo AS WarehouseNo,
-                COALESCE(warehouse.dep_adi, '') AS WarehouseName,
+                CASE
+                    WHEN @warehouseNo IS NULL THEN 'Tum depolar'
+                    ELSE COALESCE(warehouse.dep_adi, '')
+                END AS WarehouseName,
                 stock.sto_kod AS StockCode,
                 COALESCE(stock.sto_isim, '') AS StockName,
                 COALESCE(barcode.bar_kodu, '') AS Barcode,
@@ -634,6 +637,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         var (startDate, endDateExclusive) = NormalizeDateRange(request.StartDate, request.EndDate);
         var filterType = NormalizeFilterType(request.FilterType);
         var filterValue = NormalizeOrNull(request.FilterValue);
+        ValidateFilterPair(filterType, filterValue);
 
         const string sql = """
             ;WITH FilteredStock AS (
@@ -752,6 +756,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         var (startDate, endDateExclusive) = NormalizeDateRange(request.StartDate, request.EndDate);
         var filterType = NormalizeFilterType(request.FilterType);
         var filterValue = NormalizeOrNull(request.FilterValue);
+        ValidateFilterPair(filterType, filterValue);
 
         const string sql = """
             SELECT TOP (@take)
@@ -829,6 +834,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         var previousEndDateExclusive = endDateExclusive.AddYears(-1);
         var filterType = NormalizeFilterType(request.FilterType);
         var filterValue = NormalizeOrNull(request.FilterValue);
+        ValidateFilterPair(filterType, filterValue);
 
         const string sql = """
             ;WITH SalesRows AS (
@@ -987,7 +993,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                 ) AS ProductManagerCode,
                 COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '') AS ProductManagerName,
                 CASE
-                    WHEN @warehouseNo IS NULL THEN 0
+                    WHEN @warehouseNo IS NULL THEN COALESCE(allWarehouseStock.CurrentStock, 0)
                     ELSE COALESCE(dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, CONVERT(date, GETDATE())), 0)
                 END AS CurrentStock,
                 lastSale.LastSaleDate
@@ -1004,6 +1010,14 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                   AND COALESCE(bar.bar_iptal, 0) = 0
                 ORDER BY COALESCE(bar.bar_master, 0) DESC, bar.bar_create_date DESC
             ) AS barcode
+            OUTER APPLY (
+                SELECT SUM(COALESCE(dbo.fn_DepodakiMiktar(stock.sto_kod, allWarehouse.dep_no, CONVERT(date, GETDATE())), 0)) AS CurrentStock
+                FROM dbo.DEPOLAR AS allWarehouse WITH (NOLOCK)
+                WHERE @warehouseNo IS NULL
+                  AND allWarehouse.dep_no IS NOT NULL
+                  AND COALESCE(allWarehouse.dep_iptal, 0) = 0
+                  AND COALESCE(allWarehouse.dep_envanter_harici_fl, 0) = 0
+            ) AS allWarehouseStock
             OUTER APPLY (
                 SELECT MAX(sale.sth_tarih) AS LastSaleDate
                 FROM dbo.STOK_HAREKETLERI AS sale WITH (NOLOCK)
@@ -1083,7 +1097,9 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                 CASE
                     WHEN @scope = 'supplier' THEN COALESCE(supplier.cari_unvan1, '')
                     WHEN @scope = 'product-manager' THEN COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '')
-                    ELSE COALESCE(stock.sto_isim, '')
+                    WHEN @scope = 'stock' THEN COALESCE(stock.sto_isim, '')
+                    WHEN @scope = 'category' THEN COALESCE(stock.sto_kategori_kodu, '')
+                    ELSE COALESCE(stock.sto_uretici_kodu, '')
                 END AS GroupName,
                 SUM(COALESCE(movement.sth_miktar, 0)) AS SalesQuantity,
                 SUM(COALESCE(movement.sth_tutar, 0)) AS SalesAmount,
@@ -1125,7 +1141,9 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                 CASE
                     WHEN @scope = 'supplier' THEN COALESCE(supplier.cari_unvan1, '')
                     WHEN @scope = 'product-manager' THEN COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '')
-                    ELSE COALESCE(stock.sto_isim, '')
+                    WHEN @scope = 'stock' THEN COALESCE(stock.sto_isim, '')
+                    WHEN @scope = 'category' THEN COALESCE(stock.sto_kategori_kodu, '')
+                    ELSE COALESCE(stock.sto_uretici_kodu, '')
                 END
             ORDER BY SalesAmount DESC;
             """;
@@ -1392,12 +1410,12 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
 
     private static string? NormalizeFilterType(string? value)
     {
-        var normalized = NormalizeOrNull(value)?.ToLowerInvariant();
+        var normalized = NormalizeLookupKey(value);
 
         return normalized switch
         {
             null => null,
-            "stok" or "stock" => "stock",
+            "urun" or "stok" or "stock" => "stock",
             "kategori" or "category" => "category",
             "uretici" or "üretici" or "producer" => "producer",
             "tedarikci" or "tedarikçi" or "supplier" => "supplier",
@@ -1409,18 +1427,55 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
 
     private static string NormalizeProfitabilityScope(string? value)
     {
-        var normalized = NormalizeOrNull(value)?.ToLowerInvariant();
+        var normalized = NormalizeLookupKey(value);
 
         return normalized switch
         {
             null => "producer",
-            "stok" or "stock" => "stock",
+            "urun" or "stok" or "stock" => "stock",
             "kategori" or "category" => "category",
             "uretici" or "üretici" or "producer" => "producer",
             "tedarikci" or "tedarikçi" or "supplier" => "supplier",
             "satin-almaci" or "satinalmaci" or "satın-almacı" or "product-manager" => "product-manager",
             _ => throw new ArgumentException("Unsupported profitability scope.")
         };
+    }
+
+    private static void ValidateFilterPair(string? filterType, string? filterValue)
+    {
+        if (filterType is not null && filterValue is null)
+        {
+            throw new ArgumentException("Filter value is required when filter type is provided.");
+        }
+
+        if (filterType is null && filterValue is not null)
+        {
+            throw new ArgumentException("Filter type is required when filter value is provided.");
+        }
+    }
+
+    private static string? NormalizeLookupKey(string? value)
+    {
+        var normalized = NormalizeOrNull(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        return normalized
+            .Replace("\u00C7", "c")
+            .Replace("\u011E", "g")
+            .Replace("\u0130", "i")
+            .Replace("\u00D6", "o")
+            .Replace("\u015E", "s")
+            .Replace("\u00DC", "u")
+            .ToLowerInvariant()
+            .Replace("\u00E7", "c")
+            .Replace("\u011F", "g")
+            .Replace("\u0131", "i")
+            .Replace("\u00F6", "o")
+            .Replace("\u015F", "s")
+            .Replace("\u00FC", "u");
     }
 
     private static StockOnHandReportItemDto ReadStockOnHandItem(DbDataReader reader)

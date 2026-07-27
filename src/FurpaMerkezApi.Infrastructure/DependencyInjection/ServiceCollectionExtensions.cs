@@ -266,6 +266,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(SuggestedCompanyOrderOptions.SectionName));
         services.Configure<InvoiceViewingAutomaticSynchronizationOptions>(
             configuration.GetSection(InvoiceViewingAutomaticSynchronizationOptions.SectionName));
+        services.Configure<ProductDistributionMailOptions>(
+            configuration.GetSection(ProductDistributionMailOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddSingleton<MikroApiWriteAuditService>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
@@ -565,6 +567,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();
+        services.AddSingleton<IProductDistributionNotificationMailer, ProductDistributionNotificationMailer>();
         services.AddScoped<IProductDistributionService, ProductDistributionService>();
         services.AddScoped<OperationsFileGenerationService>();
 

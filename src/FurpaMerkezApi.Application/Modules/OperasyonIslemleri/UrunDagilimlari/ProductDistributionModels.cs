@@ -201,6 +201,17 @@ public sealed record ProductDistributionNotificationDto(
     bool StockOrderingStopped,
     IReadOnlyCollection<ProductDistributionNotificationRecipientDto> Recipients,
     string Subject,
+    string Message,
+    bool MailSendingEnabled,
+    int SentEmailCount,
+    int FailedEmailCount,
+    IReadOnlyCollection<ProductDistributionNotificationMailResultDto> MailResults);
+
+public sealed record ProductDistributionNotificationMailResultDto(
+    string? RegionCode,
+    string? ManagerName,
+    string? Email,
+    bool Sent,
     string Message);
 
 public sealed record ProductDistributionNotificationRecipientDto(

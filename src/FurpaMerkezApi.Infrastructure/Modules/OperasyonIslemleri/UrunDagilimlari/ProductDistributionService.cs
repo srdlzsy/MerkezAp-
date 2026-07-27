@@ -1,6 +1,8 @@
-using System.Data;
+﻿using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Net;
+using System.Text;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
@@ -14,7 +16,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimla
 public sealed class ProductDistributionService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
-    FurpaDbContext furpaDbContext)
+    FurpaDbContext furpaDbContext,
+    IProductDistributionNotificationMailer notificationMailer)
     : IProductDistributionService
 {
     private const int DefaultSalesDayCount = 42;
@@ -28,6 +31,7 @@ public sealed class ProductDistributionService(
     private const int LongRunningQueryTimeoutSeconds = 180;
     private const string FinalizeDescriptionPrefix = "Dagilim";
     private static readonly int[] KnownDistributionCenters = [50, 53, 56];
+    private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");
 
     public async Task<IReadOnlyCollection<ProductDistributionCenterDto>> GetDistributionCentersAsync(
         CancellationToken cancellationToken)
@@ -348,15 +352,31 @@ public sealed class ProductDistributionService(
         }
 
         var recipients = await QueryRegionManagersAsync(normalizedDocumentNo, cancellationToken);
-        var statusChanged = await MarkDistributionStatusAsync(normalizedDocumentNo, 1, cancellationToken) > 0;
-        var stockOrderingStopped = request.MarkStockOrderingStopped &&
-            await MarkStockOrderingStoppedAsync(detail.Header.Stock.StockCode, cancellationToken);
+        var mailResults = notificationMailer.IsEnabled
+            ? await SendNotificationMailsAsync(normalizedDocumentNo, detail, recipients, cancellationToken)
+            : Array.Empty<ProductDistributionNotificationMailResultDto>();
+        var notificationSucceeded = !notificationMailer.IsEnabled ||
+            (mailResults.Count > 0 && mailResults.All(result => result.Sent));
+        var statusChanged = false;
+        var stockOrderingStopped = false;
 
-        var refreshedStatus = GetStatus(1);
+        if (notificationSucceeded)
+        {
+            statusChanged = await MarkDistributionStatusAsync(normalizedDocumentNo, 1, cancellationToken) > 0;
+            stockOrderingStopped = request.MarkStockOrderingStopped &&
+                await MarkStockOrderingStoppedAsync(detail.Header.Stock.StockCode, cancellationToken);
+        }
+
+        var refreshedStatus = notificationSucceeded || detail.Header.Status.Code == 1
+            ? GetStatus(1)
+            : detail.Header.Status;
         var subject = $"Urun dagilimi {normalizedDocumentNo} - {detail.Header.Stock.StockName}";
-        var message = recipients.Count == 0
-            ? "Bolge yoneticisi e-posta kaydi bulunamadi; durum bilgilendirildi olarak isaretlendi."
-            : "Bilgilendirme hazirlandi; UI/entegrasyon katmani alicilara mail veya outbox ile gonderebilir.";
+        var message = BuildNotificationMessage(
+            notificationMailer.IsEnabled,
+            recipients.Count,
+            mailResults,
+            statusChanged,
+            detail.Header.Status.Code);
 
         return new ProductDistributionNotificationDto(
             normalizedDocumentNo,
@@ -365,7 +385,11 @@ public sealed class ProductDistributionService(
             stockOrderingStopped,
             recipients,
             subject,
-            message);
+            message,
+            notificationMailer.IsEnabled,
+            mailResults.Count(result => result.Sent),
+            mailResults.Count(result => !result.Sent),
+            mailResults);
     }
 
     public async Task<ProductDistributionFinalizeDto> FinalizeAsync(
@@ -375,10 +399,6 @@ public sealed class ProductDistributionService(
     {
         var normalizedDocumentNo = NormalizeDocumentNo(documentNo);
         var detail = await GetAsync(normalizedDocumentNo, cancellationToken);
-        if (detail.Header.Status.Code == 0 && !request.AllowFinalizeWithoutNotification)
-        {
-            throw new InvalidOperationException("Dagilim kesinlestirmeden once bilgilendirilmelidir.");
-        }
 
         var positiveLines = detail.Lines
             .Where(line => line.UnitQuantity > 0)
@@ -836,6 +856,218 @@ public sealed class ProductDistributionService(
 
         return rows;
     }
+
+    private async Task<IReadOnlyCollection<ProductDistributionNotificationMailResultDto>> SendNotificationMailsAsync(
+        string documentNo,
+        ProductDistributionDetailDto detail,
+        IReadOnlyCollection<ProductDistributionNotificationRecipientDto> recipients,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<ProductDistributionNotificationMailResultDto>(recipients.Count);
+        foreach (var recipient in recipients)
+        {
+            var email = NormalizeOptionalText(recipient.Email);
+            if (email is null)
+            {
+                results.Add(new ProductDistributionNotificationMailResultDto(
+                    recipient.RegionCode,
+                    recipient.ManagerName,
+                    recipient.Email,
+                    false,
+                    "Bolge yoneticisi e-posta adresi bulunamadi."));
+                continue;
+            }
+
+            var regionLines = detail.Lines
+                .Where(line => RegionMatches(line.RegionCode, recipient.RegionCode))
+                .OrderBy(line => line.WarehouseNo)
+                .ToArray();
+            if (regionLines.Length == 0)
+            {
+                results.Add(new ProductDistributionNotificationMailResultDto(
+                    recipient.RegionCode,
+                    recipient.ManagerName,
+                    email,
+                    false,
+                    "Bolge icin dagilim satiri bulunamadi."));
+                continue;
+            }
+
+            var subject = BuildRegionNotificationSubject(recipient.RegionCode);
+            var body = BuildNotificationMailBody(documentNo, detail, recipient, regionLines);
+
+            try
+            {
+                await notificationMailer.SendAsync(
+                    new ProductDistributionMailRequest(email, subject, body),
+                    cancellationToken);
+
+                results.Add(new ProductDistributionNotificationMailResultDto(
+                    recipient.RegionCode,
+                    recipient.ManagerName,
+                    email,
+                    true,
+                    "Mail gonderildi."));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                results.Add(new ProductDistributionNotificationMailResultDto(
+                    recipient.RegionCode,
+                    recipient.ManagerName,
+                    email,
+                    false,
+                    $"Mail gonderilemedi: {exception.Message}"));
+            }
+        }
+
+        return results;
+    }
+
+    private static string BuildNotificationMailBody(
+        string documentNo,
+        ProductDistributionDetailDto detail,
+        ProductDistributionNotificationRecipientDto recipient,
+        IReadOnlyCollection<ProductDistributionLineDto> lines)
+    {
+        var stockLabel = $"{detail.Header.Stock.StockCode} - {detail.Header.Stock.StockName}";
+        var builder = new StringBuilder();
+        builder.AppendLine("<!doctype html>");
+        builder.AppendLine("<html>");
+        builder.AppendLine("<head>");
+        builder.AppendLine("<meta charset=\"utf-8\" />");
+        builder.AppendLine("<style>");
+        builder.AppendLine("body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:14px;line-height:1.45}");
+        builder.AppendLine("h2{font-size:18px;margin:0 0 12px}");
+        builder.AppendLine("table{border-collapse:collapse;width:100%;margin:12px 0}");
+        builder.AppendLine("th,td{border:1px solid #d1d5db;padding:8px;text-align:left;vertical-align:top}");
+        builder.AppendLine("th{background:#f3f4f6;font-weight:700}");
+        builder.AppendLine(".meta th{width:180px}");
+        builder.AppendLine(".number{text-align:right;white-space:nowrap}");
+        builder.AppendLine(".muted{color:#6b7280}");
+        builder.AppendLine("</style>");
+        builder.AppendLine("</head>");
+        builder.AppendLine("<body>");
+        builder.AppendLine("<h2>Urun Dagilimi Bilgilendirmesi</h2>");
+        builder.Append("<p>");
+        builder.Append(HtmlEncode(recipient.ManagerName ?? "Bolge yoneticisi"));
+        builder.AppendLine(" dikkatine,</p>");
+        builder.AppendLine("<table class=\"meta\">");
+        AppendMetaRow(builder, "Evrak No", documentNo);
+        AppendMetaRow(builder, "Bolge", BuildRegionLabel(recipient.RegionCode));
+        AppendMetaRow(builder, "Stok", stockLabel);
+        AppendMetaRow(builder, "Dagitim Merkezi", detail.Header.DistributionCenter.WarehouseName);
+        AppendMetaRow(builder, "Dagilimi Yapan", detail.Header.DistributedBy ?? "-");
+        AppendMetaRow(builder, "Kayit Tarihi", detail.Header.CreatedAt.ToString("dd.MM.yyyy", TurkishCulture));
+        builder.AppendLine("</table>");
+        builder.AppendLine("<table>");
+        builder.AppendLine("<thead>");
+        builder.Append("<tr><th>Sube</th><th>");
+        builder.Append(HtmlEncode(stockLabel));
+        builder.AppendLine("</th><th class=\"number\">Koli</th><th class=\"number\">Adet</th></tr>");
+        builder.AppendLine("</thead>");
+        builder.AppendLine("<tbody>");
+
+        foreach (var line in lines)
+        {
+            builder.Append("<tr><td>");
+            builder.Append(HtmlEncode($"{line.WarehouseNo} - {line.WarehouseName}"));
+            builder.Append("</td><td>");
+            builder.Append(line.UnitQuantity > 0 ? "Dagitim" : "<span class=\"muted\">Dagilim Yapilmadi</span>");
+            builder.Append("</td><td class=\"number\">");
+            builder.Append(FormatWholeNumber(line.CaseQuantity));
+            builder.Append(' ');
+            builder.Append(HtmlEncode(line.CaseUnitName));
+            builder.Append("</td><td class=\"number\">");
+            builder.Append(FormatWholeNumber(line.UnitQuantity));
+            builder.Append(' ');
+            builder.Append(HtmlEncode(line.QuantityUnitName));
+            builder.AppendLine("</td></tr>");
+        }
+
+        builder.AppendLine("</tbody>");
+        builder.AppendLine("<tfoot>");
+        builder.Append("<tr><th colspan=\"2\">Toplam</th><th class=\"number\">");
+        builder.Append(FormatWholeNumber(lines.Sum(line => line.CaseQuantity)));
+        builder.Append(' ');
+        builder.Append(HtmlEncode(lines.First().CaseUnitName));
+        builder.Append("</th><th class=\"number\">");
+        builder.Append(FormatWholeNumber(lines.Sum(line => line.UnitQuantity)));
+        builder.Append(' ');
+        builder.Append(HtmlEncode(lines.First().QuantityUnitName));
+        builder.AppendLine("</th></tr>");
+        builder.AppendLine("</tfoot>");
+        builder.AppendLine("</table>");
+        builder.AppendLine("<p class=\"muted\">Bu mail Furpa Merkez API urun dagilimi bilgilendirme akisi tarafindan olusturulmustur.</p>");
+        builder.AppendLine("</body>");
+        builder.AppendLine("</html>");
+
+        return builder.ToString();
+    }
+
+    private static string BuildNotificationMessage(
+        bool mailSendingEnabled,
+        int recipientCount,
+        IReadOnlyCollection<ProductDistributionNotificationMailResultDto> mailResults,
+        bool statusChanged,
+        int previousStatus)
+    {
+        if (!mailSendingEnabled)
+        {
+            return recipientCount == 0
+                ? "Bolge yoneticisi e-posta kaydi bulunamadi; SMTP kapali oldugu icin eski akisa uygun olarak durum bilgilendirildi isaretlendi."
+                : "Bilgilendirme hazirlandi; SMTP kapali oldugu icin mail gonderimi yapilmadi.";
+        }
+
+        if (recipientCount == 0)
+        {
+            return previousStatus == 1
+                ? "Bolge yoneticisi e-posta kaydi bulunamadi; durum zaten bilgilendirildi."
+                : "Bolge yoneticisi e-posta kaydi bulunamadi; mail gonderilmedi ve durum degistirilmedi.";
+        }
+
+        var sentCount = mailResults.Count(result => result.Sent);
+        var failedCount = mailResults.Count(result => !result.Sent);
+        if (failedCount > 0)
+        {
+            return $"Mail gonderimi tamamlanamadi. Gonderilen: {sentCount}, sorunlu: {failedCount}. Durum degistirilmedi.";
+        }
+
+        return statusChanged
+            ? $"Bilgilendirme maili gonderildi ({sentCount} alici); durum bilgilendirildi olarak isaretlendi."
+            : $"Bilgilendirme maili gonderildi ({sentCount} alici); durum zaten bilgilendirildi.";
+    }
+
+    private static void AppendMetaRow(StringBuilder builder, string label, string value)
+    {
+        builder.Append("<tr><th>");
+        builder.Append(HtmlEncode(label));
+        builder.Append("</th><td>");
+        builder.Append(HtmlEncode(value));
+        builder.AppendLine("</td></tr>");
+    }
+
+    private static string BuildRegionNotificationSubject(string? regionCode)
+    {
+        var normalizedRegionCode = NormalizeOptionalText(regionCode);
+        return normalizedRegionCode is null
+            ? "Bolge, Urun Dagilimi Hk."
+            : $"{normalizedRegionCode}. Bolge, Urun Dagilimi Hk.";
+    }
+
+    private static string BuildRegionLabel(string? regionCode)
+    {
+        var normalizedRegionCode = NormalizeOptionalText(regionCode);
+        return normalizedRegionCode is null ? "-" : $"{normalizedRegionCode}. Bolge";
+    }
+
+    private static bool RegionMatches(string? left, string? right) =>
+        string.Equals(NormalizeOptionalText(left), NormalizeOptionalText(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatWholeNumber(int value) =>
+        value.ToString("N0", TurkishCulture);
+
+    private static string HtmlEncode(string value) =>
+        WebUtility.HtmlEncode(value);
 
     private async Task<IReadOnlyCollection<PreparedSaveLine>> PrepareSaveLinesAsync(
         ProductDistributionSaveRequest request,
@@ -1413,7 +1645,7 @@ public sealed class ProductDistributionService(
                 new("update", "Guncelle", true, null),
                 new("delete", "Sil", true, null),
                 new("notify", "Bilgilendir", true, null),
-                new("finalize", "Kesinlestir", false, "Once bolge bilgilendirmesi yapilmali.")
+                new("finalize", "Kesinlestir", true, null)
             ],
             1 =>
             [
@@ -1738,3 +1970,4 @@ public sealed class ProductDistributionService(
         public double Weight { get; } = weight;
     }
 }
+

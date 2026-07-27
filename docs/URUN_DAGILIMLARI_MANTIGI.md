@@ -8,8 +8,8 @@ Bu dokuman `OperasyonIslemleri > UrunDagilimlari` modulunun is mantigini anlatir
 2. API son satis hareketlerine bakarak sube bazli koli onerisi uretir.
 3. UI koli dagilimini gerekirse duzenler.
 4. Koli toplami kullanicinin girdigi toplam koliye esitse dagilim `STOK_DAGILIM` tablosuna kaydedilir.
-5. Bolge bilgilendirme adiminda durum `Bilgilendirildi` olur ve istenirse stok kartinda siparis durdurma bayragi set edilir.
-6. Kesinlestirme adiminda pozitif adetli her sube icin Mikro `DEPOLAR_ARASI_SIPARISLER` kaydi olusur.
+5. Bolge bilgilendirme opsiyoneldir; yapilirsa durum `Bilgilendirildi` olur ve istenirse stok kartinda siparis durdurma bayragi set edilir.
+6. Kesinlestirme, bilgilendirme yapilmadan da calisir; pozitif adetli her sube icin Mikro `DEPOLAR_ARASI_SIPARISLER` kaydi olusur.
 
 ## Temel Route ve Yetkiler
 
@@ -286,7 +286,7 @@ UI aksiyonlari:
 
 | Durum | Guncelle | Sil | Bilgilendir | Kesinlestir |
 |---|---|---|---|---|
-| `0` | Acik | Acik | Acik | Kapali |
+| `0` | Acik | Acik | Acik | Acik |
 | `1` | Kapali | Kapali | Acik | Acik |
 | `2` | Kapali | Kapali | Kapali | Kapali |
 
@@ -295,7 +295,7 @@ Backend kurallari:
 - Sadece `Durum = 0` kayitlar guncellenebilir.
 - Sadece `Durum = 0` kayitlar silinebilir.
 - `Durum = 2` kayit tekrar bilgilendirilemez.
-- `Durum = 0` kayit kesinlestirilmek istenirse `allowFinalizeWithoutNotification = true` gerekir.
+- `Durum = 0` ve `Durum = 1` kayitlar kesinlestirilebilir; bilgilendirme kesinlestirme icin zorunlu degildir.
 
 ## Bilgilendirme Mantigi
 
@@ -317,15 +317,54 @@ Body:
 Yaptiklari:
 
 1. Dagilim detayini okur.
-2. Kayit kesinlesmis degilse `STOK_DAGILIM.Durum = 1` yapar.
-3. `Bolge_Yoneticileri` tablosundan bolge bazli alici bilgilerini hazirlar.
-4. `markStockOrderingStopped = true` ise Mikro `STOKLAR.sto_siparis_dursun = 1` yapar.
-5. Response'ta konu, mesaj ve bolge bazli recipient ozeti doner.
+2. `Bolge_Yoneticileri` tablosundan bolge bazli alici bilgilerini hazirlar.
+3. `ProductDistributionMail.Enabled = true` ise her bolge yoneticisine HTML mail gonderir.
+4. Mail gonderimi basariliysa veya SMTP kapaliysa `STOK_DAGILIM.Durum = 1` yapar.
+5. `markStockOrderingStopped = true` ise Mikro `STOKLAR.sto_siparis_dursun = 1` yapar.
+6. Response'ta konu, mesaj, bolge bazli recipient ozeti ve mail sonuc listesi doner.
 
-Onemli not:
+Mail icerigi:
 
-- API su an direkt mail gondermez.
-- UI veya entegrasyon katmani response'taki `recipients`, `subject`, `message` bilgisini mail/outbox icin kullanmalidir.
+- Konu: `{regionCode}. Bolge, Urun Dagilimi Hk.`
+- Alici: `Bolge_Yoneticileri.bolge_muduru_eposta`
+- CC listesi `ProductDistributionMail.Cc` config alanindan gelir.
+- Govde HTML tablodur; evrak no, bolge, stok, dagitim merkezi, dagilimi yapan, sube, koli ve adet bilgisini gosterir.
+- Sifir adetli satirlar `Dagilim Yapilmadi` olarak gosterilir.
+
+SMTP config:
+
+```json
+{
+  "ProductDistributionMail": {
+    "Enabled": false,
+    "Host": "smtp.yandex.com.tr",
+    "Port": 587,
+    "EnableSsl": true,
+    "Username": "dedektif@furpa.com.tr",
+    "Password": "",
+    "FromAddress": "dedektif@furpa.com.tr",
+    "FromName": "Dedektif",
+    "Cc": [
+      "bilgilendirme@furpa.com.tr",
+      "yusuf.meral@furpa.com.tr",
+      "satinalmalar@furpa.com.tr",
+      "erkan.basaran@furpa.com.tr",
+      "asistan@furpa.com.tr",
+      "semseddin.cetin@furpa.com.tr",
+      "depo@furpa.com.tr",
+      "buzhane@furpa.com.tr"
+    ],
+    "TimeoutSeconds": 30
+  }
+}
+```
+
+Onemli notlar:
+
+- Parola kaynak kodda veya dokumanda tutulmaz; canli ortamda `ProductDistributionMail__Password` secret/env ayariyla verilir.
+- `Enabled=false` ise API mail gondermez; eski akisa uygun olarak bilgilendirme response'u hazirlar ve durum `Bilgilendirildi` olur.
+- `Enabled=true` iken alici e-postasi eksikse, SMTP ayari eksikse veya mail gonderimi hata verirse yeni kayit `Bilgilendirildi` durumuna alinmaz. Hata detayi `mailResults` icinde doner.
+- Kayit zaten `Bilgilendirildi` durumundaysa tekrar bilgilendirme maili gonderilebilir.
 
 ## Kesinlestirme Mantigi
 
@@ -351,7 +390,8 @@ Kurallar:
 - `deliveryDate`, `orderDate` tarihinden once olamaz.
 - `unitQuantity > 0` olan satirlar siparise cevrilir.
 - Pozitif adetli satir yoksa hata doner.
-- Dagilim `Durum = 0` ise normalde kesinlestirme yapilmaz; `allowFinalizeWithoutNotification = true` gonderilirse izin verilir.
+- Bilgilendirme yapilmamis `Durum = 0` dagilimlar da kesinlestirilebilir.
+- `allowFinalizeWithoutNotification` alani geriye uyum icin kabul edilir; artik izin kapisi olarak kullanilmaz.
 
 Olusan Mikro depo siparisi:
 
@@ -428,6 +468,6 @@ Detay response'u:
 5. Geriye uyum icin UI `allocatedCaseQuantity` gonderirse backend bunu da hedef aliasi olarak kabul eder.
 6. `lines[].caseQuantity` toplami hedef toplam koliye esit degilse kaydetme.
 7. Kaydetten sonra gelen `documentNo` ile detay ekranina gec.
-8. `status.code = 0` iken guncelle/sil/bilgilendir acik olsun.
-9. Bilgilendirden sonra kesinlestir acik olsun.
+8. `status.code = 0` iken guncelle/sil/bilgilendir/kesinlestir acik olsun.
+9. Bilgilendirme yapilmadan da kesinlestirme calisir; bilgilendirme sadece mail/durum adimidir.
 10. Kesinlestirme response'undaki `orders[]` ile olusan depo siparislerini kullaniciya goster.

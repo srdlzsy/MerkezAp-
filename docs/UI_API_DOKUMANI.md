@@ -7717,11 +7717,15 @@ filterValue filterType/scope ile eslesen kod veya arama degeri
 Notlar:
 
 - `filterType` icin Turkce aliaslar da kabul edilir: `stok`, `kategori`, `uretici`, `tedarikci`, `satin-almaci`, `satinalmaci`, `model`.
+- Turkce karakterli aliaslar da kabul edilir: `urun`, `ürün`, `üretici`, `tedarikçi`, `satın-almacı`.
+- `filterType` ve `filterValue` birlikte kullanılmalıdır; sadece biri gönderilirse backend 400 döner.
 - `scope` bos verilirse karlilik raporu `producer` kirilimi ile doner.
 - Sayisal toplamlar backend tarafinda 2 ondaliga yuvarlanir.
 - Barkod alanlari master/birim-1 barkod onceligiyle secilir.
 - `OnlyWithStock=true` varsayilan davranistir; sifir stoklarin da gelmesi istenirse `false` gonderilir.
 - Kategori secimi icin UI `kategori-secenekleri` endpoint'ini kullanabilir; response `categoryCode`, `categoryName`, `productCount` alanlarini doner.
+- `satislar/satmayan-urunler` admin tarafinda tum depolar icin calistirilirse `warehouseName = "Tum depolar"` ve `currentStock` aktif depolarin toplam sistem miktari olarak doner.
+- `karlilik` response'unda `groupName`, `supplier` ve `product-manager` icin ad/unvan; `stock` icin stok adi; `producer` ve `category` icin kod fallback'i olarak doner.
 
 UI akisi:
 
@@ -11009,13 +11013,22 @@ notifyBy                       string?    max 100
 markStockOrderingStopped       bool       default true
 ```
 
+Bilgilendirme mail davranisi:
+
+- SMTP ayarlari `ProductDistributionMail` config bolumunden okunur.
+- Varsayilan `Enabled=false`; bu durumda endpoint eski hazirlama akisini korur, mail gondermez ve durum `Bilgilendirildi` olur.
+- `Enabled=true` ise API `Bolge_Yoneticileri.bolge_muduru_eposta` adreslerine bolge bazli HTML mail gonderir.
+- Mail konusu bolge bazlidir: `{regionCode}. Bolge, Urun Dagilimi Hk.`
+- Mail basarili gitmeden yeni kayit `Bilgilendirildi` durumuna alinmaz. Eksik/gecersiz e-posta veya SMTP hatasi varsa `mailResults` icinde doner.
+- Parola dokumanda veya kaynak kodda tutulmaz; canli ortamda `ProductDistributionMail__Password` gibi secret/env ayariyla verilmelidir.
+
 `ProductDistributionFinalizeHttpRequest` body:
 
 ```text
 finalizeBy                     string?    max 100
 orderDate                      DateTime?
 deliveryDate                   DateTime?
-allowFinalizeWithoutNotification bool
+allowFinalizeWithoutNotification bool      geriye uyum alani; artik kesinlestirme icin zorunlu degil
 ```
 
 Response DTO katalogu:
@@ -11185,6 +11198,20 @@ stockOrderingStopped           bool
 recipients                     ProductDistributionNotificationRecipientDto[]
 subject                        string
 message                        string
+mailSendingEnabled             bool       SMTP gonderimi acik mi
+sentEmailCount                 int
+failedEmailCount               int
+mailResults                    ProductDistributionNotificationMailResultDto[]
+```
+
+`ProductDistributionNotificationMailResultDto`
+
+```text
+regionCode                     string?
+managerName                    string?
+email                          string?
+sent                           bool
+message                        string
 ```
 
 `ProductDistributionNotificationRecipientDto`
@@ -11239,9 +11266,9 @@ Onerilen UI akisi:
 4. Kullanici hedef veya satir koli degistirirse `POST .../dengele` ile kilitli satirlari koruyan yeni dagilim alinabilir.
 5. UI `summary.isBalanced = true` beklemeli; kullanici satir degistirirse toplam koli farki sifirlanmadan kaydet butonu aktif olmamalidir.
 6. `POST .../urun-dagilimlari` ile `STOK_DAGILIM` kaydi olusur ve `status.code = 0` doner.
-7. `POST .../{documentNo}/bilgilendir` statusu `1` yapar, stok kartinda `sto_siparis_dursun = 1` isaretler ve bolge bazli alici/ozet bilgisini doner.
-8. UI mail gonderimini kendi mail/outbox katmanina baglamalidir; API su an senkron SMTP gondermez, gonderilecek alici ve ozet bilgisini hazirlar.
-9. `POST .../{documentNo}/kesinlestir` statusu `2` yapar ve her pozitif adetli sube icin Mikro depo siparisi uretir. Ayni evrak tekrar cagrilirsa aciklama/evrak kontroluyle mevcut siparisleri tekrar uretmez.
+7. Bilgilendirme opsiyoneldir. `POST .../{documentNo}/bilgilendir` SMTP aciksa bolge yoneticilerine mail gonderir; basarili olursa statusu `1` yapar, stok kartinda `sto_siparis_dursun = 1` isaretler ve `mailResults` ozetini doner.
+8. SMTP kapaliysa eski davranis korunur; API mail gondermeden bilgilendirme bilgisini hazirlar ve statusu `1` yapar. UI `mailSendingEnabled`, `sentEmailCount`, `failedEmailCount` ve `mailResults` alanlarini kullaniciya gosterebilir.
+9. `POST .../{documentNo}/kesinlestir` status `0` veya `1` iken calisir, statusu `2` yapar ve her pozitif adetli sube icin Mikro depo siparisi uretir. Ayni evrak tekrar cagrilirsa aciklama/evrak kontroluyle mevcut siparisleri tekrar uretmez.
 
 `POST .../oneri` request:
 
@@ -11329,7 +11356,7 @@ Durumlar:
 
 | Kod | Ad | UI davranisi |
 |---|---|---|
-| `0` | `Kaydedildi` | Guncelle, sil ve bilgilendir acik; kesinlestir kapali |
+| `0` | `Kaydedildi` | Guncelle, sil, bilgilendir ve kesinlestir acik |
 | `1` | `Bilgilendirildi` | Kesinlestir acik; guncelle/sil kapali |
 | `2` | `Dagilim Yapildi` | Tum yazma aksiyonlari kapali |
 
