@@ -87,4 +87,28 @@ public interface IMikroDocumentEditingService
     Task<MikroDocumentDeleteResponse> DeleteCustomerMovementDocumentAsync(
         DeleteCustomerMovementDocumentRequest request,
         CancellationToken cancellationToken);
+
+    Task<CompanyOrderDocumentDto> GetCompanyOrderDocumentAsync(
+        CompanyOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
+    Task<CompanyOrderDocumentUpdateResponse> UpdateCompanyOrderDocumentAsync(
+        UpdateCompanyOrderDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<MikroDocumentDeleteResponse> DeleteCompanyOrderDocumentAsync(
+        DeleteCompanyOrderDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<WarehouseOrderDocumentDto> GetWarehouseOrderDocumentAsync(
+        WarehouseOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
+    Task<WarehouseOrderDocumentUpdateResponse> UpdateWarehouseOrderDocumentAsync(
+        UpdateWarehouseOrderDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<MikroDocumentDeleteResponse> DeleteWarehouseOrderDocumentAsync(
+        DeleteWarehouseOrderDocumentRequest request,
+        CancellationToken cancellationToken);
 }

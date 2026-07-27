@@ -1201,6 +1201,360 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<CompanyOrderDocumentDto> GetCompanyOrderDocumentAsync(
+        CompanyOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateCompanyOrderLookup(request);
+
+        var rows = await CreateCompanyOrderQuery(
+                mikroDbContext.SIPARISLERs.AsNoTracking(),
+                request)
+            .OrderBy(order => order.sip_satirno)
+            .ThenBy(order => order.sip_stok_kod)
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length == 0)
+        {
+            throw new KeyNotFoundException("Company order document was not found.");
+        }
+
+        EnsureSingleCompanyOrderDocument(rows);
+
+        return await MapCompanyOrderDocumentAsync(mikroDbContext, rows, cancellationToken);
+    }
+
+    public async Task<CompanyOrderDocumentUpdateResponse> UpdateCompanyOrderDocumentAsync(
+        UpdateCompanyOrderDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateCompanyOrderLookup(request.Lookup);
+        ValidateCompanyOrderUpdate(request);
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateCompanyOrderQuery(mikroWriteDbContext.SIPARISLERs, request.Lookup)
+                    .OrderBy(order => order.sip_satirno)
+                    .ThenBy(order => order.sip_stok_kod)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Company order document was not found in Mikro write database.");
+                }
+
+                EnsureSingleCompanyOrderDocument(rows);
+                await EnsureCompanyOrderReferencesExistAsync(request, cancellationToken);
+
+                var touchedRows = new HashSet<Guid>();
+                if (request.Header is not null && HasCompanyOrderHeaderPatch(request.Header))
+                {
+                    foreach (var row in rows)
+                    {
+                        ApplyCompanyOrderHeaderPatch(row, request.Header);
+                        touchedRows.Add(row.sip_Guid);
+                    }
+                }
+
+                if (request.Lines.Count > 0)
+                {
+                    var rowsByGuid = rows.ToDictionary(row => row.sip_Guid);
+                    foreach (var line in request.Lines)
+                    {
+                        if (!rowsByGuid.TryGetValue(line.OrderGuid, out var row))
+                        {
+                            throw new KeyNotFoundException($"Company order line was not found: {line.OrderGuid}");
+                        }
+
+                        if (ApplyCompanyOrderLinePatch(row, line))
+                        {
+                            touchedRows.Add(row.sip_Guid);
+                        }
+                    }
+                }
+
+                if (touchedRows.Count == 0)
+                {
+                    throw new ArgumentException("At least one company order field must be provided.", nameof(request));
+                }
+
+                foreach (var row in rows.Where(row => touchedRows.Contains(row.sip_Guid)))
+                {
+                    row.sip_lastup_user = updateUser;
+                    row.sip_lastup_date = updatedAt;
+                    row.sip_degisti = true;
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new CompanyOrderDocumentUpdateResponse(
+                    new MikroDocumentUpdateSummary("firma-siparisleri", touchedRows.Count, updatedAt, updateUser),
+                    await MapCompanyOrderDocumentAsync(mikroWriteDbContext, rows, cancellationToken));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<MikroDocumentDeleteResponse> DeleteCompanyOrderDocumentAsync(
+        DeleteCompanyOrderDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateCompanyOrderLookup(request.Lookup);
+
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateCompanyOrderQuery(mikroWriteDbContext.SIPARISLERs, request.Lookup)
+                    .OrderBy(order => order.sip_satirno)
+                    .ThenBy(order => order.sip_stok_kod)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Company order document was not found in Mikro write database.");
+                }
+
+                EnsureSingleCompanyOrderDocument(rows);
+
+                if (request.HardDelete)
+                {
+                    mikroWriteDbContext.SIPARISLERs.RemoveRange(rows);
+                }
+                else
+                {
+                    foreach (var row in rows)
+                    {
+                        row.sip_iptal = true;
+                        row.sip_hidden = true;
+                        row.sip_degisti = true;
+                        row.sip_lastup_user = deleteUser;
+                        row.sip_lastup_date = deletedAt;
+                    }
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    $"firma-siparisleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}",
+                    rows.Length,
+                    deletedAt,
+                    deleteUser,
+                    request.HardDelete ? "hard-delete" : "soft-delete");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<WarehouseOrderDocumentDto> GetWarehouseOrderDocumentAsync(
+        WarehouseOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateWarehouseOrderLookup(request);
+
+        var rows = await CreateWarehouseOrderQuery(
+                mikroDbContext.DEPOLAR_ARASI_SIPARISLERs.AsNoTracking(),
+                request)
+            .OrderBy(order => order.ssip_satirno)
+            .ThenBy(order => order.ssip_stok_kod)
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length == 0)
+        {
+            throw new KeyNotFoundException("Warehouse order document was not found.");
+        }
+
+        EnsureSingleWarehouseOrderDocument(rows);
+
+        return await MapWarehouseOrderDocumentAsync(mikroDbContext, rows, cancellationToken);
+    }
+
+    public async Task<WarehouseOrderDocumentUpdateResponse> UpdateWarehouseOrderDocumentAsync(
+        UpdateWarehouseOrderDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateWarehouseOrderLookup(request.Lookup);
+        ValidateWarehouseOrderUpdate(request);
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateWarehouseOrderQuery(mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs, request.Lookup)
+                    .OrderBy(order => order.ssip_satirno)
+                    .ThenBy(order => order.ssip_stok_kod)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Warehouse order document was not found in Mikro write database.");
+                }
+
+                EnsureSingleWarehouseOrderDocument(rows);
+                await EnsureWarehouseOrderReferencesExistAsync(request, cancellationToken);
+
+                var touchedRows = new HashSet<Guid>();
+                if (request.Header is not null && HasWarehouseOrderHeaderPatch(request.Header))
+                {
+                    foreach (var row in rows)
+                    {
+                        ApplyWarehouseOrderHeaderPatch(row, request.Header);
+                        touchedRows.Add(row.ssip_Guid);
+                    }
+                }
+
+                if (request.Lines.Count > 0)
+                {
+                    var rowsByGuid = rows.ToDictionary(row => row.ssip_Guid);
+                    foreach (var line in request.Lines)
+                    {
+                        if (!rowsByGuid.TryGetValue(line.OrderGuid, out var row))
+                        {
+                            throw new KeyNotFoundException($"Warehouse order line was not found: {line.OrderGuid}");
+                        }
+
+                        if (ApplyWarehouseOrderLinePatch(row, line))
+                        {
+                            touchedRows.Add(row.ssip_Guid);
+                        }
+                    }
+                }
+
+                if (touchedRows.Count == 0)
+                {
+                    throw new ArgumentException("At least one warehouse order field must be provided.", nameof(request));
+                }
+
+                foreach (var row in rows.Where(row => touchedRows.Contains(row.ssip_Guid)))
+                {
+                    row.ssip_lastup_user = updateUser;
+                    row.ssip_lastup_date = updatedAt;
+                    row.ssip_degisti = true;
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new WarehouseOrderDocumentUpdateResponse(
+                    new MikroDocumentUpdateSummary("depo-siparisleri", touchedRows.Count, updatedAt, updateUser),
+                    await MapWarehouseOrderDocumentAsync(mikroWriteDbContext, rows, cancellationToken));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<MikroDocumentDeleteResponse> DeleteWarehouseOrderDocumentAsync(
+        DeleteWarehouseOrderDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateWarehouseOrderLookup(request.Lookup);
+
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateWarehouseOrderQuery(mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs, request.Lookup)
+                    .OrderBy(order => order.ssip_satirno)
+                    .ThenBy(order => order.ssip_stok_kod)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Warehouse order document was not found in Mikro write database.");
+                }
+
+                EnsureSingleWarehouseOrderDocument(rows);
+
+                if (request.HardDelete)
+                {
+                    mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.RemoveRange(rows);
+                }
+                else
+                {
+                    foreach (var row in rows)
+                    {
+                        row.ssip_iptal = true;
+                        row.ssip_hidden = true;
+                        row.ssip_degisti = true;
+                        row.ssip_lastup_user = deleteUser;
+                        row.ssip_lastup_date = deletedAt;
+                    }
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    $"depo-siparisleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}",
+                    rows.Length,
+                    deletedAt,
+                    deleteUser,
+                    request.HardDelete ? "hard-delete" : "soft-delete");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     private IQueryable<STOK_HAREKETLERI> CreateStockMovementQuery(
         IQueryable<STOK_HAREKETLERI> source,
         StockMovementDocumentLookupRequest request)
@@ -1278,6 +1632,71 @@ public sealed class MikroDocumentEditingService(
             query = query.Where(movement =>
                 movement.cha_kod == customerCode ||
                 movement.cha_ciro_cari_kodu == customerCode);
+        }
+
+        return query;
+    }
+
+    private IQueryable<SIPARISLER> CreateCompanyOrderQuery(
+        IQueryable<SIPARISLER> source,
+        CompanyOrderDocumentLookupRequest request)
+    {
+        var documentSerie = request.DocumentSerie.Trim();
+        var query = source.Where(order =>
+            order.sip_iptal != true &&
+            order.sip_evrakno_seri == documentSerie &&
+            order.sip_evrakno_sira == request.DocumentOrderNo);
+
+        if (request.OrderType.HasValue)
+        {
+            query = query.Where(order => order.sip_tip == request.OrderType);
+        }
+
+        if (request.OrderKind.HasValue)
+        {
+            query = query.Where(order => order.sip_cins == request.OrderKind);
+        }
+
+        if (request.WarehouseNo.HasValue)
+        {
+            query = query.Where(order => order.sip_depono == request.WarehouseNo.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.CustomerCode))
+        {
+            var customerCode = request.CustomerCode.Trim();
+            query = query.Where(order => order.sip_musteri_kod == customerCode);
+        }
+
+        return query;
+    }
+
+    private IQueryable<DEPOLAR_ARASI_SIPARISLER> CreateWarehouseOrderQuery(
+        IQueryable<DEPOLAR_ARASI_SIPARISLER> source,
+        WarehouseOrderDocumentLookupRequest request)
+    {
+        var documentSerie = request.DocumentSerie.Trim();
+        var query = source.Where(order =>
+            order.ssip_iptal != true &&
+            order.ssip_evrakno_seri == documentSerie &&
+            order.ssip_evrakno_sira == request.DocumentOrderNo);
+
+        if (request.WarehouseNo.HasValue)
+        {
+            var warehouseNo = request.WarehouseNo.Value;
+            query = query.Where(order =>
+                order.ssip_girdepo == warehouseNo ||
+                order.ssip_cikdepo == warehouseNo);
+        }
+
+        if (request.InWarehouseNo.HasValue)
+        {
+            query = query.Where(order => order.ssip_girdepo == request.InWarehouseNo.Value);
+        }
+
+        if (request.OutWarehouseNo.HasValue)
+        {
+            query = query.Where(order => order.ssip_cikdepo == request.OutWarehouseNo.Value);
         }
 
         return query;
@@ -1490,6 +1909,213 @@ public sealed class MikroDocumentEditingService(
         return new CustomerMovementDocumentDto(header, lines);
     }
 
+    private async Task<CompanyOrderDocumentDto> MapCompanyOrderDocumentAsync(
+        MikroDbContext lookupContext,
+        IReadOnlyCollection<SIPARISLER> rows,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = rows
+            .Select(row => row.sip_stok_kod)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var customerCodes = rows
+            .Select(row => row.sip_musteri_kod)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = rows
+            .Select(row => row.sip_depono)
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        var stocks = await LoadStocksAsync(lookupContext, stockCodes, cancellationToken);
+        var customers = await LoadCustomersAsync(lookupContext, customerCodes, cancellationToken);
+        var warehouses = await LoadWarehousesAsync(lookupContext, warehouseNos, cancellationToken);
+        var first = rows.First();
+
+        var lines = rows
+            .OrderBy(row => row.sip_satirno)
+            .ThenBy(row => row.sip_stok_kod)
+            .Select(row =>
+            {
+                var stock = ResolveStock(stocks, row.sip_stok_kod);
+                var unitPointer = NormalizeUnitPointer(row.sip_birim_pntr);
+                var quantity = row.sip_miktar ?? 0d;
+                var deliveredQuantity = row.sip_teslim_miktar ?? 0d;
+                var amount = row.sip_tutar ?? 0d;
+
+                return new CompanyOrderDocumentLineDto(
+                    row.sip_Guid,
+                    row.sip_satirno ?? 0,
+                    row.sip_teslim_tarih,
+                    row.sip_stok_kod ?? string.Empty,
+                    stock?.sto_isim ?? string.Empty,
+                    unitPointer,
+                    ResolveUnitName(unitPointer, stock),
+                    quantity,
+                    deliveredQuantity,
+                    Math.Max(0d, quantity - deliveredQuantity),
+                    row.sip_b_fiyat ?? (quantity == 0d ? 0d : amount / quantity),
+                    amount,
+                    row.sip_iskonto_1 ?? 0d,
+                    row.sip_iskonto_2 ?? 0d,
+                    row.sip_iskonto_3 ?? 0d,
+                    row.sip_iskonto_4 ?? 0d,
+                    row.sip_iskonto_5 ?? 0d,
+                    row.sip_iskonto_6 ?? 0d,
+                    row.sip_masraf_1 ?? 0d,
+                    row.sip_masraf_2 ?? 0d,
+                    row.sip_masraf_3 ?? 0d,
+                    row.sip_masraf_4 ?? 0d,
+                    row.sip_vergi_pntr ?? 0,
+                    row.sip_vergi ?? 0d,
+                    row.sip_aciklama ?? string.Empty,
+                    row.sip_aciklama2 ?? string.Empty,
+                    row.sip_paket_kod ?? string.Empty,
+                    row.sip_parti_kodu ?? string.Empty,
+                    row.sip_lot_no ?? 0,
+                    row.sip_projekodu ?? string.Empty,
+                    row.sip_cari_sormerk ?? string.Empty,
+                    row.sip_stok_sormerk ?? string.Empty,
+                    row.sip_cagrilabilir_fl ?? false,
+                    row.sip_kapat_fl ?? false,
+                    row.sip_kapatmanedenkod ?? string.Empty,
+                    row.sip_lastup_date);
+            })
+            .ToArray();
+
+        var customer = ResolveCustomer(customers, first.sip_musteri_kod);
+        var warehouseName = ResolveWarehouseName(warehouses, first.sip_depono);
+        var header = new CompanyOrderDocumentHeaderDto(
+            first.sip_evrakno_seri ?? string.Empty,
+            first.sip_evrakno_sira ?? 0,
+            first.sip_tip ?? 0,
+            first.sip_cins ?? 0,
+            first.sip_tarih,
+            first.sip_teslim_tarih,
+            first.sip_belge_tarih,
+            first.sip_belgeno ?? string.Empty,
+            first.sip_depono ?? 0,
+            warehouseName,
+            first.sip_musteri_kod ?? string.Empty,
+            BuildCustomerTitle(customer),
+            first.sip_satici_kod ?? string.Empty,
+            first.sip_aciklama ?? string.Empty,
+            first.sip_aciklama2 ?? string.Empty,
+            first.sip_teslimturu ?? string.Empty,
+            first.sip_adresno ?? 0,
+            first.sip_doviz_cinsi ?? 0,
+            first.sip_doviz_kuru ?? 0d,
+            first.sip_alt_doviz_kuru ?? 0d,
+            first.sip_cagrilabilir_fl ?? false,
+            first.sip_kapat_fl ?? false,
+            first.sip_kapatmanedenkod ?? string.Empty,
+            first.sip_projekodu ?? string.Empty,
+            first.sip_cari_sormerk ?? string.Empty,
+            first.sip_stok_sormerk ?? string.Empty,
+            lines.Length,
+            lines.Sum(line => line.Quantity),
+            lines.Sum(line => line.DeliveredQuantity),
+            lines.Sum(line => line.RemainingQuantity),
+            lines.Sum(line => line.Amount),
+            rows.Min(row => row.sip_create_date),
+            rows.Max(row => row.sip_lastup_date));
+
+        return new CompanyOrderDocumentDto(header, lines);
+    }
+
+    private async Task<WarehouseOrderDocumentDto> MapWarehouseOrderDocumentAsync(
+        MikroDbContext lookupContext,
+        IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> rows,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = rows
+            .Select(row => row.ssip_stok_kod)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = rows
+            .SelectMany(row => new[] { row.ssip_girdepo, row.ssip_cikdepo })
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        var stocks = await LoadStocksAsync(lookupContext, stockCodes, cancellationToken);
+        var warehouses = await LoadWarehousesAsync(lookupContext, warehouseNos, cancellationToken);
+        var first = rows.First();
+
+        var lines = rows
+            .OrderBy(row => row.ssip_satirno)
+            .ThenBy(row => row.ssip_stok_kod)
+            .Select(row =>
+            {
+                var stock = ResolveStock(stocks, row.ssip_stok_kod);
+                var unitPointer = NormalizeUnitPointer(row.ssip_birim_pntr);
+                var quantity = row.ssip_miktar ?? 0d;
+                var deliveredQuantity = row.ssip_teslim_miktar ?? 0d;
+                var amount = row.ssip_tutar ?? 0d;
+
+                return new WarehouseOrderDocumentLineDto(
+                    row.ssip_Guid,
+                    row.ssip_satirno ?? 0,
+                    row.ssip_teslim_tarih,
+                    row.ssip_stok_kod ?? string.Empty,
+                    stock?.sto_isim ?? string.Empty,
+                    unitPointer,
+                    ResolveUnitName(unitPointer, stock),
+                    quantity,
+                    deliveredQuantity,
+                    Math.Max(0d, quantity - deliveredQuantity),
+                    row.ssip_b_fiyat ?? (quantity == 0d ? 0d : amount / quantity),
+                    amount,
+                    row.ssip_aciklama ?? string.Empty,
+                    row.ssip_girdepo ?? 0,
+                    ResolveWarehouseName(warehouses, row.ssip_girdepo),
+                    row.ssip_cikdepo ?? 0,
+                    ResolveWarehouseName(warehouses, row.ssip_cikdepo),
+                    row.ssip_kapat_fl ?? false,
+                    row.ssip_kapatmanedenkod ?? string.Empty,
+                    row.ssip_paket_kod ?? string.Empty,
+                    row.ssip_projekodu ?? string.Empty,
+                    row.ssip_sormerkezi ?? string.Empty,
+                    row.ssip_lastup_date);
+            })
+            .ToArray();
+
+        var header = new WarehouseOrderDocumentHeaderDto(
+            first.ssip_evrakno_seri ?? string.Empty,
+            first.ssip_evrakno_sira ?? 0,
+            first.ssip_tarih,
+            first.ssip_teslim_tarih,
+            first.ssip_belge_tarih,
+            first.ssip_belgeno ?? string.Empty,
+            first.ssip_girdepo ?? 0,
+            ResolveWarehouseName(warehouses, first.ssip_girdepo),
+            first.ssip_cikdepo ?? 0,
+            ResolveWarehouseName(warehouses, first.ssip_cikdepo),
+            first.ssip_aciklama ?? string.Empty,
+            first.ssip_kapat_fl ?? false,
+            first.ssip_kapatmanedenkod ?? string.Empty,
+            first.ssip_projekodu ?? string.Empty,
+            first.ssip_sormerkezi ?? string.Empty,
+            lines.Length,
+            lines.Sum(line => line.Quantity),
+            lines.Sum(line => line.DeliveredQuantity),
+            lines.Sum(line => line.RemainingQuantity),
+            lines.Sum(line => line.Amount),
+            rows.Min(row => row.ssip_create_date),
+            rows.Max(row => row.ssip_lastup_date));
+
+        return new WarehouseOrderDocumentDto(header, lines);
+    }
+
     private static async Task<Dictionary<string, STOKLAR>> LoadStocksAsync(
         MikroDbContext lookupContext,
         IReadOnlyCollection<string> stockCodes,
@@ -1612,6 +2238,54 @@ public sealed class MikroDocumentEditingService(
             .ToArray();
 
         await EnsureCustomerCodesExistAsync(customerCodes, cancellationToken);
+    }
+
+    private async Task EnsureCompanyOrderReferencesExistAsync(
+        UpdateCompanyOrderDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = request.Lines
+            .Select(line => line.StockCode)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => NormalizeRequiredText(value!, 25, nameof(CompanyOrderLinePatchDto.StockCode)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var customerCodes = new[] { request.Header?.CustomerCode }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => NormalizeRequiredText(value!, 25, nameof(CompanyOrderHeaderPatchDto.CustomerCode)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = new[] { request.Header?.WarehouseNo }
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        await EnsureStockCodesExistAsync(stockCodes, cancellationToken);
+        await EnsureCustomerCodesExistAsync(customerCodes, cancellationToken);
+        await EnsureWarehouseNosExistAsync(warehouseNos, cancellationToken);
+    }
+
+    private async Task EnsureWarehouseOrderReferencesExistAsync(
+        UpdateWarehouseOrderDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = request.Lines
+            .Select(line => line.StockCode)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => NormalizeRequiredText(value!, 25, nameof(WarehouseOrderLinePatchDto.StockCode)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = request.Lines
+            .SelectMany(line => new[] { line.InWarehouseNo, line.OutWarehouseNo })
+            .Concat(new[] { request.Header?.InWarehouseNo, request.Header?.OutWarehouseNo })
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        await EnsureStockCodesExistAsync(stockCodes, cancellationToken);
+        await EnsureWarehouseNosExistAsync(warehouseNos, cancellationToken);
     }
 
     private async Task EnsureStockCodesExistAsync(
@@ -2234,6 +2908,114 @@ public sealed class MikroDocumentEditingService(
         return changed;
     }
 
+    private static void ApplyCompanyOrderHeaderPatch(
+        SIPARISLER row,
+        CompanyOrderHeaderPatchDto patch)
+    {
+        if (patch.OrderDate.HasValue) row.sip_tarih = patch.OrderDate.Value.Date;
+        if (patch.DeliveryDate.HasValue) row.sip_teslim_tarih = patch.DeliveryDate.Value.Date;
+        if (patch.DocumentDate.HasValue) row.sip_belge_tarih = patch.DocumentDate.Value.Date;
+        if (patch.DocumentNo is not null) row.sip_belgeno = NormalizeText(patch.DocumentNo, 50, nameof(patch.DocumentNo));
+        if (patch.CustomerCode is not null) row.sip_musteri_kod = NormalizeText(patch.CustomerCode, 25, nameof(patch.CustomerCode));
+        if (patch.WarehouseNo.HasValue) row.sip_depono = ValidateNonNegative(patch.WarehouseNo.Value, nameof(patch.WarehouseNo));
+        if (patch.SellerCode is not null) row.sip_satici_kod = NormalizeText(patch.SellerCode, 25, nameof(patch.SellerCode));
+        if (patch.Description1 is not null) row.sip_aciklama = NormalizeText(patch.Description1, 50, nameof(patch.Description1));
+        if (patch.Description2 is not null) row.sip_aciklama2 = NormalizeText(patch.Description2, 50, nameof(patch.Description2));
+        if (patch.DeliveryType is not null) row.sip_teslimturu = NormalizeText(patch.DeliveryType, 4, nameof(patch.DeliveryType));
+        if (patch.AddressNo.HasValue) row.sip_adresno = ValidateNonNegative(patch.AddressNo.Value, nameof(patch.AddressNo));
+        if (patch.CurrencyType.HasValue) row.sip_doviz_cinsi = patch.CurrencyType.Value;
+        if (patch.CurrencyRate.HasValue) row.sip_doviz_kuru = ValidateNonNegative(patch.CurrencyRate.Value, nameof(patch.CurrencyRate));
+        if (patch.AlternativeCurrencyRate.HasValue) row.sip_alt_doviz_kuru = ValidateNonNegative(patch.AlternativeCurrencyRate.Value, nameof(patch.AlternativeCurrencyRate));
+        if (patch.CanBeCalled.HasValue) row.sip_cagrilabilir_fl = patch.CanBeCalled.Value;
+        if (patch.IsClosed.HasValue) row.sip_kapat_fl = patch.IsClosed.Value;
+        if (patch.CloseReasonCode is not null) row.sip_kapatmanedenkod = NormalizeText(patch.CloseReasonCode, 25, nameof(patch.CloseReasonCode));
+        if (patch.ProjectCode is not null) row.sip_projekodu = NormalizeText(patch.ProjectCode, 25, nameof(patch.ProjectCode));
+        if (patch.CustomerResponsibilityCenter is not null) row.sip_cari_sormerk = NormalizeText(patch.CustomerResponsibilityCenter, 25, nameof(patch.CustomerResponsibilityCenter));
+        if (patch.StockResponsibilityCenter is not null) row.sip_stok_sormerk = NormalizeText(patch.StockResponsibilityCenter, 25, nameof(patch.StockResponsibilityCenter));
+    }
+
+    private static bool ApplyCompanyOrderLinePatch(
+        SIPARISLER row,
+        CompanyOrderLinePatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.RowNo, value => row.sip_satirno = ValidateNonNegative(value, nameof(patch.RowNo)), ref changed);
+        SetIfPresent(patch.DeliveryDate, value => row.sip_teslim_tarih = value.Date, ref changed);
+        SetIfPresent(patch.StockCode, value => row.sip_stok_kod = NormalizeText(value, 25, nameof(patch.StockCode)), ref changed);
+        SetIfPresent(patch.UnitPointer, value => row.sip_birim_pntr = ValidateUnitPointer(value, nameof(patch.UnitPointer)), ref changed);
+        SetIfPresent(patch.Quantity, value => row.sip_miktar = ValidateNonNegative(value, nameof(patch.Quantity)), ref changed);
+        SetIfPresent(patch.DeliveredQuantity, value => row.sip_teslim_miktar = ValidateNonNegative(value, nameof(patch.DeliveredQuantity)), ref changed);
+        SetIfPresent(patch.UnitPrice, value => row.sip_b_fiyat = ValidateNonNegative(value, nameof(patch.UnitPrice)), ref changed);
+        SetIfPresent(patch.Amount, value => row.sip_tutar = ValidateNonNegative(value, nameof(patch.Amount)), ref changed);
+        SetIfPresent(patch.Discount1, value => row.sip_iskonto_1 = ValidateNonNegative(value, nameof(patch.Discount1)), ref changed);
+        SetIfPresent(patch.Discount2, value => row.sip_iskonto_2 = ValidateNonNegative(value, nameof(patch.Discount2)), ref changed);
+        SetIfPresent(patch.Discount3, value => row.sip_iskonto_3 = ValidateNonNegative(value, nameof(patch.Discount3)), ref changed);
+        SetIfPresent(patch.Discount4, value => row.sip_iskonto_4 = ValidateNonNegative(value, nameof(patch.Discount4)), ref changed);
+        SetIfPresent(patch.Discount5, value => row.sip_iskonto_5 = ValidateNonNegative(value, nameof(patch.Discount5)), ref changed);
+        SetIfPresent(patch.Discount6, value => row.sip_iskonto_6 = ValidateNonNegative(value, nameof(patch.Discount6)), ref changed);
+        SetIfPresent(patch.Expense1, value => row.sip_masraf_1 = ValidateNonNegative(value, nameof(patch.Expense1)), ref changed);
+        SetIfPresent(patch.Expense2, value => row.sip_masraf_2 = ValidateNonNegative(value, nameof(patch.Expense2)), ref changed);
+        SetIfPresent(patch.Expense3, value => row.sip_masraf_3 = ValidateNonNegative(value, nameof(patch.Expense3)), ref changed);
+        SetIfPresent(patch.Expense4, value => row.sip_masraf_4 = ValidateNonNegative(value, nameof(patch.Expense4)), ref changed);
+        SetIfPresent(patch.TaxPointer, value => row.sip_vergi_pntr = value, ref changed);
+        SetIfPresent(patch.TaxAmount, value => row.sip_vergi = ValidateNonNegative(value, nameof(patch.TaxAmount)), ref changed);
+        SetIfPresent(patch.Description1, value => row.sip_aciklama = NormalizeText(value, 50, nameof(patch.Description1)), ref changed);
+        SetIfPresent(patch.Description2, value => row.sip_aciklama2 = NormalizeText(value, 50, nameof(patch.Description2)), ref changed);
+        SetIfPresent(patch.PackageCode, value => row.sip_paket_kod = NormalizeText(value, 25, nameof(patch.PackageCode)), ref changed);
+        SetIfPresent(patch.PartyCode, value => row.sip_parti_kodu = NormalizeText(value, 25, nameof(patch.PartyCode)), ref changed);
+        SetIfPresent(patch.LotNo, value => row.sip_lot_no = ValidateNonNegative(value, nameof(patch.LotNo)), ref changed);
+        SetIfPresent(patch.ProjectCode, value => row.sip_projekodu = NormalizeText(value, 25, nameof(patch.ProjectCode)), ref changed);
+        SetIfPresent(patch.CustomerResponsibilityCenter, value => row.sip_cari_sormerk = NormalizeText(value, 25, nameof(patch.CustomerResponsibilityCenter)), ref changed);
+        SetIfPresent(patch.StockResponsibilityCenter, value => row.sip_stok_sormerk = NormalizeText(value, 25, nameof(patch.StockResponsibilityCenter)), ref changed);
+        SetIfPresent(patch.CanBeCalled, value => row.sip_cagrilabilir_fl = value, ref changed);
+        SetIfPresent(patch.IsClosed, value => row.sip_kapat_fl = value, ref changed);
+        SetIfPresent(patch.CloseReasonCode, value => row.sip_kapatmanedenkod = NormalizeText(value, 25, nameof(patch.CloseReasonCode)), ref changed);
+
+        return changed;
+    }
+
+    private static void ApplyWarehouseOrderHeaderPatch(
+        DEPOLAR_ARASI_SIPARISLER row,
+        WarehouseOrderHeaderPatchDto patch)
+    {
+        if (patch.OrderDate.HasValue) row.ssip_tarih = patch.OrderDate.Value.Date;
+        if (patch.DeliveryDate.HasValue) row.ssip_teslim_tarih = patch.DeliveryDate.Value.Date;
+        if (patch.DocumentDate.HasValue) row.ssip_belge_tarih = patch.DocumentDate.Value.Date;
+        if (patch.DocumentNo is not null) row.ssip_belgeno = NormalizeText(patch.DocumentNo, 50, nameof(patch.DocumentNo));
+        if (patch.InWarehouseNo.HasValue) row.ssip_girdepo = ValidateNonNegative(patch.InWarehouseNo.Value, nameof(patch.InWarehouseNo));
+        if (patch.OutWarehouseNo.HasValue) row.ssip_cikdepo = ValidateNonNegative(patch.OutWarehouseNo.Value, nameof(patch.OutWarehouseNo));
+        if (patch.Description is not null) row.ssip_aciklama = NormalizeText(patch.Description, 50, nameof(patch.Description));
+        if (patch.IsClosed.HasValue) row.ssip_kapat_fl = patch.IsClosed.Value;
+        if (patch.CloseReasonCode is not null) row.ssip_kapatmanedenkod = NormalizeText(patch.CloseReasonCode, 25, nameof(patch.CloseReasonCode));
+        if (patch.ProjectCode is not null) row.ssip_projekodu = NormalizeText(patch.ProjectCode, 25, nameof(patch.ProjectCode));
+        if (patch.ResponsibilityCenter is not null) row.ssip_sormerkezi = NormalizeText(patch.ResponsibilityCenter, 25, nameof(patch.ResponsibilityCenter));
+    }
+
+    private static bool ApplyWarehouseOrderLinePatch(
+        DEPOLAR_ARASI_SIPARISLER row,
+        WarehouseOrderLinePatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.RowNo, value => row.ssip_satirno = ValidateNonNegative(value, nameof(patch.RowNo)), ref changed);
+        SetIfPresent(patch.DeliveryDate, value => row.ssip_teslim_tarih = value.Date, ref changed);
+        SetIfPresent(patch.StockCode, value => row.ssip_stok_kod = NormalizeText(value, 25, nameof(patch.StockCode)), ref changed);
+        SetIfPresent(patch.UnitPointer, value => row.ssip_birim_pntr = ValidateUnitPointer(value, nameof(patch.UnitPointer)), ref changed);
+        SetIfPresent(patch.Quantity, value => row.ssip_miktar = ValidateNonNegative(value, nameof(patch.Quantity)), ref changed);
+        SetIfPresent(patch.DeliveredQuantity, value => row.ssip_teslim_miktar = ValidateNonNegative(value, nameof(patch.DeliveredQuantity)), ref changed);
+        SetIfPresent(patch.UnitPrice, value => row.ssip_b_fiyat = ValidateNonNegative(value, nameof(patch.UnitPrice)), ref changed);
+        SetIfPresent(patch.Amount, value => row.ssip_tutar = ValidateNonNegative(value, nameof(patch.Amount)), ref changed);
+        SetIfPresent(patch.Description, value => row.ssip_aciklama = NormalizeText(value, 50, nameof(patch.Description)), ref changed);
+        SetIfPresent(patch.InWarehouseNo, value => row.ssip_girdepo = ValidateNonNegative(value, nameof(patch.InWarehouseNo)), ref changed);
+        SetIfPresent(patch.OutWarehouseNo, value => row.ssip_cikdepo = ValidateNonNegative(value, nameof(patch.OutWarehouseNo)), ref changed);
+        SetIfPresent(patch.IsClosed, value => row.ssip_kapat_fl = value, ref changed);
+        SetIfPresent(patch.CloseReasonCode, value => row.ssip_kapatmanedenkod = NormalizeText(value, 25, nameof(patch.CloseReasonCode)), ref changed);
+        SetIfPresent(patch.PackageCode, value => row.ssip_paket_kod = NormalizeText(value, 25, nameof(patch.PackageCode)), ref changed);
+        SetIfPresent(patch.ProjectCode, value => row.ssip_projekodu = NormalizeText(value, 25, nameof(patch.ProjectCode)), ref changed);
+        SetIfPresent(patch.ResponsibilityCenter, value => row.ssip_sormerkezi = NormalizeText(value, 25, nameof(patch.ResponsibilityCenter)), ref changed);
+
+        return changed;
+    }
+
     private static void EnsureSingleStockMovementDocument(IReadOnlyCollection<STOK_HAREKETLERI> rows)
     {
         var documentCount = rows
@@ -2276,6 +3058,44 @@ public sealed class MikroDocumentEditingService(
         }
     }
 
+    private static void EnsureSingleCompanyOrderDocument(IReadOnlyCollection<SIPARISLER> rows)
+    {
+        var documentCount = rows
+            .Select(row => new
+            {
+                row.sip_tip,
+                row.sip_cins,
+                row.sip_evrakno_seri,
+                row.sip_evrakno_sira
+            })
+            .Distinct()
+            .Count();
+
+        if (documentCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one company order document matched. Add orderType or orderKind filters.");
+        }
+    }
+
+    private static void EnsureSingleWarehouseOrderDocument(IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> rows)
+    {
+        var documentCount = rows
+            .Select(row => new
+            {
+                row.ssip_evrakno_seri,
+                row.ssip_evrakno_sira
+            })
+            .Distinct()
+            .Count();
+
+        if (documentCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one warehouse order document matched. Add warehouse filters.");
+        }
+    }
+
     private static void ValidateStockMovementLookup(StockMovementDocumentLookupRequest request)
     {
         _ = NormalizeRequiredText(request.DocumentSerie, 20, nameof(request.DocumentSerie));
@@ -2301,6 +3121,49 @@ public sealed class MikroDocumentEditingService(
         if (request.CustomerCode is not null)
         {
             _ = NormalizeText(request.CustomerCode, 25, nameof(request.CustomerCode));
+        }
+    }
+
+    private static void ValidateCompanyOrderLookup(CompanyOrderDocumentLookupRequest request)
+    {
+        _ = NormalizeRequiredText(request.DocumentSerie, 20, nameof(request.DocumentSerie));
+        if (request.DocumentOrderNo < 0)
+        {
+            throw new ArgumentException("Document order no can not be negative.", nameof(request.DocumentOrderNo));
+        }
+
+        if (request.WarehouseNo is <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (request.CustomerCode is not null)
+        {
+            _ = NormalizeText(request.CustomerCode, 25, nameof(request.CustomerCode));
+        }
+    }
+
+    private static void ValidateWarehouseOrderLookup(WarehouseOrderDocumentLookupRequest request)
+    {
+        _ = NormalizeRequiredText(request.DocumentSerie, 20, nameof(request.DocumentSerie));
+        if (request.DocumentOrderNo < 0)
+        {
+            throw new ArgumentException("Document order no can not be negative.", nameof(request.DocumentOrderNo));
+        }
+
+        if (request.WarehouseNo is <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (request.InWarehouseNo is <= 0)
+        {
+            throw new ArgumentException("In warehouse no must be greater than zero.", nameof(request.InWarehouseNo));
+        }
+
+        if (request.OutWarehouseNo is <= 0)
+        {
+            throw new ArgumentException("Out warehouse no must be greater than zero.", nameof(request.OutWarehouseNo));
         }
     }
 
@@ -2378,6 +3241,42 @@ public sealed class MikroDocumentEditingService(
         }
     }
 
+    private static void ValidateCompanyOrderUpdate(UpdateCompanyOrderDocumentRequest request)
+    {
+        if (request.Lines is null)
+        {
+            throw new ArgumentException("Lines collection is required.", nameof(request.Lines));
+        }
+
+        var duplicateLine = request.Lines
+            .GroupBy(line => line.OrderGuid)
+            .FirstOrDefault(group => group.Key == Guid.Empty || group.Count() > 1)
+            ?.Key;
+
+        if (duplicateLine is not null)
+        {
+            throw new ArgumentException("Line order guid values must be unique and non-empty.", nameof(request.Lines));
+        }
+    }
+
+    private static void ValidateWarehouseOrderUpdate(UpdateWarehouseOrderDocumentRequest request)
+    {
+        if (request.Lines is null)
+        {
+            throw new ArgumentException("Lines collection is required.", nameof(request.Lines));
+        }
+
+        var duplicateLine = request.Lines
+            .GroupBy(line => line.OrderGuid)
+            .FirstOrDefault(group => group.Key == Guid.Empty || group.Count() > 1)
+            ?.Key;
+
+        if (duplicateLine is not null)
+        {
+            throw new ArgumentException("Line order guid values must be unique and non-empty.", nameof(request.Lines));
+        }
+    }
+
     private static bool HasStockMovementHeaderPatch(StockMovementHeaderPatchDto patch) =>
         patch.MovementDate.HasValue ||
         patch.DocumentDate.HasValue ||
@@ -2403,6 +3302,41 @@ public sealed class MikroDocumentEditingService(
         patch.TurnoverCustomerCode is not null ||
         patch.Description is not null ||
         patch.SellerCode is not null ||
+        patch.ProjectCode is not null ||
+        patch.ResponsibilityCenter is not null;
+
+    private static bool HasCompanyOrderHeaderPatch(CompanyOrderHeaderPatchDto patch) =>
+        patch.OrderDate.HasValue ||
+        patch.DeliveryDate.HasValue ||
+        patch.DocumentDate.HasValue ||
+        patch.DocumentNo is not null ||
+        patch.CustomerCode is not null ||
+        patch.WarehouseNo.HasValue ||
+        patch.SellerCode is not null ||
+        patch.Description1 is not null ||
+        patch.Description2 is not null ||
+        patch.DeliveryType is not null ||
+        patch.AddressNo.HasValue ||
+        patch.CurrencyType.HasValue ||
+        patch.CurrencyRate.HasValue ||
+        patch.AlternativeCurrencyRate.HasValue ||
+        patch.CanBeCalled.HasValue ||
+        patch.IsClosed.HasValue ||
+        patch.CloseReasonCode is not null ||
+        patch.ProjectCode is not null ||
+        patch.CustomerResponsibilityCenter is not null ||
+        patch.StockResponsibilityCenter is not null;
+
+    private static bool HasWarehouseOrderHeaderPatch(WarehouseOrderHeaderPatchDto patch) =>
+        patch.OrderDate.HasValue ||
+        patch.DeliveryDate.HasValue ||
+        patch.DocumentDate.HasValue ||
+        patch.DocumentNo is not null ||
+        patch.InWarehouseNo.HasValue ||
+        patch.OutWarehouseNo.HasValue ||
+        patch.Description is not null ||
+        patch.IsClosed.HasValue ||
+        patch.CloseReasonCode is not null ||
         patch.ProjectCode is not null ||
         patch.ResponsibilityCenter is not null;
 

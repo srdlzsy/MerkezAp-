@@ -646,6 +646,261 @@ public sealed record DeleteCustomerMovementDocumentRequest(
     int CurrentUserWarehouseNo,
     bool HardDelete = false);
 
+public sealed record CompanyOrderDocumentLookupRequest(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    byte? OrderType,
+    byte? OrderKind,
+    int? WarehouseNo,
+    string? CustomerCode);
+
+public sealed record CompanyOrderDocumentDto(
+    CompanyOrderDocumentHeaderDto Header,
+    IReadOnlyCollection<CompanyOrderDocumentLineDto> Lines);
+
+public sealed record CompanyOrderDocumentHeaderDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    byte OrderType,
+    byte OrderKind,
+    DateTime? OrderDate,
+    DateTime? DeliveryDate,
+    DateTime? DocumentDate,
+    string DocumentNo,
+    int WarehouseNo,
+    string WarehouseName,
+    string CustomerCode,
+    string CustomerTitle,
+    string SellerCode,
+    string Description1,
+    string Description2,
+    string DeliveryType,
+    int AddressNo,
+    byte CurrencyType,
+    double CurrencyRate,
+    double AlternativeCurrencyRate,
+    bool CanBeCalled,
+    bool IsClosed,
+    string CloseReasonCode,
+    string ProjectCode,
+    string CustomerResponsibilityCenter,
+    string StockResponsibilityCenter,
+    int LineCount,
+    double TotalQuantity,
+    double TotalDeliveredQuantity,
+    double TotalRemainingQuantity,
+    double TotalAmount,
+    DateTime CreatedAt,
+    DateTime? LastUpdatedAt);
+
+public sealed record CompanyOrderDocumentLineDto(
+    Guid OrderGuid,
+    int RowNo,
+    DateTime? DeliveryDate,
+    string StockCode,
+    string StockName,
+    byte UnitPointer,
+    string UnitName,
+    double Quantity,
+    double DeliveredQuantity,
+    double RemainingQuantity,
+    double UnitPrice,
+    double Amount,
+    double Discount1,
+    double Discount2,
+    double Discount3,
+    double Discount4,
+    double Discount5,
+    double Discount6,
+    double Expense1,
+    double Expense2,
+    double Expense3,
+    double Expense4,
+    byte TaxPointer,
+    double TaxAmount,
+    string Description1,
+    string Description2,
+    string PackageCode,
+    string PartyCode,
+    int LotNo,
+    string ProjectCode,
+    string CustomerResponsibilityCenter,
+    string StockResponsibilityCenter,
+    bool CanBeCalled,
+    bool IsClosed,
+    string CloseReasonCode,
+    DateTime? LastUpdatedAt);
+
+public sealed record CompanyOrderHeaderPatchDto(
+    DateTime? OrderDate,
+    DateTime? DeliveryDate,
+    DateTime? DocumentDate,
+    string? DocumentNo,
+    string? CustomerCode,
+    int? WarehouseNo,
+    string? SellerCode,
+    string? Description1,
+    string? Description2,
+    string? DeliveryType,
+    int? AddressNo,
+    byte? CurrencyType,
+    double? CurrencyRate,
+    double? AlternativeCurrencyRate,
+    bool? CanBeCalled,
+    bool? IsClosed,
+    string? CloseReasonCode,
+    string? ProjectCode,
+    string? CustomerResponsibilityCenter,
+    string? StockResponsibilityCenter);
+
+public sealed record CompanyOrderLinePatchDto(
+    Guid OrderGuid,
+    int? RowNo,
+    DateTime? DeliveryDate,
+    string? StockCode,
+    byte? UnitPointer,
+    double? Quantity,
+    double? DeliveredQuantity,
+    double? UnitPrice,
+    double? Amount,
+    double? Discount1,
+    double? Discount2,
+    double? Discount3,
+    double? Discount4,
+    double? Discount5,
+    double? Discount6,
+    double? Expense1,
+    double? Expense2,
+    double? Expense3,
+    double? Expense4,
+    byte? TaxPointer,
+    double? TaxAmount,
+    string? Description1,
+    string? Description2,
+    string? PackageCode,
+    string? PartyCode,
+    int? LotNo,
+    string? ProjectCode,
+    string? CustomerResponsibilityCenter,
+    string? StockResponsibilityCenter,
+    bool? CanBeCalled,
+    bool? IsClosed,
+    string? CloseReasonCode);
+
+public sealed record UpdateCompanyOrderDocumentRequest(
+    CompanyOrderDocumentLookupRequest Lookup,
+    CompanyOrderHeaderPatchDto? Header,
+    IReadOnlyCollection<CompanyOrderLinePatchDto> Lines,
+    int CurrentUserWarehouseNo);
+
+public sealed record DeleteCompanyOrderDocumentRequest(
+    CompanyOrderDocumentLookupRequest Lookup,
+    int CurrentUserWarehouseNo,
+    bool HardDelete = false);
+
+public sealed record WarehouseOrderDocumentLookupRequest(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    int? WarehouseNo,
+    int? InWarehouseNo,
+    int? OutWarehouseNo);
+
+public sealed record WarehouseOrderDocumentDto(
+    WarehouseOrderDocumentHeaderDto Header,
+    IReadOnlyCollection<WarehouseOrderDocumentLineDto> Lines);
+
+public sealed record WarehouseOrderDocumentHeaderDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    DateTime? OrderDate,
+    DateTime? DeliveryDate,
+    DateTime? DocumentDate,
+    string DocumentNo,
+    int InWarehouseNo,
+    string InWarehouseName,
+    int OutWarehouseNo,
+    string OutWarehouseName,
+    string Description,
+    bool IsClosed,
+    string CloseReasonCode,
+    string ProjectCode,
+    string ResponsibilityCenter,
+    int LineCount,
+    double TotalQuantity,
+    double TotalDeliveredQuantity,
+    double TotalRemainingQuantity,
+    double TotalAmount,
+    DateTime CreatedAt,
+    DateTime? LastUpdatedAt);
+
+public sealed record WarehouseOrderDocumentLineDto(
+    Guid OrderGuid,
+    int RowNo,
+    DateTime? DeliveryDate,
+    string StockCode,
+    string StockName,
+    byte UnitPointer,
+    string UnitName,
+    double Quantity,
+    double DeliveredQuantity,
+    double RemainingQuantity,
+    double UnitPrice,
+    double Amount,
+    string Description,
+    int InWarehouseNo,
+    string InWarehouseName,
+    int OutWarehouseNo,
+    string OutWarehouseName,
+    bool IsClosed,
+    string CloseReasonCode,
+    string PackageCode,
+    string ProjectCode,
+    string ResponsibilityCenter,
+    DateTime? LastUpdatedAt);
+
+public sealed record WarehouseOrderHeaderPatchDto(
+    DateTime? OrderDate,
+    DateTime? DeliveryDate,
+    DateTime? DocumentDate,
+    string? DocumentNo,
+    int? InWarehouseNo,
+    int? OutWarehouseNo,
+    string? Description,
+    bool? IsClosed,
+    string? CloseReasonCode,
+    string? ProjectCode,
+    string? ResponsibilityCenter);
+
+public sealed record WarehouseOrderLinePatchDto(
+    Guid OrderGuid,
+    int? RowNo,
+    DateTime? DeliveryDate,
+    string? StockCode,
+    byte? UnitPointer,
+    double? Quantity,
+    double? DeliveredQuantity,
+    double? UnitPrice,
+    double? Amount,
+    string? Description,
+    int? InWarehouseNo,
+    int? OutWarehouseNo,
+    bool? IsClosed,
+    string? CloseReasonCode,
+    string? PackageCode,
+    string? ProjectCode,
+    string? ResponsibilityCenter);
+
+public sealed record UpdateWarehouseOrderDocumentRequest(
+    WarehouseOrderDocumentLookupRequest Lookup,
+    WarehouseOrderHeaderPatchDto? Header,
+    IReadOnlyCollection<WarehouseOrderLinePatchDto> Lines,
+    int CurrentUserWarehouseNo);
+
+public sealed record DeleteWarehouseOrderDocumentRequest(
+    WarehouseOrderDocumentLookupRequest Lookup,
+    int CurrentUserWarehouseNo,
+    bool HardDelete = false);
+
 public sealed record MikroDocumentUpdateSummary(
     string Target,
     int UpdatedRowCount,
@@ -682,3 +937,11 @@ public sealed record StockMovementDocumentUpdateResponse(
 public sealed record CustomerMovementDocumentUpdateResponse(
     MikroDocumentUpdateSummary Summary,
     CustomerMovementDocumentDto Document);
+
+public sealed record CompanyOrderDocumentUpdateResponse(
+    MikroDocumentUpdateSummary Summary,
+    CompanyOrderDocumentDto Document);
+
+public sealed record WarehouseOrderDocumentUpdateResponse(
+    MikroDocumentUpdateSummary Summary,
+    WarehouseOrderDocumentDto Document);

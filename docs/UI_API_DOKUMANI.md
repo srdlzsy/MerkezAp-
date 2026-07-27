@@ -4207,6 +4207,8 @@ Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin ekl
 - `STOK_SATIS_FIYAT_LISTELERI` depo bazli stok satis fiyatlari
 - `DEPOLAR` depo kartlari
 - `CARI_HESAPLAR` cari kartlari
+- `SIPARISLER` firma siparis evraklari
+- `DEPOLAR_ARASI_SIPARISLER` depo siparis evraklari
 
 Menu:
 
@@ -4227,12 +4229,15 @@ Genel kurallar:
 - Stok ve cari hareket belgelerinde `documentSerie` ve `documentOrderNo` zorunludur.
 - `documentType`, `movementType`, `movementKind`, `normalReturn` filtreleri opsiyoneldir. Seri-sira birden fazla evrak tipi/cins/iade kombinasyonuna denk gelirse backend `409 Conflict` doner; UI kullaniciya "evrak tipi/cins/iade filtresi ile daraltin" mesaji gostermelidir.
 - Satir guncellemeleri `movementGuid` ile yapilir. UI detay response'undaki `lines[].movementGuid` degerini satir modelinde saklamalidir.
+- Firma siparislerinde `documentSerie` ve `documentOrderNo` zorunludur; `orderType` (`SIPARISLER.sip_tip`), `orderKind` (`sip_cins`), `warehouseNo` ve `customerCode` opsiyonel daraltma filtreleridir.
+- Depo siparislerinde `documentSerie` ve `documentOrderNo` zorunludur; `warehouseNo`, `inWarehouseNo` ve `outWarehouseNo` opsiyonel daraltma filtreleridir.
+- Siparis satir guncellemeleri `orderGuid` ile yapilir. UI detay response'undaki `lines[].orderGuid` degerini satir modelinde gizli anahtar olarak saklamalidir.
 - Request body'de `null` gelen alanlar degismez. Bos string gonderilirse ilgili metin alani bosaltma istegi olarak islenir.
 - Kayitlarda Mikro audit alanlari guncellenir: `lastup_user`, `lastup_date`, `degisti`.
 - Bu modul yeni evrak olusturma yapmaz; sadece whitelist icindeki alanlari gunceller.
-- Delete yalnizca silinmesi guvenli kayitlarda vardir: depo ozel stok ayari, depo bazli satis fiyati, stok hareket evraki ve cari hareket evraki.
+- Delete yalnizca silinmesi guvenli kayitlarda vardir: depo ozel stok ayari, depo bazli satis fiyati, stok hareket evraki, cari hareket evraki, firma siparis evraki ve depo siparis evraki.
 - Stok karti, depo karti ve cari karti icin delete yoktur; UI bu ana kartlarda sil butonu gostermemelidir.
-- Stok/cari hareket silmede iki mod vardir:
+- Stok/cari hareket ve siparis evraki silmede iki mod vardir:
   - Varsayilan `soft-delete`: Mikro `iptal/hidden` bayraklariyla iptal eder.
   - `hardDelete=true`: eslesen evrak satirlarini fiziksel olarak siler. Stok hareketinde bagli `STOK_HAREKETLERI_EK` satirlari da silinir.
 - UI hard delete icin ayri onay gostermelidir. Onerilen varsayilan davranis soft-delete'tir.
@@ -4270,6 +4275,12 @@ Endpoint ozeti:
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | body | `UpdateCustomerMovementDocumentHttpRequest` | `CustomerMovementDocumentUpdateResponse` | `update` |
 | `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | query | `CompanyOrderDocumentLookupHttpRequest` | `CompanyOrderDocumentDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | body | `UpdateCompanyOrderDocumentHttpRequest` | `CompanyOrderDocumentUpdateResponse` | `update` |
+| `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | query | `CompanyOrderDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | query | `WarehouseOrderDocumentLookupHttpRequest` | `WarehouseOrderDocumentDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | body | `UpdateWarehouseOrderDocumentHttpRequest` | `WarehouseOrderDocumentUpdateResponse` | `update` |
+| `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | query | `WarehouseOrderDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
 
 ### Stok Karti Arama
 
@@ -5223,12 +5234,185 @@ Response:
 
 Hard delete response'unda `deletionMode` alani `hard-delete` gelir.
 
+### Firma Siparis Evraki Getir
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri?documentSerie=F110&documentOrderNo=2841&orderType=1&warehouseNo=110&customerCode=120.01.03106`
+
+Query:
+
+- `documentSerie`: zorunlu, Mikro `SIPARISLER.sip_evrakno_seri`
+- `documentOrderNo`: zorunlu, Mikro `SIPARISLER.sip_evrakno_sira`
+- `orderType`: opsiyonel, Mikro `sip_tip`; mevcut siparis listelerinde `1=verilen`, `0=alinan` olarak kullanilir
+- `orderKind`: opsiyonel, Mikro `sip_cins`
+- `warehouseNo`: opsiyonel, Mikro `sip_depono`
+- `customerCode`: opsiyonel, Mikro `sip_musteri_kod`
+
+Response modeli `CompanyOrderDocumentDto` doner. Header; seri/sira, siparis tipi/cinsi, tarih, teslim tarihi, belge no, depo, cari, aciklama, doviz, kapanma ve toplam alanlarini icerir. Satirlar `orderGuid`, stok, birim, miktar, teslim miktari, kalan miktar, fiyat, tutar, iskonto/masraf, vergi, aciklama, paket, parti/lot, proje ve sorumluluk merkezi alanlarini icerir.
+
+### Firma Siparis Evraki Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri`
+
+Body:
+
+```json
+{
+  "lookup": {
+    "documentSerie": "F110",
+    "documentOrderNo": 2841,
+    "orderType": 1,
+    "warehouseNo": 110,
+    "customerCode": "120.01.03106"
+  },
+  "header": {
+    "orderDate": "2026-04-21",
+    "deliveryDate": "2026-04-24",
+    "documentDate": "2026-04-21",
+    "documentNo": "DUZ-001",
+    "description1": "Duzeltilen aciklama",
+    "warehouseNo": 110,
+    "customerCode": "120.01.03106"
+  },
+  "lines": [
+    {
+      "orderGuid": "9f3db1de-50ef-48a0-a617-7cf5634c4f3a",
+      "rowNo": 0,
+      "stockCode": "015792",
+      "unitPointer": 1,
+      "quantity": 12,
+      "deliveredQuantity": 2,
+      "unitPrice": 10.5,
+      "amount": 126,
+      "description1": "Satir aciklamasi"
+    }
+  ]
+}
+```
+
+Guncellenebilir header alanlari:
+
+- `orderDate`, `deliveryDate`, `documentDate`, `documentNo`
+- `customerCode`, `warehouseNo`, `sellerCode`
+- `description1`, `description2`, `deliveryType`, `addressNo`
+- `currencyType`, `currencyRate`, `alternativeCurrencyRate`
+- `canBeCalled`, `isClosed`, `closeReasonCode`
+- `projectCode`, `customerResponsibilityCenter`, `stockResponsibilityCenter`
+
+Guncellenebilir satir alanlari:
+
+- `rowNo`, `deliveryDate`, `stockCode`, `unitPointer`
+- `quantity`, `deliveredQuantity`, `unitPrice`, `amount`
+- `discount1..discount6`, `expense1..expense4`, `taxPointer`, `taxAmount`
+- `description1`, `description2`, `packageCode`, `partyCode`, `lotNo`
+- `projectCode`, `customerResponsibilityCenter`, `stockResponsibilityCenter`
+- `canBeCalled`, `isClosed`, `closeReasonCode`
+
+Response `CompanyOrderDocumentUpdateResponse` doner; `document` alaninda kaydin guncel hali bulunur.
+
+### Firma Siparis Evraki Sil
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri?documentSerie=F110&documentOrderNo=2841&orderType=1&warehouseNo=110`
+
+Hard delete:
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri?documentSerie=F110&documentOrderNo=2841&orderType=1&warehouseNo=110&hardDelete=true`
+
+Kurallar:
+
+- Query alani `GET /firma-siparisleri` ile aynidir.
+- `hardDelete=false`: `sip_iptal`, `sip_hidden`, `sip_degisti`, `sip_lastup_user`, `sip_lastup_date` alanlari guncellenir.
+- `hardDelete=true`: eslesen `SIPARISLER` satirlari fiziksel silinir.
+- Seri/sira birden fazla `sip_tip` veya `sip_cins` kombinasyonuna denk gelirse `409 Conflict` doner; UI `orderType` veya `orderKind` filtresi istemelidir.
+
+### Depo Siparis Evraki Getir
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri?documentSerie=D110&documentOrderNo=1915&warehouseNo=110`
+
+Query:
+
+- `documentSerie`: zorunlu, Mikro `DEPOLAR_ARASI_SIPARISLER.ssip_evrakno_seri`
+- `documentOrderNo`: zorunlu, Mikro `ssip_evrakno_sira`
+- `warehouseNo`: opsiyonel; `ssip_girdepo` veya `ssip_cikdepo` eslesmesi arar
+- `inWarehouseNo`: opsiyonel, Mikro `ssip_girdepo`
+- `outWarehouseNo`: opsiyonel, Mikro `ssip_cikdepo`
+
+Response modeli `WarehouseOrderDocumentDto` doner. Header; seri/sira, siparis tarihi, teslim tarihi, belge no, giris/cikis depo, aciklama, kapanma ve toplam alanlarini icerir. Satirlar `orderGuid`, stok, birim, miktar, teslim miktari, kalan miktar, fiyat, tutar, giris/cikis depo, aciklama, paket, proje ve sorumluluk merkezi alanlarini icerir.
+
+### Depo Siparis Evraki Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri`
+
+Body:
+
+```json
+{
+  "lookup": {
+    "documentSerie": "D110",
+    "documentOrderNo": 1915,
+    "warehouseNo": 110
+  },
+  "header": {
+    "orderDate": "2026-04-21",
+    "deliveryDate": "2026-04-24",
+    "documentDate": "2026-04-21",
+    "documentNo": "DUZ-DEP-001",
+    "inWarehouseNo": 110,
+    "outWarehouseNo": 50,
+    "description": "Duzeltilen depo siparisi"
+  },
+  "lines": [
+    {
+      "orderGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
+      "rowNo": 0,
+      "stockCode": "015792",
+      "unitPointer": 1,
+      "quantity": 24,
+      "deliveredQuantity": 4,
+      "unitPrice": 8.5,
+      "amount": 204,
+      "description": "Satir aciklamasi"
+    }
+  ]
+}
+```
+
+Guncellenebilir header alanlari:
+
+- `orderDate`, `deliveryDate`, `documentDate`, `documentNo`
+- `inWarehouseNo`, `outWarehouseNo`, `description`
+- `isClosed`, `closeReasonCode`
+- `projectCode`, `responsibilityCenter`
+
+Guncellenebilir satir alanlari:
+
+- `rowNo`, `deliveryDate`, `stockCode`, `unitPointer`
+- `quantity`, `deliveredQuantity`, `unitPrice`, `amount`
+- `description`, `inWarehouseNo`, `outWarehouseNo`
+- `isClosed`, `closeReasonCode`, `packageCode`, `projectCode`, `responsibilityCenter`
+
+Response `WarehouseOrderDocumentUpdateResponse` doner; `document` alaninda kaydin guncel hali bulunur.
+
+### Depo Siparis Evraki Sil
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri?documentSerie=D110&documentOrderNo=1915&warehouseNo=110`
+
+Hard delete:
+
+`DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri?documentSerie=D110&documentOrderNo=1915&warehouseNo=110&hardDelete=true`
+
+Kurallar:
+
+- Query alani `GET /depo-siparisleri` ile aynidir.
+- `hardDelete=false`: `ssip_iptal`, `ssip_hidden`, `ssip_degisti`, `ssip_lastup_user`, `ssip_lastup_date` alanlari guncellenir.
+- `hardDelete=true`: eslesen `DEPOLAR_ARASI_SIPARISLER` satirlari fiziksel silinir.
+- UI varsayilan olarak soft-delete kullanmali, hard delete icin ayri onay istemelidir.
+
 UI is akisi onerisi:
 
-1. Kullanici duzeltme tipini secer: Stok Karti, Depo Karti, Cari Karti, Stok Hareketi veya Cari Hareketi.
+1. Kullanici duzeltme tipini secer: Stok Karti, Depo Karti, Cari Karti, Stok Hareketi, Cari Hareketi, Firma Siparisi veya Depo Siparisi.
 2. Kart duzeltmelerinde once arama endpoint'iyle kayit secilir, sonra detay endpoint'iyle form doldurulur.
-3. Stok/cari hareketinde seri-sira girilir; evrak tipi/cins/iade alanlari varsa query'e eklenir.
-4. Hareket detay response'u geldikten sonra UI `movementGuid` alanlarini satir gridinde gizli anahtar olarak saklar.
+3. Stok/cari hareketinde seri-sira girilir; evrak tipi/cins/iade alanlari varsa query'e eklenir. Siparislerde seri-sira girilir; firma siparisinde `orderType/orderKind`, depo siparisinde depo filtreleriyle daraltma yapilir.
+4. Hareket detay response'u geldikten sonra UI `movementGuid`, siparis detay response'u geldikten sonra `orderGuid` alanlarini satir gridinde gizli anahtar olarak saklar.
 5. Kullanici sadece degisen alanlari gonderir; degismeyen alanlar `null` veya body disinda birakilir.
 6. `409 Conflict` gelirse filtreleri daraltma mesaji gosterilir.
 7. Basarili `PUT` response'u guncel belge/kart halini dondurdugu icin UI gridini bu response ile yeniler.
@@ -15859,6 +16043,14 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UpdateCustomerMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `CustomerMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `TurnoverCustomerCode`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
 - `CustomerMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `CustomerCode`, `TurnoverCustomerCode`, `Quantity`, `Amount`, `SubAmount`, `DueDay`, `Discount1..Discount6`, `Expense1..Expense4`, `Tax1..Tax5`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
+- `CompanyOrderDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `OrderType`, `OrderKind`, `WarehouseNo`, `CustomerCode`, `HardDelete`
+- `UpdateCompanyOrderDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
+- `CompanyOrderHeaderPatchHttpRequest`: `OrderDate`, `DeliveryDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `WarehouseNo`, `SellerCode`, `Description1`, `Description2`, `DeliveryType`, `AddressNo`, `CurrencyType`, `CurrencyRate`, `AlternativeCurrencyRate`, `CanBeCalled`, `IsClosed`, `CloseReasonCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`
+- `CompanyOrderLinePatchHttpRequest`: `OrderGuid`, `RowNo`, `DeliveryDate`, `StockCode`, `UnitPointer`, `Quantity`, `DeliveredQuantity`, `UnitPrice`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `Description1`, `Description2`, `PackageCode`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `CanBeCalled`, `IsClosed`, `CloseReasonCode`
+- `WarehouseOrderDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `WarehouseNo`, `InWarehouseNo`, `OutWarehouseNo`, `HardDelete`
+- `UpdateWarehouseOrderDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
+- `WarehouseOrderHeaderPatchHttpRequest`: `OrderDate`, `DeliveryDate`, `DocumentDate`, `DocumentNo`, `InWarehouseNo`, `OutWarehouseNo`, `Description`, `IsClosed`, `CloseReasonCode`, `ProjectCode`, `ResponsibilityCenter`
+- `WarehouseOrderLinePatchHttpRequest`: `OrderGuid`, `RowNo`, `DeliveryDate`, `StockCode`, `UnitPointer`, `Quantity`, `DeliveredQuantity`, `UnitPrice`, `Amount`, `Description`, `InWarehouseNo`, `OutWarehouseNo`, `IsClosed`, `CloseReasonCode`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
 
 ### Ayar Request Modelleri
 

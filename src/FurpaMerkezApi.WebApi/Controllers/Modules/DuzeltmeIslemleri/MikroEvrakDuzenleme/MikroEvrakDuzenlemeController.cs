@@ -488,6 +488,134 @@ public sealed class MikroEvrakDuzenlemeController(
         return Ok(response);
     }
 
+    [HttpGet("firma-siparisleri")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(CompanyOrderDocumentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CompanyOrderDocumentDto>> GetCompanyOrderDocument(
+        [FromQuery] CompanyOrderDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetCompanyOrderDocumentAsync(request.ToApplicationRequest(), cancellationToken));
+
+    [HttpPut("firma-siparisleri")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(CompanyOrderDocumentUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CompanyOrderDocumentUpdateResponse>> UpdateCompanyOrderDocument(
+        [FromBody] UpdateCompanyOrderDocumentHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await service.UpdateCompanyOrderDocumentAsync(
+            request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
+            cancellationToken);
+
+        await RecordCompanyOrderFlowAsync(
+            response.Document,
+            DocumentFlowStep.DocumentUpdated,
+            $"Firma siparis evraki duzenlendi. Guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpDelete("firma-siparisleri")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteCompanyOrderDocument(
+        [FromQuery] CompanyOrderDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var lookup = request.ToApplicationRequest();
+        var beforeDelete = await service.GetCompanyOrderDocumentAsync(lookup, cancellationToken);
+        var response = await service.DeleteCompanyOrderDocumentAsync(
+            new DeleteCompanyOrderDocumentRequest(
+                lookup,
+                User.GetRequiredWarehouseNo(),
+                request.HardDelete),
+            cancellationToken);
+
+        await RecordCompanyOrderFlowAsync(
+            beforeDelete,
+            DocumentFlowStep.DocumentDeleted,
+            request.HardDelete
+                ? $"Firma siparis evraki fiziksel olarak silindi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, silinen satir: {response.DeletedRowCount}."
+                : $"Firma siparis evraki iptal edildi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, isaretlenen satir: {response.DeletedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpGet("depo-siparisleri")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(WarehouseOrderDocumentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<WarehouseOrderDocumentDto>> GetWarehouseOrderDocument(
+        [FromQuery] WarehouseOrderDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetWarehouseOrderDocumentAsync(request.ToApplicationRequest(), cancellationToken));
+
+    [HttpPut("depo-siparisleri")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(WarehouseOrderDocumentUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<WarehouseOrderDocumentUpdateResponse>> UpdateWarehouseOrderDocument(
+        [FromBody] UpdateWarehouseOrderDocumentHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await service.UpdateWarehouseOrderDocumentAsync(
+            request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
+            cancellationToken);
+
+        await RecordWarehouseOrderFlowAsync(
+            response.Document,
+            DocumentFlowStep.DocumentUpdated,
+            $"Depo siparis evraki duzenlendi. Guncellenen satir: {response.Summary.UpdatedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpDelete("depo-siparisleri")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteWarehouseOrderDocument(
+        [FromQuery] WarehouseOrderDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var lookup = request.ToApplicationRequest();
+        var beforeDelete = await service.GetWarehouseOrderDocumentAsync(lookup, cancellationToken);
+        var response = await service.DeleteWarehouseOrderDocumentAsync(
+            new DeleteWarehouseOrderDocumentRequest(
+                lookup,
+                User.GetRequiredWarehouseNo(),
+                request.HardDelete),
+            cancellationToken);
+
+        await RecordWarehouseOrderFlowAsync(
+            beforeDelete,
+            DocumentFlowStep.DocumentDeleted,
+            request.HardDelete
+                ? $"Depo siparis evraki fiziksel olarak silindi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, silinen satir: {response.DeletedRowCount}."
+                : $"Depo siparis evraki iptal edildi. Evrak: {beforeDelete.Header.DocumentSerie} / {beforeDelete.Header.DocumentOrderNo}, isaretlenen satir: {response.DeletedRowCount}.",
+            cancellationToken);
+
+        return Ok(response);
+    }
+
     private Task RecordReferenceFlowAsync(
         DocumentFlowType documentType,
         int sourceWarehouseNo,
@@ -569,6 +697,65 @@ public sealed class MikroEvrakDuzenlemeController(
                 ChangedByUserId: User.GetRequiredUserId(),
                 DocumentNo: document.Header.DocumentNo,
                 ExternalDocumentNo: document.Header.CustomerCode),
+            cancellationToken);
+    }
+
+    private Task RecordCompanyOrderFlowAsync(
+        CompanyOrderDocumentDto document,
+        DocumentFlowStep step,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var sourceWarehouseNo = ResolveWarehouseNo(document.Header.WarehouseNo);
+
+        return documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.IssuedCompanyOrder,
+                    sourceWarehouseNo,
+                    document.Header.DocumentSerie,
+                    document.Header.DocumentOrderNo),
+                DocumentFlowType.IssuedCompanyOrder,
+                sourceWarehouseNo,
+                null,
+                document.Header.DocumentSerie,
+                document.Header.DocumentOrderNo,
+                step,
+                DocumentFlowStatus.Succeeded,
+                message,
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: document.Header.DocumentNo,
+                ExternalDocumentNo: document.Header.CustomerCode),
+            cancellationToken);
+    }
+
+    private Task RecordWarehouseOrderFlowAsync(
+        WarehouseOrderDocumentDto document,
+        DocumentFlowStep step,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var sourceWarehouseNo = ResolveWarehouseNo(document.Header.InWarehouseNo, document.Header.OutWarehouseNo);
+        var targetWarehouseNo = ResolveNullableWarehouseNo(document.Header.OutWarehouseNo);
+
+        return documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.IssuedWarehouseOrder,
+                    sourceWarehouseNo,
+                    document.Header.DocumentSerie,
+                    document.Header.DocumentOrderNo),
+                DocumentFlowType.IssuedWarehouseOrder,
+                sourceWarehouseNo,
+                targetWarehouseNo,
+                document.Header.DocumentSerie,
+                document.Header.DocumentOrderNo,
+                step,
+                DocumentFlowStatus.Succeeded,
+                message,
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: document.Header.DocumentNo,
+                ExternalDocumentNo: $"{document.Header.InWarehouseNo}->{document.Header.OutWarehouseNo}"),
             cancellationToken);
     }
 
@@ -1606,6 +1793,432 @@ public sealed class CustomerMovementLinePatchHttpRequest
             Tax5,
             Description,
             SellerCode,
+            ProjectCode,
+            ResponsibilityCenter);
+}
+
+public sealed class CompanyOrderDocumentLookupHttpRequest
+{
+    [Required]
+    [StringLength(20)]
+    public string DocumentSerie { get; init; } = string.Empty;
+
+    [Range(0, int.MaxValue)]
+    public int DocumentOrderNo { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? OrderType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? OrderKind { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [StringLength(25)]
+    public string? CustomerCode { get; init; }
+
+    public bool HardDelete { get; init; }
+
+    public CompanyOrderDocumentLookupRequest ToApplicationRequest() =>
+        new(
+            DocumentSerie,
+            DocumentOrderNo,
+            OrderType,
+            OrderKind,
+            WarehouseNo,
+            CustomerCode);
+}
+
+public sealed class UpdateCompanyOrderDocumentHttpRequest
+{
+    [Required]
+    public CompanyOrderDocumentLookupHttpRequest Lookup { get; init; } = new();
+
+    public CompanyOrderHeaderPatchHttpRequest? Header { get; init; }
+
+    public IReadOnlyCollection<CompanyOrderLinePatchHttpRequest> Lines { get; init; } =
+        Array.Empty<CompanyOrderLinePatchHttpRequest>();
+
+    public UpdateCompanyOrderDocumentRequest ToApplicationRequest(int currentUserWarehouseNo) =>
+        new(
+            Lookup.ToApplicationRequest(),
+            Header?.ToApplicationRequest(),
+            Lines.Select(line => line.ToApplicationRequest()).ToArray(),
+            currentUserWarehouseNo);
+}
+
+public sealed class CompanyOrderHeaderPatchHttpRequest
+{
+    public DateTime? OrderDate { get; init; }
+
+    public DateTime? DeliveryDate { get; init; }
+
+    public DateTime? DocumentDate { get; init; }
+
+    [StringLength(50)]
+    public string? DocumentNo { get; init; }
+
+    [StringLength(25)]
+    public string? CustomerCode { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [StringLength(25)]
+    public string? SellerCode { get; init; }
+
+    [StringLength(50)]
+    public string? Description1 { get; init; }
+
+    [StringLength(50)]
+    public string? Description2 { get; init; }
+
+    [StringLength(4)]
+    public string? DeliveryType { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? AddressNo { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? CurrencyType { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? CurrencyRate { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? AlternativeCurrencyRate { get; init; }
+
+    public bool? CanBeCalled { get; init; }
+
+    public bool? IsClosed { get; init; }
+
+    [StringLength(25)]
+    public string? CloseReasonCode { get; init; }
+
+    [StringLength(25)]
+    public string? ProjectCode { get; init; }
+
+    [StringLength(25)]
+    public string? CustomerResponsibilityCenter { get; init; }
+
+    [StringLength(25)]
+    public string? StockResponsibilityCenter { get; init; }
+
+    public CompanyOrderHeaderPatchDto ToApplicationRequest() =>
+        new(
+            OrderDate,
+            DeliveryDate,
+            DocumentDate,
+            DocumentNo,
+            CustomerCode,
+            WarehouseNo,
+            SellerCode,
+            Description1,
+            Description2,
+            DeliveryType,
+            AddressNo,
+            CurrencyType,
+            CurrencyRate,
+            AlternativeCurrencyRate,
+            CanBeCalled,
+            IsClosed,
+            CloseReasonCode,
+            ProjectCode,
+            CustomerResponsibilityCenter,
+            StockResponsibilityCenter);
+}
+
+public sealed class CompanyOrderLinePatchHttpRequest
+{
+    public Guid OrderGuid { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? RowNo { get; init; }
+
+    public DateTime? DeliveryDate { get; init; }
+
+    [StringLength(25)]
+    public string? StockCode { get; init; }
+
+    [Range(1, 4)]
+    public byte? UnitPointer { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? DeliveredQuantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? UnitPrice { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Amount { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Discount1 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Discount2 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Discount3 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Discount4 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Discount5 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Discount6 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Expense1 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Expense2 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Expense3 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Expense4 { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte? TaxPointer { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? TaxAmount { get; init; }
+
+    [StringLength(50)]
+    public string? Description1 { get; init; }
+
+    [StringLength(50)]
+    public string? Description2 { get; init; }
+
+    [StringLength(25)]
+    public string? PackageCode { get; init; }
+
+    [StringLength(25)]
+    public string? PartyCode { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? LotNo { get; init; }
+
+    [StringLength(25)]
+    public string? ProjectCode { get; init; }
+
+    [StringLength(25)]
+    public string? CustomerResponsibilityCenter { get; init; }
+
+    [StringLength(25)]
+    public string? StockResponsibilityCenter { get; init; }
+
+    public bool? CanBeCalled { get; init; }
+
+    public bool? IsClosed { get; init; }
+
+    [StringLength(25)]
+    public string? CloseReasonCode { get; init; }
+
+    public CompanyOrderLinePatchDto ToApplicationRequest() =>
+        new(
+            OrderGuid,
+            RowNo,
+            DeliveryDate,
+            StockCode,
+            UnitPointer,
+            Quantity,
+            DeliveredQuantity,
+            UnitPrice,
+            Amount,
+            Discount1,
+            Discount2,
+            Discount3,
+            Discount4,
+            Discount5,
+            Discount6,
+            Expense1,
+            Expense2,
+            Expense3,
+            Expense4,
+            TaxPointer,
+            TaxAmount,
+            Description1,
+            Description2,
+            PackageCode,
+            PartyCode,
+            LotNo,
+            ProjectCode,
+            CustomerResponsibilityCenter,
+            StockResponsibilityCenter,
+            CanBeCalled,
+            IsClosed,
+            CloseReasonCode);
+}
+
+public sealed class WarehouseOrderDocumentLookupHttpRequest
+{
+    [Required]
+    [StringLength(20)]
+    public string DocumentSerie { get; init; } = string.Empty;
+
+    [Range(0, int.MaxValue)]
+    public int DocumentOrderNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? InWarehouseNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? OutWarehouseNo { get; init; }
+
+    public bool HardDelete { get; init; }
+
+    public WarehouseOrderDocumentLookupRequest ToApplicationRequest() =>
+        new(
+            DocumentSerie,
+            DocumentOrderNo,
+            WarehouseNo,
+            InWarehouseNo,
+            OutWarehouseNo);
+}
+
+public sealed class UpdateWarehouseOrderDocumentHttpRequest
+{
+    [Required]
+    public WarehouseOrderDocumentLookupHttpRequest Lookup { get; init; } = new();
+
+    public WarehouseOrderHeaderPatchHttpRequest? Header { get; init; }
+
+    public IReadOnlyCollection<WarehouseOrderLinePatchHttpRequest> Lines { get; init; } =
+        Array.Empty<WarehouseOrderLinePatchHttpRequest>();
+
+    public UpdateWarehouseOrderDocumentRequest ToApplicationRequest(int currentUserWarehouseNo) =>
+        new(
+            Lookup.ToApplicationRequest(),
+            Header?.ToApplicationRequest(),
+            Lines.Select(line => line.ToApplicationRequest()).ToArray(),
+            currentUserWarehouseNo);
+}
+
+public sealed class WarehouseOrderHeaderPatchHttpRequest
+{
+    public DateTime? OrderDate { get; init; }
+
+    public DateTime? DeliveryDate { get; init; }
+
+    public DateTime? DocumentDate { get; init; }
+
+    [StringLength(50)]
+    public string? DocumentNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? InWarehouseNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? OutWarehouseNo { get; init; }
+
+    [StringLength(50)]
+    public string? Description { get; init; }
+
+    public bool? IsClosed { get; init; }
+
+    [StringLength(25)]
+    public string? CloseReasonCode { get; init; }
+
+    [StringLength(25)]
+    public string? ProjectCode { get; init; }
+
+    [StringLength(25)]
+    public string? ResponsibilityCenter { get; init; }
+
+    public WarehouseOrderHeaderPatchDto ToApplicationRequest() =>
+        new(
+            OrderDate,
+            DeliveryDate,
+            DocumentDate,
+            DocumentNo,
+            InWarehouseNo,
+            OutWarehouseNo,
+            Description,
+            IsClosed,
+            CloseReasonCode,
+            ProjectCode,
+            ResponsibilityCenter);
+}
+
+public sealed class WarehouseOrderLinePatchHttpRequest
+{
+    public Guid OrderGuid { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? RowNo { get; init; }
+
+    public DateTime? DeliveryDate { get; init; }
+
+    [StringLength(25)]
+    public string? StockCode { get; init; }
+
+    [Range(1, 4)]
+    public byte? UnitPointer { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? DeliveredQuantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? UnitPrice { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Amount { get; init; }
+
+    [StringLength(50)]
+    public string? Description { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? InWarehouseNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? OutWarehouseNo { get; init; }
+
+    public bool? IsClosed { get; init; }
+
+    [StringLength(25)]
+    public string? CloseReasonCode { get; init; }
+
+    [StringLength(25)]
+    public string? PackageCode { get; init; }
+
+    [StringLength(25)]
+    public string? ProjectCode { get; init; }
+
+    [StringLength(25)]
+    public string? ResponsibilityCenter { get; init; }
+
+    public WarehouseOrderLinePatchDto ToApplicationRequest() =>
+        new(
+            OrderGuid,
+            RowNo,
+            DeliveryDate,
+            StockCode,
+            UnitPointer,
+            Quantity,
+            DeliveredQuantity,
+            UnitPrice,
+            Amount,
+            Description,
+            InWarehouseNo,
+            OutWarehouseNo,
+            IsClosed,
+            CloseReasonCode,
+            PackageCode,
             ProjectCode,
             ResponsibilityCenter);
 }
