@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FurpaMerkezApi.WebApi.Controllers.Modules.AramaIslemleri;
+using FurpaMerkezApi.WebApi.Controllers.Modules.OperasyonIslemleri;
 using FurpaMerkezApi.WebApi.Filters;
 using FurpaMerkezApi.WebApi.Security;
 using Microsoft.AspNetCore.Http;
@@ -58,6 +59,36 @@ public sealed class WarehouseAccessFilterTests
         var filter = new WarehouseAccessFilter();
 
         Assert.Throws<ForbiddenAccessException>(() => filter.OnActionExecuting(context));
+    }
+
+    [Fact]
+    public void OnActionExecuting_DoesNotScopeProductDistributionTargetWarehouses()
+    {
+        var request = new ProductDistributionSaveHttpRequest
+        {
+            StockCode = "STK001",
+            DistributionCenterWarehouseNo = 50,
+            TotalCaseQuantity = 10,
+            Lines =
+            [
+                new ProductDistributionSaveLineHttpRequest
+                {
+                    WarehouseNo = 1,
+                    CaseQuantity = 4
+                },
+                new ProductDistributionSaveLineHttpRequest
+                {
+                    WarehouseNo = 114,
+                    CaseQuantity = 6
+                }
+            ]
+        };
+        var context = CreateContext(request, currentWarehouseNo: 50);
+        var filter = new WarehouseAccessFilter();
+
+        filter.OnActionExecuting(context);
+
+        Assert.Equal([1, 114], request.Lines.Select(line => line.WarehouseNo));
     }
 
     private static ActionExecutingContext CreateContext(object request, int currentWarehouseNo)

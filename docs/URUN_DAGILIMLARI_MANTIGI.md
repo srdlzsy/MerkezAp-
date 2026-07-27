@@ -133,6 +133,23 @@ API toplam koliyi subelere satis payina gore dagitir.
 5. Kalan koli varsa en buyuk ondalik farktan baslayarak satirlara 1'er koli eklenir.
 6. Esitlik durumunda once daha yuksek agirlik, sonra daha kucuk depo kodu onceliklidir.
 
+Response satirlarinda miktar ve yuzde ayrimi aciktir:
+
+| Alan | Anlam |
+|---|---|
+| `regionCode` | Subenin `DEPOLAR.dep_bolge_kodu` degeri. |
+| `regionName` | UI etiketi; ornek `Bolge 1`. |
+| `lastSalesQuantity` | Secili donemdeki satis miktari; birimi `quantityUnitName`. |
+| `currentStockQuantity` | Referans tarihteki stok miktari; birimi `quantityUnitName`. |
+| `companyAverageDailySales` | Sube basina gunluk ortalama satis miktari; yuzde degildir. |
+| `branchAverageDailySales` | Bu subenin gunluk ortalama satis miktari; yuzde degildir. |
+| `salesSharePercent` | Subenin toplam satis icindeki payi, `0..100`. |
+| `caseSharePercent` | Subeye ayrilan kolinin toplam koli icindeki payi, `0..100`. |
+| `caseQuantity` | Koli miktari; birimi `caseUnitName`. |
+| `unitQuantity` | Mikro siparisine gidecek miktar; birimi `quantityUnitName`. |
+| `quantityUnitName` | Satis/stok/adet miktarlarinin birim etiketi. |
+| `caseUnitName` | Koli alanlarinin birim etiketi. |
+
 Response'taki `reason` alanlari:
 
 | Reason | Anlam |

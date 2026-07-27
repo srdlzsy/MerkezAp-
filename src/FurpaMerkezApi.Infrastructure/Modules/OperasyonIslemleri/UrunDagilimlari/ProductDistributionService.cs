@@ -22,6 +22,8 @@ public sealed class ProductDistributionService(
     private const int MaxSalesDayCount = 365;
     private const int DefaultTake = 100;
     private const int MaxTake = 500;
+    private const string DefaultQuantityUnitName = "adet";
+    private const string CaseUnitName = "koli";
     private const int FirstDocumentOrderNo = 0;
     private const int LongRunningQueryTimeoutSeconds = 180;
     private const string FinalizeDescriptionPrefix = "Dagilim";
@@ -87,6 +89,8 @@ public sealed class ProductDistributionService(
         var totalSales = salesRows.Sum(row => Math.Max(0d, row.LastSalesQuantity));
         var companyAverageDailySales = salesRows.Count == 0 ? 0d : totalSales / salesDayCount / salesRows.Count;
         var allocations = AllocateCases(rowsForAllocation, request.TotalCaseQuantity);
+        var allocatedCaseQuantity = allocations.Values.Sum();
+        var quantityUnitName = ResolveQuantityUnitName(stock);
         var lines = salesRows
             .Where(row => request.IncludeBranchesWithoutSales || row.LastSalesQuantity > 0d || allocations.ContainsKey(row.WarehouseNo))
             .Select(row =>
@@ -97,17 +101,23 @@ public sealed class ProductDistributionService(
                     : row.LastSalesQuantity <= 0d
                         ? "no-period-sales"
                         : "rounded-to-zero";
+                var regionCode = NormalizeOptionalText(row.RegionCode);
 
                 return new ProductDistributionLineDto(
                     row.WarehouseNo,
                     row.WarehouseName,
-                    row.RegionCode,
+                    regionCode,
+                    ResolveRegionName(regionCode),
                     Round(row.LastSalesQuantity),
                     Round(row.CurrentStockQuantity),
                     Round(companyAverageDailySales),
                     Round(row.LastSalesQuantity / salesDayCount),
+                    CalculatePercent(row.LastSalesQuantity, totalSales),
+                    CalculatePercent(caseQuantity, allocatedCaseQuantity),
                     caseQuantity,
                     checked(caseQuantity * stock.PackageFactor),
+                    quantityUnitName,
+                    CaseUnitName,
                     reason);
             })
             .OrderByDescending(line => line.CaseQuantity)
@@ -116,7 +126,6 @@ public sealed class ProductDistributionService(
             .ThenBy(line => line.WarehouseNo)
             .ToArray();
 
-        var allocatedCaseQuantity = lines.Sum(line => line.CaseQuantity);
         var summary = new ProductDistributionSummaryDto(
             salesDayCount,
             referenceDate,
@@ -149,7 +158,7 @@ public sealed class ProductDistributionService(
         var salesDayCount = ClampSalesDayCount(request.SalesDayCount);
         var referenceDate = (request.ReferenceDate ?? DateTime.Today).Date;
         var warnings = new List<string>();
-        var lines = BalanceLines(request, stock.PackageFactor, warnings);
+        var lines = BalanceLines(request, stock.PackageFactor, ResolveQuantityUnitName(stock), warnings);
         var allocatedCaseQuantity = lines.Sum(line => line.CaseQuantity);
         var caseDifference = request.TargetCaseQuantity - allocatedCaseQuantity;
         var isBalanced = caseDifference == 0;
@@ -453,6 +462,9 @@ public sealed class ProductDistributionService(
                 first.DistributionCenterWarehouseNo,
                 $"Depo {first.DistributionCenterWarehouseNo}",
                 null);
+        var totalSalesQuantity = rows.Sum(row => Math.Max(0d, row.LastSalesQuantity));
+        var totalCaseQuantity = rows.Sum(row => row.CaseQuantity);
+        var quantityUnitName = ResolveQuantityUnitName(stock);
 
         var lines = rows
             .OrderBy(row => row.RegionCode)
@@ -460,21 +472,26 @@ public sealed class ProductDistributionService(
             .Select(row =>
             {
                 var warehouse = warehouses.GetValueOrDefault(row.WarehouseNo);
+                var regionCode = NormalizeOptionalText(warehouse?.RegionCode ?? row.RegionCode);
                 return new ProductDistributionLineDto(
                     row.WarehouseNo,
                     warehouse?.WarehouseName ?? $"Depo {row.WarehouseNo}",
-                    warehouse?.RegionCode ?? row.RegionCode,
+                    regionCode,
+                    ResolveRegionName(regionCode),
                     Round(row.LastSalesQuantity),
                     0d,
                     Round(row.CompanyAverageDailySales),
                     Round(row.BranchAverageDailySales),
+                    CalculatePercent(row.LastSalesQuantity, totalSalesQuantity),
+                    CalculatePercent(row.CaseQuantity, totalCaseQuantity),
                     row.CaseQuantity,
                     row.UnitQuantity,
+                    quantityUnitName,
+                    CaseUnitName,
                     row.UnitQuantity > 0 ? "saved" : "no-allocation");
             })
             .ToArray();
 
-        var totalCaseQuantity = lines.Sum(line => line.CaseQuantity);
         var summary = new ProductDistributionSummaryDto(
             DefaultSalesDayCount,
             first.CreatedAt.Date,
@@ -1237,6 +1254,7 @@ public sealed class ProductDistributionService(
     private static IReadOnlyCollection<ProductDistributionBalanceLineDto> BalanceLines(
         ProductDistributionBalanceRequest request,
         int packageFactor,
+        string quantityUnitName,
         ICollection<string> warnings)
     {
         var groupedLines = request.Lines
@@ -1272,21 +1290,33 @@ public sealed class ProductDistributionService(
             ReduceExtraCases(workingLines, -difference, warnings);
         }
 
+        var totalSalesQuantity = workingLines.Sum(line => Math.Max(0d, line.LastSalesQuantity));
+        var allocatedCaseQuantity = workingLines.Sum(line => line.CaseQuantity);
+
         return workingLines
-            .Select(line => new ProductDistributionBalanceLineDto(
-                line.WarehouseNo,
-                line.WarehouseName,
-                line.RegionCode,
-                Round(line.LastSalesQuantity),
-                Round(line.CurrentStockQuantity),
-                Round(line.CompanyAverageDailySales),
-                Round(line.BranchAverageDailySales),
-                line.OriginalCaseQuantity,
-                line.CaseQuantity,
-                line.CaseQuantity - line.OriginalCaseQuantity,
-                checked(line.CaseQuantity * packageFactor),
-                line.IsLocked,
-                GetBalanceReason(line)))
+            .Select(line =>
+            {
+                var regionCode = NormalizeOptionalText(line.RegionCode);
+                return new ProductDistributionBalanceLineDto(
+                    line.WarehouseNo,
+                    line.WarehouseName,
+                    regionCode,
+                    ResolveRegionName(regionCode),
+                    Round(line.LastSalesQuantity),
+                    Round(line.CurrentStockQuantity),
+                    Round(line.CompanyAverageDailySales),
+                    Round(line.BranchAverageDailySales),
+                    CalculatePercent(line.LastSalesQuantity, totalSalesQuantity),
+                    CalculatePercent(line.CaseQuantity, allocatedCaseQuantity),
+                    line.OriginalCaseQuantity,
+                    line.CaseQuantity,
+                    line.CaseQuantity - line.OriginalCaseQuantity,
+                    checked(line.CaseQuantity * packageFactor),
+                    quantityUnitName,
+                    CaseUnitName,
+                    line.IsLocked,
+                    GetBalanceReason(line));
+            })
             .ToArray();
     }
 
@@ -1519,6 +1549,18 @@ public sealed class ProductDistributionService(
 
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string ResolveQuantityUnitName(ProductDistributionStockDto stock) =>
+        NormalizeOptionalText(stock.UnitName) ?? DefaultQuantityUnitName;
+
+    private static string? ResolveRegionName(string? regionCode)
+    {
+        var normalized = NormalizeOptionalText(regionCode);
+        return normalized is null ? null : $"Bolge {normalized}";
+    }
+
+    private static double CalculatePercent(double value, double total) =>
+        total <= 0d ? 0d : Round(Math.Max(0d, value) * 100d / total);
 
     private static int? ParseRegionNo(string? regionCode) =>
         int.TryParse(regionCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out var regionNo)

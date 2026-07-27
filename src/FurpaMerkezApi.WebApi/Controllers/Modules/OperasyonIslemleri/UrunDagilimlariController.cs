@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -254,6 +255,7 @@ public sealed class ProductDistributionBalanceHttpRequest
 
 public sealed class ProductDistributionBalanceLineHttpRequest
 {
+    [IgnoreWarehouseAccess]
     [Range(1, int.MaxValue)]
     public int WarehouseNo { get; init; }
 
@@ -327,6 +329,7 @@ public sealed class ProductDistributionSaveHttpRequest
 
 public sealed class ProductDistributionSaveLineHttpRequest
 {
+    [IgnoreWarehouseAccess]
     [Range(1, int.MaxValue)]
     public int WarehouseNo { get; init; }
 

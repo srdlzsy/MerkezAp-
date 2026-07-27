@@ -70,14 +70,19 @@ public sealed record ProductDistributionBalanceLineDto(
     int WarehouseNo,
     string WarehouseName,
     string? RegionCode,
+    string? RegionName,
     double LastSalesQuantity,
     double CurrentStockQuantity,
     double CompanyAverageDailySales,
     double BranchAverageDailySales,
+    double SalesSharePercent,
+    double CaseSharePercent,
     int OriginalCaseQuantity,
     int CaseQuantity,
     int CaseDelta,
     int UnitQuantity,
+    string QuantityUnitName,
+    string CaseUnitName,
     bool IsLocked,
     string Reason);
 
@@ -150,12 +155,17 @@ public sealed record ProductDistributionLineDto(
     int WarehouseNo,
     string WarehouseName,
     string? RegionCode,
+    string? RegionName,
     double LastSalesQuantity,
     double CurrentStockQuantity,
     double CompanyAverageDailySales,
     double BranchAverageDailySales,
+    double SalesSharePercent,
+    double CaseSharePercent,
     int CaseQuantity,
     int UnitQuantity,
+    string QuantityUnitName,
+    string CaseUnitName,
     string Reason);
 
 public sealed record ProductDistributionSummaryDto(

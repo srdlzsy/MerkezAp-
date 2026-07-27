@@ -85,6 +85,11 @@ public sealed class WarehouseAccessFilter : IActionFilter
                 continue;
             }
 
+            if (property.GetCustomAttribute<IgnoreWarehouseAccessAttribute>() is not null)
+            {
+                continue;
+            }
+
             var propertyValue = property.GetValue(value);
 
             if (IsScopedWarehouseName(property.Name))
@@ -151,3 +156,6 @@ public sealed class WarehouseAccessFilter : IActionFilter
         type == typeof(TimeOnly) ||
         type == typeof(Guid);
 }
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class IgnoreWarehouseAccessAttribute : Attribute;

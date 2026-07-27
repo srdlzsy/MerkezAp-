@@ -11053,14 +11053,19 @@ warnings                       string[]
 warehouseNo                    int
 warehouseName                  string
 regionCode                     string?
-lastSalesQuantity              double
-currentStockQuantity           double
-companyAverageDailySales       double
-branchAverageDailySales        double
+regionName                     string?    UI etiketi; orn. Bolge 1
+lastSalesQuantity              double     miktar; quantityUnitName birimiyle okunur
+currentStockQuantity           double     miktar; quantityUnitName birimiyle okunur
+companyAverageDailySales       double     gunluk ortalama miktar; quantityUnitName/gun
+branchAverageDailySales        double     gunluk ortalama miktar; quantityUnitName/gun
+salesSharePercent              double     0..100; toplam satis icindeki pay
+caseSharePercent               double     0..100; toplam koli icindeki pay
 originalCaseQuantity           int        dengeleme oncesi koli
 caseQuantity                   int        dengeleme sonrasi koli
 caseDelta                      int        degisim, arti/eksi olabilir
 unitQuantity                   int        caseQuantity * stock.packageFactor
+quantityUnitName               string     miktar/adet alanlarinin birimi
+caseUnitName                   string     koli alanlarinin birimi
 isLocked                       bool
 reason                         string     locked, balanced-up, balanced-down, unchanged
 ```
@@ -11125,12 +11130,17 @@ regionCode                     string?
 warehouseNo                    int
 warehouseName                  string
 regionCode                     string?
-lastSalesQuantity              double
-currentStockQuantity           double
-companyAverageDailySales       double
-branchAverageDailySales        double
-caseQuantity                   int
-unitQuantity                   int
+regionName                     string?    UI etiketi; orn. Bolge 1
+lastSalesQuantity              double     miktar; quantityUnitName birimiyle okunur
+currentStockQuantity           double     miktar; quantityUnitName birimiyle okunur
+companyAverageDailySales       double     gunluk ortalama miktar; quantityUnitName/gun
+branchAverageDailySales        double     gunluk ortalama miktar; quantityUnitName/gun
+salesSharePercent              double     0..100; toplam satis icindeki pay
+caseSharePercent               double     0..100; toplam koli icindeki pay
+caseQuantity                   int        koli; caseUnitName birimiyle okunur
+unitQuantity                   int        caseQuantity * stock.packageFactor; quantityUnitName birimiyle okunur
+quantityUnitName               string     miktar/adet alanlarinin birimi
+caseUnitName                   string     koli alanlarinin birimi
 reason                         string
 ```
 
@@ -11252,10 +11262,14 @@ Oneri response alanlari:
 - `summary.totalCaseQuantity`: kullanicinin girdigi toplam koli.
 - `summary.allocatedCaseQuantity`: satirlara dagitilan koli.
 - `summary.caseDifference`: kaydetmeden once `0` olmalidir.
-- `lines[].lastSalesQuantity`: secili donemde subenin satis adedi.
-- `lines[].currentStockQuantity`: referans tarihte subedeki mevcut stok.
-- `lines[].caseQuantity`: UI gridinde duzenlenebilir satir hedef/dagilim koli miktari.
-- `lines[].unitQuantity`: Mikro siparisine gidecek adet.
+- `lines[].regionCode` / `lines[].regionName`: subenin bolge kodu ve UI etiketi.
+- `lines[].lastSalesQuantity`: secili donemde subenin satis miktari; birimi `quantityUnitName` alanindadir.
+- `lines[].currentStockQuantity`: referans tarihte subedeki mevcut stok; birimi `quantityUnitName` alanindadir.
+- `lines[].companyAverageDailySales` ve `lines[].branchAverageDailySales`: gunluk ortalama miktar; yuzde degildir.
+- `lines[].salesSharePercent`: subenin toplam satis icindeki yuzdesi, `0..100`.
+- `lines[].caseSharePercent`: subeye ayrilan kolinin toplam koli icindeki yuzdesi, `0..100`.
+- `lines[].caseQuantity`: UI gridinde duzenlenebilir satir hedef/dagilim koli miktari; birimi `caseUnitName` alanindadir.
+- `lines[].unitQuantity`: Mikro siparisine gidecek miktar; `caseQuantity * stock.packageFactor`, birimi `quantityUnitName` alanindadir.
 - `lines[].reason`: `sales-share`, `equal-share`, `rounded-to-zero`, `no-period-sales` gibi UI ipucu.
 
 `POST .../urun-dagilimlari/dengele` request:
