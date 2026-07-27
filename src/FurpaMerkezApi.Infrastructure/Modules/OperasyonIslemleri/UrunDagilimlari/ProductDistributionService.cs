@@ -23,6 +23,7 @@ public sealed class ProductDistributionService(
     private const int DefaultTake = 100;
     private const int MaxTake = 500;
     private const int FirstDocumentOrderNo = 0;
+    private const int LongRunningQueryTimeoutSeconds = 180;
     private const string FinalizeDescriptionPrefix = "Dagilim";
     private static readonly int[] KnownDistributionCenters = [50, 53, 56];
 
@@ -137,6 +138,40 @@ public sealed class ProductDistributionService(
             warnings);
     }
 
+
+    public async Task<ProductDistributionBalanceDto> BalanceAsync(
+        ProductDistributionBalanceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateBalanceRequest(request);
+
+        var stock = await GetStockAsync(NormalizeStockCode(request.StockCode), cancellationToken);
+        var salesDayCount = ClampSalesDayCount(request.SalesDayCount);
+        var referenceDate = (request.ReferenceDate ?? DateTime.Today).Date;
+        var warnings = new List<string>();
+        var lines = BalanceLines(request, stock.PackageFactor, warnings);
+        var allocatedCaseQuantity = lines.Sum(line => line.CaseQuantity);
+        var caseDifference = request.TargetCaseQuantity - allocatedCaseQuantity;
+        var isBalanced = caseDifference == 0;
+        var summary = new ProductDistributionSummaryDto(
+            salesDayCount,
+            referenceDate,
+            lines.Count,
+            request.TargetCaseQuantity,
+            allocatedCaseQuantity,
+            caseDifference,
+            lines.Sum(line => line.UnitQuantity),
+            isBalanced,
+            isBalanced
+                ? "Dagilim hedef koli ile dengeli."
+                : "Dagilim hedef koli ile dengeli degil; kilitli satirlar veya sifir satirlar kontrol edilmeli.");
+
+        return new ProductDistributionBalanceDto(
+            stock,
+            summary,
+            lines,
+            warnings);
+    }
     public async Task<IReadOnlyCollection<ProductDistributionListItemDto>> ListAsync(
         ProductDistributionListRequest request,
         CancellationToken cancellationToken)
@@ -583,27 +618,36 @@ public sealed class ProductDistributionService(
         await mikroDbContext.Database.OpenConnectionAsync(cancellationToken);
         var connection = mikroDbContext.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = LongRunningQueryTimeoutSeconds;
         command.CommandText = """
+            WITH Sales AS (
+                SELECT
+                    movement.sth_cikis_depo_no AS WarehouseNo,
+                    SUM(movement.sth_miktar) AS LastSalesQuantity
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                WHERE movement.sth_stok_kod = @stockCode
+                  AND movement.sth_tarih >= @periodStart
+                  AND movement.sth_tarih < @periodEndExclusive
+                  AND movement.sth_tip = 1
+                  AND movement.sth_cins = 1
+                  AND COALESCE(movement.sth_normal_iade, 0) = 0
+                  AND movement.sth_cikis_depo_no > 100
+                GROUP BY movement.sth_cikis_depo_no
+            )
             SELECT
                 warehouse.dep_no AS WarehouseNo,
                 warehouse.dep_adi AS WarehouseName,
                 warehouse.dep_bolge_kodu AS RegionCode,
-                COALESCE(SUM(movement.sth_miktar), 0) AS LastSalesQuantity,
+                COALESCE(sales.LastSalesQuantity, 0) AS LastSalesQuantity,
                 COALESCE(dbo.fn_DepodakiMiktar(@stockCode, warehouse.dep_no, @referenceDate), 0) AS CurrentStockQuantity
             FROM dbo.DEPOLAR AS warehouse WITH (NOLOCK)
-            LEFT JOIN dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-                ON movement.sth_cikis_depo_no = warehouse.dep_no
-               AND movement.sth_stok_kod = @stockCode
-               AND movement.sth_tarih >= @periodStart
-               AND movement.sth_tarih < @periodEndExclusive
-               AND movement.sth_tip = 1
-               AND movement.sth_cins = 1
-               AND COALESCE(movement.sth_normal_iade, 0) = 0
+            LEFT JOIN Sales AS sales
+                ON sales.WarehouseNo = warehouse.dep_no
             WHERE warehouse.dep_no > 100
               AND COALESCE(warehouse.dep_iptal, 0) = 0
               AND COALESCE(warehouse.dep_envanter_harici_fl, 0) = 0
-            GROUP BY warehouse.dep_no, warehouse.dep_adi, warehouse.dep_bolge_kodu
-            ORDER BY warehouse.dep_bolge_kodu, warehouse.dep_no;
+            ORDER BY warehouse.dep_bolge_kodu, warehouse.dep_no
+            OPTION (RECOMPILE);
             """;
         AddParameter(command, "@stockCode", stockCode);
         AddParameter(command, "@periodStart", periodStart);
@@ -833,11 +877,12 @@ public sealed class ProductDistributionService(
                 line.BranchAverageDailySales ?? 0d));
         }
 
+        var expectedCaseQuantity = ResolveExpectedCaseQuantity(request);
         var totalCaseQuantity = preparedLines.Sum(line => line.CaseQuantity);
-        if (totalCaseQuantity != request.TotalCaseQuantity)
+        if (totalCaseQuantity != expectedCaseQuantity)
         {
             throw new InvalidOperationException(
-                $"Dagilim koli toplami {totalCaseQuantity}; beklenen toplam {request.TotalCaseQuantity}.");
+                $"Dagilim koli toplami {totalCaseQuantity}; beklenen toplam {expectedCaseQuantity}.");
         }
 
         return preparedLines;
@@ -1188,6 +1233,148 @@ public sealed class ProductDistributionService(
         return allocationRows.ToDictionary(row => row.WarehouseNo, row => row.CaseQuantity);
     }
 
+
+    private static IReadOnlyCollection<ProductDistributionBalanceLineDto> BalanceLines(
+        ProductDistributionBalanceRequest request,
+        int packageFactor,
+        ICollection<string> warnings)
+    {
+        var groupedLines = request.Lines
+            .GroupBy(line => line.WarehouseNo)
+            .Select(group => group.Last())
+            .ToArray();
+
+        if (groupedLines.Length != request.Lines.Count)
+        {
+            throw new ArgumentException("Ayni sube/depo birden fazla satirda gonderilemez.", nameof(request.Lines));
+        }
+
+        var workingLines = groupedLines
+            .Select(line => new BalanceWorkingLine(
+                line.WarehouseNo,
+                string.IsNullOrWhiteSpace(line.WarehouseName) ? $"Depo {line.WarehouseNo}" : line.WarehouseName.Trim(),
+                string.IsNullOrWhiteSpace(line.RegionCode) ? null : line.RegionCode.Trim(),
+                line.LastSalesQuantity,
+                line.CurrentStockQuantity,
+                line.CompanyAverageDailySales,
+                line.BranchAverageDailySales,
+                line.CaseQuantity,
+                line.IsLocked))
+            .ToArray();
+
+        var difference = request.TargetCaseQuantity - workingLines.Sum(line => line.CaseQuantity);
+        if (difference > 0)
+        {
+            AddMissingCases(workingLines, difference, warnings);
+        }
+        else if (difference < 0)
+        {
+            ReduceExtraCases(workingLines, -difference, warnings);
+        }
+
+        return workingLines
+            .Select(line => new ProductDistributionBalanceLineDto(
+                line.WarehouseNo,
+                line.WarehouseName,
+                line.RegionCode,
+                Round(line.LastSalesQuantity),
+                Round(line.CurrentStockQuantity),
+                Round(line.CompanyAverageDailySales),
+                Round(line.BranchAverageDailySales),
+                line.OriginalCaseQuantity,
+                line.CaseQuantity,
+                line.CaseQuantity - line.OriginalCaseQuantity,
+                checked(line.CaseQuantity * packageFactor),
+                line.IsLocked,
+                GetBalanceReason(line)))
+            .ToArray();
+    }
+
+    private static void AddMissingCases(
+        IReadOnlyCollection<BalanceWorkingLine> lines,
+        int missingCaseQuantity,
+        ICollection<string> warnings)
+    {
+        var candidates = lines
+            .Where(line => !line.IsLocked)
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            warnings.Add("Eksik koli var ama kilitli olmayan satir yok; hedefe denge kurulamadi.");
+            return;
+        }
+
+        var additions = AllocateCases(
+            candidates
+                .Select(line => new BranchSalesRow(
+                    line.WarehouseNo,
+                    line.WarehouseName,
+                    line.RegionCode,
+                    Math.Max(0d, line.LastSalesQuantity),
+                    line.CurrentStockQuantity))
+                .ToArray(),
+            missingCaseQuantity);
+
+        foreach (var line in candidates)
+        {
+            line.CaseQuantity = checked(line.CaseQuantity + additions.GetValueOrDefault(line.WarehouseNo));
+        }
+    }
+
+    private static void ReduceExtraCases(
+        IReadOnlyCollection<BalanceWorkingLine> lines,
+        int extraCaseQuantity,
+        ICollection<string> warnings)
+    {
+        var remaining = extraCaseQuantity;
+        var candidates = lines
+            .Where(line => !line.IsLocked && line.CaseQuantity > 0)
+            .OrderBy(line => Math.Max(0d, line.LastSalesQuantity))
+            .ThenBy(line => Math.Max(0d, line.BranchAverageDailySales))
+            .ThenByDescending(line => line.CaseQuantity)
+            .ThenBy(line => line.WarehouseNo)
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            warnings.Add("Fazla koli var ama dusulebilecek kilitli olmayan satir yok; hedefe denge kurulamadi.");
+            return;
+        }
+
+        foreach (var line in candidates)
+        {
+            if (remaining == 0)
+            {
+                break;
+            }
+
+            var removed = Math.Min(line.CaseQuantity, remaining);
+            line.CaseQuantity -= removed;
+            remaining -= removed;
+        }
+
+        if (remaining > 0)
+        {
+            warnings.Add($"Fazla {extraCaseQuantity} kolinin {extraCaseQuantity - remaining} kolisi dusulebildi; kalan {remaining} koli icin kilitli satirlar kontrol edilmeli.");
+        }
+    }
+
+    private static string GetBalanceReason(BalanceWorkingLine line)
+    {
+        if (line.IsLocked)
+        {
+            return "locked";
+        }
+
+        var delta = line.CaseQuantity - line.OriginalCaseQuantity;
+        return delta switch
+        {
+            > 0 => "balanced-up",
+            < 0 => "balanced-down",
+            _ => "unchanged"
+        };
+    }
     private static IReadOnlyCollection<ProductDistributionActionDto> CreateActions(int status) =>
         status switch
         {
@@ -1241,6 +1428,37 @@ public sealed class ProductDistributionService(
         }
     }
 
+
+    private static void ValidateBalanceRequest(ProductDistributionBalanceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.StockCode))
+        {
+            throw new ArgumentException("Stok kodu zorunludur.", nameof(request.StockCode));
+        }
+
+        if (request.TargetCaseQuantity < 0)
+        {
+            throw new ArgumentException("Hedef koli miktari negatif olamaz.", nameof(request.TargetCaseQuantity));
+        }
+
+        if (request.Lines is null || request.Lines.Count == 0)
+        {
+            throw new ArgumentException("En az bir dagilim satiri zorunludur.", nameof(request.Lines));
+        }
+
+        foreach (var line in request.Lines)
+        {
+            if (line.WarehouseNo <= 0)
+            {
+                throw new ArgumentException("Sube/depo kodu sifirdan buyuk olmalidir.", nameof(request.Lines));
+            }
+
+            if (line.CaseQuantity < 0)
+            {
+                throw new ArgumentException("Dagilim koli miktari negatif olamaz.", nameof(request.Lines));
+            }
+        }
+    }
     private static void ValidateSaveRequest(ProductDistributionSaveRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.StockCode))
@@ -1258,11 +1476,24 @@ public sealed class ProductDistributionService(
             throw new ArgumentException("Toplam koli miktari negatif olamaz.", nameof(request.TotalCaseQuantity));
         }
 
+        if (request.TargetCaseQuantity is < 0)
+        {
+            throw new ArgumentException("Hedef koli miktari negatif olamaz.", nameof(request.TargetCaseQuantity));
+        }
+
+        if (request.AllocatedCaseQuantity is < 0)
+        {
+            throw new ArgumentException("Dagitilan koli miktari negatif olamaz.", nameof(request.AllocatedCaseQuantity));
+        }
+
         if (request.Lines is null || request.Lines.Count == 0)
         {
             throw new ArgumentException("En az bir dagilim satiri zorunludur.", nameof(request.Lines));
         }
     }
+
+    private static int ResolveExpectedCaseQuantity(ProductDistributionSaveRequest request) =>
+        request.TargetCaseQuantity ?? request.AllocatedCaseQuantity ?? request.TotalCaseQuantity;
 
     private static int ClampSalesDayCount(int? salesDayCount) =>
         Math.Clamp(salesDayCount ?? DefaultSalesDayCount, MinSalesDayCount, MaxSalesDayCount);
@@ -1418,6 +1649,38 @@ public sealed class ProductDistributionService(
         string DocumentSerie,
         int DocumentOrderNo);
 
+
+    private sealed class BalanceWorkingLine(
+        int warehouseNo,
+        string warehouseName,
+        string? regionCode,
+        double lastSalesQuantity,
+        double currentStockQuantity,
+        double companyAverageDailySales,
+        double branchAverageDailySales,
+        int caseQuantity,
+        bool isLocked)
+    {
+        public int WarehouseNo { get; } = warehouseNo;
+
+        public string WarehouseName { get; } = warehouseName;
+
+        public string? RegionCode { get; } = regionCode;
+
+        public double LastSalesQuantity { get; } = lastSalesQuantity;
+
+        public double CurrentStockQuantity { get; } = currentStockQuantity;
+
+        public double CompanyAverageDailySales { get; } = companyAverageDailySales;
+
+        public double BranchAverageDailySales { get; } = branchAverageDailySales;
+
+        public int OriginalCaseQuantity { get; } = caseQuantity;
+
+        public int CaseQuantity { get; set; } = caseQuantity;
+
+        public bool IsLocked { get; } = isLocked;
+    }
     private sealed class AllocationRow(
         int warehouseNo,
         int caseQuantity,

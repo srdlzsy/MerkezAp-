@@ -735,6 +735,7 @@ GET /api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}
 Ana ekran:
 
 - Tarih araligi ve depo filtresiyle yapilmis firma mal kabul fisleri listelenir.
+- Liste tarih araligi `documentDate` uzerinden calisir; Mikro karsiligi `STOK_HAREKETLERI.sth_belge_tarih` kolonudur. `movementCreateDate` sadece bilgi alanidir.
 - Liste create kaynagi degildir; gecmis fisleri gosterir.
 - Kullanici mevcut fisi acarsa detay endpoint'i salt okunur detay icin
   kullanilir.

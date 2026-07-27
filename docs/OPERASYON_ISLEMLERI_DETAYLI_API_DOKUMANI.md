@@ -572,6 +572,7 @@ Route:
 ```http
 GET    /api/operasyon-islemleri/urun-dagilimlari/dagitim-merkezleri
 POST   /api/operasyon-islemleri/urun-dagilimlari/oneri
+POST   /api/operasyon-islemleri/urun-dagilimlari/dengele
 GET    /api/operasyon-islemleri/urun-dagilimlari
 GET    /api/operasyon-islemleri/urun-dagilimlari/{documentNo}
 POST   /api/operasyon-islemleri/urun-dagilimlari

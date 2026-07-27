@@ -3839,6 +3839,7 @@ Yetki:
 Onemli not:
 
 - Bu liste yeni create kaynagi degil, mevcut yapilmis mal kabul fislerinin gecmis listesidir.
+- Firma mal kabul liste tarih filtresi `documentDate` alanina, Mikro tarafinda `STOK_HAREKETLERI.sth_belge_tarih` kolonuna uygulanir; `movementCreateDate` filtre alani degildir.
 - Response modeli `CompanyMovementListItemDto` ile aynidir.
 - UI ana ekranda gecmisi gosterip `Yeni Mal Kabul` aksiyonuyla create ekranina gecebilir.
 
@@ -10913,6 +10914,7 @@ Endpoint ozeti:
 |---|---|---|---|---|
 | `GET /api/operasyon-islemleri/urun-dagilimlari/dagitim-merkezleri` | - | - | `ProductDistributionCenterDto[]` | `list` |
 | `POST /api/operasyon-islemleri/urun-dagilimlari/oneri` | body | `ProductDistributionProposalHttpRequest` | `ProductDistributionProposalDto` | `create` |
+| `POST /api/operasyon-islemleri/urun-dagilimlari/dengele` | body | `ProductDistributionBalanceHttpRequest` | `ProductDistributionBalanceDto` | `create` |
 | `GET /api/operasyon-islemleri/urun-dagilimlari` | query | `ProductDistributionListHttpRequest` | `ProductDistributionListItemDto[]` | `list` |
 | `GET /api/operasyon-islemleri/urun-dagilimlari/{documentNo}` | path | - | `ProductDistributionDetailDto` | `detail` |
 | `POST /api/operasyon-islemleri/urun-dagilimlari` | body | `ProductDistributionSaveHttpRequest` | `ProductDistributionDetailDto` | `create` |
@@ -10945,18 +10947,46 @@ take                           int?       1..500
 ```text
 stockCode                      string     zorunlu, max 25
 distributionCenterWarehouseNo  int        zorunlu
-totalCaseQuantity              int        zorunlu, 1+
+totalCaseQuantity              int?       1+; eski hedef toplam koli alani
+targetCaseQuantity             int?       1+; onerilen hedef toplam koli alani
+allocatedCaseQuantity          int?       1+; uyumluluk aliasi, targetCaseQuantity bos ise hedef olarak kabul edilir
 salesDayCount                  int?       1..365, bos ise 42
 referenceDate                  DateTime?  bos ise bugun
 includeBranchesWithoutSales    bool
 ```
 
+
+`ProductDistributionBalanceHttpRequest` body:
+
+```text
+stockCode                      string     zorunlu, max 25
+targetCaseQuantity             int        0+; hedef toplam koli
+salesDayCount                  int?       1..365, bos ise 42
+referenceDate                  DateTime?  bos ise bugun
+lines                          ProductDistributionBalanceLineHttpRequest[] zorunlu, min 1
+```
+
+`ProductDistributionBalanceLineHttpRequest` body:
+
+```text
+warehouseNo                    int        zorunlu
+warehouseName                  string?    max 100
+regionCode                     string?    max 25
+lastSalesQuantity              double
+currentStockQuantity           double
+companyAverageDailySales       double
+branchAverageDailySales        double
+caseQuantity                   int        0+; mevcut satir koli
+isLocked                       bool       true ise satir dengelemede degismez
+```
 `ProductDistributionSaveHttpRequest` body:
 
 ```text
 stockCode                      string     zorunlu, max 25
 distributionCenterWarehouseNo  int        zorunlu
-totalCaseQuantity              int        0+
+totalCaseQuantity              int        0+; eski hedef toplam koli alani
+targetCaseQuantity             int?       0+; onerilen hedef toplam koli alani
+allocatedCaseQuantity          int?       0+; uyumluluk aliasi, targetCaseQuantity bos ise hedef olarak kabul edilir
 distributedBy                  string?    max 100
 lines                          ProductDistributionSaveLineHttpRequest[] zorunlu, min 1
 ```
@@ -10965,7 +10995,7 @@ lines                          ProductDistributionSaveLineHttpRequest[] zorunlu,
 
 ```text
 warehouseNo                    int        zorunlu
-caseQuantity                   int        0+
+caseQuantity                   int        0+; satir hedef/dagilim koli miktari
 unitQuantity                   int?
 lastSalesQuantity              double?
 companyAverageDailySales       double?
@@ -11006,6 +11036,33 @@ distributionCenter             ProductDistributionWarehouseDto
 summary                        ProductDistributionSummaryDto
 lines                          ProductDistributionLineDto[]
 warnings                       string[]
+```
+
+`ProductDistributionBalanceDto`
+
+```text
+stock                          ProductDistributionStockDto
+summary                        ProductDistributionSummaryDto
+lines                          ProductDistributionBalanceLineDto[]
+warnings                       string[]
+```
+
+`ProductDistributionBalanceLineDto`
+
+```text
+warehouseNo                    int
+warehouseName                  string
+regionCode                     string?
+lastSalesQuantity              double
+currentStockQuantity           double
+companyAverageDailySales       double
+branchAverageDailySales        double
+originalCaseQuantity           int        dengeleme oncesi koli
+caseQuantity                   int        dengeleme sonrasi koli
+caseDelta                      int        degisim, arti/eksi olabilir
+unitQuantity                   int        caseQuantity * stock.packageFactor
+isLocked                       bool
+reason                         string     locked, balanced-up, balanced-down, unchanged
 ```
 
 `ProductDistributionListItemDto`
@@ -11164,17 +11221,17 @@ documentNo                     string
 deleted                        bool
 message                        string
 ```
-
 Onerilen UI akisi:
 
 1. Ekran acilisinda `GET .../dagitim-merkezleri` ile cikis depolari yuklenir.
 2. Kullanici stok, dagitim merkezi ve toplam koli girer.
 3. `POST .../oneri` cagrilir; API son 42 gun satisini varsayilan alir ve toplam koliyi satis payina gore tam dagitir.
-4. UI `summary.isBalanced = true` beklemeli; kullanici satir degistirirse toplam koli farki sifirlanmadan kaydet butonu aktif olmamalidir.
-5. `POST .../urun-dagilimlari` ile `STOK_DAGILIM` kaydi olusur ve `status.code = 0` doner.
-6. `POST .../{documentNo}/bilgilendir` statusu `1` yapar, stok kartinda `sto_siparis_dursun = 1` isaretler ve bolge bazli alici/ozet bilgisini doner.
-7. UI mail gonderimini kendi mail/outbox katmanina baglamalidir; API su an senkron SMTP gondermez, gonderilecek alici ve ozet bilgisini hazirlar.
-8. `POST .../{documentNo}/kesinlestir` statusu `2` yapar ve her pozitif adetli sube icin Mikro depo siparisi uretir. Ayni evrak tekrar cagrilirsa aciklama/evrak kontroluyle mevcut siparisleri tekrar uretmez.
+4. Kullanici hedef veya satir koli degistirirse `POST .../dengele` ile kilitli satirlari koruyan yeni dagilim alinabilir.
+5. UI `summary.isBalanced = true` beklemeli; kullanici satir degistirirse toplam koli farki sifirlanmadan kaydet butonu aktif olmamalidir.
+6. `POST .../urun-dagilimlari` ile `STOK_DAGILIM` kaydi olusur ve `status.code = 0` doner.
+7. `POST .../{documentNo}/bilgilendir` statusu `1` yapar, stok kartinda `sto_siparis_dursun = 1` isaretler ve bolge bazli alici/ozet bilgisini doner.
+8. UI mail gonderimini kendi mail/outbox katmanina baglamalidir; API su an senkron SMTP gondermez, gonderilecek alici ve ozet bilgisini hazirlar.
+9. `POST .../{documentNo}/kesinlestir` statusu `2` yapar ve her pozitif adetli sube icin Mikro depo siparisi uretir. Ayni evrak tekrar cagrilirsa aciklama/evrak kontroluyle mevcut siparisleri tekrar uretmez.
 
 `POST .../oneri` request:
 
@@ -11197,9 +11254,31 @@ Oneri response alanlari:
 - `summary.caseDifference`: kaydetmeden once `0` olmalidir.
 - `lines[].lastSalesQuantity`: secili donemde subenin satis adedi.
 - `lines[].currentStockQuantity`: referans tarihte subedeki mevcut stok.
-- `lines[].caseQuantity`: UI gridinde duzenlenebilir koli.
+- `lines[].caseQuantity`: UI gridinde duzenlenebilir satir hedef/dagilim koli miktari.
 - `lines[].unitQuantity`: Mikro siparisine gidecek adet.
 - `lines[].reason`: `sales-share`, `equal-share`, `rounded-to-zero`, `no-period-sales` gibi UI ipucu.
+
+`POST .../urun-dagilimlari/dengele` request:
+
+```json
+{
+  "stockCode": "153.01.0001",
+  "targetCaseQuantity": 2000,
+  "lines": [
+    {
+      "warehouseNo": 110,
+      "warehouseName": "Sube 110",
+      "regionCode": "1",
+      "lastSalesQuantity": 84,
+      "currentStockQuantity": 12,
+      "companyAverageDailySales": 1.45,
+      "branchAverageDailySales": 2,
+      "caseQuantity": 2100,
+      "isLocked": false
+    }
+  ]
+}
+```
 
 `POST/PUT .../urun-dagilimlari` request:
 
@@ -11207,13 +11286,14 @@ Oneri response alanlari:
 {
   "stockCode": "153.01.0001",
   "distributionCenterWarehouseNo": 50,
-  "totalCaseQuantity": 120,
+  "targetCaseQuantity": 2100,
+  "allocatedCaseQuantity": 2100,
   "distributedBy": "MERKEZ",
   "lines": [
     {
       "warehouseNo": 110,
-      "caseQuantity": 12,
-      "unitQuantity": 144,
+      "caseQuantity": 2100,
+      "unitQuantity": 25200,
       "lastSalesQuantity": 84,
       "companyAverageDailySales": 1.45,
       "branchAverageDailySales": 2
@@ -11224,7 +11304,8 @@ Oneri response alanlari:
 
 Kayit kurallari:
 
-- `lines[].caseQuantity` toplami `totalCaseQuantity` ile ayni olmalidir.
+- `POST .../dengele`, `targetCaseQuantity` ile mevcut satir toplam farkini kapatir; `isLocked=true` satirlara dokunmaz.
+- `targetCaseQuantity` doluysa `lines[].caseQuantity` toplami bu degerle ayni olmalidir; bos ise `allocatedCaseQuantity`, o da bos ise `totalCaseQuantity` esas alinir.
 - `unitQuantity` bos gonderilirse API `caseQuantity * stock.packageFactor` hesaplar.
 - Ayni sube/depo iki satirda gonderilemez.
 - Dagitim merkezi satir deposu olarak gonderilemez.

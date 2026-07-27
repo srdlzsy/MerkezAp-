@@ -6,6 +6,8 @@ public interface IProductDistributionService
 
     Task<ProductDistributionProposalDto> CreateProposalAsync(ProductDistributionProposalRequest request, CancellationToken cancellationToken);
 
+    Task<ProductDistributionBalanceDto> BalanceAsync(ProductDistributionBalanceRequest request, CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<ProductDistributionListItemDto>> ListAsync(ProductDistributionListRequest request, CancellationToken cancellationToken);
 
     Task<ProductDistributionDetailDto> GetAsync(string documentNo, CancellationToken cancellationToken);
@@ -40,6 +42,44 @@ public sealed record ProductDistributionProposalDto(
     ProductDistributionSummaryDto Summary,
     IReadOnlyCollection<ProductDistributionLineDto> Lines,
     IReadOnlyCollection<string> Warnings);
+public sealed record ProductDistributionBalanceRequest(
+    string StockCode,
+    int TargetCaseQuantity,
+    int? SalesDayCount,
+    DateTime? ReferenceDate,
+    IReadOnlyCollection<ProductDistributionBalanceLineRequest> Lines);
+
+public sealed record ProductDistributionBalanceLineRequest(
+    int WarehouseNo,
+    string? WarehouseName,
+    string? RegionCode,
+    double LastSalesQuantity,
+    double CurrentStockQuantity,
+    double CompanyAverageDailySales,
+    double BranchAverageDailySales,
+    int CaseQuantity,
+    bool IsLocked);
+
+public sealed record ProductDistributionBalanceDto(
+    ProductDistributionStockDto Stock,
+    ProductDistributionSummaryDto Summary,
+    IReadOnlyCollection<ProductDistributionBalanceLineDto> Lines,
+    IReadOnlyCollection<string> Warnings);
+
+public sealed record ProductDistributionBalanceLineDto(
+    int WarehouseNo,
+    string WarehouseName,
+    string? RegionCode,
+    double LastSalesQuantity,
+    double CurrentStockQuantity,
+    double CompanyAverageDailySales,
+    double BranchAverageDailySales,
+    int OriginalCaseQuantity,
+    int CaseQuantity,
+    int CaseDelta,
+    int UnitQuantity,
+    bool IsLocked,
+    string Reason);
 
 public sealed record ProductDistributionListRequest(
     int? Status,
@@ -66,6 +106,8 @@ public sealed record ProductDistributionSaveRequest(
     string StockCode,
     int DistributionCenterWarehouseNo,
     int TotalCaseQuantity,
+    int? TargetCaseQuantity,
+    int? AllocatedCaseQuantity,
     string? DistributedBy,
     IReadOnlyCollection<ProductDistributionSaveLineRequest> Lines);
 

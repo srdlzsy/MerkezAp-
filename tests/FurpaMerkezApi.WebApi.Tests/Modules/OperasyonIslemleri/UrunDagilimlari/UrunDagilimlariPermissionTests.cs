@@ -26,6 +26,7 @@ public sealed class UrunDagilimlariPermissionTests
     [InlineData(nameof(UrunDagilimlariController.List), "operasyon-islemleri.urun-dagilimlari.list")]
     [InlineData(nameof(UrunDagilimlariController.Detail), "operasyon-islemleri.urun-dagilimlari.detail")]
     [InlineData(nameof(UrunDagilimlariController.Proposal), "operasyon-islemleri.urun-dagilimlari.create")]
+    [InlineData(nameof(UrunDagilimlariController.Balance), "operasyon-islemleri.urun-dagilimlari.create")]
     [InlineData(nameof(UrunDagilimlariController.Save), "operasyon-islemleri.urun-dagilimlari.create")]
     [InlineData(nameof(UrunDagilimlariController.Update), "operasyon-islemleri.urun-dagilimlari.update")]
     [InlineData(nameof(UrunDagilimlariController.Notify), "operasyon-islemleri.urun-dagilimlari.update")]

@@ -42,12 +42,21 @@ public sealed class UrunDagilimlariController(IProductDistributionService produc
             new ProductDistributionProposalRequest(
                 request.StockCode,
                 request.DistributionCenterWarehouseNo,
-                request.TotalCaseQuantity,
+                ResolveProposalCaseQuantity(request),
                 request.SalesDayCount,
                 request.ReferenceDate,
                 request.IncludeBranchesWithoutSales),
             cancellationToken));
 
+
+    [HttpPost("dengele")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(ProductDistributionBalanceDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ProductDistributionBalanceDto>> Balance(
+        [FromBody] ProductDistributionBalanceHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await productDistributionService.BalanceAsync(ToBalanceRequest(request), cancellationToken));
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProductDistributionListItemDto>), StatusCodes.Status200OK)]
@@ -142,11 +151,32 @@ public sealed class UrunDagilimlariController(IProductDistributionService produc
         CancellationToken cancellationToken) =>
         Ok(await productDistributionService.DeleteAsync(documentNo, cancellationToken));
 
+
+    private static ProductDistributionBalanceRequest ToBalanceRequest(ProductDistributionBalanceHttpRequest request) =>
+        new(
+            request.StockCode,
+            request.TargetCaseQuantity,
+            request.SalesDayCount,
+            request.ReferenceDate,
+            request.Lines
+                .Select(line => new ProductDistributionBalanceLineRequest(
+                    line.WarehouseNo,
+                    line.WarehouseName,
+                    line.RegionCode,
+                    line.LastSalesQuantity,
+                    line.CurrentStockQuantity,
+                    line.CompanyAverageDailySales,
+                    line.BranchAverageDailySales,
+                    line.CaseQuantity,
+                    line.IsLocked))
+                .ToArray());
     private ProductDistributionSaveRequest ToSaveRequest(ProductDistributionSaveHttpRequest request) =>
         new(
             request.StockCode,
             request.DistributionCenterWarehouseNo,
             request.TotalCaseQuantity,
+            request.TargetCaseQuantity,
+            request.AllocatedCaseQuantity,
             ResolveUserName(request.DistributedBy),
             request.Lines
                 .Select(line => new ProductDistributionSaveLineRequest(
@@ -157,6 +187,9 @@ public sealed class UrunDagilimlariController(IProductDistributionService produc
                     line.CompanyAverageDailySales,
                     line.BranchAverageDailySales))
                 .ToArray());
+
+    private static int ResolveProposalCaseQuantity(ProductDistributionProposalHttpRequest request) =>
+        request.TargetCaseQuantity ?? request.AllocatedCaseQuantity ?? request.TotalCaseQuantity ?? 0;
 
     private string? ResolveUserName(string? requestedName)
     {
@@ -182,7 +215,13 @@ public sealed class ProductDistributionProposalHttpRequest
     public int DistributionCenterWarehouseNo { get; init; }
 
     [Range(1, int.MaxValue)]
-    public int TotalCaseQuantity { get; init; }
+    public int? TotalCaseQuantity { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? TargetCaseQuantity { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? AllocatedCaseQuantity { get; init; }
 
     [Range(1, 365)]
     public int? SalesDayCount { get; init; }
@@ -192,6 +231,51 @@ public sealed class ProductDistributionProposalHttpRequest
     public bool IncludeBranchesWithoutSales { get; init; }
 }
 
+
+public sealed class ProductDistributionBalanceHttpRequest
+{
+    [Required]
+    [StringLength(25)]
+    public string StockCode { get; init; } = string.Empty;
+
+    [Range(0, int.MaxValue)]
+    public int TargetCaseQuantity { get; init; }
+
+    [Range(1, 365)]
+    public int? SalesDayCount { get; init; }
+
+    public DateTime? ReferenceDate { get; init; }
+
+    [Required]
+    [MinLength(1)]
+    public IReadOnlyCollection<ProductDistributionBalanceLineHttpRequest> Lines { get; init; } =
+        Array.Empty<ProductDistributionBalanceLineHttpRequest>();
+}
+
+public sealed class ProductDistributionBalanceLineHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int WarehouseNo { get; init; }
+
+    [StringLength(100)]
+    public string? WarehouseName { get; init; }
+
+    [StringLength(25)]
+    public string? RegionCode { get; init; }
+
+    public double LastSalesQuantity { get; init; }
+
+    public double CurrentStockQuantity { get; init; }
+
+    public double CompanyAverageDailySales { get; init; }
+
+    public double BranchAverageDailySales { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int CaseQuantity { get; init; }
+
+    public bool IsLocked { get; init; }
+}
 public sealed class ProductDistributionListHttpRequest
 {
     [Range(0, 2)]
@@ -225,6 +309,12 @@ public sealed class ProductDistributionSaveHttpRequest
 
     [Range(0, int.MaxValue)]
     public int TotalCaseQuantity { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? TargetCaseQuantity { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? AllocatedCaseQuantity { get; init; }
 
     [StringLength(100)]
     public string? DistributedBy { get; init; }
