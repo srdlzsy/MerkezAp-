@@ -136,7 +136,7 @@ public sealed class FirmaSevkleriController(
         [FromBody, Required] SendEDespatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDetailPolicy);
 
         return Ok(await eDespatchService.SendAsync(
             new SendEDespatchRequest(
@@ -177,7 +177,7 @@ public sealed class FirmaSevkleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDetailPolicy);
         var response = await eDespatchService.GetPdfAsync(
             new GetEDespatchPdfRequest(
                 EDespatchDocumentType.OutgoingCompanyShipment,
@@ -200,7 +200,7 @@ public sealed class FirmaSevkleriController(
         [FromBody] CreateCompanyMovementHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, OutgoingCreatePolicy);
         var response = await createCompanyShipmentUseCase.ExecuteAsync(
             new CreateCompanyMovementRequest(
                 warehouseNo,
@@ -257,7 +257,9 @@ public sealed class FirmaSevkleriController(
         CompanyMovementKind kind,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(
+            request.WarehouseNo,
+            kind == CompanyMovementKind.IncomingShipment ? IncomingListPolicy : OutgoingListPolicy);
 
         return Ok(await listCompanyShipmentsUseCase.ExecuteAsync(
             new CompanyMovementListRequest(
@@ -275,7 +277,9 @@ public sealed class FirmaSevkleriController(
         CompanyMovementKind kind,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(
+            warehouseNo,
+            kind == CompanyMovementKind.IncomingShipment ? IncomingDetailPolicy : OutgoingDetailPolicy);
 
         return Ok(await getCompanyShipmentDetailUseCase.ExecuteAsync(
             new CompanyMovementDetailRequest(

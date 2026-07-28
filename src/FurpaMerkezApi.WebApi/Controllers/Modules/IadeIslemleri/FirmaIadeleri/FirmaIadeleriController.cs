@@ -42,7 +42,7 @@ public sealed class FirmaIadeleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listCompanyReturnsUseCase.ExecuteAsync(
             new CompanyMovementListRequest(
@@ -63,7 +63,7 @@ public sealed class FirmaIadeleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getCompanyReturnDetailUseCase.ExecuteAsync(
             new CompanyMovementDetailRequest(
@@ -82,7 +82,7 @@ public sealed class FirmaIadeleriController(
         [FromBody] CreateCompanyMovementHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createCompanyReturnUseCase.ExecuteAsync(
             new CreateCompanyMovementRequest(
                 warehouseNo,
@@ -141,7 +141,7 @@ public sealed class FirmaIadeleriController(
         [FromBody, Required] SendEDespatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await eDespatchService.SendAsync(
             new SendEDespatchRequest(
@@ -168,7 +168,7 @@ public sealed class FirmaIadeleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
         var response = await eDespatchService.GetPdfAsync(
             new GetEDespatchPdfRequest(
                 EDespatchDocumentType.CompanyReturn,

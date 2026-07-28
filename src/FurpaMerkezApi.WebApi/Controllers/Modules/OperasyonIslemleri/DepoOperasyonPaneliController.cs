@@ -18,9 +18,11 @@ public sealed class DepoOperasyonPaneliController(
     private const string MenuCode = "depo-operasyon-paneli";
     private const string MenuName = "DepoOperasyonPaneli";
     private const string ListPolicy = "operasyon-islemleri.depo-operasyon-paneli.list";
+    private const string AllWarehousesPolicy = "operasyon-islemleri.depo-operasyon-paneli.all-warehouses";
 
     [HttpGet]
-    [Authorize(Roles = "Administrator,Admin", Policy = ListPolicy)]
+    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = AllWarehousesPolicy)]
     [ProducesResponseType(typeof(WarehouseOperationsDashboardDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<WarehouseOperationsDashboardDto>> Get(
         [FromQuery] DateOnly? date,

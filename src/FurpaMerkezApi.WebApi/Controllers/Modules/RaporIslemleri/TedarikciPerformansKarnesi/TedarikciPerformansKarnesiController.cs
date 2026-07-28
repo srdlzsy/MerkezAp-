@@ -21,6 +21,7 @@ public sealed class TedarikciPerformansKarnesiController(
     private const string MenuName = "TedarikciPerformansKarnesi";
     private const string ListPolicy = "rapor-islemleri.tedarikci-performans-karnesi.list";
     private const string DetailPolicy = "rapor-islemleri.tedarikci-performans-karnesi.detail";
+    private const string AllWarehousesPolicy = "rapor-islemleri.tedarikci-performans-karnesi.all-warehouses";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -30,7 +31,7 @@ public sealed class TedarikciPerformansKarnesiController(
         [FromQuery] SupplierPerformanceHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy);
 
         return Ok(await useCase.GetReportAsync(ToApplicationRequest(request, warehouseNo, request.CustomerCode), cancellationToken));
     }
@@ -45,7 +46,7 @@ public sealed class TedarikciPerformansKarnesiController(
         [FromQuery] SupplierPerformanceDetailHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy);
 
         return Ok(await useCase.GetDetailAsync(
             new SupplierPerformanceDetailRequest(

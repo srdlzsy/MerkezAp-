@@ -19,6 +19,7 @@ public sealed class PromosyonRaporlariController(IPromotionReportsUseCase promot
     private const string MenuCode = "promosyon-raporlari";
     private const string MenuName = "PromosyonRaporlari";
     private const string ListPolicy = "rapor-islemleri.promosyon-raporlari.list";
+    private const string AllWarehousesPolicy = "rapor-islemleri.promosyon-raporlari.all-warehouses";
 
     [HttpGet("bultenler")]
     [Authorize(Policy = ListPolicy)]
@@ -29,7 +30,7 @@ public sealed class PromosyonRaporlariController(IPromotionReportsUseCase promot
         CancellationToken cancellationToken) =>
         Ok(await promotionReportsUseCase.GetBulletinsAsync(
             new PromotionBulletinListRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.ActiveOn,
                 request.OnlyActive,
                 request.Search,
@@ -46,7 +47,7 @@ public sealed class PromosyonRaporlariController(IPromotionReportsUseCase promot
         CancellationToken cancellationToken) =>
         Ok(await promotionReportsUseCase.GetBulletinOptionsAsync(
             new PromotionBulletinListRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.ActiveOn,
                 request.OnlyActive,
                 request.Search,
@@ -90,7 +91,7 @@ public sealed class PromosyonRaporlariController(IPromotionReportsUseCase promot
         var startDate = request.StartDate?.Date ?? endDate.AddDays(-30);
 
         return new(
-            User.ResolveWarehouseScope(request.WarehouseNo),
+            User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
             startDate,
             endDate,
             request.PromotionCode,

@@ -37,7 +37,7 @@ public sealed class MasrafFisleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listExpenseReceiptsUseCase.ExecuteAsync(
             new StockReceiptListRequest(
@@ -58,7 +58,7 @@ public sealed class MasrafFisleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getExpenseReceiptDetailUseCase.ExecuteAsync(
             new StockReceiptDetailRequest(
@@ -76,7 +76,7 @@ public sealed class MasrafFisleriController(
         [FromBody] CreateStockReceiptHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createExpenseReceiptUseCase.ExecuteAsync(
             new CreateStockReceiptRequest(
                 warehouseNo,

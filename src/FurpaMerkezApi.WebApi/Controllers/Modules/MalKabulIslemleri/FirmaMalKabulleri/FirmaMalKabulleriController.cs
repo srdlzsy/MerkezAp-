@@ -45,7 +45,7 @@ public sealed class FirmaMalKabulleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listCompanyReceivingDocumentsUseCase.ExecuteAsync(
             new CompanyMovementListRequest(
@@ -66,7 +66,7 @@ public sealed class FirmaMalKabulleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getCompanyReceivingDocumentDetailUseCase.ExecuteAsync(
             new CompanyMovementDetailRequest(
@@ -88,7 +88,7 @@ public sealed class FirmaMalKabulleriController(
         [FromBody] CreateCompanyReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createCompanyReceivingUseCase.ExecuteAsync(
             new CreateCompanyReceivingRequest(
                 warehouseNo,
@@ -179,7 +179,7 @@ public sealed class FirmaMalKabulleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy);
 
         return Ok(await getInboundDespatchLookupUseCase.ExecuteAsync(
             new InboundDespatchLookupRequest(

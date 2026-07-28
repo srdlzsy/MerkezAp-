@@ -36,7 +36,7 @@ public sealed class OnerilenDepoSiparisleriController(
         [FromQuery] SuggestedWarehouseOrderListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var targetWarehouseNo = User.ResolveWarehouseNo(request.TargetWarehouseNo);
+        var targetWarehouseNo = User.ResolveWarehouseNoForPolicy(request.TargetWarehouseNo, ListPolicy);
 
         return Ok(await listSuggestedWarehouseOrdersUseCase.ExecuteAsync(
             new SuggestedWarehouseOrderListRequest(
@@ -55,7 +55,7 @@ public sealed class OnerilenDepoSiparisleriController(
         [FromBody] ConvertSuggestedWarehouseOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var targetWarehouseNo = User.ResolveWarehouseNo(request.TargetWarehouseNo);
+        var targetWarehouseNo = User.ResolveWarehouseNoForPolicy(request.TargetWarehouseNo, CreatePolicy);
         var response = await createIssuedWarehouseOrderUseCase.ExecuteAsync(
             new CreateIssuedWarehouseOrderRequest(
                 targetWarehouseNo,

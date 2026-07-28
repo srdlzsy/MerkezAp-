@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.StokAnomaliMerkezi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
@@ -24,6 +23,7 @@ public sealed class StokAnomaliMerkeziController(IStockAnomalyCenterService stoc
     private const string DetailPolicy = "stok-islemleri.stok-anomali-merkezi.detail";
     private const string UpdatePolicy = "stok-islemleri.stok-anomali-merkezi.update";
     private const string ScanPolicy = "stok-islemleri.stok-anomali-merkezi.scan";
+    private const string AllWarehousesPolicy = "stok-islemleri.stok-anomali-merkezi.all-warehouses";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -79,7 +79,7 @@ public sealed class StokAnomaliMerkeziController(IStockAnomalyCenterService stoc
     {
         return Ok(await stockAnomalyCenterService.GetAsync(
             id,
-            CanViewAllWarehouses(User) ? null : User.GetRequiredWarehouseNo(),
+            User.HasPermission(AllWarehousesPolicy) ? null : User.GetRequiredWarehouseNo(),
             cancellationToken));
     }
 
@@ -130,22 +130,14 @@ public sealed class StokAnomaliMerkeziController(IStockAnomalyCenterService stoc
                 request.Status,
                 request.Note,
                 User.GetRequiredUserId(),
-                CanViewAllWarehouses(User) ? null : User.GetRequiredWarehouseNo()),
+                User.HasPermission(AllWarehousesPolicy) ? null : User.GetRequiredWarehouseNo()),
             cancellationToken));
     }
 
     private int? ResolveWarehouseScope(int? requestedWarehouseNo)
     {
-        if (CanViewAllWarehouses(User))
-        {
-            return requestedWarehouseNo;
-        }
-
-        return User.GetRequiredWarehouseNo();
+        return User.ResolveWarehouseScope(requestedWarehouseNo, AllWarehousesPolicy);
     }
-
-    private static bool CanViewAllWarehouses(ClaimsPrincipal user) =>
-        user.IsInRole("Administrator") || user.IsInRole("Admin");
 }
 
 public sealed class StockAnomalyListHttpRequest

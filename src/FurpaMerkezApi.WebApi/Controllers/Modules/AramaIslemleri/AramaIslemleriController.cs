@@ -33,7 +33,7 @@ public sealed class AramaIslemleriController(
         [FromQuery] ProductSearchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
 
         return Ok(await searchProductsUseCase.ExecuteAsync(
             new ProductSearchRequest(
@@ -55,7 +55,7 @@ public sealed class AramaIslemleriController(
         [FromQuery] ProductSearchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, PriceLookupPolicy);
 
         return Ok(await searchProductsUseCase.ExecuteAsync(
             new ProductSearchRequest(
@@ -80,7 +80,7 @@ public sealed class AramaIslemleriController(
     {
         var normalizedBarcode = NormalizeOrNull(barcode)
             ?? throw new ArgumentException("Barcode is required.", nameof(barcode));
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, PriceLookupPolicy);
 
         return Ok(await searchProductsUseCase.ExecuteAsync(
             new ProductSearchRequest(
@@ -146,7 +146,7 @@ public sealed class AramaIslemleriController(
         [FromQuery] BarcodeResolutionHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
 
         return Ok(await resolveBarcodeUseCase.ExecuteAsync(
             new BarcodeResolutionRequest(
@@ -167,7 +167,7 @@ public sealed class AramaIslemleriController(
     {
         var barcode = NormalizeOrNull(request.Barcode)
             ?? throw new ArgumentException("Barcode is required.", nameof(request.Barcode));
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, BarcodeCustomerLookupPolicy);
 
         return Ok(await FindCustomersByBarcodeAsync(
             warehouseNo,
@@ -188,7 +188,7 @@ public sealed class AramaIslemleriController(
     {
         var normalizedBarcode = NormalizeOrNull(barcode)
             ?? throw new ArgumentException("Barcode is required.", nameof(barcode));
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, BarcodeCustomerLookupPolicy);
 
         return Ok(await FindCustomersByBarcodeAsync(
             warehouseNo,

@@ -36,7 +36,7 @@ public sealed class OnerilenFirmaSiparisleriController(
         [FromQuery] SuggestedCompanyOrderListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listSuggestedCompanyOrdersUseCase.ExecuteAsync(
             new SuggestedCompanyOrderListRequest(
@@ -56,7 +56,7 @@ public sealed class OnerilenFirmaSiparisleriController(
         [FromBody] ConvertSuggestedCompanyOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createIssuedCompanyOrderUseCase.ExecuteAsync(
             new CreateIssuedCompanyOrderRequest(
                 warehouseNo,

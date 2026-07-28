@@ -40,7 +40,7 @@ public sealed class SayimSonuclariController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listInventoryCountsUseCase.ExecuteAsync(
             new InventoryCountListRequest(
@@ -61,7 +61,7 @@ public sealed class SayimSonuclariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getInventoryCountDetailUseCase.ExecuteAsync(
             new InventoryCountDetailRequest(
@@ -81,7 +81,7 @@ public sealed class SayimSonuclariController(
         [FromBody] CreateInventoryCountHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createInventoryCountUseCase.ExecuteAsync(
             new CreateInventoryCountRequest(
                 warehouseNo,

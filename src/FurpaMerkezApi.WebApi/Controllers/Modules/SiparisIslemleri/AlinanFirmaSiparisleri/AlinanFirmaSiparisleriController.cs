@@ -35,7 +35,7 @@ public sealed class AlinanFirmaSiparisleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listReceivedCompanyOrdersUseCase.ExecuteAsync(
             new CompanyOrderListRequest(
@@ -56,7 +56,7 @@ public sealed class AlinanFirmaSiparisleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getReceivedCompanyOrderDetailUseCase.ExecuteAsync(
             new CompanyOrderDetailRequest(

@@ -19,9 +19,12 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
     private const string ModuleName = "OperasyonIslemleri";
     private const string MenuCode = "belge-akis-takibi";
     private const string MenuName = "BelgeAkisTakibi";
+    private const string ListPolicy = "operasyon-islemleri.belge-akis-takibi.list";
+    private const string DetailPolicy = "operasyon-islemleri.belge-akis-takibi.detail";
+    private const string AllWarehousesPolicy = "operasyon-islemleri.belge-akis-takibi.all-warehouses";
 
     [HttpGet]
-    [Authorize]
+    [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(DocumentFlowListResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DocumentFlowListResponse>> List(
@@ -35,7 +38,7 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
             throw new ArgumentException("Start date can not be later than end date.");
         }
 
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await documentFlowService.ListAsync(
             new DocumentFlowListRequest(
@@ -50,14 +53,14 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize]
+    [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(DocumentFlowDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DocumentFlowDetailDto>> Detail(
         Guid id,
         CancellationToken cancellationToken)
     {
-        int? allowedWarehouseNo = User.IsAdministrator()
+        int? allowedWarehouseNo = User.HasPermission(AllWarehousesPolicy)
             ? null
             : User.GetRequiredWarehouseNo();
 

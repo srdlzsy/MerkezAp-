@@ -33,7 +33,7 @@ public sealed class OperationsController(IOperationsService operationsService)
         CancellationToken cancellationToken)
     {
         var response = await operationsService.QueueScalesFileAsync(
-            User.ResolveWarehouseNo(warehouseNo),
+            User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -50,7 +50,7 @@ public sealed class OperationsController(IOperationsService operationsService)
         CancellationToken cancellationToken)
     {
         var response = await operationsService.QueueProductBarcodePluNoFileAsync(
-            User.ResolveWarehouseNo(warehouseNo),
+            User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -66,7 +66,7 @@ public sealed class OperationsController(IOperationsService operationsService)
         CancellationToken cancellationToken)
     {
         var response = await operationsService.QueueCashierFileAsync(
-            User.ResolveWarehouseNo(warehouseNo),
+            User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -82,7 +82,7 @@ public sealed class OperationsController(IOperationsService operationsService)
         CancellationToken cancellationToken)
     {
         var response = await operationsService.QueuePromoFileAsync(
-            User.ResolveWarehouseNo(warehouseNo),
+            User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy),
             User.GetRequiredUserId(),
             cancellationToken);
 
@@ -96,7 +96,7 @@ public sealed class OperationsController(IOperationsService operationsService)
     public async Task<ActionResult<OperationJobDetailDto>> GetJob(Guid jobId, CancellationToken cancellationToken)
     {
         var response = await operationsService.GetJobAsync(jobId, cancellationToken);
-        _ = User.ResolveWarehouseNo(response.WarehouseNo);
+        _ = User.ResolveWarehouseNoForPolicy(response.WarehouseNo, DetailPolicy);
 
         return Ok(response);
     }

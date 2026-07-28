@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Reflection;
+using System.Security.Claims;
 using FurpaMerkezApi.WebApi.Extensions;
 using FurpaMerkezApi.WebApi.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace FurpaMerkezApi.WebApi.Filters;
@@ -19,7 +21,7 @@ public sealed class WarehouseAccessFilter : IActionFilter
     {
         var user = context.HttpContext.User;
 
-        if (user.Identity?.IsAuthenticated != true || user.IsAdministrator())
+        if (user.Identity?.IsAuthenticated != true || CanAccessAllWarehouses(user, context))
         {
             return;
         }
@@ -117,6 +119,26 @@ public sealed class WarehouseAccessFilter : IActionFilter
     private static bool IsScopedWarehouseName(string? name) =>
         !string.IsNullOrWhiteSpace(name) && ScopedWarehousePropertyNames.Contains(name);
 
+    private static bool CanAccessAllWarehouses(ClaimsPrincipal user, ActionExecutingContext context) =>
+        GetAllWarehousesPermissionCodes(context)
+            .Any(user.HasPermission);
+
+    private static IEnumerable<string> GetAllWarehousesPermissionCodes(ActionExecutingContext context)
+    {
+        foreach (var authorizeData in context.ActionDescriptor.EndpointMetadata.OfType<IAuthorizeData>())
+        {
+            if (!string.IsNullOrWhiteSpace(authorizeData.Policy))
+            {
+                yield return ClaimsPrincipalExtensions.ToAllWarehousesPermissionCode(authorizeData.Policy);
+            }
+        }
+
+        foreach (var attribute in context.ActionDescriptor.EndpointMetadata.OfType<WarehouseScopePermissionAttribute>())
+        {
+            yield return attribute.PermissionCode;
+        }
+    }
+
     private static bool TryGetWarehouseNo(object value, out int? warehouseNo)
     {
         warehouseNo = value is int number ? number : null;
@@ -159,3 +181,9 @@ public sealed class WarehouseAccessFilter : IActionFilter
 
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class IgnoreWarehouseAccessAttribute : Attribute;
+
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]
+public sealed class WarehouseScopePermissionAttribute(string permissionCode) : Attribute
+{
+    public string PermissionCode { get; } = permissionCode;
+}

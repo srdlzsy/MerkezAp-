@@ -19,6 +19,7 @@ public sealed class SatisAnalizleriController(
     private const string MenuCode = "satis-analizleri";
     private const string MenuName = "SatisAnalizleri";
     private const string ListPolicy = "rapor-islemleri.satis-analizleri.list";
+    private const string AllWarehousesPolicy = "rapor-islemleri.satis-analizleri.all-warehouses";
 
     [HttpGet("banka-hareketleri")]
     [Authorize(Policy = ListPolicy)]
@@ -214,7 +215,7 @@ public sealed class SatisAnalizleriController(
 
     private SalesAnalysisDateRangeRequest ToDateRangeRequest(WarehouseOrderDateRangeHttpRequest request) =>
         new(
-            User.ResolveWarehouseScope(request.WarehouseNo),
+            User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
             request.StartDate!.Value,
             request.EndDate!.Value);
 }

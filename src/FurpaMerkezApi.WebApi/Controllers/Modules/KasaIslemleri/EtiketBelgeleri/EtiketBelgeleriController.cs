@@ -62,7 +62,7 @@ public sealed class EtiketBelgeleriController(
         CancellationToken cancellationToken)
     {
         var response = await listLabelDocumentsUseCase.ExecuteAsync(
-            new LabelDocumentListRequest(warehouseNo),
+            new LabelDocumentListRequest(User.ResolveWarehouseScopeForPolicy(warehouseNo, ListPolicy)),
             cancellationToken);
 
         return Ok(response);
@@ -78,7 +78,7 @@ public sealed class EtiketBelgeleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
         var response = await getLabelDocumentProductsUseCase.ExecuteAsync(
             new LabelDocumentDetailRequest(
                 resolvedWarehouseNo,
@@ -101,7 +101,7 @@ public sealed class EtiketBelgeleriController(
         LabelTagListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, ListPolicy);
         var response = await listLabelTagsUseCase.ExecuteAsync(
             new LabelTagListRequest(warehouseNo, request.DateToGet!.Value),
             cancellationToken);
@@ -118,7 +118,7 @@ public sealed class EtiketBelgeleriController(
         [FromQuery] LabelPriceChangedProductListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, ListPolicy);
         var response = await listLabelPriceChangedProductsUseCase.ExecuteAsync(
             new LabelPriceChangedProductRequest(
                 warehouseNo,
@@ -136,7 +136,7 @@ public sealed class EtiketBelgeleriController(
         [FromBody] CreateLabelDocumentHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createLabelDocumentUseCase.ExecuteAsync(
             new CreateLabelDocumentRequest(
                 warehouseNo,
@@ -159,7 +159,7 @@ public sealed class EtiketBelgeleriController(
         int? take,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, ListPolicy);
         var response = await listLabelDocumentsUseCase.ExecuteAsync(
             new LabelDocumentListRequest(
                 resolvedWarehouseNo,

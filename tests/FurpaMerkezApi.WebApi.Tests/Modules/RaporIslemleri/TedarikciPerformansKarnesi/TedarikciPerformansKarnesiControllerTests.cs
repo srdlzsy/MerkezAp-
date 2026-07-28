@@ -50,10 +50,13 @@ public sealed class TedarikciPerformansKarnesiControllerTests
     }
 
     [Fact]
-    public async Task Detail_AllowsAdministratorToQueryAllWarehouses()
+    public async Task Detail_AllowsAllWarehousesPermissionToQueryAllWarehouses()
     {
         var useCase = new CapturingTedarikciPerformansKarnesiUseCase();
-        var controller = CreateController(useCase, warehouseNo: 0, roles: ["Administrator"]);
+        var controller = CreateController(
+            useCase,
+            warehouseNo: 0,
+            permissions: ["rapor-islemleri.tedarikci-performans-karnesi.all-warehouses"]);
 
         await controller.Detail(
             "120.01.03106",
@@ -74,7 +77,8 @@ public sealed class TedarikciPerformansKarnesiControllerTests
     private static TedarikciPerformansKarnesiController CreateController(
         ITedarikciPerformansKarnesiUseCase useCase,
         int warehouseNo,
-        IReadOnlyCollection<string>? roles = null)
+        IReadOnlyCollection<string>? roles = null,
+        IReadOnlyCollection<string>? permissions = null)
     {
         var claims = new List<Claim>
         {
@@ -83,6 +87,7 @@ public sealed class TedarikciPerformansKarnesiControllerTests
         };
 
         claims.AddRange((roles ?? []).Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange((permissions ?? []).Select(permission => new Claim("permission", permission)));
 
         return new TedarikciPerformansKarnesiController(useCase)
         {

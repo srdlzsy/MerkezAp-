@@ -19,6 +19,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
     private const string MenuCode = "stok-raporlari";
     private const string MenuName = "StokRaporlari";
     private const string ListPolicy = "rapor-islemleri.stok-raporlari.list";
+    private const string AllWarehousesPolicy = "rapor-islemleri.stok-raporlari.all-warehouses";
 
     [HttpGet("son-stok")]
     [Authorize(Policy = ListPolicy)]
@@ -29,7 +30,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetStockOnHandAsync(
             new StockOnHandReportRequest(
-                User.ResolveWarehouseNo(request.WarehouseNo),
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.Search,
                 request.SupplierCode,
@@ -50,7 +51,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetStockOnHandAsync(
             new StockOnHandReportRequest(
-                User.ResolveWarehouseNo(request.WarehouseNo),
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.Search,
                 request.SupplierCode,
@@ -71,7 +72,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetStockOnHandAsync(
             new StockOnHandReportRequest(
-                User.ResolveWarehouseNo(request.WarehouseNo),
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.Search,
                 null,
@@ -106,7 +107,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetStockOnHandAsync(
             new StockOnHandReportRequest(
-                User.ResolveWarehouseNo(request.WarehouseNo),
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.Search,
                 null,
@@ -136,7 +137,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetProductWarehouseStockAsync(
             new ProductWarehouseStockRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.StockCodeOrBarcode ?? string.Empty,
                 request.OnlyWithStock,
@@ -153,7 +154,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetProductWarehouseStockAsync(
             new ProductWarehouseStockRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 stockCodeOrBarcode,
                 request.OnlyWithStock,
@@ -169,7 +170,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetStockCardDetailsAsync(
             new StockCardDetailRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.Barcode,
                 request.StockCode,
                 request.StockName,
@@ -197,7 +198,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         Ok(await stockReportsUseCase.GetWarehouseHasBranchMissingAsync(
             new WarehouseMissingStockRequest(
                 request.SourceWarehouseNo!.Value,
-                User.ResolveWarehouseNo(request.TargetWarehouseNo),
+                User.ResolveWarehouseNo(request.TargetWarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.Search,
                 request.ModelCode,
@@ -213,7 +214,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetWarehouseZeroStocksAsync(
             new WarehouseZeroStockRequest(
-                User.ResolveWarehouseNo(request.WarehouseNo),
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
                 request.ReportDate ?? DateTime.Today,
                 request.ModelCode,
                 request.Take),
@@ -228,7 +229,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetStockMovementsAsync(
             new StockMovementReportRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.StockCode,
@@ -244,7 +245,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetInOutComparisonAsync(
             new MovementInOutComparisonRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.FilterType,
@@ -261,7 +262,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetBranchSalesAsync(
             new BranchSalesReportRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.FilterType,
@@ -278,7 +279,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetYearSalesComparisonAsync(
             new YearSalesComparisonRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.FilterType,
@@ -295,7 +296,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetReturnBranchesAsync(
             new ReturnBranchReportRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.StockCode ?? string.Empty,
@@ -311,7 +312,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetNotSoldProductsAsync(
             new NotSoldProductReportRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.ProductManagerCode,
@@ -328,7 +329,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetProfitabilityAsync(
             new ProfitabilityReportRequest(
-                User.ResolveWarehouseScope(request.WarehouseNo),
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 request.Scope,
@@ -345,7 +346,7 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
         CancellationToken cancellationToken) =>
         Ok(await stockReportsUseCase.GetCountingComparisonAsync(
             new CountingComparisonReportRequest(
-                User.ResolveWarehouseNo(request.WarehouseNo),
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
                 request.CountDate!.Value,
                 request.DocumentNo,
                 request.PackageCode,

@@ -37,7 +37,7 @@ public sealed class VirmanlarController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listVirmansUseCase.ExecuteAsync(
             new VirmanListRequest(
@@ -58,7 +58,7 @@ public sealed class VirmanlarController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getVirmanDetailUseCase.ExecuteAsync(
             new VirmanDetailRequest(
@@ -76,7 +76,7 @@ public sealed class VirmanlarController(
         [FromBody] CreateVirmanHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createVirmanUseCase.ExecuteAsync(
             new CreateVirmanRequest(
                 warehouseNo,

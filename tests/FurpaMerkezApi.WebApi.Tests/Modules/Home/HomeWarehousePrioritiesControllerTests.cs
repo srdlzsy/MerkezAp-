@@ -26,14 +26,14 @@ public sealed class HomeWarehousePrioritiesControllerTests
     }
 
     [Fact]
-    public async Task Get_AllowsAdminToSelectWarehouse()
+    public async Task Get_AllowsAllWarehousesPermissionToSelectWarehouse()
     {
         var service = new CapturingHomeWarehousePrioritiesService();
         var controller = CreateController(
             service,
             warehouseNo: 0,
             warehouseName: "MERKEZ",
-            roles: ["Administrator"]);
+            permissions: ["home.depo-oncelikleri.all-warehouses"]);
 
         await controller.Get(
             new HomeWarehousePrioritiesHttpRequest
@@ -68,7 +68,8 @@ public sealed class HomeWarehousePrioritiesControllerTests
         IHomeWarehousePrioritiesService service,
         int warehouseNo,
         string warehouseName,
-        IReadOnlyCollection<string>? roles = null)
+        IReadOnlyCollection<string>? roles = null,
+        IReadOnlyCollection<string>? permissions = null)
     {
         var claims = new List<Claim>
         {
@@ -79,6 +80,7 @@ public sealed class HomeWarehousePrioritiesControllerTests
         };
 
         claims.AddRange((roles ?? []).Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange((permissions ?? []).Select(permission => new Claim("permission", permission)));
 
         return new HomeWarehousePrioritiesController(service)
         {

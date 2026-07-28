@@ -506,7 +506,7 @@ public sealed class AxataSenkronizasyonuController(
         [FromBody] CreateCompanyReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var requestedByUserId = User.GetRequiredUserId();
         var response = await createCompanyReceivingUseCase.ExecuteAsync(
             BuildCreateCompanyReceivingRequest(warehouseNo, requestedByUserId, request),
@@ -523,14 +523,16 @@ public sealed class AxataSenkronizasyonuController(
         [FromBody] AxataManualIncomingCompanyReceivingBatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
         var requestedByUserId = User.GetRequiredUserId();
         var result = await ExecuteBatchAsync(
             request.Items,
             request.ContinueOnError,
             BuildCompanyReceivingReference,
             item => createCompanyReceivingUseCase.ExecuteAsync(
-                BuildCreateCompanyReceivingRequest(warehouseNo, requestedByUserId, item),
+                BuildCreateCompanyReceivingRequest(
+                    User.ResolveWarehouseNoForPolicy(item.WarehouseNo, CreatePolicy),
+                    requestedByUserId,
+                    item),
                 cancellationToken));
 
         return Ok(new AxataManualIncomingCompanyReceivingBatchResponse(
@@ -549,7 +551,7 @@ public sealed class AxataSenkronizasyonuController(
         [FromBody] CreateInventoryCountHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var requestedByUserId = User.GetRequiredUserId();
         var response = await createInventoryCountUseCase.ExecuteAsync(
             BuildCreateInventoryCountRequest(warehouseNo, requestedByUserId, request),
@@ -566,14 +568,16 @@ public sealed class AxataSenkronizasyonuController(
         [FromBody] AxataManualIncomingInventoryCountBatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
         var requestedByUserId = User.GetRequiredUserId();
         var result = await ExecuteBatchAsync(
             request.Items,
             request.ContinueOnError,
             BuildInventoryCountReference,
             item => createInventoryCountUseCase.ExecuteAsync(
-                BuildCreateInventoryCountRequest(warehouseNo, requestedByUserId, item),
+                BuildCreateInventoryCountRequest(
+                    User.ResolveWarehouseNoForPolicy(item.WarehouseNo, CreatePolicy),
+                    requestedByUserId,
+                    item),
                 cancellationToken));
 
         return Ok(new AxataManualIncomingInventoryCountBatchResponse(
@@ -592,7 +596,7 @@ public sealed class AxataSenkronizasyonuController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = request.WarehouseNo ?? User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listPendingWarehouseReceivingsUseCase.ExecuteAsync(
             new WarehouseShippingListRequest(
@@ -614,7 +618,7 @@ public sealed class AxataSenkronizasyonuController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getPendingWarehouseReceivingDetailUseCase.ExecuteAsync(
             new WarehouseShippingDetailRequest(
@@ -636,7 +640,7 @@ public sealed class AxataSenkronizasyonuController(
         [FromBody] AcceptWarehouseReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, UpdatePolicy);
 
         return Ok(await acceptWarehouseReceivingUseCase.ExecuteAsync(
             BuildAcceptWarehouseReceivingRequest(warehouseNo, documentSerie, documentOrderNo, request),
@@ -651,13 +655,17 @@ public sealed class AxataSenkronizasyonuController(
         [FromBody] AxataManualIncomingWarehouseReceivingBatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(null, UpdatePolicy);
         var result = await ExecuteBatchAsync(
             request.Items,
             request.ContinueOnError,
             item => $"{item.DocumentSerie}.{item.DocumentOrderNo}",
             item => acceptWarehouseReceivingUseCase.ExecuteAsync(
-                BuildAcceptWarehouseReceivingRequest(warehouseNo, item.DocumentSerie, item.DocumentOrderNo, item),
+                BuildAcceptWarehouseReceivingRequest(
+                    warehouseNo,
+                    item.DocumentSerie,
+                    item.DocumentOrderNo,
+                    item),
                 cancellationToken));
 
         return Ok(new AxataManualIncomingWarehouseReceivingBatchResponse(

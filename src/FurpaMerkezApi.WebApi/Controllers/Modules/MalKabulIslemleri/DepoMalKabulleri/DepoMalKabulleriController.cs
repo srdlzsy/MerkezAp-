@@ -42,7 +42,7 @@ public sealed class DepoMalKabulleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listPendingWarehouseReceivingsUseCase.ExecuteAsync(
             new WarehouseShippingListRequest(
@@ -65,7 +65,7 @@ public sealed class DepoMalKabulleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getPendingWarehouseReceivingDetailUseCase.ExecuteAsync(
             new WarehouseShippingDetailRequest(
@@ -94,7 +94,7 @@ public sealed class DepoMalKabulleriController(
         [FromBody] AcceptWarehouseReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, UpdatePolicy);
 
         var response = await acceptWarehouseReceivingUseCase.ExecuteAsync(
             new AcceptWarehouseReceivingRequest(
@@ -143,7 +143,7 @@ public sealed class DepoMalKabulleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, UpdatePolicy);
 
         return Ok(await getInboundDespatchLookupUseCase.ExecuteAsync(
             new InboundDespatchLookupRequest(

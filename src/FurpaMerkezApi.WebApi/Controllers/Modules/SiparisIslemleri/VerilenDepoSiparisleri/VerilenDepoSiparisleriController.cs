@@ -40,7 +40,7 @@ public sealed class VerilenDepoSiparisleriController(
         [FromQuery] WarehouseOrderDateRangeHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listIssuedWarehouseOrdersUseCase.ExecuteAsync(
             new WarehouseOrderListRequest(
@@ -61,7 +61,7 @@ public sealed class VerilenDepoSiparisleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getIssuedWarehouseOrderDetailUseCase.ExecuteAsync(
             new WarehouseOrderDetailRequest(
@@ -91,7 +91,7 @@ public sealed class VerilenDepoSiparisleriController(
         [FromBody] CreateIssuedWarehouseOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var inWarehouseNo = User.ResolveWarehouseNo(request.InWarehouseNo);
+        var inWarehouseNo = User.ResolveWarehouseNoForPolicy(request.InWarehouseNo, CreatePolicy);
         var response = await createIssuedWarehouseOrderUseCase.ExecuteAsync(
             new CreateIssuedWarehouseOrderRequest(
                 inWarehouseNo,

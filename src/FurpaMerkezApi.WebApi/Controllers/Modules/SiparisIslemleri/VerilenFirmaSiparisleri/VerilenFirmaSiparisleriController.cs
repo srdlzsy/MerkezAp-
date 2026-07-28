@@ -40,7 +40,7 @@ public sealed class VerilenFirmaSiparisleriController(
         [FromQuery] IssuedCompanyOrderListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return Ok(await listIssuedCompanyOrdersUseCase.ExecuteAsync(
             new CompanyOrderListRequest(
@@ -63,7 +63,7 @@ public sealed class VerilenFirmaSiparisleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
 
         return Ok(await getIssuedCompanyOrderDetailUseCase.ExecuteAsync(
             new CompanyOrderDetailRequest(
@@ -94,7 +94,7 @@ public sealed class VerilenFirmaSiparisleriController(
         [FromBody] CreateIssuedCompanyOrderHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
         var response = await createIssuedCompanyOrderUseCase.ExecuteAsync(
             new CreateIssuedCompanyOrderRequest(
                 warehouseNo,

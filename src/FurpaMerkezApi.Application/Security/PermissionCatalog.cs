@@ -7,38 +7,62 @@ public static class PermissionCatalog
         new("list", "Listele"),
         new("detail", "Detay"),
         new("create", "Ekle"),
-        new("update", "Guncelle")
+        new("update", "Guncelle"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ReadActions =
     [
         new("list", "Listele"),
-        new("detail", "Detay")
+        new("detail", "Detay"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ListActions =
     [
-        new("list", "Listele")
+        new("list", "Listele"),
+        new("all-warehouses", "Tum Depolar")
+    ];
+
+    private static readonly PermissionActionDefinition[] ReportListActions =
+    [
+        new("list", "Listele"),
+        new("all-warehouses", "Tum Depolar")
+    ];
+
+    private static readonly PermissionActionDefinition[] ReportReadActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("all-warehouses", "Tum Depolar")
+    ];
+
+    private static readonly PermissionActionDefinition[] HomeWarehousePriorityActions =
+    [
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ListCreateActions =
     [
         new("list", "Listele"),
-        new("create", "Ekle")
+        new("create", "Ekle"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ReadCreateActions =
     [
         new("list", "Listele"),
         new("detail", "Detay"),
-        new("create", "Ekle")
+        new("create", "Ekle"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ReadUpdateActions =
     [
         new("list", "Listele"),
         new("detail", "Detay"),
-        new("update", "Guncelle")
+        new("update", "Guncelle"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ReadUpdateDeleteActions =
@@ -46,7 +70,8 @@ public static class PermissionCatalog
         new("list", "Listele"),
         new("detail", "Detay"),
         new("update", "Guncelle"),
-        new("delete", "Sil")
+        new("delete", "Sil"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] StockAnomalyActions =
@@ -54,7 +79,8 @@ public static class PermissionCatalog
         new("list", "Listele"),
         new("detail", "Detay"),
         new("update", "Guncelle"),
-        new("scan", "Tara")
+        new("scan", "Tara"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] FeedbackActions =
@@ -70,7 +96,8 @@ public static class PermissionCatalog
         new("list", "Listele"),
         new("create", "Ekle"),
         new("update", "Guncelle"),
-        new("delete", "Sil")
+        new("delete", "Sil"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     private static readonly PermissionActionDefinition[] ProductDistributionActions =
@@ -79,7 +106,8 @@ public static class PermissionCatalog
         new("detail", "Detay"),
         new("create", "Ekle"),
         new("update", "Guncelle"),
-        new("delete", "Sil")
+        new("delete", "Sil"),
+        new("all-warehouses", "Tum Depolar")
     ];
 
     public static IReadOnlyCollection<PermissionDefinition> Definitions { get; } =
@@ -115,6 +143,8 @@ public static class PermissionCatalog
             "manage",
             "Yonet"),
 
+        ..CreateMenuPermissions("home", "Home", "depo-oncelikleri", "DepoOncelikleri", HomeWarehousePriorityActions),
+
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "fiyat-gor", "FiyatGor", ListActions),
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
@@ -149,10 +179,10 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "sayim-sonuclari", "SayimSonuclari"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "virmanlar", "Virmanlar"),
         ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "stok-anomali-merkezi", "StokAnomaliMerkezi", StockAnomalyActions),
-        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "satis-analizleri", "SatisAnalizleri", ListActions),
-        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "stok-raporlari", "StokRaporlari", ListActions),
-        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "promosyon-raporlari", "PromosyonRaporlari", ListActions),
-        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "tedarikci-performans-karnesi", "TedarikciPerformansKarnesi", ReadActions),
+        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "satis-analizleri", "SatisAnalizleri", ReportListActions),
+        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "stok-raporlari", "StokRaporlari", ReportListActions),
+        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "promosyon-raporlari", "PromosyonRaporlari", ReportListActions),
+        ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "tedarikci-performans-karnesi", "TedarikciPerformansKarnesi", ReportReadActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "depo-operasyon-paneli", "DepoOperasyonPaneli", ListActions),

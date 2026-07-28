@@ -116,7 +116,7 @@ public sealed class DepoIadeleriController(
         [FromBody] CreateWarehouseReturnHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var sourceWarehouseNo = User.ResolveWarehouseNo(request.SourceWarehouseNo);
+        var sourceWarehouseNo = User.ResolveWarehouseNoForPolicy(request.SourceWarehouseNo, OutgoingCreatePolicy);
         var response = await createWarehouseReturnUseCase.ExecuteAsync(
             new CreateWarehouseReturnRequest(
                 sourceWarehouseNo,
@@ -190,7 +190,7 @@ public sealed class DepoIadeleriController(
         [FromBody, Required] SendEDespatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDetailPolicy);
 
         return Ok(await eDespatchService.SendAsync(
             new SendEDespatchRequest(
@@ -231,7 +231,7 @@ public sealed class DepoIadeleriController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDetailPolicy);
         var response = await eDespatchService.GetPdfAsync(
             new GetEDespatchPdfRequest(
                 EDespatchDocumentType.WarehouseReturn,
@@ -256,7 +256,9 @@ public sealed class DepoIadeleriController(
         WarehouseShippingDirection direction,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(
+            request.WarehouseNo,
+            direction == WarehouseShippingDirection.Incoming ? IncomingListPolicy : OutgoingListPolicy);
 
         return Ok(await listWarehouseReturnsUseCase.ExecuteAsync(
             new WarehouseShippingListRequest(
@@ -274,7 +276,9 @@ public sealed class DepoIadeleriController(
         WarehouseShippingDirection direction,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(
+            warehouseNo,
+            direction == WarehouseShippingDirection.Incoming ? IncomingDetailPolicy : OutgoingDetailPolicy);
 
         return Ok(await getWarehouseReturnDetailUseCase.ExecuteAsync(
             new WarehouseShippingDetailRequest(

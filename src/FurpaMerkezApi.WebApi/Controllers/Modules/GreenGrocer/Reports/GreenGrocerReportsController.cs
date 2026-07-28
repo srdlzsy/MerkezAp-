@@ -92,7 +92,7 @@ public sealed class GreenGrocerReportsController(
 
         return new GreenGrocerReportDateRequest(
             date,
-            User.ResolveWarehouseScope(request.WarehouseNo),
+            User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy),
             request.TypeCode,
             request.Search,
             request.IncludeLazyBranches,

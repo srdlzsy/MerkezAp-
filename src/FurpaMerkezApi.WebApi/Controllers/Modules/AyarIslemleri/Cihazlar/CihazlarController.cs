@@ -35,8 +35,11 @@ public sealed class CihazlarController(IAyarlarService ayarlarService)
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<DeviceDto>>> List(
         [FromQuery, Range(1, int.MaxValue)] int? branchNo,
-        CancellationToken cancellationToken) =>
-        Ok(await ayarlarService.ListDevicesAsync(branchNo, cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        var resolvedBranchNo = User.ResolveWarehouseScopeForPolicy(branchNo, ListPolicy);
+        return Ok(await ayarlarService.ListDevicesAsync(resolvedBranchNo, cancellationToken));
+    }
 
     [HttpGet("durum")]
     [Authorize(Policy = ListPolicy)]
@@ -46,7 +49,7 @@ public sealed class CihazlarController(IAyarlarService ayarlarService)
         [FromQuery, Range(1, int.MaxValue)] int? branchNo,
         CancellationToken cancellationToken)
     {
-        var resolvedBranchNo = branchNo ?? User.GetRequiredWarehouseNo();
+        var resolvedBranchNo = User.ResolveWarehouseNoForPolicy(branchNo, ListPolicy);
         return Ok(await ayarlarService.CheckDeviceStatusAsync(resolvedBranchNo, cancellationToken));
     }
 
@@ -57,7 +60,9 @@ public sealed class CihazlarController(IAyarlarService ayarlarService)
     public async Task<ActionResult<IReadOnlyCollection<DeviceStatusDto>>> BranchStatus(
         [Range(1, int.MaxValue)] int branchNo,
         CancellationToken cancellationToken) =>
-        Ok(await ayarlarService.CheckDeviceStatusAsync(branchNo, cancellationToken));
+        Ok(await ayarlarService.CheckDeviceStatusAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, ListPolicy),
+            cancellationToken));
 
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]
@@ -71,7 +76,7 @@ public sealed class CihazlarController(IAyarlarService ayarlarService)
     {
         var response = await ayarlarService.CreateDeviceAsync(
             new CreateDeviceRequest(
-                request.BranchNo!.Value,
+                User.ResolveWarehouseNoForPolicy(request.BranchNo, CreatePolicy),
                 request.DeviceTypeId!.Value,
                 request.IpAddress!,
                 request.Description!),

@@ -9,13 +9,23 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Tarihler `ISO 8601` formatindadir.
 - Yetki sistemi `module > menu > action` mantigindadir.
 - UI menu agaci ve buton gorunurlugu `me` cevabindan uretilmelidir.
-- Depo yetkisi backend tarafinda merkezi uygulanir: `Admin` veya `Administrator` rolu tum depolar icin islem yapabilir; diger kullanicilar sadece JWT icindeki kendi deposu icin islem yapabilir.
-- UI normal kullaniciya depo secimi sormamalidir. Liste/create/update isteklerinde depo alani bos birakilabilir; backend normal kullanici icin kullanici deposunu uygular.
-- UI yalnizca `Admin` veya `Administrator` rolunde depo secici/filtresi gostermelidir. Liste/rapor endpointlerinde admin `WarehouseNo`/`warehouseNo` alanini bos veya `null` gonderirse backend tum depolari getirir; admin belirli depo secmek isterse depo no gondermelidir. Tek depo gerektiren create/update/detail islemlerinde `null` tum depo anlamina gelmez; backend token deposunu varsayar veya ilgili islem icin secili depo bekler.
-- Admin tum depolari listelediginde detay ekranina gecis icin UI, secilen satirdaki depo bilgisini kullanmalidir. Detay endpointine `warehouseNo=null` gonderilmemelidir; satirda gelen `warehouseNo`, `sourceWarehouseNo` veya ilgili islem deposu query/body alanina yazilmalidir.
-- Normal kullanici farkli `WarehouseNo`, `BranchNo` veya islem deposu gonderirse API `403 Forbidden` doner.
-- Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; normal kullanicida `WarehouseNo` verilmezse JWT icindeki depo kullanilir.
+- Depo yetkisi backend tarafinda merkezi ve permission bazli uygulanir. Kullanici sadece JWT icindeki kendi deposunda islem yapar; baska depo veya tum depo kapsami icin ilgili menuye ait `{module}.{menu}.all-warehouses` yetkisi gerekir.
+- `Admin`/`Administrator` rolu migration ve seed ile tum permission'lari aldigi icin tum depolari gorebilir; fakat uygulama kararini role bakarak degil `all-warehouses` permission claim'ine bakarak verir. Boylece admin olmayan role de modul modul tum depo yetkisi verilebilir.
+- UI depo secici/filtresi gosterecegi zaman role bakmamalidir. Secili ekrandaki permission setinde ilgili `*.all-warehouses` kodu varsa depo secici acilir; yoksa depo alani gizlenir veya kilitlenir.
+- Liste/rapor endpointlerinde `*.all-warehouses` yetkisi olan kullanici `WarehouseNo`/`warehouseNo` alanini bos veya `null` gonderirse endpoint destekliyorsa tum depolar doner; belirli depo icin depo no gonderilir. Tek depo gerektiren create/update/detail islemlerinde `null` tum depo anlamina gelmez; backend token deposunu varsayar veya ilgili islem icin secili depo bekler.
+- Tum depolari listeleyen kullanici detay ekranina gecis icin UI, secilen satirdaki depo bilgisini kullanmalidir. Detay endpointine `warehouseNo=null` gonderilmemelidir; satirda gelen `warehouseNo`, `sourceWarehouseNo`, `targetWarehouseNo`, `branchNo` veya ilgili islem deposu query/body alanina yazilmalidir.
+- Ilgili `*.all-warehouses` yetkisi olmayan kullanici farkli `WarehouseNo`, `BranchNo` veya islem deposu gonderirse API `403 Forbidden` doner.
+- Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; depo yetkisi yoksa `WarehouseNo` verilmez ve backend JWT icindeki depoyu kullanir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
+
+### Tum Depo Yetki Modeli
+
+- Depo kapsamli menu/action setlerinde `all-warehouses` aksiyonu bulunur. Kod formati `{module}.{menu}.all-warehouses` seklindedir.
+- UI depo secici gostermek icin role degil, aktif kullanicinin `permissions` listesindeki ilgili `all-warehouses` koduna bakmalidir.
+- Ornek: stok raporlari icin tum sube yetkisi `rapor-islemleri.stok-raporlari.all-warehouses`; belge akis icin `operasyon-islemleri.belge-akis-takibi.all-warehouses`; kasa sayimi goruntuleme icin `kasa-islemleri.kasa-sayimlari.all-warehouses`; icmal girisi icin `kasa-islemleri.icmal-kaydi-girisi.all-warehouses`.
+- Admin rolu migration/seed ile bu yetkilerin tamamini alir. Admin olmayan role modul bazli tum depo verilecekse sadece ilgili menu icin `list/detail/create/update/delete` aksiyonlariyla birlikte `all-warehouses` atanir.
+- Backend policy'deki aksiyon kodundan tum depo kodunu turetir: `rapor-islemleri.stok-raporlari.list` isteginde depo secimi icin `rapor-islemleri.stok-raporlari.all-warehouses` aranir.
+- Bu yetkileri Auth DB'ye ekleyen migration: `20260727150749_AddAllWarehouseScopePermissions`.
 
 ## Home / Depo Oncelikleri
 
@@ -30,10 +40,10 @@ Kaynaklar:
 Kapsam:
 
 - Sadece login olmak yeterlidir.
-- Normal kullanici `warehouseNo` gondermez; backend JWT icindeki depoyu uygular.
-- Normal kullanici baska depo icin `warehouseNo` gonderirse `403 Forbidden` doner.
-- `Admin` veya `Administrator` rolu `warehouseNo` gondererek depo secebilir.
-- Admin `warehouseNo` gondermezse tum depolar ozetlenir ve `warehouseNo: null` doner.
+- `home.depo-oncelikleri.all-warehouses` yetkisi olmayan kullanici `warehouseNo` gondermez; backend JWT icindeki depoyu uygular.
+- Bu yetki yokken baska depo icin `warehouseNo` gonderilirse `403 Forbidden` doner.
+- `home.depo-oncelikleri.all-warehouses` yetkisi olan kullanici `warehouseNo` gondererek depo secebilir.
+- Bu yetkiye sahip kullanici `warehouseNo` gondermezse tum depolar ozetlenir ve `warehouseNo: null` doner.
 - Endpoint sadece mevcut izleme tablolarindan okur; pahali tarama/senkronizasyon tetiklemez.
 
 Endpoint ozeti:
@@ -46,7 +56,7 @@ Query:
 
 ```text
 date         opsiyonel; yyyy-MM-dd, bos ise bugun
-warehouseNo  opsiyonel; sadece Admin/Administrator icin tum depo filtreleme anlamlidir
+warehouseNo  opsiyonel; sadece `home.depo-oncelikleri.all-warehouses` yetkisi olan kullanicida tum depo/depoya gore filtreleme anlamlidir
 ```
 
 Ornek:
@@ -141,7 +151,7 @@ UI onerisi:
 - Altinda 4-6 kompakt metrik karti kullan; eski sabit hizli erisim menusu yerine bu kartlardan gelen `route` ile yonlendir.
 - `priorities` listesini "once bunu yap" sirasi gibi kullan; `critical` maddeleri daha belirgin renkle ayir.
 - `priorities` bos ise pozitif bos durum goster: `headline` zaten "Bugun acil oncelik yok" doner.
-- Admin kullanicida depo filtresi eklenebilir; normal kullanicida depo secici gosterilmemelidir.
+- `home.depo-oncelikleri.all-warehouses` yetkisi olan kullanicida depo filtresi eklenebilir; diger kullanicida depo secici gosterilmemelidir.
 
 ## Home / Ortak Sikayet Oneri
 
@@ -1720,7 +1730,7 @@ Ortak query:
 ```text
 date                 opsiyonel; rapor tarihi, verilmezse bugun
 dateToGet            opsiyonel; date icin geriye uyum alias'i
-warehouseNo          opsiyonel; normal kullanicida backend JWT deposunu uygular, Admin/Administrator bos birakirsa tum subeler
+warehouseNo          opsiyonel; `green-grocer.reports.all-warehouses` yoksa backend JWT deposunu uygular, yetki varsa bos birakilirsa tum subeler
 typeCode             opsiyonel; 10, 11, 12, yesillik veya all/tum
 search               opsiyonel; urun kodu, urun adi, sube adi veya evrak serisinde arar
 includeLazyBranches  opsiyonel; default true, siparis girmeyen subeleri de dondurur
@@ -1894,7 +1904,7 @@ Kural:
 - Eski WebUI'deki `TimeSpan.Hours` davranisi yerine `TotalHours` kullanilir.
 - Kayit yoksa `404`, 24 saat penceresi gecmisse `409 Conflict` doner.
 - Normal kullanicida `warehouseNo` gonderilmezse backend JWT deposunu uygular; baska depo gonderirse `403` doner.
-- Admin/Administrator `warehouseNo` bos birakirsa evrak no ile eslesen tum sube satirlari silinebilir; UI'da admin icin de secili sube ile silme onerilir.
+- `green-grocer.reports.all-warehouses` yetkisiyle `warehouseNo` bos birakilirsa evrak no ile eslesen tum sube satirlari silinebilir; UI'da yine secili sube ile silme onerilir.
 
 Response:
 
@@ -2402,7 +2412,7 @@ Onemli not:
 - Yazma islemi EF Core uzerinden ayri `MikroWriteDbContext` ile yapilir; okuma tarafindaki `MikroDbContext` ile karismaz.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri icin test DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
-- Normal kullanici icin `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `inWarehouseNo` gonderebilir.
+- `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` yoksa `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `inWarehouseNo` gonderilebilir.
 - `outWarehouseNo` siparis verilen/karsi depo numarasidir.
 
 Request:
@@ -2515,7 +2525,7 @@ Yetki:
 Not:
 
 - Bu endpoint mevcut `Verilen Depo Siparisi Olustur` altyapisini kullanir.
-- Normal kullanici icin `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `targetWarehouseNo` gonderebilir.
+- `siparis-islemleri.onerilen-depo-siparisleri.all-warehouses` yoksa `targetWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `targetWarehouseNo` gonderilebilir.
 - `sourceWarehouseNo`, olusacak depo siparisindeki `outWarehouseNo` olarak kullanilir.
 
 Request:
@@ -2645,7 +2655,7 @@ Onemli not:
 - `SIPARISLER` tablosuna `sip_tip = 1`, `sip_cins = 0` olarak verilen firma siparisi yazar.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri/tip/cins icin write DB'deki maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili siparis menusunde `all-warehouses` yetkisi olan kullanici baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Cari bilgisi write DB'de `CARI_HESAPLAR` icinden okunur; `cari_odemeplan_no` -> `sip_opno`, `cari_pasaport_no == "1"` -> `sip_cagrilabilir_fl`.
 
 Request:
@@ -2767,7 +2777,7 @@ Yetki:
 Not:
 
 - Bu endpoint mevcut `Verilen Firma Siparisi Olustur` altyapisini kullanir.
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili siparis menusunde `all-warehouses` yetkisi olan kullanici baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - `supplierCode`, olusacak firma siparisindeki `customerCode` olarak kullanilir.
 
 Request:
@@ -3074,7 +3084,7 @@ Onemli not:
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - Su an write hedefi canli `MikroConnection` degil; `MikroWriteConnection` yoksa `testMikroConnection` kullanilir.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 17`, `sth_tip = 2`, `sth_cins = 6` olarak depolar arasi sevk yazar.
-- Normal kullanici icin `sourceWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska kaynak depodan sevk olusturacaksa body'de opsiyonel `sourceWarehouseNo` gonderebilir.
+- `sevk-islemleri.giden-depolar-arasi-sevkler.all-warehouses` yoksa `sourceWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska kaynak depodan sevk olusturulacaksa body'de opsiyonel `sourceWarehouseNo` gonderilebilir.
 - `targetWarehouseNo` UI'da secilen hedef depodur ve `sth_nakliyedeposu` alanina yazilir.
 - `transitWarehouseNo` verilmezse `60` kullanilir ve `sth_giris_depo_no` alanina yazilir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
@@ -3356,7 +3366,7 @@ Onemli not:
 
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 1`, `sth_tip = 1`, `sth_normal_iade = 0` olarak firma giden sevki yazar.
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina sevk olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili sevk menusunde `all-warehouses` yetkisi olan kullanici baska depo adina sevk olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - `customerCode` zorunludur ve write DB'de `CARI_HESAPLAR` icinde kontrol edilir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri, evrak tipi ve iade tipi icin write DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
@@ -3676,7 +3686,7 @@ Onemli not:
 
 - Bu endpoint yeni ana stok hareketi olusturmaz; gonderen deponun olusturdugu mevcut `sth_evraktip = 17`, `sth_normal_iade = 0 veya 1` satirlarini gunceller.
 - `isReturn = false` normal gelen depo sevkini, `isReturn = true` gelen depo iadesini ifade eder.
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo icin kabul yapacaksa body'de opsiyonel `warehouseNo` gonderebilir.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `mal-kabul-islemleri.depo-mal-kabulleri.all-warehouses` yetkisi olan kullanici baska depo icin kabul yapacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Bekleyen kabul icin hareketlerde `sth_nakliyedeposu = kullaniciDeposu` ve `sth_nakliyedurumu != 1` olmalidir.
 - `sth_miktar` degistirilmez; resmi sevk/e-irsaliye miktari olarak korunur.
 - UI'dan gelen sayilan miktar `sth_FormulMiktar` alanina yazilir.
@@ -3980,7 +3990,7 @@ Yetki:
 Onemli not:
 
 - Tek endpoint hem siparisli hem siparissiz mal kabul icin kullanilir.
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina firma mal kabul olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `mal-kabul-islemleri.firma-mal-kabulleri.all-warehouses` yetkisi olan kullanici baska depo adina firma mal kabul olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Mobil offline pilotta request'e `clientRequestId` eklenmelidir.
 - Backend `sth_evraktip = 13`, `sth_tip = 0`, `sth_normal_iade = 0` olarak yeni giris hareketi olusturur.
 - Mal kabul giris hareketinde `sth_miktar` irsaliye/gelen miktari olan `dispatchQuantity` ile yazilir.
@@ -5468,7 +5478,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina fis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili stok menusunde `all-warehouses` yetkisi olan kullanici baska depo adina fis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 0`, `sth_tip = 1`, `sth_normal_iade = 0`, `sth_cins = 4` olarak kayit yazar
 - `sth_cari_kodu` bos yazilir; bu fislerde cari baglantisi yoktur
 - `creator` ve `acceptor` alanlari sirasiyla `sth_HareketGrupKodu1` ve `sth_HareketGrupKodu2` kolonlarina yazilir
@@ -5566,7 +5576,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina fis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili stok menusunde `all-warehouses` yetkisi olan kullanici baska depo adina fis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 0`, `sth_tip = 1`, `sth_normal_iade = 0`, `sth_cins = 5` olarak kayit yazar
 - `sth_isemri_gider_kodu` alanina sabit olarak `0032` yazilir
 - `sth_cari_kodu` bos yazilir; bu fislerde cari baglantisi yoktur
@@ -5712,7 +5722,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina sayim sonucu olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `stok-islemleri.sayim-sonuclari.all-warehouses` yetkisi olan kullanici baska depo adina sayim sonucu olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - Mobil offline pilotta request'e `clientRequestId` eklenmelidir.
 - backend `SAYIM_SONUCLARI` tablosuna yeni satirlar yazar
 - `documentNo` ayni depo icin `sym_evrakno` maksimum degerinin bir fazlasi olarak uretilir
@@ -5842,7 +5852,7 @@ Sayim sonucu offline UI akisi:
 
 ### Stok Anomali Merkezi
 
-Stok anomali merkezi, Mikro verisini tarayip supheli durumlari Auth veritabanindaki `stock_anomalies` tablosunda takip kaydi olarak saklar. Mikro'ya yazma yapmaz. Admin/Administrator tum depolari gorur; depo kullanicisi sadece kendi deposuyla iliskili anomalileri gorur ve tarar.
+Stok anomali merkezi, Mikro verisini tarayip supheli durumlari Auth veritabanindaki `stock_anomalies` tablosunda takip kaydi olarak saklar. Mikro'ya yazma yapmaz. `stok-islemleri.stok-anomali-merkezi.all-warehouses` yetkisi olan kullanici tum depolari gorur; diger kullanici sadece kendi deposuyla iliskili anomalileri gorur ve tarar.
 
 Yakaladigi anomali tipleri:
 
@@ -5969,13 +5979,13 @@ Request:
 
 Not:
 
-- Admin/Administrator `warehouseNo` bos gonderirse tum depolar taranir.
+- `stok-islemleri.stok-anomali-merkezi.all-warehouses` yetkisi olan kullanici `warehouseNo` bos gonderirse tum depolar taranir.
 - Depo kullanicisi `warehouseNo` gonderse bile backend JWT icindeki kendi deposunu kullanir.
 - `startDate/endDate` duplicate belge, mal kabul farki ve yuksek miktar kontrollerinde kullanilir.
 - Eksi stok ve hareketsiz stok kontrolleri mevcut bakiye uzerinden calisir.
 - `takePerRule`, her kuralin tek taramada en fazla kac sonuc yazacagini belirler.
 - Tarama sorgulari buyuk Mikro tablolarinda calistigi icin UI ayni anda birden fazla `tara` istegi baslatmamali; buton tarama bitene kadar disabled/loading durumda kalmalidir.
-- Admin tum depo taramasi yapabiliyor olsa da yogun sistemlerde UI varsayilan olarak secili depo veya kisa tarih araligi ile taramayi tesvik etmelidir.
+- Tum depo taramasi yetkiyle mumkun olsa da yogun sistemlerde UI varsayilan olarak secili depo veya kisa tarih araligi ile taramayi tesvik etmelidir.
 - Backend her kurali ayri calistirir ve sonuc kayitlarini kural bazinda sinirlar; `takePerRule` buyutuldukce Mikro sorgu suresi artabilir.
 - kurallar tamamlandiktan sonra urunler Mikro'dan toplu zenginlestirilir; once `STOK_DEPO_DETAYLARI.sdp_UrunSorumlusuKodu`, bos ise `STOKLAR.sto_urun_sorkod` kullanilir ve ad/soyad `CARI_PERSONEL_TANIMLARI` tablosundan alinir.
 - migration sonrasi eski anomalilerin satin almacisi ilk yeni taramada doldurulur.
@@ -6021,9 +6031,9 @@ Durumlar:
 UI oneri:
 
 1. Panel acilisinda once `GET /stok-anomali-merkezi?status=Open&take=100` cagir.
-2. Admin icin depo filtresi goster; depo kullanicisinda depo filtresini kilitle/gizle.
+2. `stok-islemleri.stok-anomali-merkezi.all-warehouses` varsa depo filtresi goster; yoksa depo filtresini kilitle/gizle.
 3. `satin-almacilar` lookup sonucunu filtre dropdown'unda kullan; `ATANMAMIS` seciminde listeyi `hasProductManager=false` ile cagir.
-4. "Tara" aksiyonu Admin'de tum depolar veya secili depo icin, depo kullanicisinda sadece kendi deposu icin calissin.
+4. "Tara" aksiyonu `stok-islemleri.stok-anomali-merkezi.all-warehouses` varsa tum depolar veya secili depo icin, yoksa sadece kullanici deposu icin calissin.
 5. Tarama sirasinda ikinci tarama istegini engelle, bitince `rules` sonucunu ozetle ve listeyi yenile.
 6. `rules[].error` doluysa sadece ilgili kurali uyari olarak goster; diger kurallarin kaydettigi anomaliler listede kalir.
 7. Satir tiklaninca detay endpoint'i ile `evidence` ve `events` gosterilsin.
@@ -6120,7 +6130,7 @@ Response:
 
 ### Etiketler
 
-Belirli bir tarih icin depo bazli tag/view kayitlarini getirir. Normal kullanici icin depo sorulmaz; `Admin`/`Administrator` query'de opsiyonel `warehouseNo` gonderebilir.
+Belirli bir tarih icin depo bazli tag/view kayitlarini getirir. `kasa-islemleri.etiket-belgeleri.all-warehouses` yoksa depo sorulmaz; yetki varsa query'de opsiyonel `warehouseNo` gonderilebilir.
 
 `GET /api/kasa-islemleri/etiket-belgeleri/etiketler?dateToGet=2026-04-24&warehouseNo=110`
 
@@ -6256,7 +6266,7 @@ Response:
 
 ### Fiyati Degisen Etiket Urunleri
 
-Belirli bir zaman bilgisinden sonra fiyati degisen ve etikete uygun urunleri getirir. Normal kullanici icin depo sorulmaz; `Admin`/`Administrator` query'de opsiyonel `warehouseNo` gonderebilir.
+Belirli bir zaman bilgisinden sonra fiyati degisen ve etikete uygun urunleri getirir. `kasa-islemleri.etiket-belgeleri.all-warehouses` yoksa depo sorulmaz; yetki varsa query'de opsiyonel `warehouseNo` gonderilebilir.
 
 `GET /api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=24.04.2026%2008:00:00&warehouseNo=110`
 
@@ -6308,7 +6318,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo icin etiket belgesi olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `kasa-islemleri.etiket-belgeleri.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo icin etiket belgesi olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir
 - en az bir satir zorunludur
 - her satir yalnizca `productCode` alanini ister
 - backend Furpa veritabaninda `LabelDocuments` ve `LabelDocumentDetails` tablolarina transaction ile yazar
@@ -6391,7 +6401,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina virman olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `stok-islemleri.virmanlar.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina virman olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir
 - backend `STOK_HAREKETLERI` tablosuna `sth_evraktip = 6`, `sth_normal_iade = 0`, `sth_cins = 3` olacak sekilde kayit yazar
 - `movementType` alaninin karsiligi satir bazinda `sth_tip` kolonuna yazilir; `2` gonderilirse backend Mikro uyumu icin satiri `1` cikis ve `0` giris olarak iki stok hareketine acar
 - eski yapiya uygun olarak `sth_giris_depo_no` ve `sth_cikis_depo_no` ayni islem deposuna yazilir
@@ -6605,7 +6615,7 @@ Onemli not:
 
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 17`, `sth_tip = 2`, `sth_cins = 6`, `sth_normal_iade = 1` olarak depo iadesi yazar.
-- Normal kullanici icin `sourceWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska kaynak depodan iade olusturacaksa body'de opsiyonel `sourceWarehouseNo` gonderebilir.
+- `iade-islemleri.giden-depo-iadeleri.all-warehouses` yoksa `sourceWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska kaynak depodan iade olusturulacaksa body'de opsiyonel `sourceWarehouseNo` gonderilebilir.
 - `targetWarehouseNo` iadenin donecegi/hedef depodur ve `sth_nakliyedeposu` alanina yazilir.
 - `transitWarehouseNo` verilmezse `60` kullanilir ve `sth_giris_depo_no` alanina yazilir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
@@ -6748,7 +6758,7 @@ Onemli not:
 
 - Bu endpoint EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar.
 - `STOK_HAREKETLERI` tablosuna `sth_evraktip = 1`, `sth_tip = 1`, `sth_normal_iade = 1` olarak firma iadesi yazar.
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina iade olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
+- `iade-islemleri.firma-iadeleri.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina iade olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir.
 - `customerCode` zorunludur ve write DB'de `CARI_HESAPLAR` icinde kontrol edilir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri, evrak tipi ve iade tipi icin write DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
@@ -7427,6 +7437,7 @@ Yetki kodlari:
 
 - `rapor-islemleri.tedarikci-performans-karnesi.list`
 - `rapor-islemleri.tedarikci-performans-karnesi.detail`
+- `rapor-islemleri.tedarikci-performans-karnesi.all-warehouses`
 
 Veri kaynaklari:
 
@@ -7437,7 +7448,8 @@ Veri kaynaklari:
 - Fatura ozeti: bizim kestigimiz fatura adaylari Mikro `CARI_HESAP_HAREKETLERI`, tedarikcinin bize kestigi gelen faturalar `uyumsoft_inbox_invoices` cache uzerinden ozetlenir
 - Gelen fatura toplami ile bizim kestigimiz fatura toplami dogrudan mutabakat farki olarak yorumlanmaz; bu alanlar yalnizca ayri fatura ozeti olarak verilir
 - Satir bazli fiyat/fatura kontrolu ikinci fazdir; ilk fazda fatura metrikleri `summary-only` durumundadir
-- Depo filtresi backend tarafinda JWT depo kapsami ile zorlanir; normal kullanici kendi deposu disinda veri alamaz, Admin/Administrator bos depo filtresiyle tum depolari gorebilir
+- Depo filtresi backend tarafinda JWT depo kapsami ile zorlanir; `rapor-islemleri.tedarikci-performans-karnesi.all-warehouses` olmayan kullanici kendi deposu disinda veri alamaz.
+- `rapor-islemleri.tedarikci-performans-karnesi.all-warehouses` yetkisi olan kullanici `warehouseNo` bos birakirsa tum depolari, belirli depo gonderirse o depoyu raporlar.
 
 Endpoint ozeti:
 
@@ -7451,7 +7463,7 @@ Liste query:
 ```text
 startDate     zorunlu, ISO tarih
 endDate       zorunlu, ISO tarih
-warehouseNo   opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular; Admin/Administrator bos birakirsa tum depolar
+warehouseNo   opsiyonel; `all-warehouses` yoksa UI sormaz ve backend JWT deposunu uygular; `rapor-islemleri.tedarikci-performans-karnesi.all-warehouses` varsa bos birakilirsa tum depolar
 customerCode  opsiyonel; tek tedarikciye daraltir
 take          opsiyonel; default 100, max 500
 ```
@@ -7463,7 +7475,7 @@ Detay query:
 ```text
 startDate   zorunlu
 endDate     zorunlu
-warehouseNo opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular; Admin/Administrator secili depo icin gonderebilir
+warehouseNo opsiyonel; `all-warehouses` yoksa UI sormaz ve backend JWT deposunu uygular; `rapor-islemleri.tedarikci-performans-karnesi.all-warehouses` varsa secili depo icin gonderilebilir
 eventTake   opsiyonel; default 100, max 500
 ```
 
@@ -7657,6 +7669,7 @@ Temel route:
 Yetki kodu:
 
 - `rapor-islemleri.stok-raporlari.list`
+- `rapor-islemleri.stok-raporlari.all-warehouses`
 
 Veri kaynaklari:
 
@@ -7693,7 +7706,7 @@ Endpoint ozeti:
 Ortak query kurallari:
 
 ```text
-warehouseNo   opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular
+warehouseNo   opsiyonel; `rapor-islemleri.stok-raporlari.all-warehouses` yoksa UI sormaz ve backend JWT deposunu uygular
 reportDate    opsiyonel; stok anlik raporlarinda verilmezse bugun
 startDate     tarih araligi raporlarinda zorunlu
 endDate       tarih araligi raporlarinda zorunlu; backend gunu dahil kabul eder
@@ -7703,8 +7716,9 @@ take          opsiyonel; max 1000
 Depo kapsami:
 
 - `son-stok`, `tedarikci-son-stok`, `kategori-son-stok`, `uretici-son-stok`, `envanter-degeri`, `depoda-var-subede-yok`, `depo-sifir-stok` ve `sayim-karsilastirma` tek depo raporudur.
-- `urun-depo-durum`, `stok-kartlari`, `hareketler`, `giris-cikis-karsilastirma`, satis, iade, satmayan urun ve karlilik raporlarinda Admin/Administrator `warehouseNo` bos birakirsa tum depolar okunabilir.
-- Normal kullanicida backend token deposunu uygular; UI depo secimi gostermemelidir.
+- `urun-depo-durum`, `stok-kartlari`, `hareketler`, `giris-cikis-karsilastirma`, satis, iade, satmayan urun ve karlilik raporlarinda `rapor-islemleri.stok-raporlari.all-warehouses` yetkisi olan kullanici `warehouseNo` bos birakirsa tum depolar okunabilir.
+- `rapor-islemleri.stok-raporlari.all-warehouses` olmayan kullanicida backend token deposunu uygular; UI depo secimi gostermemelidir.
+- Ornek: Asistan rolune sadece stok raporlari icin tum sube erisimi verilecekse role `rapor-islemleri.stok-raporlari.list` ve `rapor-islemleri.stok-raporlari.all-warehouses` yetkileri atanir; `Admin` rolu verilmesi gerekmez.
 
 Filtre alanlari:
 
@@ -7724,7 +7738,7 @@ Notlar:
 - Barkod alanlari master/birim-1 barkod onceligiyle secilir.
 - `OnlyWithStock=true` varsayilan davranistir; sifir stoklarin da gelmesi istenirse `false` gonderilir.
 - Kategori secimi icin UI `kategori-secenekleri` endpoint'ini kullanabilir; response `categoryCode`, `categoryName`, `productCount` alanlarini doner.
-- `satislar/satmayan-urunler` admin tarafinda tum depolar icin calistirilirse `warehouseName = "Tum depolar"` ve `currentStock` aktif depolarin toplam sistem miktari olarak doner.
+- `satislar/satmayan-urunler` tum depo yetkisiyle tum depolar icin calistirilirse `warehouseName = "Tum depolar"` ve `currentStock` aktif depolarin toplam sistem miktari olarak doner.
 - `karlilik` response'unda `groupName`, `supplier` ve `product-manager` icin ad/unvan; `stock` icin stok adi; `producer` ve `category` icin kod fallback'i olarak doner.
 
 UI akisi:
@@ -7767,6 +7781,7 @@ Temel route:
 Yetki kodu:
 
 - `rapor-islemleri.promosyon-raporlari.list`
+- `rapor-islemleri.promosyon-raporlari.all-warehouses`
 
 Veri kaynaklari:
 
@@ -7790,7 +7805,7 @@ Endpoint ozeti:
 Bulten listesi query:
 
 ```text
-warehouseNo  opsiyonel; normal kullanicida UI sormaz ve backend JWT deposunu uygular
+warehouseNo  opsiyonel; `rapor-islemleri.promosyon-raporlari.all-warehouses` yoksa UI sormaz ve backend JWT deposunu uygular
 activeOn     opsiyonel; verilmezse bugun
 onlyActive   opsiyonel; default true, activeOn tarihinde aktif olan bultenleri getirir
 search       opsiyonel; kod, ad veya aciklama arar
@@ -7802,7 +7817,7 @@ Performans query:
 ```text
 startDate      opsiyonel; verilmezse endDate - 30 gun
 endDate        opsiyonel; verilmezse bugun, backend gunu dahil kabul eder
-warehouseNo    opsiyonel; Admin/Administrator bos birakirsa tum subeler
+warehouseNo    opsiyonel; `rapor-islemleri.promosyon-raporlari.all-warehouses` varsa bos birakilirsa tum subeler
 promotionCode  opsiyonel; tek bulten/promosyon kodu
 search         opsiyonel; kod, ad veya aciklama arar
 take           opsiyonel; default 250, max 1000
@@ -7852,6 +7867,7 @@ Temel route:
 Yetki kodu:
 
 - `rapor-islemleri.satis-analizleri.list`
+- `rapor-islemleri.satis-analizleri.all-warehouses`
 
 Request query alanlari:
 
@@ -7863,8 +7879,8 @@ warehouseNo  opsiyonel
 
 Not:
 
-- Normal kullanicida UI `warehouseNo` sormaz; backend JWT icindeki kullanici deposunu uygular.
-- `Admin`/`Administrator` icin `warehouseNo` verilirse tek sube filtrelenir, verilmezse tum subeler icin rapor doner.
+- `rapor-islemleri.satis-analizleri.all-warehouses` yoksa UI `warehouseNo` sormaz; backend JWT icindeki kullanici deposunu uygular.
+- `rapor-islemleri.satis-analizleri.all-warehouses` varsa `warehouseNo` verilirse tek sube filtrelenir, verilmezse tum subeler icin rapor doner.
 - Tarih filtresi gun bazinda calisir; backend `endDate` degerini dahil kabul edip sorguda ertesi gunun basina kadar okur.
 - Tum tutar alanlari backend tarafinda 2 ondaliga yuvarlanir.
 - Indirim karti raporu kullanim adedini Mikro `TurnoverDiscountCardDetails` kaynagindan, kullanim tutarini Furpa `PosFaturas` kaynagindan eslestirir.
@@ -8588,7 +8604,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina banknot takip kaydi acacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `kasa-islemleri.banknot-takipleri.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina banknot takip kaydi acilacaksa body'de opsiyonel `warehouseNo` gonderilebilir
 - ayni depo ve ayni gun icin kayit varsa yeni insert yapmaz, `200 OK` ve `created = false` doner
 - yeni kayit acilirse `201 Created` ve `created = true` doner
 
@@ -8707,7 +8723,7 @@ Yetki:
 
 Onemli not:
 
-- Normal kullanici icin `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo adina kasa sayimi olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
+- `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina kasa sayimi/complete icmal kaydi olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir
 - en az bir `paymentTypes` veya `storeExpenses` satiri zorunludur
 - backend `Summaries`, `BanknoteMovements`, `GiftCheckMovements` ve `CARI_HESAP_HAREKETLERI` tarafina yazar
 - `documentSerie` backend tarafinda `KS{islemDepoNo}` olarak uretilir
@@ -8946,7 +8962,7 @@ Home / Sikayet Oneri Kutusu
 
 Ortak Islemler / Sikayet Oneri Yonetimi
   -> menu permission'i: ortak-islemler.sikayet-oneri.list veya list-all kullanilabilir
-  -> Admin/Administrator rolu tum kayitlari ve aksiyonlari gorur
+  -> tum depo/kapsam gerekiyorsa ilgili menunun `*.all-warehouses` yetkisi kontrol edilir
   -> admin olmayan kullanici sadece kendi actigi kayitlari liste/detay olarak gorur
   -> admin olmayan kullanici okundu, durum veya admin notu guncelleyemez
   -> liste icin GET /api/yonetim/sikayet-oneri veya /api/ortak-islemler/sikayet-oneri
@@ -10640,7 +10656,7 @@ Legacy farklarini okurken su noktalari esas alinmalidir:
 
 - Hangfire ve SignalR beklentisi yoktur; bu modul application icindeki hosted queue + polling modeliyle calisir
 - `warehouseNo` artik `ClaimTypes.Name` degil, `warehouse_no` claim'inden okunur
-- Normal kullanicida dosya olusturma aksiyonlari icin depo sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `Admin`/`Administrator` baska depo icin job baslatacaksa query'de opsiyonel `warehouseNo` gonderebilir.
+- `operasyon-islemleri.operations.all-warehouses` yoksa dosya olusturma aksiyonlari icin depo sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo icin job baslatilacaksa query'de opsiyonel `warehouseNo` gonderilebilir.
 - `promofile` de yeni kuyruk/polling modeliyle calisir; eski yardimci dosya zinciri job icinde uretilir
 
 Temel route:
@@ -10836,7 +10852,7 @@ Bu endpoint merkez yoneticisinin aktif depolari tek istekte izlemesi icindir. De
 GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-02
 ```
 
-- Yalniz `Administrator` veya `Admin` rolundeki ve `operasyon-islemleri.depo-operasyon-paneli.list` yetkisine sahip kullanicilar erisebilir.
+- Yalniz `operasyon-islemleri.depo-operasyon-paneli.list` ve `operasyon-islemleri.depo-operasyon-paneli.all-warehouses` yetkilerine sahip kullanicilar erisebilir.
 - Modul kodu `operasyon-islemleri`, menu kodu `depo-operasyon-paneli`, menu adi `DepoOperasyonPaneli` degeridir.
 - UI bu kaydi `Operasyon Islemleri > Depo Operasyon Paneli` menusu olarak gosterebilir.
 - `date` opsiyoneldir ve `yyyy-MM-dd` formatindadir. Gonderilmezse API sunucusunun bugunku tarihi kullanilir.
@@ -11405,9 +11421,9 @@ Yetki ve depo ayrimi:
 
 - Login olmus her depo kullanicisi kendi deposuyla iliskili akislari gorur.
 - Depo kullanicisinda query ile gelen `warehouseNo` dikkate alinmaz; backend JWT icindeki depo numarasini kullanir.
-- `Administrator` veya `Admin` rolundeki kullanici tum depolari gorebilir ve `warehouseNo` filtresini kullanabilir.
+- `operasyon-islemleri.belge-akis-takibi.all-warehouses` yetkisi olan kullanici tum depolari gorebilir ve `warehouseNo` filtresini kullanabilir.
 - Detay endpointinde depo kullanicisi sadece kaynak veya hedef deposu kendi deposu olan akisi acabilir; aksi durumda `404` doner.
-- Permission katalogunda `operasyon-islemleri.belge-akis-takibi.list` ve `operasyon-islemleri.belge-akis-takibi.detail` kodlari vardir. Bunlar menu/rol gorunurlugu icin kullanilabilir; API erisiminde asil veri ayrimi rol ve depo uzerinden yapilir.
+- Permission katalogunda `operasyon-islemleri.belge-akis-takibi.list`, `operasyon-islemleri.belge-akis-takibi.detail` ve `operasyon-islemleri.belge-akis-takibi.all-warehouses` kodlari vardir. API erisiminde veri ayrimi permission ve depo uzerinden yapilir.
 
 Takibi acma/kapatma:
 
@@ -11465,7 +11481,7 @@ GET /api/operasyon-islemleri/belge-akis-takibi?warehouseNo=1&startDate=2026-07-0
 
 Query alanlari:
 
-- `warehouseNo`: opsiyonel. Sadece `Administrator`/`Admin` icin etkilidir.
+- `warehouseNo`: opsiyonel. Sadece `operasyon-islemleri.belge-akis-takibi.all-warehouses` yetkisi varsa etkilidir.
 - `startDate`: opsiyonel. `updatedAtUtc` uzerinden filtreler.
 - `endDate`: opsiyonel. Gun sonu dahil olacak sekilde filtreler.
 - `documentType`: opsiyonel enum.
@@ -11577,7 +11593,7 @@ UI onerisi:
 - Liste gridinde belge tipi, kaynak depo, hedef depo, belge no, e-belge no, son adim, durum, son hata ve guncelleme tarihi kolonlari yeterlidir.
 - Durum badge'i `Succeeded` icin yesil, `Failed` icin kirmizi kullanilabilir.
 - Detayda timeline sirali gosterilmeli; hata varsa `error` alanindan kopyalanabilir teknik detay acilmalidir.
-- Admin kullanicida depo filtresi gosterilmeli; depo kullanicisinda depo filtresi gizlenmeli veya pasif olmalidir.
+- `operasyon-islemleri.belge-akis-takibi.all-warehouses` varsa depo filtresi gosterilmeli; yoksa depo filtresi gizlenmeli veya pasif olmalidir.
 - `trackingEnabled = false` ise ekranda "Yeni akis kaydi kapali, eski kayitlar goruntuleniyor" uyarisi gosterilmelidir.
 
 Operasyon modulu notlari:
@@ -11585,7 +11601,7 @@ Operasyon modulu notlari:
 - bu modul Hangfire yerine uygulama ici hosted queue kullanir
 - UI canli progress stream beklememelidir; polling yeterlidir
 - `scalesfile` icin `BranchDetails` kaydi ve `ScalesType` bilgisi zorunludur
-- `scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointlerinde `warehouseNo` query parametresi opsiyoneldir; yalniz `Admin`/`Administrator` icin depo secimi anlamlidir
+- `scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointlerinde `warehouseNo` query parametresi opsiyoneldir; yalniz `operasyon-islemleri.operations.all-warehouses` yetkisi icin depo secimi anlamlidir
 - `productbarcodeplunofile` ve `cashierfile` lokal export uretebilir; branch network path varsa ek olarak paylasima da kopyalanir
 - `promofile` `PROMO.DAT`, `NOPROMO.DAT`, `NOCEK.DAT`, `NOYEMEK.DAT`, `GRUP.DAT`, `OZELKOD.DAT`, `EFATVNO.DAT` ve kasa bazli `MESAJ.xxx` dosyalarini uretir
 - export klasoru config'deki `OperationsExport:BasePath` ile verilebilir; bos ise uygulama altindaki `App_Data/OperationsExports` kullanilir
@@ -16243,7 +16259,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Operasyon Request Modelleri
 
 - `SaveAuthorizationFileHttpRequest`: `Id`, `UpdateDate`, `Name`, `Z`, `R`, `X`
-- `GET /api/operations/scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointleri body almaz; opsiyonel `warehouseNo` query parametresi yalniz admin depo secimi icindir.
+- `GET /api/operations/scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointleri body almaz; opsiyonel `warehouseNo` query parametresi yalniz `operasyon-islemleri.operations.all-warehouses` yetkili depo secimi icindir.
 - `POST /api/operations/saveauthorizationfile` ve `POST /api/operations/authorization-files` body modeli tek obje degil, `IReadOnlyCollection<SaveAuthorizationFileHttpRequest>` dizisidir.
 - `DocumentFlowListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `DocumentType`, `Status`, `Search`, `Take`
 - `GET /api/operasyon-islemleri/belge-akis-takibi` body almaz; filtreleri query parametresi olarak alir.

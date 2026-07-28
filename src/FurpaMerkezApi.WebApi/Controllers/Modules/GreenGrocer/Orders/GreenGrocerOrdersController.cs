@@ -35,7 +35,7 @@ public sealed class GreenGrocerOrdersController(
             new DeleteGreenGrocerOrderRequest(
                 request.DocumentSerie!,
                 request.DocumentOrderNo!.Value,
-                User.ResolveWarehouseScope(request.WarehouseNo)),
+                User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, UpdatePolicy)),
             cancellationToken);
 
         return Ok(response);

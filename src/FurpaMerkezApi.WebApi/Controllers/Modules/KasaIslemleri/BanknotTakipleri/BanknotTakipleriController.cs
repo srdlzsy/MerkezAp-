@@ -36,7 +36,7 @@ public sealed class BanknotTakipleriController(
         [FromQuery] BanknoteTrackDateHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
         var response = await listBanknoteTracksUseCase.ExecuteAsync(
             new BanknoteTrackListRequest(
                 request.DateToGet!.Value,
@@ -53,12 +53,13 @@ public sealed class BanknotTakipleriController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<BanknoteTrackDto>> Detail(
         Guid banknoteTrackId,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
         var response = await getBanknoteTrackDetailUseCase.ExecuteAsync(
             new BanknoteTrackDetailRequest(
                 banknoteTrackId,
-                User.ResolveWarehouseNo()),
+                User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy)),
             cancellationToken);
 
         return Ok(response);
@@ -90,7 +91,7 @@ public sealed class BanknotTakipleriController(
     }
 
     private int ResolveWriteWarehouseNo(int? warehouseNo)
-        => User.ResolveWarehouseNo(warehouseNo);
+        => User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy);
 }
 
 public sealed class BanknoteTrackDateHttpRequest

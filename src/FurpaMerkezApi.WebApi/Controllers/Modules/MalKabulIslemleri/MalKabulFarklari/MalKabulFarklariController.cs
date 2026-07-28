@@ -64,7 +64,7 @@ public sealed class MalKabulFarklariController(
         WarehouseReceivingDifferenceScope scope,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
 
         return await listWarehouseReceivingDifferencesUseCase.ExecuteAsync(
             new WarehouseReceivingDifferenceListRequest(

@@ -41,7 +41,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] CashSummaryDateHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
         var response = await cashSummaryQueriesUseCase.ListAsync(
             new CashSummaryDateRequest(
                 request.DateToGet!.Value,
@@ -59,7 +59,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] CashSummaryDateHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
         var response = await cashSummaryQueriesUseCase.GetReportAsync(
             new CashSummaryDateRequest(
                 request.DateToGet!.Value,
@@ -103,7 +103,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
         var response = await cashSummaryQueriesUseCase.GetBanknoteMovementsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -124,7 +124,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
         var response = await cashSummaryQueriesUseCase.GetGiftCheckMovementsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -160,7 +160,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] CashRegistryHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var branchNo = request.BranchNo ?? User.GetRequiredWarehouseNo();
+        var branchNo = User.ResolveWarehouseNoForPolicy(request.BranchNo, EntryListPolicy);
         var response = await cashSummaryLookupsUseCase.GetCashRegistriesAsync(
             new CashRegistryRequest(branchNo),
             cancellationToken);
@@ -278,7 +278,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] ZReportValueHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, EntryListPolicy);
         var response = await getCashSummaryZReportTotalUseCase.ExecuteAsync(
             new ZReportValueRequest(
                 resolvedWarehouseNo,
@@ -298,7 +298,7 @@ public sealed class KasaSayimlariController(
         [FromBody] CreateCashSummaryHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo);
+        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo, EntryCreatePolicy);
         var response = await cashSummaryCommandsUseCase.CreateAsync(
             new CreateCashSummaryRequest(
                 warehouseNo,
@@ -354,7 +354,7 @@ public sealed class KasaSayimlariController(
         [FromBody] UpdateCashSummaryDetailsHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo);
+        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo, EntryUpdatePolicy);
         var response = await cashSummaryCommandsUseCase.UpdateDetailsAsync(
             new UpdateCashSummaryDetailsRequest(
                 warehouseNo,
@@ -386,7 +386,7 @@ public sealed class KasaSayimlariController(
         [FromBody] UpdateCashSummaryBanknotesHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo);
+        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo, EntryUpdatePolicy);
         var response = await cashSummaryCommandsUseCase.UpdateBanknotesAsync(
             new UpdateCashSummaryBanknotesRequest(
                 warehouseNo,
@@ -411,12 +411,13 @@ public sealed class KasaSayimlariController(
     public async Task<ActionResult<DeleteCashSummaryResponse>> Delete(
         string documentSerie,
         int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, EntryDeletePolicy);
         var response = await cashSummaryCommandsUseCase.DeleteAsync(
             new DeleteCashSummaryRequest(
-                warehouseNo,
+                resolvedWarehouseNo,
                 documentSerie,
                 documentOrderNo),
             cancellationToken);
@@ -430,7 +431,7 @@ public sealed class KasaSayimlariController(
         int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNo(warehouseNo);
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
         var response = await cashSummaryQueriesUseCase.GetDetailsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -446,8 +447,8 @@ public sealed class KasaSayimlariController(
         return Ok(response);
     }
 
-    private int ResolveWriteWarehouseNo(int? warehouseNo)
-        => User.ResolveWarehouseNo(warehouseNo);
+    private int ResolveWriteWarehouseNo(int? warehouseNo, string actionPermissionCode)
+        => User.ResolveWarehouseNoForPolicy(warehouseNo, actionPermissionCode);
 }
 
 public sealed class CashSummaryDateHttpRequest

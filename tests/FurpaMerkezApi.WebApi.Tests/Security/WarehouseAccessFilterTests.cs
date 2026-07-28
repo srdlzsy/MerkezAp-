@@ -3,6 +3,7 @@ using FurpaMerkezApi.WebApi.Controllers.Modules.AramaIslemleri;
 using FurpaMerkezApi.WebApi.Controllers.Modules.OperasyonIslemleri;
 using FurpaMerkezApi.WebApi.Filters;
 using FurpaMerkezApi.WebApi.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
@@ -62,6 +63,42 @@ public sealed class WarehouseAccessFilterTests
     }
 
     [Fact]
+    public void OnActionExecuting_AllowsScopedWarehouseMismatchWithAllWarehousesPermission()
+    {
+        var request = new ScopedWarehouseRequest
+        {
+            WarehouseNo = 1
+        };
+        var context = CreateContext(
+            request,
+            currentWarehouseNo: 50,
+            policy: "stok-islemleri.zayiat-fisleri.list",
+            permissions: ["stok-islemleri.zayiat-fisleri.all-warehouses"]);
+        var filter = new WarehouseAccessFilter();
+
+        filter.OnActionExecuting(context);
+
+        Assert.Equal(1, request.WarehouseNo);
+    }
+
+    [Fact]
+    public void OnActionExecuting_RejectsAdministratorRoleWithoutAllWarehousesPermission()
+    {
+        var request = new ScopedWarehouseRequest
+        {
+            WarehouseNo = 1
+        };
+        var context = CreateContext(
+            request,
+            currentWarehouseNo: 50,
+            policy: "stok-islemleri.zayiat-fisleri.list",
+            roles: ["Administrator"]);
+        var filter = new WarehouseAccessFilter();
+
+        Assert.Throws<ForbiddenAccessException>(() => filter.OnActionExecuting(context));
+    }
+
+    [Fact]
     public void OnActionExecuting_DoesNotScopeProductDistributionTargetWarehouses()
     {
         var request = new ProductDistributionSaveHttpRequest
@@ -91,16 +128,34 @@ public sealed class WarehouseAccessFilterTests
         Assert.Equal([1, 114], request.Lines.Select(line => line.WarehouseNo));
     }
 
-    private static ActionExecutingContext CreateContext(object request, int currentWarehouseNo)
+    private static ActionExecutingContext CreateContext(
+        object request,
+        int currentWarehouseNo,
+        string? policy = null,
+        IReadOnlyCollection<string>? roles = null,
+        IReadOnlyCollection<string>? permissions = null)
     {
         var httpContext = new DefaultHttpContext
         {
-            User = CreateUser(currentWarehouseNo)
+            User = CreateUser(currentWarehouseNo, roles, permissions)
         };
+        var actionDescriptor = new ActionDescriptor
+        {
+            EndpointMetadata = string.IsNullOrWhiteSpace(policy)
+                ? []
+                :
+                [
+                    new AuthorizeAttribute
+                    {
+                        Policy = policy
+                    }
+                ]
+        };
+
         var actionContext = new ActionContext(
             httpContext,
             new RouteData(),
-            new ActionDescriptor(),
+            actionDescriptor,
             new ModelStateDictionary());
 
         return new ActionExecutingContext(
@@ -113,12 +168,21 @@ public sealed class WarehouseAccessFilterTests
             controller: null!);
     }
 
-    private static ClaimsPrincipal CreateUser(int warehouseNo) =>
-        new(new ClaimsIdentity(
-            [
-                new Claim("warehouse_no", warehouseNo.ToString())
-            ],
-            authenticationType: "Test"));
+    private static ClaimsPrincipal CreateUser(
+        int warehouseNo,
+        IReadOnlyCollection<string>? roles,
+        IReadOnlyCollection<string>? permissions)
+    {
+        var claims = new List<Claim>
+        {
+            new("warehouse_no", warehouseNo.ToString())
+        };
+
+        claims.AddRange((roles ?? []).Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange((permissions ?? []).Select(permission => new Claim("permission", permission)));
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"));
+    }
 
     private sealed class ScopedWarehouseRequest
     {

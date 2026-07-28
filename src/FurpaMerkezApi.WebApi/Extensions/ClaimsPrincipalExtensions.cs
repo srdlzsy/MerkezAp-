@@ -7,6 +7,8 @@ internal static class ClaimsPrincipalExtensions
 {
     private const string AdminRoleName = "Admin";
     private const string AdministratorRoleName = "Administrator";
+    private const string PermissionClaimType = "permission";
+    private const string AllWarehousesActionCode = "all-warehouses";
 
     public static int GetRequiredWarehouseNo(this ClaimsPrincipal user)
     {
@@ -23,11 +25,42 @@ internal static class ClaimsPrincipalExtensions
     public static bool IsAdministrator(this ClaimsPrincipal user) =>
         user.IsInRole(AdminRoleName) || user.IsInRole(AdministratorRoleName);
 
+    public static bool HasPermission(this ClaimsPrincipal user, string permissionCode) =>
+        user.HasClaim(claim =>
+            string.Equals(claim.Type, PermissionClaimType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(claim.Value, permissionCode, StringComparison.OrdinalIgnoreCase));
+
+    public static string ToAllWarehousesPermissionCode(string actionPermissionCode)
+    {
+        if (string.IsNullOrWhiteSpace(actionPermissionCode))
+        {
+            throw new ArgumentException("Permission code is required.", nameof(actionPermissionCode));
+        }
+
+        var lastSeparatorIndex = actionPermissionCode.LastIndexOf(".", StringComparison.Ordinal);
+
+        return lastSeparatorIndex > 0
+            ? $"{actionPermissionCode[..lastSeparatorIndex]}.{AllWarehousesActionCode}"
+            : $"{actionPermissionCode}.{AllWarehousesActionCode}";
+    }
+
     public static int ResolveWarehouseNo(this ClaimsPrincipal user, int? requestedWarehouseNo = null)
     {
         var currentWarehouseNo = user.GetRequiredWarehouseNo();
 
-        if (user.IsAdministrator())
+        EnsureWarehouseAccess(currentWarehouseNo, requestedWarehouseNo);
+
+        return currentWarehouseNo;
+    }
+
+    public static int ResolveWarehouseNo(
+        this ClaimsPrincipal user,
+        int? requestedWarehouseNo,
+        string allWarehousesPermissionCode)
+    {
+        var currentWarehouseNo = user.GetRequiredWarehouseNo();
+
+        if (user.CanAccessAllWarehouses(allWarehousesPermissionCode))
         {
             return requestedWarehouseNo ?? currentWarehouseNo;
         }
@@ -37,15 +70,35 @@ internal static class ClaimsPrincipalExtensions
         return currentWarehouseNo;
     }
 
+    public static int ResolveWarehouseNoForPolicy(
+        this ClaimsPrincipal user,
+        int? requestedWarehouseNo,
+        string actionPermissionCode) =>
+        user.ResolveWarehouseNo(requestedWarehouseNo, ToAllWarehousesPermissionCode(actionPermissionCode));
+
     public static int? ResolveWarehouseScope(this ClaimsPrincipal user, int? requestedWarehouseNo = null)
     {
-        if (user.IsAdministrator())
+        return user.ResolveWarehouseNo(requestedWarehouseNo);
+    }
+
+    public static int? ResolveWarehouseScope(
+        this ClaimsPrincipal user,
+        int? requestedWarehouseNo,
+        string allWarehousesPermissionCode)
+    {
+        if (user.CanAccessAllWarehouses(allWarehousesPermissionCode))
         {
             return requestedWarehouseNo;
         }
 
         return user.ResolveWarehouseNo(requestedWarehouseNo);
     }
+
+    public static int? ResolveWarehouseScopeForPolicy(
+        this ClaimsPrincipal user,
+        int? requestedWarehouseNo,
+        string actionPermissionCode) =>
+        user.ResolveWarehouseScope(requestedWarehouseNo, ToAllWarehousesPermissionCode(actionPermissionCode));
 
     public static Guid GetRequiredUserId(this ClaimsPrincipal user)
     {
@@ -58,6 +111,9 @@ internal static class ClaimsPrincipalExtensions
 
         return userId;
     }
+
+    private static bool CanAccessAllWarehouses(this ClaimsPrincipal user, string allWarehousesPermissionCode) =>
+        user.HasPermission(allWarehousesPermissionCode);
 
     private static void EnsureWarehouseAccess(int currentWarehouseNo, int? requestedWarehouseNo)
     {

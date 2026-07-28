@@ -136,7 +136,7 @@ public sealed class DepolarArasiSevklerController(
         [FromBody, Required] SendEDespatchHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDetailPolicy);
 
         return Ok(await eDespatchService.SendAsync(
             new SendEDespatchRequest(
@@ -177,7 +177,7 @@ public sealed class DepolarArasiSevklerController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDetailPolicy);
         var response = await eDespatchService.GetPdfAsync(
             new GetEDespatchPdfRequest(
                 EDespatchDocumentType.InterWarehouseShipment,
@@ -200,7 +200,7 @@ public sealed class DepolarArasiSevklerController(
         [FromBody] CreateInterWarehouseShipmentHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var sourceWarehouseNo = User.ResolveWarehouseNo(request.SourceWarehouseNo);
+        var sourceWarehouseNo = User.ResolveWarehouseNoForPolicy(request.SourceWarehouseNo, OutgoingCreatePolicy);
         var response = await createInterWarehouseShipmentUseCase.ExecuteAsync(
             new CreateInterWarehouseShipmentRequest(
                 sourceWarehouseNo,
@@ -259,7 +259,9 @@ public sealed class DepolarArasiSevklerController(
         WarehouseShippingDirection direction,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScopeForPolicy(
+            request.WarehouseNo,
+            direction == WarehouseShippingDirection.Incoming ? IncomingListPolicy : OutgoingListPolicy);
 
         return Ok(await listInterWarehouseShipmentsUseCase.ExecuteAsync(
             new WarehouseShippingListRequest(
@@ -277,7 +279,9 @@ public sealed class DepolarArasiSevklerController(
         WarehouseShippingDirection direction,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = warehouseNo ?? User.GetRequiredWarehouseNo();
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(
+            warehouseNo,
+            direction == WarehouseShippingDirection.Incoming ? IncomingDetailPolicy : OutgoingDetailPolicy);
 
         return Ok(await getInterWarehouseShipmentDetailUseCase.ExecuteAsync(
             new WarehouseShippingDetailRequest(

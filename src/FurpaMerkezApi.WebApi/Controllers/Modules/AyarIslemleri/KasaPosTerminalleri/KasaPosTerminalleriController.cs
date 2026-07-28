@@ -57,7 +57,9 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
     public async Task<ActionResult<IReadOnlyCollection<CashRegisterMessageStatusDto>>> BranchMessageStatus(
         [Range(1, int.MaxValue)] int branchNo,
         CancellationToken cancellationToken) =>
-        Ok(await ayarlarService.ReadCashRegisterMessageStatusAsync(branchNo, cancellationToken));
+        Ok(await ayarlarService.ReadCashRegisterMessageStatusAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, ListPolicy),
+            cancellationToken));
 
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]
@@ -71,7 +73,7 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
     {
         var response = await ayarlarService.CreateCashRegisterAsync(
             new CreateCashRegisterRequest(
-                request.BranchNo!.Value,
+                User.ResolveWarehouseNoForPolicy(request.BranchNo, CreatePolicy),
                 request.CashNo!.Value,
                 request.CashType!.Value,
                 request.Terminals
@@ -96,7 +98,10 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
         [Range(1, int.MaxValue)] int cashNo,
         CancellationToken cancellationToken)
     {
-        await ayarlarService.DeleteCashRegisterAsync(branchNo, cashNo, cancellationToken);
+        await ayarlarService.DeleteCashRegisterAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, UpdatePolicy),
+            cashNo,
+            cancellationToken);
         return NoContent();
     }
 
@@ -110,7 +115,10 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
         [Required(AllowEmptyStrings = false), StringLength(40)] string terminalNo,
         CancellationToken cancellationToken)
     {
-        await ayarlarService.DeleteCashRegisterTerminalAsync(branchNo, terminalNo, cancellationToken);
+        await ayarlarService.DeleteCashRegisterTerminalAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, UpdatePolicy),
+            terminalNo,
+            cancellationToken);
         return NoContent();
     }
 }

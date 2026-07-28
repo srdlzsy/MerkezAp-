@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,7 +16,10 @@ namespace FurpaMerkezApi.WebApi.Controllers;
 public sealed class HomeWarehousePrioritiesController(
     IHomeWarehousePrioritiesService prioritiesService) : ControllerBase
 {
+    private const string AllWarehousesPolicy = "home.depo-oncelikleri.all-warehouses";
+
     [HttpGet]
+    [WarehouseScopePermission(AllWarehousesPolicy)]
     [ProducesResponseType(typeof(HomeWarehousePrioritiesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<HomeWarehousePrioritiesDto>> Get(
@@ -23,7 +27,7 @@ public sealed class HomeWarehousePrioritiesController(
         CancellationToken cancellationToken)
     {
         var date = request.Date ?? DateOnly.FromDateTime(DateTime.Today);
-        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo);
+        var warehouseNo = User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy);
 
         return Ok(await prioritiesService.GetAsync(
             new HomeWarehousePrioritiesRequest(

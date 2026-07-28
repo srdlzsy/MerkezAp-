@@ -48,10 +48,13 @@ public sealed class StokRaporlariControllerTests
     }
 
     [Fact]
-    public async Task ProductWarehouseStock_AllowsAdministratorToQueryAllWarehouses()
+    public async Task ProductWarehouseStock_AllowsAllWarehousesPermissionToQueryAllWarehouses()
     {
         var useCase = new CapturingStockReportsUseCase();
-        var controller = CreateController(useCase, warehouseNo: 0, roles: ["Administrator"]);
+        var controller = CreateController(
+            useCase,
+            warehouseNo: 0,
+            permissions: ["rapor-islemleri.stok-raporlari.all-warehouses"]);
 
         await controller.ProductWarehouseStock(
             new ProductWarehouseStockHttpRequest
@@ -86,7 +89,8 @@ public sealed class StokRaporlariControllerTests
     private static StokRaporlariController CreateController(
         IStockReportsUseCase useCase,
         int warehouseNo,
-        IReadOnlyCollection<string>? roles = null)
+        IReadOnlyCollection<string>? roles = null,
+        IReadOnlyCollection<string>? permissions = null)
     {
         var claims = new List<Claim>
         {
@@ -95,6 +99,7 @@ public sealed class StokRaporlariControllerTests
         };
 
         claims.AddRange((roles ?? []).Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange((permissions ?? []).Select(permission => new Claim("permission", permission)));
 
         return new StokRaporlariController(useCase)
         {
