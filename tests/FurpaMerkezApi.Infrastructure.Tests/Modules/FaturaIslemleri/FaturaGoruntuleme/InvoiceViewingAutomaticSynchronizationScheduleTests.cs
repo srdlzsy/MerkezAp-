@@ -75,6 +75,49 @@ public sealed class InvoiceViewingAutomaticSynchronizationScheduleTests
     }
 
     [Fact]
+    public void TryGetMissedSlot_ReturnsLatestExpiredSlot()
+    {
+        var options = new InvoiceViewingAutomaticSynchronizationOptions
+        {
+            StartTime = "08:30",
+            EndTime = "17:30",
+            IntervalMinutes = 120,
+            TriggerWindowMinutes = 5
+        };
+
+        var hasMissedSlot = InvoiceViewingAutomaticSynchronizationSchedule.TryGetMissedSlot(
+            new DateTime(2026, 7, 21, 13, 0, 0),
+            options,
+            out var missedSlot,
+            out var invalidReason);
+
+        Assert.True(hasMissedSlot);
+        Assert.Null(invalidReason);
+        Assert.Equal(new TimeSpan(12, 30, 0), missedSlot);
+    }
+
+    [Fact]
+    public void TryGetNextSlot_ReturnsUpcomingSlot()
+    {
+        var options = new InvoiceViewingAutomaticSynchronizationOptions
+        {
+            StartTime = "08:30",
+            EndTime = "17:30",
+            IntervalMinutes = 120
+        };
+
+        var hasNextSlot = InvoiceViewingAutomaticSynchronizationSchedule.TryGetNextSlot(
+            new DateTime(2026, 7, 21, 13, 0, 0),
+            options,
+            out var nextSlot,
+            out var invalidReason);
+
+        Assert.True(hasNextSlot);
+        Assert.Null(invalidReason);
+        Assert.Equal(new TimeSpan(14, 30, 0), nextSlot);
+    }
+
+    [Fact]
     public void BuildSlots_AcceptsDotSeparatedTimes()
     {
         var options = new InvoiceViewingAutomaticSynchronizationOptions

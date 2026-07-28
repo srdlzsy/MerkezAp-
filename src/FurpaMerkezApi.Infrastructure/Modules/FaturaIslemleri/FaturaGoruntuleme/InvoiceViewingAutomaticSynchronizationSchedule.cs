@@ -87,6 +87,63 @@ internal static class InvoiceViewingAutomaticSynchronizationSchedule
             .ToArray();
     }
 
+    public static bool TryGetMissedSlot(
+        DateTime localNow,
+        InvoiceViewingAutomaticSynchronizationOptions options,
+        out TimeSpan missedSlot,
+        out string? invalidReason)
+    {
+        missedSlot = default;
+
+        var slots = BuildSlots(options, out invalidReason);
+        if (slots.Count == 0)
+        {
+            return false;
+        }
+
+        var currentTime = localNow.TimeOfDay;
+        var triggerWindow = ResolveTriggerWindow(options);
+
+        foreach (var slot in slots.Reverse())
+        {
+            if (currentTime >= slot + triggerWindow)
+            {
+                missedSlot = slot;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool TryGetNextSlot(
+        DateTime localNow,
+        InvoiceViewingAutomaticSynchronizationOptions options,
+        out TimeSpan nextSlot,
+        out string? invalidReason)
+    {
+        nextSlot = default;
+
+        var slots = BuildSlots(options, out invalidReason);
+        if (slots.Count == 0)
+        {
+            return false;
+        }
+
+        var currentTime = localNow.TimeOfDay;
+
+        foreach (var slot in slots)
+        {
+            if (currentTime < slot)
+            {
+                nextSlot = slot;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static TimeSpan ResolveTriggerWindow(InvoiceViewingAutomaticSynchronizationOptions options) =>
         TimeSpan.FromMinutes(Math.Clamp(options.TriggerWindowMinutes, 1, 60));
 

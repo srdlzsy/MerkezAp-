@@ -148,15 +148,11 @@ public sealed class HomeWarehousePrioritiesService(
 
         var query = authDbContext.StockAnomalies
             .AsNoTracking()
-            .Where(anomaly =>
-                anomaly.Status == StockAnomalyStatus.Open ||
-                anomaly.Status == StockAnomalyStatus.Acknowledged);
+            .Where(anomaly => anomaly.Status == StockAnomalyStatus.Open);
 
         if (hasWarehouseNo)
         {
-            query = query.Where(anomaly =>
-                anomaly.WarehouseNo == scopedWarehouseNo ||
-                anomaly.RelatedWarehouseNo == scopedWarehouseNo);
+            query = query.Where(anomaly => anomaly.WarehouseNo == scopedWarehouseNo);
         }
 
         return await query

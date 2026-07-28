@@ -6,12 +6,13 @@ public sealed class InvoiceViewingSynchronizationProgressStore
 {
     private readonly object gate = new();
     private InvoiceViewingSynchronizationProgressResponse latest = CreateIdleProgress();
+    private SchedulerSnapshot scheduler = SchedulerSnapshot.Empty;
 
     public InvoiceViewingSynchronizationProgressResponse Get()
     {
         lock (gate)
         {
-            return latest;
+            return AttachSchedulerSnapshot(latest);
         }
     }
 
@@ -57,7 +58,43 @@ public sealed class InvoiceViewingSynchronizationProgressStore
                 ElapsedMs: 0,
                 Message: "Senkronizasyon siraya alindi.");
 
-            return latest;
+            return AttachSchedulerSnapshot(latest);
+        }
+    }
+
+    public void ReportSchedulerCheck(
+        bool enabled,
+        DateTime checkedAtUtc,
+        DateTime checkedAtLocal,
+        string status,
+        string message,
+        string? currentSlot = null,
+        string? nextSlot = null,
+        string? lastQueuedSlot = null,
+        DateTime? lastQueuedAtUtc = null,
+        string? lastSkippedSlot = null,
+        DateTime? lastSkippedAtUtc = null,
+        string? lastMissedSlot = null,
+        DateTime? lastMissedAtUtc = null)
+    {
+        lock (gate)
+        {
+            scheduler = scheduler with
+            {
+                Enabled = enabled,
+                LastCheckedAtUtc = checkedAtUtc,
+                LastCheckedAtLocal = checkedAtLocal,
+                Status = status,
+                Message = message,
+                CurrentSlot = currentSlot,
+                NextSlot = nextSlot,
+                LastQueuedSlot = lastQueuedAtUtc.HasValue ? lastQueuedSlot : scheduler.LastQueuedSlot,
+                LastQueuedAtUtc = lastQueuedAtUtc ?? scheduler.LastQueuedAtUtc,
+                LastSkippedSlot = lastSkippedAtUtc.HasValue ? lastSkippedSlot : scheduler.LastSkippedSlot,
+                LastSkippedAtUtc = lastSkippedAtUtc ?? scheduler.LastSkippedAtUtc,
+                LastMissedSlot = lastMissedAtUtc.HasValue ? lastMissedSlot : scheduler.LastMissedSlot,
+                LastMissedAtUtc = lastMissedAtUtc ?? scheduler.LastMissedAtUtc
+            };
         }
     }
 
@@ -267,4 +304,54 @@ public sealed class InvoiceViewingSynchronizationProgressStore
         startedAtUtc.HasValue
             ? Math.Max(0, (long)(nowUtc - startedAtUtc.Value).TotalMilliseconds)
             : 0;
+
+    private InvoiceViewingSynchronizationProgressResponse AttachSchedulerSnapshot(
+        InvoiceViewingSynchronizationProgressResponse progress) =>
+        progress with
+        {
+            AutomaticSynchronizationEnabled = scheduler.Enabled,
+            SchedulerLastCheckedAtUtc = scheduler.LastCheckedAtUtc,
+            SchedulerLastCheckedLocal = scheduler.LastCheckedAtLocal,
+            SchedulerStatus = scheduler.Status,
+            SchedulerMessage = scheduler.Message,
+            SchedulerCurrentSlot = scheduler.CurrentSlot,
+            SchedulerNextSlot = scheduler.NextSlot,
+            SchedulerLastQueuedSlot = scheduler.LastQueuedSlot,
+            SchedulerLastQueuedAtUtc = scheduler.LastQueuedAtUtc,
+            SchedulerLastSkippedSlot = scheduler.LastSkippedSlot,
+            SchedulerLastSkippedAtUtc = scheduler.LastSkippedAtUtc,
+            SchedulerLastMissedSlot = scheduler.LastMissedSlot,
+            SchedulerLastMissedAtUtc = scheduler.LastMissedAtUtc
+        };
+
+    private sealed record SchedulerSnapshot(
+        bool? Enabled,
+        DateTime? LastCheckedAtUtc,
+        DateTime? LastCheckedAtLocal,
+        string? Status,
+        string? Message,
+        string? CurrentSlot,
+        string? NextSlot,
+        string? LastQueuedSlot,
+        DateTime? LastQueuedAtUtc,
+        string? LastSkippedSlot,
+        DateTime? LastSkippedAtUtc,
+        string? LastMissedSlot,
+        DateTime? LastMissedAtUtc)
+    {
+        public static SchedulerSnapshot Empty { get; } = new(
+            Enabled: null,
+            LastCheckedAtUtc: null,
+            LastCheckedAtLocal: null,
+            Status: null,
+            Message: null,
+            CurrentSlot: null,
+            NextSlot: null,
+            LastQueuedSlot: null,
+            LastQueuedAtUtc: null,
+            LastSkippedSlot: null,
+            LastSkippedAtUtc: null,
+            LastMissedSlot: null,
+            LastMissedAtUtc: null);
+    }
 }

@@ -70,7 +70,20 @@ public sealed record InvoiceViewingSynchronizationProgressResponse(
     DateTime? LastUpdatedAtUtc,
     DateTime? FinishedAtUtc,
     long ElapsedMs,
-    string Message);
+    string Message,
+    bool? AutomaticSynchronizationEnabled = null,
+    DateTime? SchedulerLastCheckedAtUtc = null,
+    DateTime? SchedulerLastCheckedLocal = null,
+    string? SchedulerStatus = null,
+    string? SchedulerMessage = null,
+    string? SchedulerCurrentSlot = null,
+    string? SchedulerNextSlot = null,
+    string? SchedulerLastQueuedSlot = null,
+    DateTime? SchedulerLastQueuedAtUtc = null,
+    string? SchedulerLastSkippedSlot = null,
+    DateTime? SchedulerLastSkippedAtUtc = null,
+    string? SchedulerLastMissedSlot = null,
+    DateTime? SchedulerLastMissedAtUtc = null);
 
 public sealed record InvoiceViewingDetailRequest(string DocumentId);
 
