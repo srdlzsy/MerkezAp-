@@ -76,9 +76,7 @@ public sealed class StockAnomalyCenterService(
         if (allowedWarehouseNo.HasValue)
         {
             var warehouseNo = allowedWarehouseNo.Value;
-            query = query.Where(anomaly =>
-                anomaly.WarehouseNo == warehouseNo ||
-                anomaly.RelatedWarehouseNo == warehouseNo);
+            query = query.Where(anomaly => anomaly.WarehouseNo == warehouseNo);
         }
 
         var anomaly = await query.SingleOrDefaultAsync(cancellationToken)
@@ -135,9 +133,7 @@ public sealed class StockAnomalyCenterService(
         if (request.AllowedWarehouseNo.HasValue)
         {
             var warehouseNo = request.AllowedWarehouseNo.Value;
-            query = query.Where(anomaly =>
-                anomaly.WarehouseNo == warehouseNo ||
-                anomaly.RelatedWarehouseNo == warehouseNo);
+            query = query.Where(anomaly => anomaly.WarehouseNo == warehouseNo);
         }
 
         var anomaly = await query.SingleOrDefaultAsync(cancellationToken)
@@ -160,9 +156,7 @@ public sealed class StockAnomalyCenterService(
         if (request.WarehouseNo.HasValue)
         {
             var warehouseNo = request.WarehouseNo.Value;
-            query = query.Where(anomaly =>
-                anomaly.WarehouseNo == warehouseNo ||
-                anomaly.RelatedWarehouseNo == warehouseNo);
+            query = query.Where(anomaly => anomaly.WarehouseNo == warehouseNo);
         }
 
         if (request.Status.HasValue)
@@ -200,9 +194,7 @@ public sealed class StockAnomalyCenterService(
         if (request.WarehouseNo.HasValue)
         {
             var warehouseNo = request.WarehouseNo.Value;
-            query = query.Where(anomaly =>
-                anomaly.WarehouseNo == warehouseNo ||
-                anomaly.RelatedWarehouseNo == warehouseNo);
+            query = query.Where(anomaly => anomaly.WarehouseNo == warehouseNo);
         }
 
         if (request.Type.HasValue)
@@ -831,7 +823,7 @@ public sealed class StockAnomalyCenterService(
                   AND movement.sth_tarih < @endDateExclusive
                   AND movement.sth_evrakno_seri IS NOT NULL
                   AND movement.sth_evrakno_sira IS NOT NULL
-                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
+                  AND (@warehouseNo IS NULL OR ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no) = @warehouseNo)
                 GROUP BY movement.sth_evraktip, movement.sth_tip, movement.sth_cins, movement.sth_normal_iade,
                     movement.sth_evrakno_seri, movement.sth_evrakno_sira, movement.sth_belge_no, movement.sth_stok_kod,
                     ISNULL(movement.sth_cikis_depo_no, movement.sth_giris_depo_no), movement.sth_giris_depo_no, movement.sth_miktar
@@ -925,7 +917,7 @@ public sealed class StockAnomalyCenterService(
                   AND movement.sth_nakliyedurumu = 1
                   AND movement.sth_FormulMiktar IS NOT NULL
                   AND ABS(ISNULL(movement.sth_FormulMiktar, 0) - ISNULL(movement.sth_miktar, 0)) > 0.000001
-                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo)
                 ORDER BY movement.sth_tarih DESC
             )
             SELECT
@@ -1006,7 +998,7 @@ public sealed class StockAnomalyCenterService(
                   AND movement.sth_tarih < @endDateExclusive
                   AND movement.sth_stok_kod IS NOT NULL
                   AND ISNULL(movement.sth_miktar, 0) > 0
-                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo)
+                  AND (@warehouseNo IS NULL OR CASE WHEN movement.sth_tip = 0 THEN movement.sth_giris_depo_no ELSE movement.sth_cikis_depo_no END = @warehouseNo)
             ),
             Averages AS (
                 SELECT WarehouseNo, sth_stok_kod AS ProductCode, AVG(Quantity) AS AverageQuantity
@@ -1204,7 +1196,7 @@ public sealed class StockAnomalyCenterService(
                   AND movement.sth_tarih >= @startDate
                   AND movement.sth_tarih < @endDateExclusive
                   AND movement.sth_tarih < @pendingTransferCutoffDate
-                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo OR movement.sth_giris_depo_no = @warehouseNo OR movement.sth_nakliyedeposu = @warehouseNo)
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo)
                 ORDER BY movement.sth_tarih ASC
             )
             SELECT

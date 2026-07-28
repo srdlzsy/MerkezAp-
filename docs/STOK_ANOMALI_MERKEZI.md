@@ -74,7 +74,7 @@ Query parametreleri:
 
 | Parametre | Tip | Aciklama |
 | --- | --- | --- |
-| `warehouseNo` | `int?` | Depo filtresi. Admin olmayan kullanicilarda kullanicinin deposuna zorlanir. |
+| `warehouseNo` | `int?` | Depo filtresi. `all-warehouses` yetkisi olmayan kullanicilarda kullanicinin deposuna zorlanir. |
 | `type` | `StockAnomalyType?` | Anomali tipi. |
 | `status` | `StockAnomalyStatus?` | Durum filtresi. |
 | `severity` | `StockAnomalySeverity?` | Onem filtresi. |
@@ -218,14 +218,18 @@ Yetkiler:
 | Detay | `stok-islemleri.stok-anomali-merkezi.detail` |
 | Durum guncelleme | `stok-islemleri.stok-anomali-merkezi.update` |
 | Tarama | `stok-islemleri.stok-anomali-merkezi.scan` |
+| Tum depolar | `stok-islemleri.stok-anomali-merkezi.all-warehouses` |
 
 Depo kapsami:
 
-- `Administrator` veya `Admin` rolundeki kullanici tum depolari gorebilir.
-- Diger kullanicilarda istek icindeki `warehouseNo` dikkate alinmaz; kullanicinin
-  token/claim uzerindeki depo numarasi kullanilir.
-- Detay ve durum degistirme islerinde kullanici sadece kendi deposu veya iliskili
-  depo olarak gecen kayitlara erisebilir.
+- `stok-islemleri.stok-anomali-merkezi.all-warehouses` yetkisi olan kullanici tum
+  depolari gorebilir veya `warehouseNo` ile depo secebilir.
+- Diger kullanicilarda istek icindeki `warehouseNo` kendi deposundan farkliysa
+  `403 Forbidden` doner; `warehouseNo` bos ise token/claim uzerindeki depo numarasi
+  kullanilir.
+- Detay ve durum degistirme islerinde kullanici sadece ana deposu kendi deposu olan
+  kayitlara erisebilir. `related_warehouse_no` bilgi amaclidir ve tek basina depo
+  yetki kapsamini genisletmez.
 
 ## Veri Modeli
 

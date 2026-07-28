@@ -5852,7 +5852,7 @@ Sayim sonucu offline UI akisi:
 
 ### Stok Anomali Merkezi
 
-Stok anomali merkezi, Mikro verisini tarayip supheli durumlari Auth veritabanindaki `stock_anomalies` tablosunda takip kaydi olarak saklar. Mikro'ya yazma yapmaz. `stok-islemleri.stok-anomali-merkezi.all-warehouses` yetkisi olan kullanici tum depolari gorur; diger kullanici sadece kendi deposuyla iliskili anomalileri gorur ve tarar.
+Stok anomali merkezi, Mikro verisini tarayip supheli durumlari Auth veritabanindaki `stock_anomalies` tablosunda takip kaydi olarak saklar. Mikro'ya yazma yapmaz. `stok-islemleri.stok-anomali-merkezi.all-warehouses` yetkisi olan kullanici tum depolari gorur; diger kullanici sadece ana deposu kendi JWT deposu olan anomalileri gorur ve tarar. `relatedWarehouseNo` bilgi amaclidir; tek basina depo yetki kapsamini genisletmez.
 
 Yakaladigi anomali tipleri:
 
@@ -5935,7 +5935,7 @@ Satin almacilar lookup:
 
 `GET /api/stok-islemleri/stok-anomali-merkezi/satin-almacilar?warehouseNo=110&status=Open`
 
-- `warehouseNo` depo yetki kapsamina tabidir; depo kullanicisi sadece kendi deposunu gorur.
+- `warehouseNo` depo yetki kapsamina tabidir; depo kullanicisi sadece ana deposu kendi deposu olan anomalileri gorur.
 - `status` opsiyoneldir ve varsayilan `Open` degeridir.
 - sadece secilen kapsamdaki anomalilerde bulunan satin almacilar doner.
 - sorumlusu olmayan anomaliler `code=""`, `name="ATANMAMIS"`, `isAssigned=false` satirinda gruplanir.
@@ -5980,7 +5980,7 @@ Request:
 Not:
 
 - `stok-islemleri.stok-anomali-merkezi.all-warehouses` yetkisi olan kullanici `warehouseNo` bos gonderirse tum depolar taranir.
-- Depo kullanicisi `warehouseNo` gonderse bile backend JWT icindeki kendi deposunu kullanir.
+- Depo kullanicisi `warehouseNo` gonderse bile backend JWT icindeki kendi deposunu kullanir; tarama sonucu baska ana depo adina anomali acmaz.
 - `startDate/endDate` duplicate belge, mal kabul farki ve yuksek miktar kontrollerinde kullanilir.
 - Eksi stok ve hareketsiz stok kontrolleri mevcut bakiye uzerinden calisir.
 - `takePerRule`, her kuralin tek taramada en fazla kac sonuc yazacagini belirler.
