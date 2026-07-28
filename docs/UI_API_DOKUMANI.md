@@ -18,11 +18,31 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; depo yetkisi yoksa `WarehouseNo` verilmez ve backend JWT icindeki depoyu kullanir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
 
+Route parametre notu:
+
+- Controller route template'lerinde belge anahtarlari genel olarak `{documentSerie}/{documentOrderNo}` seklindedir.
+- Dokumanin eski akis semalarinda gecen `{seri}/{sira}` ifadesi ayni path degerlerinin kisa yazimidir; UI yeni kodda controller'daki canonical adlari `documentSerie` ve `documentOrderNo` olarak kullanmalidir.
+- `{id:guid}`, `{documentOrderNo:int}` gibi ASP.NET route constraint'leri dokuman orneklerinde genelde `{id}`, `{documentOrderNo}` olarak sade yazilir; path formatini degistirmez.
+
+Controller'da acik olan pratik alias/canonical route'lar:
+
+- `GET /api/arama-islemleri/barkodlar/{barcode}/cozumle`
+- `GET /api/arama-islemleri/urunler/{stockCode}/cari-onerileri`
+- `GET /api/siparis-islemleri/alinan-depo-siparisleri/{documentSerie}/{documentOrderNo}`
+- `GET /api/siparis-islemleri/alinan-depo-siparisleri/key/{documentKey}`
+- `GET /api/siparis-islemleri/alinan-firma-siparisleri/key/{documentKey}`
+- `GET /api/siparis-islemleri/verilen-depo-siparisleri/key/{documentKey}`
+- `GET /api/siparis-islemleri/verilen-firma-siparisleri/key/{documentKey}`
+- `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}` ve `POST /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}` ve `POST /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}` ve `POST /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/{documentSerie}/{documentOrderNo}` ve `POST /api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/{documentSerie}/{documentOrderNo}/kabul`, depo mal kabul detay/kabul endpointinin eski menu uyum alias'idir.
+
 ### Tum Depo Yetki Modeli
 
 - Depo kapsamli menu/action setlerinde `all-warehouses` aksiyonu bulunur. Kod formati `{module}.{menu}.all-warehouses` seklindedir.
 - UI depo secici gostermek icin role degil, aktif kullanicinin `permissions` listesindeki ilgili `all-warehouses` koduna bakmalidir.
-- Ornek: stok raporlari icin tum sube yetkisi `rapor-islemleri.stok-raporlari.all-warehouses`; belge akis icin `operasyon-islemleri.belge-akis-takibi.all-warehouses`; kasa sayimi goruntuleme icin `kasa-islemleri.kasa-sayimlari.all-warehouses`; icmal girisi icin `kasa-islemleri.icmal-kaydi-girisi.all-warehouses`.
+- Ornek: stok raporlari icin tum sube yetkisi `rapor-islemleri.stok-raporlari.all-warehouses`; belge akis icin `operasyon-islemleri.belge-akis-takibi.all-warehouses`; kasa sayimi goruntuleme icin `kasa-islemleri.kasa-sayimlari.all-warehouses`; icmal girisi icin `kasa-islemleri.icmal-kaydi-girisi.all-warehouses`; POS muhasebe aktarimi icin `entegrasyon-islemleri.pos-muhasebe-aktarimi.all-warehouses`.
 - Admin rolu migration/seed ile bu yetkilerin tamamini alir. Admin olmayan role modul bazli tum depo verilecekse sadece ilgili menu icin `list/detail/create/update/delete` aksiyonlariyla birlikte `all-warehouses` atanir.
 - Backend policy'deki aksiyon kodundan tum depo kodunu turetir: `rapor-islemleri.stok-raporlari.list` isteginde depo secimi icin `rapor-islemleri.stok-raporlari.all-warehouses` aranir.
 - Bu yetkileri Auth DB'ye ekleyen migration: `20260727150749_AddAllWarehouseScopePermissions`.
@@ -230,7 +250,11 @@ Endpoint ozeti:
 | `POST /api/ortak-islemler/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
 | `POST /api/yonetim/sikayet-oneri` | body | `CreateFeedbackItemHttpRequest` | `FeedbackItemDto` | login |
 | `GET /api/home/sikayet-oneri/benim` | - | - | `FeedbackItemDto[]` | login |
+| `GET /api/ortak-islemler/sikayet-oneri/benim` | - | - | `FeedbackItemDto[]` | login |
+| `GET /api/yonetim/sikayet-oneri/benim` | - | - | `FeedbackItemDto[]` | login |
 | `GET /api/home/sikayet-oneri/ozet` | - | - | `FeedbackSummaryDto` | login |
+| `GET /api/ortak-islemler/sikayet-oneri/ozet` | - | - | `FeedbackSummaryDto` | login |
+| `GET /api/yonetim/sikayet-oneri/ozet` | - | - | `FeedbackSummaryDto` | login |
 | `GET /api/yonetim/sikayet-oneri` | query | `FeedbackManagementListHttpRequest` | `FeedbackItemDto[]` | login; admin tumu, digerleri kendi kayitlari |
 | `GET /api/yonetim/sikayet-oneri/{id}` | path | `id: guid` | `FeedbackItemDto` | login; admin tumu, digerleri kendi kaydi |
 | `PATCH /api/yonetim/sikayet-oneri/{id}/okundu` | path | `id: guid` | `FeedbackItemDto` | `Admin` veya `Administrator` |
@@ -244,6 +268,8 @@ Yonetim endpointleri icin alias route:
 /api/ortak-islemler/sikayet-oneri/{id}/okundu
 /api/ortak-islemler/sikayet-oneri/{id}/durum
 ```
+
+Home/kullanici endpointleri icin `home`, `ortak-islemler` ve `yonetim` route kokleri controller'da aciktir. UI sade kullanim icin home kutusunda `/api/home/sikayet-oneri/*`, ortak menu ekraninda `/api/ortak-islemler/sikayet-oneri/*` yolunu tercih edebilir.
 
 ### Sikayet Oneri Olustur
 
@@ -7798,6 +7824,7 @@ Endpoint ozeti:
 |---|---|---|---|---|
 | `GET /api/rapor-islemleri/promosyon-raporlari/bultenler` | query | `PromotionBulletinListHttpRequest` | `PromotionBulletinListItemDto[]` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/bulten-secenekleri` | query | `PromotionBulletinOptionHttpRequest` | `PromotionBulletinOptionDto[]` | `list` |
+| `GET /api/rapor-islemleri/promosyon-raporlari/bultenler/secenekler` | query | `PromotionBulletinOptionHttpRequest` | `PromotionBulletinOptionDto[]` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/performans` | query | `PromotionPerformanceHttpRequest` | `PromotionPerformanceReportDto` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/satis-marj-etkisi` | query | `PromotionPerformanceHttpRequest` | `PromotionPerformanceReportDto` | `list` |
 | `GET /api/rapor-islemleri/promosyon-raporlari/performans/sube` | query | `PromotionPerformanceHttpRequest` | `PromotionBranchPerformanceItemDto[]` | `list` |
@@ -7838,7 +7865,7 @@ UI akisi:
 
 1. Menu `Rapor Islemleri / Promosyon Raporlari` olarak acilir.
 2. Ilk sekmede `bultenler` endpoint'i ile aktif/pasif bulten listesi gosterilir.
-3. Performans filtrelerindeki bulten/promosyon dropdown'u `bulten-secenekleri` endpoint'i ile doldurulur.
+3. Performans filtrelerindeki bulten/promosyon dropdown'u `bulten-secenekleri` veya canonical alias olan `bultenler/secenekler` endpoint'i ile doldurulur.
 4. Bulten satiri veya dropdown secimi yapilirse `promotionCode` ile `performans` endpoint'i cagrilir.
 5. Ustte kullanim adedi, fis sayisi, net/brut satis, indirim tutari ve marj kartlari gosterilir.
 6. Detay gridinde promosyon bazli satirlar; sube sekmesinde `performans/sube` sonucu gosterilir.
@@ -7849,6 +7876,8 @@ Ornekler:
 `GET /api/rapor-islemleri/promosyon-raporlari/bultenler?warehouseNo=110&onlyActive=true&take=100`
 
 `GET /api/rapor-islemleri/promosyon-raporlari/bulten-secenekleri?search=12&take=50`
+
+`GET /api/rapor-islemleri/promosyon-raporlari/bultenler/secenekler?search=12&take=50`
 
 `GET /api/rapor-islemleri/promosyon-raporlari/performans?startDate=2026-07-01&endDate=2026-07-21&warehouseNo=110&take=250`
 
@@ -8563,7 +8592,9 @@ Yetki:
 
 Not:
 
-- `warehouseNo = 1` gonderilirse tum depolar listelenir
+- `kasa-islemleri.banknot-takipleri.all-warehouses` yoksa UI `warehouseNo` gondermez; backend JWT icindeki kullanici deposunu uygular
+- `kasa-islemleri.banknot-takipleri.all-warehouses` varsa `warehouseNo` bos/null gonderilirse tum depolar listelenir; belirli depo icin ilgili depo no gonderilir
+- `warehouseNo = 1` artik tum depolar anlami tasimaz; gercekten 1 no'lu depo filtresi olarak yorumlanir
 - response modeli `BanknoteTrackDto` doner ve `banknoteTrackId` alanini GUID olarak icerir
 - bu route'da `differenceAmount`, eski kodla uyumlu olarak `deliveryTotalAmount - totalAmount` hesaplanir
 
@@ -8896,8 +8927,6 @@ Bu endpoint iskelet olarak acildi. Is kurali ve Mikro veritabani entegrasyonu so
 - `POST /api/siparis-islemleri/alinan-depo-siparisleri`
 - `PUT /api/siparis-islemleri/alinan-depo-siparisleri/{id}`
 - `POST /api/siparis-islemleri/alinan-firma-siparisleri`
-- `POST /api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order`
-- `POST /api/siparis-islemleri/onerilen-firma-siparisleri/convert-to-order`
 - `PUT /api/siparis-islemleri/alinan-firma-siparisleri/{id}`
 - `PUT /api/siparis-islemleri/verilen-depo-siparisleri/{id}`
 - `PUT /api/siparis-islemleri/verilen-firma-siparisleri/{id}`
@@ -8918,29 +8947,16 @@ Bu endpoint iskelet olarak acildi. Is kurali ve Mikro veritabani entegrasyonu so
 - `PUT /api/iade-islemleri/depo-iadeleri/{id}`
 - `PUT /api/iade-islemleri/firma-iadeleri/{id}`
 
-### Entegrasyon Islemleri
+### Stok Islemleri
 
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/erpye-gonder`
-- `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/ice-aktar`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/erpye-gonder`
-- `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar/{invoiceId}`
-- `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/pos-faturalar`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/ice-aktar`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/erpye-gonder`
-- `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari/{expenseId}`
-- `DELETE /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/gider-pusulalari`
-- `GET /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri`
-- `POST /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri`
-- `PUT /api/entegrasyon-islemleri/pos-muhasebe-aktarimi/kasa-eslemeleri/{mappingId}`
+- `PUT /api/stok-islemleri/zayiat-fisleri/{id}`
+- `PUT /api/stok-islemleri/masraf-fisleri/{id}`
+- `PUT /api/stok-islemleri/sayim-sonuclari/{id}`
+- `PUT /api/stok-islemleri/virmanlar/{id}`
+
+### Kasa Islemleri
+
+- `PUT /api/kasa-islemleri/etiket-belgeleri/{id}`
 
 ## UI Isleyis Semasi
 
@@ -12382,6 +12398,17 @@ Yetki kodlari:
 - `entegrasyon-islemleri.pos-muhasebe-aktarimi.detail`
 - `entegrasyon-islemleri.pos-muhasebe-aktarimi.create`
 - `entegrasyon-islemleri.pos-muhasebe-aktarimi.update`
+- `entegrasyon-islemleri.pos-muhasebe-aktarimi.all-warehouses`
+
+Depo kapsami icin bu surum notu:
+
+- Permission katalogunda `all-warehouses` yetkisi vardir; UI depo seciciyi genel proje kuralina uygun olarak bu permission'a gore acmalidir.
+- Bu controller su an `WarehouseNo` alanini merkezi `ResolveWarehouseNoForPolicy`/`ResolveWarehouseScopeForPolicy` ile cozumlemez; request'teki `WarehouseNo` dogrudan servise gider.
+- Bu nedenle POS ekraninda `all-warehouses` yoksa UI depo secici gostermemeli ve POS fatura/gider pusulasi liste/import isteklerinde kullanicinin kendi `warehouseNo` degerini gondermelidir. `WarehouseNo` bos giderse bu POS servisinde branch filtresi uygulanmaz.
+- `all-warehouses` varsa UI belirli depo icin `WarehouseNo` gonderebilir; tum subeler icin bos birakabilir.
+- POS fatura ve gider pusulasi liste/import isteklerinde depo filtresi `BranchNo`/kaynak `Sube` uzerinden calisir.
+- Z raporu liste/overview tarafinda `ZReportTotals` kaydinda branch kolonu olmadigi icin `WarehouseNo` bu surumde Z raporu kayitlarini daraltmaz; sube adi `CashRegisterBranches` eslesmesi uzerinden yalniz goruntuleme bilgisi olarak gelir.
+- Detay, ERP'ye gonderme ve silme istekleri ID koleksiyonlari ile calisir; bu isteklerdeki `WarehouseNo` alani bu surumde ID kapsam kontrolu icin kullanilmaz.
 
 Mevcut backend durumu:
 
@@ -12406,7 +12433,8 @@ Bu tab mevcut staging Z raporlarini listeleme, detay izleme, staging silme ve ER
 
 Mevcut akis:
 
-- kullanici tarih ve depo baglamina gore staging Z raporlarini listeler
+- kullanici tarih ve bekleyen/tum kayit baglamina gore staging Z raporlarini listeler
+- `WarehouseNo` bu surumde Z raporu listesini daraltmaz; Z raporu sube bilgisi kasa-sube eslemesinden `branchName` olarak gorunur
 - belge baslik, KDV satiri ve odeme satiri bazinda detay inceler
 - secilen raporlar ERP muhasebe fisine donusturulur
 - ERP gonderimi icin `CashRegisterNo` degerinin `CashRegisterBranches` tablosunda sube ile eslenmis olmasi gerekir
@@ -12424,6 +12452,7 @@ Endpoint'ler:
 UI beklentisi:
 
 - liste ekraninda durum, tarih, Z no, kasa no, sube ve toplam kolonlari hazir dusunulmelidir
+- liste response'unda sube no yoktur; UI sube adini `branchName` alanindan gosterir
 - detay ekraninda header + KDV satirlari + odeme satirlari alt panelli dusunulmelidir
 - `ice aktar` butonu ayrik bir dialog ile acilmalidir; parser aktif olana kadar UI bu aksiyonu uyariyla sunabilir
 - `ERP'ye gonder` aksiyonu coklu secim ile calisacakmis gibi tasarlanmalidir
@@ -12506,6 +12535,7 @@ UI beklentisi:
 - bu tab master-data ekranidir; tarih filtresi gerektirmez
 - grid inline edit veya drawer edit mantigi uygundur
 - minimum alanlar `cashRegisterNo` ve `branchNo` olarak dusunulmelidir
+- request modelinde `branchName` ve `description` alanlari bulunsa da create/update tarafinda bu surumde kullanilmaz; response'taki `branchName`, `branchNo` ile Mikro depo adindan uretilir
 
 #### UI Durum Yonetimi
 
@@ -12650,6 +12680,10 @@ Alan notlari:
 - `ImportPosDocumentsHttpRequest.DateToGet`, POS ekranlari icin `BusinessDate` alias'idir; iki alan da gelirse backend `BusinessDate` degerini kullanir
 - `erpye-gonder` ve toplu `DELETE` body'lerinde belge tipine gore `TotalIds`, `InvoiceIds` veya `ExpenseIds` tercih edilmelidir
 - `DocumentIds`, eski UI contract'lari icin geriye uyumlu yedek alandir
+- `PosAccountingTransferHttpRequest.WarehouseNo` ve `PosAccountingDeleteHttpRequest.WarehouseNo` alanlari contract'ta vardir; bu surumde belge ID kapsam kontrolunde kullanilmaz
+- POS fatura update islemi `DocumentNo`, `CustomerTaxNo` ve `PaymentType` alanlarini isler; `BranchNo` ve `Description` bu endpointte kullanilmaz
+- gider pusulasi update islemi `BranchNo`, `DocumentNo` ve `PaymentType` alanlarini isler; `CustomerTaxNo` ve `Description` bu endpointte kullanilmaz
+- kasa esleme create/update islemi `CashRegisterNo` ve `BranchNo` alanlarini isler; `BranchName` ve `Description` body alanlari bu surumde kullanilmaz
 
 Toplu gonderme / silme body ornekleri:
 
