@@ -85,6 +85,39 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
         return items.FirstOrDefault();
     }
 
+    public async Task<BanknoteTrackDailySummaryTotalDto> GetDailySummaryTotalAsync(
+        BanknoteTrackDailySummaryTotalRequest request,
+        CancellationToken cancellationToken)
+    {
+        Validate(request);
+        var (date, nextDate) = NormalizeDateRange(request.DateToGet);
+
+        const string sql = """
+            SELECT
+                COALESCE(SUM(bm.Total), 0) AS TotalAmount
+            FROM BanknoteMovements bm
+            WHERE bm.CreateDate >= @date
+              AND bm.CreateDate < @nextDate
+              AND bm.BranchNo = @warehouseNo;
+            """;
+
+        var totals = await ExecuteReaderAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", date);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@warehouseNo", request.WarehouseNo);
+            },
+            reader => Round(ReadDouble(reader, "TotalAmount")),
+            cancellationToken);
+
+        return new BanknoteTrackDailySummaryTotalDto(
+            date,
+            request.WarehouseNo,
+            totals.FirstOrDefault());
+    }
+
     private static BanknoteTrackDto Map(DbDataReader reader)
     {
         var totalAmount = Round(ReadDouble(reader, "TotalAmount"));
@@ -168,6 +201,19 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
         if (request.BanknoteTrackId == Guid.Empty)
         {
             throw new ArgumentException("Banknote track id is required.", nameof(request.BanknoteTrackId));
+        }
+
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+    }
+
+    private static void Validate(BanknoteTrackDailySummaryTotalRequest request)
+    {
+        if (request.DateToGet == default)
+        {
+            throw new ArgumentException("Banknote summary date is required.", nameof(request.DateToGet));
         }
 
         if (request.WarehouseNo <= 0)

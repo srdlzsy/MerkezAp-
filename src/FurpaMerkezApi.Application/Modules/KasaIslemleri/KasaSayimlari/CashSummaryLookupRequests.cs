@@ -19,6 +19,6 @@ public sealed record BankPaymentTypeRequest(
 
 public sealed record ZReportValueRequest(
     int WarehouseNo,
-    string DocumentSerie,
+    string? DocumentSerie,
     int ZReportNo,
     int CashNo);

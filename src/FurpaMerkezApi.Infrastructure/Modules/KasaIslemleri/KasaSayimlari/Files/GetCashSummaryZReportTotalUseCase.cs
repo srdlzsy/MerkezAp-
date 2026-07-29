@@ -24,20 +24,11 @@ public sealed class GetCashSummaryZReportTotalUseCase(FurpaDbContext furpaDbCont
             throw new ArgumentException("Z report no and cash no must be valid.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.DocumentSerie))
-        {
-            throw new ArgumentException("Document serie is required.", nameof(request.DocumentSerie));
-        }
-
-        var branchNo = ParseBranchNoFromDocumentSerie(request.DocumentSerie);
-        if (branchNo is null)
-        {
-            return -1d;
-        }
+        var branchNo = ResolveBranchNoForZReport(request.WarehouseNo, request.DocumentSerie);
 
         var branchDetail = await furpaDbContext.BranchDetails
             .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.BranchNo == branchNo.Value, cancellationToken);
+            .FirstOrDefaultAsync(item => item.BranchNo == branchNo, cancellationToken);
 
         if (branchDetail is null ||
             string.IsNullOrWhiteSpace(branchDetail.BranchIpAddress) ||
@@ -71,18 +62,36 @@ public sealed class GetCashSummaryZReportTotalUseCase(FurpaDbContext furpaDbCont
             : -1d;
     }
 
-    private static int? ParseBranchNoFromDocumentSerie(string documentSerie)
+    internal static int ResolveBranchNoForZReport(int warehouseNo, string? documentSerie) =>
+        ParseBranchNoFromDocumentSerie(documentSerie) ?? warehouseNo;
+
+    internal static int? ParseBranchNoFromDocumentSerie(string? documentSerie)
     {
-        var trimmed = documentSerie.Trim();
-        if (!trimmed.StartsWith('F'))
+        if (string.IsNullOrWhiteSpace(documentSerie))
         {
             return null;
         }
 
-        var dotIndex = trimmed.IndexOf('.', StringComparison.Ordinal);
-        var branchText = dotIndex > 1
-            ? trimmed[1..dotIndex]
-            : trimmed[1..];
+        var trimmed = documentSerie.Trim();
+        if (trimmed.StartsWith("KS", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryParseLeadingNumber(trimmed[2..]);
+        }
+
+        if (!trimmed.StartsWith("F", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return TryParseLeadingNumber(trimmed[1..]);
+    }
+
+    private static int? TryParseLeadingNumber(string value)
+    {
+        var dotIndex = value.IndexOf('.', StringComparison.Ordinal);
+        var branchText = dotIndex > 0
+            ? value[..dotIndex]
+            : value;
 
         return int.TryParse(branchText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var branchNo)
             ? branchNo

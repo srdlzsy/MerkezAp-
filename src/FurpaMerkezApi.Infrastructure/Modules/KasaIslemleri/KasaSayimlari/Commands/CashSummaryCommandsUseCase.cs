@@ -1,6 +1,7 @@
 using System.Data;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Commands;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,12 @@ public sealed class CashSummaryCommandsUseCase(
     private const byte CustomerMovementTpoz = 0;
     private const byte CustomerMovementTradeType = 0;
     private const int FirstDocumentOrderNo = 1;
+    private const int CashTotalPaymentTypeId = 500;
+    private const int CashTotalSlipNumber = 1;
+    private const int StoreExpensePaymentTypeStart = 110;
+    private const int StoreExpensePaymentTypeEnd = 113;
+    private const string CashTotalTypeName = "Nakit";
+    private const string CashTotalDescription = "Nakit Toplam";
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCashSummaryResponse> CreateAsync(
@@ -34,11 +41,21 @@ public sealed class CashSummaryCommandsUseCase(
         var now = DateTime.Now;
         var summaryDate = request.SummaryDate.Date;
         var documentSerie = $"KS{request.WarehouseNo}";
-        var summaryLines = request.PaymentTypes
-            .Select(line => CreateSummaryEntity(request, line, now))
-            .Concat(request.StoreExpenses.Select(line => CreateSummaryEntity(request, line, now)))
-            .ToArray();
         var banknoteLines = request.BanknoteMovements.ToArray();
+        var cashAmount = ResolveCashTotalAmount(request.PaymentTypes, banknoteLines);
+        var paymentLines = request.PaymentTypes
+            .Where(line => !IsCashPaymentLine(line))
+            .ToArray();
+        var storeExpenseLines = request.StoreExpenses.ToArray();
+        var documentTotal = ResolveCreateDocumentTotal(
+            request.Total,
+            paymentLines,
+            cashAmount);
+        var summaryLines = paymentLines
+            .Select(line => CreateSummaryEntity(request, line, documentTotal, now))
+            .Concat(storeExpenseLines.Select(line => CreateSummaryEntity(request, line, documentTotal, now)))
+            .Prepend(CreateCashTotalSummaryEntity(request, cashAmount, documentTotal, now))
+            .ToArray();
         var giftCheckLines = request.GiftCheckMovements.ToArray();
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
@@ -70,6 +87,7 @@ public sealed class CashSummaryCommandsUseCase(
                     summaryDate,
                     documentSerie,
                     documentOrderNo,
+                    documentTotal,
                     now);
 
                 await mikroWriteDbContext.Summaries.AddRangeAsync(summaryLines, cancellationToken);
@@ -85,7 +103,7 @@ public sealed class CashSummaryCommandsUseCase(
                     summaryDate,
                     request.WarehouseNo,
                     summaryLines.Length,
-                    request.Total,
+                    documentTotal,
                     options.ConnectionStringName);
             }
             catch
@@ -128,11 +146,18 @@ public sealed class CashSummaryCommandsUseCase(
 
                 var header = existingSummaries[0];
                 var now = DateTime.Now;
-                var totalAmount = request.Details.Sum(item => item.Amount);
+                var cashAmount = await ResolveCashTotalAmountAsync(
+                    request,
+                    existingSummaries,
+                    cancellationToken);
+                var detailLines = request.Details
+                    .Where(line => !IsCashDetailLine(line))
+                    .ToArray();
+                var totalAmount = CalculateDocumentTotal(detailLines, cashAmount);
 
                 mikroWriteDbContext.Summaries.RemoveRange(existingSummaries);
 
-                var updatedSummaries = request.Details
+                var updatedSummaries = detailLines
                     .Select(detail => new SummaryEntity
                     {
                         DocumentSerie = header.DocumentSerie,
@@ -151,9 +176,10 @@ public sealed class CashSummaryCommandsUseCase(
                         SlipNumber = detail.SlipNumber,
                         TerminalId = NormalizeText(detail.TerminalId),
                         Description = NormalizeText(detail.Description),
-                        StoreExpenseType = null,
+                        StoreExpenseType = ResolveStoreExpenseType(detail.PaymentTypeId),
                         CreateDate = now
                     })
+                    .Prepend(CreateCashTotalSummaryEntity(header, cashAmount, totalAmount, now))
                     .ToArray();
 
                 await mikroWriteDbContext.Summaries.AddRangeAsync(updatedSummaries, cancellationToken);
@@ -197,18 +223,20 @@ public sealed class CashSummaryCommandsUseCase(
 
             try
             {
-                var summaryHeader = await mikroWriteDbContext.Summaries
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(item =>
+                var existingSummaries = await mikroWriteDbContext.Summaries
+                    .Where(item =>
                         item.WarehouseNo == request.WarehouseNo &&
                         item.DocumentSerie == request.DocumentSerie &&
-                        item.DocumentOrderNo == request.DocumentOrderNo,
-                        cancellationToken);
+                        item.DocumentOrderNo == request.DocumentOrderNo)
+                    .OrderBy(item => item.Id)
+                    .ToListAsync(cancellationToken);
 
-                if (summaryHeader is null)
+                if (existingSummaries.Count == 0)
                 {
                     throw new KeyNotFoundException("Cash summary was not found.");
                 }
+
+                var summaryHeader = existingSummaries[0];
 
                 var existingBanknotes = await mikroWriteDbContext.BanknoteMovements
                     .Where(item =>
@@ -221,6 +249,7 @@ public sealed class CashSummaryCommandsUseCase(
 
                 var now = DateTime.Now;
                 var updatedBanknotes = request.BanknoteMovements
+                    .Where(item => item.Quantity > 0)
                     .Select(item => new BanknoteMovementEntity
                     {
                         DocumentSerie = request.DocumentSerie,
@@ -234,9 +263,18 @@ public sealed class CashSummaryCommandsUseCase(
                         CreateDate = now
                     })
                     .ToArray();
+                var cashAmount = updatedBanknotes.Sum(item => item.Total);
+                var totalAmount = CalculateDocumentTotal(existingSummaries, cashAmount);
 
                 await mikroWriteDbContext.BanknoteMovements.AddRangeAsync(updatedBanknotes, cancellationToken);
-                await TouchCustomerMovementAsync(request.DocumentSerie, request.DocumentOrderNo, now, cancellationToken);
+                EnsureCashTotalSummary(existingSummaries, summaryHeader, cashAmount, totalAmount, now);
+                UpdateSummaryDocumentTotals(existingSummaries, totalAmount);
+                await UpdateCustomerMovementTotalsAsync(
+                    request.DocumentSerie,
+                    request.DocumentOrderNo,
+                    totalAmount,
+                    now,
+                    cancellationToken);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
@@ -244,7 +282,7 @@ public sealed class CashSummaryCommandsUseCase(
                     request.DocumentSerie,
                     request.DocumentOrderNo,
                     updatedBanknotes.Length,
-                    updatedBanknotes.Sum(item => item.Total));
+                    cashAmount);
             }
             catch
             {
@@ -351,28 +389,163 @@ public sealed class CashSummaryCommandsUseCase(
         }
     }
 
-    private async Task TouchCustomerMovementAsync(
-        string documentSerie,
-        int documentOrderNo,
-        DateTime now,
+    private async Task<double> ResolveCashTotalAmountAsync(
+        UpdateCashSummaryDetailsRequest request,
+        IReadOnlyCollection<SummaryEntity> existingSummaries,
         CancellationToken cancellationToken)
     {
-        var customerMovements = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
-            .Where(item =>
-                item.cha_evrakno_seri == documentSerie &&
-                item.cha_evrakno_sira == documentOrderNo)
-            .ToListAsync(cancellationToken);
+        var banknoteTotal = await GetBanknoteTotalAsync(
+            request.WarehouseNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
 
-        foreach (var movement in customerMovements)
+        if (!IsZero(banknoteTotal))
         {
-            movement.cha_lastup_user = MikroUserNo;
-            movement.cha_lastup_date = now;
+            return banknoteTotal;
+        }
+
+        var existingCashTotal = existingSummaries
+            .Where(IsCashSummary)
+            .Sum(item => item.Amount);
+
+        if (!IsZero(existingCashTotal))
+        {
+            return existingCashTotal;
+        }
+
+        return request.Details
+            .Where(IsCashDetailLine)
+            .Sum(item => item.Amount);
+    }
+
+    private async Task<double> GetBanknoteTotalAsync(
+        int warehouseNo,
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var total = await mikroWriteDbContext.BanknoteMovements
+            .Where(item =>
+                item.WarehouseNo == warehouseNo &&
+                item.DocumentSerie == documentSerie &&
+                item.DocumentOrderNo == documentOrderNo)
+            .SumAsync(item => (double?)item.Total, cancellationToken);
+
+        return total ?? 0d;
+    }
+
+    private void EnsureCashTotalSummary(
+        List<SummaryEntity> summaries,
+        SummaryEntity header,
+        double cashAmount,
+        double documentTotal,
+        DateTime now)
+    {
+        var cashSummaries = summaries
+            .Where(IsCashSummary)
+            .ToArray();
+        var cashSummary = cashSummaries.FirstOrDefault();
+
+        if (cashSummary is null)
+        {
+            cashSummary = CreateCashTotalSummaryEntity(header, cashAmount, documentTotal, now);
+            summaries.Add(cashSummary);
+            mikroWriteDbContext.Summaries.Add(cashSummary);
+        }
+        else
+        {
+            ApplyCashTotalSummary(cashSummary, header, cashAmount, documentTotal, now);
+        }
+
+        foreach (var duplicate in cashSummaries.Skip(1))
+        {
+            summaries.Remove(duplicate);
+            mikroWriteDbContext.Summaries.Remove(duplicate);
         }
     }
 
-    private static SummaryEntity CreateSummaryEntity(
+    private static void UpdateSummaryDocumentTotals(
+        IEnumerable<SummaryEntity> summaries,
+        double documentTotal)
+    {
+        foreach (var summary in summaries)
+        {
+            summary.Total = documentTotal;
+        }
+    }
+
+    private static double ResolveCashTotalAmount(
+        IEnumerable<CreateCashSummaryPaymentLineRequest> paymentLines,
+        IEnumerable<CreateCashSummaryBanknoteLineRequest> banknoteLines)
+    {
+        var banknoteTotal = banknoteLines.Sum(item => item.Total);
+
+        return !IsZero(banknoteTotal)
+            ? banknoteTotal
+            : paymentLines
+                .Where(IsCashPaymentLine)
+                .Sum(item => item.AmountValue);
+    }
+
+    private static double ResolveCreateDocumentTotal(
+        double requestTotal,
+        IEnumerable<CreateCashSummaryPaymentLineRequest> paymentLines,
+        double cashAmount) =>
+        !IsZero(requestTotal)
+            ? requestTotal
+            : cashAmount + paymentLines
+                .Where(ShouldCountInDocumentTotal)
+                .Sum(item => item.AmountValue);
+
+    private static double CalculateDocumentTotal(
+        IEnumerable<UpdateCashSummaryDetailLineRequest> detailLines,
+        double cashAmount) =>
+        cashAmount + detailLines
+            .Where(ShouldCountInDocumentTotal)
+            .Sum(item => item.Amount);
+
+    private static double CalculateDocumentTotal(
+        IEnumerable<SummaryEntity> summaries,
+        double cashAmount) =>
+        cashAmount + summaries
+            .Where(item => !IsCashSummary(item) && ShouldCountInDocumentTotal(item))
+            .Sum(item => item.Amount);
+
+    private static bool ShouldCountInDocumentTotal(UpdateCashSummaryDetailLineRequest line) =>
+        line.PaymentTypeId < 100 &&
+        !CashSummaryCategoryMatcher.IsStoreExpensePaymentType(line.TypeName);
+
+    private static bool ShouldCountInDocumentTotal(CreateCashSummaryPaymentLineRequest line) =>
+        line.PaymentTypeNo < 100 &&
+        !CashSummaryCategoryMatcher.IsStoreExpensePaymentType(line.PaymentName);
+
+    private static bool ShouldCountInDocumentTotal(SummaryEntity line) =>
+        line.PaymentTypeId < 100 && line.StoreExpenseType is null;
+
+    private static bool IsCashPaymentLine(CreateCashSummaryPaymentLineRequest line) =>
+        line.PaymentTypeNo == CashTotalPaymentTypeId ||
+        CashSummaryCategoryMatcher.IsCashPaymentType(line.PaymentName);
+
+    private static bool IsCashDetailLine(UpdateCashSummaryDetailLineRequest line) =>
+        line.PaymentTypeId == CashTotalPaymentTypeId ||
+        CashSummaryCategoryMatcher.IsCashPaymentType(line.TypeName);
+
+    private static bool IsCashSummary(SummaryEntity item) =>
+        item.PaymentTypeId == CashTotalPaymentTypeId;
+
+    private static int? ResolveStoreExpenseType(int paymentTypeId) =>
+        paymentTypeId is >= StoreExpensePaymentTypeStart and <= StoreExpensePaymentTypeEnd
+            ? paymentTypeId
+            : null;
+
+    private static bool IsZero(double value) =>
+        Math.Abs(value) < 0.000_001d;
+
+    private static SummaryEntity CreateCashTotalSummaryEntity(
         CreateCashSummaryRequest request,
-        CreateCashSummaryPaymentLineRequest line,
+        double cashAmount,
+        double documentTotal,
         DateTime now) =>
         new()
         {
@@ -381,7 +554,70 @@ public sealed class CashSummaryCommandsUseCase(
             CashierNo = request.CashierNo,
             ManagerNo = request.ManagerNo,
             SummaryDate = request.SummaryDate.Date,
-            Total = request.Total,
+            Total = documentTotal,
+            PaymentTypeId = CashTotalPaymentTypeId,
+            Amount = cashAmount,
+            WarehouseNo = request.WarehouseNo,
+            TypeName = CashTotalTypeName,
+            AccountCode = string.Empty,
+            SlipNumber = IsZero(cashAmount) ? 0 : CashTotalSlipNumber,
+            TerminalId = string.Empty,
+            Description = CashTotalDescription,
+            StoreExpenseType = null,
+            CreateDate = now
+        };
+
+    private static SummaryEntity CreateCashTotalSummaryEntity(
+        SummaryEntity header,
+        double cashAmount,
+        double documentTotal,
+        DateTime now)
+    {
+        var summary = new SummaryEntity();
+        ApplyCashTotalSummary(summary, header, cashAmount, documentTotal, now);
+        return summary;
+    }
+
+    private static void ApplyCashTotalSummary(
+        SummaryEntity summary,
+        SummaryEntity header,
+        double cashAmount,
+        double documentTotal,
+        DateTime now)
+    {
+        summary.DocumentSerie = header.DocumentSerie;
+        summary.DocumentOrderNo = header.DocumentOrderNo;
+        summary.CashNo = header.CashNo;
+        summary.ZReportNo = header.ZReportNo;
+        summary.CashierNo = header.CashierNo;
+        summary.ManagerNo = header.ManagerNo;
+        summary.SummaryDate = header.SummaryDate;
+        summary.Total = documentTotal;
+        summary.PaymentTypeId = CashTotalPaymentTypeId;
+        summary.Amount = cashAmount;
+        summary.WarehouseNo = header.WarehouseNo;
+        summary.TypeName = CashTotalTypeName;
+        summary.AccountCode = string.Empty;
+        summary.SlipNumber = IsZero(cashAmount) ? 0 : CashTotalSlipNumber;
+        summary.TerminalId = string.Empty;
+        summary.Description = CashTotalDescription;
+        summary.StoreExpenseType = null;
+        summary.CreateDate = now;
+    }
+
+    private static SummaryEntity CreateSummaryEntity(
+        CreateCashSummaryRequest request,
+        CreateCashSummaryPaymentLineRequest line,
+        double documentTotal,
+        DateTime now) =>
+        new()
+        {
+            CashNo = request.CashNo,
+            ZReportNo = request.ZReportNo,
+            CashierNo = request.CashierNo,
+            ManagerNo = request.ManagerNo,
+            SummaryDate = request.SummaryDate.Date,
+            Total = documentTotal,
             PaymentTypeId = line.PaymentTypeNo,
             Amount = line.AmountValue,
             WarehouseNo = request.WarehouseNo,
@@ -397,6 +633,7 @@ public sealed class CashSummaryCommandsUseCase(
     private static SummaryEntity CreateSummaryEntity(
         CreateCashSummaryRequest request,
         CreateCashSummaryStoreExpenseLineRequest line,
+        double documentTotal,
         DateTime now) =>
         new()
         {
@@ -405,13 +642,13 @@ public sealed class CashSummaryCommandsUseCase(
             CashierNo = request.CashierNo,
             ManagerNo = request.ManagerNo,
             SummaryDate = request.SummaryDate.Date,
-            Total = request.Total,
-            PaymentTypeId = 0,
+            Total = documentTotal,
+            PaymentTypeId = line.StoreExpenseType,
             Amount = line.AmountValue,
             WarehouseNo = request.WarehouseNo,
             TypeName = NormalizeText(string.IsNullOrWhiteSpace(line.Description) ? "StoreExpense" : line.Description),
             AccountCode = string.Empty,
-            SlipNumber = 0,
+            SlipNumber = 1,
             TerminalId = string.Empty,
             Description = NormalizeText(line.Description),
             StoreExpenseType = line.StoreExpenseType,
@@ -461,6 +698,7 @@ public sealed class CashSummaryCommandsUseCase(
         DateTime summaryDate,
         string documentSerie,
         int documentOrderNo,
+        double documentTotal,
         DateTime now) =>
         new()
         {
@@ -510,8 +748,8 @@ public sealed class CashSummaryCommandsUseCase(
             cha_karsidgrupno = 0,
             cha_karsisrmrkkodu = string.Empty,
             cha_miktari = 1d,
-            cha_meblag = request.Total,
-            cha_aratoplam = request.Total,
+            cha_meblag = documentTotal,
+            cha_aratoplam = documentTotal,
             cha_vade = 0,
             cha_Vade_Farki_Yuz = 0d,
             cha_ft_iskonto1 = 0d,
@@ -656,7 +894,9 @@ public sealed class CashSummaryCommandsUseCase(
             throw new ArgumentException("Summary date is required.", nameof(request.SummaryDate));
         }
 
-        if (request.PaymentTypes.Count == 0 && request.StoreExpenses.Count == 0)
+        if (request.PaymentTypes.Count == 0 &&
+            request.StoreExpenses.Count == 0 &&
+            request.BanknoteMovements.Count == 0)
         {
             throw new ArgumentException("At least one summary detail line is required.");
         }

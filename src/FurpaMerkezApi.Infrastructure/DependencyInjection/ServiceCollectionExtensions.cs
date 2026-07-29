@@ -528,6 +528,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IKasaHareketAktarimiService, KasaHareketAktarimiService>();
         services.AddScoped<IKasaCiroAktarimiService, KasaCiroAktarimiService>();
         services.AddScoped<IListBanknoteTracksUseCase, ListBanknoteTracksUseCase>();
+        services.AddScoped<IGetBanknoteTrackDailySummaryTotalUseCase, GetBanknoteTrackDailySummaryTotalUseCase>();
         services.AddScoped<IGetBanknoteTrackDetailUseCase, GetBanknoteTrackDetailUseCase>();
         services.AddScoped<ICreateBanknoteTrackUseCase, CreateBanknoteTrackUseCase>();
         services.AddScoped<IListLabelDocumentsUseCase, ListLabelDocumentsUseCase>();

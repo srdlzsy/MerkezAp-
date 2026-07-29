@@ -16,6 +16,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.BanknotTakiple
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class BanknotTakipleriController(
     IListBanknoteTracksUseCase listBanknoteTracksUseCase,
+    IGetBanknoteTrackDailySummaryTotalUseCase getBanknoteTrackDailySummaryTotalUseCase,
     IGetBanknoteTrackDetailUseCase getBanknoteTrackDetailUseCase,
     ICreateBanknoteTrackUseCase createBanknoteTrackUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
@@ -39,6 +40,24 @@ public sealed class BanknotTakipleriController(
         var warehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
         var response = await listBanknoteTracksUseCase.ExecuteAsync(
             new BanknoteTrackListRequest(
+                request.DateToGet!.Value,
+                warehouseNo),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpGet("sayim-toplami")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(BanknoteTrackDailySummaryTotalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BanknoteTrackDailySummaryTotalDto>> DailySummaryTotal(
+        [FromQuery] BanknoteTrackDateHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, ListPolicy);
+        var response = await getBanknoteTrackDailySummaryTotalUseCase.ExecuteAsync(
+            new BanknoteTrackDailySummaryTotalRequest(
                 request.DateToGet!.Value,
                 warehouseNo),
             cancellationToken);

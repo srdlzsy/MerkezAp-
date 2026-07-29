@@ -282,7 +282,7 @@ public sealed class KasaSayimlariController(
         var response = await getCashSummaryZReportTotalUseCase.ExecuteAsync(
             new ZReportValueRequest(
                 resolvedWarehouseNo,
-                request.DocumentSerie!,
+                request.DocumentSerie,
                 request.ZReportNo!.Value,
                 request.CashNo!.Value),
             cancellationToken);
@@ -505,7 +505,6 @@ public sealed class ZReportValueHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Required]
     [StringLength(20)]
     public string? DocumentSerie { get; init; }
 

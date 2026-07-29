@@ -8,6 +8,15 @@ public sealed record BanknoteTrackDetailRequest(
     Guid BanknoteTrackId,
     int WarehouseNo);
 
+public sealed record BanknoteTrackDailySummaryTotalRequest(
+    DateTime DateToGet,
+    int WarehouseNo);
+
+public sealed record BanknoteTrackDailySummaryTotalDto(
+    DateTime DateToGet,
+    int WarehouseNo,
+    double TotalAmount);
+
 public sealed record BanknoteTrackDto(
     Guid BanknoteTrackId,
     int WarehouseNo,

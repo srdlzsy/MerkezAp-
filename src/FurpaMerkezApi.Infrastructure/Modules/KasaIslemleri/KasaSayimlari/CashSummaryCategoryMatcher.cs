@@ -187,6 +187,9 @@ internal static class CashSummaryCategoryMatcher
         return Contains(normalized, "store expense") || Contains(normalized, "magaza gider") || Contains(normalized, "gider");
     }
 
+    public static bool IsCashPaymentType(string? value) =>
+        IsCash(Normalize(value));
+
     private static bool IsCash(string normalized) =>
         Contains(normalized, "cash") || Contains(normalized, "nakit");
 

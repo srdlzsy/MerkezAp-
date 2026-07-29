@@ -8520,23 +8520,15 @@ Not:
 - response modeli `CashSummaryDetailItemDto` doner
 - belge bulunmazsa `404 Not Found` doner
 - odeme satirlari ve store expense satirlari ayni listede gelir
+- `PaymentTypeID = 500` nakit toplam satiri bu endpointte donmez; backend bu satiri banknot hareketlerinden garanti eder
 
 Response:
 
 ```json
 [
   {
-    "typeName": "Nakit",
-    "paymentTypeId": 1,
-    "accountCode": "",
-    "slipNumber": 0,
-    "amount": 11340.5,
-    "terminalId": "",
-    "description": ""
-  },
-  {
     "typeName": "Akbank POS",
-    "paymentTypeId": 5,
+    "paymentTypeId": 1,
     "accountCode": "POS-AKBANK",
     "slipNumber": 45612,
     "amount": 2500,
@@ -8600,6 +8592,31 @@ Not:
 - `warehouseNo = 1` artik tum depolar anlami tasimaz; gercekten 1 no'lu depo filtresi olarak yorumlanir
 - response modeli `BanknoteTrackDto` doner ve `banknoteTrackId` alanini GUID olarak icerir
 - bu route'da `differenceAmount`, eski kodla uyumlu olarak `deliveryTotalAmount - totalAmount` hesaplanir
+
+Sayim toplami:
+
+`GET /api/kasa-islemleri/banknot-takipleri/sayim-toplami?dateToGet=2026-04-24&warehouseNo=110`
+
+Yetki:
+
+- `kasa-islemleri.banknot-takipleri.list`
+
+Not:
+
+- Banknot teslim formunda `totalAmount` alanini backendden doldurmak icindir
+- toplam, eski `GetTotalAmountForBanknoteTrack` davranisina uygun olarak `BanknoteMovements.CreateDate` gunu ve depo filtresiyle `Total` toplamidir
+- `kasa-islemleri.banknot-takipleri.all-warehouses` yoksa `warehouseNo` gonderilmez; backend JWT deposunu kullanir
+- all-warehouses yetkisi varsa baska depo icin `warehouseNo` gonderilebilir
+
+Response:
+
+```json
+{
+  "dateToGet": "2026-04-24T00:00:00",
+  "warehouseNo": 110,
+  "totalAmount": 12000
+}
+```
 
 Response:
 
@@ -8733,7 +8750,7 @@ Kisa response ornekleri:
 
 Paylasim klasorundeki Z rapor dosyasindan `NET CIRO` degerini okumaya calisir.
 
-`GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?documentSerie=KS110&warehouseNo=110&zReportNo=125&cashNo=1`
+`GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?warehouseNo=110&zReportNo=125&cashNo=1`
 
 Yetki:
 
@@ -8742,8 +8759,10 @@ Yetki:
 Not:
 
 - response `double` doner
+- `documentSerie` opsiyoneldir; gonderilirse `KS110`, `F110.1` ve `F110` formatlari desteklenir
+- `documentSerie` bos veya parse edilemezse backend dogrudan `warehouseNo` ile sube path bilgisini cozer
 - dosya bulunamazsa, config bos ise veya `NET CIRO` parse edilemezse `-1` doner
-- backend `KasaSayimlari:ZReportBasePath` konfigurasyonunu kullanir
+- backend sube IP ve POS klasor bilgisini `BranchDetails` kaydindan okur
 
 ### Icmal Kaydi Girisi / Olustur
 
@@ -8758,10 +8777,12 @@ Yetki:
 Onemli not:
 
 - `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina kasa sayimi/complete icmal kaydi olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir
-- en az bir `paymentTypes` veya `storeExpenses` satiri zorunludur
+- en az bir `paymentTypes`, `storeExpenses` veya `banknoteMovements` satiri zorunludur
 - backend `Summaries`, `BanknoteMovements`, `GiftCheckMovements` ve `CARI_HESAP_HAREKETLERI` tarafina yazar
 - `documentSerie` backend tarafinda `KS{islemDepoNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
+- nakit toplam `paymentTypes` icinde manuel gonderilmez; backend banknot hareketlerinden `PaymentTypeID = 500`, `description = "Nakit Toplam"` satirini garanti eder
+- UI yanlislikla `paymentTypes` icinde `Nakit` veya `paymentTypeNo = 500` gonderirse backend bunu ayri odeme satiri olarak yazmaz, 500 satirini banknot toplamindan uretir
 
 Request:
 
@@ -8771,8 +8792,8 @@ Request:
   "zReportNo": 125,
   "cashierNo": 1001,
   "managerNo": 1002,
-  "zTotalValue": 15340.5,
-  "total": 15340.5,
+  "zTotalValue": 6500,
+  "total": 6500,
   "summaryDate": "2026-04-24",
   "giftCheckMovements": [],
   "banknoteMovements": [
@@ -8785,12 +8806,12 @@ Request:
   ],
   "paymentTypes": [
     {
-      "paymentName": "Nakit",
+      "paymentName": "Akbank POS",
       "paymentTypeNo": 1,
-      "accountCode": "",
-      "terminalId": "",
-      "slipNumber": 0,
-      "amountValue": 11340.5
+      "accountCode": "POS-AKBANK",
+      "terminalId": "TERM-01",
+      "slipNumber": 12,
+      "amountValue": 2500
     }
   ],
   "storeExpenses": []
@@ -8805,8 +8826,8 @@ Response:
   "documentOrderNo": 12,
   "summaryDate": "2026-04-24T00:00:00",
   "warehouseNo": 110,
-  "lineCount": 1,
-  "total": 15340.5,
+  "lineCount": 2,
+  "total": 6500,
   "writeConnectionName": "MikroConnection"
 }
 ```
@@ -8829,7 +8850,9 @@ Yetki:
 Not:
 
 - detay update request'inde `details` listesi zorunludur
+- detay update request'inde nakit/500 satiri gonderilmez; backend mevcut banknot toplamindan 500 satirini korur
 - banknot update request'inde `banknoteMovements` bos gonderilirse mevcut banknot satirlari temizlenebilir
+- banknot update sonrasi backend `PaymentTypeID = 500` nakit toplam satirini ve ilgili cari hareket toplamlarini yeni belge toplamiyla gunceller
 - `DELETE` cagrisinda `warehouseNo` body'den alinmaz; JWT deposu kullanilir
 
 Detay update request:
@@ -8838,12 +8861,12 @@ Detay update request:
 {
   "details": [
     {
-      "typeName": "Nakit",
+      "typeName": "Akbank POS",
       "paymentTypeId": 1,
-      "accountCode": "",
-      "slipNumber": 0,
-      "amount": 12000,
-      "terminalId": "",
+      "accountCode": "POS-AKBANK",
+      "slipNumber": 12,
+      "amount": 2500,
+      "terminalId": "TERM-01",
       "description": ""
     }
   ]
@@ -8856,8 +8879,8 @@ Detay update response:
 {
   "documentSerie": "KS110",
   "documentOrderNo": 12,
-  "updatedLineCount": 1,
-  "totalAmount": 12000
+  "updatedLineCount": 2,
+  "totalAmount": 6500
 }
 ```
 
@@ -15050,6 +15073,11 @@ public sealed record BanknoteTrackDto(
     string Receiver,
     DateTime CreateDate);
 
+public sealed record BanknoteTrackDailySummaryTotalDto(
+    DateTime DateToGet,
+    int WarehouseNo,
+    double TotalAmount);
+
 public sealed record BanknoteTypeItemDto(
     double Value,
     double Quantity,
@@ -16251,7 +16279,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CashRegisterLookupHttpRequest`: `CashNo`, `CashRegisterNo`
 - `CashierSearchHttpRequest`: `FilterString`
 - `BankPaymentTypeHttpRequest`: `CashRegisterNo`
-- `ZReportValueHttpRequest`: `WarehouseNo`, `DocumentSerie`, `ZReportNo`, `CashNo`
+- `ZReportValueHttpRequest`: `WarehouseNo`, `DocumentSerie` (opsiyonel), `ZReportNo`, `CashNo`
 - `CreateBanknoteTrackHttpRequest`: `WarehouseNo`, `BanknoteTrackDate`, `TotalAmount`, `DeliveryTotalAmount`, `Deliverer`, `Receiver`
 - `CreateCashSummaryHttpRequest`: `WarehouseNo`, `CashNo`, `ZReportNo`, `CashierNo`, `ManagerNo`, `ZTotalValue`, `Total`, `SummaryDate`, `GiftCheckMovements`, `BanknoteMovements`, `PaymentTypes`, `StoreExpenses`
 - `CreateGiftCheckMovementHttpRequest`: `GiftCheckType`, `Quantity`, `Total`, `Value`
