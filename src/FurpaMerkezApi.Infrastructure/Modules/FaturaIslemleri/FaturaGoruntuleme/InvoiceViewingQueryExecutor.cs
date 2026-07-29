@@ -184,12 +184,15 @@ public sealed class InvoiceViewingQueryExecutor(
 
     private IQueryable<UyumsoftInboxInvoice> BuildListQuery(InvoiceViewingListRequest request)
     {
-        var startDate = request.StartDate.Date;
-        var endDateExclusive = request.EndDate.Date.AddDays(1);
-
         var query = authDbContext.UyumsoftInboxInvoices
-            .AsNoTracking()
-            .Where(item =>
+            .AsNoTracking();
+
+        if (!HasTextSearchCriteria(request))
+        {
+            var startDate = request.StartDate.Date;
+            var endDateExclusive = request.EndDate.Date.AddDays(1);
+
+            query = query.Where(item =>
                 (item.InvoiceDate.HasValue &&
                  item.InvoiceDate.Value >= startDate &&
                  item.InvoiceDate.Value < endDateExclusive) ||
@@ -197,11 +200,23 @@ public sealed class InvoiceViewingQueryExecutor(
                  item.CreateDate.HasValue &&
                  item.CreateDate.Value >= startDate &&
                  item.CreateDate.Value < endDateExclusive));
+        }
 
         query = ApplyStructuredFilters(query, request);
 
         return query;
     }
+
+    private static bool HasTextSearchCriteria(InvoiceViewingListRequest request) =>
+        !string.IsNullOrWhiteSpace(request.SearchText) ||
+        !string.IsNullOrWhiteSpace(request.InvoiceId) ||
+        !string.IsNullOrWhiteSpace(request.DespatchId) ||
+        !string.IsNullOrWhiteSpace(request.CustomerTitle) ||
+        !string.IsNullOrWhiteSpace(request.CustomerTcknVkn) ||
+        !string.IsNullOrWhiteSpace(request.DocumentId) ||
+        !string.IsNullOrWhiteSpace(request.OrderDocumentId) ||
+        !string.IsNullOrWhiteSpace(request.Status) ||
+        !string.IsNullOrWhiteSpace(request.InvoiceType);
 
     public async Task<InvoiceViewingListItemDto> GetByDocumentIdAsync(
         string documentId,

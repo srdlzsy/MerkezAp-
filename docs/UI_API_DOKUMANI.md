@@ -28,15 +28,33 @@ Controller'da acik olan pratik alias/canonical route'lar:
 
 - `GET /api/arama-islemleri/barkodlar/{barcode}/cozumle`
 - `GET /api/arama-islemleri/urunler/{stockCode}/cari-onerileri`
+- `GET /api/arama-islemleri/urunler/{stockCode}/son-kunye`
 - `GET /api/siparis-islemleri/alinan-depo-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/alinan-depo-siparisleri/key/{documentKey}`
+- `GET /api/siparis-islemleri/alinan-firma-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/alinan-firma-siparisleri/key/{documentKey}`
+- `GET /api/siparis-islemleri/verilen-depo-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/verilen-depo-siparisleri/key/{documentKey}`
+- `GET /api/siparis-islemleri/verilen-firma-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/verilen-firma-siparisleri/key/{documentKey}`
-- `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}` ve `POST /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye`, `giden` alias'i ile ayni outgoing akisi calistirir.
-- `GET /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}` ve `POST /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye`, `giden` alias'i ile ayni outgoing akisi calistirir.
-- `GET /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}` ve `POST /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
+- `GET /api/sevk-islemleri/depolar-arasi-sevkler/gelen/{documentSerie}/{documentOrderNo}`
+- `GET /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
+- `GET /api/sevk-islemleri/firma-sevkleri/gelen/{documentSerie}/{documentOrderNo}`
+- `GET /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}`, `POST /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET /api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}`, `POST /api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
+- `GET /api/iade-islemleri/depo-iadeleri/gelen/{documentSerie}/{documentOrderNo}`
+- `GET /api/iade-islemleri/firma-iadeleri/{documentSerie}/{documentOrderNo}`, `POST /api/iade-islemleri/firma-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/iade-islemleri/firma-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
+- `GET /api/mal-kabul-islemleri/depo-mal-kabulleri/{documentSerie}/{documentOrderNo}` ve `POST /api/mal-kabul-islemleri/depo-mal-kabulleri/{documentSerie}/{documentOrderNo}/kabul`
 - `GET /api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/{documentSerie}/{documentOrderNo}` ve `POST /api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/{documentSerie}/{documentOrderNo}/kabul`, depo mal kabul detay/kabul endpointinin eski menu uyum alias'idir.
+- `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/{documentSerie}/{documentOrderNo}`
+- `GET /api/stok-islemleri/zayiat-fisleri/{documentSerie}/{documentOrderNo}`
+- `GET /api/stok-islemleri/masraf-fisleri/{documentSerie}/{documentOrderNo}`
+- `GET /api/stok-islemleri/virmanlar/{documentSerie}/{documentOrderNo}`
+- `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri`
+- `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri` ve `DELETE /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`
 
 ### Tum Depo Yetki Modeli
 
@@ -9361,6 +9379,7 @@ Not:
 
 - yeni davranisla birlikte `GET /api/fatura-islemleri/fatura-goruntuleme` artik yalnizca DB/cache okur
 - yeni eklendi: Uyumsoft tarih araligi senkronizasyonu ayri endpoint olan `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` ile yapilir
+- arama metni veya net metin arama parametresi doluysa liste tarih filtresi uygulanmaz; fatura/irsaliye/ETTN no bilinen kayit tum cache icinde aranir
 
 Kisa ornek:
 
@@ -9410,6 +9429,7 @@ UI notu:
 - yeni UI gelistirmelerinde `isProcessed`, `isPrinted` ve `page` kullanilmasi tavsiye edilir
 - eski istemciler icin `ProcessedState`, `PrintedState` ve `PageNumber` hala desteklenir
 - ayni request'te hem yeni hem eski alias gonderilirse yeni aliaslar (`isProcessed`, `isPrinted`, `page`) oncelikli kabul edilir
+- arama alani bossa listeleme `StartDate` / `EndDate` araligina gore yapilir; `SearchText`, `invoiceId/invoiceNo`, `despatchId/despatchNo`, `customerTitle`, `customerTcknVkn/tcknVkn`, `documentId/ettn`, `orderDocumentId`, `status` veya `invoiceType` doluysa tarih filtresi devre disi kalir
 - filtreleme iki asamali dusunulmelidir:
   - backend filtreleri tarih araligindaki genis veri setini daraltir ve DB/cache uzerinden calisir
   - frontend/grid filtreleri backend'den donen aday set uzerinde anlik lokal filtreleme yapar
@@ -9461,6 +9481,7 @@ Liste davranisi:
 - `GET /api/fatura-islemleri/fatura-goruntuleme` otomatik Uyumsoft cagrisi yapmaz; sadece lokal cache/DB sonucunu doner
 - yeni eklendi: `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize` endpoint'i secilen tarih araligini Uyumsoft `GetInboxInvoices` operasyonu ile cache tabloya upsert eder
 - legacy `GetInvoicesAsync(isProcessed, isPrinted)` akisindaki gibi tarih + islenme + yazdirilma filtresi uygulanir
+- arama kriteri doluysa tarih kosulu uygulanmaz; `isProcessed` ve `isPrinted` filtreleri yine uygulanmaya devam eder
 - `invoiceDate` Uyumsoft full UBL icindeki `Invoice.IssueDate` (Fatura Tarihi) alanindan, `createDate` ise `InvoiceInfo.CreateDateUtc` alanindan doldurulur
 - Uyumsoft kaynak sorgusu teknik olarak `ExecutionStartDate` / `ExecutionEndDate` ile calisir; bu nedenle senkronizasyon Uyumsoft'u secilen bitis tarihinden sonra da konfigurasyon kadar ileri tarar, cache'e alinacak asil is kaydi ise sonradan `invoiceDate` / Fatura Tarihi ile daraltilir
 - senkron request'indeki tarih araligi Uyumsoft'tan cekilen kayitlara `invoiceDate` uzerinden tekrar uygulanir; bu nedenle DB'ye yalnizca Fatura Tarihi secilen aralikta olan belgeler yazilir
@@ -9497,7 +9518,7 @@ Liste davranisi:
   - `1300` -> `Iade Edildi`
   - `1400` -> `E-Arsiv Iptal`
   - diger -> `Bilinmiyor`
-- SQL tarafinda tarih + processed + printed + net query filtreleri uygulanir:
+- SQL tarafinda processed + printed + net query filtreleri uygulanir; tarih filtresi yalnizca net metin arama kriteri yoksa eklenir:
   - `invoiceId` / `invoiceNo`
   - `despatchId` / `despatchNo`
   - `customerTitle`
@@ -16304,9 +16325,9 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `InvoiceSendingRenderHttpRequest`: `Scenario`, `Profile`, `PreferEmbeddedXslt`, `FallbackToDefaultXslt` (JSON body'de `fallbackToGeneral` olarak gonderilir)
 - `InvoiceSendingBatchHttpRequest`: `Scenario`, `Documents[]`
 - `InvoiceSendingBatchDocumentHttpRequest`: `DocumentSerie`, `DocumentOrderNo`
-- `InvoiceViewingListHttpRequest`: `StartDate`, `EndDate`, `ProcessedState`, `IsProcessed`, `PrintedState`, `IsPrinted`, `SearchField`, `SearchText`, `PageNumber`, `Page`, `PageSize`
+- `InvoiceViewingListHttpRequest`: `StartDate`, `EndDate`, `ProcessedState`, `IsProcessed`, `PrintedState`, `IsPrinted`, `SearchField`, `SearchText`, `InvoiceId`, `InvoiceNo`, `DespatchId`, `DespatchNo`, `CustomerTitle`, `CustomerTcknVkn`, `TcknVkn`, `DocumentId`, `Ettn`, `OrderDocumentId`, `Status`, `InvoiceType`, `MinInvoiceTotal`, `MaxInvoiceTotal`, `HasDespatchId`, `PageNumber`, `Page`, `PageSize`
 - `InvoiceViewingSynchronizationHttpRequest`: `StartDate`, `EndDate`, `IncludeStatuses`
-- `InvoiceViewingSynchronizationProgressResponse`: `IsRunning`, `Status`, `StartDate`, `EndDate`, `IncludeStatuses`, `QueryStartDate`, `QueryEndDate`, `PageIndex`, `PageNumber`, `PageSize`, `TotalCount`, `TotalPage`, `FetchedCount`, `MatchedCount`, `InsertedCount`, `UpdatedCount`, `LastPageItemCount`, `LastPageMatchedCount`, `LastPageInsertedCount`, `LastPageUpdatedCount`, `ProgressPercent`, `StartedAtUtc`, `LastUpdatedAtUtc`, `FinishedAtUtc`, `ElapsedMs`, `Message`
+- `InvoiceViewingSynchronizationProgressResponse`: `IsRunning`, `Status`, `StartDate`, `EndDate`, `IncludeStatuses`, `QueryStartDate`, `QueryEndDate`, `PageIndex`, `PageNumber`, `PageSize`, `TotalCount`, `TotalPage`, `FetchedCount`, `MatchedCount`, `SkippedInvoiceDateOutOfRangeCount`, `SkippedDuplicateDocumentCount`, `InsertedCount`, `UpdatedCount`, `LastPageItemCount`, `LastPageMatchedCount`, `LastPageSkippedInvoiceDateOutOfRangeCount`, `LastPageSkippedDuplicateDocumentCount`, `LastPageInsertedCount`, `LastPageUpdatedCount`, `ProgressPercent`, `StartedAtUtc`, `LastUpdatedAtUtc`, `FinishedAtUtc`, `ElapsedMs`, `Message`, `AutomaticSynchronizationEnabled`, `SchedulerLastCheckedAtUtc`, `SchedulerLastCheckedLocal`, `SchedulerStatus`, `SchedulerMessage`, `SchedulerCurrentSlot`, `SchedulerNextSlot`, `SchedulerLastQueuedSlot`, `SchedulerLastQueuedAtUtc`, `SchedulerLastSkippedSlot`, `SchedulerLastSkippedAtUtc`, `SchedulerLastMissedSlot`, `SchedulerLastMissedAtUtc`
 - `InvoiceViewingRenderHttpRequest`: `Profile`, `PreferEmbeddedXslt`, `FallbackToDefaultXslt` (JSON body'de `fallbackToGeneral` olarak gonderilir)
 - `InvoiceViewingPrintedStateHttpRequest`: `IsPrinted`, `Source`
 - `InvoicePreviewHttpRequest`: `InvoiceId`, `XmlContent`, `Profile`, `PreferEmbeddedXslt`

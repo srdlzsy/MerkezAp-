@@ -19,103 +19,172 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         var normalized = Normalize(request);
 
         const string sql = """
-            SELECT TOP (@take)
-                @warehouseNo AS WarehouseNo,
-                CASE
-                    WHEN @warehouseNo IS NULL THEN 'Tum depolar'
-                    ELSE COALESCE(warehouse.dep_adi, '')
-                END AS WarehouseName,
-                stock.sto_kod AS StockCode,
-                COALESCE(stock.sto_isim, '') AS StockName,
-                COALESCE(barcode.bar_kodu, '') AS Barcode,
-                COALESCE(stock.sto_birim1_ad, '') AS UnitName,
-                quantity.Quantity,
-                COALESCE(dbo.fn_StokSatisFiyati(stock.sto_kod, '1', @warehouseNo, '1'), 0) AS SalesPrice,
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
-                    NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), ''),
-                    ''
-                ) AS SupplierCode,
-                COALESCE(supplier.cari_unvan1, '') AS SupplierName,
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''),
-                    NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), ''),
-                    ''
-                ) AS ProductManagerCode,
-                COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '') AS ProductManagerName,
-                COALESCE(stock.sto_kategori_kodu, '') AS CategoryCode,
-                COALESCE(stock.sto_reyon_kodu, '') AS RayonCode,
-                COALESCE(stock.sto_uretici_kodu, '') AS ProducerCode,
-                COALESCE(stock.sto_model_kodu, '') AS ModelCode,
-                COALESCE(detail.sdp_satisdursun, stock.sto_satis_dursun) AS SalesBlockCode,
-                COALESCE(detail.sdp_sipdursun, stock.sto_siparis_dursun) AS OrderBlockCode,
-                COALESCE(detail.sdp_malkabuldursun, stock.sto_malkabul_dursun) AS GoodsAcceptanceBlockCode,
-                COALESCE(detail.sdp_Pasif_fl, stock.sto_pasif_fl, 0) AS IsPassive
-            FROM dbo.STOKLAR AS stock WITH (NOLOCK)
-            LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS detail WITH (NOLOCK)
-                ON detail.sdp_depo_kod = stock.sto_kod
-               AND detail.sdp_depo_no = @warehouseNo
-            LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK)
-                ON warehouse.dep_no = @warehouseNo
-            OUTER APPLY (
-                SELECT TOP (1) bar.bar_kodu
-                FROM dbo.BARKOD_TANIMLARI AS bar WITH (NOLOCK)
-                WHERE bar.bar_stokkodu = stock.sto_kod
-                  AND COALESCE(bar.bar_iptal, 0) = 0
-                ORDER BY
-                    CASE WHEN COALESCE(bar.bar_master, 0) = 1 THEN 0 ELSE 1 END,
-                    CASE WHEN COALESCE(bar.bar_birimpntr, 0) = 1 THEN 0 ELSE 1 END,
-                    bar.bar_create_date DESC
-            ) AS barcode
-            CROSS APPLY (
-                SELECT COALESCE(dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, @reportDate), 0) AS Quantity
-            ) AS quantity
-            LEFT JOIN dbo.CARI_HESAPLAR AS supplier WITH (NOLOCK)
-                ON supplier.cari_kod = COALESCE(
-                    NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
-                    NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), '')
-                )
-            LEFT JOIN dbo.CARI_PERSONEL_TANIMLARI AS personnel WITH (NOLOCK)
-                ON personnel.cari_per_kod = COALESCE(
-                    NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''),
-                    NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), '')
-                )
-            WHERE COALESCE(stock.sto_iptal, 0) = 0
-              AND (@onlyWithStock = 0 OR ABS(quantity.Quantity) > 0.000001)
+            SET NOCOUNT ON;
+
+            IF OBJECT_ID('tempdb..#StockReportMovementBalance') IS NOT NULL
+            BEGIN
+                DROP TABLE #StockReportMovementBalance;
+            END;
+
+            CREATE TABLE #StockReportMovementBalance (
+                StockCode nvarchar(25) NOT NULL PRIMARY KEY
+            );
+
+            INSERT INTO #StockReportMovementBalance (StockCode)
+            SELECT movement.sth_stok_kod
+            FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+            WHERE @onlyWithStock = 1
+              AND movement.sth_stok_kod IS NOT NULL
+              AND COALESCE(movement.sth_iptal, 0) = 0
+              AND movement.sth_tarih <= @reportDate
+              AND COALESCE(movement.sth_cins, 0) NOT IN (9, 15)
               AND (
-                    @search IS NULL
-                    OR stock.sto_kod LIKE @searchLike
-                    OR stock.sto_isim LIKE @searchLike
-                    OR barcode.bar_kodu LIKE @searchLike
-              )
-              AND (
-                    @supplierCode IS NULL
-                    OR COALESCE(
-                        NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
-                        NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), '')
-                    ) = @supplierCode
-                    OR EXISTS (
-                        SELECT 1
-                        FROM dbo.SATINALMA_SARTLARI AS term WITH (NOLOCK)
-                        WHERE term.sas_stok_kod = stock.sto_kod
-                          AND term.sas_cari_kod = @supplierCode
-                          AND COALESCE(term.sas_iptal, 0) = 0
+                    (movement.sth_tip = 0 AND movement.sth_giris_depo_no = @warehouseNo)
+                    OR (movement.sth_tip = 1 AND movement.sth_cikis_depo_no = @warehouseNo)
+                    OR (
+                        movement.sth_tip = 2
+                        AND movement.sth_giris_depo_no <> movement.sth_cikis_depo_no
+                        AND (
+                            movement.sth_giris_depo_no = @warehouseNo
+                            OR movement.sth_cikis_depo_no = @warehouseNo
+                        )
                     )
               )
-              AND (@categoryCode IS NULL OR stock.sto_kategori_kodu = @categoryCode)
-              AND (@producerCode IS NULL OR stock.sto_uretici_kodu = @producerCode)
-              AND (
-                    @productManagerCode IS NULL
-                    OR COALESCE(
+            GROUP BY movement.sth_stok_kod
+            HAVING ABS(ROUND(SUM(CASE
+                WHEN movement.sth_tip = 0 THEN COALESCE(movement.sth_miktar, 0)
+                WHEN movement.sth_tip = 1 THEN -1 * COALESCE(movement.sth_miktar, 0)
+                WHEN movement.sth_tip = 2 AND movement.sth_giris_depo_no = @warehouseNo THEN COALESCE(movement.sth_miktar, 0)
+                WHEN movement.sth_tip = 2 AND movement.sth_cikis_depo_no = @warehouseNo THEN -1 * COALESCE(movement.sth_miktar, 0)
+                ELSE 0
+            END), 8)) > 0.000001
+            OPTION (RECOMPILE);
+
+            ;WITH CandidateStocks AS (
+                SELECT
+                    @warehouseNo AS WarehouseNo,
+                    CASE
+                        WHEN @warehouseNo IS NULL THEN 'Tum depolar'
+                        ELSE COALESCE(warehouse.dep_adi, '')
+                    END AS WarehouseName,
+                    stock.sto_kod AS StockCode,
+                    COALESCE(stock.sto_isim, '') AS StockName,
+                    COALESCE(barcode.bar_kodu, '') AS Barcode,
+                    COALESCE(stock.sto_birim1_ad, '') AS UnitName,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
+                        NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), ''),
+                        ''
+                    ) AS SupplierCode,
+                    COALESCE(supplier.cari_unvan1, '') AS SupplierName,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''),
+                        NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), ''),
+                        ''
+                    ) AS ProductManagerCode,
+                    COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '') AS ProductManagerName,
+                    COALESCE(stock.sto_kategori_kodu, '') AS CategoryCode,
+                    COALESCE(stock.sto_reyon_kodu, '') AS RayonCode,
+                    COALESCE(stock.sto_uretici_kodu, '') AS ProducerCode,
+                    COALESCE(stock.sto_model_kodu, '') AS ModelCode,
+                    COALESCE(detail.sdp_satisdursun, stock.sto_satis_dursun) AS SalesBlockCode,
+                    COALESCE(detail.sdp_sipdursun, stock.sto_siparis_dursun) AS OrderBlockCode,
+                    COALESCE(detail.sdp_malkabuldursun, stock.sto_malkabul_dursun) AS GoodsAcceptanceBlockCode,
+                    COALESCE(detail.sdp_Pasif_fl, stock.sto_pasif_fl, 0) AS IsPassive
+                FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                LEFT JOIN #StockReportMovementBalance AS movementBalance
+                    ON movementBalance.StockCode = stock.sto_kod
+                LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS detail WITH (NOLOCK)
+                    ON detail.sdp_depo_kod = stock.sto_kod
+                   AND detail.sdp_depo_no = @warehouseNo
+                LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK)
+                    ON warehouse.dep_no = @warehouseNo
+                OUTER APPLY (
+                    SELECT TOP (1) bar.bar_kodu
+                    FROM dbo.BARKOD_TANIMLARI AS bar WITH (NOLOCK)
+                    WHERE bar.bar_stokkodu = stock.sto_kod
+                      AND COALESCE(bar.bar_iptal, 0) = 0
+                    ORDER BY
+                        CASE WHEN COALESCE(bar.bar_master, 0) = 1 THEN 0 ELSE 1 END,
+                        CASE WHEN COALESCE(bar.bar_birimpntr, 0) = 1 THEN 0 ELSE 1 END,
+                        bar.bar_create_date DESC
+                ) AS barcode
+                LEFT JOIN dbo.CARI_HESAPLAR AS supplier WITH (NOLOCK)
+                    ON supplier.cari_kod = COALESCE(
+                        NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
+                        NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), '')
+                    )
+                LEFT JOIN dbo.CARI_PERSONEL_TANIMLARI AS personnel WITH (NOLOCK)
+                    ON personnel.cari_per_kod = COALESCE(
                         NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''),
                         NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), '')
-                    ) = @productManagerCode
-              )
-              AND (@modelCode IS NULL OR stock.sto_model_kodu = @modelCode)
+                    )
+                WHERE COALESCE(stock.sto_iptal, 0) = 0
+                  AND (
+                        @search IS NULL
+                        OR stock.sto_kod LIKE @searchLike
+                        OR stock.sto_isim LIKE @searchLike
+                        OR barcode.bar_kodu LIKE @searchLike
+                  )
+                  AND (
+                        @supplierCode IS NULL
+                        OR COALESCE(
+                            NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
+                            NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), '')
+                        ) = @supplierCode
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.SATINALMA_SARTLARI AS term WITH (NOLOCK)
+                            WHERE term.sas_stok_kod = stock.sto_kod
+                              AND term.sas_cari_kod = @supplierCode
+                              AND COALESCE(term.sas_iptal, 0) = 0
+                        )
+                  )
+                  AND (@categoryCode IS NULL OR stock.sto_kategori_kodu = @categoryCode)
+                  AND (@producerCode IS NULL OR stock.sto_uretici_kodu = @producerCode)
+                  AND (
+                        @productManagerCode IS NULL
+                        OR COALESCE(
+                            NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''),
+                            NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), '')
+                        ) = @productManagerCode
+                  )
+                  AND (@modelCode IS NULL OR stock.sto_model_kodu = @modelCode)
+                  AND (@onlyWithStock = 0 OR movementBalance.StockCode IS NOT NULL)
+            )
+            SELECT TOP (@take)
+                candidate.WarehouseNo,
+                candidate.WarehouseName,
+                candidate.StockCode,
+                candidate.StockName,
+                candidate.Barcode,
+                candidate.UnitName,
+                quantity.Quantity,
+                COALESCE(dbo.fn_StokSatisFiyati(candidate.StockCode, '1', @warehouseNo, '1'), 0) AS SalesPrice,
+                candidate.SupplierCode,
+                candidate.SupplierName,
+                candidate.ProductManagerCode,
+                candidate.ProductManagerName,
+                candidate.CategoryCode,
+                candidate.RayonCode,
+                candidate.ProducerCode,
+                candidate.ModelCode,
+                candidate.SalesBlockCode,
+                candidate.OrderBlockCode,
+                candidate.GoodsAcceptanceBlockCode,
+                candidate.IsPassive
+            FROM CandidateStocks AS candidate
+            CROSS APPLY (
+                SELECT COALESCE(dbo.fn_DepodakiMiktar(candidate.StockCode, @warehouseNo, @reportDate), 0) AS Quantity
+            ) AS quantity
+            WHERE (@onlyWithStock = 0 OR ABS(quantity.Quantity) > 0.000001)
             ORDER BY
                 ABS(quantity.Quantity) DESC,
-                stock.sto_isim,
-                stock.sto_kod;
+                candidate.StockName,
+                candidate.StockCode
+            OPTION (RECOMPILE);
+
+            DROP TABLE #StockReportMovementBalance;
             """;
 
         var items = await ExecuteReaderAsync(
@@ -219,7 +288,8 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
               AND (@onlyWithStock = 0 OR ABS(quantity.Quantity) > 0.000001)
             ORDER BY
                 CASE WHEN ABS(quantity.Quantity) > 0.000001 THEN 0 ELSE 1 END,
-                warehouse.dep_no;
+                warehouse.dep_no
+            OPTION (RECOMPILE);
             """;
 
         return await ExecuteReaderAsync(
@@ -974,9 +1044,63 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         var productManagerCode = NormalizeOrNull(request.ProductManagerCode);
 
         const string sql = """
+            SET NOCOUNT ON;
+
+            IF OBJECT_ID('tempdb..#NotSoldCandidates') IS NOT NULL
+            BEGIN
+                DROP TABLE #NotSoldCandidates;
+            END;
+
+            CREATE TABLE #NotSoldCandidates (
+                WarehouseNo int NULL,
+                WarehouseName nvarchar(255) NOT NULL,
+                StockCode nvarchar(25) NOT NULL PRIMARY KEY,
+                StockName nvarchar(255) NOT NULL,
+                Barcode nvarchar(50) NOT NULL,
+                SupplierCode nvarchar(25) NOT NULL,
+                SupplierName nvarchar(255) NOT NULL,
+                ProductManagerCode nvarchar(25) NOT NULL,
+                ProductManagerName nvarchar(255) NOT NULL,
+                LastSaleDate datetime NULL
+            );
+
+            ;WITH SalesSummary AS (
+                SELECT
+                    sale.sth_stok_kod AS StockCode,
+                    MAX(sale.sth_tarih) AS LastSaleDate,
+                    MAX(CASE
+                        WHEN sale.sth_tarih >= @startDate
+                         AND sale.sth_tarih < @endDateExclusive THEN 1
+                        ELSE 0
+                    END) AS HasSaleInRange
+                FROM dbo.STOK_HAREKETLERI AS sale WITH (NOLOCK)
+                WHERE sale.sth_stok_kod IS NOT NULL
+                  AND COALESCE(sale.sth_iptal, 0) = 0
+                  AND sale.sth_tip = 1
+                  AND sale.sth_cins = 1
+                  AND COALESCE(sale.sth_normal_iade, 0) = 0
+                  AND sale.sth_evraktip IN (1, 4)
+                  AND (@warehouseNo IS NULL OR sale.sth_cikis_depo_no = @warehouseNo)
+                GROUP BY sale.sth_stok_kod
+            )
+            INSERT INTO #NotSoldCandidates (
+                WarehouseNo,
+                WarehouseName,
+                StockCode,
+                StockName,
+                Barcode,
+                SupplierCode,
+                SupplierName,
+                ProductManagerCode,
+                ProductManagerName,
+                LastSaleDate
+            )
             SELECT TOP (@take)
                 @warehouseNo AS WarehouseNo,
-                COALESCE(warehouse.dep_adi, '') AS WarehouseName,
+                CASE
+                    WHEN @warehouseNo IS NULL THEN 'Tum depolar'
+                    ELSE COALESCE(warehouse.dep_adi, '')
+                END AS WarehouseName,
                 stock.sto_kod AS StockCode,
                 COALESCE(stock.sto_isim, '') AS StockName,
                 COALESCE(barcode.bar_kodu, '') AS Barcode,
@@ -992,12 +1116,10 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                     ''
                 ) AS ProductManagerCode,
                 COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '') AS ProductManagerName,
-                CASE
-                    WHEN @warehouseNo IS NULL THEN COALESCE(allWarehouseStock.CurrentStock, 0)
-                    ELSE COALESCE(dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, CONVERT(date, GETDATE())), 0)
-                END AS CurrentStock,
-                lastSale.LastSaleDate
+                sales.LastSaleDate
             FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+            LEFT JOIN SalesSummary AS sales
+                ON sales.StockCode = stock.sto_kod
             LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS detail WITH (NOLOCK)
                 ON detail.sdp_depo_kod = stock.sto_kod
                AND detail.sdp_depo_no = @warehouseNo
@@ -1010,25 +1132,6 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                   AND COALESCE(bar.bar_iptal, 0) = 0
                 ORDER BY COALESCE(bar.bar_master, 0) DESC, bar.bar_create_date DESC
             ) AS barcode
-            OUTER APPLY (
-                SELECT SUM(COALESCE(dbo.fn_DepodakiMiktar(stock.sto_kod, allWarehouse.dep_no, CONVERT(date, GETDATE())), 0)) AS CurrentStock
-                FROM dbo.DEPOLAR AS allWarehouse WITH (NOLOCK)
-                WHERE @warehouseNo IS NULL
-                  AND allWarehouse.dep_no IS NOT NULL
-                  AND COALESCE(allWarehouse.dep_iptal, 0) = 0
-                  AND COALESCE(allWarehouse.dep_envanter_harici_fl, 0) = 0
-            ) AS allWarehouseStock
-            OUTER APPLY (
-                SELECT MAX(sale.sth_tarih) AS LastSaleDate
-                FROM dbo.STOK_HAREKETLERI AS sale WITH (NOLOCK)
-                WHERE sale.sth_stok_kod = stock.sto_kod
-                  AND COALESCE(sale.sth_iptal, 0) = 0
-                  AND sale.sth_tip = 1
-                  AND sale.sth_cins = 1
-                  AND COALESCE(sale.sth_normal_iade, 0) = 0
-                  AND sale.sth_evraktip IN (1, 4)
-                  AND (@warehouseNo IS NULL OR sale.sth_cikis_depo_no = @warehouseNo)
-            ) AS lastSale
             LEFT JOIN dbo.CARI_HESAPLAR AS supplier WITH (NOLOCK)
                 ON supplier.cari_kod = COALESCE(
                     NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''),
@@ -1046,20 +1149,95 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                     @productManagerCode IS NULL
                     OR COALESCE(NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''), NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), '')) = @productManagerCode
               )
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM dbo.STOK_HAREKETLERI AS sale WITH (NOLOCK)
-                    WHERE sale.sth_stok_kod = stock.sto_kod
-                      AND COALESCE(sale.sth_iptal, 0) = 0
-                      AND sale.sth_tarih >= @startDate
-                      AND sale.sth_tarih < @endDateExclusive
-                      AND sale.sth_tip = 1
-                      AND sale.sth_cins = 1
-                      AND COALESCE(sale.sth_normal_iade, 0) = 0
-                      AND sale.sth_evraktip IN (1, 4)
-                      AND (@warehouseNo IS NULL OR sale.sth_cikis_depo_no = @warehouseNo)
-              )
-            ORDER BY lastSale.LastSaleDate DESC, stock.sto_isim;
+              AND COALESCE(sales.HasSaleInRange, 0) = 0
+            ORDER BY sales.LastSaleDate DESC, stock.sto_isim
+            OPTION (RECOMPILE);
+
+            IF @warehouseNo IS NULL
+            BEGIN
+                ;WITH ActiveWarehouses AS (
+                    SELECT warehouse.dep_no AS WarehouseNo
+                    FROM dbo.DEPOLAR AS warehouse WITH (NOLOCK)
+                    WHERE warehouse.dep_no IS NOT NULL
+                      AND COALESCE(warehouse.dep_iptal, 0) = 0
+                      AND COALESCE(warehouse.dep_envanter_harici_fl, 0) = 0
+                ),
+                AllWarehouseMovementStock AS (
+                    SELECT
+                        movement.sth_stok_kod AS StockCode,
+                        ROUND(SUM(CASE
+                            WHEN movement.sth_tip = 0 AND inputWarehouse.WarehouseNo IS NOT NULL THEN COALESCE(movement.sth_miktar, 0)
+                            WHEN movement.sth_tip = 1 AND outputWarehouse.WarehouseNo IS NOT NULL THEN -1 * COALESCE(movement.sth_miktar, 0)
+                            WHEN movement.sth_tip = 2 THEN
+                                (CASE WHEN inputWarehouse.WarehouseNo IS NOT NULL THEN COALESCE(movement.sth_miktar, 0) ELSE 0 END)
+                                - (CASE WHEN outputWarehouse.WarehouseNo IS NOT NULL THEN COALESCE(movement.sth_miktar, 0) ELSE 0 END)
+                            ELSE 0
+                        END), 8) AS CurrentStock
+                    FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                    INNER JOIN #NotSoldCandidates AS candidate
+                        ON candidate.StockCode = movement.sth_stok_kod
+                    LEFT JOIN ActiveWarehouses AS inputWarehouse
+                        ON inputWarehouse.WarehouseNo = movement.sth_giris_depo_no
+                    LEFT JOIN ActiveWarehouses AS outputWarehouse
+                        ON outputWarehouse.WarehouseNo = movement.sth_cikis_depo_no
+                    WHERE COALESCE(movement.sth_iptal, 0) = 0
+                      AND movement.sth_tarih <= CONVERT(date, GETDATE())
+                      AND COALESCE(movement.sth_cins, 0) NOT IN (9, 15)
+                      AND (
+                            (movement.sth_tip = 0 AND inputWarehouse.WarehouseNo IS NOT NULL)
+                            OR (movement.sth_tip = 1 AND outputWarehouse.WarehouseNo IS NOT NULL)
+                            OR (
+                                movement.sth_tip = 2
+                                AND movement.sth_giris_depo_no <> movement.sth_cikis_depo_no
+                                AND (
+                                    inputWarehouse.WarehouseNo IS NOT NULL
+                                    OR outputWarehouse.WarehouseNo IS NOT NULL
+                                )
+                            )
+                      )
+                    GROUP BY movement.sth_stok_kod
+                )
+                SELECT
+                    candidate.WarehouseNo,
+                    candidate.WarehouseName,
+                    candidate.StockCode,
+                    candidate.StockName,
+                    candidate.Barcode,
+                    candidate.SupplierCode,
+                    candidate.SupplierName,
+                    candidate.ProductManagerCode,
+                    candidate.ProductManagerName,
+                    COALESCE(allWarehouseStock.CurrentStock, 0) AS CurrentStock,
+                    candidate.LastSaleDate
+                FROM #NotSoldCandidates AS candidate
+                LEFT JOIN AllWarehouseMovementStock AS allWarehouseStock
+                    ON allWarehouseStock.StockCode = candidate.StockCode
+                ORDER BY candidate.LastSaleDate DESC, candidate.StockName
+                OPTION (RECOMPILE);
+            END
+            ELSE
+            BEGIN
+                SELECT
+                    candidate.WarehouseNo,
+                    candidate.WarehouseName,
+                    candidate.StockCode,
+                    candidate.StockName,
+                    candidate.Barcode,
+                    candidate.SupplierCode,
+                    candidate.SupplierName,
+                    candidate.ProductManagerCode,
+                    candidate.ProductManagerName,
+                    COALESCE(singleWarehouseStock.CurrentStock, 0) AS CurrentStock,
+                    candidate.LastSaleDate
+                FROM #NotSoldCandidates AS candidate
+                CROSS APPLY (
+                    SELECT COALESCE(dbo.fn_DepodakiMiktar(candidate.StockCode, @warehouseNo, CONVERT(date, GETDATE())), 0) AS CurrentStock
+                ) AS singleWarehouseStock
+                ORDER BY candidate.LastSaleDate DESC, candidate.StockName
+                OPTION (RECOMPILE);
+            END;
+
+            DROP TABLE #NotSoldCandidates;
             """;
 
         return await ExecuteReaderAsync(
@@ -1209,13 +1387,16 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                 COALESCE(NULLIF(rows.Barcode, ''), barcode.bar_kodu, '') AS Barcode,
                 COALESCE(stock.sto_birim1_ad, '') AS UnitName,
                 rows.CountQuantity,
-                COALESCE(dbo.fn_DepodakiMiktar(rows.StockCode, rows.WarehouseNo, rows.CountDate), 0) AS SystemQuantity,
+                systemQuantity.SystemQuantity,
                 COALESCE(dbo.fn_StokSatisFiyati(rows.StockCode, '1', rows.WarehouseNo, '1'), 0) AS SalesPrice
             FROM CountRows AS rows
             LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
                 ON stock.sto_kod = rows.StockCode
             LEFT JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK)
                 ON warehouse.dep_no = rows.WarehouseNo
+            CROSS APPLY (
+                SELECT COALESCE(dbo.fn_DepodakiMiktar(rows.StockCode, rows.WarehouseNo, rows.CountDate), 0) AS SystemQuantity
+            ) AS systemQuantity
             OUTER APPLY (
                 SELECT TOP (1) bar.bar_kodu
                 FROM dbo.BARKOD_TANIMLARI AS bar WITH (NOLOCK)
@@ -1223,7 +1404,8 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                   AND COALESCE(bar.bar_iptal, 0) = 0
                 ORDER BY COALESCE(bar.bar_master, 0) DESC, bar.bar_create_date DESC
             ) AS barcode
-            ORDER BY ABS(rows.CountQuantity - COALESCE(dbo.fn_DepodakiMiktar(rows.StockCode, rows.WarehouseNo, rows.CountDate), 0)) DESC;
+            ORDER BY ABS(rows.CountQuantity - systemQuantity.SystemQuantity) DESC
+            OPTION (RECOMPILE);
             """;
 
         return await ExecuteReaderAsync(

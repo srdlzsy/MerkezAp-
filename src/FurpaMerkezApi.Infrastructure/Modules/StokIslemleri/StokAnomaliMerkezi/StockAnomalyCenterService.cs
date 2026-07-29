@@ -744,15 +744,16 @@ public sealed class StockAnomalyCenterService(
                 SELECT TOP (@take)
                     summary.sho_Depo AS WarehouseNo,
                     summary.sho_StokKodu AS ProductCode,
-                    SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                      - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS Quantity
+                    SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_GirisIade, 0)
+                      - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_CikisIade, 0)) AS Quantity
                 FROM dbo.STOK_HAREKETLERI_OZET AS summary WITH (NOLOCK)
                 WHERE summary.sho_Depo IS NOT NULL
                   AND summary.sho_StokKodu IS NOT NULL
+                  AND summary.sho_HareketCins NOT IN (9, 15)
                   AND (@warehouseNo IS NULL OR summary.sho_Depo = @warehouseNo)
                 GROUP BY summary.sho_Depo, summary.sho_StokKodu
-                HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                         - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) < -0.000001
+                HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_GirisIade, 0)
+                         - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_CikisIade, 0)) < -0.000001
                 ORDER BY Quantity ASC
             )
             SELECT
@@ -1087,15 +1088,16 @@ public sealed class StockAnomalyCenterService(
                 SELECT
                     summary.sho_Depo AS WarehouseNo,
                     summary.sho_StokKodu AS ProductCode,
-                    SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                      - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) AS Quantity
+                    SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_GirisIade, 0)
+                      - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_CikisIade, 0)) AS Quantity
                 FROM dbo.STOK_HAREKETLERI_OZET AS summary WITH (NOLOCK)
                 WHERE summary.sho_Depo IS NOT NULL
                   AND summary.sho_StokKodu IS NOT NULL
+                  AND summary.sho_HareketCins NOT IN (9, 15)
                   AND (@warehouseNo IS NULL OR summary.sho_Depo = @warehouseNo)
                 GROUP BY summary.sho_Depo, summary.sho_StokKodu
-                HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_CikisIade, 0)
-                         - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_GirisIade, 0)) > 0.000001
+                HAVING SUM(ISNULL(summary.sho_GirisNormal, 0) + ISNULL(summary.sho_GirisIade, 0)
+                         - ISNULL(summary.sho_CikisNormal, 0) - ISNULL(summary.sho_CikisIade, 0)) > 0.000001
             ),
             DormantBalances AS (
                 SELECT TOP (@take)
@@ -1106,12 +1108,21 @@ public sealed class StockAnomalyCenterService(
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM dbo.STOK_HAREKETLERI AS recentMovement WITH (NOLOCK)
-                    WHERE recentMovement.sth_iptal <> 1
+                    WHERE COALESCE(recentMovement.sth_iptal, 0) = 0
                       AND recentMovement.sth_tarih >= @dormantCutoffDate
+                      AND recentMovement.sth_cins NOT IN (9, 15)
                       AND recentMovement.sth_stok_kod = balances.ProductCode
                       AND (
                           (recentMovement.sth_tip = 0 AND recentMovement.sth_giris_depo_no = balances.WarehouseNo) OR
-                          (recentMovement.sth_tip <> 0 AND recentMovement.sth_cikis_depo_no = balances.WarehouseNo)
+                          (recentMovement.sth_tip = 1 AND recentMovement.sth_cikis_depo_no = balances.WarehouseNo) OR
+                          (
+                              recentMovement.sth_tip = 2
+                              AND recentMovement.sth_giris_depo_no <> recentMovement.sth_cikis_depo_no
+                              AND (
+                                  recentMovement.sth_giris_depo_no = balances.WarehouseNo OR
+                                  recentMovement.sth_cikis_depo_no = balances.WarehouseNo
+                              )
+                          )
                       )
                 )
                 ORDER BY balances.Quantity DESC
@@ -1127,11 +1138,20 @@ public sealed class StockAnomalyCenterService(
             OUTER APPLY (
                 SELECT TOP (1) movement.sth_tarih AS LastMovementDate
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-                WHERE movement.sth_iptal <> 1
+                WHERE COALESCE(movement.sth_iptal, 0) = 0
                   AND movement.sth_stok_kod = dormant.ProductCode
+                  AND movement.sth_cins NOT IN (9, 15)
                   AND (
                       (movement.sth_tip = 0 AND movement.sth_giris_depo_no = dormant.WarehouseNo) OR
-                      (movement.sth_tip <> 0 AND movement.sth_cikis_depo_no = dormant.WarehouseNo)
+                      (movement.sth_tip = 1 AND movement.sth_cikis_depo_no = dormant.WarehouseNo) OR
+                      (
+                          movement.sth_tip = 2
+                          AND movement.sth_giris_depo_no <> movement.sth_cikis_depo_no
+                          AND (
+                              movement.sth_giris_depo_no = dormant.WarehouseNo OR
+                              movement.sth_cikis_depo_no = dormant.WarehouseNo
+                          )
+                      )
                   )
                 ORDER BY movement.sth_tarih DESC
             ) AS lastMovements

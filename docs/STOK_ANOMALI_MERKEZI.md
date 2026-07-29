@@ -283,7 +283,7 @@ Tarama kurallari ve zenginlestirme icin su Mikro tablolarina bakilir:
 
 | Tablo | Kullanim |
 | --- | --- |
-| `STOK_HAREKETLERI_OZET` | Eksi stok ve hareketsiz stok bakiyesi. |
+| `STOK_HAREKETLERI_OZET` | Eksi stok ve hareketsiz stok bakiyesi. Stok/depo/yil/donem/hareket cinsi kirminda ozetlenmis Mikro hareket verisidir. |
 | `STOK_HAREKETLERI` | Evrak tekrari, kabul farki, yuksek miktar ve bekleyen transfer. |
 | `STOKLAR` | Urun adi ve genel urun sorumlusu kodu. |
 | `DEPOLAR` | Depo adi. |
@@ -293,6 +293,14 @@ Tarama kurallari ve zenginlestirme icin su Mikro tablolarina bakilir:
 ## Teknik Notlar
 
 - Taramada her kural kendi SQL sorgusunu calistirir; `commandTimeout` 180 saniyedir.
+- `STOK_HAREKETLERI_OZET` net stok formulu Mikro'nun kendi fonksiyonlariyla ayni
+  tutulur: `GirisNormal + GirisIade - CikisNormal - CikisIade`.
+- `STOK_HAREKETLERI_OZET` bakiyesi hesaplanirken `sho_HareketCins IN (9, 15)`
+  deger farki hareketleri dislanir. Depo bazli bakiyede transfer hareketleri (`6`)
+  dahil edilir; cunku giris deposuna arti, cikis deposuna eksi etki eder.
+- `STOK_HAREKETLERI_OZET` gun bazli tarih tutmaz; son durum ve donemsel kontroller
+  icin uygundur. Gun hassasiyetli stok kontrolunde `fn_DepodakiMiktar(stok, depo, tarih)`
+  tercih edilmelidir.
 - Kural bazli hata olursa scan tamamen dusmez; response icindeki ilgili rule satirinda
   `error` alanina hata yazilir.
 - Upsert islemi `source_key` uzerinden yapilir.

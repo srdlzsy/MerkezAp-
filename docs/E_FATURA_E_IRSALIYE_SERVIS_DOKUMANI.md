@@ -261,6 +261,12 @@ Liste query parametreleri:
 | `page` veya `PageNumber` | Hayir | Sayfa numarasi, varsayilan `1` |
 | `PageSize` | Hayir | Sayfa boyutu, varsayilan `50` |
 
+Arama-tarih kurali:
+
+- `SearchText`, `InvoiceId/invoiceNo`, `DespatchId/despatchNo`, `CustomerTitle`, `CustomerTcknVkn/tcknVkn`, `DocumentId/ettn`, `OrderDocumentId`, `Status` veya `InvoiceType` bos ise liste `StartDate` / `EndDate` araligina gore gelir.
+- Bu metin arama kriterlerinden biri doluysa tarih filtresi uygulanmaz; kayit tum `uyumsoft_inbox_invoices` cache tablosunda aranir.
+- `isProcessed` ve `isPrinted` durum filtreleri arama varken de uygulanmaya devam eder.
+
 Liste ornegi:
 
 ```http
