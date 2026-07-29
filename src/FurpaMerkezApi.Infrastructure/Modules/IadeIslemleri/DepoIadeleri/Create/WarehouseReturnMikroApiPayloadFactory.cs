@@ -19,7 +19,8 @@ internal static class WarehouseReturnMikroApiPayloadFactory
         string documentNo,
         string documentSerie,
         int documentOrderNo,
-        string description)
+        string description,
+        IReadOnlyDictionary<int, Guid>? warehouseOrderLineGuidByRowNo = null)
     {
         var satirlar = lines
             .Select((line, rowNo) =>
@@ -52,6 +53,10 @@ internal static class WarehouseReturnMikroApiPayloadFactory
                     0d,
                     0,
                     1,
+                    warehouseOrderLineGuidByRowNo is not null &&
+                    warehouseOrderLineGuidByRowNo.TryGetValue(rowNo, out var warehouseOrderLineGuid)
+                        ? warehouseOrderLineGuid
+                        : null,
                     request.TransitWarehouseNo,
                     request.SourceWarehouseNo,
                     FormatDate(movementDate),
@@ -142,6 +147,7 @@ internal sealed record WarehouseReturnMikroApiLine(
     double sth_iskonto2,
     int sth_isk_mas1,
     int sth_isk_mas2,
+    Guid? sth_subesip_uid,
     int sth_giris_depo_no,
     int sth_cikis_depo_no,
     string sth_malkbl_sevk_tarihi,

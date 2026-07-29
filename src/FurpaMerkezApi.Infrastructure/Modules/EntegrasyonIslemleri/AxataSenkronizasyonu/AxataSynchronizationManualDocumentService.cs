@@ -7,7 +7,10 @@ using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
@@ -20,11 +23,17 @@ internal sealed class AxataSynchronizationManualDocumentService(
     InventoryCountDetailQueryExecutor inventoryCountDetailQueryExecutor,
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
-    MikroWriteDbContext mikroWriteDbContext)
+    MikroWriteDbContext mikroWriteDbContext,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
+    ILogger<AxataSynchronizationManualDocumentService> logger)
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
     private const short MikroUserNo = 39;
     private const string CompletedStatus = "1";
+    private const string DepolarArasiSiparisDuzeltPath = "/Api/apiMethods/DepolarArasiSiparisDuzeltV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
 
     public Task<AxataSynchronizationManualDocumentCandidatesDto> ListCandidatesAsync(
         AxataSynchronizationTaskExecutionContext context,
@@ -432,9 +441,9 @@ internal sealed class AxataSynchronizationManualDocumentService(
 
                 if (dispatchResult.IsSuccess)
                 {
-                    var markedLineCount = await MarkWarehouseOrderAsSentAsync(detailRequest, cancellationToken);
-                    notes.Add(markedLineCount > 0
-                        ? $"{markedLineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi."
+                    var markResult = await MarkWarehouseOrderAsSentAsync(detailRequest, cancellationToken);
+                    notes.Add(markResult.LineCount > 0
+                        ? $"{markResult.LineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
                         : "UYARI: AXATA Success dondu ancak Mikro ssip_special1 bayragi icin eslesen satir bulunamadi.");
                 }
 
@@ -484,7 +493,27 @@ internal sealed class AxataSynchronizationManualDocumentService(
             notes);
     }
 
-    private async Task<int> MarkWarehouseOrderAsSentAsync(
+    private async Task<WarehouseOrderSentFlagMarkResult> MarkWarehouseOrderAsSentAsync(
+        WarehouseOrderDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        return mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
+        {
+            MikroWriteMode.MikroApi => new WarehouseOrderSentFlagMarkResult(
+                await MarkWarehouseOrderAsSentWithMikroApiAsync(request, cancellationToken),
+                "MikroApi:DepolarArasiSiparisDuzeltV2"),
+            MikroWriteMode.Database => new WarehouseOrderSentFlagMarkResult(
+                await MarkWarehouseOrderAsSentInDatabaseAsync(request, cancellationToken),
+                "Database"),
+            MikroWriteMode.DualShadow => new WarehouseOrderSentFlagMarkResult(
+                await MarkWarehouseOrderAsSentInDatabaseAsync(request, cancellationToken),
+                "Database:DualShadowFallback"),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
+        };
+    }
+
+    private async Task<int> MarkWarehouseOrderAsSentInDatabaseAsync(
         WarehouseOrderDetailRequest request,
         CancellationToken cancellationToken)
     {
@@ -502,6 +531,101 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 .SetProperty(order => order.ssip_lastup_user, MikroUserNo)
                 .SetProperty(order => order.ssip_lastup_date, now),
                 cancellationToken);
+    }
+
+    private async Task<int> MarkWarehouseOrderAsSentWithMikroApiAsync(
+        WarehouseOrderDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var lineGuids = await GetWarehouseOrderLineGuidsAsync(request, cancellationToken);
+
+        if (lineGuids.Length == 0)
+        {
+            return 0;
+        }
+
+        var payload = AxataWarehouseOrderSentFlagMikroApiPayloadFactory.Create(
+            lineGuids,
+            CompletedStatus);
+
+        logger.LogInformation(
+            "AXATA issued warehouse order sent flag is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, LineCount={LineCount}",
+            DepolarArasiSiparisDuzeltPath,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            request.WarehouseNo,
+            lineGuids.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DepolarArasiSiparisDuzeltPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API issued warehouse order sent flag update failed.");
+        }
+
+        var markedLineCount = await RecoverMikroApiWarehouseOrderSentFlagAsync(
+            lineGuids,
+            cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{request.DocumentSerie.Trim()}/{request.DocumentOrderNo}",
+            cancellationToken: cancellationToken);
+
+        return markedLineCount;
+    }
+
+    private async Task<Guid[]> GetWarehouseOrderLineGuidsAsync(
+        WarehouseOrderDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = request.DocumentSerie.Trim();
+
+        return await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_iptal != true &&
+                order.ssip_evrakno_seri == documentSerie &&
+                order.ssip_evrakno_sira == request.DocumentOrderNo &&
+                order.ssip_cikdepo == request.WarehouseNo)
+            .Select(order => order.ssip_Guid)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private async Task<int> RecoverMikroApiWarehouseOrderSentFlagAsync(
+        IReadOnlyCollection<Guid> lineGuids,
+        CancellationToken cancellationToken)
+    {
+        var lineGuidArray = lineGuids.ToArray();
+
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var markedLineCount = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+                .AsNoTracking()
+                .Where(order =>
+                    lineGuidArray.Contains(order.ssip_Guid) &&
+                    order.ssip_special1 == CompletedStatus)
+                .CountAsync(cancellationToken);
+
+            if (markedLineCount == lineGuids.Count)
+            {
+                return markedLineCount;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API issued warehouse order sent flag update succeeded, but ssip_special1=1 could not be verified for all order lines.");
     }
 
     private static string BuildDocumentReference(AxataSynchronizationManualDocumentInput input)
@@ -601,3 +725,7 @@ internal sealed record AxataSynchronizationManualDocumentCandidateCriteria(
     DateTime EndDate,
     int Skip,
     int Take);
+
+internal sealed record WarehouseOrderSentFlagMarkResult(
+    int LineCount,
+    string WriteChannel);

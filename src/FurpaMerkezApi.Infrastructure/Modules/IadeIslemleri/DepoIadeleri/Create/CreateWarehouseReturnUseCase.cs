@@ -1,8 +1,10 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -30,6 +32,7 @@ public sealed class CreateWarehouseReturnUseCase(
     private const byte WaitingShippingState = 0;
     private const int FirstDocumentOrderNo = 0;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
+    private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
@@ -155,6 +158,14 @@ public sealed class CreateWarehouseReturnUseCase(
         var documentNo = NormalizeText(request.DocumentNo);
         var description = NormalizeText(request.Description);
         var lines = request.Lines.ToArray();
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        var automaticWarehouseOrderLineGuids = await CreateMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+            request,
+            lines,
+            movementDate,
+            cancellationToken);
+
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var payload = WarehouseReturnMikroApiPayloadFactory.Create(
             request,
@@ -164,7 +175,8 @@ public sealed class CreateWarehouseReturnUseCase(
             documentNo,
             documentSerie,
             documentOrderNo,
-            description);
+            description,
+            automaticWarehouseOrderLineGuids);
 
         logger.LogInformation(
             "Warehouse return create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, TransitWarehouseNo={TransitWarehouseNo}, LineCount={LineCount}",
@@ -195,13 +207,6 @@ public sealed class CreateWarehouseReturnUseCase(
             movementDate,
             documentDate,
             documentNo,
-            cancellationToken);
-
-        await ApplyMikroApiAutomaticWarehouseOrderLinksAsync(
-            request,
-            lines,
-            recovered.MovementGuidByRowNo,
-            movementDate,
             cancellationToken);
 
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
@@ -378,70 +383,209 @@ public sealed class CreateWarehouseReturnUseCase(
             movementGuidByRowNo);
     }
 
-    private async Task ApplyMikroApiAutomaticWarehouseOrderLinksAsync(
+    private async Task<Dictionary<int, Guid>> CreateMikroApiAutomaticWarehouseOrderLineGuidsAsync(
         CreateWarehouseReturnRequest request,
         IReadOnlyList<CreateWarehouseReturnLineRequest> lines,
-        IReadOnlyDictionary<int, Guid> movementGuidByRowNo,
         DateTime movementDate,
         CancellationToken cancellationToken)
     {
-        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
-
-        await executionStrategy.ExecuteAsync(async () =>
+        var automaticRows = GetAutomaticWarehouseOrderRows(request, lines);
+        if (automaticRows.Length == 0)
         {
-            mikroWriteDbContext.ChangeTracker.Clear();
-            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+            return new Dictionary<int, Guid>();
+        }
+
+        if (mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder != MikroWriteMode.MikroApi)
+        {
+            throw new InvalidOperationException(
+                "Mikro API warehouse return automatic order creation requires MikroWriteRouting:IssuedWarehouseOrder to be MikroApi.");
+        }
+
+        var orderDate = movementDate;
+        var deliveryDate = movementDate;
+        var documentSerie = $"F{request.TargetWarehouseNo}";
+        var documentOrderNo = await GetNextWarehouseOrderDocumentOrderNoAsync(
+            documentSerie,
+            cancellationToken);
+        var orderRequest = new CreateIssuedWarehouseOrderRequest(
+            request.TargetWarehouseNo,
+            request.SourceWarehouseNo,
+            orderDate,
+            deliveryDate,
+            request.Description,
+            automaticRows
+                .Select(row => new CreateIssuedWarehouseOrderLineRequest(
+                    row.Line.StockCode,
+                    row.Line.Quantity,
+                    null,
+                    row.Line.UnitPrice,
+                    row.Line.UnitPointer,
+                    row.Line.Description ?? request.Description,
+                    null,
+                    row.Line.ProjectCode,
+                    row.Line.ProductResponsibilityCenter))
+                .ToArray());
+        var payload = IssuedWarehouseOrderMikroApiPayloadFactory.Create(
+            orderRequest,
+            orderRequest.Lines,
+            orderDate,
+            deliveryDate,
+            documentSerie,
+            documentOrderNo);
+
+        logger.LogInformation(
+            "Automatic warehouse order for warehouse return is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}",
+            DepolarArasiSiparisKaydetPath,
+            documentSerie,
+            documentOrderNo,
+            orderRequest.InWarehouseNo,
+            orderRequest.OutWarehouseNo,
+            automaticRows.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DepolarArasiSiparisKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API automatic warehouse order create failed.");
+        }
+
+        var recovered = await RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+            documentSerie,
+            documentOrderNo,
+            orderRequest,
+            automaticRows,
+            cancellationToken);
+        var recoveredGuid = recovered.Values.FirstOrDefault();
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{documentSerie}/{documentOrderNo}",
+            recoveredGuid == Guid.Empty ? null : recoveredGuid,
+            cancellationToken: cancellationToken);
+
+        return recovered;
+    }
+
+    private async Task<Dictionary<int, Guid>> RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest orderRequest,
+        IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+                documentSerie,
+                documentOrderNo,
+                orderRequest,
+                expectedRows,
                 cancellationToken);
 
-            try
+            if (response is not null)
             {
-                var now = DateTime.Now;
-                var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
-                    request,
-                    lines,
-                    movementDate,
-                    now,
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
                     cancellationToken);
-                var movementExtras = new List<STOK_HAREKETLERI_EK>();
-
-                foreach (var (rowNo, automaticOrderLine) in automaticOrderLines)
-                {
-                    if (!movementGuidByRowNo.TryGetValue(rowNo, out var movementGuid))
-                    {
-                        throw new InvalidOperationException(
-                            "Mikro API warehouse return line could not be matched to the created movement row.");
-                    }
-
-                    movementExtras.Add(AutomaticWarehouseOrderFactory.CreateMovementExtra(
-                        movementGuid,
-                        automaticOrderLine.ssip_Guid,
-                        now));
-                }
-
-                if (automaticOrderLines.Count > 0)
-                {
-                    await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(
-                        automaticOrderLines.Values,
-                        cancellationToken);
-                }
-
-                if (movementExtras.Count > 0)
-                {
-                    await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(
-                        movementExtras,
-                        cancellationToken);
-                }
-
-                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
             }
-            catch
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API automatic warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+    }
+
+    private async Task<Dictionary<int, Guid>?> TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest orderRequest,
+        IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_evrakno_seri == documentSerie &&
+                order.ssip_evrakno_sira == documentOrderNo &&
+                order.ssip_girdepo == orderRequest.InWarehouseNo &&
+                order.ssip_cikdepo == orderRequest.OutWarehouseNo)
+            .Select(order => new
             {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
+                order.ssip_Guid,
+                order.ssip_satirno,
+                order.ssip_stok_kod,
+                order.ssip_miktar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count < expectedRows.Count)
+        {
+            return null;
+        }
+
+        var duplicatedRowNo = rows
+            .GroupBy(row => row.ssip_satirno ?? -1)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicatedRowNo is not null)
+        {
+            throw new InvalidOperationException(
+                "More than one automatic warehouse order line matched the same row number.");
+        }
+
+        var rowByOrderRowNo = rows
+            .Where(row => row.ssip_satirno.HasValue)
+            .ToDictionary(row => row.ssip_satirno!.Value);
+        var result = new Dictionary<int, Guid>(expectedRows.Count);
+
+        foreach (var expectedRow in expectedRows)
+        {
+            if (!rowByOrderRowNo.TryGetValue(expectedRow.OrderRowNo, out var row))
+            {
+                return null;
             }
-        });
+
+            if (!string.Equals(
+                    row.ssip_stok_kod?.Trim(),
+                    expectedRow.Line.StockCode.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                Math.Abs((row.ssip_miktar ?? 0d) - expectedRow.Line.Quantity) > 0.0001d)
+            {
+                throw new InvalidOperationException(
+                    "Mikro API automatic warehouse order line could not be matched safely.");
+            }
+
+            result[expectedRow.OriginalRowNo] = row.ssip_Guid;
+        }
+
+        return result;
+    }
+
+    private AutomaticWarehouseOrderRow[] GetAutomaticWarehouseOrderRows(
+        CreateWarehouseReturnRequest request,
+        IReadOnlyList<CreateWarehouseReturnLineRequest> lines)
+    {
+        var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
+        if (!automationOptions.Enabled ||
+            !automationOptions.CreateForWarehouseReturns ||
+            !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
+        {
+            return [];
+        }
+
+        return lines
+            .Select((line, rowNo) => new AutomaticWarehouseOrderRow(
+                rowNo,
+                rowNo,
+                line))
+            .ToArray();
     }
 
     private async Task<Dictionary<int, DEPOLAR_ARASI_SIPARISLER>> CreateAutomaticWarehouseOrderLinesAsync(
@@ -733,6 +877,11 @@ public sealed class CreateWarehouseReturnUseCase(
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private sealed record AutomaticWarehouseOrderRow(
+        int OriginalRowNo,
+        int OrderRowNo,
+        CreateWarehouseReturnLineRequest Line);
 
     private sealed record RecoveredWarehouseReturnCreate(
         string DocumentSerie,

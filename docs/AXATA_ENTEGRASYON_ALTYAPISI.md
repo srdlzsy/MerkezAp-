@@ -277,6 +277,7 @@ Destekleyen task'lar:
   - Varsayilan WCF operation fallback: `addOutboundOrder`
   - Config ile genelde `addOutboundOrderV2`
   - Hareket tipi: `C01`
+  - AXATA basarili donerse worker basari bayragi `ssip_special1=1` olarak isaretlenir; `MikroWriteRouting:IssuedWarehouseOrder=Database` iken mevcut DB update yolu, `MikroApi` iken `DepolarArasiSiparisDuzeltV2` yolu kullanilir. MikroApi modunda DB fallback yapilmaz, yazim satir GUID'leri uzerinden read-only geri okuma ile dogrulanir.
   - Master alanlari worker parity:
     - `S00TESN = DocumentSerie.DocumentOrderNo`
     - `S00TMUS = InWarehouseNo`

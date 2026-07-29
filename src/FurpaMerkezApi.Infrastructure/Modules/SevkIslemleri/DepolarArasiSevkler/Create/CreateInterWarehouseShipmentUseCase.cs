@@ -1,8 +1,10 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -22,7 +24,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     : ICreateInterWarehouseShipmentUseCase
 {
     private const short MovementFileId = 16;
-    private const short MovementExtraFileId = 590;
     private const short MikroUserNo = 39;
     private const byte MovementType = 2;
     private const byte MovementGenre = 6;
@@ -31,6 +32,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private const byte WaitingShippingState = 0;
     private const int FirstDocumentOrderNo = 0;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
+    private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
@@ -174,13 +176,23 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         var lines = request.Lines.ToArray();
 
         mikroWriteDbContext.ChangeTracker.Clear();
-        await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
+        var linkedWarehouseOrderLines = await GetAndValidateLinkedOrderLinesAsync(
+            request,
+            lines,
+            cancellationToken);
         mikroWriteDbContext.ChangeTracker.Clear();
+
+        var automaticWarehouseOrderLineGuids = await CreateMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+            request,
+            lines,
+            movementDate,
+            cancellationToken);
+        var shipmentLines = ApplyAutomaticWarehouseOrderLineGuids(lines, automaticWarehouseOrderLineGuids);
 
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var payload = InterWarehouseShipmentMikroApiPayloadFactory.Create(
             request,
-            lines,
+            shipmentLines,
             movementDate,
             documentDate,
             documentNo,
@@ -196,7 +208,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             request.SourceWarehouseNo,
             request.TargetWarehouseNo,
             request.TransitWarehouseNo,
-            lines.Length);
+            shipmentLines.Length);
 
         var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
             DahiliStokHareketKaydetPath,
@@ -213,17 +225,13 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             documentSerie,
             documentOrderNo,
             request,
-            lines.Length,
+            shipmentLines.Length,
             movementDate,
             documentDate,
             documentNo,
             cancellationToken);
-        var linkedWarehouseOrderLineCount = await ApplyMikroApiWarehouseOrderLinksAsync(
-            request,
-            lines,
-            recovered.MovementGuidByRowNo,
-            movementDate,
-            cancellationToken);
+        var totalLinkedWarehouseOrderLineCount =
+            linkedWarehouseOrderLines.Count + automaticWarehouseOrderLineGuids.Count;
 
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
@@ -242,7 +250,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             recovered.TargetWarehouseNo,
             recovered.TransitWarehouseNo,
             recovered.LineCount,
-            linkedWarehouseOrderLineCount,
+            totalLinkedWarehouseOrderLineCount,
             recovered.TotalQuantity,
             recovered.TotalAmount,
             options.ConnectionStringName);
@@ -400,91 +408,227 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             movementGuidByRowNo);
     }
 
-    private async Task<int> ApplyMikroApiWarehouseOrderLinksAsync(
+    private async Task<Dictionary<int, Guid>> CreateMikroApiAutomaticWarehouseOrderLineGuidsAsync(
         CreateInterWarehouseShipmentRequest request,
         IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines,
-        IReadOnlyDictionary<int, Guid> movementGuidByRowNo,
         DateTime movementDate,
         CancellationToken cancellationToken)
     {
-        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
-
-        return await executionStrategy.ExecuteAsync(async () =>
+        var automaticRows = GetAutomaticWarehouseOrderRows(request, lines);
+        if (automaticRows.Length == 0)
         {
-            mikroWriteDbContext.ChangeTracker.Clear();
-            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+            return new Dictionary<int, Guid>();
+        }
+
+        if (mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder != MikroWriteMode.MikroApi)
+        {
+            throw new InvalidOperationException(
+                "Mikro API inter warehouse shipment automatic order creation requires MikroWriteRouting:IssuedWarehouseOrder to be MikroApi.");
+        }
+
+        var orderDate = movementDate;
+        var deliveryDate = movementDate;
+        var documentSerie = $"F{request.TargetWarehouseNo}";
+        var documentOrderNo = await GetNextWarehouseOrderDocumentOrderNoAsync(
+            documentSerie,
+            cancellationToken);
+        var orderRequest = new CreateIssuedWarehouseOrderRequest(
+            request.TargetWarehouseNo,
+            request.SourceWarehouseNo,
+            orderDate,
+            deliveryDate,
+            request.Description,
+            automaticRows
+                .Select(row => new CreateIssuedWarehouseOrderLineRequest(
+                    row.Line.StockCode,
+                    row.Line.Quantity,
+                    null,
+                    row.Line.UnitPrice,
+                    row.Line.UnitPointer,
+                    row.Line.Description ?? request.Description,
+                    null,
+                    row.Line.ProjectCode,
+                    row.Line.ProductResponsibilityCenter))
+                .ToArray());
+        var payload = IssuedWarehouseOrderMikroApiPayloadFactory.Create(
+            orderRequest,
+            orderRequest.Lines,
+            orderDate,
+            deliveryDate,
+            documentSerie,
+            documentOrderNo);
+
+        logger.LogInformation(
+            "Automatic warehouse order for inter warehouse shipment is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}",
+            DepolarArasiSiparisKaydetPath,
+            documentSerie,
+            documentOrderNo,
+            orderRequest.InWarehouseNo,
+            orderRequest.OutWarehouseNo,
+            automaticRows.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DepolarArasiSiparisKaydetPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API automatic warehouse order create failed.");
+        }
+
+        var recovered = await RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+            documentSerie,
+            documentOrderNo,
+            orderRequest,
+            automaticRows,
+            cancellationToken);
+        var recoveredGuid = recovered.Values.FirstOrDefault();
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{documentSerie}/{documentOrderNo}",
+            recoveredGuid == Guid.Empty ? null : recoveredGuid,
+            cancellationToken: cancellationToken);
+
+        return recovered;
+    }
+
+    private async Task<Dictionary<int, Guid>> RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest orderRequest,
+        IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var response = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+                documentSerie,
+                documentOrderNo,
+                orderRequest,
+                expectedRows,
                 cancellationToken);
 
-            try
+            if (response is not null)
             {
-                var now = DateTime.Now;
-                var linkedOrderLines = await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
-                var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
-                    request,
-                    lines,
-                    movementDate,
-                    now,
+                return response;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
                     cancellationToken);
-                var movementExtras = new List<STOK_HAREKETLERI_EK>();
-
-                for (var rowNo = 0; rowNo < lines.Count; rowNo++)
-                {
-                    var line = lines[rowNo];
-                    var warehouseOrderLineGuid = line.WarehouseOrderLineGuid;
-                    if (!warehouseOrderLineGuid.HasValue &&
-                        automaticOrderLines.TryGetValue(rowNo, out var automaticOrderLine))
-                    {
-                        warehouseOrderLineGuid = automaticOrderLine.ssip_Guid;
-                    }
-
-                    if (!warehouseOrderLineGuid.HasValue)
-                    {
-                        continue;
-                    }
-
-                    if (!movementGuidByRowNo.TryGetValue(rowNo, out var movementGuid))
-                    {
-                        throw new InvalidOperationException(
-                            "Mikro API inter warehouse shipment line could not be matched to the created movement row.");
-                    }
-
-                    movementExtras.Add(AutomaticWarehouseOrderFactory.CreateMovementExtra(
-                        movementGuid,
-                        warehouseOrderLineGuid.Value,
-                        now));
-                }
-
-                if (automaticOrderLines.Count > 0)
-                {
-                    await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(
-                        automaticOrderLines.Values,
-                        cancellationToken);
-                }
-
-                if (movementExtras.Count > 0)
-                {
-                    await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(
-                        movementExtras,
-                        cancellationToken);
-                }
-
-                if (ShouldUpdateLinkedOrderDeliveredQuantities(request, lines))
-                {
-                    ApplyLinkedOrderDeliveredQuantities(lines, linkedOrderLines, now);
-                }
-
-                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-
-                return linkedOrderLines.Count + automaticOrderLines.Count;
             }
-            catch
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API automatic warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+    }
+
+    private async Task<Dictionary<int, Guid>?> TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest orderRequest,
+        IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_evrakno_seri == documentSerie &&
+                order.ssip_evrakno_sira == documentOrderNo &&
+                order.ssip_girdepo == orderRequest.InWarehouseNo &&
+                order.ssip_cikdepo == orderRequest.OutWarehouseNo)
+            .Select(order => new
             {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
+                order.ssip_Guid,
+                order.ssip_satirno,
+                order.ssip_stok_kod,
+                order.ssip_miktar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count < expectedRows.Count)
+        {
+            return null;
+        }
+
+        var duplicatedRowNo = rows
+            .GroupBy(row => row.ssip_satirno ?? -1)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicatedRowNo is not null)
+        {
+            throw new InvalidOperationException(
+                "More than one automatic warehouse order line matched the same row number.");
+        }
+
+        var rowByOrderRowNo = rows
+            .Where(row => row.ssip_satirno.HasValue)
+            .ToDictionary(row => row.ssip_satirno!.Value);
+        var result = new Dictionary<int, Guid>(expectedRows.Count);
+
+        foreach (var expectedRow in expectedRows)
+        {
+            if (!rowByOrderRowNo.TryGetValue(expectedRow.OrderRowNo, out var row))
+            {
+                return null;
             }
-        });
+
+            if (!string.Equals(
+                    row.ssip_stok_kod?.Trim(),
+                    expectedRow.Line.StockCode.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                Math.Abs((row.ssip_miktar ?? 0d) - expectedRow.Line.Quantity) > 0.0001d)
+            {
+                throw new InvalidOperationException(
+                    "Mikro API automatic warehouse order line could not be matched safely.");
+            }
+
+            result[expectedRow.OriginalRowNo] = row.ssip_Guid;
+        }
+
+        return result;
+    }
+
+    private AutomaticWarehouseOrderRow[] GetAutomaticWarehouseOrderRows(
+        CreateInterWarehouseShipmentRequest request,
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines)
+    {
+        var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
+        if (!automationOptions.Enabled ||
+            !automationOptions.CreateForInterWarehouseShipments ||
+            !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
+        {
+            return [];
+        }
+
+        return lines
+            .Select((line, rowNo) => new { line, rowNo })
+            .Where(item => !item.line.WarehouseOrderLineGuid.HasValue)
+            .Select((item, orderRowNo) => new AutomaticWarehouseOrderRow(
+                item.rowNo,
+                orderRowNo,
+                item.line))
+            .ToArray();
+    }
+
+    private static CreateInterWarehouseShipmentLineRequest[] ApplyAutomaticWarehouseOrderLineGuids(
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines,
+        IReadOnlyDictionary<int, Guid> automaticWarehouseOrderLineGuids)
+    {
+        if (automaticWarehouseOrderLineGuids.Count == 0)
+        {
+            return lines.ToArray();
+        }
+
+        return lines
+            .Select((line, rowNo) => automaticWarehouseOrderLineGuids.TryGetValue(rowNo, out var warehouseOrderLineGuid)
+                ? line with { WarehouseOrderLineGuid = warehouseOrderLineGuid }
+                : line)
+            .ToArray();
     }
 
     private async Task<Dictionary<int, DEPOLAR_ARASI_SIPARISLER>> CreateAutomaticWarehouseOrderLinesAsync(
@@ -822,91 +966,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         };
     }
 
-    private static STOK_HAREKETLERI_EK CreateMovementExtra(
-        Guid movementGuid,
-        Guid warehouseOrderLineGuid,
-        DateTime now) =>
-        new()
-        {
-            sthek_Guid = Guid.NewGuid(),
-            sthek_DBCno = 0,
-            sthek_SpecRECno = 0,
-            sthek_iptal = false,
-            sthek_fileid = MovementExtraFileId,
-            sthek_hidden = false,
-            sthek_kilitli = false,
-            sthek_degisti = false,
-            sthek_checksum = 0,
-            sthek_create_user = MikroUserNo,
-            sthek_create_date = now,
-            sthek_lastup_user = MikroUserNo,
-            sthek_lastup_date = now,
-            sthek_special1 = string.Empty,
-            sthek_special2 = string.Empty,
-            sthek_special3 = string.Empty,
-            sthek_related_uid = movementGuid,
-            sth_subesip_uid = warehouseOrderLineGuid,
-            sth_bkm_uid = Guid.Empty,
-            sth_karsikons_uid = Guid.Empty,
-            sth_rez_uid = Guid.Empty,
-            sth_optamam_uid = Guid.Empty,
-            sth_iadeTlp_uid = Guid.Empty,
-            sth_HalSatis_uid = Guid.Empty,
-            sth_ciroprim_uid = Guid.Empty,
-            sth_iade_evrak_seri = string.Empty,
-            sth_iade_evrak_sira = 0,
-            sth_yat_tes_kodu = string.Empty,
-            sth_ihracat_kredi_kodu = string.Empty,
-            sth_diib_belge_no = string.Empty,
-            sth_diib_satir_no = 0,
-            sth_mensey_ulke_tipi = 0,
-            sth_mensey_ulke_kodu = string.Empty,
-            sth_halrehmiktari = 0d,
-            sth_halrehfiyati = 0d,
-            sth_halsandikmiktari = 0d,
-            sth_halsandikfiyati = 0d,
-            sth_halsandikkdvtutari = 0d,
-            sth_HalKomisyonuKdv = 0d,
-            sth_HalRusum = 0d,
-            sth_satistipi = 0,
-            sth_vardiya_tarihi = MikroEmptyDate,
-            sth_vardiya_no = 0,
-            sth_direkt_iscilik_1 = 0d,
-            sth_direkt_iscilik_2 = 0d,
-            sth_direkt_iscilik_3 = 0d,
-            sth_direkt_iscilik_4 = 0d,
-            sth_direkt_iscilik_5 = 0d,
-            sth_genel_uretim_1 = 0d,
-            sth_genel_uretim_2 = 0d,
-            sth_genel_uretim_3 = 0d,
-            sth_genel_uretim_4 = 0d,
-            sth_genel_uretim_5 = 0d,
-            sth_fis_tarihi2 = MikroEmptyDate,
-            sth_fis_sirano2 = 0,
-            sth_fiyfark_esas_evrak_seri = string.Empty,
-            sth_fiyfark_esas_evrak_sira = 0,
-            sth_fiyfark_esas_satir_no = 0,
-            sth_istisna = string.Empty,
-            sth_otv_tevkifat_turu = 0,
-            sth_otv_tevkifat_tutari = 0d,
-            sth_servishar_uid = Guid.Empty,
-            sth_bakimsarf_uid = Guid.Empty,
-            sth_utsbildirimturu = 0,
-            sth_utshekzayiatturu = 0,
-            sth_utsimhabertarafgerekcesi = 0,
-            sth_utsdigergerekceaciklamasi = string.Empty,
-            sth_hizlisatis_promosyonkodu_1 = string.Empty,
-            sth_hizlisatis_promosyonkodu_2 = string.Empty,
-            sth_hizlisatis_promosyonkodu_3 = string.Empty,
-            sth_hks_kunye_no = string.Empty,
-            sth_hks_carikodu = string.Empty,
-            sth_tevkifat_islem_turu_idx = 0,
-            sth_otv_istisnakodu = string.Empty,
-            sth_karsi_program_kodu = string.Empty,
-            sth_sas_kalem_no = string.Empty,
-            sth_yerlilik_orani = 0
-        };
-
     private static void Validate(CreateInterWarehouseShipmentRequest request)
     {
         if (request.SourceWarehouseNo <= 0)
@@ -972,6 +1031,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private sealed record AutomaticWarehouseOrderRow(
+        int OriginalRowNo,
+        int OrderRowNo,
+        CreateInterWarehouseShipmentLineRequest Line);
 
     private sealed record RecoveredInterWarehouseShipmentCreate(
         string DocumentSerie,

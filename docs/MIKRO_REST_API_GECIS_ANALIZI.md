@@ -194,7 +194,7 @@ REST karsiliklari:
 | Islem | Mikro REST endpoint | Not |
 |---|---|---|
 | Create | `POST /Api/apiMethods/DepolarArasiSiparisKaydetV2` | Net endpoint var |
-| Update | `POST /Api/apiMethods/DepolarArasiSiparisDuzeltV2` | Mevcut kodda manuel update yok |
+| Update | `POST /Api/apiMethods/DepolarArasiSiparisDuzeltV2` | AXATA canli dispatch sonrasi `ssip_special1=1` isaretlemesi MikroApi modunda bu endpoint ile yapilir |
 | GUID satir sil | `POST /Api/apiMethods/DepolarArasiSiparisGuidSilV2` | GUID gerektirir |
 | Belge sil | `POST /Api/apiMethods/DepolarArasiSiparisSilV2` | Belge seri/sira veya GUID davranisi test edilmeli |
 
@@ -203,6 +203,7 @@ Gecis notu:
 - Mevcut kod `documentSerie = F{InWarehouseNo}` ve sirayi DB max ile uretiyor.
 - REST API kendi sirasini uretebilir veya verilen seri/sirayi kabul edebilir; bu davranis test edilmeli.
 - `ssip_rezervasyon_miktari`, `ssip_paket_kod`, `ssip_sormerkezi` gibi alanlar mapping'e eklenmeli.
+- `issued-warehouse-order-sync` AXATA'ya basarili gonderimden sonra `MikroWriteRouting:IssuedWarehouseOrder=MikroApi` ise `DepolarArasiSiparisDuzeltV2` ile satir `ssip_Guid` + `ssip_special1=1` gonderir; DB fallback yoktur, sadece read-only geri okuma ile tum satirlarin isaretlendigi dogrulanir.
 
 ### Verilen Firma Siparisi
 
@@ -371,7 +372,7 @@ REST karsiliklari:
 
 | Islem | Mikro REST endpoint | Not |
 |---|---|---|
-| Sevk create | `POST /Api/apiMethods/DahiliStokHareketKaydetV2` veya `POST /Api/apiMethods/IrsaliyeKaydetV2` | Hangisinin dogru oldugu canli payload ile test edilmeli |
+| Sevk create | `POST /Api/apiMethods/DahiliStokHareketKaydetV2` | Canli bagli siparis ornegi `sth_subesip_uid` ile dogrulandi |
 | Otomatik siparis create | `POST /Api/apiMethods/DepolarArasiSiparisKaydetV2` | Mevcut otomasyon korunacaksa gerekir |
 | Update | `POST /Api/apiMethods/DahiliStokHareketDuzeltV2` veya `POST /Api/apiMethods/IrsaliyeDuzeltV2` | Belge tipine gore secilir |
 | Satir sil | `GuidSilV2` veya `SatirSilV2` ailesi | GUID saklama zorunlu |
@@ -383,9 +384,11 @@ Gecis notu:
 - `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
 - `MikroApi` modu stok hareketini `POST /Api/apiMethods/DahiliStokHareketKaydetV2` endpoint'i ile olusturur.
 - Payload mapper mevcut sistem davranisini korur: `sth_evraktip=17`, `sth_tip=2`, `sth_cins=6`, `sth_normal_iade=0`, kaynak depo `sth_cikis_depo_no`, transit depo `sth_giris_depo_no`, hedef depo `sth_nakliyedeposu`, durum `sth_nakliyedurumu=0`.
+- Mikro destek cevabina gore bagli depo siparisi satirlari payload satirinda `sth_subesip_uid = warehouseOrderLineGuid` olarak gonderilir; Mikro hareketi ilgili depo siparisine bu alanla baglar ve response icinde olusan hareket `guid` bilgisini dondurur.
 - REST create sonrasi hareket satirlari `STOK_HAREKETLERI` tablosundan `sth_Guid` ile geri okunur.
-- Hareket-ek (`STOK_HAREKETLERI_EK`) siparis baglantisi ve bagli siparis teslim miktari update davranisi Mikro API contract'inda net olmadigi icin REST hareketinden sonra DB tamamlayici adim olarak korunur.
-- Otomatik depo siparisi olusturma aciksa `DEPOLAR_ARASI_SIPARISLER` satirlari mevcut DB factory ile olusturulmaya devam eder ve hareket-ek baglantisi kurulur.
+- `warehouseOrderLineGuid` ile gelen bagli satirlarda `STOK_HAREKETLERI_EK` linki ve siparis teslim/kapanma etkisi Mikro tarafina birakilir; ayni satir icin DB'den tekrar hareket-ek insert veya teslim miktari update yapilmaz.
+- `MikroApi` modunda otomatik depo siparisi olusturma aciksa once `POST /Api/apiMethods/DepolarArasiSiparisKaydetV2` ile depo siparisi olusturulur, olusan `DEPOLAR_ARASI_SIPARISLER.ssip_Guid` degerleri geri okunur ve sevk payload'ina `sth_subesip_uid` olarak yazilir.
+- API-only davranisi korumak icin otomatik depo siparisli sevkte `MikroWriteRouting:IssuedWarehouseOrder` de `MikroApi` olmalidir; degilse sevk create baslamadan hata verilir.
 - Canli ortamda tek satirli, bagli siparisli ve otomatik siparisli senaryolar ayri ayri dogrulanmali.
 
 ### Depo Iade
@@ -403,7 +406,7 @@ REST karsiliklari:
 
 | Islem | Mikro REST endpoint | Not |
 |---|---|---|
-| Create | `POST /Api/apiMethods/DahiliStokHareketKaydetV2` veya `POST /Api/apiMethods/IrsaliyeKaydetV2` | Iade tipi/cinsi test edilmeli |
+| Create | `POST /Api/apiMethods/DahiliStokHareketKaydetV2` | `sth_normal_iade=1` depo iadesi payload mapper ile baglandi |
 | Otomatik siparis create | `POST /Api/apiMethods/DepolarArasiSiparisKaydetV2` | Otomasyon aciksa gerekir |
 | Update | ilgili `...DuzeltV2` | Mevcut kodda update yok |
 | Sil | ilgili `...SilV2` / `...GuidSilV2` | GUID ve belge kimligi gerekir |
@@ -414,8 +417,11 @@ Gecis notu:
 - `Database`, `MikroApi` ve `DualShadow` modlari desteklenir.
 - `MikroApi` modu stok hareketini `POST /Api/apiMethods/DahiliStokHareketKaydetV2` endpoint'i ile olusturur.
 - Payload mapper mevcut sistem davranisini korur: `sth_evraktip=17`, `sth_tip=2`, `sth_cins=6`, `sth_normal_iade=1`, kaynak depo `sth_cikis_depo_no`, transit depo `sth_giris_depo_no`, hedef depo `sth_nakliyedeposu`, durum `sth_nakliyedurumu=0`.
+- Mikro destek cevabina gore bagli depo siparisi satirlari payload satirinda `sth_subesip_uid` olarak gonderilir; depo iadesinde UI'dan bagli satir GUID'i alinmaz, otomasyonla olusan `DEPOLAR_ARASI_SIPARISLER.ssip_Guid` degeri kullanilir.
 - REST create sonrasi hareket satirlari `STOK_HAREKETLERI` tablosundan `sth_Guid` ile geri okunur.
-- Otomatik depo siparisi olusturma aciksa `DEPOLAR_ARASI_SIPARISLER` satirlari mevcut DB factory ile olusturulmaya devam eder ve hareket-ek baglantisi kurulur.
+- `MikroApi` modunda otomatik depo siparisi olusturma aciksa once `POST /Api/apiMethods/DepolarArasiSiparisKaydetV2` ile depo siparisi olusturulur, olusan `ssip_Guid` degerleri geri okunur ve iade payload'ina `sth_subesip_uid` olarak yazilir.
+- API-only davranisi korumak icin otomatik depo siparisli iadede `MikroWriteRouting:IssuedWarehouseOrder` de `MikroApi` olmalidir; degilse depo iade create baslamadan hata verilir.
+- `MikroApi` modunda `DEPOLAR_ARASI_SIPARISLER`, `STOK_HAREKETLERI_EK` veya siparis teslim miktari icin DB tamamlayici insert/update yapilmaz; link/teslim etkisi Mikro tarafina birakilir.
 - Canli ortamda otomatik siparis kapali ve acik depo iade senaryolari ayri ayri dogrulanmali.
 
 ### Firma Mal Kabul
@@ -426,11 +432,11 @@ Mevcut kod:
 - Mikro tablolar:
   - `STOK_HAREKETLERI`
   - gerekirse iade hareketi olarak yine `STOK_HAREKETLERI`
-  - bagli siparis varsa `SIPARISLER` teslim miktari update
+  - bagli sipariste `Database` modunda `SIPARISLER` teslim miktari update; `MikroApi` modunda `sth_sip_uid` ile Mikro API teslim etkisi
 - Islem:
   - firma mal kabul hareketi create eder.
   - eksik/fazla ve iade senaryolarini yonetir.
-  - siparis teslim miktarini uygular.
+  - siparis teslim miktarini Database modunda uygular, MikroApi modunda bu etkiyi Mikro API'ye birakir.
 
 REST karsiliklari:
 
@@ -449,8 +455,9 @@ Gecis notu:
 - `MikroApi` modu ana mal kabul hareketlerini `POST /Api/apiMethods/IrsaliyeKaydetV2` endpoint'i ile olusturur.
 - Payload mapper mevcut sistem davranisini korur: `sth_evraktip=13`, `sth_tip=0`, `sth_cins=0`, `sth_normal_iade=0`, cari kodu, depo, seri/sira, siparis GUID, SKT, teslim eden/alan, parti/lot, proje ve sorumluluk merkezi alanlari maplenir.
 - REST create sonrasi ana mal kabul hareketleri `STOK_HAREKETLERI` tablosundan `sth_Guid` ile geri okunur ve mevcut `CreateCompanyReceivingResponse` formatina cevrilir.
-- Bagli siparis teslim miktari update'i API contract'inda net olmadigi icin REST hareketinden sonra DB tamamlayici adim olarak korunur.
-- Kismi kabulde otomatik firma iade hareketi aciksa mevcut DB davranisi korunur; iade hareketleri `STOK_HAREKETLERI` tablosuna DB tamamlayici adimda yazilir.
+- Bagli siparis satirinda `sth_sip_uid = orderGuid` payload icinde gonderilir; `MikroApi` modunda `SIPARISLER.sip_teslim_miktar` icin DB tamamlayici update yapilmaz, teslim etkisi Mikro API'ye birakilir.
+- Kismi kabulde otomatik firma iade hareketi aciksa iade hareketleri de `POST /Api/apiMethods/IrsaliyeKaydetV2` ile olusturulur; olusan iade satir GUID'leri geri okunup response'taki `returnMovementGuid` alanlarina yazilir.
+- `MikroApi` modunda firma mal kabul icin Mikro is tablolarina manuel `STOK_HAREKETLERI` insert'i veya `SIPARISLER` update'i yapilmaz; DB sadece varlik kontrolu ve recovery icin okunur.
 - Offline `clientRequestId` idempotency akisi korunur; trace degeri `sth_eticaret_kanal_kodu` alanina payload ile tasinir.
 - Canli ortamda siparissiz, siparis bagli, fazla kabul ve kismi kabul/otomatik iade senaryolari ayri ayri dogrulanmali.
 
@@ -730,3 +737,123 @@ En temiz baslangic:
 5. Test sonucu olumluysa `DepolarArasiSiparisKaydetV2` ile devam et.
 
 Bu sira sistemin canli operasyon riskini dusuk tutar ve Mikro REST API davranisini kontrollu sekilde ogrenmemizi saglar.
+
+## MikroApi Gecisi Pilot / Platform Testleri
+
+Bu bolum canliya gecmeden once test veya pilot ortamda calistirilacak zorunlu test setidir. Her testte request body, response body, MikroApi audit kaydi, geri okunan Mikro belge/satir bilgisi ve varsa yan sistem etkisi kaydedilmelidir.
+
+### Genel Platform Testleri
+
+- `MikroApi` config dogrulama: `BaseUrl`, `FirmaKodu`, `CalismaYili`, `KullaniciKodu`, `SifreAnahtari`, `ApiKey`, timeout ve retry ayarlari dogru ortam degerleriyle calismali.
+- Auth testi: gunluk MD5 sifre uretimi ile Mikro API login veya basit health/probe cagrisi basarili donmeli.
+- Audit testi: her POST icin `MikroApiWriteAudit` kaydinda path, request, response, HTTP status, Mikro `StatusCode`, hata mesaji ve recovery bilgisi gorulmeli.
+- Gizli veri testi: log ve audit icinde sifre/API key gibi alanlar maskelenmis olmali.
+- Timeout/retry testi: timeout durumunda kontrollu hata donmeli; retry duplicate belge olusturmamali.
+- Idempotency testi: `clientRequestId` destekleyen akislarda ayni request tekrar geldiginde ayni sonuc toparlanmali; farkli payload ile ayni id gelirse hata donmeli.
+- Yetki testi: depo bazli create/list/detail akislari normal depo yetkisi ve `all-warehouses` yetkisi ile ayri ayri denenmeli.
+- Config routing testi: ayni islem `Database` ve `MikroApi` modunda ayri calistirilmali; `DualShadow` icin dry-run olmadigi bilindigi icin canli yazim gibi kullanilmamali.
+- Recovery testi: MikroApi basarili dondukten sonra DB readback ile belge/satir bulunmali; bulunamazsa backend basarili gibi davranmamali.
+- Hata response testi: eksik zorunlu alan, hatali stok/cari/depo, kapali siparis ve fazla miktar gibi durumlarda backend anlamli hata dondurmeli.
+- Performans testi: listeleme read path DB'de kalirken create sonrasi readback suresi kabul edilebilir olmali.
+
+### Sayim Sonuclari
+
+- `MikroWriteRouting:InventoryCount=MikroApi` ile tek satirli sayim olustur.
+- Cok satirli sayim olustur; farkli stok, barkod, birim pointer ve miktar kombinasyonlarini dene.
+- Ayni `clientRequestId` ile tekrar gonder; duplicate sayim olusmadigini ve response'un toparlandigini dogrula.
+- Mikro `SAYIM_SONUCLARI` geri okumasinda belge no, depo, tarih, satir sayisi ve toplam miktar UI response'u ile eslesmeli.
+
+### Verilen Depo Siparisi
+
+- `MikroWriteRouting:IssuedWarehouseOrder=MikroApi` ile tek satirli depo siparisi olustur.
+- Cok satirli depo siparisi olustur; `ssip_Guid`, seri, sira, giris depo, cikis depo, miktar ve birim bilgilerini geri oku.
+- Ayni seri/sira icin duplicate riskini test et; tekrar gonderim yeni evrak mi aciyor, hata mi donuyor kaydet.
+- `DepolarArasiSiparisDuzeltV2` ile `ssip_Guid + ssip_special1=1` isaretleme testini yap; tum satirlar read-only geri okumada `1` olmali.
+
+### Verilen Firma Siparisi
+
+- `MikroWriteRouting:IssuedCompanyOrder=MikroApi` ile tek satirli firma siparisi olustur.
+- Cok satirli sipariste cari, stok, miktar, fiyat, proje ve sorumluluk merkezi alanlarini geri oku.
+- Hatali cari/stok ve sifir miktar senaryolarinda backend hata response'unu kaydet.
+- Siparis create sonrasi sonraki mal kabul akisi icin `sip_Guid` degerinin dogru okunabildigini dogrula.
+
+### Stok Fisi / Sarf / Zayiat
+
+- `MikroWriteRouting:StockReceipt=MikroApi` ile desteklenen stok hareket tiplerini tek tek dene.
+- `sth_tip`, `sth_cins`, `sth_evraktip`, depo, stok, miktar, fiyat ve belge no alanlarini DB write ornegiyle karsilastir.
+- Iptal/silme kullanilacaksa ilgili `DahiliStokHareket...SilV2` endpoint davranisini ayri test et; belge mi satir mi sildigini kaydet.
+
+### Virman
+
+- `MikroWriteRouting:Virman=MikroApi` ile giris/cikis depo virmanini olustur.
+- Stok hareketinde giris depo, cikis depo, miktar, birim ve hareket cinsi DB mode ornegiyle ayni olmali.
+- Negatif miktar, ayni depo, hatali depo ve hatali stok senaryolarini hata testi olarak calistir.
+
+### Firma Sevk / Firma Iade
+
+- `MikroWriteRouting:CompanyMovement=MikroApi` ile firma sevk olustur.
+- Firma iade veya iade normal tipi gerekiyorsa ayri evrakla test et.
+- Cari, depo, `sth_evraktip`, `sth_tip`, `sth_cins`, `sth_normal_iade`, stok, miktar, fiyat ve vergi alanlarini geri oku.
+- E-irsaliye veya Uyumsoft'a etki edecek evraklarda e-belge akisi ayrica test edilmeli.
+
+### Depolar Arasi Sevk
+
+- `MikroWriteRouting:InterWarehouseShipment=MikroApi` ile siparissiz tek satirli sevk olustur.
+- Var olan depo siparis satiri ile `warehouseOrderLineGuid` gonder; Mikro payload'inda `sth_subesip_uid` gitmeli.
+- Sevk sonrasi `STOK_HAREKETLERI_EK.sth_subesip_uid` linki Mikro tarafinda olusmali.
+- Bagli sipariste `ssip_teslim_miktar` ve kapanma etkisi Mikro tarafinda beklenen sekilde olusmali.
+- Otomatik depo siparisi gerekiyorsa `MikroWriteRouting:IssuedWarehouseOrder=MikroApi` ile once siparisin API'den olustugunu, sonra sevkin bu `ssip_Guid` ile baglandigini dogrula.
+- Kismi sevk, tam sevk, kalan miktari asan sevk, hatali hedef depo ve hatali transit depo senaryolarini ayri calistir.
+
+### Depo Iade
+
+- `MikroWriteRouting:WarehouseReturn=MikroApi` ile otomatik siparis kapaliyken depo iadesi olustur.
+- Otomatik siparis acikken once `DepolarArasiSiparisKaydetV2`, sonra `DahiliStokHareketKaydetV2` akisi calismali.
+- Iade hareketinde `sth_normal_iade=1`, `sth_evraktip=17`, depo ve miktar alanlarini geri oku.
+- `sth_subesip_uid` linki, `STOK_HAREKETLERI_EK` kaydi ve siparis teslim etkisi Mikro tarafinda dogrulanmali.
+- `IssuedWarehouseOrder` MikroApi degilken otomatik siparisli iade baslamadan hata vermeli; DB tamamlayici insert yapmamali.
+
+### Firma Mal Kabul
+
+- `MikroWriteRouting:CompanyReceiving=MikroApi` ile siparissiz tam kabul olustur.
+- `orderGuid` dolu siparis bagli tam kabul olustur; `sth_sip_uid` ve siparis teslim etkisi dogrulanmali.
+- Kismi kabul test et: `dispatchQuantity > acceptedQuantity` iken ana mal kabul ve otomatik firma iade hareketi MikroApi ile olusmali.
+- `autoCreateReturnForPartialAcceptance=false` test et; iade hareketi olusmamali, response manuel cozum bekleyen durum dondurmeli.
+- Fazla kabul senaryosu: `allowOrderOverReceiving=false` hata vermeli, `true` ise kalan siparisli ve fazla kisim siparissiz bolunmeli.
+- Offline/idempotency senaryosu: ayni `clientRequestId` ile tekrar request sonucu toparlanmali.
+
+### Depo Mal Kabul Kabul Islemi
+
+- `MikroWriteRouting:WarehouseReceivingAcceptance=MikroApi` ile bekleyen depolar arasi mal kabul satirlarini kabul et.
+- `DahiliStokHareketDuzeltV2` sonrasi hareket satirlarinda kabul miktari ve nakliye durumu beklenen hale gelmeli.
+- Tam kabul, kismi kabul, sifir kabul ve fazla kabul hatasi ayri test edilmeli.
+- Kabul sonrasi depo mal kabul farklari ve detay endpointleri yeni durumu dogru gostermeli.
+
+### AXATA Entegrasyonu
+
+- Worker/scheduler acikken normal task'larin Mikro'ya belge yazmadigini, sadece Outbox/payload urettigini dogrula.
+- `issued-warehouse-order-sync` manuel live dispatch ile AXATA `addOutboundOrder*` basarili donmeli.
+- `IssuedWarehouseOrder=MikroApi` iken dispatch sonrasi `ssip_special1=1` isaretleme `DepolarArasiSiparisDuzeltV2` ile yapilmali; DB update fallback olmamali.
+- `IssuedWarehouseOrder=Database` iken eski DB update davranisi korunmali.
+- Live audit `unsyncedWarehouseOrders`, `sentWarehouseOrdersMissingMikroShipments`, `sentWarehouseOrdersWithShipmentDifferences` listelerini dogru uretmeli.
+- C01 import testinde AXATA teslimati Mikro depolar arasi sevk fisine cevrilmeli; `sth_subesip_uid` linki olusmali.
+- C01 belge bazli rescue testinde `status=0` ve `status=1` arama davranisi, guvenli satir eslesmesi ve duplicate fis engeli dogrulanmali.
+- ACK testinde Mikro yazim basarili olmadan AXATA `ENT006.S06STAT=1` yapilmamali.
+
+### Duzeltme ve Silme Aileleri
+
+- Depo siparisi update: `DepolarArasiSiparisDuzeltV2` ile miktar ve `ssip_special1` gibi alanlar GUID bazli guncellenmeli.
+- Depo siparisi GUID silme: `DepolarArasiSiparisGuidSilV2` satir silme davranisi test edilmeli.
+- Firma siparisi update/sil: `SiparisDuzeltV2`, `SiparisGuidSilV2`, `SiparisSilV2` davranisi belge ve satir bazinda ayrilmali.
+- Dahili stok hareket update/sil: `DahiliStokHareketDuzeltV2`, `DahiliStokHareketGuidSilV2`, `DahiliStokHareketSilV2` icin GUID ve belge kimligi davranisi kaydedilmeli.
+- Irsaliye update/sil: `IrsaliyeDuzeltV2`, `IrsaliyeSatirSilV2`, `IrsaliyeSilV2` e-belgeye etkisiyle birlikte test edilmeli.
+- Duzeltme/silme testleri canli pilotta once test firma/yil veya geri alinabilir evraklarla yapilmali.
+
+### Kapanis Kabul Kriterleri
+
+- Her MikroApi create/update icin API response basarili, audit tamamlanmis ve DB readback dogrulanmis olmali.
+- MikroApi modunda is tablolarina manuel DB insert/update kalmamali; DB sadece readback, dogrulama ve rapor icin okunmali.
+- Database moduna geri donus ayni config degisikligiyle calismali.
+- UI response alanlari Database ve MikroApi modunda ayni sozlesmeyi korumali.
+- Yetki, depo scope, duplicate, timeout, recovery ve yan sistem etkileri test kanitiyla kapatilmali.
+- Pilot evraklar icin Mikro ekraninda belge, satir, link, teslim miktari ve e-belge/AXATA durumlari operasyon ekibiyle birlikte onaylanmali.
