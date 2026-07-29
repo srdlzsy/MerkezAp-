@@ -98,7 +98,7 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
 
         modelBuilder.Entity<AuthorizationFileEntity>(entity =>
         {
-            entity.ToTable("AuthorizationFiles");
+            entity.ToTable("AuthorizationFile");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Name).HasMaxLength(100);
             entity.Property(item => item.UpdateDate).HasColumnType("datetime");
