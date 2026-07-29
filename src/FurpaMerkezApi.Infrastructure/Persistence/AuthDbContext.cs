@@ -21,6 +21,12 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<FeedbackItem> FeedbackItems => Set<FeedbackItem>();
 
+    public DbSet<Announcement> Announcements => Set<Announcement>();
+
+    public DbSet<AnnouncementTarget> AnnouncementTargets => Set<AnnouncementTarget>();
+
+    public DbSet<AnnouncementRead> AnnouncementReads => Set<AnnouncementRead>();
+
     public DbSet<DocumentFlow> DocumentFlows => Set<DocumentFlow>();
 
     public DbSet<DocumentFlowEvent> DocumentFlowEvents => Set<DocumentFlowEvent>();

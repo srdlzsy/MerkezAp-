@@ -91,6 +91,16 @@ public static class PermissionCatalog
         new("list-all", "Tumunu Listele")
     ];
 
+    private static readonly PermissionActionDefinition[] AnnouncementActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("create", "Ekle"),
+        new("update", "Guncelle"),
+        new("archive", "Arsivle"),
+        new("all-warehouses", "Tum Depolar")
+    ];
+
     private static readonly PermissionActionDefinition[] CashSummaryEntryActions =
     [
         new("list", "Listele"),
@@ -150,6 +160,7 @@ public static class PermissionCatalog
 
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
+        ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "duyurular", "Duyurular", AnnouncementActions),
 
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "cihazlar", "Cihazlar"),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "sube-ayarlari", "SubeAyarlari"),

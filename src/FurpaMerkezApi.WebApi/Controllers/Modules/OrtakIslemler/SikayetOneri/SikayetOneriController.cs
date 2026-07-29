@@ -71,10 +71,16 @@ public sealed class HomeSikayetOneriController(ISikayetOneriService service) : C
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class YonetimSikayetOneriController(ISikayetOneriService service) : ControllerBase
 {
-    private const string AdminRoleName = "Admin";
-    private const string AdministratorRoleName = "Administrator";
+    private const string ModuleCode = "ortak-islemler";
+    private const string MenuCode = "sikayet-oneri";
+
+    private const string ListPolicy = ModuleCode + "." + MenuCode + ".list";
+    private const string DetailPolicy = ModuleCode + "." + MenuCode + ".detail";
+    private const string UpdatePolicy = ModuleCode + "." + MenuCode + ".update";
+    private const string ListAllPolicy = ModuleCode + "." + MenuCode + ".list-all";
 
     [HttpGet]
+    [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<FeedbackItemDto>>> List(
@@ -95,6 +101,7 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(FeedbackItemDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<FeedbackItemDto>> GetById(
@@ -108,17 +115,13 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
     }
 
     [HttpPatch("{id:guid}/okundu")]
+    [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(FeedbackItemDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<FeedbackItemDto>> MarkAsRead(
         Guid id,
         CancellationToken cancellationToken)
     {
-        if (!CanManageFeedback())
-        {
-            return Forbid();
-        }
-
         return Ok(await service.MarkAsReadAsync(
             id,
             new FeedbackManagementActionContext(User.GetRequiredUserId(), CanViewAllFeedback()),
@@ -126,6 +129,7 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
     }
 
     [HttpPatch("{id:guid}/durum")]
+    [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(FeedbackItemDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -134,11 +138,6 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
         [FromBody] ChangeFeedbackStatusHttpRequest request,
         CancellationToken cancellationToken)
     {
-        if (!CanManageFeedback())
-        {
-            return Forbid();
-        }
-
         return Ok(await service.ChangeStatusAsync(
             id,
             new ChangeFeedbackStatusRequest(request.Status, request.AdminNote),
@@ -147,11 +146,7 @@ public sealed class YonetimSikayetOneriController(ISikayetOneriService service) 
     }
 
     private bool CanViewAllFeedback() =>
-        CanManageFeedback();
-
-    private bool CanManageFeedback() =>
-        User.IsInRole(AdministratorRoleName) ||
-        User.IsInRole(AdminRoleName);
+        User.HasPermission(ListAllPolicy);
 }
 
 public sealed class CreateFeedbackItemHttpRequest

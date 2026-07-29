@@ -5,8 +5,6 @@ namespace FurpaMerkezApi.WebApi.Extensions;
 
 internal static class ClaimsPrincipalExtensions
 {
-    private const string AdminRoleName = "Admin";
-    private const string AdministratorRoleName = "Administrator";
     private const string PermissionClaimType = "permission";
     private const string AllWarehousesActionCode = "all-warehouses";
 
@@ -21,9 +19,6 @@ internal static class ClaimsPrincipalExtensions
 
         return warehouseNo;
     }
-
-    public static bool IsAdministrator(this ClaimsPrincipal user) =>
-        user.IsInRole(AdminRoleName) || user.IsInRole(AdministratorRoleName);
 
     public static bool HasPermission(this ClaimsPrincipal user, string permissionCode) =>
         user.HasClaim(claim =>
