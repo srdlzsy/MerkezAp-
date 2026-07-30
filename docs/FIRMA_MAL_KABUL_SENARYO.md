@@ -236,6 +236,10 @@ On dolum map'i:
 primaryCustomerSuggestion.customerCode -> request.customerCode
 despatchNumber                         -> request.documentNo
 actualDespatchDate ?? issueDate        -> request.movementDate
+actualDespatchTime                     -> UI fiili sevk saati bilgisi
+plaque                                 -> UI arac plakasi bilgisi
+driverNameSurname                      -> UI sofor adi soyadi bilgisi
+driverTckn                             -> UI sofor TCKN bilgisi
 issueDate                              -> request.documentDate
 ettn                                   -> UI referans bilgisi
 notes                                  -> UI not paneli veya kisa description adayi

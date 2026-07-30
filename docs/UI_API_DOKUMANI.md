@@ -4044,6 +4044,10 @@ Response:
   "despatchNumber": "IRS2026000001234",
   "issueDate": "2026-05-06T00:00:00",
   "actualDespatchDate": "2026-05-06T00:00:00",
+  "actualDespatchTime": "08:00:00",
+  "plaque": "34 HTE 490_BRS",
+  "driverNameSurname": "ORHAN BAYRAM",
+  "driverTckn": "49216016986",
   "profileId": "TEMELIRSALIYE",
   "despatchAdviceTypeCode": "SEVK",
   "notes": [
@@ -4318,6 +4322,10 @@ Response:
   "despatchNumber": "IRS2026000001234",
   "issueDate": "2026-05-06T00:00:00",
   "actualDespatchDate": "2026-05-06T00:00:00",
+  "actualDespatchTime": "08:00:00",
+  "plaque": "34 HTE 490_BRS",
+  "driverNameSurname": "ORHAN BAYRAM",
+  "driverTckn": "49216016986",
   "profileId": "TEMELIRSALIYE",
   "despatchAdviceTypeCode": "SEVK",
   "notes": [

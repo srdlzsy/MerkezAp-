@@ -468,6 +468,10 @@ Response ana alanlari:
 | `despatchNumber` | E-irsaliye numarasi |
 | `issueDate` | Duzenleme tarihi |
 | `actualDespatchDate` | Fiili sevk tarihi |
+| `actualDespatchTime` | Fiili sevk saati |
+| `plaque` | Arac plakasi |
+| `driverNameSurname` | Sofor adi soyadi |
+| `driverTckn` | Sofor TCKN |
 | `sender` | Gonderici bilgileri |
 | `receiver` | Alici bilgileri |
 | `primaryCustomerSuggestion` | Birincil cari eslestirme onerisi |

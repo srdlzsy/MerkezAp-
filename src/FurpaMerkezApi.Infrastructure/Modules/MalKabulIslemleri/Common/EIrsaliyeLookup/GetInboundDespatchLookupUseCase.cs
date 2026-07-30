@@ -49,6 +49,10 @@ public sealed class GetInboundDespatchLookupUseCase(
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
                 Array.Empty<string>(),
                 null,
                 null,
@@ -80,6 +84,30 @@ public sealed class GetInboundDespatchLookupUseCase(
         var customerSuggestions = await ResolveCustomerSuggestionsAsync(sender, cancellationToken);
         var primaryCustomerSuggestion = customerSuggestions.FirstOrDefault();
         var matchedLineCount = resolvedLines.Count(line => line.IsMatched);
+        var actualDespatchDate = ParseDateOrNull(GetFirstPathValue(
+            despatchAdvice,
+            ["Shipment", "ActualDespatchDate"],
+            ["Shipment", "Delivery", "Despatch", "ActualDespatchDate"]));
+        var actualDespatchTime = ParseTimeOrNull(GetFirstPathValue(
+            despatchAdvice,
+            ["Shipment", "ActualDespatchTime"],
+            ["Shipment", "Delivery", "Despatch", "ActualDespatchTime"]));
+        var plaque = NormalizeOrNull(GetPathValue(
+            despatchAdvice,
+            "Shipment",
+            "ShipmentStage",
+            "TransportMeans",
+            "RoadTransport",
+            "LicensePlateID"));
+        var driverNameSurname = JoinNonEmpty(
+            GetPathValue(despatchAdvice, "Shipment", "ShipmentStage", "DriverPerson", "FirstName"),
+            GetPathValue(despatchAdvice, "Shipment", "ShipmentStage", "DriverPerson", "FamilyName"));
+        var driverTcknRaw = GetPathValue(
+            despatchAdvice,
+            "Shipment",
+            "ShipmentStage",
+            "DriverPerson",
+            "NationalityID");
 
         return new InboundDespatchLookupResponse(
             true,
@@ -88,7 +116,11 @@ public sealed class GetInboundDespatchLookupUseCase(
             NormalizeOrNull(GetPathValue(despatchAdvice, "UUID")) ?? ettn,
             NormalizeOrNull(GetPathValue(despatchAdvice, "ID")),
             ParseDateOrNull(GetPathValue(despatchAdvice, "IssueDate")),
-            ParseDateOrNull(GetPathValue(despatchAdvice, "Shipment", "ActualDespatchDate")),
+            actualDespatchDate,
+            actualDespatchTime,
+            plaque,
+            driverNameSurname,
+            NormalizeDigits(driverTcknRaw) ?? NormalizeOrNull(driverTcknRaw),
             NormalizeOrNull(GetPathValue(despatchAdvice, "ProfileID")),
             NormalizeOrNull(GetPathValue(despatchAdvice, "DespatchAdviceTypeCode")),
             notes,
@@ -434,6 +466,20 @@ public sealed class GetInboundDespatchLookupUseCase(
         return NormalizeOrNull(current!.Value);
     }
 
+    private static string? GetFirstPathValue(XElement? parent, params string[][] localNamePaths)
+    {
+        foreach (var localNamePath in localNamePaths)
+        {
+            var value = GetPathValue(parent, localNamePath);
+            if (value is not null)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
     private static DateTime? ParseDateOrNull(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -451,6 +497,59 @@ public sealed class GetInboundDespatchLookupUseCase(
         }
 
         return null;
+    }
+
+    private static TimeOnly? ParseTimeOrNull(string? value)
+    {
+        var normalized = NormalizeOrNull(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (DateTimeOffset.TryParse(
+                normalized,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var parsedDateTimeOffset))
+        {
+            return TimeOnly.FromDateTime(parsedDateTimeOffset.DateTime);
+        }
+
+        if (DateTime.TryParse(
+                normalized,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var parsedDateTime))
+        {
+            return TimeOnly.FromDateTime(parsedDateTime);
+        }
+
+        var timePart = normalized;
+        var timeSeparatorIndex = timePart.IndexOf('T', StringComparison.OrdinalIgnoreCase);
+        if (timeSeparatorIndex >= 0 && timeSeparatorIndex + 1 < timePart.Length)
+        {
+            timePart = timePart[(timeSeparatorIndex + 1)..];
+        }
+
+        if (timePart.EndsWith("Z", StringComparison.OrdinalIgnoreCase))
+        {
+            timePart = timePart[..^1];
+        }
+
+        var offsetSeparatorIndex = timePart.IndexOfAny(['+', '-']);
+        if (offsetSeparatorIndex > 0)
+        {
+            timePart = timePart[..offsetSeparatorIndex];
+        }
+
+        return TimeOnly.TryParse(
+            timePart,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces,
+            out var parsedTime)
+            ? parsedTime
+            : null;
     }
 
     private static int? ParseIntOrNull(string? value) =>
@@ -479,6 +578,18 @@ public sealed class GetInboundDespatchLookupUseCase(
     {
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static string? JoinNonEmpty(params string?[] values)
+    {
+        var joined = string.Join(
+            ' ',
+            values
+                .Select(NormalizeOrNull)
+                .Where(value => value is not null)
+                .Cast<string>());
+
+        return NormalizeOrNull(joined);
     }
 
     private sealed record BarcodeLookup(
