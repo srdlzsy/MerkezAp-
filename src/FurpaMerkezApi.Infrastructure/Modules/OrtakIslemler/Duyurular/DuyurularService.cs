@@ -10,6 +10,8 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
 {
     private const int DefaultTake = 100;
     private const int MaxTake = 500;
+    private const int DefaultSearchTake = 25;
+    private const int MaxSearchTake = 100;
 
     public async Task<IReadOnlyCollection<AnnouncementDto>> GetInboxAsync(
         AnnouncementInboxRequest request,
@@ -169,7 +171,17 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
             .Take(take)
             .ToArrayAsync(cancellationToken);
 
-        return announcements.Select(announcement => ToDto(announcement, null)).ToArray();
+        var readSummaries = await BuildReadSummaryByAnnouncementIdAsync(
+            announcements,
+            request.Actor,
+            cancellationToken);
+
+        return announcements
+            .Select(announcement => ToDto(
+                announcement,
+                null,
+                GetReadSummary(readSummaries, announcement.Id)))
+            .ToArray();
     }
 
     public async Task<AnnouncementDto> GetForManagementAsync(
@@ -181,9 +193,107 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
             announcementId,
             actor,
             asTracking: false,
+            includeReads: false,
             cancellationToken);
 
-        return ToDto(announcement, null);
+        return await ToManagementDtoAsync(
+            announcement,
+            actor,
+            includeReceipts: true,
+            cancellationToken);
+    }
+
+    public async Task<AnnouncementReadReceiptListDto> GetReadReceiptsAsync(
+        Guid announcementId,
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        var announcement = await GetScopedAnnouncementAsync(
+            announcementId,
+            actor,
+            asTracking: false,
+            includeReads: false,
+            cancellationToken);
+
+        var readSummaries = await BuildReadSummaryByAnnouncementIdAsync(
+            [announcement],
+            actor,
+            cancellationToken);
+
+        var readers = await ListReadReceiptsAsync(announcement.Id, actor, cancellationToken);
+
+        return new AnnouncementReadReceiptListDto(
+            announcement.Id,
+            GetReadSummary(readSummaries, announcement.Id) ?? CreateEmptyReadSummary(),
+            readers);
+    }
+
+    public async Task<IReadOnlyCollection<AnnouncementTargetUserDto>> SearchTargetUsersAsync(
+        AnnouncementTargetUserSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateActor(request.Actor);
+
+        if (request.WarehouseNo is { } warehouseNo)
+        {
+            ValidateTargetWarehouseNo(warehouseNo);
+
+            if (!request.Actor.CanTargetAllWarehouses && warehouseNo != request.Actor.WarehouseNo)
+            {
+                throw new ArgumentException(
+                    "Current user is not allowed to search another warehouse.",
+                    nameof(request.WarehouseNo));
+            }
+        }
+
+        var take = NormalizeSearchTake(request.Take);
+        var searchTerm = NormalizeSearchTerm(request.SearchTerm);
+
+        var query = ApplyTargetUserSearchScope(
+            dbContext.Users.AsNoTracking().Where(user => user.IsActive),
+            request.Actor,
+            request.WarehouseNo);
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(user =>
+                user.Username.ToLower().Contains(searchTerm) ||
+                user.Email.ToLower().Contains(searchTerm) ||
+                user.FirstName.ToLower().Contains(searchTerm) ||
+                user.LastName.ToLower().Contains(searchTerm) ||
+                (user.FirstName + " " + user.LastName).ToLower().Contains(searchTerm) ||
+                user.WarehouseNo.ToLower().Contains(searchTerm) ||
+                user.WarehouseName.ToLower().Contains(searchTerm));
+        }
+
+        var users = await query
+            .OrderBy(user => user.WarehouseNo)
+            .ThenBy(user => user.FirstName)
+            .ThenBy(user => user.LastName)
+            .ThenBy(user => user.Username)
+            .Take(take)
+            .Select(user => new
+            {
+                user.Id,
+                user.Username,
+                user.Email,
+                user.FirstName,
+                user.LastName,
+                user.WarehouseNo,
+                user.WarehouseName
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return users
+            .Select(user => ToTargetUserDto(
+                user.Id,
+                user.Username,
+                user.Email,
+                user.FirstName,
+                user.LastName,
+                user.WarehouseNo,
+                user.WarehouseName))
+            .ToArray();
     }
 
     public async Task<AnnouncementDto> CreateAsync(
@@ -219,7 +329,11 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToDto(announcement, null);
+        return await ToManagementDtoAsync(
+            announcement,
+            request.Actor,
+            includeReceipts: false,
+            cancellationToken);
     }
 
     public async Task<AnnouncementDto> UpdateAsync(
@@ -233,6 +347,7 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
             announcementId,
             request.Actor,
             asTracking: true,
+            includeReads: true,
             cancellationToken);
 
         EnsureCanModify(announcement, request.Actor);
@@ -261,7 +376,11 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToDto(announcement, null);
+        return await ToManagementDtoAsync(
+            announcement,
+            request.Actor,
+            includeReceipts: false,
+            cancellationToken);
     }
 
     public async Task<AnnouncementDto> ArchiveAsync(
@@ -275,6 +394,7 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
             announcementId,
             actor,
             asTracking: true,
+            includeReads: false,
             cancellationToken);
 
         EnsureCanModify(announcement, actor);
@@ -282,7 +402,11 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToDto(announcement, null);
+        return await ToManagementDtoAsync(
+            announcement,
+            actor,
+            includeReceipts: false,
+            cancellationToken);
     }
 
     private IQueryable<Announcement> CreateVisibleAnnouncementQuery(
@@ -306,14 +430,21 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         Guid announcementId,
         AnnouncementActorContext actor,
         bool asTracking,
+        bool includeReads,
         CancellationToken cancellationToken)
     {
         ValidateAnnouncementId(announcementId);
         ValidateActor(actor);
 
         IQueryable<Announcement> query = ApplyManagementScope(dbContext.Announcements, actor)
-            .Include(announcement => announcement.Targets)
-            .Include(announcement => announcement.Reads);
+            .Include(announcement => announcement.Targets);
+
+        if (includeReads)
+        {
+            query = query
+                .Include(announcement => announcement.Reads)
+                .ThenInclude(read => read.User);
+        }
 
         if (!asTracking)
         {
@@ -342,6 +473,293 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
                 target.WarehouseNo == actor.WarehouseNo ||
                 target.UserId == actor.UserId));
     }
+
+    private async Task<AnnouncementDto> ToManagementDtoAsync(
+        Announcement announcement,
+        AnnouncementActorContext actor,
+        bool includeReceipts,
+        CancellationToken cancellationToken)
+    {
+        var readSummaries = await BuildReadSummaryByAnnouncementIdAsync(
+            [announcement],
+            actor,
+            cancellationToken);
+
+        var readReceipts = includeReceipts
+            ? await ListReadReceiptsAsync(announcement.Id, actor, cancellationToken)
+            : Array.Empty<AnnouncementReadReceiptDto>();
+
+        return ToDto(
+            announcement,
+            null,
+            GetReadSummary(readSummaries, announcement.Id),
+            readReceipts);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, AnnouncementReadSummaryDto>> BuildReadSummaryByAnnouncementIdAsync(
+        IReadOnlyCollection<Announcement> announcements,
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        var announcementArray = announcements.ToArray();
+
+        if (announcementArray.Length == 0)
+        {
+            return new Dictionary<Guid, AnnouncementReadSummaryDto>();
+        }
+
+        var announcementIds = announcementArray
+            .Select(announcement => announcement.Id)
+            .ToArray();
+
+        var readStats = await CreateScopedReadQuery(announcementIds, actor)
+            .GroupBy(read => read.AnnouncementId)
+            .Select(group => new
+            {
+                AnnouncementId = group.Key,
+                ReadCount = group.Count(),
+                LastReadAtUtc = group.Max(read => (DateTime?)read.ReadAtUtc)
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var readStatsByAnnouncementId = readStats.ToDictionary(
+            readStat => readStat.AnnouncementId,
+            readStat => readStat);
+
+        var targetUserCounts = await ResolveTargetUserCountsByAnnouncementIdAsync(
+            announcementArray,
+            actor,
+            cancellationToken);
+
+        return announcementArray.ToDictionary(
+            announcement => announcement.Id,
+            announcement =>
+            {
+                readStatsByAnnouncementId.TryGetValue(announcement.Id, out var readStat);
+                targetUserCounts.TryGetValue(announcement.Id, out var targetUserCount);
+
+                var readCount = readStat?.ReadCount ?? 0;
+                var unreadCount = targetUserCount.HasValue
+                    ? (int?)Math.Max(targetUserCount.Value - readCount, 0)
+                    : null;
+
+                return new AnnouncementReadSummaryDto(
+                    readCount,
+                    targetUserCount,
+                    unreadCount,
+                    readStat?.LastReadAtUtc);
+            });
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, int?>> ResolveTargetUserCountsByAnnouncementIdAsync(
+        IReadOnlyCollection<Announcement> announcements,
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        var announcementArray = announcements.ToArray();
+        var result = new Dictionary<Guid, int?>();
+
+        if (announcementArray.Length == 0)
+        {
+            return result;
+        }
+
+        var hasAllWarehousesTarget = announcementArray.Any(announcement =>
+            announcement.Targets.Any(target => target.Type == AnnouncementTargetType.AllWarehouses));
+
+        var targetedWarehouseNos = announcementArray
+            .SelectMany(announcement => announcement.Targets)
+            .Where(target => target.Type == AnnouncementTargetType.Warehouse && target.WarehouseNo.HasValue)
+            .Select(target => target.WarehouseNo!.Value)
+            .Distinct()
+            .ToArray();
+
+        var scopedAllWarehousesUserCount = hasAllWarehousesTarget
+            ? await CountActiveUsersInScopeAsync(actor, cancellationToken)
+            : 0;
+
+        var userCountByWarehouseNo = await CountActiveUsersByWarehouseNoAsync(
+            targetedWarehouseNos,
+            actor,
+            cancellationToken);
+
+        foreach (var announcement in announcementArray)
+        {
+            if (announcement.Targets.Any(target => target.Type == AnnouncementTargetType.AllWarehouses))
+            {
+                result[announcement.Id] = scopedAllWarehousesUserCount;
+                continue;
+            }
+
+            var warehouseTargets = announcement.Targets
+                .Where(target => target.Type == AnnouncementTargetType.Warehouse && target.WarehouseNo.HasValue)
+                .Select(target => target.WarehouseNo!.Value)
+                .Distinct()
+                .ToArray();
+
+            if (warehouseTargets.Length > 0)
+            {
+                var visibleWarehouseTargets = actor.CanTargetAllWarehouses
+                    ? warehouseTargets
+                    : warehouseTargets.Where(warehouseNo => warehouseNo == actor.WarehouseNo).ToArray();
+
+                result[announcement.Id] = visibleWarehouseTargets.Sum(warehouseNo =>
+                    userCountByWarehouseNo.TryGetValue(warehouseNo, out var userCount) ? userCount : 0);
+
+                continue;
+            }
+
+            result[announcement.Id] = announcement.Targets
+                .Where(target => target.Type == AnnouncementTargetType.User && target.UserId.HasValue)
+                .Where(target => IsTargetVisibleToActor(target, actor))
+                .Select(target => target.UserId!.Value)
+                .Distinct()
+                .Count();
+        }
+
+        return result;
+    }
+
+    private async Task<int> CountActiveUsersInScopeAsync(
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.IsActive);
+
+        if (!actor.CanTargetAllWarehouses)
+        {
+            var actorWarehouseNoText = actor.WarehouseNo.ToString();
+            query = query.Where(user => user.WarehouseNo == actorWarehouseNoText);
+        }
+
+        return await query.CountAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<int, int>> CountActiveUsersByWarehouseNoAsync(
+        IReadOnlyCollection<int> warehouseNos,
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        var scopedWarehouseNos = actor.CanTargetAllWarehouses
+            ? warehouseNos.Distinct().ToArray()
+            : warehouseNos.Where(warehouseNo => warehouseNo == actor.WarehouseNo).Distinct().ToArray();
+
+        if (scopedWarehouseNos.Length == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        var scopedWarehouseNoTexts = scopedWarehouseNos
+            .Select(warehouseNo => warehouseNo.ToString())
+            .ToArray();
+
+        var counts = await dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.IsActive && scopedWarehouseNoTexts.Contains(user.WarehouseNo))
+            .GroupBy(user => user.WarehouseNo)
+            .Select(group => new
+            {
+                WarehouseNo = group.Key,
+                Count = group.Count()
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return counts
+            .Select(count => new
+            {
+                WarehouseNo = TryParseWarehouseNo(count.WarehouseNo),
+                count.Count
+            })
+            .Where(count => count.WarehouseNo.HasValue)
+            .ToDictionary(
+                count => count.WarehouseNo!.Value,
+                count => count.Count);
+    }
+
+    private async Task<IReadOnlyCollection<AnnouncementReadReceiptDto>> ListReadReceiptsAsync(
+        Guid announcementId,
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        var readers = await CreateScopedReadQuery([announcementId], actor)
+            .OrderByDescending(read => read.ReadAtUtc)
+            .ThenBy(read => read.User.Username)
+            .Select(read => new
+            {
+                read.UserId,
+                read.User.Username,
+                read.User.FirstName,
+                read.User.LastName,
+                read.User.Email,
+                read.User.WarehouseNo,
+                read.User.WarehouseName,
+                read.ReadAtUtc
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return readers
+            .Select(reader =>
+            {
+                var fullName = JoinFullName(reader.FirstName, reader.LastName);
+
+                return new AnnouncementReadReceiptDto(
+                    reader.UserId,
+                    reader.Username,
+                    string.IsNullOrWhiteSpace(fullName) ? reader.Username : fullName,
+                    reader.Email,
+                    TryParseWarehouseNo(reader.WarehouseNo),
+                    reader.WarehouseName,
+                    reader.ReadAtUtc);
+            })
+            .ToArray();
+    }
+
+    private IQueryable<AnnouncementRead> CreateScopedReadQuery(
+        IReadOnlyCollection<Guid> announcementIds,
+        AnnouncementActorContext actor)
+    {
+        var query = dbContext.AnnouncementReads
+            .AsNoTracking()
+            .Where(read => announcementIds.Contains(read.AnnouncementId));
+
+        if (actor.CanTargetAllWarehouses)
+        {
+            return query;
+        }
+
+        var actorWarehouseNoText = actor.WarehouseNo.ToString();
+
+        return query.Where(read =>
+            read.UserId == actor.UserId ||
+            read.User.WarehouseNo == actorWarehouseNoText);
+    }
+
+    private static IQueryable<AppUser> ApplyTargetUserSearchScope(
+        IQueryable<AppUser> query,
+        AnnouncementActorContext actor,
+        int? requestedWarehouseNo)
+    {
+        if (actor.CanTargetAllWarehouses)
+        {
+            if (requestedWarehouseNo is { } warehouseNo)
+            {
+                var warehouseNoText = warehouseNo.ToString();
+                return query.Where(user => user.WarehouseNo == warehouseNoText);
+            }
+
+            return query;
+        }
+
+        var actorWarehouseNoText = actor.WarehouseNo.ToString();
+        return query.Where(user => user.WarehouseNo == actorWarehouseNoText);
+    }
+
+    private static bool IsTargetVisibleToActor(AnnouncementTarget target, AnnouncementActorContext actor) =>
+        actor.CanTargetAllWarehouses ||
+        target.UserId == actor.UserId ||
+        target.WarehouseNo == actor.WarehouseNo;
 
     private async Task<IReadOnlyCollection<AnnouncementTarget>> BuildTargetsAsync(
         Guid announcementId,
@@ -550,6 +968,38 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         return Math.Min(take.Value, MaxTake);
     }
 
+    private static int NormalizeSearchTake(int? take)
+    {
+        if (take is null)
+        {
+            return DefaultSearchTake;
+        }
+
+        if (take.Value <= 0)
+        {
+            throw new ArgumentException("Take must be greater than zero.", nameof(take));
+        }
+
+        return Math.Min(take.Value, MaxSearchTake);
+    }
+
+    private static string NormalizeSearchTerm(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim();
+
+        if (normalized.Length > 100)
+        {
+            throw new ArgumentException("Search term can not exceed 100 characters.", nameof(value));
+        }
+
+        return normalized.ToLowerInvariant();
+    }
+
     private static AnnouncementPriority ParsePriority(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -595,7 +1045,14 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
             .Replace("-", string.Empty, StringComparison.Ordinal)
             .Replace("_", string.Empty, StringComparison.Ordinal)
             .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
+            .ToLowerInvariant()
+            .Replace("İ", "i", StringComparison.Ordinal)
+            .Replace("ı", "i", StringComparison.Ordinal)
+            .Replace("ğ", "g", StringComparison.Ordinal)
+            .Replace("ü", "u", StringComparison.Ordinal)
+            .Replace("ş", "s", StringComparison.Ordinal)
+            .Replace("ö", "o", StringComparison.Ordinal)
+            .Replace("ç", "c", StringComparison.Ordinal);
     }
 
     private static void ValidateActor(AnnouncementActorContext actor)
@@ -669,6 +1126,16 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         throw new InvalidOperationException("User warehouse information is invalid.");
     }
 
+    private static int? TryParseWarehouseNo(string? value)
+    {
+        if (int.TryParse(value, out var warehouseNo) && warehouseNo >= 0)
+        {
+            return warehouseNo;
+        }
+
+        return null;
+    }
+
     private static string JoinFullName(string firstName, string lastName)
     {
         var fullName = string.Join(" ", new[] { firstName, lastName }
@@ -678,7 +1145,21 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         return string.IsNullOrWhiteSpace(fullName) ? string.Empty : fullName;
     }
 
-    private static AnnouncementDto ToDto(Announcement announcement, Guid? currentUserId)
+    private static AnnouncementReadSummaryDto? GetReadSummary(
+        IReadOnlyDictionary<Guid, AnnouncementReadSummaryDto> readSummaries,
+        Guid announcementId) =>
+        readSummaries.TryGetValue(announcementId, out var readSummary)
+            ? readSummary
+            : null;
+
+    private static AnnouncementReadSummaryDto CreateEmptyReadSummary() =>
+        new(0, null, null, null);
+
+    private static AnnouncementDto ToDto(
+        Announcement announcement,
+        Guid? currentUserId,
+        AnnouncementReadSummaryDto? readSummary = null,
+        IReadOnlyCollection<AnnouncementReadReceiptDto>? readReceipts = null)
     {
         var readAtUtc = currentUserId.HasValue
             ? announcement.Reads.FirstOrDefault(read => read.UserId == currentUserId.Value)?.ReadAtUtc
@@ -708,7 +1189,9 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
                 .ThenBy(target => target.WarehouseNo)
                 .ThenBy(target => target.Username)
                 .Select(ToTargetDto)
-                .ToArray());
+                .ToArray(),
+            readSummary,
+            readReceipts ?? Array.Empty<AnnouncementReadReceiptDto>());
     }
 
     private static AnnouncementTargetDto ToTargetDto(AnnouncementTarget target) =>
@@ -721,6 +1204,32 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
             target.UserId,
             target.Username,
             target.UserFullName);
+
+    private static AnnouncementTargetUserDto ToTargetUserDto(
+        Guid id,
+        string username,
+        string email,
+        string firstName,
+        string lastName,
+        string warehouseNo,
+        string warehouseName)
+    {
+        var fullName = JoinFullName(firstName, lastName);
+        var displayFullName = string.IsNullOrWhiteSpace(fullName) ? username : fullName;
+        var parsedWarehouseNo = TryParseWarehouseNo(warehouseNo);
+        var warehouseLabel = parsedWarehouseNo.HasValue
+            ? $"{parsedWarehouseNo.Value} - {warehouseName}"
+            : warehouseName;
+
+        return new AnnouncementTargetUserDto(
+            id,
+            username,
+            displayFullName,
+            email,
+            parsedWarehouseNo,
+            warehouseName,
+            $"{displayFullName} ({username}) / {warehouseLabel}");
+    }
 
     private static string PriorityCode(AnnouncementPriority priority) =>
         priority switch

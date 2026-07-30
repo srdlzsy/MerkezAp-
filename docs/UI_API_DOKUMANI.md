@@ -499,6 +499,7 @@ Veri Auth DB tarafinda tutulur:
 - Migration: `20260729133811_AddAnnouncements`
 - Duyuruyu olusturan kullanici bilgileri `created_by_user_id`, `created_by_username`, `created_by_full_name` alanlarinda saklanir.
 - Okundu bilgisi kullanici bazli `announcement_reads` tablosunda tutulur.
+- Okuyan kullanici listesi `announcement_reads` ile `app_users` iliskisinden doner; ayrica `readSummary` ile okuyan/hedef/okumayan sayilari verilir.
 - Hedefler ayri satirlar olarak `announcement_targets` tablosunda tutulur; ayni duyuru birden fazla depoya veya kullaniciya hedeflenebilir.
 
 Temel kural:
@@ -555,7 +556,7 @@ Request tarafinda backend su alias'lari da kabul eder:
 - priority: `normal`, `important`, `onemli`, `urgent`, `acil`
 - status: `published`, `yayinda`, `archived`, `arsivde`
 - targetType: `AllWarehouses`, `Warehouse`, `User`, `tumdepolar`, `depo`, `kullanici`
-- `-`, `_` ve bosluklar normalize edilir; ornegin `all-warehouses`, `all warehouses`, `tum_depolar` ayni anlama gelir.
+- `-`, `_`, bosluklar ve Turkce karakterli yazimlar normalize edilir; ornegin `all-warehouses`, `all warehouses`, `tum_depolar`, `tum depolar` ayni anlama gelir.
 
 UI icin onerilen kullanim:
 
@@ -574,7 +575,9 @@ UI icin onerilen kullanim:
 - Yonetim ekrani `OrtakIslemler > Duyurular` altinda acilabilir; menu icin `ortak-islemler.duyurular.list` kullanilmalidir.
 - Create butonu `create`, duzenle butonu `update`, arsivle butonu `archive`, depo/kullanici kapsam genisletme kontrolleri `all-warehouses` yetkisine gore acilmalidir.
 - `all-warehouses` yoksa hedef tipi seciminde "Tum Depolar" pasif olmalidir; depo hedeflemede sadece kullanicinin kendi deposu secilebilir.
-- Kullanici hedefleme ekraninda `all-warehouses` yoksa kullanici arama/secimi sadece kendi deposundaki aktif kullanicilarla sinirli tutulmalidir.
+- Kullanici hedefleme ekraninda id elle yazdirilmaz; arama kutusu `GET /api/ortak-islemler/duyurular/hedef-kullanicilar?search=...` ile beslenir.
+- Kullanici hedefleme aramasi yalnizca aktif kullanicilari dondurur; `all-warehouses` yoksa backend sonucu otomatik kendi depoyla sinirlar.
+- Yonetim listesinde `readSummary` kolonlariyla okuyan/hedef/okumayan sayilari gosterilebilir; detayda `readReceipts` veya `GET /okuyanlar` ile kisi listesi acilabilir.
 - Tarihler UI tarafinda kullanicinin lokal saatinde gosterilebilir ama API'ye UTC olarak gonderilmelidir.
 - `expiresAtUtc` bos ise duyuru manuel arsivlenene kadar surekli yayinda kalir.
 
@@ -586,7 +589,9 @@ Endpoint ozeti:
 | `GET /api/home/duyurular/ozet` | - | - | `AnnouncementSummaryDto` | login |
 | `PATCH /api/home/duyurular/{id}/okundu` | path | `id: guid` | `AnnouncementDto` | login |
 | `GET /api/ortak-islemler/duyurular` | query | `AnnouncementManagementListHttpRequest` | `AnnouncementDto[]` | `ortak-islemler.duyurular.list` |
+| `GET /api/ortak-islemler/duyurular/hedef-kullanicilar` | query | `AnnouncementTargetUserSearchHttpRequest` | `AnnouncementTargetUserDto[]` | `ortak-islemler.duyurular.list` |
 | `GET /api/ortak-islemler/duyurular/{id}` | path | `id: guid` | `AnnouncementDto` | `ortak-islemler.duyurular.detail` |
+| `GET /api/ortak-islemler/duyurular/{id}/okuyanlar` | path | `id: guid` | `AnnouncementReadReceiptListDto` | `ortak-islemler.duyurular.detail` |
 | `POST /api/ortak-islemler/duyurular` | body | `SaveAnnouncementHttpRequest` | `AnnouncementDto` | `ortak-islemler.duyurular.create` |
 | `PUT /api/ortak-islemler/duyurular/{id}` | body | `SaveAnnouncementHttpRequest` | `AnnouncementDto` | `ortak-islemler.duyurular.update` |
 | `PATCH /api/ortak-islemler/duyurular/{id}/arsivle` | path | `id: guid` | `AnnouncementDto` | `ortak-islemler.duyurular.archive` |
@@ -595,7 +600,9 @@ Yonetim endpointleri icin alias route:
 
 ```text
 /api/yonetim/duyurular
+/api/yonetim/duyurular/hedef-kullanicilar
 /api/yonetim/duyurular/{id}
+/api/yonetim/duyurular/{id}/okuyanlar
 /api/yonetim/duyurular/{id}/arsivle
 ```
 
@@ -658,7 +665,9 @@ Response:
         "username": null,
         "userFullName": null
       }
-    ]
+    ],
+    "readSummary": null,
+    "readReceipts": []
   }
 ]
 ```
@@ -726,6 +735,49 @@ Kapsam:
 - `all-warehouses` olan kullanici tum duyurular uzerinden filtreleme yapar.
 - `all-warehouses` olmayan kullanici kendi olusturdugu veya kendisine/kendi deposuna/tum depolara hedeflenmis duyurulari gorur.
 - `all-warehouses` olmayan kullanici `targetWarehouseNo` filtresinde sadece kendi deposunu gonderebilir; baska depo gonderirse 400 doner.
+- Response icindeki `readSummary` doludur; liste performansi icin `readReceipts` bos dizi doner.
+
+### Duyuru Hedef Kullanici Arama
+
+`GET /api/ortak-islemler/duyurular/hedef-kullanicilar`
+
+Alias:
+
+`GET /api/yonetim/duyurular/hedef-kullanicilar`
+
+Ornek:
+
+`GET /api/ortak-islemler/duyurular/hedef-kullanicilar?search=serdal&warehouseNo=101&take=25`
+
+Query:
+
+```text
+search       opsiyonel; username, ad, soyad, e-posta, depo no veya depo adinda aranir; max 100
+warehouseNo  opsiyonel; sadece all-warehouses yetkisi olan kullanici baska depo gonderebilir
+take         opsiyonel; default 25, max 100
+```
+
+Response:
+
+```json
+[
+  {
+    "id": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
+    "username": "serdal.ozsoy",
+    "fullName": "Serdal Ozsoy",
+    "email": "serdal.ozsoy@example.local",
+    "warehouseNo": 101,
+    "warehouseName": "Depo 101",
+    "displayName": "Serdal Ozsoy (serdal.ozsoy) / 101 - Depo 101"
+  }
+]
+```
+
+Not:
+
+- Endpoint `ortak-islemler.duyurular.list` ister.
+- Sadece aktif kullanicilar doner.
+- `all-warehouses` olmayan kullanici icin sonuc her zaman kendi deposuyla sinirlidir.
 
 ### Duyuru Yonetim Detay
 
@@ -735,13 +787,52 @@ Alias:
 
 `GET /api/yonetim/duyurular/{id}`
 
-Response `AnnouncementDto` doner.
+Response `AnnouncementDto` doner. Detay response'unda `readSummary` ve `readReceipts` doludur.
 
 Yetki ve kapsam:
 
 - Endpoint `ortak-islemler.duyurular.detail` ister.
 - `all-warehouses` olan kullanici tum duyurulari gorur.
 - `all-warehouses` olmayan kullanici kendi olusturdugu veya kendi kapsaminda gorunen duyuruyu gorur.
+
+### Duyuru Okuyanlar
+
+`GET /api/ortak-islemler/duyurular/{id}/okuyanlar`
+
+Alias:
+
+`GET /api/yonetim/duyurular/{id}/okuyanlar`
+
+Response:
+
+```json
+{
+  "announcementId": "a64af2ad-b0a2-4b62-8b21-91a63f2b0f30",
+  "summary": {
+    "readCount": 2,
+    "targetUserCount": 3,
+    "unreadCount": 1,
+    "lastReadAtUtc": "2026-07-29T13:20:00Z"
+  },
+  "readers": [
+    {
+      "userId": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
+      "username": "serdal.ozsoy",
+      "userFullName": "Serdal Ozsoy",
+      "email": "serdal.ozsoy@example.local",
+      "warehouseNo": 101,
+      "warehouseName": "Depo 101",
+      "readAtUtc": "2026-07-29T13:20:00Z"
+    }
+  ]
+}
+```
+
+Not:
+
+- Endpoint `ortak-islemler.duyurular.detail` ister.
+- `readers` en son okuyan en ustte olacak sekilde siralanir.
+- `all-warehouses` olmayan kullanicida okuyanlar listesi kendi depo/kendi kullanici kapsamina sinirlanir.
 
 ### Duyuru Olustur
 
@@ -9427,7 +9518,9 @@ Ortak Islemler / Duyurular Yonetimi
   -> arsivle butonu icin ortak-islemler.duyurular.archive
   -> tum depolar/baska depo/baska depo kullanicisi hedeflemek icin ortak-islemler.duyurular.all-warehouses
   -> liste icin GET /api/ortak-islemler/duyurular veya /api/yonetim/duyurular
+  -> hedef kullanici secimi icin GET /api/ortak-islemler/duyurular/hedef-kullanicilar?search=...
   -> satir detay icin GET /api/ortak-islemler/duyurular/{id}
+  -> okuyanlar paneli icin GET /api/ortak-islemler/duyurular/{id}/okuyanlar
   -> yeni duyuru icin POST /api/ortak-islemler/duyurular
   -> hedefleri tamamen yenileyerek guncellemek icin PUT /api/ortak-islemler/duyurular/{id}
   -> arsivlemek icin PATCH /api/ortak-islemler/duyurular/{id}/arsivle
@@ -14217,7 +14310,9 @@ public sealed record AnnouncementDto(
     DateTime CreatedAtUtc,
     DateTime? UpdatedAtUtc,
     DateTime? ReadAtUtc,
-    IReadOnlyCollection<AnnouncementTargetDto> Targets);
+    IReadOnlyCollection<AnnouncementTargetDto> Targets,
+    AnnouncementReadSummaryDto? ReadSummary,
+    IReadOnlyCollection<AnnouncementReadReceiptDto> ReadReceipts);
 
 public sealed record AnnouncementTargetDto(
     Guid Id,
@@ -14228,6 +14323,35 @@ public sealed record AnnouncementTargetDto(
     Guid? UserId,
     string? Username,
     string? UserFullName);
+
+public sealed record AnnouncementReadSummaryDto(
+    int ReadCount,
+    int? TargetUserCount,
+    int? UnreadCount,
+    DateTime? LastReadAtUtc);
+
+public sealed record AnnouncementReadReceiptListDto(
+    Guid AnnouncementId,
+    AnnouncementReadSummaryDto Summary,
+    IReadOnlyCollection<AnnouncementReadReceiptDto> Readers);
+
+public sealed record AnnouncementReadReceiptDto(
+    Guid UserId,
+    string Username,
+    string UserFullName,
+    string Email,
+    int? WarehouseNo,
+    string? WarehouseName,
+    DateTime ReadAtUtc);
+
+public sealed record AnnouncementTargetUserDto(
+    Guid Id,
+    string Username,
+    string FullName,
+    string Email,
+    int? WarehouseNo,
+    string? WarehouseName,
+    string DisplayName);
 
 public enum EDespatchDocumentType
 {
@@ -16614,6 +16738,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `ChangeFeedbackStatusHttpRequest`: `Status`, `AdminNote`
 - `AnnouncementInboxHttpRequest`: `IncludeRead`, `Take`
 - `AnnouncementManagementListHttpRequest`: `Status`, `TargetType`, `TargetWarehouseNo`, `TargetUserId`, `StartDate`, `EndDate`, `IncludeArchived`, `Take`
+- `AnnouncementTargetUserSearchHttpRequest`: `Search`, `WarehouseNo`, `Take`
 - `SaveAnnouncementHttpRequest`: `Title`, `Message`, `Priority`, `TargetType`, `TargetWarehouseNos`, `TargetUserIds`, `StartsAtUtc`, `ExpiresAtUtc`
 - `CreateCompanyMovementHttpRequest`: `WarehouseNo`, `CustomerCode`, `MovementDate`, `DocumentDate`, `DocumentNo`, `Description`, `Lines`
 - `CreateCompanyMovementLineHttpRequest`: `StockCode`, `Quantity`, `UnitPrice`, `UnitPointer`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`

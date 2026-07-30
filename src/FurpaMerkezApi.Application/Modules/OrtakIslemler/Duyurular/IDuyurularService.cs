@@ -26,6 +26,15 @@ public interface IDuyurularService
         AnnouncementActorContext actor,
         CancellationToken cancellationToken);
 
+    Task<AnnouncementReadReceiptListDto> GetReadReceiptsAsync(
+        Guid announcementId,
+        AnnouncementActorContext actor,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<AnnouncementTargetUserDto>> SearchTargetUsersAsync(
+        AnnouncementTargetUserSearchRequest request,
+        CancellationToken cancellationToken);
+
     Task<AnnouncementDto> CreateAsync(
         CreateAnnouncementRequest request,
         CancellationToken cancellationToken);

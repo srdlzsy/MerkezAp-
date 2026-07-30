@@ -47,6 +47,12 @@ public sealed record AnnouncementManagementListRequest(
     int? Take,
     AnnouncementActorContext Actor);
 
+public sealed record AnnouncementTargetUserSearchRequest(
+    string? SearchTerm,
+    int? WarehouseNo,
+    int? Take,
+    AnnouncementActorContext Actor);
+
 public sealed record AnnouncementSummaryDto(
     int ActiveCount,
     int UnreadCount,
@@ -72,7 +78,9 @@ public sealed record AnnouncementDto(
     DateTime CreatedAtUtc,
     DateTime? UpdatedAtUtc,
     DateTime? ReadAtUtc,
-    IReadOnlyCollection<AnnouncementTargetDto> Targets);
+    IReadOnlyCollection<AnnouncementTargetDto> Targets,
+    AnnouncementReadSummaryDto? ReadSummary,
+    IReadOnlyCollection<AnnouncementReadReceiptDto> ReadReceipts);
 
 public sealed record AnnouncementTargetDto(
     Guid Id,
@@ -83,3 +91,32 @@ public sealed record AnnouncementTargetDto(
     Guid? UserId,
     string? Username,
     string? UserFullName);
+
+public sealed record AnnouncementReadSummaryDto(
+    int ReadCount,
+    int? TargetUserCount,
+    int? UnreadCount,
+    DateTime? LastReadAtUtc);
+
+public sealed record AnnouncementReadReceiptListDto(
+    Guid AnnouncementId,
+    AnnouncementReadSummaryDto Summary,
+    IReadOnlyCollection<AnnouncementReadReceiptDto> Readers);
+
+public sealed record AnnouncementReadReceiptDto(
+    Guid UserId,
+    string Username,
+    string UserFullName,
+    string Email,
+    int? WarehouseNo,
+    string? WarehouseName,
+    DateTime ReadAtUtc);
+
+public sealed record AnnouncementTargetUserDto(
+    Guid Id,
+    string Username,
+    string FullName,
+    string Email,
+    int? WarehouseNo,
+    string? WarehouseName,
+    string DisplayName);

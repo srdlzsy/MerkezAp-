@@ -96,6 +96,30 @@ public sealed class DuyurularController(IDuyurularService service) : ControllerB
         CancellationToken cancellationToken) =>
         Ok(await service.GetForManagementAsync(id, CreateActorContext(), cancellationToken));
 
+    [HttpGet("{id:guid}/okuyanlar")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AnnouncementReadReceiptListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AnnouncementReadReceiptListDto>> GetReadReceipts(
+        Guid id,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetReadReceiptsAsync(id, CreateActorContext(), cancellationToken));
+
+    [HttpGet("hedef-kullanicilar")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<AnnouncementTargetUserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<AnnouncementTargetUserDto>>> SearchTargetUsers(
+        [FromQuery] AnnouncementTargetUserSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.SearchTargetUsersAsync(
+            new AnnouncementTargetUserSearchRequest(
+                request.Search,
+                request.WarehouseNo,
+                request.Take,
+                CreateActorContext()),
+            cancellationToken));
+
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(AnnouncementDto), StatusCodes.Status201Created)]
@@ -202,6 +226,18 @@ public sealed class AnnouncementManagementListHttpRequest
     public bool IncludeArchived { get; init; }
 
     [Range(1, 500)]
+    public int? Take { get; init; }
+}
+
+public sealed class AnnouncementTargetUserSearchHttpRequest
+{
+    [StringLength(100)]
+    public string? Search { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, 100)]
     public int? Take { get; init; }
 }
 
