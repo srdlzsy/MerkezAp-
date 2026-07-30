@@ -65,6 +65,7 @@ Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 | [DEPO_MAL_KABUL_ISLEYIS.md](DEPO_MAL_KABUL_ISLEYIS.md) | Depo mal kabul isleyisi. |
 | [FIRMA_MAL_KABUL_SENARYO.md](FIRMA_MAL_KABUL_SENARYO.md) | Firma mal kabul senaryolari ve Mikro yazim kurallari. |
 | [BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md](BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md) | Barkod okutma, cozumleme, urun arama, fiyat/cari bulma ve barkod tanimlama rehberi. |
+| [ETIKET_BASIM_API.md](ETIKET_BASIM_API.md) | Etiket basim mal kabul kayitlari, hesaplama, etiket datasi ve rapor API rehberi. |
 | [DEPO_ONERILEN_SIPARIS.md](DEPO_ONERILEN_SIPARIS.md) | Depo onerilen siparis sorgu ve hesap mantigi. |
 | [FIRMA_ONERILEN_SIPARIS.md](FIRMA_ONERILEN_SIPARIS.md) | Firma/tedarikci onerilen siparis mantigi. |
 

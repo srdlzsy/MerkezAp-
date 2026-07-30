@@ -120,6 +120,17 @@ public static class PermissionCatalog
         new("all-warehouses", "Tum Depolar")
     ];
 
+    private static readonly PermissionActionDefinition[] EtiketBasimActions =
+    [
+        new("list", "Listele"),
+        new("detail", "Detay"),
+        new("create", "Ekle"),
+        new("update", "Guncelle"),
+        new("delete", "Sil"),
+        new("transfer", "Aktar"),
+        new("all-warehouses", "Tum Depolar")
+    ];
+
     public static IReadOnlyCollection<PermissionDefinition> Definitions { get; } =
     [
         new(
@@ -213,6 +224,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-ciro-aktarimi", "KasaCiroAktarimi", ReadCreateActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-hareket-aktarimi", "KasaHareketAktarimi"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-belgeleri", "EtiketBelgeleri"),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-basim", "EtiketBasim", EtiketBasimActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kunye-etiket-yazdirma", "KunyeEtiketYazdirma"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "manav-kunye-etiket-yazdirma", "ManavKunyeEtiketYazdirma", ListActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "banknot-takipleri", "BanknotTakipleri", ReadCreateActions)

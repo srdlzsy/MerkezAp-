@@ -6832,6 +6832,512 @@ Response:
 ]
 ```
 
+### Etiket Basim
+
+Eski WinForms `Etiket Basim` uygulamasindaki manav/depo mal kabul etiketi akisi icin yeni API moduludur. Bu modul, mevcut `etiket-belgeleri` modulunden farklidir; `Furpa.dbo.Manav_Depo_Mal_Kabul_Etiket` kabul kayitlarini yonetir, kasa/net kilo hesaplar ve UI'nin yazdirabilecegi etiket datasini dondurur.
+
+Bu bolum UI tarafinin baska bir dokumana gitmeden kullanabilmesi icin tum endpoint, request, response, status ve yazdirma notlarini icerir.
+
+Root route:
+
+`/api/kasa-islemleri/etiket-basim`
+
+Yetkiler:
+
+- `kasa-islemleri.etiket-basim.list`
+- `kasa-islemleri.etiket-basim.detail`
+- `kasa-islemleri.etiket-basim.create`
+- `kasa-islemleri.etiket-basim.update`
+- `kasa-islemleri.etiket-basim.delete`
+- `kasa-islemleri.etiket-basim.transfer`
+- `kasa-islemleri.etiket-basim.all-warehouses`
+
+Genel HTTP notlari:
+
+- Tum endpointler token ister.
+- Yetki yoksa `403`, token yok/gecersizse `401` doner.
+- Validation hatalarinda standart `ProblemDetails` ile `400` doner.
+- Kayit bulunamazsa `404`, aktarilmis kayit guncelleme/silme denemesinde `409` doner.
+- `DELETE` basarili olursa body donmez, `204 No Content` doner.
+
+Endpoint ozeti:
+
+| Method | Endpoint | Request | Response | Yetki |
+|---|---|---|---|---|
+| `GET` | `/suppliers` | query: `query`, `take` | `EtiketBasimSupplierSuggestionDto[]` | `list` |
+| `GET` | `/suppliers/by-name` | query: `name` | `EtiketBasimSupplierSuggestionDto` | `list` |
+| `GET` | `/stocks` | query: `query`, `prefix`, `take` | `EtiketBasimStockSuggestionDto[]` | `list` |
+| `GET` | `/stocks/by-name` | query: `name` | `EtiketBasimStockSuggestionDto` | `list` |
+| `GET` | `/stocks/{stockCode}` | path: `stockCode` | `EtiketBasimStockSuggestionDto` | `list` |
+| `POST` | `/acceptance-records/calculate` | body: `EtiketBasimCalculationHttpRequest` | `EtiketBasimCalculationDto` | `create` |
+| `GET` | `/acceptance-records` | query: `date` | `EtiketBasimAcceptanceRecordDto[]` | `list` |
+| `GET` | `/acceptance-records/{id}` | path: `id` | `EtiketBasimAcceptanceRecordDto` | `detail` |
+| `POST` | `/acceptance-records` | body: `SaveEtiketBasimAcceptanceRecordHttpRequest` | `EtiketBasimAcceptanceRecordDto` | `create` |
+| `PUT` | `/acceptance-records/{id}` | path: `id`, body: `SaveEtiketBasimAcceptanceRecordHttpRequest` | `EtiketBasimAcceptanceRecordDto` | `update` |
+| `DELETE` | `/acceptance-records/{id}` | path: `id` | `204 No Content` | `delete` |
+| `GET` | `/acceptance-records/{id}/label` | path: `id` | `EtiketBasimLabelDto` | `detail` |
+| `POST` | `/labels/preview` | body: `SaveEtiketBasimAcceptanceRecordHttpRequest` | `EtiketBasimLabelDto` | `create` |
+| `GET` | `/reports/received-products` | query: `date` | `EtiketBasimReceivedProductReportItemDto[]` | `list` |
+| `GET` | `/reports/depot-stock` | query: `warehouseNo`, `date` | `EtiketBasimDepotStockReportItemDto[]` | `list` |
+| `POST` | `/micro/goods-receipts` | body: `EtiketBasimMicroTransferHttpRequest` | `501 EtiketBasimMicroTransferUnavailableDto` | `transfer` |
+
+Referans arama endpointleri:
+
+`GET /api/kasa-islemleri/etiket-basim/suppliers?query=ABC&take=20`
+
+Query:
+
+- `query`: zorunlu, en az 2 karakter
+- `take`: opsiyonel, varsayilan `20`, aralik `1-100`
+
+Response:
+
+```json
+[
+  {
+    "supplierCode": "120.001",
+    "supplierName": "TEDARIKCI A"
+  },
+  {
+    "supplierCode": "120.002",
+    "supplierName": "TEDARIKCI B"
+  }
+]
+```
+
+`GET /api/kasa-islemleri/etiket-basim/suppliers/by-name?name=TEDARIKCI%20A`
+
+Query:
+
+- `name`: zorunlu, tedarikci adi
+
+Response:
+
+```json
+{
+  "supplierCode": "120.001",
+  "supplierName": "TEDARIKCI A"
+}
+```
+
+`GET /api/kasa-islemleri/etiket-basim/stocks?query=DOMATES&prefix=MNV&take=20`
+
+Query:
+
+- `query`: opsiyonel, stok adi/stok kodu/barkod aramasi
+- `prefix`: opsiyonel, varsayilan `MNV`, en fazla 10 karakter
+- `take`: opsiyonel, varsayilan `20`, aralik `1-100`
+
+Response:
+
+```json
+[
+  {
+    "stockCode": "MNV001",
+    "stockName": "MNV DOMATES",
+    "barcode": "1234567"
+  },
+  {
+    "stockCode": "MNV002",
+    "stockName": "MNV BIBER",
+    "barcode": "7654321"
+  }
+]
+```
+
+`GET /api/kasa-islemleri/etiket-basim/stocks/by-name?name=MNV%20DOMATES`
+
+Query:
+
+- `name`: zorunlu, stok adi
+
+Response:
+
+```json
+{
+  "stockCode": "MNV001",
+  "stockName": "MNV DOMATES",
+  "barcode": "1234567"
+}
+```
+
+`GET /api/kasa-islemleri/etiket-basim/stocks/MNV001`
+
+Path:
+
+- `stockCode`: zorunlu, stok kodu
+
+Response:
+
+```json
+{
+  "stockCode": "MNV001",
+  "stockName": "MNV DOMATES",
+  "barcode": "1234567"
+}
+```
+
+Referans arama notlari:
+
+- tedarikci aramada eski uygulamadaki cari kod prefix haricleri korunur: `8888`, `1999`, `2012`, `4690`, `1998`, `2022`, `120.MY`
+- stok aramada varsayilan prefix `MNV` olur
+- `query` stok adi, stok kodu veya barkod icinde aranir
+- `*` karakteri SQL wildcard gibi `%` davranisina cevrilir
+- `suppliers/by-name`, `stocks/by-name` ve `stocks/{stockCode}` sonuc bulamazsa `404` doner
+
+Hesaplama:
+
+`POST /api/kasa-islemleri/etiket-basim/acceptance-records/calculate`
+
+Request:
+
+```json
+{
+  "grossWeight": 100.0,
+  "caseTare": 1.2,
+  "caseCount": 10,
+  "palletTare": 5.0,
+  "stockBarcode": "1234567"
+}
+```
+
+Body:
+
+- `grossWeight`: zorunlu, brut kilo
+- `caseTare`: zorunlu, tek kasa darasi
+- `caseCount`: opsiyonel, bos gelirse `1`
+- `palletTare`: opsiyonel, bos gelirse `0`
+- `stockBarcode`: opsiyonel, doluysa etiket barkodu hesaplanir
+
+Response:
+
+```json
+{
+  "caseTotalTare": 12.0,
+  "netReceivedWeight": 83.0,
+  "averageCaseWeight": 8.3,
+  "labelBarcodeRaw": "123456708300",
+  "labelBarcode": "1234567083001",
+  "barcodeSymbology": "EAN13"
+}
+```
+
+Hesap kurali:
+
+- `caseTotalTare = caseTare * caseCount`
+- `netReceivedWeight = grossWeight - caseTotalTare - palletTare`
+- `averageCaseWeight = netReceivedWeight / caseCount`
+- `caseCount` bos gelirse `1`, `palletTare` bos gelirse `0` kabul edilir
+- `averageCaseWeight > 99` ise API hata doner
+- `stockBarcode` gonderilirse API eski uygulamadaki ortalama kilo formatina gore `labelBarcodeRaw` uretir; `labelBarcode` yazdirilacak nihai barkoddur
+
+Kabul kayitlari:
+
+- `GET /api/kasa-islemleri/etiket-basim/acceptance-records?date=2026-07-30`
+- `GET /api/kasa-islemleri/etiket-basim/acceptance-records/{id}`
+- `POST /api/kasa-islemleri/etiket-basim/acceptance-records`
+- `PUT /api/kasa-islemleri/etiket-basim/acceptance-records/{id}`
+- `DELETE /api/kasa-islemleri/etiket-basim/acceptance-records/{id}`
+
+Liste request:
+
+```text
+date  zorunlu; yyyy-MM-dd
+```
+
+Liste response:
+
+```json
+[
+  {
+    "id": 15,
+    "createdAt": "2026-07-30T10:20:00",
+    "updatedAt": "2026-07-30T10:20:00",
+    "supplierCode": "120.001",
+    "supplierName": "TEDARIKCI A",
+    "documentSeries": "MNV",
+    "documentNo": "12345",
+    "seriesAndNumber": "MNV12345",
+    "stockCode": "MNV001",
+    "stockName": "MNV DOMATES",
+    "stockBarcode": "1234567",
+    "grossWeight": 100.0,
+    "caseTare": 1.2,
+    "caseCount": 10,
+    "caseTotalTare": 12.0,
+    "palletTare": 5.0,
+    "averageCaseWeight": 8.3,
+    "netReceivedWeight": 83.0,
+    "receivedBy": "Ali",
+    "microTransferred": false,
+    "status": "Bekliyor",
+    "caseType": "REHINLI",
+    "labelBarcodeRaw": "123456708300",
+    "labelBarcode": "1234567083001",
+    "barcodeSymbology": "EAN13"
+  }
+]
+```
+
+Tek kayit request:
+
+```text
+id  zorunlu path parametresi
+```
+
+Tek kayit response, create response ve update response ayni `EtiketBasimAcceptanceRecordDto` modelini doner.
+
+Kayit request:
+
+```json
+{
+  "supplierCode": "120.001",
+  "supplierName": "TEDARIKCI A",
+  "documentSeries": "MNV",
+  "documentNo": "12345",
+  "stockCode": "MNV001",
+  "stockName": "MNV DOMATES",
+  "stockBarcode": "1234567",
+  "grossWeight": 100.0,
+  "caseTare": 1.2,
+  "caseCount": 10,
+  "palletTare": 5.0,
+  "receivedBy": "Ali",
+  "caseType": "REHINLI"
+}
+```
+
+Kayit request alanlari:
+
+- `supplierCode`: zorunlu, en fazla 25 karakter
+- `supplierName`: zorunlu, en fazla 255 karakter
+- `documentSeries`: opsiyonel, en fazla 25 karakter, bos gelirse `MNV`
+- `documentNo`: zorunlu, en fazla 25 karakter
+- `stockCode`: zorunlu, en fazla 25 karakter
+- `stockName`: zorunlu, en fazla 255 karakter
+- `stockBarcode`: zorunlu, en fazla 50 karakter
+- `grossWeight`: zorunlu, brut kilo
+- `caseTare`: zorunlu, tek kasa darasi
+- `caseCount`: opsiyonel, bos gelirse `1`
+- `palletTare`: opsiyonel, bos gelirse `0`
+- `receivedBy`: zorunlu, en fazla 100 karakter
+- `caseType`: zorunlu, en fazla 20 karakter, `REHINLI` veya `REHINSIZ`
+
+Kayit response:
+
+```json
+{
+  "id": 15,
+  "createdAt": "2026-07-30T10:20:00",
+  "updatedAt": "2026-07-30T10:20:00",
+  "supplierCode": "120.001",
+  "supplierName": "TEDARIKCI A",
+  "documentSeries": "MNV",
+  "documentNo": "12345",
+  "seriesAndNumber": "MNV12345",
+  "stockCode": "MNV001",
+  "stockName": "MNV DOMATES",
+  "stockBarcode": "1234567",
+  "grossWeight": 100.0,
+  "caseTare": 1.2,
+  "caseCount": 10,
+  "caseTotalTare": 12.0,
+  "palletTare": 5.0,
+  "averageCaseWeight": 8.3,
+  "netReceivedWeight": 83.0,
+  "receivedBy": "Ali",
+  "microTransferred": false,
+  "status": "Bekliyor",
+  "caseType": "REHINLI",
+  "labelBarcodeRaw": "123456708300",
+  "labelBarcode": "1234567083001",
+  "barcodeSymbology": "EAN13"
+}
+```
+
+Create/update/delete statuslari:
+
+- `POST /acceptance-records` basariliysa `201 Created` ve yukaridaki `EtiketBasimAcceptanceRecordDto` response'unu doner
+- `PUT /acceptance-records/{id}` basariliysa `200 OK` ve guncellenmis `EtiketBasimAcceptanceRecordDto` response'unu doner
+- `PUT /acceptance-records/{id}` icin kayit yoksa `404`, kayit Mikro'ya aktarilmissa `409` doner
+- `DELETE /acceptance-records/{id}` basariliysa `204 No Content` doner
+- `DELETE /acceptance-records/{id}` icin kayit yoksa `404`, kayit Mikro'ya aktarilmissa `409` doner
+
+Kayit notlari:
+
+- yeni kayit `Mikro_Aktarildi = 0` olarak acilir
+- `documentSeries` bos gelirse `MNV` kabul edilir
+- aktarilmis kayit guncellenemez ve silinemez
+- `caseType` icin request tarafinda `REHINLI` ve `REHINSIZ` gonderilebilir; API response'u tablo degeriyle uyumlu normalize edilmis kasa tipini doner
+
+Etiket datasini alma:
+
+- kaydedilmis satir icin `GET /api/kasa-islemleri/etiket-basim/acceptance-records/{id}/label`
+- kaydetmeden onizleme icin `POST /api/kasa-islemleri/etiket-basim/labels/preview`
+
+Kaydedilmis etiket request:
+
+```text
+id  zorunlu path parametresi
+```
+
+Preview request:
+
+```json
+{
+  "supplierCode": "120.001",
+  "supplierName": "TEDARIKCI A",
+  "documentSeries": "MNV",
+  "documentNo": "12345",
+  "stockCode": "MNV001",
+  "stockName": "MNV DOMATES",
+  "stockBarcode": "1234567",
+  "grossWeight": 100.0,
+  "caseTare": 1.2,
+  "caseCount": 10,
+  "palletTare": 5.0,
+  "receivedBy": "Ali",
+  "caseType": "REHINLI"
+}
+```
+
+Label response:
+
+```json
+{
+  "recordId": 15,
+  "stockCode": "MNV001",
+  "stockName": "MNV DOMATES",
+  "stockBarcode": "1234567",
+  "supplierName": "TEDARIKCI A",
+  "averageCaseWeight": 8.3,
+  "labelDate": "2026-07-30T10:20:00",
+  "labelCount": 10,
+  "labelBarcodeRaw": "123456708300",
+  "labelBarcode": "1234567083001",
+  "barcodeSymbology": "EAN13",
+  "caseTare": 1.2,
+  "caseType": "REHINLI"
+}
+```
+
+UI yazdirma akisi:
+
+1. Kullanici kayitli satirdan yazdiracaksa `GET /acceptance-records/{id}/label` cagrilir.
+2. Kullanici henuz kaydetmeden etiket gormek/yazdirmak istiyorsa ayni kayit body modeliyle `POST /labels/preview` cagrilir.
+3. API etiket resmi, PDF veya ZPL dondurmez; eski sistem gibi UI/terminal Windows printer driver uzerinden kendi yazici entegrasyonunu calistirir.
+4. Eski rapor olcusu referans alinacaksa etiket alani yaklasik `57.9 mm x 38.9 mm`, sifir margin dusunulebilir.
+5. UI etikette en az stok adi, tedarikci, tarih, ortalama kasa kilosu, kasa tipi, kasa darasi ve barkod metnini gostermelidir.
+6. `labelCount` kasa sayisidir; UI bu degeri yazdirma kopya adedi olarak kullanmali veya kullaniciya adet olarak onermelidir.
+7. `barcodeSymbology = EAN13` ise EAN-13, `EAN8` ise EAN-8, diger durumda Code128 renderer kullanilmalidir.
+8. Normal yazdirma icin `labelBarcode` kullanilmalidir; bu alan EAN13 icin check-digit eklenmis nihai degerdir. Kullanilan renderer check digit'i kendisi hesaplamak istiyorsa `labelBarcodeRaw` verilebilir.
+9. Yazdirma butonu ikinci kez tiklanmaya karsi loading/disabled durumda tutulmalidir; baski basarili olursa kayit tekrar kaydedilmez.
+
+Eski yazdirma referansi:
+
+- Eski sistem ZPL, ESC/POS, Bluetooth veya socket komutu uretmez.
+- Kullanici standart Windows `PrintDialog` ile Windows'ta tanimli yaziciyi secer.
+- Etiket DevExpress `XtraReport` olarak hazirlanir ve `ReportPrintTool.Print()` ile printer driver'a gonderilir.
+- API'nin ilk surumde data-only kalmasi eski davranisa uygundur; PDF/PNG/ZPL uretimi ayrica istenirse yeni endpoint olarak tasarlanmalidir.
+
+Eski etiket tasarim alani:
+
+| API alani | Eski rapor kontrolu | UI kullanimi |
+|---|---|---|
+| `stockName` | `XrStokAdi` | ust bolumde genis urun adi |
+| `stockCode` | `XrStokKodu` | barkod ustu bilgi satiri |
+| `stockBarcode` | `XrBarkod` | barkod ustu urun barkodu |
+| `averageCaseWeight` | `XrMiktar` | orta bolumde ortalama kasa kilosu |
+| `caseTare` | `XrDara` | orta bolumde kasa darasi |
+| `caseType` | `XrKasaTip` | orta/alt bolumde kasa tipi |
+| `labelDate` | `XrTarih` | orta/alt bolumde tarih |
+| `labelBarcode` | `xrBarCode1` | alt bolumde asil barkod |
+| `supplierName` | `XrCariUnvan` | en alt bolumde tedarikci |
+
+Raporlar:
+
+- `GET /api/kasa-islemleri/etiket-basim/reports/received-products?date=2026-07-30`
+- `GET /api/kasa-islemleri/etiket-basim/reports/depot-stock?warehouseNo=56&date=2026-07-30`
+
+Alinan urunler raporu request:
+
+```text
+date  zorunlu; yyyy-MM-dd
+```
+
+Alinan urunler raporu response:
+
+```json
+[
+  {
+    "supplierName": "TEDARIKCI A",
+    "stockCode": "MNV001",
+    "barcode": "1234567",
+    "stockName": "MNV DOMATES",
+    "grossWeight": 100.0,
+    "caseTotalTare": 12.0,
+    "palletTare": 5.0,
+    "caseCount": 10,
+    "netReceivedWeight": 83.0,
+    "invoiceQuantity": 80.0,
+    "invoiceDifference": 3.0
+  }
+]
+```
+
+Depo stok raporu request:
+
+```text
+warehouseNo  opsiyonel; bos ise 56 kullanilir
+date         opsiyonel; bos ise bugun kullanilir
+```
+
+Depo stok raporu response:
+
+```json
+[
+  {
+    "stockCode": "MNV001",
+    "stockName": "MNV DOMATES",
+    "responsible": "SATINALMA SORUMLUSU",
+    "currentStock": 125.5,
+    "purchasePriceWithVat": 18.75,
+    "salesPrice": 24.9
+  }
+]
+```
+
+Rapor notlari:
+
+- depo stok raporunda `warehouseNo` verilmezse eski akisla uyumlu varsayilan depo `56` olur
+- kullanici kendi deposu disinda depo isterse ilgili tum depo yetkisi gerekir
+- alinan urunler raporu Furpa kabul kayitlarini Mikro fatura miktarlariyla karsilastirmak icindir
+
+Mikro aktarim:
+
+`POST /api/kasa-islemleri/etiket-basim/micro/goods-receipts`
+
+Request:
+
+```json
+{
+  "date": "2026-07-30",
+  "supplierCode": "120.001"
+}
+```
+
+Response: `501 Not Implemented`
+
+```json
+{
+  "isAvailable": false,
+  "message": "Mikro aktarim henuz guvenli sekilde aktif degil.",
+  "requiredRule": "Sadece bekleyen kayitlar, transaction, duplicate korumasi ve evrak no stratejisi netlestikten sonra acilmalidir."
+}
+```
+
+Bu route sozlesme olarak vardir fakat su an `501 Not Implemented` doner. UI bu butonu canli aktarim gibi calistirmamalidir. Eski sistem Mikro `STOK_HAREKETLERI` tablosuna dogrudan insert attigi, duplicate/idempotency ve evrak sira uretimi netlesmedigi icin aktarim bilincli olarak kapali tutulmustur.
+
 ### Fiyati Degisen Etiket Urunleri
 
 Belirli bir zaman bilgisinden sonra fiyati degisen ve etikete uygun urunleri getirir. `kasa-islemleri.etiket-belgeleri.all-warehouses` yoksa depo sorulmaz; yetki varsa query'de opsiyonel `warehouseNo` gonderilebilir.
@@ -9740,6 +10246,20 @@ Kasa Islemleri / Manav Kunye Etiket Yazdirma
   -> zengin liste satirlarini KunyeLabelTagDto ile goster
   -> endpoint token istemez
 
+Kasa Islemleri / Etiket Basim
+  -> ekran acilisinda gunluk liste icin GET /api/kasa-islemleri/etiket-basim/acceptance-records?date=...
+  -> tedarikci secimi icin GET /api/kasa-islemleri/etiket-basim/suppliers?query=...
+  -> stok secimi icin GET /api/kasa-islemleri/etiket-basim/stocks?query=...&prefix=MNV
+  -> brut kilo, kasa darasi, kasa sayisi ve palet darasi girildikce POST /api/kasa-islemleri/etiket-basim/acceptance-records/calculate
+  -> kaydetmek icin POST /api/kasa-islemleri/etiket-basim/acceptance-records
+  -> duzenlemek icin PUT /api/kasa-islemleri/etiket-basim/acceptance-records/{id}
+  -> silmek icin DELETE /api/kasa-islemleri/etiket-basim/acceptance-records/{id}
+  -> kayitli satirdan yazdirmak icin GET /api/kasa-islemleri/etiket-basim/acceptance-records/{id}/label
+  -> kaydetmeden onizleme/yazdirma icin POST /api/kasa-islemleri/etiket-basim/labels/preview
+  -> UI labelBarcodeRaw, labelBarcode, barcodeSymbology ve labelCount alanlariyla yazici entegrasyonunu kendisi calistirir
+  -> raporlar icin GET /api/kasa-islemleri/etiket-basim/reports/received-products ve /reports/depot-stock
+  -> Mikro aktarim endpoint'i 501 dondugu icin UI'da kapali veya "hazir degil" olarak gosterilmelidir
+
 Stok Islemleri / Virmanlar
   -> liste filtreleri: tarih araligi, opsiyonel depo
   -> GET /api/stok-islemleri/virmanlar
@@ -11223,6 +11743,7 @@ Liste ekranlarinda onerilen kolonlar:
 - Zayiat ve masraf fisleri icin: belge tarihi, seri, sira, creator, acceptor, depo, satir sayisi, toplam miktar
 - Sayim sonuclari icin: belge tarihi, belge no, sayim adi, depo, satir sayisi, toplam miktar
 - Etiket belgeleri icin: olusturma tarihi, documentId, depo
+- Etiket basim icin: olusturma tarihi, cari, evrak seri/sira, stok kodu, stok adi, brut kilo, net kilo, kasa sayisi, ortalama kasa kilosu, durum, Mikro aktarildi
 - Kasa sayimlari icin: tarih, seri, sira, kasa no, z no, kasiyer, yonetici, toplam
 - Kasa cirolari icin: is tarihi, sube, vardiya, kasiyer kodu, kasiyer adi, satis tutari, tahsilat tutari, komisyon, net tahsilat
 - Depo iadeleri icin: belge tarihi, seri, sira, kaynak depo, hedef depo, satir sayisi, toplam miktar
@@ -16852,6 +17373,13 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `LabelPriceChangedProductListHttpRequest`: `WarehouseNo`, `DateTimeFilter`
 - `CreateLabelDocumentHttpRequest`: `WarehouseNo`, `Lines`
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`
+- `EtiketBasimReferenceSearchHttpRequest`: `Query`, `Take`
+- `EtiketBasimStockSearchHttpRequest`: `Query`, `Prefix`, `Take`
+- `EtiketBasimDateHttpRequest`: `Date`
+- `EtiketBasimCalculationHttpRequest`: `GrossWeight`, `CaseTare`, `CaseCount`, `PalletTare`, `StockBarcode`
+- `SaveEtiketBasimAcceptanceRecordHttpRequest`: `SupplierCode`, `SupplierName`, `DocumentSeries`, `DocumentNo`, `StockCode`, `StockName`, `StockBarcode`, `GrossWeight`, `CaseTare`, `CaseCount`, `PalletTare`, `ReceivedBy`, `CaseType`
+- `EtiketBasimDepotStockReportHttpRequest`: `WarehouseNo`, `Date`
+- `EtiketBasimMicroTransferHttpRequest`: `Date`, `SupplierCode`
 
 ### Rapor Request Modelleri
 
