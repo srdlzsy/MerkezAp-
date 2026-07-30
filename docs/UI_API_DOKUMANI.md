@@ -2441,6 +2441,7 @@ Not:
 - Mikro tarafinda sadece SELECT/read-only mantigiyla calisir.
 - Urun arama `dbo.__StokveFiyatArama_Gokhan` stored procedure'u ile yapilir.
 - Mobil barkod okutma senaryolarinda genel `urunler` listesi yerine once `barkodlar/{barcode}/cozumle` endpoint'i tercih edilmelidir.
+- Barkod okutma, cozumleme, satira ekleme, fiyat/cari bulma ve barkod tanimlatma karar akisi icin kisa rehber: `docs/BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md`.
 - Mobil offline fiyat okutma icin tekil `fiyat-gor` endpointleri yerine `GET /api/mobile-sync/urun-fiyat-katalogu` ile depo bazli katalog cihaza indirilmelidir.
 - Mobil offline cari ve depo secimleri icin online arama endpointleri yerine `GET /api/mobile-sync/cari-katalogu` ve `GET /api/mobile-sync/depo-katalogu` kataloglari cihaza indirilmelidir.
 - Mal kabul create ekranlarinda cari secimini hizlandirmak icin `urunler/{stockCode}/cari-onerileri` endpoint'i yardimci olarak kullanilabilir.
@@ -2630,8 +2631,8 @@ Query:
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
 operationType  opsiyonel; islem tipini verir, satira ekleme kararinda kullanilir
-targetWarehouseNo opsiyonel; hedef depo/model kod uygunlugu kontrolu icin kullanilir
-supplierCode   opsiyonel; secili tedarikciye gore SATINALMA_SARTLARI kontrolu yapar
+targetWarehouseNo opsiyonel; hedef depo/model kod uygunlugu hesaplamak icin kullanilir; shipment icin bloklayici degildir
+supplierCode   opsiyonel; secili tedarikciye gore SATINALMA_SARTLARI kontrolu yapar; receiving/order icin karar motoruna dahil edilir
 companyCode    opsiyonel; supplierCode ile ayni anlamda geriye uyum alias'i
 isRefund       opsiyonel; false ise eski sistemdeki iade disi DLS/99 filtresi uygulanir
 screenCode     opsiyonel; eski UI uyumu icin korunur, operationType bos ise ekran baglami gibi kullanilir
@@ -2657,7 +2658,9 @@ Onemli not:
 - `caseBarcode`, `unitsPerCase` ve `matchedUnitsPerCase` alanlari koli/master barkod tespitinde kullanilir.
 - `isSalesBlocked`, `isOrderBlocked`, `isGoodsAcceptanceBlocked` ve `isPassive` depo detay degerleri varsa depo ozelinden, yoksa stok kartindan hesaplanir.
 - `isAllowedForTargetWarehouse` hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kod listesine gore hesaplanir.
-- `hasPurchaseRequirement` tedarikci veya hedef depo baglami verilirse `SATINALMA_SARTLARI` kontrol sonucudur. Bu sonuc mal kabul/siparis operasyonunda satira ekleme kararina dahil edilir.
+- `operationType=shipment` icin hedef depo model kod sonucu bilgi olarak donebilir; fakat hedef depo model kodu sevkte `isUsableInOperation=false` yapmaz.
+- `hasPurchaseRequirement` tedarikci/companyCode verilirse veya operasyon `receiving`/`order` ise `SATINALMA_SARTLARI` kontrol sonucudur. Bu sonuc sadece mal kabul/siparis operasyonunda satira ekleme kararina dahil edilir.
+- `operationType=shipment` icin sirf `targetWarehouseNo` geldi diye satinalma sarti kontrolu calismaz ve satira ekleme bloklanmaz.
 - `salesPrice` ve `priceTypeCode` secili depodaki fiyat satirindan gelir.
 - `isUsableInOperation`, `operationDecision`, `warnings` ve `errors` UI'in tek karar noktasi olmalidir.
 
@@ -2720,6 +2723,7 @@ Bulunamayan barkod davranisi:
 
 - Endpoint `200 OK` ile doner, fakat `isFound = false` olur.
 - Bu durumda UI hata modal'i yerine kullaniciya "urun bulunamadi" veya "barkod tanimsiz" gibi hizli bir mesaj gosterebilir.
+- Bu endpoint Mikro `BARKOD_TANIMLARI` tablosuna yeni barkod yazmaz. Barkod tanimlatma/ekletme istenirse ayri permission, duplicate kontrolu ve audit iceren yeni bir yazma akisi tasarlanmalidir.
 
 UI kullanim notu:
 

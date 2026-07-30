@@ -223,10 +223,11 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             cancellationToken);
         AddTargetWarnings(targetWarehouse, warnings);
 
-        var shouldCheckPurchaseRequirement = supplierCode is not null ||
-                                             targetWarehouseNo.HasValue ||
-                                             operationType is "receiving" or "order";
-        var shouldEnforcePurchaseRequirement = operationType is "receiving" or "order";
+        var shouldEnforceTargetWarehouse = BarcodeResolutionOperationRules.ShouldEnforceTargetWarehouse(operationType);
+        var shouldCheckPurchaseRequirement = BarcodeResolutionOperationRules.ShouldCheckPurchaseRequirement(
+            operationType,
+            supplierCode);
+        var shouldEnforcePurchaseRequirement = BarcodeResolutionOperationRules.ShouldEnforcePurchaseRequirement(operationType);
         var hasPurchaseRequirement = await EvaluatePurchaseRequirementAsync(
             stock.StockCode,
             supplierCode,
@@ -272,7 +273,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             isOrderBlocked,
             isGoodsAcceptanceBlocked,
             isPassive,
-            targetWarehouse.IsAllowed,
+            shouldEnforceTargetWarehouse ? targetWarehouse.IsAllowed : null,
             hasPurchaseRequirement,
             shouldEnforcePurchaseRequirement,
             isExcludedForNonRefund);
@@ -895,4 +896,16 @@ file static class BarcodeLookupInfoExtensions
 {
     public static bool IsBarcodeCheckDigitInvalid(this BarcodeLookupInfo lookup) =>
         lookup.IsCheckDigitValid == false;
+}
+
+internal static class BarcodeResolutionOperationRules
+{
+    internal static bool ShouldEnforceTargetWarehouse(string? operationType) =>
+        !string.Equals(operationType, "shipment", StringComparison.Ordinal);
+
+    internal static bool ShouldCheckPurchaseRequirement(string? operationType, string? supplierCode) =>
+        supplierCode is not null || operationType is "receiving" or "order";
+
+    internal static bool ShouldEnforcePurchaseRequirement(string? operationType) =>
+        operationType is "receiving" or "order";
 }
