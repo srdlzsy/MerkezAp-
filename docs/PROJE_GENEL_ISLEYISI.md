@@ -412,7 +412,8 @@ Kullanici bulunur.
 Kullanici rolleri ve role permission'lari Include ile yuklenir.
 Kullanici aktif mi kontrol edilir.
 Sifre hash'i dogrulanir.
-Terminal role ozel IP/sube kontrolu varsa uygulanir.
+Terminal role kullanicilarda gelen IPv4 adresinin ilk 3 blogu kullanicinin kendi BranchDetails.BranchIpAddress ilk 3 bloguyla eslesmelidir.
+Auth:TerminalLogin:SharedNetworkWarehouseGroups icinde ayni gruba alinan depolar, gruptaki diger depolarin BranchDetails IP agindan da terminal girisi yapabilir. Ornek: 50 ve 56 ayni interneti kullaniyorsa [50, 56] grubu tanimlanir.
 JWT token uretilir.
 AuthResponse icinde token, expire bilgisi ve UserDto doner.
 ```

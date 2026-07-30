@@ -8,6 +8,7 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.SeedData;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
@@ -18,8 +19,11 @@ public sealed class AuthService(
     IPasswordHasher passwordHasher,
     IJwtTokenFactory jwtTokenFactory,
     IClock clock,
+    IConfiguration configuration,
     ILogger<AuthService> logger) : IAuthService
 {
+    private static readonly Guid TerminalRoleId = Guid.Parse("3c1daafe-5922-466e-9f79-6d2ca34ce84d");
+
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
     {
         var normalizedUsername = NormalizeLookup(request.Username);
@@ -62,65 +66,35 @@ public sealed class AuthService(
         return CreateAuthResponse(createdUser);
     }
 
-   public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
-{
-    var normalizedLookup = NormalizeLookup(request.UsernameOrEmail);
-
-   var user = await dbContext.Users .Include(currentUser => currentUser.UserRoles) 
-   .ThenInclude(userRole => userRole.Role)
-    .ThenInclude(role => role.RolePermissions) 
-    .ThenInclude(rolePermission => rolePermission.Permission) 
-    .FirstOrDefaultAsync( currentUser => currentUser.NormalizedUsername == normalizedLookup || currentUser.NormalizedEmail == normalizedLookup, cancellationToken);
-
-    if (user is null || !user.IsActive || !passwordHasher.Verify(request.Password, user.PasswordHash))
+    public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
     {
-        throw new UnauthorizedAccessException("Username, email or password is invalid.");
-    }
+        var normalizedLookup = NormalizeLookup(request.UsernameOrEmail);
 
-    var terminalRoleId = Guid.Parse("3c1daafe-5922-466e-9f79-6d2ca34ce84d");
-
-    var isTerminalUser = user.UserRoles.Any(x => x.RoleId == terminalRoleId);
-
-    if (isTerminalUser)
-    {
-        var ip = request.IpAddress;
-
-        logger.LogInformation("Validating terminal user login network for user {UserId}.", user.Id);
-
-        if (string.IsNullOrWhiteSpace(ip))
-        {
-            throw new UnauthorizedAccessException("Terminal kullanıcısı için IP adresi zorunludur.");
-        }
-
-        var parts = ip.Split('.');
-
-        if (parts.Length != 4)
-        {
-            throw new UnauthorizedAccessException("Geçersiz IP adresi.");
-        }
-
-        var networkPrefix = $"{parts[0]}.{parts[1]}.{parts[2]}.";
-
-        var branch = await furpaDbContext.BranchDetails
-            .FirstOrDefaultAsync(x =>
-                x.BranchIpAddress.StartsWith(networkPrefix),
+        var user = await dbContext.Users
+            .Include(currentUser => currentUser.UserRoles)
+                .ThenInclude(userRole => userRole.Role)
+                    .ThenInclude(role => role.RolePermissions)
+                        .ThenInclude(rolePermission => rolePermission.Permission)
+            .FirstOrDefaultAsync(
+                currentUser =>
+                    currentUser.NormalizedUsername == normalizedLookup ||
+                    currentUser.NormalizedEmail == normalizedLookup,
                 cancellationToken);
 
-        if (branch is null)
+        if (user is null || !user.IsActive || !passwordHasher.Verify(request.Password, user.PasswordHash))
         {
-            throw new UnauthorizedAccessException("Bu IP adresi herhangi bir şube ağıyla eşleşmiyor.");
+            throw new UnauthorizedAccessException("Username, email or password is invalid.");
         }
 
-      
-        if (!int.TryParse(user.WarehouseNo, out var userWarehouseNo) ||
-            userWarehouseNo != branch.BranchNo)
+        var isTerminalUser = user.UserRoles.Any(userRole => userRole.RoleId == TerminalRoleId);
+
+        if (isTerminalUser)
         {
-            throw new UnauthorizedAccessException("Bu kullanıcı bu şubeden giriş yapamaz.");
+            await ValidateTerminalUserNetworkAsync(user, request.IpAddress, cancellationToken);
         }
+
+        return CreateAuthResponse(user);
     }
-
-    return CreateAuthResponse(user);
-}
 
     public async Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -145,6 +119,96 @@ public sealed class AuthService(
             .FirstOrDefaultAsync(currentUser => currentUser.Id == userId, cancellationToken);
 
         return user ?? throw new KeyNotFoundException("User was not found.");
+    }
+
+    private async Task ValidateTerminalUserNetworkAsync(
+        AppUser user,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Validating terminal user login network for user {UserId}.", user.Id);
+
+        if (!int.TryParse(user.WarehouseNo, out var userWarehouseNo))
+        {
+            throw new UnauthorizedAccessException("Kullanici depo numarasi gecersiz.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ipAddress))
+        {
+            throw new UnauthorizedAccessException("Terminal kullanicisi icin IP adresi zorunludur.");
+        }
+
+        var inboundNetworkPrefix = GetIpv4NetworkPrefix(ipAddress);
+        if (inboundNetworkPrefix is null)
+        {
+            throw new UnauthorizedAccessException("Gecersiz IP adresi.");
+        }
+
+        var allowedNetworkBranchNos = GetAllowedNetworkBranchNos(userWarehouseNo);
+        var branchIpAddresses = await furpaDbContext.BranchDetails
+            .AsNoTracking()
+            .Where(item => allowedNetworkBranchNos.Contains(item.BranchNo))
+            .Select(item => item.BranchIpAddress)
+            .ToArrayAsync(cancellationToken);
+
+        if (branchIpAddresses.Length == 0)
+        {
+            throw new UnauthorizedAccessException("Kullanici deposu icin sube IP ayarlari bulunamadi.");
+        }
+
+        var matchesAllowedNetwork = branchIpAddresses
+            .Select(GetIpv4NetworkPrefix)
+            .Any(branchNetworkPrefix =>
+                string.Equals(inboundNetworkPrefix, branchNetworkPrefix, StringComparison.Ordinal));
+
+        if (!matchesAllowedNetwork)
+        {
+            throw new UnauthorizedAccessException("Bu kullanici bu subeden giris yapamaz.");
+        }
+    }
+
+    private int[] GetAllowedNetworkBranchNos(int userWarehouseNo)
+    {
+        var allowedBranchNos = new HashSet<int> { userWarehouseNo };
+
+        foreach (var group in configuration.GetSection("Auth:TerminalLogin:SharedNetworkWarehouseGroups").GetChildren())
+        {
+            var groupWarehouseNos = group.GetSection("WarehouseNos").Get<int[]>() ?? [];
+
+            if (!groupWarehouseNos.Contains(userWarehouseNo))
+            {
+                continue;
+            }
+
+            foreach (var groupWarehouseNo in groupWarehouseNos.Where(warehouseNo => warehouseNo > 0))
+            {
+                allowedBranchNos.Add(groupWarehouseNo);
+            }
+        }
+
+        return allowedBranchNos.ToArray();
+    }
+
+    private static string? GetIpv4NetworkPrefix(string ipAddress)
+    {
+        var parts = ipAddress.Trim().Split('.', StringSplitOptions.TrimEntries);
+
+        if (parts.Length != 4)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (!byte.TryParse(parts[i], out var parsedPart))
+            {
+                return null;
+            }
+
+            parts[i] = parsedPart.ToString();
+        }
+
+        return $"{parts[0]}.{parts[1]}.{parts[2]}.";
     }
 
     private static string NormalizeLookup(string value)

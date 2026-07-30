@@ -21,7 +21,7 @@
 # InvoiceIds: ETTN/UUID ile tekil fatura filtrelemek icin. Ornek: eb6379bf-d2d8-4f1d-ab02-7deb09dae8d4
 # InvoiceNumbers: Fatura numarasi ile filtrelemek icin. Ornek: GIB2026000000123
 @uyumsoftInboxExecutionStartDate = 2026-07-01T00:00:00
-@uyumsoftInboxExecutionEndDate = 2026-07-20T23:59:59
+@uyumsoftInboxExecutionEndDate = 2026-07-01T23:59:59
 @uyumsoftInboxPageIndex = 0
 @uyumsoftInboxPageSize = 20
 @uyumsoftInboxSetTaken = false
