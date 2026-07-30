@@ -17,4 +17,10 @@ public sealed record ProductLookupItemDto(
     bool IsSalesBlocked,
     bool IsOrderBlocked,
     bool IsGoodsAcceptanceBlocked,
-    string ProductManagerCode);
+    string ProductManagerCode,
+    string? RequestedBarcode = null,
+    string? LookupBarcode = null,
+    bool IsVariableWeightBarcode = false,
+    double? EmbeddedQuantity = null,
+    string? EmbeddedQuantityUnit = null,
+    bool? IsBarcodeCheckDigitValid = null);

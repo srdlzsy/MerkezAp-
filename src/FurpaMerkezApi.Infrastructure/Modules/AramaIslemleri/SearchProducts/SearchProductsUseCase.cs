@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,11 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
 
-        var barcode = NormalizeOrNull(request.Barcode);
+        var requestedBarcode = NormalizeOrNull(request.Barcode);
+        var barcodeLookup = requestedBarcode is null
+            ? null
+            : BarcodeLookupNormalizer.Normalize(requestedBarcode);
+        var barcode = barcodeLookup?.LookupBarcode;
         var stockCode = NormalizeOrNull(request.StockCode);
         var stockName = NormalizeOrNull(request.StockName);
         var supplierCode = NormalizeOrNull(request.SupplierCode);
@@ -83,7 +88,13 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     IsBlocked(salesBlockCode),
                     IsBlocked(orderBlockCode),
                     IsBlocked(goodsAcceptanceBlockCode),
-                    ReadString(reader, "UrunSorumlusu")));
+                    ReadString(reader, "UrunSorumlusu"),
+                    barcodeLookup?.OriginalBarcode,
+                    barcodeLookup?.LookupBarcode,
+                    barcodeLookup?.IsVariableWeightBarcode ?? false,
+                    barcodeLookup?.EmbeddedQuantity,
+                    barcodeLookup?.EmbeddedQuantityUnit,
+                    barcodeLookup?.IsCheckDigitValid));
             }
         }
         finally

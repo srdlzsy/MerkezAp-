@@ -152,7 +152,11 @@ public sealed class AramaIslemleriController(
             new BarcodeResolutionRequest(
                 warehouseNo,
                 barcode,
-                request.ScreenCode),
+                request.ScreenCode,
+                request.OperationType,
+                request.TargetWarehouseNo,
+                request.CompanyCode ?? request.SupplierCode,
+                request.IsRefund),
             cancellationToken));
     }
 
@@ -343,6 +347,20 @@ public sealed class BarcodeResolutionHttpRequest
 {
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
+
+    [StringLength(64)]
+    public string? OperationType { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? TargetWarehouseNo { get; init; }
+
+    [StringLength(25)]
+    public string? SupplierCode { get; init; }
+
+    [StringLength(25)]
+    public string? CompanyCode { get; init; }
+
+    public bool? IsRefund { get; init; }
 
     [StringLength(64)]
     public string? ScreenCode { get; init; }

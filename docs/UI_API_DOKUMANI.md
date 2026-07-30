@@ -2465,7 +2465,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; barkod ile exact arama
+barcode        opsiyonel; barkod ile exact arama; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
@@ -2486,22 +2486,28 @@ Response:
 [
   {
     "warehouseNo": 110,
-    "barcode": "8690000000000",
+    "barcode": "2700174",
     "stockCode": "015550",
-    "stockName": "Stok Adi",
-    "price": 125.5,
+    "stockName": "MNV SEFTALI KG",
+    "price": 99.9,
     "priceTypeCode": 1,
-    "unitName": "AD",
+    "unitName": "KG",
     "unitMultiplier": 1,
-    "secondaryUnitName": "KOLI",
-    "secondaryUnitMultiplier": 12,
+    "secondaryUnitName": "",
+    "secondaryUnitMultiplier": 0,
     "salesBlockCode": 0,
     "orderBlockCode": 0,
     "goodsAcceptanceBlockCode": 0,
     "isSalesBlocked": false,
     "isOrderBlocked": false,
     "isGoodsAcceptanceBlocked": false,
-    "productManagerCode": "PER001"
+    "productManagerCode": "PER001",
+    "requestedBarcode": "2700174041103",
+    "lookupBarcode": "2700174",
+    "isVariableWeightBarcode": true,
+    "embeddedQuantity": 4.11,
+    "embeddedQuantityUnit": "KG",
+    "isBarcodeCheckDigitValid": true
   }
 ]
 ```
@@ -2511,6 +2517,7 @@ UI kullanim notu:
 - Mal kabulde `isGoodsAcceptanceBlocked = true` olan urunlerde uyari gosterilebilir.
 - Siparis girisinde `isOrderBlocked = true` olan urunlerde uyari veya engel uygulanabilir.
 - Satis/sevk formlarinda `isSalesBlocked = true` olan urunlerde uyari gosterilebilir.
+- Barkod okutulan satir ekleme ekranlarinda nihai karar icin once `barkodlar/{barcode}/cozumle` cagrilmalidir; `urunler` daha cok liste/arama deneyimi icindir.
 
 ### Fiyat Gor
 
@@ -2536,7 +2543,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; barkod ile exact arama
+barcode        opsiyonel; barkod ile exact arama; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
@@ -2553,6 +2560,7 @@ UI kullanim notu:
 
 - Sol menu altinda `AramaIslemleri > FiyatGor` gibi ayri bir hizli ekran olarak sunulabilir.
 - Barkod okutma ekraninda pratik yol `barkodlar/{barcode}/fiyat` alias'idir.
+- Terazi barkodunda response icindeki `requestedBarcode`, `lookupBarcode`, `embeddedQuantity` ve `embeddedQuantityUnit` alanlari UI'a okutulan barkod ile arama barkodunu ayirmak icin gelir.
 - El terminali offline kullanacaksa bu endpoint online anlik sorgu icin kalmali; offline veri hazirligi `Mobil Urun-Fiyat Katalog Sync` endpoint'iyle yapilmalidir.
 
 ### Urun Son Kunye
@@ -2613,64 +2621,98 @@ Not:
 
 ### Tek Barkod Cozumle
 
-Mobil uygulamada barkod okutunca tek cevapta urun bulundu mu, stok kodu, koli barkodu, koli ici adet ve secili ekranda kullanilabilirlik bilgisi almak icin:
+Mobil uygulamada barkod okutunca tek cevapta urun bulundu mu, okutulan barkodun tipi, koli ici adet, terazi/KG miktari, hedef depo uygunlugu, satinalma sarti ve secili islem icin kullanilabilirlik bilgisini almak icin:
 
-`GET /api/arama-islemleri/barkodlar/8690000000000/cozumle?warehouseNo=110&screenCode=firma-mal-kabulleri`
+`GET /api/arama-islemleri/barkodlar/2700174041103/cozumle?warehouseNo=110&operationType=receiving&targetWarehouseNo=120&supplierCode=120.01.03106`
 
 Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-screenCode     opsiyonel; ekran baglamini verir, kullanilabilirlik yorumu icin kullanilir
+operationType  opsiyonel; islem tipini verir, satira ekleme kararinda kullanilir
+targetWarehouseNo opsiyonel; hedef depo/model kod uygunlugu kontrolu icin kullanilir
+supplierCode   opsiyonel; secili tedarikciye gore SATINALMA_SARTLARI kontrolu yapar
+companyCode    opsiyonel; supplierCode ile ayni anlamda geriye uyum alias'i
+isRefund       opsiyonel; false ise eski sistemdeki iade disi DLS/99 filtresi uygulanir
+screenCode     opsiyonel; eski UI uyumu icin korunur, operationType bos ise ekran baglami gibi kullanilir
 ```
 
-Desteklenen tipik `screenCode` degerleri:
+Desteklenen tipik `operationType` / `screenCode` degerleri:
 
-- `firma-mal-kabulleri`
-- `depo-mal-kabulleri`
-- `sayim-sonuclari`
-- `verilen-firma-siparisleri`
-- `verilen-depo-siparisleri`
-- `giden-firma-sevkleri`
-- `giden-depolar-arasi-sevkler`
-- `firma-iadeleri`
-- `giden-depo-iadeleri`
+- `receiving`, `firma-mal-kabulleri`, `depo-mal-kabulleri`
+- `order`, `verilen-firma-siparisleri`, `verilen-depo-siparisleri`
+- `shipment`, `giden-firma-sevkleri`, `giden-depolar-arasi-sevkler`
+- `return`, `firma-iadeleri`, `giden-depo-iadeleri`
+- `waste`, `zayiat-fisleri`, `masraf-fisleri`, `fire`
+- `count`, `sayim-sonuclari`
 
 Onemli not:
 
-- Endpoint once `BARKOD_TANIMLARI` tablosunda exact barkod arar.
+- Endpoint once 13 haneli terazi barkodunu normalize eder. `27` veya `29` ile baslayan EAN-13 barkodlarda ilk 7 hane urun barkodu kabul edilir; 8-12. haneler KG miktari olarak `embeddedQuantity` alanina yazilir.
+- Ornek: `2700174041103` okutulursa `lookupBarcode = 2700174`, `embeddedQuantity = 4.11`, `embeddedQuantityUnit = KG` doner.
+- Endpoint normalize edilen barkodu `BARKOD_TANIMLARI` tablosunda exact arar.
 - Barkod bulunamazsa barkodu stok kodu veya global urun numarasi gibi degerlerle eslestirmeyi dener.
-- `resolutionSource` alani eslestirmenin `barcode`, `stock-code`, `gtin` veya `not-found` kaynakli oldugunu anlatir.
-- `caseBarcode` ve `unitsPerCase` alanlari koli/master barkod tespit edilebilirse dolar.
-- `defaultSupplierCode` ve `defaultSupplierName` alanlari stok kartindaki varsayilan tedarikci bilgisini dondurur.
-- `isUsableInScreen` ve `usabilityReason` alanlari secilen ekran icin pratik karar vermeyi kolaylastirir.
+- `resolutionSource` alani eslestirmenin `variable-weight`, `barcode`, `stock-code`, `gtin` veya `not-found` kaynakli oldugunu anlatir.
+- `barcodeKind` alani okutulan barkodun `variable-weight`, `product`, `case`, `alternative`, `stock-code` veya `gtin` gibi pratik tipini verir.
+- `caseBarcode`, `unitsPerCase` ve `matchedUnitsPerCase` alanlari koli/master barkod tespitinde kullanilir.
+- `isSalesBlocked`, `isOrderBlocked`, `isGoodsAcceptanceBlocked` ve `isPassive` depo detay degerleri varsa depo ozelinden, yoksa stok kartindan hesaplanir.
+- `isAllowedForTargetWarehouse` hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kod listesine gore hesaplanir.
+- `hasPurchaseRequirement` tedarikci veya hedef depo baglami verilirse `SATINALMA_SARTLARI` kontrol sonucudur. Bu sonuc mal kabul/siparis operasyonunda satira ekleme kararina dahil edilir.
+- `salesPrice` ve `priceTypeCode` secili depodaki fiyat satirindan gelir.
+- `isUsableInOperation`, `operationDecision`, `warnings` ve `errors` UI'in tek karar noktasi olmalidir.
 
 Response:
 
 ```json
 {
   "isFound": true,
-  "barcode": "8690000000000",
+  "barcode": "2700174041103",
   "warehouseNo": 110,
-  "screenCode": "firma-mal-kabulleri",
-  "resolutionSource": "barcode",
+  "screenCode": null,
+  "resolutionSource": "variable-weight",
   "stockCode": "015550",
-  "stockName": "Stok Adi",
-  "matchedBarcode": "8690000000000",
-  "primaryBarcode": "8690000000000",
+  "stockName": "MNV SEFTALI KG",
+  "matchedBarcode": "2700174",
+  "primaryBarcode": "2700174",
   "caseBarcode": "18690000000007",
   "unitsPerCase": 12,
   "matchedUnitPointer": 1,
-  "matchedUnitName": "AD",
+  "matchedUnitName": "KG",
   "matchedUnitMultiplier": 1,
   "isBlocked": false,
   "isSalesBlocked": false,
   "isOrderBlocked": false,
   "isGoodsAcceptanceBlocked": false,
   "isUsableInScreen": true,
-  "usabilityReason": "Urun mal kabul ekraninda kullanilabilir.",
+  "usabilityReason": "Islem tipi verilmedigi icin genel blok bilgisi donduruldu.",
   "defaultSupplierCode": "120.01.03106",
-  "defaultSupplierName": "ORNEK TEDARIKCI"
+  "defaultSupplierName": "ORNEK TEDARIKCI",
+  "lookupBarcode": "2700174",
+  "isVariableWeightBarcode": true,
+  "embeddedQuantity": 4.11,
+  "embeddedQuantityUnit": "KG",
+  "isBarcodeCheckDigitValid": true,
+  "barcodeKind": "variable-weight",
+  "isPrimaryBarcode": false,
+  "isCaseBarcode": false,
+  "isAlternativeBarcode": false,
+  "matchedUnitsPerCase": null,
+  "operationType": "receiving",
+  "targetWarehouseNo": 120,
+  "isAllowedForTargetWarehouse": true,
+  "targetWarehouseReason": "Urun hedef deponun izinli model kodlari icinde.",
+  "productModelCode": "MNV",
+  "targetWarehouseModelCodes": ["MNV", "SKT"],
+  "supplierCode": "120.01.03106",
+  "hasPurchaseRequirement": true,
+  "purchaseRequirementReason": "Secili tedarikci icin satinalma sarti bulundu.",
+  "salesPrice": 99.9,
+  "priceTypeCode": 1,
+  "isPassive": false,
+  "isUsableInOperation": true,
+  "operationDecision": "Urun mal kabul isleminde kullanilabilir.",
+  "warnings": [],
+  "errors": []
 }
 ```
 
@@ -2682,7 +2724,10 @@ Bulunamayan barkod davranisi:
 UI kullanim notu:
 
 - Kamera ile tek barkod okutulan ekranlarda once bu endpoint cagrilmalidir.
-- `isFound = true` ve `isUsableInScreen = false` ise UI urunu satira eklemeden once blok nedenini gostermelidir.
+- UI barkodun urun/stok/ad/tipi tahminini frontend'de yapmamalidir; okutulan degeri aynen bu endpoint'e gondermelidir.
+- Satira ekleme karari icin ana alan `isUsableInOperation` olmalidir. `false` ise `operationDecision` ve `errors` kullaniciya gosterilmelidir.
+- Terazi barkodunda satir miktari icin `embeddedQuantity` kullanilabilir; bos ise varsayilan miktar UI tarafinda `1` kabul edilebilir.
+- Koli barkodu okutulduysa `isCaseBarcode = true` ve `matchedUnitsPerCase` dolu gelir; UI koli ici adet kadar miktar onerebilir.
 - `caseBarcode` doluysa koli barkodu tekrar okutma, koli bozma veya alternatif birim secimi gibi kisayollar acilabilir.
 
 ### Urunden Cari Onerileri
@@ -14545,7 +14590,13 @@ public sealed record ProductLookupItemDto(
     bool IsSalesBlocked,
     bool IsOrderBlocked,
     bool IsGoodsAcceptanceBlocked,
-    string ProductManagerCode);
+    string ProductManagerCode,
+    string? RequestedBarcode = null,
+    string? LookupBarcode = null,
+    bool IsVariableWeightBarcode = false,
+    double? EmbeddedQuantity = null,
+    string? EmbeddedQuantityUnit = null,
+    bool? IsBarcodeCheckDigitValid = null);
 
 public sealed record ProductCustomerSuggestionResponse(
     bool IsProductFound,
@@ -16760,7 +16811,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `ProductBarcodePriceLookupHttpRequest`: `WarehouseNo`, `Take`
 - `CustomerSearchHttpRequest`: `SearchText`, `Take`
 - `WarehouseSearchHttpRequest`: `SearchText`, `WarehouseNo`, `Take`
-- `BarcodeResolutionHttpRequest`: `WarehouseNo`, `ScreenCode`
+- `BarcodeResolutionHttpRequest`: `WarehouseNo`, `OperationType`, `TargetWarehouseNo`, `SupplierCode`, `CompanyCode`, `IsRefund`, `ScreenCode`
 - `BarcodeCustomerLookupHttpRequest`: `Barcode`, `WarehouseNo`, `Take`
 - `BarcodeCustomerLookupByPathHttpRequest`: `WarehouseNo`, `Take`
 - `ProductCustomerSuggestionHttpRequest`: `Take`
