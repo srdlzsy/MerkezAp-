@@ -190,6 +190,24 @@ Projede tek veritabani yoktur. Birden fazla veri kaynagi vardir.
 | `ShopigoCiroDbContext` | `ShopigoCiroConnection` | Shopigo ciro verileri, config varsa kaydedilir |
 | `MikroApiClient` | `MikroApi:BaseUrl` | Mikro REST API cagrilari |
 
+SQL command timeout ayarlari `DatabaseCommandTimeouts` konfigurasyonundan yonetilir:
+
+```json
+{
+  "DatabaseCommandTimeouts": {
+    "DefaultSeconds": 300,
+    "AuthSeconds": 300,
+    "MikroReadSeconds": 300,
+    "MikroWriteSeconds": 300,
+    "FurpaSeconds": 300,
+    "AxataSeconds": 300,
+    "ShopigoCiroSeconds": 300
+  }
+}
+```
+
+`MikroReadSeconds` liste/detay/rapor okumalari, `MikroWriteSeconds` create/update/delete yazma islemleri icin kullanilir. Degerler ortam degiskeniyle `DatabaseCommandTimeouts__MikroWriteSeconds=300` formatinda override edilebilir. Uygulama degerleri 30 ile 1800 saniye arasinda sinirlar.
+
 ## 8. AuthDbContext
 
 `AuthDbContext`, auth ve yetki sisteminin ana DB context'idir.

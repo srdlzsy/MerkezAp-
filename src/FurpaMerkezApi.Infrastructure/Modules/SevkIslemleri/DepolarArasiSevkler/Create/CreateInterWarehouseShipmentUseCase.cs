@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
@@ -33,11 +35,14 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private const byte InterWarehouseShipmentDocumentType = 17;
     private const byte WaitingShippingState = 0;
     private const int FirstDocumentOrderNo = 0;
+    private const int ShipmentCreateLockTimeoutMilliseconds = 120_000;
+    private const int RecentDuplicateLookupMinutes = 5;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> LocalShipmentCreateLocks = new(StringComparer.Ordinal);
 
     public async Task<CreateInterWarehouseShipmentResponse> ExecuteAsync(
         CreateInterWarehouseShipmentRequest request,
@@ -75,9 +80,25 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
         return await executionStrategy.ExecuteAsync(async () =>
         {
+            await using var createLock = await AcquireShipmentCreateLockAsync(documentSerie, cancellationToken);
             mikroWriteDbContext.ChangeTracker.Clear();
+
+            var duplicate = await TryFindRecentDuplicateAsync(
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                now,
+                options.ConnectionStringName,
+                cancellationToken);
+
+            if (duplicate is not null)
+            {
+                return duplicate;
+            }
+
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -164,7 +185,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
@@ -175,6 +196,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CancellationToken cancellationToken)
     {
         var options = mikroWriteOptions.Value;
+        var now = DateTime.Now;
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
         var documentSerie = $"F{request.SourceWarehouseNo}";
@@ -187,7 +209,23 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             IsGreenGrocerOrderLinkingEnabled(),
             cancellationToken);
 
+        await using var createLock = await AcquireShipmentCreateLockAsync(documentSerie, cancellationToken);
         mikroWriteDbContext.ChangeTracker.Clear();
+
+        var duplicate = await TryFindRecentDuplicateAsync(
+            request,
+            lines,
+            movementDate,
+            documentDate,
+            now,
+            options.ConnectionStringName,
+            cancellationToken);
+
+        if (duplicate is not null)
+        {
+            return duplicate;
+        }
+
         var linkedWarehouseOrderLines = await GetAndValidateLinkedOrderLinesAsync(
             request,
             lines,
@@ -276,6 +314,164 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             "MikroWriteRouting:InterWarehouseShipment is DualShadow. DahiliStokHareketKaydetV2 has no dry-run contract, so only the database write path will run.");
 
         return await ExecuteDatabaseAsync(request, cancellationToken);
+    }
+
+    private async Task<CreateInterWarehouseShipmentResponse?> TryFindRecentDuplicateAsync(
+        CreateInterWarehouseShipmentRequest request,
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines,
+        DateTime movementDate,
+        DateTime documentDate,
+        DateTime now,
+        string connectionStringName,
+        CancellationToken cancellationToken)
+    {
+        var duplicateThreshold = now.AddMinutes(-RecentDuplicateLookupMinutes);
+        var candidateRows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_tip == MovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_evrakno_seri == $"F{request.SourceWarehouseNo}" &&
+                movement.sth_evrakno_sira.HasValue &&
+                movement.sth_satirno.HasValue &&
+                movement.sth_cikis_depo_no == request.SourceWarehouseNo &&
+                movement.sth_giris_depo_no == request.TransitWarehouseNo &&
+                movement.sth_nakliyedeposu == request.TargetWarehouseNo &&
+                movement.sth_tarih == movementDate &&
+                movement.sth_belge_tarih == documentDate &&
+                movement.sth_create_date >= duplicateThreshold)
+            .Select(movement => new ShipmentDuplicateRow(
+                movement.sth_evrakno_seri ?? string.Empty,
+                movement.sth_evrakno_sira,
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no ?? string.Empty,
+                movement.sth_cikis_depo_no ?? 0,
+                movement.sth_nakliyedeposu ?? 0,
+                movement.sth_giris_depo_no ?? 0,
+                movement.sth_satirno,
+                movement.sth_stok_kod,
+                movement.sth_miktar ?? 0d,
+                movement.sth_birim_pntr ?? 0,
+                movement.sth_tutar ?? 0d,
+                movement.sth_aciklama,
+                movement.sth_parti_kodu,
+                movement.sth_lot_no ?? 0,
+                movement.sth_proje_kodu,
+                movement.sth_cari_srm_merkezi,
+                movement.sth_stok_srm_merkezi))
+            .ToListAsync(cancellationToken);
+
+        foreach (var candidate in candidateRows.GroupBy(row => new
+                 {
+                     row.DocumentSerie,
+                     row.DocumentOrderNo,
+                     row.SourceWarehouseNo,
+                     row.TargetWarehouseNo,
+                     row.TransitWarehouseNo
+                 }))
+        {
+            var rows = candidate.ToArray();
+            if (rows.Length != lines.Count)
+            {
+                continue;
+            }
+
+            if (!ShipmentLinesMatch(request, lines, rows))
+            {
+                continue;
+            }
+
+            var firstRow = rows[0];
+            var linkedWarehouseOrderLineCount =
+                lines.Count(line => line.WarehouseOrderLineGuid.HasValue) +
+                GetAutomaticWarehouseOrderRows(request, lines).Length;
+
+            logger.LogWarning(
+                "Recent duplicate inter warehouse shipment create request matched existing document. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, LineCount={LineCount}",
+                firstRow.DocumentSerie,
+                firstRow.DocumentOrderNo,
+                request.SourceWarehouseNo,
+                request.TargetWarehouseNo,
+                rows.Length);
+
+            return new CreateInterWarehouseShipmentResponse(
+                firstRow.DocumentSerie,
+                firstRow.DocumentOrderNo ?? FirstDocumentOrderNo,
+                firstRow.MovementDate?.Date ?? movementDate,
+                firstRow.DocumentDate?.Date ?? documentDate,
+                firstRow.DocumentNo,
+                firstRow.SourceWarehouseNo,
+                firstRow.TargetWarehouseNo,
+                firstRow.TransitWarehouseNo,
+                rows.Length,
+                linkedWarehouseOrderLineCount,
+                rows.Sum(row => row.Quantity),
+                rows.Sum(row => row.Amount),
+                connectionStringName);
+        }
+
+        return null;
+    }
+
+    private async Task<IAsyncDisposable> AcquireShipmentCreateLockAsync(
+        string documentSerie,
+        CancellationToken cancellationToken)
+    {
+        var lockResource = $"FurpaMerkezApi:InterWarehouseShipmentCreate:{documentSerie}";
+        var localLock = LocalShipmentCreateLocks.GetOrAdd(lockResource, _ => new SemaphoreSlim(1, 1));
+        await localLock.WaitAsync(cancellationToken);
+
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State != ConnectionState.Open;
+
+        try
+        {
+            if (closeConnection)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DECLARE @result int;
+                EXEC @result = sys.sp_getapplock
+                    @Resource = @resource,
+                    @LockMode = 'Exclusive',
+                    @LockOwner = 'Session',
+                    @LockTimeout = @lockTimeout;
+                SELECT @result;
+                """;
+            command.CommandTimeout = (ShipmentCreateLockTimeoutMilliseconds / 1000) + 10;
+            AddParameter(command, "@resource", DbType.String, lockResource);
+            AddParameter(command, "@lockTimeout", DbType.Int32, ShipmentCreateLockTimeoutMilliseconds);
+
+            var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+            if (result < 0)
+            {
+                throw new TimeoutException(
+                    $"Inter warehouse shipment create lock could not be acquired. SQL result: {result}.");
+            }
+
+            return new ShipmentCreateLockLease(
+                connection,
+                closeConnection,
+                localLock,
+                lockResource,
+                logger);
+        }
+        catch
+        {
+            if (closeConnection && connection.State != ConnectionState.Closed)
+            {
+                await connection.CloseAsync();
+            }
+
+            localLock.Release();
+            throw;
+        }
     }
 
     private async Task<RecoveredInterWarehouseShipmentCreate> RecoverMikroApiCreateResponseAsync(
@@ -1049,6 +1245,71 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
     }
 
+    private static bool ShipmentLinesMatch(
+        CreateInterWarehouseShipmentRequest request,
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> expectedLines,
+        IReadOnlyCollection<ShipmentDuplicateRow> actualRows)
+    {
+        var rowsByRowNo = actualRows
+            .Where(row => row.RowNo.HasValue)
+            .GroupBy(row => row.RowNo!.Value)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+
+        if (rowsByRowNo.Count != expectedLines.Count ||
+            rowsByRowNo.Values.Any(group => group.Length != 1))
+        {
+            return false;
+        }
+
+        for (var rowNo = 0; rowNo < expectedLines.Count; rowNo++)
+        {
+            if (!rowsByRowNo.TryGetValue(rowNo, out var matchingRows))
+            {
+                return false;
+            }
+
+            var expectedLine = expectedLines[rowNo];
+            var actualRow = matchingRows[0];
+            var expectedAmount = expectedLine.Quantity * expectedLine.UnitPrice;
+            var expectedDescription = expectedLine.Description ?? request.Description;
+
+            if (!TextEquals(actualRow.StockCode, expectedLine.StockCode) ||
+                !NearlyEquals(actualRow.Quantity, expectedLine.Quantity) ||
+                actualRow.UnitPointer != expectedLine.UnitPointer ||
+                !NearlyEquals(actualRow.Amount, expectedAmount) ||
+                !TextEquals(actualRow.Description, expectedDescription) ||
+                !TextEquals(actualRow.PartyCode, expectedLine.PartyCode) ||
+                actualRow.LotNo != expectedLine.LotNo ||
+                !TextEquals(actualRow.ProjectCode, expectedLine.ProjectCode) ||
+                !TextEquals(actualRow.CustomerResponsibilityCenter, expectedLine.CustomerResponsibilityCenter) ||
+                !TextEquals(actualRow.ProductResponsibilityCenter, expectedLine.ProductResponsibilityCenter))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool NearlyEquals(double actual, double expected) =>
+        Math.Abs(actual - expected) <= 0.0001d;
+
+    private static bool TextEquals(string? actual, string? expected) =>
+        string.Equals(NormalizeText(actual), NormalizeText(expected), StringComparison.OrdinalIgnoreCase);
+
+    private static void AddParameter(
+        DbCommand command,
+        string name,
+        DbType type,
+        object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.DbType = type;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
@@ -1070,4 +1331,68 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         double TotalQuantity,
         double TotalAmount,
         IReadOnlyDictionary<int, Guid> MovementGuidByRowNo);
+
+    private sealed record ShipmentDuplicateRow(
+        string DocumentSerie,
+        int? DocumentOrderNo,
+        DateTime? MovementDate,
+        DateTime? DocumentDate,
+        string DocumentNo,
+        int SourceWarehouseNo,
+        int TargetWarehouseNo,
+        int TransitWarehouseNo,
+        int? RowNo,
+        string? StockCode,
+        double Quantity,
+        int UnitPointer,
+        double Amount,
+        string? Description,
+        string? PartyCode,
+        int LotNo,
+        string? ProjectCode,
+        string? CustomerResponsibilityCenter,
+        string? ProductResponsibilityCenter);
+
+    private sealed class ShipmentCreateLockLease(
+        DbConnection connection,
+        bool closeConnection,
+        SemaphoreSlim localLock,
+        string lockResource,
+        ILogger<CreateInterWarehouseShipmentUseCase> leaseLogger)
+        : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (connection.State == ConnectionState.Open)
+                {
+                    await using var command = connection.CreateCommand();
+                    command.CommandText = """
+                        EXEC sys.sp_releaseapplock
+                            @Resource = @resource,
+                            @LockOwner = 'Session';
+                        """;
+                    AddParameter(command, "@resource", DbType.String, lockResource);
+                    await command.ExecuteNonQueryAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception exception)
+            {
+                leaseLogger.LogWarning(
+                    exception,
+                    "Inter warehouse shipment create SQL application lock could not be released explicitly. Resource={LockResource}",
+                    lockResource);
+            }
+            finally
+            {
+                if (closeConnection && connection.State != ConnectionState.Closed)
+                {
+                    await connection.CloseAsync();
+                }
+
+                localLock.Release();
+            }
+        }
+    }
 }

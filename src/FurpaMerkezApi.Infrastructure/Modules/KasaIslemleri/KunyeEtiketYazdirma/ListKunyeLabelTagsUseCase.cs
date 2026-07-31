@@ -112,7 +112,7 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                 ORDER BY s.sto_isim;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@date", date, DbType.DateTime2);
             AddParameter(command, "@nextDate", nextDate, DbType.DateTime2);

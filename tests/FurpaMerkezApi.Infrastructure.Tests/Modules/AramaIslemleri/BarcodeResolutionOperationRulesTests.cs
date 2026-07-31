@@ -45,4 +45,21 @@ public sealed class BarcodeResolutionOperationRulesTests
 
         Assert.True(result);
     }
+    [Fact]
+    public void ShouldEnforceSalesBlock_ReturnsFalse_ForShipment()
+    {
+        var result = BarcodeResolutionOperationRules.ShouldEnforceSalesBlock("shipment");
+
+        Assert.False(result);
+    }
+
+    [Theory]
+    [InlineData("return")]
+    [InlineData("waste")]
+    public void ShouldEnforceSalesBlock_ReturnsTrue_ForReturnAndWaste(string operationType)
+    {
+        var result = BarcodeResolutionOperationRules.ShouldEnforceSalesBlock(operationType);
+
+        Assert.True(result);
+    }
 }

@@ -16,6 +16,7 @@ public sealed record GreenGrocerDashboardDto(
     int DocumentCount,
     int ProductCount,
     double TotalQuantity,
+    GreenGrocerReportCaseInfoDto? CaseInfo,
     IReadOnlyCollection<GreenGrocerTypeSummaryDto> TypeSummaries,
     IReadOnlyCollection<GreenGrocerBranchSummaryDto> Branches,
     IReadOnlyCollection<GreenGrocerProductReportItemDto> TopProducts,
@@ -27,14 +28,16 @@ public sealed record GreenGrocerTypeSummaryDto(
     int BranchCount,
     int DocumentCount,
     int ProductCount,
-    double TotalQuantity);
+    double TotalQuantity,
+    GreenGrocerReportCaseInfoDto? CaseInfo = null);
 
 public sealed record GreenGrocerBranchSummaryDto(
     int BranchNo,
     string BranchName,
     int DocumentCount,
     int ProductCount,
-    double TotalQuantity);
+    double TotalQuantity,
+    GreenGrocerReportCaseInfoDto? CaseInfo = null);
 
 public sealed record GreenGrocerBranchReportDto(
     IReadOnlyCollection<GreenGrocerBranchReportItemDto> Items,
@@ -52,14 +55,16 @@ public sealed record GreenGrocerBranchReportItemDto(
     string ProductName,
     double Quantity,
     DateTime LatestCreateDate,
-    bool CanDelete);
+    bool CanDelete,
+    GreenGrocerReportCaseInfoDto? CaseInfo = null);
 
 public sealed record GreenGrocerProductReportItemDto(
     string TypeCode,
     string TypeName,
     string ProductCode,
     string ProductName,
-    double Quantity);
+    double Quantity,
+    GreenGrocerReportCaseInfoDto? CaseInfo = null);
 
 public sealed record GreenGrocerProductReportGroupDto(
     string TypeCode,
@@ -67,6 +72,7 @@ public sealed record GreenGrocerProductReportGroupDto(
     string ProductCode,
     string ProductName,
     double TotalQuantity,
+    GreenGrocerReportCaseInfoDto? CaseInfo,
     IReadOnlyCollection<GreenGrocerProductBranchItemDto> Branches);
 
 public sealed record GreenGrocerProductBranchItemDto(
@@ -76,7 +82,8 @@ public sealed record GreenGrocerProductBranchItemDto(
     int DocumentOrderNo,
     double Quantity,
     DateTime LatestCreateDate,
-    bool CanDelete);
+    bool CanDelete,
+    GreenGrocerReportCaseInfoDto? CaseInfo = null);
 
 public sealed record GreenGrocerGreenReportItemDto(
     DateTime OrderDate,
@@ -91,7 +98,21 @@ public sealed record GreenGrocerGreenReportItemDto(
     string ProductName,
     double Quantity,
     DateTime LatestCreateDate,
-    bool CanDelete);
+    bool CanDelete,
+    GreenGrocerReportCaseInfoDto? CaseInfo = null);
+
+public sealed record GreenGrocerReportCaseInfoDto(
+    double InputQuantity,
+    string InputMode,
+    double EstimatedQuantity,
+    string MicroUnit,
+    double? AverageKgPerCase,
+    double? UnitsPerCase,
+    string AverageSource,
+    string Confidence,
+    int? AverageRecordCount,
+    int? AverageCaseCount,
+    double? CoefficientOfVariation);
 
 public sealed record GreenGrocerLazyBranchDto(
     int BranchNo,

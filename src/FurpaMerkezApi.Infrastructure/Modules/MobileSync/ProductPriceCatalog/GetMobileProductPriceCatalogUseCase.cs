@@ -237,7 +237,7 @@ public sealed class GetMobileProductPriceCatalogUseCase(MikroDbContext mikroDbCo
                 ORDER BY StockCode, Barcode, LookupSource;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
             AddParameter(command, "@since", effectiveSince, DbType.DateTime2);

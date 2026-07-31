@@ -156,7 +156,7 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
             using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
             configureCommand(command);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);

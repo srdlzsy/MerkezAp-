@@ -84,7 +84,7 @@ public sealed class GetMobileCustomerCatalogUseCase(MikroDbContext mikroDbContex
                 ORDER BY CustomerCode;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@since", effectiveSince, DbType.DateTime2);
             AddParameter(command, "@syncUpperBound", syncUpperBound, DbType.DateTime2);

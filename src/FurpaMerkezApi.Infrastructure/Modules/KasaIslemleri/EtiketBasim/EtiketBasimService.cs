@@ -48,7 +48,7 @@ public sealed class EtiketBasimService(
             ORDER BY cari_unvan1;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@take", take, DbType.Int32);
         AddParameter(command, "@queryLike", query + "%", DbType.String);
 
@@ -121,7 +121,7 @@ public sealed class EtiketBasimService(
             ORDER BY stock.sto_isim;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@take", take, DbType.Int32);
         AddParameter(command, "@prefixLike", prefix + "%", DbType.String);
         AddParameter(command, "@queryLike", BuildContainsLike(query), DbType.String);
@@ -175,7 +175,7 @@ public sealed class EtiketBasimService(
             ORDER BY ID DESC;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@date", date.Date, DbType.Date);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -259,7 +259,7 @@ public sealed class EtiketBasimService(
             SELECT CAST(SCOPE_IDENTITY() AS int);
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddSaveParameters(command, normalized, calculation);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -313,7 +313,7 @@ public sealed class EtiketBasimService(
               AND ISNULL(Mikro_Aktarildi, 0) = 0;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@Id", id, DbType.Int32);
         AddSaveParameters(command, normalized, calculation);
 
@@ -345,7 +345,7 @@ public sealed class EtiketBasimService(
               AND ISNULL(Mikro_Aktarildi, 0) = 0;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@Id", id, DbType.Int32);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
@@ -518,7 +518,7 @@ public sealed class EtiketBasimService(
             ORDER BY StockName;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 180;
+        command.CommandTimeout = 300;
         AddParameter(command, "@warehouseNo", warehouseNo, DbType.Int32);
         AddParameter(command, "@date", date.Date, DbType.Date);
 
@@ -585,7 +585,7 @@ public sealed class EtiketBasimService(
             ORDER BY stock.sto_isim;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@value", value, DbType.String);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -607,7 +607,7 @@ public sealed class EtiketBasimService(
             WHERE ID = @Id;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 60;
+        command.CommandTimeout = 300;
         AddParameter(command, "@Id", id, DbType.Int32);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -645,7 +645,7 @@ public sealed class EtiketBasimService(
             ORDER BY Cari_Unvan, Stok_Ismi;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 90;
+        command.CommandTimeout = 300;
         AddParameter(command, "@date", date, DbType.Date);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -685,7 +685,7 @@ public sealed class EtiketBasimService(
             GROUP BY customer.cari_unvan1, movement.sth_stok_kod;
             """;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 90;
+        command.CommandTimeout = 300;
         AddParameter(command, "@date", date, DbType.Date);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

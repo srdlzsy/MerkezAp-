@@ -807,7 +807,7 @@ internal sealed class OperationsFileGenerationService(
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 180
+            CommandTimeout = 300
         };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 

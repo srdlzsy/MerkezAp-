@@ -1226,7 +1226,7 @@ public sealed class KasaHareketAktarimiService(
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
             configureCommand(command);
 
             var value = await command.ExecuteScalarAsync(cancellationToken);
@@ -1263,7 +1263,7 @@ public sealed class KasaHareketAktarimiService(
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
             configureCommand(command);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);

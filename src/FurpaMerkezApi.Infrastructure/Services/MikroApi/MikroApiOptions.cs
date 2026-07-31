@@ -20,7 +20,7 @@ public sealed class MikroApiOptions
 
     public string ApiKey { get; init; } = string.Empty;
 
-    public int TimeoutSeconds { get; init; } = 30;
+    public int TimeoutSeconds { get; init; } = 300;
 
     public int RetryCount { get; init; } = 2;
 

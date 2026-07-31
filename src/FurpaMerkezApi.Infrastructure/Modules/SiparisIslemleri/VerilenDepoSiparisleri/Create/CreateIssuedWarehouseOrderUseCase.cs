@@ -1,6 +1,10 @@
 using System.Data;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
+using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -11,15 +15,19 @@ using Microsoft.Extensions.Options;
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 
 public sealed class CreateIssuedWarehouseOrderUseCase(
+    AuthDbContext authDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<GreenGrocerProductCaseOptions> greenGrocerProductCaseOptions,
+    IClock clock,
     MikroApiClient mikroApiClient,
     ILogger<CreateIssuedWarehouseOrderUseCase> logger)
     : ICreateIssuedWarehouseOrderUseCase
 {
     private const short FileId = 86;
     private const short MikroUserNo = 39;
+    private const int GreenGrocerWarehouseNo = 56;
     private const int FirstDocumentOrderNo = 0;
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const int MikroApiRecoveryAttemptCount = 5;
@@ -79,6 +87,15 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(entities, cancellationToken);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
+
+                await TryCreateGreenGrocerOrderLineSnapshotsAsync(
+                    request,
+                    lines,
+                    entities.ToDictionary(entity => entity.ssip_satirno ?? 0, entity => entity.ssip_Guid),
+                    documentSerie,
+                    documentOrderNo,
+                    orderDate,
+                    CancellationToken.None);
 
                 return new CreateIssuedWarehouseOrderResponse(
                     documentSerie,
@@ -145,6 +162,15 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             deliveryDate,
             options.ConnectionStringName,
             cancellationToken);
+
+        await TryCreateGreenGrocerOrderLineSnapshotsAsync(
+            request,
+            lines,
+            await GetOrderLineGuidByRowNoAsync(documentSerie, documentOrderNo, request, cancellationToken),
+            recovered.DocumentSerie,
+            recovered.DocumentOrderNo,
+            recovered.OrderDate,
+            CancellationToken.None);
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
@@ -276,6 +302,120 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
+    private async Task<Dictionary<int, Guid>> GetOrderLineGuidByRowNoAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        return await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_evrakno_seri == documentSerie &&
+                order.ssip_evrakno_sira == documentOrderNo &&
+                order.ssip_girdepo == request.InWarehouseNo &&
+                order.ssip_cikdepo == request.OutWarehouseNo &&
+                order.ssip_satirno.HasValue)
+            .Select(order => new
+            {
+                RowNo = order.ssip_satirno!.Value,
+                order.ssip_Guid
+            })
+            .ToDictionaryAsync(row => row.RowNo, row => row.ssip_Guid, cancellationToken);
+    }
+
+    private async Task TryCreateGreenGrocerOrderLineSnapshotsAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        IReadOnlyList<CreateIssuedWarehouseOrderLineRequest> lines,
+        IReadOnlyDictionary<int, Guid> lineGuidByRowNo,
+        string documentSerie,
+        int documentOrderNo,
+        DateTime orderDate,
+        CancellationToken cancellationToken)
+    {
+        if (!greenGrocerProductCaseOptions.CurrentValue.Enabled ||
+            request.OutWarehouseNo != GreenGrocerWarehouseNo ||
+            !request.CreatedByUserId.HasValue ||
+            lines.All(line => line.GreenGrocerCase is null))
+        {
+            return;
+        }
+
+        try
+        {
+            var requestedSnapshots = lines
+                .Select((line, rowNo) => new { line, rowNo, line.GreenGrocerCase })
+                .Where(item => item.GreenGrocerCase is not null &&
+                               lineGuidByRowNo.ContainsKey(item.rowNo))
+                .ToArray();
+
+            if (requestedSnapshots.Length == 0)
+            {
+                return;
+            }
+
+            var lineGuids = requestedSnapshots
+                .Select(item => lineGuidByRowNo[item.rowNo])
+                .ToArray();
+            var existingLineGuids = await authDbContext.GreenGrocerOrderLineSnapshots
+                .AsNoTracking()
+                .Where(snapshot => lineGuids.Contains(snapshot.WarehouseOrderLineGuid))
+                .Select(snapshot => snapshot.WarehouseOrderLineGuid)
+                .ToListAsync(cancellationToken);
+            var existingLineGuidSet = existingLineGuids.ToHashSet();
+            var createdAtUtc = clock.UtcNow;
+            var snapshots = requestedSnapshots
+                .Where(item => !existingLineGuidSet.Contains(lineGuidByRowNo[item.rowNo]))
+                .Select(item =>
+                {
+                    var snapshot = item.GreenGrocerCase!;
+                    return new GreenGrocerOrderLineSnapshot(
+                        Guid.NewGuid(),
+                        lineGuidByRowNo[item.rowNo],
+                        documentSerie,
+                        documentOrderNo,
+                        item.rowNo,
+                        orderDate,
+                        request.OutWarehouseNo,
+                        request.InWarehouseNo,
+                        item.line.StockCode,
+                        Round(snapshot.InputQuantity),
+                        snapshot.InputMode,
+                        snapshot.ConversionMode,
+                        RoundOrNull(snapshot.AverageKgPerCase),
+                        RoundOrNull(snapshot.UnitsPerCase),
+                        Round(snapshot.EstimatedQuantity),
+                        snapshot.MicroUnit,
+                        snapshot.AverageSource,
+                        snapshot.AverageRecordCount,
+                        snapshot.AverageCaseCount,
+                        RoundOrNull(snapshot.CoefficientOfVariation),
+                        snapshot.Confidence,
+                        request.CreatedByUserId.Value,
+                        createdAtUtc);
+                })
+                .ToArray();
+
+            if (snapshots.Length == 0)
+            {
+                return;
+            }
+
+            await authDbContext.GreenGrocerOrderLineSnapshots.AddRangeAsync(snapshots, cancellationToken);
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Green grocer order line snapshots could not be saved. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}",
+                documentSerie,
+                documentOrderNo,
+                request.InWarehouseNo,
+                request.OutWarehouseNo);
+        }
+    }
+
     private static DEPOLAR_ARASI_SIPARISLER CreateOrderLine(
         CreateIssuedWarehouseOrderRequest request,
         CreateIssuedWarehouseOrderLineRequest line,
@@ -393,9 +533,49 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             {
                 throw new ArgumentException("Line recommended quantity can not be negative.", nameof(request.Lines));
             }
+
+            if (line.GreenGrocerCase is not null)
+            {
+                ValidateGreenGrocerSnapshot(line.GreenGrocerCase, line.Quantity);
+            }
+        }
+    }
+
+    private static void ValidateGreenGrocerSnapshot(
+        GreenGrocerOrderLineSnapshotRequest snapshot,
+        double lineQuantity)
+    {
+        if (snapshot.InputQuantity <= 0)
+        {
+            throw new ArgumentException("Green grocer input quantity must be greater than zero.");
+        }
+
+        if (snapshot.EstimatedQuantity <= 0)
+        {
+            throw new ArgumentException("Green grocer estimated quantity must be greater than zero.");
+        }
+
+        if (Math.Abs(snapshot.EstimatedQuantity - lineQuantity) > 0.0001d)
+        {
+            throw new ArgumentException("Green grocer estimated quantity must match the order line quantity.");
+        }
+
+        if (string.IsNullOrWhiteSpace(snapshot.InputMode) ||
+            string.IsNullOrWhiteSpace(snapshot.ConversionMode) ||
+            string.IsNullOrWhiteSpace(snapshot.MicroUnit) ||
+            string.IsNullOrWhiteSpace(snapshot.AverageSource) ||
+            string.IsNullOrWhiteSpace(snapshot.Confidence))
+        {
+            throw new ArgumentException("Green grocer snapshot fields are required.");
         }
     }
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static double Round(double value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static double? RoundOrNull(double? value) =>
+        value.HasValue ? Round(value.Value) : null;
 }

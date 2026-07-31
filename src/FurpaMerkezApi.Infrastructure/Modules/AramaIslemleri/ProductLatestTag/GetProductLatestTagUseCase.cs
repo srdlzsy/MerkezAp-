@@ -65,7 +65,7 @@ public sealed class GetProductLatestTagUseCase(MikroDbContext mikroDbContext) : 
                 ORDER BY vw.ShippingDate DESC;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@stockCode", stockCode);
             AddParameter(command, "@warehouseNo", request.WarehouseNo);

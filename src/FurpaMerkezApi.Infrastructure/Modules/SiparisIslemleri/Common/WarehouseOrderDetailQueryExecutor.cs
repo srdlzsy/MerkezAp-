@@ -1,10 +1,13 @@
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 
-public sealed class WarehouseOrderDetailQueryExecutor(MikroDbContext mikroDbContext)
+public sealed class WarehouseOrderDetailQueryExecutor(
+    MikroDbContext mikroDbContext,
+    AuthDbContext authDbContext)
 {
     internal async Task<WarehouseOrderDetailDto> ExecuteAsync(
         WarehouseOrderDetailRequest request,
@@ -83,6 +86,10 @@ public sealed class WarehouseOrderDetailQueryExecutor(MikroDbContext mikroDbCont
             throw new KeyNotFoundException("Warehouse order detail was not found.");
         }
 
+        var greenGrocerCaseByLineGuid = await GetGreenGrocerCaseByLineGuidAsync(
+            rows.Select(row => row.ssip_Guid).ToArray(),
+            cancellationToken);
+
         var headerCount = rows
             .Select(row => new
             {
@@ -134,7 +141,8 @@ public sealed class WarehouseOrderDetailQueryExecutor(MikroDbContext mikroDbCont
                     row.ssip_kapat_fl ?? false,
                     row.ssip_aciklama ?? string.Empty,
                     row.ssip_paket_kod ?? string.Empty,
-                    row.ssip_projekodu ?? string.Empty);
+                    row.ssip_projekodu ?? string.Empty,
+                    greenGrocerCaseByLineGuid.GetValueOrDefault(row.ssip_Guid));
             })
             .ToArray();
 
@@ -163,6 +171,64 @@ public sealed class WarehouseOrderDetailQueryExecutor(MikroDbContext mikroDbCont
         return new WarehouseOrderDetailDto(header, items);
     }
 
+    private async Task<IReadOnlyDictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>> GetGreenGrocerCaseByLineGuidAsync(
+        IReadOnlyCollection<Guid> lineGuids,
+        CancellationToken cancellationToken)
+    {
+        var normalizedLineGuids = lineGuids
+            .Where(guid => guid != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (normalizedLineGuids.Length == 0)
+        {
+            return new Dictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>();
+        }
+
+        var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+            .AsNoTracking()
+            .Where(snapshot => normalizedLineGuids.Contains(snapshot.WarehouseOrderLineGuid))
+            .Select(snapshot => new
+            {
+                snapshot.WarehouseOrderLineGuid,
+                snapshot.InputQuantity,
+                snapshot.InputMode,
+                snapshot.ConversionMode,
+                snapshot.EstimatedQuantity,
+                snapshot.MicroUnit,
+                snapshot.AverageKgPerCase,
+                snapshot.UnitsPerCase,
+                snapshot.AverageSource,
+                snapshot.AverageRecordCount,
+                snapshot.AverageCaseCount,
+                snapshot.CoefficientOfVariation,
+                snapshot.Confidence,
+                snapshot.ActualShippedQuantity,
+                snapshot.ActualShippedCaseCount,
+                snapshot.Status
+            })
+            .ToListAsync(cancellationToken);
+
+        return snapshots.ToDictionary(
+            snapshot => snapshot.WarehouseOrderLineGuid,
+            snapshot => new WarehouseOrderLineGreenGrocerCaseDto(
+                Round(snapshot.InputQuantity),
+                snapshot.InputMode,
+                snapshot.ConversionMode,
+                Round(snapshot.EstimatedQuantity),
+                snapshot.MicroUnit,
+                RoundOrNull(snapshot.AverageKgPerCase),
+                RoundOrNull(snapshot.UnitsPerCase),
+                snapshot.AverageSource,
+                snapshot.AverageRecordCount,
+                snapshot.AverageCaseCount,
+                RoundOrNull(snapshot.CoefficientOfVariation),
+                snapshot.Confidence,
+                RoundOrNull(snapshot.ActualShippedQuantity),
+                RoundOrNull(snapshot.ActualShippedCaseCount),
+                snapshot.Status));
+    }
+
     private static byte NormalizeUnitPointer(byte? unitPointer) =>
         unitPointer is >= 1 and <= 4 ? unitPointer.Value : (byte)1;
 
@@ -179,4 +245,10 @@ public sealed class WarehouseOrderDetailQueryExecutor(MikroDbContext mikroDbCont
             4 => unit4Name ?? unit1Name ?? string.Empty,
             _ => unit1Name ?? string.Empty
         };
+
+    private static double Round(double value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static double? RoundOrNull(double? value) =>
+        value.HasValue ? Round(value.Value) : null;
 }

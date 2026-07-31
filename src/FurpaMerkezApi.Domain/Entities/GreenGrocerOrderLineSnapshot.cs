@@ -14,6 +14,61 @@ public sealed class GreenGrocerOrderLineSnapshot
         Status = string.Empty;
     }
 
+    public GreenGrocerOrderLineSnapshot(
+        Guid id,
+        Guid warehouseOrderLineGuid,
+        string documentSerie,
+        int documentOrderNo,
+        int rowNo,
+        DateTime orderDate,
+        int sourceWarehouseNo,
+        int targetWarehouseNo,
+        string stockCode,
+        double inputQuantity,
+        string inputMode,
+        string conversionMode,
+        double? averageKgPerCase,
+        double? unitsPerCase,
+        double estimatedQuantity,
+        string microUnit,
+        string averageSource,
+        int? averageRecordCount,
+        int? averageCaseCount,
+        double? coefficientOfVariation,
+        string confidence,
+        Guid createdByUserId,
+        DateTime createdAtUtc)
+    {
+        Id = id;
+        WarehouseOrderLineGuid = warehouseOrderLineGuid;
+        DocumentSerie = NormalizeRequired(documentSerie, nameof(documentSerie), 20);
+        DocumentOrderNo = documentOrderNo;
+        RowNo = rowNo;
+        OrderDate = orderDate.Date;
+        SourceWarehouseNo = sourceWarehouseNo;
+        TargetWarehouseNo = targetWarehouseNo;
+        StockCode = NormalizeRequired(stockCode, nameof(stockCode), 25);
+        InputQuantity = inputQuantity;
+        InputMode = NormalizeRequired(inputMode, nameof(inputMode), 40);
+        ConversionMode = NormalizeRequired(conversionMode, nameof(conversionMode), 60);
+        AverageKgPerCase = averageKgPerCase;
+        UnitsPerCase = unitsPerCase;
+        EstimatedQuantity = estimatedQuantity;
+        MicroUnit = NormalizeRequired(microUnit, nameof(microUnit), 20);
+        AverageSource = NormalizeRequired(averageSource, nameof(averageSource), 60);
+        AverageRecordCount = averageRecordCount;
+        AverageCaseCount = averageCaseCount;
+        CoefficientOfVariation = coefficientOfVariation;
+        Confidence = NormalizeRequired(confidence, nameof(confidence), 30);
+        ActualShippedQuantity = null;
+        ActualShippedCaseCount = null;
+        Status = "Ordered";
+        CreatedByUserId = createdByUserId;
+        CreatedAtUtc = createdAtUtc;
+        UpdatedByUserId = null;
+        UpdatedAtUtc = null;
+    }
+
     public Guid Id { get; private set; }
 
     public Guid WarehouseOrderLineGuid { get; private set; }
@@ -69,4 +124,17 @@ public sealed class GreenGrocerOrderLineSnapshot
     public Guid? UpdatedByUserId { get; private set; }
 
     public DateTime? UpdatedAtUtc { get; private set; }
+
+    private static string NormalizeRequired(string value, string parameterName, int maxLength)
+    {
+        var normalized = value.Trim();
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException($"{parameterName} is required.", parameterName);
+        }
+
+        return normalized.Length <= maxLength
+            ? normalized
+            : throw new ArgumentException($"{parameterName} can not be longer than {maxLength} characters.", parameterName);
+    }
 }

@@ -226,6 +226,34 @@ public static class ServiceCollectionExtensions
         var furpaConnection = configuration.GetConnectionString("FurpaConnection");
         var axataConnection = configuration.GetConnectionString("AxataConnection");
         var shopigoCiroConnection = configuration.GetConnectionString("ShopigoCiroConnection");
+        var defaultCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "DefaultSeconds",
+            300);
+        var authCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "AuthSeconds",
+            defaultCommandTimeoutSeconds);
+        var mikroReadCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "MikroReadSeconds",
+            defaultCommandTimeoutSeconds);
+        var mikroWriteCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "MikroWriteSeconds",
+            defaultCommandTimeoutSeconds);
+        var furpaCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "FurpaSeconds",
+            defaultCommandTimeoutSeconds);
+        var axataCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "AxataSeconds",
+            defaultCommandTimeoutSeconds);
+        var shopigoCiroCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "ShopigoCiroSeconds",
+            defaultCommandTimeoutSeconds);
 
         if (string.IsNullOrWhiteSpace(authConnection))
         {
@@ -338,13 +366,19 @@ public static class ServiceCollectionExtensions
                     sqlServer =>
                     {
                         sqlServer.EnableRetryOnFailure();
-                        sqlServer.CommandTimeout(180);
+                        sqlServer.CommandTimeout(authCommandTimeoutSeconds);
                     });
 
                 return;
             }
 
-            options.UseNpgsql(authConnection, npgsql => npgsql.MigrationsAssembly(typeof(AuthDbContext).Assembly.FullName));
+            options.UseNpgsql(
+                authConnection,
+                npgsql =>
+                {
+                    npgsql.MigrationsAssembly(typeof(AuthDbContext).Assembly.FullName);
+                    npgsql.CommandTimeout(authCommandTimeoutSeconds);
+                });
         });
 
         services.AddDbContext<MikroDbContext>(options =>
@@ -353,7 +387,7 @@ public static class ServiceCollectionExtensions
                 sqlServer =>
                 {
                     sqlServer.EnableRetryOnFailure();
-                    sqlServer.CommandTimeout(180);
+                    sqlServer.CommandTimeout(mikroReadCommandTimeoutSeconds);
                 }));
 
         services.AddDbContext<MikroWriteDbContext>(options =>
@@ -362,7 +396,7 @@ public static class ServiceCollectionExtensions
                 sqlServer =>
                 {
                     sqlServer.EnableRetryOnFailure();
-                    sqlServer.CommandTimeout(180);
+                    sqlServer.CommandTimeout(mikroWriteCommandTimeoutSeconds);
                 }));
 
         services.AddDbContext<FurpaDbContext>(options =>
@@ -371,7 +405,7 @@ public static class ServiceCollectionExtensions
                 sqlServer =>
                 {
                     sqlServer.EnableRetryOnFailure();
-                    sqlServer.CommandTimeout(180);
+                    sqlServer.CommandTimeout(furpaCommandTimeoutSeconds);
                 }));
 
         if (!string.IsNullOrWhiteSpace(axataConnection))
@@ -385,7 +419,7 @@ public static class ServiceCollectionExtensions
                         // Compatibility level 120 makes collection Contains generate classic IN clauses.
                         sqlServer.UseCompatibilityLevel(120);
                         sqlServer.EnableRetryOnFailure();
-                        sqlServer.CommandTimeout(180);
+                        sqlServer.CommandTimeout(axataCommandTimeoutSeconds);
                     }));
         }
 
@@ -395,10 +429,10 @@ public static class ServiceCollectionExtensions
                 options.UseSqlServer(
                     shopigoCiroConnection,
                     sqlServer =>
-                    {
-                        sqlServer.EnableRetryOnFailure();
-                        sqlServer.CommandTimeout(180);
-                    }));
+                {
+                    sqlServer.EnableRetryOnFailure();
+                    sqlServer.CommandTimeout(shopigoCiroCommandTimeoutSeconds);
+                }));
         }
 
         services.AddSingleton<IClock, SystemClock>();
@@ -617,4 +651,16 @@ public static class ServiceCollectionExtensions
     private static bool IsSqlServerConnectionString(string connectionString) =>
         connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) ||
         connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
+
+    private static int GetDatabaseCommandTimeoutSeconds(
+        IConfiguration configuration,
+        string key,
+        int fallbackSeconds)
+    {
+        var defaultSeconds = configuration.GetValue<int?>("DatabaseCommandTimeouts:DefaultSeconds");
+        var configuredSeconds = configuration.GetValue<int?>($"DatabaseCommandTimeouts:{key}");
+        var seconds = configuredSeconds ?? defaultSeconds ?? fallbackSeconds;
+
+        return Math.Clamp(seconds, 30, 1_800);
+    }
 }

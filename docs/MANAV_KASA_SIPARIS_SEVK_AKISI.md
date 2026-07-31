@@ -158,12 +158,14 @@ Bu tablo su sorulari cevaplar:
 
 ### green_grocer_order_line_snapshots
 
-Siparis aninda kullanilan ortalama/katsayi bilgisini ileride sabitlemek icin
-hazirlandi.
+Siparis aninda kullanilan kasa/koli girisi, ortalama/katsayi ve Mikro'ya yazilan
+tahmini KG/ADET miktarini sabitler.
 
-Ilk surumde tablo hazirdir; siparis create akisi bu tabloya henuz otomatik
-yazmaz. Ikinci fazda, siparis satiri olustugu anda "3 kasa hangi ortalama ile
-kac KG kabul edildi?" bilgisi bu tabloda saklanabilir.
+UI `resolution-preview` cevabini depo siparisi create satirindaki
+`greenGrocerCase` nesnesine tasirsa backend Mikro siparis satiri olustuktan sonra
+satir GUID'i ile snapshot yazar. Boylece sonradan ortalama degisse bile manav
+depo gelen sipariste ve GreenGrocer raporlarinda "3 kasa ~= 11.25 KG" bilgisi
+aynen gorulebilir.
 
 ## Profil Alanlari
 
@@ -356,9 +358,39 @@ Ideal UI akisi:
 6. `isUsable=false` ise satir ekletmez.
 7. `confidence=Medium` veya `requiresManualApproval=true` ise uyari/onay gosterir.
 8. Siparis satirina Mikro miktari olarak `estimatedQuantity` yazilir.
+9. Manav siparisi `outWarehouseNo=56` ile kaydediliyorsa UI ayni cozumleme
+   cevabini satirdaki `greenGrocerCase` nesnesine tasir.
 
 Bu sayede sube yine kasa mantiginda calisir; Mikro tarafinda ise KG/ADET daha
 anlamli durur.
+
+Manav siparisi create satiri ornegi:
+
+```json
+{
+  "stockCode": "001082",
+  "quantity": 11.25,
+  "unitPointer": 1,
+  "description": "3 kasa",
+  "greenGrocerCase": {
+    "inputQuantity": 3,
+    "inputMode": "Case",
+    "conversionMode": "LabelAverageKgPerCase",
+    "microUnit": "KG",
+    "estimatedQuantity": 11.25,
+    "averageKgPerCase": 3.75,
+    "unitsPerCase": null,
+    "averageSource": "LabelHistory",
+    "averageRecordCount": 47,
+    "averageCaseCount": 7526,
+    "coefficientOfVariation": 0.08,
+    "confidence": "High"
+  }
+}
+```
+
+Burada `quantity` Mikro'ya yazilacak degerdir. `greenGrocerCase.inputQuantity`
+ise kullanicinin girdigi kasa/koli miktaridir.
 
 ## Sevk Akisi Nasil Olmali?
 
@@ -375,20 +407,25 @@ Bu eski mantiktir.
 3. Sevk siparise baglanmaz.
 4. Kalan siparis miktari kontrolu yoktur.
 5. Teslim miktari guncellenmez.
+6. UI manav sevkte siparis secme, kalan siparis kapatma ve
+   `warehouseOrderLineGuid` tasima akisini gostermemelidir. Gelen siparis detayi
+   ve rapordaki `greenGrocerCase` bilgisi sadece bilgilendirme icindir.
 
 ### OrderLinkingEnabled=true
 
 Bu yeni kontrollu baglama modudur.
 
-1. UI sevk satirinda gercek siparis satiri GUID'ini `warehouseOrderLineGuid`
+1. UI manav depo gelen siparis detayinda `items[].greenGrocerCase` dolu satirlari
+   "3 kasa ~= 11.25 KG" gibi gosterir.
+2. UI sevk satirinda gercek siparis satiri GUID'ini `warehouseOrderLineGuid`
    olarak gonderir.
-2. Backend GUID'i temizlemez.
-3. Backend siparis satirini bulur.
-4. Kaynak depo, hedef depo ve stok kodu eslesmesini kontrol eder.
-5. Siparis satiri kapali mi kontrol eder.
-6. Sevk miktari kalan miktardan fazla mi kontrol eder.
-7. Hareket olusurken siparis satiri GUID'i sevk hareketine baglanir.
-8. Database modunda `ssip_teslim_miktar` ve `ssip_kapat_fl` guncellenir.
+3. Backend GUID'i temizlemez.
+4. Backend siparis satirini bulur.
+5. Kaynak depo, hedef depo ve stok kodu eslesmesini kontrol eder.
+6. Siparis satiri kapali mi kontrol eder.
+7. Sevk miktari kalan miktardan fazla mi kontrol eder.
+8. Hareket olusurken siparis satiri GUID'i sevk hareketine baglanir.
+9. Database modunda `ssip_teslim_miktar` ve `ssip_kapat_fl` guncellenir.
 
 Onemli not: Bu modda sevk miktari yine gercek KG/ADET olmalidir. Kasa sayisi
 degil, okutulan/olculen gercek miktar gonderilmelidir.
@@ -423,6 +460,8 @@ ayri bir karar ve ayri test ister.
 - `confidence=Medium` ise kullanicidan onay istenebilir.
 - `estimatedQuantity` Mikro'ya yazilacak KG/ADET miktaridir.
 - `inputQuantity` kullanicinin girdigi kasa/koli/adet degeridir.
+- Siparis create satirinda `greenGrocerCase` gonderilirse gelen siparis detayi ve
+  GreenGrocer raporlari ayni kasa/ortalama bilgisini geri dondurur.
 - `OrderLinkingEnabled=false` ise manav sevkte `warehouseOrderLineGuid` gonderme.
 - `OrderLinkingEnabled=true` ve `isOrderLinkable=true` ise sevkte ilgili
   siparis satirinin `lineGuid` degerini `warehouseOrderLineGuid` olarak gonder.
@@ -434,6 +473,10 @@ ayri bir karar ve ayri test ister.
   temizlenir.
 - `OrderLinkingEnabled=true` iken GUID korunur ama sadece UI gonderirse kullanilir.
 - 56 depo icin otomatik depo siparisi uretimi kapali kalir.
+- `outWarehouseNo=56` olan depo siparislerinde satir `greenGrocerCase` bilgisi
+  gelirse backend `green_grocer_order_line_snapshots` kaydi yazar.
+- Depo siparis detayi ve GreenGrocer raporlari snapshot varsa `greenGrocerCase`
+  / `caseInfo` alanlarini dondurur.
 - Siparis satiri baglama acildiginda mevcut standart kontroller calisir:
   kaynak depo, hedef depo, stok kodu, kapali satir ve kalan miktar.
 
@@ -457,6 +500,9 @@ Infrastructure:
 
 ```text
 src/FurpaMerkezApi.Infrastructure/Modules/GreenGrocer/ProductCases
+src/FurpaMerkezApi.Infrastructure/Modules/GreenGrocer/Reports
+src/FurpaMerkezApi.Infrastructure/Modules/SiparisIslemleri/Common/WarehouseOrderDetailQueryExecutor.cs
+src/FurpaMerkezApi.Infrastructure/Modules/SiparisIslemleri/VerilenDepoSiparisleri/Create/CreateIssuedWarehouseOrderUseCase.cs
 src/FurpaMerkezApi.Infrastructure/Modules/SevkIslemleri/DepolarArasiSevkler/Create/GreenGrocerShipmentLineNormalizer.cs
 src/FurpaMerkezApi.Infrastructure/Modules/SevkIslemleri/DepolarArasiSevkler/Create/CreateInterWarehouseShipmentUseCase.cs
 src/FurpaMerkezApi.Infrastructure/Persistence/Configurations/GreenGrocerProductCaseProfileConfiguration.cs
@@ -496,9 +542,9 @@ docs/MANAV_KASA_SIPARIS_SEVK_AKISI.md
    tolerans ihtiyaci dogabilir. Profilde `overDeliveryTolerancePercent` alanlari
    bunun icin hazir durur.
 
-4. Snapshot tablosu hazir ama siparis create akisi henuz snapshot yazmiyor.
-   Siparis anindaki ortalama sonradan degismesin istenirse ikinci fazda bu tablo
-   aktif kullanilmalidir.
+4. Snapshot yazimi Mikro siparisi olustuktan sonra Auth DB'ye yazilir. Mikro
+   siparis basarili olup snapshot yazimi teknik bir sebeple basarisiz kalirsa
+   siparis kaydi geri alinmaz; log uzerinden takip edilmelidir.
 
 5. Mikro API modunda teslim miktari/kapatma etkisi Mikro API tarafinin
    davranisina baglidir. Database modunda backend kendisi gunceller.
@@ -511,7 +557,8 @@ docs/MANAV_KASA_SIPARIS_SEVK_AKISI.md
 4. Raporlarda "sube kasa talebi" ve "tahmini KG/ADET" ayrimini dogrula.
 5. Bir veya iki sube ile `OrderLinkingEnabled=true` pilot yap.
 6. Sevkte kalan miktar/kapatma davranisini canli veriyle kontrol et.
-7. Tolerans ve snapshot ihtiyacina gore ikinci faza gec.
+7. Tolerans, pilot sube kapsami ve sevk kapatma kurallarina gore sonraki fazi
+   netlestir.
 
 ## Kapsamli Commit Onerisi
 
@@ -527,7 +574,7 @@ Detayli commit mesaji:
 feat(green-grocer): add configurable case resolution and order-linked shipment flow
 
 - add GreenGrocer product case profile domain model, DTOs, service and controller
-- add Auth DB migration for product case profiles and future order line snapshots
+- add Auth DB migration for product case profiles and order line snapshots
 - calculate KG-per-case averages from Furpa manav label history
 - support manual kg/case, fixed units/case, direct quantity, manual-only and blocked conversion modes
 - add GreenGrocerProductCases.Enabled feature flag for disabling the new resolution API

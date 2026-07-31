@@ -1,10 +1,13 @@
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Reports;
 
-public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
+public sealed class GreenGrocerReportsUseCase(
+    MikroDbContext mikroDbContext,
+    AuthDbContext authDbContext)
     : IGreenGrocerReportsUseCase
 {
     private const string GreensTypeCode = "12";
@@ -51,7 +54,8 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 group.Select(item => item.BranchNo).Distinct().Count(),
                 CountDocuments(group),
                 group.Select(item => item.ProductCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
-                Round(group.Sum(item => item.Quantity))))
+                Round(group.Sum(item => item.Quantity)),
+                AggregateCaseInfo(group.Select(item => item.CaseInfo))))
             .ToArray();
         var branchSummaries = items
             .GroupBy(item => new
@@ -66,7 +70,8 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 group.Key.BranchName,
                 CountDocuments(group),
                 group.Select(item => item.ProductCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
-                Round(group.Sum(item => item.Quantity))))
+                Round(group.Sum(item => item.Quantity)),
+                AggregateCaseInfo(group.Select(item => item.CaseInfo))))
             .Take(normalized.Take)
             .ToArray();
 
@@ -78,6 +83,7 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
             CountDocuments(items),
             items.Select(item => item.ProductCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
             Round(items.Sum(item => item.Quantity)),
+            AggregateCaseInfo(items.Select(item => item.CaseInfo)),
             typeSummaries,
             branchSummaries,
             topProducts,
@@ -127,6 +133,7 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                   (normalized.WarehouseNo == null || branch.dep_no == normalized.WarehouseNo.Value)
             select new
             {
+                LineGuid = order.ssip_Guid,
                 OrderDate = order.ssip_tarih,
                 BranchNo = branch.dep_no,
                 BranchName = branch.dep_adi,
@@ -155,6 +162,9 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
             .ThenBy(row => row.RowNo)
             .Take(normalized.Take)
             .ToListAsync(cancellationToken);
+        var caseInfoByLineGuid = await GetCaseInfoByLineGuidAsync(
+            rows.Select(row => row.LineGuid).ToArray(),
+            cancellationToken);
 
         return rows
             .Select(row => new GreenGrocerGreenReportItemDto(
@@ -170,7 +180,8 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 row.ProductName ?? string.Empty,
                 Round(row.Quantity ?? 0d),
                 row.LatestCreateDate,
-                CanDelete(row.LatestCreateDate, now)))
+                CanDelete(row.LatestCreateDate, now),
+                caseInfoByLineGuid.GetValueOrDefault(row.LineGuid)))
             .ToArray();
     }
 
@@ -211,6 +222,7 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 group.Key.ProductCode,
                 group.Key.ProductName,
                 Round(group.Sum(item => item.Quantity)),
+                AggregateCaseInfo(group.Select(item => item.CaseInfo)),
                 group
                     .OrderBy(item => item.BranchName, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(item => item.DocumentOrderNo)
@@ -221,7 +233,8 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                         item.DocumentOrderNo,
                         item.Quantity,
                         item.LatestCreateDate,
-                        item.CanDelete))
+                        item.CanDelete,
+                        item.CaseInfo))
                     .ToArray()))
             .Take(normalized.Take)
             .ToArray();
@@ -249,6 +262,7 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                   (request.TypeCode == null || product.sto_model_kodu == request.TypeCode)
             select new
             {
+                LineGuid = order.ssip_Guid,
                 OrderDate = order.ssip_tarih,
                 BranchNo = branch.dep_no,
                 BranchName = branch.dep_adi,
@@ -270,7 +284,18 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 (row.DocumentSerie != null && row.DocumentSerie.Contains(request.Search)));
         }
 
-        var rows = await query
+        var rawRows = await query
+            .OrderBy(row => row.BranchName)
+            .ThenBy(row => row.TypeCode)
+            .ThenBy(row => row.ProductName)
+            .ThenBy(row => row.DocumentOrderNo)
+            .ThenBy(row => row.LineGuid)
+            .ToListAsync(cancellationToken);
+        var caseInfoByLineGuid = await GetCaseInfoByLineGuidAsync(
+            rawRows.Select(row => row.LineGuid).ToArray(),
+            cancellationToken);
+
+        var rows = rawRows
             .GroupBy(row => new
             {
                 row.OrderDate,
@@ -282,9 +307,6 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 row.ProductCode,
                 row.ProductName
             })
-            .OrderBy(group => group.Key.BranchName)
-            .ThenBy(group => group.Key.TypeCode)
-            .ThenBy(group => group.Key.ProductName)
             .Select(group => new
             {
                 group.Key.OrderDate,
@@ -296,9 +318,11 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 group.Key.ProductCode,
                 group.Key.ProductName,
                 Quantity = group.Sum(item => item.Quantity ?? 0d),
-                LatestCreateDate = group.Max(item => item.LatestCreateDate)
+                LatestCreateDate = group.Max(item => item.LatestCreateDate),
+                CaseInfo = AggregateCaseInfo(group.Select(item =>
+                    caseInfoByLineGuid.GetValueOrDefault(item.LineGuid)))
             })
-            .ToListAsync(cancellationToken);
+            .ToArray();
 
         return rows
             .Select(row => new GreenGrocerBranchReportItemDto(
@@ -313,7 +337,8 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 row.ProductName ?? string.Empty,
                 Round(row.Quantity),
                 row.LatestCreateDate,
-                CanDelete(row.LatestCreateDate, now)))
+                CanDelete(row.LatestCreateDate, now),
+                row.CaseInfo))
             .ToArray();
     }
 
@@ -373,8 +398,129 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
                 group.Key.TypeName,
                 group.Key.ProductCode,
                 group.Key.ProductName,
-                Round(group.Sum(item => item.Quantity))))
+                Round(group.Sum(item => item.Quantity)),
+                AggregateCaseInfo(group.Select(item => item.CaseInfo))))
             .ToArray();
+
+    private async Task<IReadOnlyDictionary<Guid, GreenGrocerReportCaseInfoDto>> GetCaseInfoByLineGuidAsync(
+        IReadOnlyCollection<Guid> lineGuids,
+        CancellationToken cancellationToken)
+    {
+        var normalizedLineGuids = lineGuids
+            .Where(lineGuid => lineGuid != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (normalizedLineGuids.Length == 0)
+        {
+            return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
+        }
+
+        var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+            .AsNoTracking()
+            .Where(snapshot => normalizedLineGuids.Contains(snapshot.WarehouseOrderLineGuid))
+            .Select(snapshot => new
+            {
+                snapshot.WarehouseOrderLineGuid,
+                snapshot.InputQuantity,
+                snapshot.InputMode,
+                snapshot.EstimatedQuantity,
+                snapshot.MicroUnit,
+                snapshot.AverageKgPerCase,
+                snapshot.UnitsPerCase,
+                snapshot.AverageSource,
+                snapshot.Confidence,
+                snapshot.AverageRecordCount,
+                snapshot.AverageCaseCount,
+                snapshot.CoefficientOfVariation
+            })
+            .ToListAsync(cancellationToken);
+
+        return snapshots.ToDictionary(
+            snapshot => snapshot.WarehouseOrderLineGuid,
+            snapshot => new GreenGrocerReportCaseInfoDto(
+                Round(snapshot.InputQuantity),
+                snapshot.InputMode,
+                Round(snapshot.EstimatedQuantity),
+                snapshot.MicroUnit,
+                RoundOrNull(snapshot.AverageKgPerCase),
+                RoundOrNull(snapshot.UnitsPerCase),
+                snapshot.AverageSource,
+                snapshot.Confidence,
+                snapshot.AverageRecordCount,
+                snapshot.AverageCaseCount,
+                RoundOrNull(snapshot.CoefficientOfVariation)));
+    }
+
+    private static GreenGrocerReportCaseInfoDto? AggregateCaseInfo(
+        IEnumerable<GreenGrocerReportCaseInfoDto?> caseInfos)
+    {
+        var items = caseInfos
+            .OfType<GreenGrocerReportCaseInfoDto>()
+            .ToArray();
+
+        if (items.Length == 0)
+        {
+            return null;
+        }
+
+        return new GreenGrocerReportCaseInfoDto(
+            Round(items.Sum(item => item.InputQuantity)),
+            SingleOrMixed(items.Select(item => item.InputMode)),
+            Round(items.Sum(item => item.EstimatedQuantity)),
+            SingleOrMixed(items.Select(item => item.MicroUnit)),
+            WeightedAverageOrNull(items, item => item.AverageKgPerCase),
+            WeightedAverageOrNull(items, item => item.UnitsPerCase),
+            SingleOrMixed(items.Select(item => item.AverageSource)),
+            SingleOrMixed(items.Select(item => item.Confidence)),
+            SumOrNull(items.Select(item => item.AverageRecordCount)),
+            SumOrNull(items.Select(item => item.AverageCaseCount)),
+            WeightedAverageOrNull(items, item => item.CoefficientOfVariation));
+    }
+
+    private static string SingleOrMixed(IEnumerable<string> values)
+    {
+        var distinctValues = values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+
+        return distinctValues.Length == 1 ? distinctValues[0] : "Mixed";
+    }
+
+    private static int? SumOrNull(IEnumerable<int?> values)
+    {
+        var materialized = values
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .ToArray();
+
+        return materialized.Length == 0 ? null : materialized.Sum();
+    }
+
+    private static double? WeightedAverageOrNull(
+        IReadOnlyCollection<GreenGrocerReportCaseInfoDto> items,
+        Func<GreenGrocerReportCaseInfoDto, double?> selector)
+    {
+        var weightedItems = items
+            .Select(item => new
+            {
+                Weight = item.InputQuantity,
+                Value = selector(item)
+            })
+            .Where(item => item.Weight > 0 && item.Value.HasValue)
+            .ToArray();
+
+        var totalWeight = weightedItems.Sum(item => item.Weight);
+        if (totalWeight <= 0)
+        {
+            return null;
+        }
+
+        return Round(weightedItems.Sum(item => item.Weight * item.Value!.Value) / totalWeight);
+    }
 
     private static NormalizedGreenGrocerReportRequest Normalize(GreenGrocerReportDateRequest request)
     {
@@ -440,6 +586,9 @@ public sealed class GreenGrocerReportsUseCase(MikroDbContext mikroDbContext)
 
     private static double Round(double value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static double? RoundOrNull(double? value) =>
+        value.HasValue ? Round(value.Value) : null;
 
     private sealed record NormalizedGreenGrocerReportRequest(
         DateTime Date,

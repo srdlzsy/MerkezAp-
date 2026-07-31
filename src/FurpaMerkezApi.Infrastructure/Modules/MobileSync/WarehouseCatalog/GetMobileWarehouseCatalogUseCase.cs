@@ -88,7 +88,7 @@ public sealed class GetMobileWarehouseCatalogUseCase(MikroDbContext mikroDbConte
                 ORDER BY WarehouseNo;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@since", effectiveSince, DbType.DateTime2);
             AddParameter(command, "@syncUpperBound", syncUpperBound, DbType.DateTime2);

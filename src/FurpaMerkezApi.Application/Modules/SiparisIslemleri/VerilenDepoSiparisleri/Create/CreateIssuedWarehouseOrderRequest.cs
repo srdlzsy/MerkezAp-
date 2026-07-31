@@ -6,7 +6,8 @@ public sealed record CreateIssuedWarehouseOrderRequest(
     DateTime? OrderDate,
     DateTime? DeliveryDate,
     string? Description,
-    IReadOnlyCollection<CreateIssuedWarehouseOrderLineRequest> Lines);
+    IReadOnlyCollection<CreateIssuedWarehouseOrderLineRequest> Lines,
+    Guid? CreatedByUserId = null);
 
 public sealed record CreateIssuedWarehouseOrderLineRequest(
     string StockCode,
@@ -17,4 +18,19 @@ public sealed record CreateIssuedWarehouseOrderLineRequest(
     string? Description = null,
     string? PackageCode = null,
     string? ProjectCode = null,
-    string? ResponsibilityCenter = null);
+    string? ResponsibilityCenter = null,
+    GreenGrocerOrderLineSnapshotRequest? GreenGrocerCase = null);
+
+public sealed record GreenGrocerOrderLineSnapshotRequest(
+    double InputQuantity,
+    string InputMode,
+    string ConversionMode,
+    string MicroUnit,
+    double EstimatedQuantity,
+    double? AverageKgPerCase,
+    double? UnitsPerCase,
+    string AverageSource,
+    int? AverageRecordCount,
+    int? AverageCaseCount,
+    double? CoefficientOfVariation,
+    string Confidence);

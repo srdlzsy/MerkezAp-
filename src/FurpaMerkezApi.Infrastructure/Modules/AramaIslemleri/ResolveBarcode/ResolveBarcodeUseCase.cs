@@ -444,7 +444,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 THEN 1 ELSE 0 END;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 60;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@stockCode", stockCode, DbType.String);
             AddParameter(command, "@supplierCode", supplierCode, DbType.String);
@@ -705,9 +705,15 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 ? new OperationEvaluation(false, "Urun siparis icin bloklu.")
                 : new OperationEvaluation(true, "Urun siparis isleminde kullanilabilir."),
 
-            "shipment" or "return" or "waste" => isSalesBlocked
+            "shipment" => new OperationEvaluation(
+                true,
+                isSalesBlocked
+                    ? "Urun satis/sevk cikis bloklu olarak isaretli; depolar arasi sevk isleminde bilgi olarak donduruldu."
+                    : "Urun sevk isleminde kullanilabilir."),
+
+            "return" or "waste" => BarcodeResolutionOperationRules.ShouldEnforceSalesBlock(operationType) && isSalesBlocked
                 ? new OperationEvaluation(false, "Urun stok cikis, sevk, iade veya fire icin bloklu.")
-                : new OperationEvaluation(true, "Urun stok cikis, sevk, iade veya fire isleminde kullanilabilir."),
+                : new OperationEvaluation(true, "Urun iade veya fire isleminde kullanilabilir."),
 
             null => new OperationEvaluation(true, "Islem tipi verilmedigi icin genel blok bilgisi donduruldu."),
 
@@ -908,4 +914,7 @@ internal static class BarcodeResolutionOperationRules
 
     internal static bool ShouldEnforcePurchaseRequirement(string? operationType) =>
         operationType is "receiving" or "order";
+
+    internal static bool ShouldEnforceSalesBlock(string? operationType) =>
+        operationType is "return" or "waste";
 }

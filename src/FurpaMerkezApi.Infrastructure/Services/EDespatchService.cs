@@ -1009,13 +1009,9 @@ public sealed class EDespatchService(
             var (firstName, familyName) = SplitPersonName(driverNameSurname!);
             var driverElements = new List<object>
             {
-                new XElement(basic + "FirstName", firstName)
+                new XElement(basic + "FirstName", firstName),
+                new XElement(basic + "FamilyName", familyName)
             };
-
-            if (!string.IsNullOrWhiteSpace(familyName))
-            {
-                driverElements.Add(new XElement(basic + "FamilyName", familyName));
-            }
 
             if (!string.IsNullOrWhiteSpace(driverTckn))
             {
@@ -1633,15 +1629,15 @@ public sealed class EDespatchService(
         };
     }
 
-    private static (string FirstName, string? FamilyName) SplitPersonName(string value)
+    internal static (string FirstName, string FamilyName) SplitPersonName(string value)
     {
         var parts = value
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         return parts.Length switch
         {
-            0 => (string.Empty, null),
-            1 => (parts[0], null),
+            0 => (string.Empty, string.Empty),
+            1 => (parts[0], parts[0]),
             _ => (string.Join(" ", parts[..^1]), parts[^1])
         };
     }

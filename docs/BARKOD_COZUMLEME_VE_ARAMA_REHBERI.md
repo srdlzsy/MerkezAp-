@@ -125,7 +125,7 @@ UI icin en onemli alanlar:
 | `isCaseBarcode` | Koli/master barkod mu? |
 | `matchedUnitsPerCase` | Okutulan barkod koli ise koli ici miktar. |
 | `isPassive` | Urun pasif mi? Pasif urun islemde bloklanir. |
-| `isSalesBlocked` | Satis/sevk cikisi icin blok bilgisi. |
+| `isSalesBlocked` | Satis/sevk cikisi icin blok bilgisi. Sevkte tek basina engel degildir. |
 | `isOrderBlocked` | Siparis icin blok bilgisi. |
 | `isGoodsAcceptanceBlocked` | Mal kabul icin blok bilgisi. |
 | `isAllowedForTargetWarehouse` | Hedef depo model kod uygunlugu. Her zaman blok anlamina gelmez. |
@@ -153,7 +153,8 @@ Bugunku API karar mantigi:
 | Tum islemler | `isRefund = false` ve urun `DLS/99` ise urun kullanilamaz. |
 | `receiving` | Mal kabul bloklu ise kullanilamaz. |
 | `order` | Siparis bloklu ise kullanilamaz. |
-| `shipment`, `return`, `waste` | Satis/sevk cikis bloklu ise kullanilamaz. |
+| `shipment` | Satis/sevk blok bilgisi bilgi olarak doner; pasif/DLS disinda satira eklemeyi bloklamaz. |
+| `return`, `waste` | Satis/sevk cikis bloklu ise kullanilamaz. |
 | `count` | Pasif/DLS disinda ozel blok uygulanmaz. |
 | Bilinmeyen islem tipi | Ozel kural yoksa genel bilgiler doner. |
 
@@ -189,6 +190,8 @@ GET /api/arama-islemleri/barkodlar/{barcode}/cozumle?operationType=shipment&ware
 Kural:
 
 - Hedef depo model kodu hesaplanabilir ama sevkte bloklayici degildir.
+- `isSalesBlocked = true` sevkte bilgi/uyari olarak okunur; tek basina satira
+  ekleme engeli degildir.
 - Satira ekleme karari `isUsableInOperation` ile verilir.
 - Terazi barkoduysa miktar icin `embeddedQuantity` onerilebilir.
 - Koli barkoduysa miktar icin `matchedUnitsPerCase` onerilebilir.

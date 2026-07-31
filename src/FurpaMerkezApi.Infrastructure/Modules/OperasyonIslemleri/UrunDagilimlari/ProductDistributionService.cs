@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Net;
@@ -28,7 +28,7 @@ public sealed class ProductDistributionService(
     private const string DefaultQuantityUnitName = "adet";
     private const string CaseUnitName = "koli";
     private const int FirstDocumentOrderNo = 0;
-    private const int LongRunningQueryTimeoutSeconds = 180;
+    private const int LongRunningQueryTimeoutSeconds = 300;
     private const string FinalizeDescriptionPrefix = "Dagilim";
     private static readonly int[] KnownDistributionCenters = [50, 53, 56];
     private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");

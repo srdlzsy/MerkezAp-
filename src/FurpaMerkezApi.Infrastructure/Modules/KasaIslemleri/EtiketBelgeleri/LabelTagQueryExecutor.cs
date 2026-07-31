@@ -54,7 +54,7 @@ public sealed class LabelTagQueryExecutor(FurpaDbContext furpaDbContext)
                 ORDER BY ProductName, ProductionDate;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@warehouseNo", request.WarehouseNo);
             AddParameter(command, "@date", date);

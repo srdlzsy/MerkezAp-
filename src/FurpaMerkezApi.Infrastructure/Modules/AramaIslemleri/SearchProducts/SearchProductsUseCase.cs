@@ -55,7 +55,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             using var command = connection.CreateCommand();
             command.CommandText = "dbo.__StokveFiyatArama_Gokhan";
             command.CommandType = CommandType.StoredProcedure;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
 
             AddParameter(command, "@sfiyat_deposirano", request.WarehouseNo);
             AddParameter(command, "@bar_kodu", barcode);

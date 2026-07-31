@@ -860,7 +860,7 @@ public sealed class KasaCiroAktarimiService(
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 180;
+        command.CommandTimeout = 300;
 
         if (transaction is not null)
         {
@@ -885,7 +885,7 @@ public sealed class KasaCiroAktarimiService(
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         command.CommandType = CommandType.Text;
-        command.CommandTimeout = 180;
+        command.CommandTimeout = 300;
 
         if (transaction is not null)
         {

@@ -688,7 +688,7 @@ public sealed class StockAnomalyCenterService(
             {
                 await using var command = connection.CreateCommand();
                 command.CommandText = sql;
-                command.CommandTimeout = 60;
+                command.CommandTimeout = 300;
 
                 AddParameter(command, "@newAnomalyId", Guid.NewGuid());
                 AddParameter(command, "@eventId", Guid.NewGuid());
@@ -1293,7 +1293,7 @@ public sealed class StockAnomalyCenterService(
         {
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
-            command.CommandTimeout = 180;
+            command.CommandTimeout = 300;
             AddParameter(command, "@take", request.TakePerRule);
             AddParameter(command, "@warehouseNo", request.WarehouseNo);
             AddParameter(command, "@startDate", request.StartDate);

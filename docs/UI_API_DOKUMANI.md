@@ -18,6 +18,15 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; depo yetkisi yoksa `WarehouseNo` verilmez ve backend JWT icindeki depoyu kullanir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
 
+Timeout ve tekrar deneme notu:
+
+- API tarafinda SQL command timeout degerleri `DatabaseCommandTimeouts` konfigurasyonundan okunur; varsayilan appsettings degeri `300` saniyedir.
+- `MikroReadSeconds` liste/detay/rapor okumalari, `MikroWriteSeconds` create/update/delete yazma islemleri icin kullanilir. `AuthSeconds`, `FurpaSeconds`, `AxataSeconds` ve `ShopigoCiroSeconds` ilgili DB context'leri icindir.
+- Raw SQL ile yazilmis liste/arama/rapor komutlari da genel olarak `300` saniye bekleyecek sekilde ayarlanmistir.
+- `MikroApi:TimeoutSeconds` varsayilan appsettings'te `300` saniyedir. Yazma rotasi `MikroApi` ise UI bu sureyi de dikkate almalidir.
+- Terminal, mobil ve web istemcileri liste ve create isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Subede internet zayifsa API islemi devam ederken istemci 30-60 saniyede vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
+- POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
+
 Route parametre notu:
 
 - Controller route template'lerinde belge anahtarlari genel olarak `{documentSerie}/{documentOrderNo}` seklindedir.
@@ -2274,7 +2283,7 @@ Bu bolum subelerin manav siparisinde kasa/koli girip Mikro tarafinda KG/ADET ola
 
 Kaynaklar:
 
-- Profil ve ileride siparis snapshot kayitlari uygulama DB'sinde tutulur.
+- Profil ve siparis snapshot kayitlari uygulama DB'sinde tutulur.
 - Stok karti bilgisi Mikro `STOKLAR` tablosundan okunur.
 - Kasa kg ortalamasi Furpa `Manav_Depo_Mal_Kabul_Etiket` tablosundaki gercek etiket/tartim gecmisinden hesaplanir.
 - Mikro ve Furpa tablolarina yeni kural tablosu acilmaz.
@@ -2282,7 +2291,7 @@ Kaynaklar:
 Yeni tablolar:
 
 - `green_grocer_product_case_profiles`: stok bazli kasa/koli/manuel cevrim kuralidir.
-- `green_grocer_order_line_snapshots`: siparis aninda kullanilan ortalama/katsayi ve Mikro siparis satir GUID'i icin hazir snapshot tablosudur. Ilk surumde API tarafinda tablo hazirdir; siparis kaydetme akisi bu tabloya sonraki adimda baglanacaktir.
+- `green_grocer_order_line_snapshots`: siparis aninda kullanilan kasa/koli girisi, ortalama/katsayi, Mikro'ya yazilan tahmini KG/ADET ve Mikro siparis satir GUID'i bilgisini sabitler.
 
 Feature flag:
 
@@ -2303,6 +2312,8 @@ Feature flag:
 - Siparise bagli manav sevk istenirse `GreenGrocerProductCases__OrderLinkingEnabled=true` yapilir. Bu ayar ancak `Enabled=true` iken anlamlidir.
 - `OrderLinkingEnabled=true` iken `resolution-preview` response'undaki `isOrderLinkable=true` ise UI ilgili siparis satirinin `lineGuid` degerini sevk request satirinda `warehouseOrderLineGuid` olarak gonderebilir.
 - Bu ayar otomatik depo siparisi uretmez; yalnizca UI'nin gonderdigi gercek siparis satiri GUID'inin korunup sevke baglanmasini saglar.
+- `OrderLinkingEnabled=false` iken UI manav sevkinde siparis secme/kalan siparis kapatma akisiyle ugrasmamalidir; sadece barkod/etiket okutulan gercek KG/ADET miktariyla siparissiz sevk yapmalidir.
+- `OrderLinkingEnabled=true` iken manav depo gelen siparis detayi `items[].greenGrocerCase` dolu gelen satirlari "kasa talebi + tahmini KG/ADET" olarak gosterir ve UI sevkte bu satirin `lineGuid` degerini tasiyabilir.
 
 Cozumleme siniflari:
 
@@ -2543,6 +2554,7 @@ UI onerisi:
 - `confidence=Medium` ise satir eklenebilir ama uyari gosterilir.
 - `estimatedQuantity` Mikro siparis satirina yazilacak KG/ADET miktaridir.
 - `inputQuantity`, `inputMode`, `averageKgPerCase` veya `unitsPerCase` UI'da "3 kasa ~= 11.25 KG" gibi gosterilir.
+- Depo siparisi kaydederken `outWarehouseNo=56` ve `resolution-preview` kullanildiysa satirda `quantity = estimatedQuantity` gonderilmeli, response'taki cozumleme bilgileri de `greenGrocerCase` nesnesine aynen tasinmalidir. Backend bu bilgiyi `green_grocer_order_line_snapshots` tablosuna satir GUID'iyle yazar.
 - `isOrderLinkable=true` ve `GreenGrocerProductCases:OrderLinkingEnabled=true` ise sevk ekraninda ilgili siparis satiri GUID'i `warehouseOrderLineGuid` olarak gonderilebilir.
 
 Tip secenekleri:
@@ -2594,6 +2606,19 @@ Response:
   "documentCount": 18,
   "productCount": 42,
   "totalQuantity": 1250.75,
+  "caseInfo": {
+    "inputQuantity": 312,
+    "inputMode": "Case",
+    "estimatedQuantity": 1250.75,
+    "microUnit": "KG",
+    "averageKgPerCase": 4.01,
+    "unitsPerCase": null,
+    "averageSource": "Mixed",
+    "confidence": "Mixed",
+    "averageRecordCount": 470,
+    "averageCaseCount": 75260,
+    "coefficientOfVariation": 0.1
+  },
   "typeSummaries": [
     {
       "typeCode": "12",
@@ -2601,7 +2626,20 @@ Response:
       "branchCount": 12,
       "documentCount": 12,
       "productCount": 8,
-      "totalQuantity": 210.5
+      "totalQuantity": 210.5,
+      "caseInfo": {
+        "inputQuantity": 84,
+        "inputMode": "Pack",
+        "estimatedQuantity": 210.5,
+        "microUnit": "ADET",
+        "averageKgPerCase": null,
+        "unitsPerCase": 25,
+        "averageSource": "StockUnitFactor",
+        "confidence": "High",
+        "averageRecordCount": null,
+        "averageCaseCount": null,
+        "coefficientOfVariation": null
+      }
     }
   ],
   "branches": [],
@@ -2630,7 +2668,20 @@ Response item:
   "typeName": "Manav Tip 10",
   "productCode": "016201",
   "productName": "ELMA",
-  "quantity": 42.5
+  "quantity": 42.5,
+  "caseInfo": {
+    "inputQuantity": 10,
+    "inputMode": "Case",
+    "estimatedQuantity": 42.5,
+    "microUnit": "KG",
+    "averageKgPerCase": 4.25,
+    "unitsPerCase": null,
+    "averageSource": "LabelHistory",
+    "confidence": "High",
+    "averageRecordCount": 47,
+    "averageCaseCount": 7526,
+    "coefficientOfVariation": 0.08
+  }
 }
 ```
 
@@ -2659,7 +2710,20 @@ Response:
       "productName": "ELMA",
       "quantity": 12,
       "latestCreateDate": "2026-06-04T09:15:10",
-      "canDelete": true
+      "canDelete": true,
+      "caseInfo": {
+        "inputQuantity": 3,
+        "inputMode": "Case",
+        "estimatedQuantity": 12,
+        "microUnit": "KG",
+        "averageKgPerCase": 4,
+        "unitsPerCase": null,
+        "averageSource": "LabelHistory",
+        "confidence": "High",
+        "averageRecordCount": 47,
+        "averageCaseCount": 7526,
+        "coefficientOfVariation": 0.08
+      }
     }
   ],
   "lazyBranches": [
@@ -2684,6 +2748,7 @@ Amac:
 
 - Urunleri toplam miktar ve sube/evrak kirilimiyle dondurur.
 - `branches` kiriliminda `latestCreateDate` ve `canDelete` alanlari bulunur; UI sil butonunu `canDelete=true` ve kullanicida `green-grocer.reports.update` yetkisi varsa gostermelidir.
+- `caseInfo` doluysa rapor satiri siparis anindaki kasa/koli snapshot'ini de icerir. `quantity` ve `caseInfo.estimatedQuantity` Mikro'ya yazilan KG/ADET toplamidir; `caseInfo.inputQuantity` subenin girdigi kasa/koli toplamidir.
 
 ### Yesillik Raporu
 
@@ -2816,7 +2881,7 @@ UI kullanim notu:
 
 - Mal kabulde `isGoodsAcceptanceBlocked = true` olan urunlerde uyari gosterilebilir.
 - Siparis girisinde `isOrderBlocked = true` olan urunlerde uyari veya engel uygulanabilir.
-- Satis/sevk formlarinda `isSalesBlocked = true` olan urunlerde uyari gosterilebilir.
+- Satis/sevk formlarinda `isSalesBlocked = true` olan urunlerde uyari gosterilebilir; depolar arasi sevkte bu alan tek basina satira ekleme engeli degildir.
 - Barkod okutulan satir ekleme ekranlarinda nihai karar icin once `barkodlar/{barcode}/cozumle` cagrilmalidir; `urunler` daha cok liste/arama deneyimi icindir.
 
 ### Fiyat Gor
@@ -2958,6 +3023,7 @@ Onemli not:
 - `isSalesBlocked`, `isOrderBlocked`, `isGoodsAcceptanceBlocked` ve `isPassive` depo detay degerleri varsa depo ozelinden, yoksa stok kartindan hesaplanir.
 - `isAllowedForTargetWarehouse` hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kod listesine gore hesaplanir.
 - `operationType=shipment` icin hedef depo model kod sonucu bilgi olarak donebilir; fakat hedef depo model kodu sevkte `isUsableInOperation=false` yapmaz.
+- `operationType=shipment` icin `isSalesBlocked=true` bilgi/uyari olarak doner; pasif/DLS disinda tek basina satira eklemeyi bloklamaz.
 - `hasPurchaseRequirement` tedarikci/companyCode verilirse veya operasyon `receiving`/`order` ise `SATINALMA_SARTLARI` kontrol sonucudur. Bu sonuc sadece mal kabul/siparis operasyonunda satira ekleme kararina dahil edilir.
 - `operationType=shipment` icin sirf `targetWarehouseNo` geldi diye satinalma sarti kontrolu calismaz ve satira ekleme bloklanmaz.
 - `salesPrice` ve `priceTypeCode` secili depodaki fiyat satirindan gelir.
@@ -3028,7 +3094,7 @@ UI kullanim notu:
 
 - Kamera ile tek barkod okutulan ekranlarda once bu endpoint cagrilmalidir.
 - UI barkodun urun/stok/ad/tipi tahminini frontend'de yapmamalidir; okutulan degeri aynen bu endpoint'e gondermelidir.
-- Satira ekleme karari icin ana alan `isUsableInOperation` olmalidir. `false` ise `operationDecision` ve `errors` kullaniciya gosterilmelidir.
+- Satira ekleme karari icin ana alan `isUsableInOperation` olmalidir. `false` ise `operationDecision` ve `errors` kullaniciya gosterilmelidir. Sevkte `isSalesBlocked` tek basina engel gibi yorumlanmamalidir.
 - Terazi barkodunda satir miktari icin `embeddedQuantity` kullanilabilir; bos ise varsayilan miktar UI tarafinda `1` kabul edilebilir.
 - Koli barkodu okutulduysa `isCaseBarcode = true` ve `matchedUnitsPerCase` dolu gelir; UI koli ici adet kadar miktar onerebilir.
 - `caseBarcode` doluysa koli barkodu tekrar okutma, koli bozma veya alternatif birim secimi gibi kisayollar acilabilir.
@@ -3271,6 +3337,9 @@ Onemli not:
 - `documentOrderNo` ayni seri icin test DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` yoksa `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `inWarehouseNo` gonderilebilir.
 - `outWarehouseNo` siparis verilen/karsi depo numarasidir.
+- Manav depo siparisinde `outWarehouseNo=56` olmalidir. UI `resolution-preview` kullandiysa satirda `quantity = estimatedQuantity` gonderir; kullanicinin girdigi kasa/koli ve ortalama bilgisi opsiyonel `greenGrocerCase` nesnesinde gonderilir.
+- `greenGrocerCase` gonderilirse `estimatedQuantity` ile satir `quantity` birebir eslesmelidir; eslesmezse API `400 Bad Request` doner.
+- `greenGrocerCase` sadece snapshot/rapor/detay gosterimi icindir; Mikro siparis satirina yine `quantity` alani yazilir.
 
 Request:
 
@@ -3291,6 +3360,41 @@ Request:
       "packageCode": "",
       "projectCode": "",
       "responsibilityCenter": ""
+    }
+  ]
+}
+```
+
+Manav kasa siparisi request ornegi:
+
+```json
+{
+  "outWarehouseNo": 56,
+  "orderDate": "2026-07-31",
+  "deliveryDate": "2026-07-31",
+  "description": "Manav siparisi",
+  "lines": [
+    {
+      "stockCode": "001082",
+      "quantity": 11.25,
+      "recommendedQuantity": 0,
+      "unitPrice": 0,
+      "unitPointer": 1,
+      "description": "3 kasa",
+      "greenGrocerCase": {
+        "inputQuantity": 3,
+        "inputMode": "Case",
+        "conversionMode": "LabelAverageKgPerCase",
+        "microUnit": "KG",
+        "estimatedQuantity": 11.25,
+        "averageKgPerCase": 3.75,
+        "unitsPerCase": null,
+        "averageSource": "LabelHistory",
+        "averageRecordCount": 47,
+        "averageCaseCount": 7526,
+        "coefficientOfVariation": 0.08,
+        "confidence": "High"
+      }
     }
   ]
 }
@@ -3742,6 +3846,7 @@ Yetki:
   },
   "items": [
     {
+      "lineGuid": "8d4a5a77-1b3f-4f2a-93a1-b90a1b7d3c11",
       "lineNo": 0,
       "stockCode": "015550",
       "stockName": "Stok Adi",
@@ -3831,7 +3936,42 @@ Yetki:
       "isClosed": false,
       "description": "",
       "packageCode": "",
-      "projectCode": ""
+      "projectCode": "",
+      "greenGrocerCase": null
+    },
+    {
+      "lineGuid": "03d6df6a-b1b2-4923-b8f0-28060446e61f",
+      "lineNo": 1,
+      "stockCode": "001082",
+      "stockName": "MNV SEFTALI KG",
+      "unitName": "KG",
+      "unitPointer": 1,
+      "quantity": 11.25,
+      "deliveredQuantity": 0,
+      "remainingQuantity": 11.25,
+      "unitPrice": 0,
+      "lineAmount": 0,
+      "isClosed": false,
+      "description": "3 kasa",
+      "packageCode": "",
+      "projectCode": "",
+      "greenGrocerCase": {
+        "inputQuantity": 3,
+        "inputMode": "Case",
+        "conversionMode": "LabelAverageKgPerCase",
+        "estimatedQuantity": 11.25,
+        "microUnit": "KG",
+        "averageKgPerCase": 3.75,
+        "unitsPerCase": null,
+        "averageSource": "LabelHistory",
+        "averageRecordCount": 47,
+        "averageCaseCount": 7526,
+        "coefficientOfVariation": 0.08,
+        "confidence": "High",
+        "actualShippedQuantity": null,
+        "actualShippedCaseCount": null,
+        "status": "Ordered"
+      }
     }
   ]
 }
@@ -3845,6 +3985,9 @@ UI kullanim notlari:
 - alternatif olarak `documentKey` de saklanabilir
 - detay ekraninda ust kart icin `header`, grid icin `items` kullanilmalidir
 - Depo siparis detayi `items[].lineGuid` dondurur; depolar arasi sevki siparise baglamak icin bu guid `warehouseOrderLineGuid` olarak gonderilebilir
+- `items[].greenGrocerCase` doluysa satir manav kasa/koli cozumleme snapshot'i ile olusmustur. UI manav depo gelen siparisinde bu satiri "3 kasa ~= 11.25 KG, ort 3.75 KG/kasa" gibi gostermelidir.
+- `OrderLinkingEnabled=false` ise UI bu `lineGuid` bilgisini manav sevke tasimaz; satir sadece bilgilendirme/rapor icin kullanilir.
+- `OrderLinkingEnabled=true` ise UI manav sevkte ayni satirin `lineGuid` degerini `warehouseOrderLineGuid` olarak gonderir ve gercek sevk miktarini okutulan KG/ADET olarak yollar.
 
 ## Sevk Islemleri
 
@@ -3948,6 +4091,9 @@ Onemli not:
 - `transitWarehouseNo` verilmezse `60` kullanilir ve `sth_giris_depo_no` alanina yazilir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri ve `sth_evraktip = 17` icin write DB'deki maksimum sira okunarak uretilir.
+- Backend ayni `documentSerie` icin sevk olusturma islemlerini SQL application lock ile siraya alir. Bu, terminalden pes pese kaydetme veya ayni anda birden fazla sevk olusturma durumunda sira numarasi/insert deadlock riskini azaltir.
+- Backend son 5 dakika icinde ayni kaynak depo, hedef depo, transit depo, tarih ve birebir ayni satirlar ile olusmus bir sevk bulursa yeni evrak acmaz; mevcut evrakin `documentSerie` ve `documentOrderNo` bilgisini ayni response modeliyle dondurur. Bu alan response'ta ayrica isaretlenmez, UI ayni response'u basar.
+- UI kaydet butonunu ilk tiklamadan sonra request bitene kadar disable etmeli ve timeout sonrasi ayni body tekrar gonderildiginde ayni evrak numarasinin donebilecegini kabul etmelidir. Timeout gorulse bile kullaniciya liste/detay yenileme secenegi verilmesi onerilir.
 - Satirda `warehouseOrderLineGuid` verilirse depo siparis satirina baglanir. `MikroWriteRouting:InterWarehouseShipment=Database` modunda backend `STOK_HAREKETLERI_EK.sth_subesip_uid` linkini DB'de kurar; `MikroApi` modunda ayni GUID `DahiliStokHareketKaydetV2` satirina `sth_subesip_uid` olarak gonderilir ve link/teslim etkisi Mikro tarafina birakilir.
 - `warehouseOrderLineGuid` verilmezse satir normalde siparissiz sevk olarak olusur; otomatik depo siparisi kurali devredeyse backend once Mikro API ile depo siparisi olusturup satiri bu yeni siparis GUID'ine baglar.
 - Siparise bagli satirda stok kodu, kaynak depo, hedef depo ve kalan miktar kontrol edilir.
@@ -8186,7 +8332,7 @@ Response:
 
 ### E-Irsaliye Gonderme Response
 
-Dort e-irsaliye gonderme endpointi de ayni request body modelini bekler ve ayni response modelini doner. `plaque`, `driverNameSurname` ve `driverTckn` zorunludur; UI bu alanlari sevk/iade create ekraninda degil, e-irsaliye gonderme aninda almalidir.
+Dort e-irsaliye gonderme endpointi de ayni request body modelini bekler ve ayni response modelini doner. `plaque`, `driverNameSurname` ve `driverTckn` zorunludur; UI bu alanlari sevk/iade create ekraninda degil, e-irsaliye gonderme aninda almalidir. `driverNameSurname` en az iki kelime olacak sekilde `Ad Soyad` formatinda gonderilmelidir; tek kelime gelirse API 400 doner. Backend UBL uretiminde `DriverPerson` icinde sirayi `FirstName`, `FamilyName`, `NationalityID` olarak yazar; `NationalityID` soyaddan once gonderilmez.
 
 Request:
 
@@ -11043,7 +11189,7 @@ Davranis:
 - `sourceTotalCount` Uyumsoft'un genisletilmis execution penceresinde bildirdigi toplam kayit, `fetchedCount` tum sayfalardan gercekten okunan kayit sayisi, `matchedCount` ise secilen Fatura Tarihi araligina uyup cache'e aday olan tekil kayit sayisidir
 - Uyumsoft cagrisi basarisiz olursa progress `status=failed` olur; sessiz basarili sayilmaz
 - Uyumsoft zaman asiminda progress `status=failed` olur; UI kullaniciya daha kucuk tarih araligi denemesini onermelidir
-- Uyumsoft e-fatura WCF timeout degeri `EInvoice:TimeoutSeconds` konfigurasyonuyla yonetilir; varsayilan appsettings degeri `180` saniyedir
+- Uyumsoft e-fatura WCF timeout degeri `EInvoice:TimeoutSeconds` konfigurasyonuyla yonetilir; varsayilan appsettings degeri `360` saniyedir
 - backend her Uyumsoft sayfasi icin page index, page size, item count, total count, total page ve sure bilgisini loglar; ayrica Fatura Tarihi araligina uyan `MatchedItems` / `MatchedTotal` ve sayfa upsert sayilari loglanir
 - timeout durumunda ayni tarih araligiyla tekrar `POST /senkronize` calistirilirse onceki denemede cache'e yazilmis sayfalar korunur, eksik kalan sayfalardan gelen kayitlar guncellenerek devam eder
 - tekrar eden veya degisiklik icermeyen sayfalar icin koruma vardir; sonsuz donguye girmez
@@ -15543,7 +15689,25 @@ public sealed record WarehouseOrderLineItemDto(
     bool IsClosed,
     string Description,
     string PackageCode,
-    string ProjectCode);
+    string ProjectCode,
+    WarehouseOrderLineGreenGrocerCaseDto? GreenGrocerCase = null);
+
+public sealed record WarehouseOrderLineGreenGrocerCaseDto(
+    double InputQuantity,
+    string InputMode,
+    string ConversionMode,
+    double EstimatedQuantity,
+    string MicroUnit,
+    double? AverageKgPerCase,
+    double? UnitsPerCase,
+    string AverageSource,
+    int? AverageRecordCount,
+    int? AverageCaseCount,
+    double? CoefficientOfVariation,
+    string Confidence,
+    double? ActualShippedQuantity,
+    double? ActualShippedCaseCount,
+    string Status);
 
 public sealed record WarehouseOrderDetailDto(
     WarehouseOrderHeaderDto Header,
@@ -17650,7 +17814,8 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CreateIssuedCompanyOrderHttpRequest`: `WarehouseNo`, `CustomerCode`, `OrderDate`, `DeliveryDate`, `Description1`, `Description2`, `Deliverer`, `Receiver`, `Lines`
 - `CreateIssuedCompanyOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description1`, `Description2`, `PackageCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `ProductResponsibilityCenter`
 - `CreateIssuedWarehouseOrderHttpRequest`: `InWarehouseNo`, `OutWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
-- `CreateIssuedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
+- `CreateIssuedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`, `GreenGrocerCase`
+- `GreenGrocerOrderLineSnapshotHttpRequest`: `InputQuantity`, `InputMode`, `ConversionMode`, `MicroUnit`, `EstimatedQuantity`, `AverageKgPerCase`, `UnitsPerCase`, `AverageSource`, `AverageRecordCount`, `AverageCaseCount`, `CoefficientOfVariation`, `Confidence`
 - `SuggestedWarehouseOrderListHttpRequest`: `TargetWarehouseNo`, `SourceWarehouseNo`, `LookbackDays`, `FallbackRecommendedDay`
 - `ConvertSuggestedWarehouseOrderHttpRequest`: `TargetWarehouseNo`, `SourceWarehouseNo`, `OrderDate`, `DeliveryDate`, `Description`, `Lines`
 - `ConvertSuggestedWarehouseOrderLineHttpRequest`: `StockCode`, `Quantity`, `RecommendedQuantity`, `UnitPrice`, `UnitPointer`, `Description`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`

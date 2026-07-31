@@ -109,8 +109,10 @@ public sealed class VerilenDepoSiparisleriController(
                         line.Description,
                         line.PackageCode,
                         line.ProjectCode,
-                        line.ResponsibilityCenter))
-                    .ToArray()),
+                        line.ResponsibilityCenter,
+                        ToApplicationRequest(line.GreenGrocerCase)))
+                    .ToArray(),
+                User.GetRequiredUserId()),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -139,6 +141,24 @@ public sealed class VerilenDepoSiparisleriController(
     [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
     public ActionResult<ModuleActionScaffoldResponse> Update(string id, [FromBody] ModuleActionRequest request) =>
         UpdateNotImplemented(UpdatePolicy, id);
+
+    private static GreenGrocerOrderLineSnapshotRequest? ToApplicationRequest(
+        GreenGrocerOrderLineSnapshotHttpRequest? request) =>
+        request is null
+            ? null
+            : new GreenGrocerOrderLineSnapshotRequest(
+                request.InputQuantity,
+                request.InputMode,
+                request.ConversionMode,
+                request.MicroUnit,
+                request.EstimatedQuantity,
+                request.AverageKgPerCase,
+                request.UnitsPerCase,
+                request.AverageSource,
+                request.AverageRecordCount,
+                request.AverageCaseCount,
+                request.CoefficientOfVariation,
+                request.Confidence);
 }
 
 public sealed class CreateIssuedWarehouseOrderHttpRequest
@@ -191,4 +211,50 @@ public sealed class CreateIssuedWarehouseOrderLineHttpRequest
 
     [StringLength(25)]
     public string? ResponsibilityCenter { get; init; }
+
+    public GreenGrocerOrderLineSnapshotHttpRequest? GreenGrocerCase { get; init; }
+}
+
+public sealed class GreenGrocerOrderLineSnapshotHttpRequest
+{
+    [Range(0.000001, double.MaxValue)]
+    public double InputQuantity { get; init; }
+
+    [Required]
+    [StringLength(40)]
+    public string InputMode { get; init; } = string.Empty;
+
+    [Required]
+    [StringLength(60)]
+    public string ConversionMode { get; init; } = string.Empty;
+
+    [Required]
+    [StringLength(20)]
+    public string MicroUnit { get; init; } = string.Empty;
+
+    [Range(0.000001, double.MaxValue)]
+    public double EstimatedQuantity { get; init; }
+
+    [Range(0.000001, double.MaxValue)]
+    public double? AverageKgPerCase { get; init; }
+
+    [Range(0.000001, double.MaxValue)]
+    public double? UnitsPerCase { get; init; }
+
+    [Required]
+    [StringLength(60)]
+    public string AverageSource { get; init; } = string.Empty;
+
+    [Range(0, int.MaxValue)]
+    public int? AverageRecordCount { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? AverageCaseCount { get; init; }
+
+    [Range(0d, double.MaxValue)]
+    public double? CoefficientOfVariation { get; init; }
+
+    [Required]
+    [StringLength(30)]
+    public string Confidence { get; init; } = string.Empty;
 }

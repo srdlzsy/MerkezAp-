@@ -29,7 +29,8 @@ Uygulama config'ine `MikroApi` section'i eklendi.
     "SifreAnahtari": "<secret>",
     "FirmaNo": 0,
     "SubeNo": 0,
-    "ApiKey": "<secret>"
+    "ApiKey": "<secret>",
+    "TimeoutSeconds": 300
   }
 }
 ```

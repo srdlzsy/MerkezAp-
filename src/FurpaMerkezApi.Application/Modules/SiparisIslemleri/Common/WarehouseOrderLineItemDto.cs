@@ -15,4 +15,22 @@ public sealed record WarehouseOrderLineItemDto(
     bool IsClosed,
     string Description,
     string PackageCode,
-    string ProjectCode);
+    string ProjectCode,
+    WarehouseOrderLineGreenGrocerCaseDto? GreenGrocerCase = null);
+
+public sealed record WarehouseOrderLineGreenGrocerCaseDto(
+    double InputQuantity,
+    string InputMode,
+    string ConversionMode,
+    double EstimatedQuantity,
+    string MicroUnit,
+    double? AverageKgPerCase,
+    double? UnitsPerCase,
+    string AverageSource,
+    int? AverageRecordCount,
+    int? AverageCaseCount,
+    double? CoefficientOfVariation,
+    string Confidence,
+    double? ActualShippedQuantity,
+    double? ActualShippedCaseCount,
+    string Status);
