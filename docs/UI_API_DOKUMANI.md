@@ -2223,10 +2223,23 @@ Kasiyere yeni 6 haneli numeric sifre uretir. Response `CashierPasswordMutationDt
 
 Bu modul eski `Furpa.GreenGrocerWebUI` icindeki manav/yesillik raporlarini yeni API'ye tasir.
 
+Manav siparis/sevk is kurali:
+
+- Canli Mikro gecmisinde `56 MANAV DEPO` kaynakli manav siparisleri `DEPOLAR_ARASI_SIPARISLER` uzerinde talep/kasa niyeti gibi kullanilir; `ssip_miktar` Mikro'da stok ana birimi nedeniyle KG/ADET gorunse de sevk limiti olarak yorumlanmaz.
+- Gercek sevk miktari depolar arasi sevkte `STOK_HAREKETLERI.sth_miktar` alanina yazilan KG/ADET degeridir. Bu miktar etiket/terazi barkodu okutularak olusur.
+- Manav sevklerinde siparis satiri teslim kapatma akisi kullanilmaz. Canli DB pratiginde `STOK_HAREKETLERI_EK.sth_subesip_uid` linki ve `ssip_teslim_miktar` guncellemesi yoktur.
+- `GreenGrocerProductCases:OrderLinkingEnabled=false` ise UI manav sevkinde `warehouseOrderLineGuid` gondermemelidir. Gonderilirse backend `sourceWarehouseNo = 56` ve `STOKLAR.sto_model_kodu in ('10','11','12')` olan satirlarda bu GUID'i yok sayar.
+- `GreenGrocerProductCases:OrderLinkingEnabled=true` ise UI manav sevkinde gercek siparis satiri GUID'ini `warehouseOrderLineGuid` olarak gonderebilir. Bu durumda sevk satiri siparis satirina baglanir ve kalan/teslim miktari kurallari calisir.
+- Manav raporlarinda siparis miktari "sube talebi/kasa niyeti", sevk miktari ise "gercek KG/ADET" olarak ayri okunmalidir.
+
 Yetki:
 
 - `green-grocer.reports.list`: raporlari goruntuleme
 - `green-grocer.reports.update`: manav siparisi silme
+- `green-grocer.product-case-profiles.list`: kasa profil listeleme ve cozumleme onizleme
+- `green-grocer.product-case-profiles.detail`: kasa profil detayi
+- `green-grocer.product-case-profiles.update`: kasa profil kaydetme
+- `green-grocer.product-case-profiles.delete`: kasa profil pasife alma
 
 Tarih query alani:
 
@@ -2245,6 +2258,283 @@ search               opsiyonel; urun kodu, urun adi, sube adi veya evrak serisin
 includeLazyBranches  opsiyonel; default true, siparis girmeyen subeleri de dondurur
 take                 opsiyonel; default 1000, max 5000
 ```
+
+### Manav Kasa Profil ve Cozumleme
+
+Bu bolum subelerin manav siparisinde kasa/koli girip Mikro tarafinda KG/ADET olarak anlamli miktar olusmasi icin tasarlanan yeni kural katmanidir.
+
+Kaynaklar:
+
+- Profil ve ileride siparis snapshot kayitlari uygulama DB'sinde tutulur.
+- Stok karti bilgisi Mikro `STOKLAR` tablosundan okunur.
+- Kasa kg ortalamasi Furpa `Manav_Depo_Mal_Kabul_Etiket` tablosundaki gercek etiket/tartim gecmisinden hesaplanir.
+- Mikro ve Furpa tablolarina yeni kural tablosu acilmaz.
+
+Yeni tablolar:
+
+- `green_grocer_product_case_profiles`: stok bazli kasa/koli/manuel cevrim kuralidir.
+- `green_grocer_order_line_snapshots`: siparis aninda kullanilan ortalama/katsayi ve Mikro siparis satir GUID'i icin hazir snapshot tablosudur. Ilk surumde API tarafinda tablo hazirdir; siparis kaydetme akisi bu tabloya sonraki adimda baglanacaktir.
+
+Feature flag:
+
+```json
+{
+  "GreenGrocerProductCases": {
+    "Enabled": true,
+    "OrderLinkingEnabled": false
+  }
+}
+```
+
+- Varsayilan `Enabled=true`; yeni kasa profil/cozumleme endpointleri aktif gelir.
+- Ortam degiskeni ile kapatma: `GreenGrocerProductCases__Enabled=false`
+- `Enabled=false` ise bu bolumdeki endpointler `409 Conflict` doner ve detay mesajinda ozelligin konfigurasyonla kapali oldugu belirtilir.
+- UI kapali durumda `resolution-preview` cagirmamali, profil ekranini gizlemeli ve eski manav siparis/sevk akisini kullanmaya devam etmelidir.
+- Varsayilan `OrderLinkingEnabled=false`; manav sevkte siparis GUID'i gelse bile eski davranis korunur ve GUID temizlenir.
+- Siparise bagli manav sevk istenirse `GreenGrocerProductCases__OrderLinkingEnabled=true` yapilir. Bu ayar ancak `Enabled=true` iken anlamlidir.
+- `OrderLinkingEnabled=true` iken `resolution-preview` response'undaki `isOrderLinkable=true` ise UI ilgili siparis satirinin `lineGuid` degerini sevk request satirinda `warehouseOrderLineGuid` olarak gonderebilir.
+- Bu ayar otomatik depo siparisi uretmez; yalnizca UI'nin gonderdigi gercek siparis satiri GUID'inin korunup sevke baglanmasini saglar.
+
+Cozumleme siniflari:
+
+```text
+InputMode:
+- Case      kasa girisi
+- Pack      koli/paket girisi
+- Piece     direkt adet girisi
+- KgDirect  direkt kg girisi
+- Sarf      kasa/ambalaj/sarf malzemesi
+
+ConversionMode:
+- LabelAverageKgPerCase  Furpa etiket gecmisinden kg/kasa ortalamasi
+- ManualKgPerCase        profil uzerindeki manuel kg/kasa
+- FixedUnitsPerCase      Mikro birim2 katsayisi veya manuel adet/koli katsayisi
+- DirectQuantity         girilen miktari direkt Mikro ana birimine yaz
+- ManualOnly             otomatik hesaplama yok, manuel karar gerekli
+- Blocked                bu urun manav kasa siparisinde engelli
+
+Confidence:
+- High
+- Medium
+- Low
+- Blocked
+```
+
+Profil listeleme:
+
+`GET /api/green-grocer/product-case-profiles?search=KARPUZ&includeInactive=false&take=100`
+
+Query:
+
+- `search`: opsiyonel, stok kodu, stok adi, model adi veya not icinde arar
+- `includeInactive`: opsiyonel, default `false`
+- `take`: opsiyonel, default `100`, max `500`
+
+Response:
+
+```json
+[
+  {
+    "id": "ed2486c3-bd7f-4f4c-84f0-7c099cb9a6d1",
+    "stockCode": "000488",
+    "stockName": "MNV KARPUZ KG",
+    "modelCode": "10",
+    "modelName": "Meyve",
+    "unit1": "KG",
+    "unit2": "",
+    "unit2Factor": 0,
+    "isActive": true,
+    "inputMode": "Case",
+    "conversionMode": "ManualKgPerCase",
+    "manualKgPerCase": 12.5,
+    "manualUnitsPerCase": null,
+    "minExpectedKgPerCase": 8,
+    "maxExpectedKgPerCase": 25,
+    "averageWindowDays": 30,
+    "minAverageRecordCount": 5,
+    "minAverageCaseCount": 20,
+    "maxCoefficientOfVariation": 0.25,
+    "requiresManualApproval": true,
+    "allowOrderLinking": true,
+    "overDeliveryTolerancePercent": 20,
+    "notes": "Karpuz manuel kasa ortalamasi ile yonetilir.",
+    "createdAtUtc": "2026-07-31T06:17:50Z",
+    "updatedAtUtc": null
+  }
+]
+```
+
+Profil detayi:
+
+`GET /api/green-grocer/product-case-profiles/{stockCode}`
+
+Ornek:
+
+`GET /api/green-grocer/product-case-profiles/000488`
+
+Response tek `GreenGrocerProductCaseProfileDto` modelidir. Profil yoksa `404` doner.
+
+Profil kaydetme:
+
+`PUT /api/green-grocer/product-case-profiles/{stockCode}`
+
+Body:
+
+```json
+{
+  "isActive": true,
+  "inputMode": "Case",
+  "conversionMode": "ManualKgPerCase",
+  "manualKgPerCase": 12.5,
+  "manualUnitsPerCase": null,
+  "minExpectedKgPerCase": 8,
+  "maxExpectedKgPerCase": 25,
+  "averageWindowDays": 30,
+  "minAverageRecordCount": 5,
+  "minAverageCaseCount": 20,
+  "maxCoefficientOfVariation": 0.25,
+  "requiresManualApproval": true,
+  "allowOrderLinking": true,
+  "overDeliveryTolerancePercent": 20,
+  "notes": "Karpuz manuel kg/kasa ile hesaplanacak."
+}
+```
+
+Kaydetme kurallari:
+
+- `stockCode` Mikro `STOKLAR` icinde bulunmalidir.
+- Sadece `sto_model_kodu` `10`, `11`, `12`, `23` olan urunlere profil kaydedilir.
+- `ManualKgPerCase` modunda `manualKgPerCase > 0` zorunludur.
+- `FixedUnitsPerCase` modunda `manualUnitsPerCase` verilmezse backend Mikro `sto_birim2_katsayi` degerini kullanabilir.
+- `DELETE` fiziksel silmez; profili pasife alir.
+
+Profil pasife alma:
+
+`DELETE /api/green-grocer/product-case-profiles/{stockCode}`
+
+Basarili response:
+
+```text
+204 No Content
+```
+
+Cozumleme onizleme:
+
+`POST /api/green-grocer/product-case-profiles/resolution-preview`
+
+Alias:
+
+`POST /api/green-grocer/product-case-profiles/cozumleme-onizleme`
+
+Body:
+
+```json
+{
+  "stockCode": "001082",
+  "inputQuantity": 3,
+  "sourceWarehouseNo": 56,
+  "targetWarehouseNo": 110,
+  "orderDate": "2026-07-31T00:00:00"
+}
+```
+
+Response:
+
+Not: `isOrderLinkable` alani profilin `allowOrderLinking` degeri ile global
+`GreenGrocerProductCases:OrderLinkingEnabled` ayarinin birlikte sonucudur. Global
+ayar kapaliysa profil izin verse bile response `isOrderLinkable=false` doner.
+Asagidaki ornekte `OrderLinkingEnabled=true` varsayilmistir.
+
+```json
+{
+  "stockCode": "001082",
+  "stockName": "MNV SEFTALI KG",
+  "modelCode": "10",
+  "modelName": "Meyve",
+  "unit1": "KG",
+  "unit2": "",
+  "unit2Factor": 0,
+  "inputQuantity": 3,
+  "inputMode": "Case",
+  "conversionMode": "LabelAverageKgPerCase",
+  "microUnit": "KG",
+  "estimatedQuantity": 11.25,
+  "averageKgPerCase": 3.75,
+  "unitsPerCase": null,
+  "averageSource": "LabelHistory",
+  "averageRecordCount": 47,
+  "averageCaseCount": 7526,
+  "coefficientOfVariation": 0.08,
+  "latestLabelDate": "2026-07-30T00:00:00",
+  "confidence": "High",
+  "requiresManualApproval": false,
+  "isOrderLinkable": true,
+  "isUsable": true,
+  "warnings": [],
+  "errors": []
+}
+```
+
+ADET/koli ornegi:
+
+```json
+{
+  "stockCode": "016167",
+  "inputQuantity": 3,
+  "sourceWarehouseNo": 56
+}
+```
+
+Response mantigi:
+
+```json
+{
+  "stockCode": "016167",
+  "stockName": "MNV MAYDANOZ ADET",
+  "inputMode": "Pack",
+  "conversionMode": "FixedUnitsPerCase",
+  "microUnit": "ADET",
+  "estimatedQuantity": 75,
+  "unitsPerCase": 25,
+  "averageSource": "StockUnitFactor",
+  "confidence": "High",
+  "isUsable": true,
+  "warnings": [],
+  "errors": []
+}
+```
+
+Ortalama yoksa response hata listeleyerek doner:
+
+```json
+{
+  "stockCode": "023740",
+  "stockName": "MNV KIRKAGAC KAVUN KG",
+  "inputMode": "Case",
+  "conversionMode": "ManualOnly",
+  "microUnit": "KG",
+  "estimatedQuantity": 0,
+  "averageSource": "None",
+  "confidence": "Blocked",
+  "requiresManualApproval": true,
+  "isOrderLinkable": false,
+  "isUsable": false,
+  "warnings": [],
+  "errors": [
+    "Urun icin guncel kasa kg ortalamasi yok; manuel profil tanimlanmali."
+  ]
+}
+```
+
+UI onerisi:
+
+- Siparis ekraninda kullanici yine kasa/koli girer.
+- Barkod/stok secildikten sonra `resolution-preview` cagrilir.
+- `isUsable=false` ise satir ekletilmez; `errors.first` kullaniciya gosterilir.
+- `confidence=Medium` ise satir eklenebilir ama uyari gosterilir.
+- `estimatedQuantity` Mikro siparis satirina yazilacak KG/ADET miktaridir.
+- `inputQuantity`, `inputMode`, `averageKgPerCase` veya `unitsPerCase` UI'da "3 kasa ~= 11.25 KG" gibi gosterilir.
+- `isOrderLinkable=true` ve `GreenGrocerProductCases:OrderLinkingEnabled=true` ise sevk ekraninda ilgili siparis satiri GUID'i `warehouseOrderLineGuid` olarak gonderilebilir.
 
 Tip secenekleri:
 
@@ -3652,6 +3942,7 @@ Onemli not:
 - Satirda `warehouseOrderLineGuid` verilirse depo siparis satirina baglanir. `MikroWriteRouting:InterWarehouseShipment=Database` modunda backend `STOK_HAREKETLERI_EK.sth_subesip_uid` linkini DB'de kurar; `MikroApi` modunda ayni GUID `DahiliStokHareketKaydetV2` satirina `sth_subesip_uid` olarak gonderilir ve link/teslim etkisi Mikro tarafina birakilir.
 - `warehouseOrderLineGuid` verilmezse satir normalde siparissiz sevk olarak olusur; otomatik depo siparisi kurali devredeyse backend once Mikro API ile depo siparisi olusturup satiri bu yeni siparis GUID'ine baglar.
 - Siparise bagli satirda stok kodu, kaynak depo, hedef depo ve kalan miktar kontrol edilir.
+- Manav istisnasi: `sourceWarehouseNo = 56` ve stok model kodu `10`, `11` veya `12` ise `GreenGrocerProductCases:OrderLinkingEnabled=false` durumunda satirdaki `warehouseOrderLineGuid` yok sayilir, otomatik depo siparisi/linki uretilmez ve kalan siparis miktari kontrolu uygulanmaz. `OrderLinkingEnabled=true` ise UI'nin gonderdigi gercek siparis satiri GUID'i korunur, sevk siparise baglanir ve kalan/teslim miktari kontrolleri calisir. Bu satirlarda `quantity` gercek okutulan KG/ADET sevk miktaridir.
 - Plaka, sofor adi ve TCKN bu create request'inde gonderilmez. Bu alanlar e-irsaliye gonderim request'inde zorunludur.
 
 Siparissiz request:
@@ -17329,6 +17620,9 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 
 - `GreenGrocerReportHttpRequest`: `Date`, `DateToGet`, `WarehouseNo`, `TypeCode`, `Search`, `IncludeLazyBranches`, `Take`
 - `DeleteGreenGrocerOrderHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `WarehouseNo`
+- `GreenGrocerProductCaseProfileListHttpRequest`: `Search`, `IncludeInactive`, `Take`
+- `SaveGreenGrocerProductCaseProfileHttpRequest`: `IsActive`, `InputMode`, `ConversionMode`, `ManualKgPerCase`, `ManualUnitsPerCase`, `MinExpectedKgPerCase`, `MaxExpectedKgPerCase`, `AverageWindowDays`, `MinAverageRecordCount`, `MinAverageCaseCount`, `MaxCoefficientOfVariation`, `RequiresManualApproval`, `AllowOrderLinking`, `OverDeliveryTolerancePercent`, `Notes`
+- `GreenGrocerProductCaseResolutionHttpRequest`: `StockCode`, `OrderDate`, `SourceWarehouseNo`, `InputQuantity`
 
 ### Arama Request Modelleri
 

@@ -3,6 +3,7 @@ using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -19,6 +20,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptions<AxataSynchronizationOptions> axataOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<GreenGrocerProductCaseOptions> greenGrocerProductCaseOptions,
     MikroApiClient mikroApiClient,
     ILogger<CreateInterWarehouseShipmentUseCase> logger)
     : ICreateInterWarehouseShipmentUseCase
@@ -63,7 +65,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         var documentDate = (request.DocumentDate ?? movementDate).Date;
         var documentSerie = $"F{request.SourceWarehouseNo}";
         var documentNo = NormalizeText(request.DocumentNo);
-        var lines = request.Lines.ToArray();
+        var lines = await GreenGrocerShipmentLineNormalizer.DetachWarehouseOrderLinksAsync(
+            mikroWriteDbContext,
+            request,
+            request.Lines.ToArray(),
+            IsGreenGrocerOrderLinkingEnabled(),
+            cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -173,7 +180,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         var documentSerie = $"F{request.SourceWarehouseNo}";
         var documentNo = NormalizeText(request.DocumentNo);
         var description = NormalizeText(request.Description);
-        var lines = request.Lines.ToArray();
+        var lines = await GreenGrocerShipmentLineNormalizer.DetachWarehouseOrderLinksAsync(
+            mikroWriteDbContext,
+            request,
+            request.Lines.ToArray(),
+            IsGreenGrocerOrderLinkingEnabled(),
+            cancellationToken);
 
         mikroWriteDbContext.ChangeTracker.Clear();
         var linkedWarehouseOrderLines = await GetAndValidateLinkedOrderLinesAsync(
@@ -598,7 +610,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines)
     {
         var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
-        if (!automationOptions.Enabled ||
+        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(request.SourceWarehouseNo) ||
+            !automationOptions.Enabled ||
             !automationOptions.CreateForInterWarehouseShipments ||
             !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
         {
@@ -613,6 +626,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 orderRowNo,
                 item.line))
             .ToArray();
+    }
+
+    private bool IsGreenGrocerOrderLinkingEnabled()
+    {
+        var currentOptions = greenGrocerProductCaseOptions.CurrentValue;
+        return currentOptions.Enabled && currentOptions.OrderLinkingEnabled;
     }
 
     private static CreateInterWarehouseShipmentLineRequest[] ApplyAutomaticWarehouseOrderLineGuids(
@@ -639,7 +658,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CancellationToken cancellationToken)
     {
         var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
-        if (!automationOptions.Enabled ||
+        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(request.SourceWarehouseNo) ||
+            !automationOptions.Enabled ||
             !automationOptions.CreateForInterWarehouseShipments ||
             !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
         {

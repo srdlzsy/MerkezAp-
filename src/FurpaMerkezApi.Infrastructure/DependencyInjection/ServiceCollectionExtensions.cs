@@ -13,6 +13,7 @@ using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGonderimi;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchWarehouses;
+using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
@@ -109,6 +110,7 @@ using FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGonderimi;
 using FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchWarehouses;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Infrastructure.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
@@ -272,6 +274,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(InvoiceViewingAutomaticSynchronizationOptions.SectionName));
         services.Configure<ProductDistributionMailOptions>(
             configuration.GetSection(ProductDistributionMailOptions.SectionName));
+        services.Configure<GreenGrocerProductCaseOptions>(
+            configuration.GetSection(GreenGrocerProductCaseOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddSingleton<MikroApiWriteAuditService>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
@@ -424,6 +428,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetMobileProductPriceCatalogUseCase, GetMobileProductPriceCatalogUseCase>();
         services.AddScoped<IGetMobileCustomerCatalogUseCase, GetMobileCustomerCatalogUseCase>();
         services.AddScoped<IGetMobileWarehouseCatalogUseCase, GetMobileWarehouseCatalogUseCase>();
+        services.AddScoped<IGreenGrocerProductCaseService, GreenGrocerProductCaseService>();
         services.AddScoped<IGreenGrocerReportsUseCase, GreenGrocerReportsUseCase>();
         services.AddScoped<IDeleteGreenGrocerOrderUseCase, DeleteGreenGrocerOrderUseCase>();
         services.AddScoped<CompanyOrderDetailQueryExecutor>();

@@ -37,6 +37,12 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<StockAnomalyEvent> StockAnomalyEvents => Set<StockAnomalyEvent>();
 
+    public DbSet<GreenGrocerProductCaseProfile> GreenGrocerProductCaseProfiles =>
+        Set<GreenGrocerProductCaseProfile>();
+
+    public DbSet<GreenGrocerOrderLineSnapshot> GreenGrocerOrderLineSnapshots =>
+        Set<GreenGrocerOrderLineSnapshot>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(

@@ -170,6 +170,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
+        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "product-case-profiles", "ProductCaseProfiles", ProductDistributionActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "duyurular", "Duyurular", AnnouncementActions),
 
