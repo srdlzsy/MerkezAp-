@@ -2,133 +2,180 @@ namespace FurpaMerkezApi.Application.Security;
 
 public static class PermissionCatalog
 {
+    private static readonly PermissionActionDefinition PageAction = new("page", "Sayfa");
+    private static readonly PermissionActionDefinition ManageAction = new("manage", "Yonet");
+
+    private static readonly PermissionActionDefinition ListAction = new("list", "Listele");
+    private static readonly PermissionActionDefinition DetailAction = new("detail", "Detay");
+    private static readonly PermissionActionDefinition CreateAction = new("create", "Ekle");
+    private static readonly PermissionActionDefinition UpdateAction = new("update", "Guncelle");
+    private static readonly PermissionActionDefinition DeleteAction = new("delete", "Sil");
+    private static readonly PermissionActionDefinition AllWarehousesAction = new("all-warehouses", "Tum Depolar");
+
     private static readonly PermissionActionDefinition[] CrudActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("create", "Ekle"),
-        new("update", "Guncelle"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        AllWarehousesAction
+    ];
+
+    private static readonly PermissionActionDefinition[] ManageCrudActions =
+    [
+        ManageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ReadActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ListActions =
     [
-        new("list", "Listele"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ReportListActions =
     [
-        new("list", "Listele"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ReportReadActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] HomeWarehousePriorityActions =
     [
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ListCreateActions =
     [
-        new("list", "Listele"),
-        new("create", "Ekle"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        CreateAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ReadCreateActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("create", "Ekle"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ReadUpdateActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("update", "Guncelle"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        UpdateAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ReadUpdateDeleteActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("update", "Guncelle"),
-        new("delete", "Sil"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        UpdateAction,
+        DeleteAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] StockAnomalyActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("update", "Guncelle"),
+        PageAction,
+        ListAction,
+        DetailAction,
+        UpdateAction,
         new("scan", "Tara"),
-        new("all-warehouses", "Tum Depolar")
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] FeedbackActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("update", "Guncelle"),
+        PageAction,
+        ListAction,
+        DetailAction,
+        UpdateAction,
         new("list-all", "Tumunu Listele")
     ];
 
     private static readonly PermissionActionDefinition[] AnnouncementActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("create", "Ekle"),
-        new("update", "Guncelle"),
+        PageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
         new("archive", "Arsivle"),
-        new("all-warehouses", "Tum Depolar")
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] CashSummaryEntryActions =
     [
-        new("list", "Listele"),
-        new("create", "Ekle"),
-        new("update", "Guncelle"),
-        new("delete", "Sil"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        CreateAction,
+        UpdateAction,
+        DeleteAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] ProductDistributionActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("create", "Ekle"),
-        new("update", "Guncelle"),
-        new("delete", "Sil"),
-        new("all-warehouses", "Tum Depolar")
+        PageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        DeleteAction,
+        AllWarehousesAction
+    ];
+
+    private static readonly PermissionActionDefinition[] ProductCaseProfileActions =
+    [
+        ManageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        DeleteAction,
+        AllWarehousesAction
     ];
 
     private static readonly PermissionActionDefinition[] EtiketBasimActions =
     [
-        new("list", "Listele"),
-        new("detail", "Detay"),
-        new("create", "Ekle"),
-        new("update", "Guncelle"),
-        new("delete", "Sil"),
+        PageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        DeleteAction,
         new("transfer", "Aktar"),
-        new("all-warehouses", "Tum Depolar")
+        AllWarehousesAction
     ];
 
     public static IReadOnlyCollection<PermissionDefinition> Definitions { get; } =
@@ -170,14 +217,14 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
-        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "product-case-profiles", "ProductCaseProfiles", ProductDistributionActions),
+        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "product-case-profiles", "ProductCaseProfiles", ProductCaseProfileActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "duyurular", "Duyurular", AnnouncementActions),
 
-        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "cihazlar", "Cihazlar"),
-        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "sube-ayarlari", "SubeAyarlari"),
-        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasa-pos-terminalleri", "KasaPosTerminalleri"),
-        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasiyerler", "Kasiyerler"),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "cihazlar", "Cihazlar", ManageCrudActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "sube-ayarlari", "SubeAyarlari", ManageCrudActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasa-pos-terminalleri", "KasaPosTerminalleri", ManageCrudActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasiyerler", "Kasiyerler", ManageCrudActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),

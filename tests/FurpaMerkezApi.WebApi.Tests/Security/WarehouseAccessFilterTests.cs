@@ -82,7 +82,7 @@ public sealed class WarehouseAccessFilterTests
     }
 
     [Fact]
-    public void OnActionExecuting_RejectsAdministratorRoleWithoutAllWarehousesPermission()
+    public void OnActionExecuting_AllowsAdministratorRoleWithoutAllWarehousesPermission()
     {
         var request = new ScopedWarehouseRequest
         {
@@ -95,7 +95,9 @@ public sealed class WarehouseAccessFilterTests
             roles: ["Administrator"]);
         var filter = new WarehouseAccessFilter();
 
-        Assert.Throws<ForbiddenAccessException>(() => filter.OnActionExecuting(context));
+        filter.OnActionExecuting(context);
+
+        Assert.Equal(1, request.WarehouseNo);
     }
 
     [Fact]

@@ -503,13 +503,20 @@ Hiyerarsi:
 Module -> Menu -> Action
 ```
 
-Ornek:
+Ornek API aksiyonu:
 
 ```text
 Module: kasa-islemleri
 Menu:   kasa-sayimlari
 Action: list
 Code:   kasa-islemleri.kasa-sayimlari.list
+```
+
+Ornek menu/route erisimi:
+
+```text
+Normal ekran:        kasa-islemleri.kasa-sayimlari.page
+Tanim/yonetim ekran: green-grocer.product-case-profiles.manage
 ```
 
 `PermissionCatalog.cs` sistemde bilinen permission'lari tanimlar.
@@ -575,12 +582,16 @@ Frontend tarafinda menu gorunurlugu kullanicinin permission listesine gore yapil
 Dogru yaklasim:
 
 ```text
-Menu/list gorunurlugu -> *.list permission
-Detay butonu         -> *.detail permission
-Ekle butonu          -> *.create permission
-Duzenle butonu       -> *.update permission
-Ozel aksiyon         -> ilgili ozel permission
+Normal menu/route gorunurlugu     -> *.page permission
+Tanim/yonetim menu/route gorunumu -> *.manage permission
+Liste verisi veya tablo refresh   -> *.list permission
+Detay butonu                      -> *.detail permission
+Ekle butonu                       -> *.create permission
+Duzenle butonu                    -> *.update permission
+Ozel aksiyon                      -> ilgili ozel permission
 ```
+
+`list/detail/create/update/delete` yetkileri API ve buton aksiyonlari icindir. UI sol menu veya route guard icin bu aksiyonlari alias olarak kullanmamalidir.
 
 Frontend menuyu gizlese bile gercek guvenlik backend `[Authorize]` kontroludur. UI kontrolu sadece kullanici deneyimi icindir.
 

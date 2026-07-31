@@ -26,8 +26,8 @@ public sealed class KasaSayimlariPermissionTests
             .Order()
             .ToArray();
 
-        Assert.Equal(["all-warehouses", "detail", "list"], kasaSayimlariActions);
-        Assert.Equal(["all-warehouses", "create", "delete", "list", "update"], icmalKaydiGirisiActions);
+        Assert.Equal(["all-warehouses", "detail", "list", "page"], kasaSayimlariActions);
+        Assert.Equal(["all-warehouses", "create", "delete", "list", "page", "update"], icmalKaydiGirisiActions);
     }
 
     [Theory]

@@ -18,7 +18,7 @@ public sealed class UrunDagilimlariPermissionTests
             .Order()
             .ToArray();
 
-        Assert.Equal(["all-warehouses", "create", "delete", "detail", "list", "update"], actions);
+        Assert.Equal(["all-warehouses", "create", "delete", "detail", "list", "page", "update"], actions);
     }
 
     [Theory]

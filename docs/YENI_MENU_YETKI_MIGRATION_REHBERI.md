@@ -130,10 +130,12 @@ PermissionCatalog'a eklemek = uygulamanin o yetkiyi gercekten tanimasini saglar
 Default davranistir. `CreateMenuPermissions` cagrilirken action verilmezse kullanilir.
 
 ```text
+page
 list
 detail
 create
 update
+all-warehouses
 ```
 
 Ornek:
@@ -145,10 +147,12 @@ Ornek:
 Uretilen permission'lar:
 
 ```text
+stok-islemleri.zayiat-fisleri.page
 stok-islemleri.zayiat-fisleri.list
 stok-islemleri.zayiat-fisleri.detail
 stok-islemleri.zayiat-fisleri.create
 stok-islemleri.zayiat-fisleri.update
+stok-islemleri.zayiat-fisleri.all-warehouses
 ```
 
 ### ReadActions
@@ -156,8 +160,10 @@ stok-islemleri.zayiat-fisleri.update
 Sadece liste ve detay ekranlari icin kullanilir.
 
 ```text
+page
 list
 detail
+all-warehouses
 ```
 
 Ornek:
@@ -171,7 +177,9 @@ Ornek:
 Sadece listeleme yetkisi gereken ekranlar icin kullanilir.
 
 ```text
+page
 list
+all-warehouses
 ```
 
 Ornek:
@@ -185,9 +193,11 @@ Ornek:
 Liste, detay ve ekleme vardir; guncelleme yoktur.
 
 ```text
+page
 list
 detail
 create
+all-warehouses
 ```
 
 ### ReadUpdateActions
@@ -195,9 +205,25 @@ create
 Liste, detay ve guncelleme vardir; ekleme yoktur.
 
 ```text
+page
 list
 detail
 update
+all-warehouses
+```
+
+### ManageCrudActions
+
+Tanim/yonetim ekranlari icin kullanilir. Menu/route gorunurlugu `manage`
+yetkisiyle acilir; CRUD aksiyonlari endpoint ve butonlarda kalir.
+
+```text
+manage
+list
+detail
+create
+update
+all-warehouses
 ```
 
 ### Ozel Action
@@ -248,10 +274,12 @@ CRUD ekran olacaksa action parametresi verme:
 Bu otomatik olarak su yetkileri uretir:
 
 ```text
+mal-kabul-islemleri.ornek-menu.page
 mal-kabul-islemleri.ornek-menu.list
 mal-kabul-islemleri.ornek-menu.detail
 mal-kabul-islemleri.ornek-menu.create
 mal-kabul-islemleri.ornek-menu.update
+mal-kabul-islemleri.ornek-menu.all-warehouses
 ```
 
 ## 6. Policy Kodunu Controller'da Kullan
@@ -511,10 +539,12 @@ public partial class AddWarehouseReceivingDifferencePermissions : Migration
 Birden fazla action varsa her permission icin ayri ID kullanilir:
 
 ```text
+ornek-menu.page
 ornek-menu.list
 ornek-menu.detail
 ornek-menu.create
 ornek-menu.update
+ornek-menu.all-warehouses
 ```
 
 Her biri `app_permissions` kaydi, her biri admin role icin `app_role_permissions` kaydi ister.
@@ -657,7 +687,9 @@ permissionTree
 Dogru frontend mantigi:
 
 ```text
-Menuyu gostermek icin ilgili list permission kontrol edilir.
+Normal menuyu/route'u gostermek icin ilgili page permission kontrol edilir.
+Tanim veya yonetim ekranini gostermek icin ilgili manage permission kontrol edilir.
+Liste verisi veya tablo refresh icin list permission kontrol edilir.
 Detay butonu icin detail permission kontrol edilir.
 Ekle butonu icin create permission kontrol edilir.
 Duzenle butonu icin update permission kontrol edilir.
@@ -666,15 +698,21 @@ Duzenle butonu icin update permission kontrol edilir.
 Ornek:
 
 ```text
-kasa-islemleri.kasa-sayimlari.list           -> Kasa Sayimlari goruntuleme menu/list gorunur
+kasa-islemleri.kasa-sayimlari.page           -> Kasa Sayimlari menu/route gorunur
+kasa-islemleri.kasa-sayimlari.list           -> Kasa Sayimlari liste API'si ve tablo refresh calisir
 kasa-islemleri.kasa-sayimlari.detail         -> Kasa Sayimlari detay gorunur
-kasa-islemleri.icmal-kaydi-girisi.list       -> Icmal Kaydi Girisi menu/form lookup gorunur
+kasa-islemleri.icmal-kaydi-girisi.page       -> Icmal Kaydi Girisi menu/route gorunur
+kasa-islemleri.icmal-kaydi-girisi.list       -> Icmal Kaydi Girisi form lookup/liste calisir
 kasa-islemleri.icmal-kaydi-girisi.create     -> icmal kaydetme butonu gorunur
 kasa-islemleri.icmal-kaydi-girisi.update     -> icmal duzenleme butonu gorunur
 kasa-islemleri.icmal-kaydi-girisi.delete     -> icmal silme butonu gorunur
+green-grocer.product-case-profiles.manage    -> Kasa profil yonetim ekrani gorunur
+green-grocer.product-case-profiles.list      -> Kasa profil liste/cozumleme API'si calisir
 ```
 
 Frontend menuyu gizlese bile gercek guvenlik backend `[Authorize]` kontroludur. UI kontrolu sadece kullanici deneyimi icindir.
+
+`list/detail/create/update/delete` gibi aksiyon yetkileri artik menu/route acmak icin kullanilmamalidir. Bu ayrim ozellikle lookup veya cozumleme endpoint'i icin `list/detail` yetkisi verilen sube kullanicilarinda yonetim ekraninin yanlislikla acilmasini engeller.
 
 ## 18. Mevcut Yapiya Gore En Dogru Pratik
 
