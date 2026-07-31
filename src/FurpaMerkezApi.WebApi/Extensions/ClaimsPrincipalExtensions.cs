@@ -1,11 +1,11 @@
 using System.Security.Claims;
+using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.WebApi.Security;
 
 namespace FurpaMerkezApi.WebApi.Extensions;
 
 internal static class ClaimsPrincipalExtensions
 {
-    private const string PermissionClaimType = "permission";
     private const string AllWarehousesActionCode = "all-warehouses";
 
     public static int GetRequiredWarehouseNo(this ClaimsPrincipal user)
@@ -22,7 +22,10 @@ internal static class ClaimsPrincipalExtensions
 
     public static bool HasPermission(this ClaimsPrincipal user, string permissionCode) =>
         user.HasClaim(claim =>
-            string.Equals(claim.Type, PermissionClaimType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase) &&
+            AuthorizationConstants.IsAdministratorRole(claim.Value)) ||
+        user.HasClaim(claim =>
+            string.Equals(claim.Type, AuthorizationConstants.PermissionClaimType, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(claim.Value, permissionCode, StringComparison.OrdinalIgnoreCase));
 
     public static string ToAllWarehousesPermissionCode(string actionPermissionCode)

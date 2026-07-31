@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.Domain.Entities;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -53,7 +54,13 @@ public sealed class JwtTokenFactory(IOptions<JwtOptions> options, IClock clock) 
         };
 
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
-        claims.AddRange(permissions.Select(permission => new Claim("permission", permission)));
+
+        if (!roles.Any(AuthorizationConstants.IsAdministratorRole))
+        {
+            claims.AddRange(permissions
+                .Where(AuthorizationConstants.ShouldEmitPermissionClaim)
+                .Select(permission => new Claim(AuthorizationConstants.PermissionClaimType, permission)));
+        }
 
         var signingCredentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SecretKey)),

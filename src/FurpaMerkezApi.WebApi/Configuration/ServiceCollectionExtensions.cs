@@ -2,6 +2,7 @@ using System.Text;
 using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.DependencyInjection;
+using FurpaMerkezApi.WebApi.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -69,8 +70,10 @@ public static class ServiceCollectionExtensions
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecretKey)),
                     ClockSkew = TimeSpan.Zero
                 };
-            });
+        });
 
+        services.AddMemoryCache();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddAuthorization(options =>
         {
             options.FallbackPolicy = new AuthorizationPolicyBuilder()
@@ -79,7 +82,8 @@ public static class ServiceCollectionExtensions
 
             foreach (var permissionCode in PermissionCatalog.Codes)
             {
-                options.AddPolicy(permissionCode, policy => policy.RequireClaim("permission", permissionCode));
+                options.AddPolicy(permissionCode, policy =>
+                    policy.Requirements.Add(new PermissionRequirement(permissionCode)));
             }
         });
 

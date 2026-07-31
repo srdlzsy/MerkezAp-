@@ -10,7 +10,7 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - Yetki sistemi `module > menu > action` mantigindadir.
 - UI menu agaci ve buton gorunurlugu `me` cevabindan uretilmelidir.
 - Depo yetkisi backend tarafinda merkezi ve permission bazli uygulanir. Kullanici sadece JWT icindeki kendi deposunda islem yapar; baska depo veya tum depo kapsami icin ilgili menuye ait `{module}.{menu}.all-warehouses` yetkisi gerekir.
-- `Admin`/`Administrator` rolu migration ve seed ile tum permission'lari aldigi icin tum depolari gorebilir; fakat uygulama kararini role bakarak degil `all-warehouses` permission claim'ine bakarak verir. Boylece admin olmayan role de modul modul tum depo yetkisi verilebilir.
+- `Admin`/`Administrator` rolu backend tarafinda tam yetkili kabul edilir. UI tarafinda yine role name'e gore ekran acilmamalidir; menu, buton ve depo secici kararlari `login.user.permissions` veya `GET /api/auth/me` cevabindaki `permissions` listesine gore verilmelidir.
 - UI depo secici/filtresi gosterecegi zaman role bakmamalidir. Secili ekrandaki permission setinde ilgili `*.all-warehouses` kodu varsa depo secici acilir; yoksa depo alani gizlenir veya kilitlenir.
 - Liste/rapor endpointlerinde `*.all-warehouses` yetkisi olan kullanici `WarehouseNo`/`warehouseNo` alanini bos veya `null` gonderirse endpoint destekliyorsa tum depolar doner; belirli depo icin depo no gonderilir. Tek depo gerektiren create/update/detail islemlerinde `null` tum depo anlamina gelmez; backend token deposunu varsayar veya ilgili islem icin secili depo bekler.
 - Tum depolari listeleyen kullanici detay ekranina gecis icin UI, secilen satirdaki depo bilgisini kullanmalidir. Detay endpointine `warehouseNo=null` gonderilmemelidir; satirda gelen `warehouseNo`, `sourceWarehouseNo`, `targetWarehouseNo`, `branchNo` veya ilgili islem deposu query/body alanina yazilmalidir.
@@ -1330,6 +1330,15 @@ UI akisi:
 3. token'i `Authorization: Bearer {token}` ile sakla/gonder
 4. `GET /api/auth/me` ile kullanici, roller, permission listesi ve module-menu-action agacini al
 5. sol menu ve butonlari bu cevapla ciz
+
+Token ve yetki notu:
+
+- UI request/response contract'i degismedi; login yine `accessToken`, `expiresAtUtc`, `user` doner.
+- `Authorization` header'inda sadece `accessToken` gonderilir. Tum login response'u, `user` objesi veya `permissions/modules` listesi header'a konmaz.
+- Backend JWT'yi header limitlerine takilmamak icin kompakt tutar. Token icinde tum permission listesi garanti edilmez.
+- UI, JWT decode ederek menu/buton yetkisi uretmemelidir. Full yetki listesi icin `login.user.permissions` veya `GET /api/auth/me` cevabindaki `permissions` kullanilir.
+- `400 Bad Request - Request Too Long` gorulurse ilk kontrol `Authorization` header'idir; `Bearer eyJ...` disinda JSON/obje veya asiri uzun header gonderiliyor olabilir.
+- Bu kompakt token davranisi deploy edildikten sonra mevcut eski tokenlar degismez; kullanici logout/login yapmali veya UI storage temizlenmelidir.
 
 ## Auth Endpointleri
 
