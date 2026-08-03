@@ -32,6 +32,17 @@ public static class PermissionCatalog
         AllWarehousesAction
     ];
 
+    private static readonly PermissionActionDefinition[] ManageCrudDeleteActions =
+    [
+        ManageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        DeleteAction,
+        AllWarehousesAction
+    ];
+
     private static readonly PermissionActionDefinition[] ReadActions =
     [
         PageAction,
@@ -225,6 +236,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "sube-ayarlari", "SubeAyarlari", ManageCrudActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasa-pos-terminalleri", "KasaPosTerminalleri", ManageCrudActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasiyerler", "Kasiyerler", ManageCrudActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "soforler", "Soforler", ManageCrudDeleteActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),

@@ -9,6 +9,7 @@ using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,7 @@ using UyumsoftDespatch = FurpaMerkezApi.Infrastructure.Services.ServiceReference
 namespace FurpaMerkezApi.Infrastructure.Services;
 
 public sealed class EDespatchService(
+    AuthDbContext authDbContext,
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IDocumentFlowService documentFlowService,
@@ -46,6 +48,8 @@ public sealed class EDespatchService(
         SendEDespatchRequest request,
         CancellationToken cancellationToken = default)
     {
+        Validate(request);
+        request = await ResolveDriverAsync(request, cancellationToken);
         Validate(request);
 
         var config = options.Value;
@@ -103,6 +107,34 @@ public sealed class EDespatchService(
                 CancellationToken.None);
             throw;
         }
+    }
+
+    private async Task<SendEDespatchRequest> ResolveDriverAsync(
+        SendEDespatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalizedRequest = NormalizeDriverFields(request);
+
+        if (!normalizedRequest.DriverId.HasValue || normalizedRequest.DriverId.Value == Guid.Empty)
+        {
+            return normalizedRequest;
+        }
+
+        var driver = await authDbContext.DespatchDrivers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                item => item.Id == normalizedRequest.DriverId.Value && item.IsActive,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("Despatch driver was not found or inactive.");
+
+        var driverNameSurname = JoinNonEmpty(driver.FirstName, driver.LastName);
+
+        return normalizedRequest with
+        {
+            Plaque = ResolveDriverField(normalizedRequest.Plaque, driver.PlateNumber),
+            DriverNameSurname = ResolveDriverField(normalizedRequest.DriverNameSurname, driverNameSurname),
+            DriverTckn = ResolveDriverField(normalizedRequest.DriverTckn, driver.Tckn)
+        };
     }
 
     private Task RecordEDespatchFlowAsync(
@@ -1495,6 +1527,19 @@ public sealed class EDespatchService(
     private static string BuildLocalDocumentId(SendEDespatchRequest request) =>
         $"{request.DocumentType}:{request.WarehouseNo}:{request.DocumentSerie.Trim()}:{request.DocumentOrderNo}";
 
+    private static SendEDespatchRequest NormalizeDriverFields(SendEDespatchRequest request) =>
+        request with
+        {
+            Plaque = request.Plaque?.Trim() ?? string.Empty,
+            DriverNameSurname = request.DriverNameSurname?.Trim() ?? string.Empty,
+            DriverTckn = request.DriverTckn?.Trim() ?? string.Empty
+        };
+
+    private static string ResolveDriverField(string? overrideValue, string fallbackValue) =>
+        string.IsNullOrWhiteSpace(overrideValue)
+            ? fallbackValue.Trim()
+            : overrideValue.Trim();
+
     private static void Validate(SendEDespatchRequest request)
     {
         ValidateDocumentIdentity(
@@ -1502,24 +1547,51 @@ public sealed class EDespatchService(
             request.DocumentSerie,
             request.DocumentOrderNo);
 
-        if (string.IsNullOrWhiteSpace(request.Plaque))
+        if (request.DriverId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Driver id can not be empty.",
+                nameof(request.DriverId));
+        }
+
+        var requiresManualDriver = !request.DriverId.HasValue;
+
+        if (requiresManualDriver && string.IsNullOrWhiteSpace(request.Plaque))
         {
             throw new ArgumentException(
                 "Plaque is required for e-despatch.",
                 nameof(request.Plaque));
         }
 
-        if (string.IsNullOrWhiteSpace(request.DriverNameSurname))
+        if (requiresManualDriver && string.IsNullOrWhiteSpace(request.DriverNameSurname))
         {
             throw new ArgumentException(
                 "Driver name surname is required for e-despatch.",
                 nameof(request.DriverNameSurname));
         }
 
-        if (string.IsNullOrWhiteSpace(request.DriverTckn))
+        if (requiresManualDriver && string.IsNullOrWhiteSpace(request.DriverTckn))
         {
             throw new ArgumentException(
                 "Driver TCKN is required for e-despatch.",
+                nameof(request.DriverTckn));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.DriverNameSurname) &&
+            request.DriverNameSurname.Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length < 2)
+        {
+            throw new ArgumentException(
+                "Driver name surname must contain both name and surname.",
+                nameof(request.DriverNameSurname));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.DriverTckn) &&
+            (request.DriverTckn.Trim().Length != 11 || request.DriverTckn.Trim().Any(character => !char.IsDigit(character))))
+        {
+            throw new ArgumentException(
+                "Driver TCKN must be 11 digits.",
                 nameof(request.DriverTckn));
         }
     }

@@ -37,6 +37,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<StockAnomalyEvent> StockAnomalyEvents => Set<StockAnomalyEvent>();
 
+    public DbSet<DespatchDriver> DespatchDrivers => Set<DespatchDriver>();
+
     public DbSet<GreenGrocerProductCaseProfile> GreenGrocerProductCaseProfiles =>
         Set<GreenGrocerProductCaseProfile>();
 

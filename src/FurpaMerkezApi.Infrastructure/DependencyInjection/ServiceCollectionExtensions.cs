@@ -1,6 +1,7 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.Soforler;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
@@ -99,6 +100,7 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.List;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
+using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Soforler;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ResolveBarcode;
@@ -451,6 +453,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDuyurularService, DuyurularService>();
         services.AddScoped<IHomeWarehousePrioritiesService, HomeWarehousePrioritiesService>();
         services.AddScoped<IAyarlarService, AyarlarService>();
+        services.AddScoped<IDespatchDriverService, DespatchDriverService>();
         services.AddScoped<IMikroDocumentEditingService, MikroDocumentEditingService>();
         services.AddScoped<MobileOfflineSyncService>();
         services.AddScoped<ISearchProductsUseCase, SearchProductsUseCase>();

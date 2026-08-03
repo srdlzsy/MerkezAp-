@@ -7,4 +7,5 @@ public sealed record SendEDespatchRequest(
     int DocumentOrderNo,
     string Plaque,
     string DriverNameSurname,
-    string DriverTckn);
+    string DriverTckn,
+    Guid? DriverId = null);
