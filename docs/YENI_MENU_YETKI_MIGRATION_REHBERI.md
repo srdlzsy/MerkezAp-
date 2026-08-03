@@ -1,99 +1,94 @@
 # Yeni Menu, Yetki ve Migration Rehberi
 
-Bu dokuman, FurpaMerkezApi projesinde yeni bir ekran/menu/API endpoint eklerken yetki sisteminin nasil calistigini ve migration tarafinda hangi adimlarin izlenmesi gerektigini anlatir.
+Bu dokuman FurpaMerkezApi projesinde yeni ekran, menu, endpoint veya Auth DB tablosu eklerken izlenecek yolu anlatir.
 
-Projede dogru mantik sudur:
+Ana fikir:
 
 ```text
-PermissionCatalog.cs = sistemde hangi yetkiler var?
-DB app_permissions = katalogdaki yetkilerin kayitli hali
-DB app_roles = roller
-DB app_role_permissions = hangi rol hangi yetkiye sahip?
-DB app_user_roles = hangi kullanici hangi role sahip?
-JWT permission claim'leri = kullanicinin login anindaki yetkileri
-[Authorize(Policy = "...")] = endpoint seviyesinde gercek guvenlik kontrolu
+PermissionCatalog.cs = uygulamanin bildigi yetki sozlugu
+app_permissions       = bu sozlugun DB'deki kaydi
+app_roles             = rol tanimlari
+app_role_permissions  = rolun sahip oldugu yetkiler
+app_user_roles        = kullanicinin rolleri
+JWT permission claim  = login anindaki aktif yetkiler
+[Authorize(Policy)]   = endpoint seviyesinde gercek guvenlik
+Frontend permission   = menu, route, buton ve depo secici gorunurlugu
 ```
 
-Yani DB'ye elle permission eklemek tek basina yeni modul/menu olusturmaz. Bu projede yetki tanimlarinin ana kaynagi kod tarafindaki `PermissionCatalog.cs` dosyasidir.
+DB'ye elle permission eklemek tek basina yeni modul veya endpoint olusturmaz. Bu projede yeni yetki kodunun ana kaynagi kod tarafindaki `PermissionCatalog.cs` dosyasidir.
 
-## 1. Temel Mantik
+## Temel Kural
 
-Her endpoint bir permission code ile korunur.
+Her permission kodu su formdadir:
+
+```text
+{moduleCode}.{menuCode}.{actionCode}
+```
 
 Ornek:
 
 ```text
-Module: mal-kabul-islemleri
-Menu:   mal-kabul-farklari
-Action: list
-Policy: mal-kabul-islemleri.mal-kabul-farklari.list
+sevk-islemleri.giden-depolar-arasi-sevkler.list
+ayar-islemleri.soforler.manage
+green-grocer.product-case-profiles.update
 ```
 
-Controller tarafinda bu policy kullanilir:
+Controller tarafinda ayni kod policy olarak kullanilir:
 
 ```csharp
-[Authorize(Policy = "mal-kabul-islemleri.mal-kabul-farklari.list")]
+[Authorize(Policy = "ayar-islemleri.soforler.list")]
 ```
 
-Kullanici bu endpoint'e istek attiginda ASP.NET authorization sistemi JWT icinde su claim var mi diye bakar:
+Kullanici istegi geldiginde JWT icinde su claim aranir:
 
 ```text
-permission = mal-kabul-islemleri.mal-kabul-farklari.list
+permission = ayar-islemleri.soforler.list
 ```
 
-Claim varsa istek gecer. Yoksa API `403 Forbidden` doner.
+Claim yoksa API `403 Forbidden` doner.
 
-## 2. DB'ye Permission Ekleyince Neden Modul Olusmaz?
+## Page, Manage ve Action Ayrimi
 
-`app_permissions` tablosunda sadece permission kaydi vardir:
+Projede son karar su sekildedir:
 
 ```text
-id
-code
-name
-description
-created_at_utc
-updated_at_utc
+menu/route normal ekran     -> *.page
+menu/route yonetim ekrani   -> *.manage
+liste/veri cekme            -> *.list
+detay/veri inceleme         -> *.detail
+butonlar                    -> *.create / *.update / *.delete / *.archive / *.transfer
+depo secici                 -> *.all-warehouses
 ```
 
-Bu tabloda ayri `module_code`, `menu_code`, `action_code` kolonlari yoktur. Modul/menu/action bilgisi iki yoldan elde edilir:
+Bu ayrim onemlidir.
 
-1. Permission code `PermissionCatalog` icinde varsa katalogdaki tanim kullanilir.
-2. Permission code katalogda yoksa kod noktalardan parcalanarak tahmini bilgi uretilir.
+`list`, `detail`, `create`, `update`, `delete` yetkileri endpoint ve buton aksiyonlari icindir. UI sol menu veya route guard icin bu aksiyonlari tek basina kullanmamalidir.
 
-Ornek code:
+Neden?
 
 ```text
-kasa-islemleri.kasa-sayimlari.list
+Bir kullaniciya lookup veya modal icin list yetkisi verilebilir.
+Bu, kullanicinin yonetim ekranini sol menude gormesi gerektigi anlamina gelmez.
 ```
 
-Buradan su anlam cikarilir:
+Ornek:
 
 ```text
-module = kasa-islemleri
-menu   = kasa-sayimlari
-action = list
+ayar-islemleri.soforler.manage -> Soforler yonetim ekrani gorunur
+ayar-islemleri.soforler.list   -> e-irsaliye modalinda sofor arama API'si calisir
+ayar-islemleri.soforler.create -> yeni sofor ekle butonu calisir
+ayar-islemleri.soforler.delete -> sil/pasife al butonu calisir
 ```
 
-Ama bu sadece gorunum/dto tarafinda yardimci bir yorumlamadir. DB'ye su kaydi elle eklemek:
+GreenGrocer kasa profil ekrani icin de ayni mantik vardir:
 
 ```text
-stok-islemleri.yeni-menu.list
+green-grocer.product-case-profiles.manage -> profil yonetim sayfasi
+green-grocer.product-case-profiles.list   -> profil liste/cozumleme API'si
+green-grocer.product-case-profiles.update -> profil kaydetme
 ```
 
-sunlari otomatik olusturmaz:
-
-```text
-Controller endpoint
-Frontend menu
-ASP.NET authorization policy
-Business service/use case
-Migration seed uyumu
-```
-
-Bu nedenle yeni menu icin ilk kaynak `PermissionCatalog.cs` olmalidir.
-
-## 3. PermissionCatalog Ne Ise Yarar?
+## PermissionCatalog Nerede?
 
 Dosya:
 
@@ -101,9 +96,16 @@ Dosya:
 src/FurpaMerkezApi.Application/Security/PermissionCatalog.cs
 ```
 
-Bu dosya uygulamanin bildigi butun permission kodlarini tanimlar. Uygulama acilirken authorization policy'leri bu katalog uzerinden olusturulur.
+Bu dosya:
 
-WebApi tarafindaki mantik:
+```text
+Authorization policy'lerinin uretilmesine kaynak olur.
+Startup permission senkronizasyonuna kaynak olur.
+AuthDbContext seed/snapshot verisine kaynak olur.
+Frontend menu agacinin anlamlandirilmasina kaynak olur.
+```
+
+Uygulama acilisinda policy'ler katalogdan uretilir:
 
 ```csharp
 foreach (var permissionCode in PermissionCatalog.Codes)
@@ -112,22 +114,15 @@ foreach (var permissionCode in PermissionCatalog.Codes)
 }
 ```
 
-Yani bir permission code `PermissionCatalog.Codes` icinde yoksa, standart yapi icinde o permission icin policy de olusmaz.
+Katalogda olmayan bir permission kodu standart akista policy olarak taninmaz.
 
-Bu yuzden:
+## Mevcut Action Setleri
 
-```text
-DB'ye elle permission eklemek = DB kaydi olusturur
-PermissionCatalog'a eklemek = uygulamanin o yetkiyi gercekten tanimasini saglar
-```
-
-## 4. Action Tipleri
-
-`PermissionCatalog.cs` icinde hazir action gruplari vardir.
+`PermissionCatalog.cs` icinde action setleri merkezi tutulur. Yeni menu eklerken en yakin set secilmelidir.
 
 ### CrudActions
 
-Default davranistir. `CreateMenuPermissions` cagrilirken action verilmezse kullanilir.
+Normal CRUD ekranlar icin varsayilandir:
 
 ```text
 page
@@ -144,20 +139,51 @@ Ornek:
 ..CreateMenuPermissions("stok-islemleri", "StokIslemleri", "zayiat-fisleri", "ZayiatFisleri")
 ```
 
-Uretilen permission'lar:
+### ManageCrudActions
+
+Yonetim/tanim ekranlari icindir:
 
 ```text
-stok-islemleri.zayiat-fisleri.page
-stok-islemleri.zayiat-fisleri.list
-stok-islemleri.zayiat-fisleri.detail
-stok-islemleri.zayiat-fisleri.create
-stok-islemleri.zayiat-fisleri.update
-stok-islemleri.zayiat-fisleri.all-warehouses
+manage
+list
+detail
+create
+update
+all-warehouses
+```
+
+Ornek ayar ekranlari:
+
+```text
+ayar-islemleri.cihazlar.*
+ayar-islemleri.sube-ayarlari.*
+ayar-islemleri.kasa-pos-terminalleri.*
+ayar-islemleri.kasiyerler.*
+```
+
+### ManageCrudDeleteActions
+
+Yonetim/tanim ekrani olup silme/pasife alma aksiyonu olan ekranlar icindir:
+
+```text
+manage
+list
+detail
+create
+update
+delete
+all-warehouses
+```
+
+Guncel ornek:
+
+```text
+ayar-islemleri.soforler.*
 ```
 
 ### ReadActions
 
-Sadece liste ve detay ekranlari icin kullanilir.
+Liste + detay olan, yazma olmayan ekranlar:
 
 ```text
 page
@@ -166,15 +192,9 @@ detail
 all-warehouses
 ```
 
-Ornek:
-
-```csharp
-..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-cirolari", "KasaCirolari", ReadActions)
-```
-
 ### ListActions
 
-Sadece listeleme yetkisi gereken ekranlar icin kullanilir.
+Sadece liste/arama/rapor gibi ekranlar:
 
 ```text
 page
@@ -182,15 +202,9 @@ list
 all-warehouses
 ```
 
-Ornek:
-
-```csharp
-..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "satis-analizleri", "SatisAnalizleri", ListActions)
-```
-
 ### ReadCreateActions
 
-Liste, detay ve ekleme vardir; guncelleme yoktur.
+Liste, detay ve ekleme vardir; update yoktur:
 
 ```text
 page
@@ -202,7 +216,7 @@ all-warehouses
 
 ### ReadUpdateActions
 
-Liste, detay ve guncelleme vardir; ekleme yoktur.
+Liste, detay ve update vardir; create yoktur:
 
 ```text
 page
@@ -212,45 +226,47 @@ update
 all-warehouses
 ```
 
-### ManageCrudActions
+### ReadUpdateDeleteActions
 
-Tanim/yonetim ekranlari icin kullanilir. Menu/route gorunurlugu `manage`
-yetkisiyle acilir; CRUD aksiyonlari endpoint ve butonlarda kalir.
+Liste, detay, update ve delete vardir:
 
 ```text
-manage
+page
 list
 detail
-create
 update
+delete
 all-warehouses
 ```
 
-### Ozel Action
+### Ozel Action Setleri
 
-Gerektiginde ozel action tanimlanabilir. Ornek:
-
-```text
-list-all
-```
-
-Bu projede `sikayet-oneri` icin `FeedbackActions` kullaniliyor.
-
-## 5. Yeni Menuyu PermissionCatalog'a Ekle
-
-Yeni menu eklerken once module ve menu kararini netlestir.
-
-Karar verilmesi gereken bilgiler:
+Projede bazi ekranlar kendi setini kullanir:
 
 ```text
-moduleCode = kebab-case ve URL/policy uyumlu olmalidir
-moduleName = PascalCase okunabilir ad
-menuCode   = kebab-case ve URL/policy uyumlu olmalidir
-menuName   = PascalCase okunabilir ad
-actions    = ekranin gercek operasyonlarina gore secilmelidir
+FeedbackActions             -> page/list/detail/update/list-all
+AnnouncementActions         -> page/list/detail/create/update/archive/all-warehouses
+StockAnomalyActions         -> page/list/detail/update/scan/all-warehouses
+ProductCaseProfileActions   -> manage/list/detail/create/update/delete/all-warehouses
+EtiketBasimActions          -> page/list/detail/create/update/delete/transfer/all-warehouses
+ProductDistributionActions  -> page/list/detail/create/update/delete/all-warehouses
 ```
 
-Sadece liste ekrani olacaksa:
+Ozel action gerekiyorsa isim kisa, kebab-case ve is anlamina uygun olmalidir.
+
+## Yeni Menu Ekleme
+
+Once su kararlar verilir:
+
+```text
+moduleCode  -> kebab-case, URL/policy uyumlu
+moduleName  -> PascalCase, okunabilir
+menuCode    -> kebab-case, URL/policy uyumlu
+menuName    -> PascalCase, okunabilir
+actionSet   -> page mi manage mi, hangi API aksiyonlari var?
+```
+
+Normal ekran ornegi:
 
 ```csharp
 ..CreateMenuPermissions(
@@ -261,160 +277,154 @@ Sadece liste ekrani olacaksa:
     ListActions),
 ```
 
-CRUD ekran olacaksa action parametresi verme:
+Yonetim ekrani ornegi:
 
 ```csharp
 ..CreateMenuPermissions(
-    "mal-kabul-islemleri",
-    "MalKabulIslemleri",
-    "ornek-menu",
-    "OrnekMenu"),
+    "ayar-islemleri",
+    "AyarIslemleri",
+    "soforler",
+    "Soforler",
+    ManageCrudDeleteActions),
 ```
 
-Bu otomatik olarak su yetkileri uretir:
+Uretilen yetkiler:
 
 ```text
-mal-kabul-islemleri.ornek-menu.page
-mal-kabul-islemleri.ornek-menu.list
-mal-kabul-islemleri.ornek-menu.detail
-mal-kabul-islemleri.ornek-menu.create
-mal-kabul-islemleri.ornek-menu.update
-mal-kabul-islemleri.ornek-menu.all-warehouses
+ayar-islemleri.soforler.manage
+ayar-islemleri.soforler.list
+ayar-islemleri.soforler.detail
+ayar-islemleri.soforler.create
+ayar-islemleri.soforler.update
+ayar-islemleri.soforler.delete
+ayar-islemleri.soforler.all-warehouses
 ```
 
-## 6. Policy Kodunu Controller'da Kullan
+## Controller Kurallari
 
-Controller'da policy string'i permission code ile birebir ayni olmalidir.
-
-Ornek:
+Controller route'u kebab-case olmalidir:
 
 ```csharp
 [ApiController]
-[Route("api/mal-kabul-islemleri/mal-kabul-farklari")]
-public sealed class MalKabulFarklariController(...) : ControllerBase
-{
-    private const string ModuleCode = "mal-kabul-islemleri";
-    private const string MenuCode = "mal-kabul-farklari";
-
-    private const string ListPolicy = ModuleCode + "." + MenuCode + ".list";
-    private const string DetailPolicy = ModuleCode + "." + MenuCode + ".detail";
-    private const string CreatePolicy = ModuleCode + "." + MenuCode + ".create";
-    private const string UpdatePolicy = ModuleCode + "." + MenuCode + ".update";
-
-    [HttpGet]
-    [Authorize(Policy = ListPolicy)]
-    public async Task<IActionResult> List(CancellationToken cancellationToken)
-    {
-        ...
-    }
-
-    [HttpGet("{id}")]
-    [Authorize(Policy = DetailPolicy)]
-    public async Task<IActionResult> GetById(int id, CancellationToken cancellationToken)
-    {
-        ...
-    }
-
-    [HttpPost]
-    [Authorize(Policy = CreatePolicy)]
-    public async Task<IActionResult> Create(..., CancellationToken cancellationToken)
-    {
-        ...
-    }
-
-    [HttpPut("{id}")]
-    [Authorize(Policy = UpdatePolicy)]
-    public async Task<IActionResult> Update(int id, ..., CancellationToken cancellationToken)
-    {
-        ...
-    }
-}
+[Route("api/ayar-islemleri/soforler")]
+public sealed class SoforlerController(...)
 ```
 
-Dikkat edilmesi gerekenler:
+Policy const'lari permission koduyla birebir ayni olmalidir:
 
-```text
-Route kebab-case olsun.
-Policy tam permission code ile ayni olsun.
-List endpoint list policy kullansin.
-Detail endpoint detail policy kullansin.
-Create endpoint create policy kullansin.
-Update endpoint update policy kullansin.
-Endpoint'e gereksiz buyuk yetki verme.
+```csharp
+private const string ListPolicy = "ayar-islemleri.soforler.list";
+private const string DetailPolicy = "ayar-islemleri.soforler.detail";
+private const string CreatePolicy = "ayar-islemleri.soforler.create";
+private const string UpdatePolicy = "ayar-islemleri.soforler.update";
+private const string DeletePolicy = "ayar-islemleri.soforler.delete";
+```
+
+Endpoint dogru policy ile korunmalidir:
+
+```csharp
+[HttpGet]
+[Authorize(Policy = ListPolicy)]
+public async Task<ActionResult<IReadOnlyCollection<DespatchDriverDto>>> List(...)
+
+[HttpPost]
+[Authorize(Policy = CreatePolicy)]
+public async Task<ActionResult<DespatchDriverDto>> Create(...)
 ```
 
 Yanlis ornek:
 
 ```csharp
-[Authorize(Policy = "stok-islemleri.zayiat-fisleri.update")]
+[HttpGet]
+[Authorize(Policy = "ayar-islemleri.soforler.update")]
 public async Task<IActionResult> List(...)
 ```
 
 Liste endpoint'i update yetkisi istememelidir.
 
-## 7. Application Katmanina Contract Ekle
+## ModuleMenuControllerBase
 
-Yeni ekranin request/response/interface dosyalari Application tarafinda durur.
+Modul controller'lari genellikle `ModuleMenuControllerBase` miras alir.
 
-Ornek klasor:
-
-```text
-src/FurpaMerkezApi.Application/Modules/MalKabulIslemleri/MalKabulFarklari/
-```
-
-Tipik dosyalar:
+Amac:
 
 ```text
-IListWarehouseReceivingDifferencesUseCase.cs
-WarehouseReceivingDifferenceListRequest.cs
-WarehouseReceivingDifferenceDto.cs
-```
-
-Interface ornegi:
-
-```csharp
-public interface IListWarehouseReceivingDifferencesUseCase
-{
-    Task<IReadOnlyCollection<WarehouseReceivingDifferenceDto>> ExecuteAsync(
-        WarehouseReceivingDifferenceListRequest request,
-        CancellationToken cancellationToken);
-}
-```
-
-Request/response tipleri mumkun oldugunca sade tutulmali, controller icindeki body veya query modelleri Application contract'larina temizce map edilmelidir.
-
-## 8. Infrastructure Katmanina Implementasyon Ekle
-
-Is kurali ve DB sorgusu Infrastructure tarafinda yazilir.
-
-Ornek klasor:
-
-```text
-src/FurpaMerkezApi.Infrastructure/Modules/MalKabulIslemleri/MalKabulFarklari/
+moduleCode/moduleName/menuCode/menuName bilgisini standart tutmak
+scaffold/metadata cevaplarini ayni yapida donmek
+frontend tarafinda menu agaci ile controller mantigini uyumlu tutmak
 ```
 
 Ornek:
 
 ```csharp
-public sealed class ListWarehouseReceivingDifferencesUseCase(MikroDbContext mikroDbContext)
-    : IListWarehouseReceivingDifferencesUseCase
-{
-    public async Task<IReadOnlyCollection<WarehouseReceivingDifferenceDto>> ExecuteAsync(
-        WarehouseReceivingDifferenceListRequest request,
-        CancellationToken cancellationToken)
-    {
-        return await mikroDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .Where(...)
-            .Select(...)
-            .ToArrayAsync(cancellationToken);
-    }
-}
+public sealed class SoforlerController(...)
+    : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 ```
 
-Okuma sorgularinda `AsNoTracking()` kullanmak iyi olur. Yazma islemlerinde transaction, concurrency, validasyon ve hata mesajlari ekranin riskine gore ayrica dusunulmelidir.
+## Application Katmani
 
-## 9. DI Kaydini Ekle
+Yeni endpoint veya modul icin request/response/interface Application katmaninda tutulur.
+
+Ornek klasor:
+
+```text
+src/FurpaMerkezApi.Application/Modules/AyarIslemleri/Soforler/
+```
+
+Tipik icerik:
+
+```text
+DespatchDriverListRequest
+SaveDespatchDriverRequest
+DespatchDriverDto
+IDespatchDriverService
+```
+
+Controller HTTP modelini Application modeline map eder. Application modelleri HTTP attribute'lariyla kirletilmemelidir.
+
+## Infrastructure Katmani
+
+DB sorgusu, transaction, dis servis ve is kurali implementasyonu Infrastructure icindedir.
+
+Ornek klasor:
+
+```text
+src/FurpaMerkezApi.Infrastructure/Modules/AyarIslemleri/Soforler/
+```
+
+Okuma sorgularinda genel kural:
+
+```text
+AsNoTracking kullan.
+DTO projection yap.
+Take/limit koy.
+Depo yetkisi gerekiyorsa controller/claim helper ile coz.
+```
+
+Yazma sorgularinda genel kural:
+
+```text
+validasyon yap
+duplicate riskini kontrol et
+gerekirse transaction ac
+audit alanlarini clock ile set et
+anlamli exception firlat
+```
+
+Merkezi hata karsiliklari:
+
+```text
+ArgumentException         -> 400
+UnauthorizedAccessException -> 401
+ForbiddenAccessException  -> 403
+KeyNotFoundException      -> 404
+InvalidOperationException -> 409
+TimeoutException          -> 504
+```
+
+## DI Kaydi
+
+Yeni servis veya use case eklenirse DI kaydi zorunludur.
 
 Dosya:
 
@@ -422,30 +432,48 @@ Dosya:
 src/FurpaMerkezApi.Infrastructure/DependencyInjection/ServiceCollectionExtensions.cs
 ```
 
-Using ekle:
+Ornek:
 
 ```csharp
-using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabulFarklari;
-using FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabulFarklari;
+services.AddScoped<IDespatchDriverService, DespatchDriverService>();
 ```
 
-Service kaydi:
+DI kaydi yoksa uygulama runtime'da dependency resolution hatasi verir.
 
-```csharp
-services.AddScoped<
-    IListWarehouseReceivingDifferencesUseCase,
-    ListWarehouseReceivingDifferencesUseCase>();
+## AuthDbContext ve Migration
+
+Auth DB su verileri tutar:
+
+```text
+kullanicilar
+roller
+permission kayitlari
+role-permission iliskileri
+duyurular
+sikayet/oneriler
+belge akis izleme
+stock anomaly kayitlari
+GreenGrocer kasa profilleri
+GreenGrocer siparis snapshot'lari
+e-irsaliye sofor tanimlari
 ```
 
-Kayit eklenmezse controller calisirken dependency resolution hatasi alinir.
+Yeni Auth entity/tablo eklenirse migration gerekir.
 
-## 10. Permission DB'ye Nasil Duser?
+Guncel ornek:
 
-Permission'in katalogda tanimli olmasi uygulamanin yetkiyi bilmesini saglar. DB'ye dusmesi icin iki yol vardir.
+```text
+despatch_drivers tablosu -> AddDespatchDrivers migration'i
+ayar-islemleri.soforler.* yetkileri -> ayni migration icinde seed
+```
 
-### 10.1 Startup Synchronization
+## Permission DB'ye Nasil Duser?
 
-Uygulama acilisinda su ayar aktifse katalog DB ile senkronlanir:
+Iki yol vardir.
+
+### Startup Senkronizasyonu
+
+Ayar:
 
 ```json
 {
@@ -455,405 +483,369 @@ Uygulama acilisinda su ayar aktifse katalog DB ile senkronlanir:
 }
 ```
 
-Bu akista:
+Bu aciksa uygulama acilisinda:
 
 ```text
 PermissionCatalog.Definitions okunur.
-Eksik app_permissions kayitlari DB'ye eklenir.
-Mevcut kayitlarin name/description alanlari guncellenir.
-Administrator role varsa eksik yetkiler admin role'e eklenir.
+Eksik app_permissions kayitlari eklenir.
+Name/description farklari guncellenir.
+Administrator role'e eksik katalog yetkileri eklenir.
 ```
 
-Development ortaminda bu pratik olabilir. Ancak production icin migration daha kontrolludur.
+Development icin pratiktir. Production'da kontrollu migration daha guvenlidir.
 
-### 10.2 Migration
+### Migration
 
-Production veya kontrollu deployment icin yeni permission'lar migration ile DB'ye tasinmalidir.
-
-Migration sunlari yapar:
-
-```text
-app_permissions tablosuna yeni permission kayitlarini ekler
-app_role_permissions tablosunda Administrator role'e baglar
-Down metodunda once role-permission, sonra permission kaydini siler
-```
-
-Bu projede tavsiye edilen yontem:
+Kontrollu deployment icin tavsiye edilen yol:
 
 ```text
 PermissionCatalog'a ekle
-Migration yaz
-Snapshot uyumunu kontrol et
-DB update uygula
+dotnet ef migrations add ...
+Migration'i incele
+AuthDbContextModelSnapshot uyumunu kontrol et
+dotnet ef database update ile uygula
 ```
 
-## 11. Permission Migration Yaz
+EF, katalogdaki seed degisikligini migration'a `InsertData` olarak ekler.
 
-Sadece yeni permission ekliyorsan en temiz migration su sekilde olur.
+## Deterministic Permission ID
 
-Ornek:
+Permission ID'leri ortamdan ortama degismemelidir.
 
-```csharp
-public partial class AddWarehouseReceivingDifferencePermissions : Migration
-{
-    private static readonly Guid PermissionId = new("31b9c4fd-80bd-7967-11b0-3fccd5adf5e5");
-    private static readonly Guid AdministratorRoleId = new("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a");
-    private static readonly DateTime SeededAtUtc = new(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc);
-
-    protected override void Up(MigrationBuilder migrationBuilder)
-    {
-        migrationBuilder.InsertData(
-            table: "app_permissions",
-            columns: new[] { "id", "code", "created_at_utc", "description", "name", "updated_at_utc" },
-            values: new object[]
-            {
-                PermissionId,
-                "mal-kabul-islemleri.mal-kabul-farklari.list",
-                SeededAtUtc,
-                "MalKabulIslemleri > MalKabulFarklari > Listele yetkisi.",
-                "MalKabulFarklari Listele",
-                null
-            });
-
-        migrationBuilder.InsertData(
-            table: "app_role_permissions",
-            columns: new[] { "permission_id", "role_id", "assigned_at_utc" },
-            values: new object[] { PermissionId, AdministratorRoleId, SeededAtUtc });
-    }
-
-    protected override void Down(MigrationBuilder migrationBuilder)
-    {
-        migrationBuilder.DeleteData(
-            table: "app_role_permissions",
-            keyColumns: new[] { "permission_id", "role_id" },
-            keyValues: new object[] { PermissionId, AdministratorRoleId });
-
-        migrationBuilder.DeleteData(
-            table: "app_permissions",
-            keyColumn: "id",
-            keyValue: PermissionId);
-    }
-}
-```
-
-Birden fazla action varsa her permission icin ayri ID kullanilir:
-
-```text
-ornek-menu.page
-ornek-menu.list
-ornek-menu.detail
-ornek-menu.create
-ornek-menu.update
-ornek-menu.all-warehouses
-```
-
-Her biri `app_permissions` kaydi, her biri admin role icin `app_role_permissions` kaydi ister.
-
-## 12. Permission ID Nasil Secilmeli?
-
-Permission ID sabit ve tekrar uretilebilir olmalidir.
-
-Bu projede `AuthSeedData` icinde su mantik vardir:
+Bu projede seed mantigi permission code'dan deterministic GUID uretir:
 
 ```text
 permission:{code}
 ```
 
-metninden MD5 hash alinir ve GUID uretilir.
+Bu sayede ayni permission code her ortamda ayni GUID'i alir.
 
-Bunun nedeni sudur:
-
-```text
-Ayni permission code her ortamda ayni GUID'i alsin.
-Migration ve seed data birbirine ters dusmesin.
-Admin role permission baglantilari bozulmasin.
-```
-
-Elle migration yazarken dikkat:
+Dikkat:
 
 ```text
-PermissionCatalog'daki code ile migration'daki code birebir ayni olmali.
-Migration'daki GUID, AuthSeedData'nin urettigi GUID ile uyumlu olmali.
-Code degisirse GUID de degisir.
+code degisirse ID de degisir
+rename islemi yeni permission eklemekten farklidir
+role-permission baglantilari migrate edilmelidir
 ```
 
-Eger code rename yapiliyorsa sadece yeni permission eklemek yetmez. Eski role-permission baglantilarini yeni permission'a tasiyan migration yazmak gerekir.
+## AuthDbContextModelSnapshot Kontrolu
 
-## 13. AuthDbContextModelSnapshot Kontrolu
-
-Migration elle yazildiysa `AuthDbContextModelSnapshot.cs` dosyasinda seed snapshot uyumu kontrol edilmelidir.
-
-Dosya:
+Migration sonrasinda snapshot kontrol edilmelidir:
 
 ```text
 src/FurpaMerkezApi.Infrastructure/Migrations/AuthDbContextModelSnapshot.cs
 ```
 
-Seed veriler iki yerde gorulebilir:
-
-```text
-app_permissions HasData
-app_role_permissions HasData
-```
-
-Snapshot uyumsuz kalirsa EF sonraki migration'da ayni permission'i tekrar eklemeye veya silmeye calisabilir.
-
-Pratik kontrol:
-
-```text
-dotnet ef migrations add TestCheck ...
-```
-
-bos migration uretmeye calisiyorsa snapshot uyumu genelde iyidir. Alakasiz seed farklari cikiyorsa once onlar incelenmelidir. Gereksiz test migration commit edilmemelidir.
-
-## 14. Migration'i DB'ye Uygula
-
-Normal komut:
+Pratik kontrol komutu:
 
 ```powershell
-$env:ASPNETCORE_ENVIRONMENT='Development'
-dotnet ef database update --project src/FurpaMerkezApi.Infrastructure --startup-project src/FurpaMerkezApi.WebApi --context AuthDbContext
+dotnet ef migrations has-pending-model-changes --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
 ```
 
-Build zaten alinmis ve restore/build problemi varsa:
+Beklenen sonuc:
+
+```text
+No changes have been made to the model since the last migration.
+```
+
+Bu kontrol gecmezse `dotnet run` sirasinda `PendingModelChangesWarning` ile API acilmayabilir.
+
+## Migration Komutlari
+
+Yeni migration:
 
 ```powershell
-$env:ASPNETCORE_ENVIRONMENT='Development'
-dotnet ef database update --no-build --project src/FurpaMerkezApi.Infrastructure --startup-project src/FurpaMerkezApi.WebApi --context AuthDbContext
+dotnet ef migrations add AddMyFeature --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
 ```
 
-Eger EF `PendingModelChangesWarning` ile bloklarsa:
+DB'ye uygulama:
+
+```powershell
+dotnet ef database update --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
+```
+
+Pending model kontrolu:
+
+```powershell
+dotnet ef migrations has-pending-model-changes --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
+```
+
+Build/test:
+
+```powershell
+dotnet build FurpaMerkezApi.sln
+dotnet test FurpaMerkezApi.sln --no-build
+```
+
+## Rollere Yetki Verme
+
+Migration genelde Administrator role'e yeni yetkiyi baglar.
+
+Admin olmayan roller icin:
 
 ```text
-1. PermissionCatalog ve AuthSeedData farklarini kontrol et.
-2. Snapshot ile model seed verileri uyumlu mu bak.
-3. Alakasiz pending migration farklari varsa once onlari temizle.
-4. Acil durumda idempotent SQL ile permission ve __EFMigrationsHistory kaydi elle islenebilir.
+Admin panelden role permission atanir.
+Ya da ayri role-permission migration'i yazilir.
 ```
 
-Acil SQL yontemi son care olmalidir. Normal kosulda migration repo icinde tutulmalidir.
-
-## 15. Rollere Yetki Ver
-
-Migration genelde sadece Administrator role'e yeni yetkiyi baglar.
-
-Diger roller icin:
-
-```text
-Admin panelden ilgili role yeni permission verilir.
-Ya da role-permission migration'i ayrica yazilir.
-```
-
-Role permission atama akisi:
+Role permission endpoint'i mevcut role permission'larini silip gelen listeyi bastan yazar:
 
 ```text
 POST /api/roles/{roleId}/permissions
 ```
 
-Bu servis mevcut role permission'larini silip gonderilen listeyi bastan yazar. Bu yuzden frontend veya client tum permission listesini gondermelidir; sadece yeni permission'i gonderirse rolun eski yetkileri kaybolabilir.
+Bu yuzden sadece yeni permission ID'si gonderilmez. Rolun sahip olmasi gereken tum permission ID listesi gonderilir.
 
-## 16. Kullanici Token'i Ne Zaman Guncellenir?
+## Token Ne Zaman Guncellenir?
 
 Kullanici login oldugunda:
 
 ```text
-kullanici rolleri okunur
+roller okunur
 rollerin permission'lari okunur
-her permission JWT icine permission claim olarak yazilir
+permission claim'leri JWT icine yazilir
 ```
 
-Bu yuzden role yeni yetki verdikten sonra kullanicinin mevcut token'i hemen degismez.
+Role veya permission degistiyse mevcut token kendiliginden degismez.
 
 Gerekli aksiyon:
 
 ```text
-Kullanici cikis-giris yapmali.
-Ya da frontend yeni token alacak bir refresh akisi kullaniyorsa token yenilenmeli.
+kullanici cikis-giris yapar
+veya token refresh akisi varsa yeni token alir
 ```
 
-Token yenilenmeden endpoint hala `403 Forbidden` donebilir. Bu normaldir.
+Eski token ile endpoint hala `403 Forbidden` donebilir. Bu normaldir.
 
-## 17. Frontend Menu Gorunurlugu
+## all-warehouses Mantigi
 
-Frontend tarafinda menu gorunurlugu kullanicinin permission listesine gore yapilmalidir.
-
-Backend login/me cevaplarinda kullanicinin yetkileri ve permission tree bilgisi donebilir:
+Depo kapsamli endpointlerde ek yetki:
 
 ```text
-permissions
-permissionTree
+{module}.{menu}.all-warehouses
 ```
 
-Dogru frontend mantigi:
+Bu yetki varsa UI depo secici gosterebilir. Yoksa kullanici sadece JWT icindeki kendi deposu ile calisir.
+
+Backend genelde aksiyon policy'sinden all-warehouses kodunu turetir:
 
 ```text
-Normal menuyu/route'u gostermek icin ilgili page permission kontrol edilir.
-Tanim veya yonetim ekranini gostermek icin ilgili manage permission kontrol edilir.
-Liste verisi veya tablo refresh icin list permission kontrol edilir.
-Detay butonu icin detail permission kontrol edilir.
-Ekle butonu icin create permission kontrol edilir.
-Duzenle butonu icin update permission kontrol edilir.
+sevk-islemleri.giden-depolar-arasi-sevkler.list
+-> sevk-islemleri.giden-depolar-arasi-sevkler.all-warehouses
 ```
 
-Ornek:
+UI role adına bakmamalidir. Depo secici icin ilgili permission koduna bakmalidir.
+
+## Frontend Kurali
+
+Frontend `login.user.permissions` veya `GET /api/auth/me` cevabindaki permission listesine bakar.
+
+Dogru karar tablosu:
 
 ```text
-kasa-islemleri.kasa-sayimlari.page           -> Kasa Sayimlari menu/route gorunur
-kasa-islemleri.kasa-sayimlari.list           -> Kasa Sayimlari liste API'si ve tablo refresh calisir
-kasa-islemleri.kasa-sayimlari.detail         -> Kasa Sayimlari detay gorunur
-kasa-islemleri.icmal-kaydi-girisi.page       -> Icmal Kaydi Girisi menu/route gorunur
-kasa-islemleri.icmal-kaydi-girisi.list       -> Icmal Kaydi Girisi form lookup/liste calisir
-kasa-islemleri.icmal-kaydi-girisi.create     -> icmal kaydetme butonu gorunur
-kasa-islemleri.icmal-kaydi-girisi.update     -> icmal duzenleme butonu gorunur
-kasa-islemleri.icmal-kaydi-girisi.delete     -> icmal silme butonu gorunur
-green-grocer.product-case-profiles.manage    -> Kasa profil yonetim ekrani gorunur
-green-grocer.product-case-profiles.list      -> Kasa profil liste/cozumleme API'si calisir
+normal menu/route          -> *.page
+yonetim/tanim menu/route   -> *.manage
+liste tablosu refresh      -> *.list
+detay butonu               -> *.detail
+ekle butonu                -> *.create
+duzenle butonu             -> *.update
+sil/pasife al butonu       -> *.delete
+arsivle                    -> *.archive
+aktar                      -> *.transfer
+depo secici                -> *.all-warehouses
 ```
 
-Frontend menuyu gizlese bile gercek guvenlik backend `[Authorize]` kontroludur. UI kontrolu sadece kullanici deneyimi icindir.
+Role name ile UI acilmamalidir. Admin/Administrator backend tarafinda tam yetkili kabul edilse bile UI karari permission listesine gore verilmelidir.
 
-`list/detail/create/update/delete` gibi aksiyon yetkileri artik menu/route acmak icin kullanilmamalidir. Bu ayrim ozellikle lookup veya cozumleme endpoint'i icin `list/detail` yetkisi verilen sube kullanicilarinda yonetim ekraninin yanlislikla acilmasini engeller.
+## Yeni Auth DB Tanimi Eklemek
 
-## 18. Mevcut Yapiya Gore En Dogru Pratik
+Soforler modulu bu desenin guncel ornegidir.
 
-Bu proje icin tavsiye edilen karar:
+Eklenen parcalar:
 
 ```text
-Yetki tanimi koddan gelsin.
-Yetki atamasi DB'den gelsin.
-Endpoint guvenligi policy ile yapilsin.
-Frontend gorunurlugu permission listesine gore yapilsin.
+Domain entity:
+  src/FurpaMerkezApi.Domain/Entities/DespatchDriver.cs
+
+Application contract:
+  src/FurpaMerkezApi.Application/Modules/AyarIslemleri/Soforler/
+
+Infrastructure service:
+  src/FurpaMerkezApi.Infrastructure/Modules/AyarIslemleri/Soforler/
+
+EF configuration:
+  src/FurpaMerkezApi.Infrastructure/Persistence/Configurations/DespatchDriverConfiguration.cs
+
+DbContext:
+  AuthDbContext.DespatchDrivers
+
+Controller:
+  src/FurpaMerkezApi.WebApi/Controllers/Modules/AyarIslemleri/Soforler/
+
+Permission:
+  ayar-islemleri.soforler.manage/list/detail/create/update/delete/all-warehouses
+
+Migration:
+  AddDespatchDrivers
 ```
 
-DB-first permission mantigi bu projede ana model degildir. Yani admin panelden DB'ye yeni permission ekleyerek uygulamaya yeni modul kazandirmak beklenmemelidir.
+Bu desen yeni Auth DB tanim ekranlari icin tekrar kullanilabilir.
 
-DB-first sistem istenirse daha farkli bir mimari gerekir:
+## E-Irsaliye Sofor Secimi Ozel Notu
+
+E-irsaliye gonderme endpointleri artik iki sekli destekler:
 
 ```text
-modules tablosu
-menus tablosu
-permissions tablosu
-dynamic authorization policy provider
-custom authorization handler
-frontend dynamic route/menu builder
+Elle giris:
+  driverId yok
+  plaque + driverNameSurname + driverTckn zorunlu
+
+Kayitli sofor:
+  driverId var
+  backend aktif sofor kaydindan plaka/ad soyad/TCKN cozer
 ```
 
-Bu daha esnek ama daha karmasik bir yapidir. Mevcut API endpoint'leri kodda tanimli oldugu icin, code-first permission catalog bu proje icin daha guvenli ve bakimi daha kolaydir.
+`driverId` ile birlikte manuel alanlar dolu gelirse manuel alanlar secili kaydin ustune yazilir. Bu, UI'da "sofor sec, gerekirse plaka veya ad soyad duzelt" akisini destekler.
 
-## 19. Yeni Menu Icin Tam Kontrol Listesi
+## Rename Kurali
 
-Yeni menu eklerken hizli kontrol:
+Permission code rename etmek yeni permission eklemek degildir.
+
+Dogru migration:
 
 ```text
-[ ] Module code belirlendi
-[ ] Menu code belirlendi
-[ ] Action seti belirlendi: ListActions, ReadActions, CRUD, vb.
-[ ] PermissionCatalog.cs icine menu eklendi
-[ ] Controller route eklendi
-[ ] Controller policy const'lari eklendi
-[ ] Her endpoint dogru policy ile korundu
+yeni permission'i ekle
+eski role-permission baglantilarini yeni permission'a tasi
+eski permission'i sil veya devre disi birak
+Down metodunda tersini yap
+```
+
+Sadece `PermissionCatalog.cs` icinde code degistirmek production DB'de yetki kopmasina sebep olabilir.
+
+## Checklist
+
+Yeni menu/endpoint icin:
+
+```text
+[ ] Module code ve menu code net
+[ ] Ekran tipi belli: page mi manage mi?
+[ ] Action set dogru secildi
+[ ] PermissionCatalog.cs guncellendi
+[ ] Controller route kebab-case
+[ ] Controller policy const'lari permission ile birebir ayni
+[ ] Her endpoint en dar dogru policy ile korundu
 [ ] Application request/response/interface eklendi
-[ ] Infrastructure use case/query/service eklendi
+[ ] Infrastructure implementation eklendi
 [ ] DI kaydi eklendi
-[ ] Permission migration yazildi
-[ ] Permission GUID'leri katalog/seed mantigiyla uyumlu
-[ ] Administrator role permission baglantisi eklendi
+[ ] Auth entity/tablo varsa EF configuration ve DbSet eklendi
+[ ] Migration olusturuldu
+[ ] Migration diff'i incelendi
 [ ] AuthDbContextModelSnapshot kontrol edildi
+[ ] UI_API_DOKUMANI.md guncellendi
 [ ] dotnet build alindi
-[ ] dotnet ef database update calistirildi
-[ ] Admin disi roller gerekiyorsa yetki verildi
-[ ] Kullanici cikis-giris yapti
-[ ] Frontend menu/buton gorunurlugu permission'a baglandi
-[ ] 401/403 davranisi test edildi
+[ ] dotnet test calistirildi
+[ ] has-pending-model-changes temiz
+[ ] Admin disi roller gerekiyorsa permission atandi
+[ ] Kullanici token'i yenilendi
+[ ] Frontend menu/route/buton permission listesine baglandi
 ```
 
-## 20. Sik Yapilan Hatalar
+## Sik Yapilan Hatalar
 
 ### Sadece DB'ye Permission Eklemek
 
-Yanlis beklenti:
+Yanlis:
 
 ```text
-DB'ye permission ekledim, modul otomatik olusmali.
+app_permissions'a kayit attim, menu olusmali.
 ```
 
 Dogru:
 
 ```text
-PermissionCatalog'a eklenmeli.
-Controller endpoint kodda olmali.
-Frontend menu/route tanimi olmali.
-DB sadece yetki kaydini ve rol baglantisini tutar.
+PermissionCatalog'a eklenir.
+Controller endpoint kodda olur.
+Frontend route/menu tanimi yapilir.
+DB sadece yetki kaydi ve rol baglantisini tutar.
 ```
 
-### Policy Code ile Catalog Code Farkli
+### List Yetkisiyle Menu Acmak
 
 Yanlis:
 
 ```text
-Catalog: stok-islemleri.zayiat-fisleri.list
-Policy:  stok-islemleri.zayiat-fisi.list
+*.list varsa sayfa ac.
 ```
 
-Bu durumda kullanicida yetki olsa bile endpoint acilmaz.
+Dogru:
 
-### Role Yetki Verildi Ama Kullanici Hala 403 Aliyor
+```text
+normal sayfa icin *.page
+yonetim sayfasi icin *.manage
+```
+
+### Role Permission'a Sadece Yeni Yetki Gondermek
+
+Yanlis:
+
+```text
+POST /api/roles/{id}/permissions
+body: [sadece yeni permissionId]
+```
+
+Dogru:
+
+```text
+rolun sahip olmasi gereken tum permission ID listesi gonderilir
+```
+
+### Yetki Verildi Ama Hala 403
 
 Muhtemel neden:
 
 ```text
-Kullanici eski JWT ile istek atiyor.
+kullanici eski JWT ile devam ediyor
 ```
 
 Cozum:
 
 ```text
-Cikis-giris yaptir.
-Token yenile.
+cikis-giris
+veya token refresh
 ```
 
-### AssignPermissions Endpoint'ine Sadece Yeni Yetki Gondermek
+### PendingModelChangesWarning
 
-`RoleService.AssignPermissionsAsync` role ait mevcut tum permission'lari silip gelen listeyi tekrar ekler.
-
-Bu yuzden sadece yeni permission ID'si gonderilirse rolun eski yetkileri gider.
-
-Dogru:
+Muhtemel neden:
 
 ```text
-Rolun sahip olmasi gereken tum permission ID listesi gonderilmeli.
+entity/seed degisti ama migration yok
+snapshot ile model uyumsuz
 ```
 
-### Rename Islemini Yeni Permission Gibi Yapmak
-
-Permission code degistirmek migration acisindan rename'dir.
-
-Dogru migration:
+Cozum:
 
 ```text
-Yeni permission'i ekle
-Eski role-permission baglantilarini yeni permission'a tasi
-Eski permission'i sil veya pasife al
-Down metodunda tersini yap
+dotnet ef migrations has-pending-model-changes ...
+gerekirse yeni migration olustur
+migration diff'ini kontrol et
 ```
 
-## 21. Kisa Ozet
+## Kisa Ozet
 
-Bu islerin en kisa akli:
+Bu projenin yetki yasam dongusu:
 
 ```text
-PermissionCatalog  -> uygulamanin bildigi yetki kodlari
-Migration          -> yetki kodlarini DB'ye tasir
-Roles              -> yetkileri paketler
-UserRoles          -> kullaniciya rol verir
-JWT token          -> kullanicinin login anindaki yetkilerini tasir
-[Authorize] policy -> endpoint'e giris kontrolu yapar
-Frontend           -> permission'a gore menu/buton gosterir
+PermissionCatalog'a ekle
+Migration veya startup sync ile DB'ye tasi
+Role'e ata
+Kullanicinin token'ini yenile
+Controller'da policy olarak kullan
+Frontend'de menu/buton/depo secici kararini permission'a bagla
 ```
 
-En onemli kural:
+En onemli cumle:
 
 ```text
-Yeni bir menu veya endpoint icin permission DB'den baslamaz.
-Yeni yetki PermissionCatalog.cs icinden baslar.
+Yeni bir menu veya endpoint icin yetki DB'den baslamaz; PermissionCatalog.cs icinden baslar.
 ```

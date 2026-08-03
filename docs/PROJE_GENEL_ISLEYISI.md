@@ -1,55 +1,61 @@
 # FurpaMerkezApi Proje Genel Isleyisi
 
-Bu dokuman, FurpaMerkezApi projesine yeni giren birinin sistemi hizli ama saglam sekilde anlamasi icin hazirlandi.
+Bu dokuman FurpaMerkezApi projesine yeni giren birinin sistemi hizli ve saglam anlamasi icin hazirlandi.
 
-Bu dosya `docs/` klasorundeki genel proje rehberidir. Kisa proje girisi icin
-repo kokundeki [README.md](../README.md), tum dokuman haritasi icin
-[docs/README.md](README.md) dosyasina bakilabilir.
-
-Temel sorular:
+Kisa indeks:
 
 ```text
-Bu API ne is yapiyor?
-Hangi katman ne sorumluluk tasiyor?
-Bir istek sisteme girdiginde hangi adimlardan geciyor?
-Auth, rol, permission ve menu yapisi nasil calisiyor?
-Yeni bir ekran veya endpoint eklemek istersek nereye dokunuyoruz?
+Bu API ne yapar?
+Katmanlar nasil ayrilir?
+Hangi DB ne icin kullanilir?
+Auth, rol, permission ve menu nasil calisir?
+Bir istek hangi adimlardan gecer?
+Yeni endpoint veya ekran eklenirken nereye dokunulur?
 Migration ne zaman gerekir?
-Mikro DB, Furpa DB, Auth DB ve Mikro REST API arasindaki fark nedir?
+GreenGrocer, e-irsaliye, timeout ve terminal IP gibi ozel isler nerede durur?
 ```
 
-## 1. Projenin Kisa Ozeti
+Ek dokumanlar:
 
-`FurpaMerkezApi`, Furpa merkez operasyonlari icin yazilmis bir `.NET 9` Web API projesidir.
+- Kisa repo girisi: [../README.md](../README.md)
+- Dokuman haritasi: [README.md](README.md)
+- UI endpoint dokumani: [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md)
+- Yeni menu/yetki/migration rehberi: [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 
-API'nin ana gorevleri:
+## Projenin Kisa Ozeti
+
+`FurpaMerkezApi`, Furpa merkez operasyonlari icin yazilmis `.NET 9` Web API projesidir.
+
+Ana gorevler:
 
 ```text
-Kullanici girisi yapmak
-Kullanici, rol ve yetki yonetmek
-Merkez operasyon ekranlari icin veri sunmak
-Mikro/Furpa kaynaklarindan veri okumak
-Bazi operasyonlarda Mikro veya Furpa tarafina yazmak
-Fatura, sevk, siparis, stok, kasa, mal kabul gibi modulleri beslemek
-Axata, Uyumsoft, POS muhasebe gibi entegrasyonlari calistirmak
-Uzun isleri background worker/queue ile islemek
+kullanici girisi ve JWT uretimi
+kullanici, rol ve permission yonetimi
+frontend menu ve buton yetkilerini beslemek
+Mikro/Furpa kaynaklarindan liste, detay ve rapor verisi okumak
+Mikro veya Furpa tarafina kontrollu yazma yapmak
+fatura, sevk, iade, siparis, mal kabul, stok, kasa ve rapor ekranlarini beslemek
+Uyumsoft e-fatura/e-irsaliye entegrasyonlarini calistirmak
+Axata, POS muhasebe, Shopigo ciro gibi dis kaynaklari okumak
+uzun surebilecek isleri background queue/worker ile yonetmek
+terminal/mobil offline ve operasyon destek akislarini takip etmek
 ```
 
-En kisa akis:
+En kisa istek akisi:
 
 ```text
 Frontend
   -> WebApi Controller
-  -> Application contract / use case interface
-  -> Infrastructure implementation
-  -> DbContext / QueryExecutor / WriteService / Integration Client
+  -> Application contract/interface
+  -> Infrastructure service/use case/query executor
+  -> DbContext / WriteService / Integration Client
   -> DTO
   -> HTTP Response
 ```
 
-## 2. Ana Mimari
+## Katmanlar
 
-Projede 4 ana katman var:
+Projede 4 ana katman vardir:
 
 ```text
 Domain
@@ -58,13 +64,13 @@ Infrastructure
 WebApi
 ```
 
-Bu repo Clean Architecture cizgisine yakindir, ama pratikte use case implementasyonlarinin buyuk kismi `Infrastructure` katmanindadir. `Application` daha cok kontrat, DTO ve sistem dili katmanidir.
+Bu yapi Clean Architecture cizgisine yakindir. Pratikte use case implementasyonlarinin buyuk kismi `Infrastructure` icindedir. `Application` daha cok kontrat, DTO ve sistem dili katmanidir.
 
-## 3. Domain Katmani
+## Domain Katmani
 
-Domain katmani cekirdek entity'leri ve temel kurallari tasir.
+Domain cekirdek entity'leri ve temel kurallari tasir.
 
-Onemli auth entity'leri:
+Ornek entity'ler:
 
 ```text
 AppUser
@@ -72,73 +78,79 @@ AppRole
 AppPermission
 AppUserRole
 AppRolePermission
+Announcement / AnnouncementTarget / AnnouncementRead
+FeedbackItem
+DocumentFlow / DocumentFlowEvent
+StockAnomaly / StockAnomalyEvent
+MikroApiWriteAudit
 MobileOfflineSyncRequest
 UyumsoftInboxInvoice
-FeedbackItem
+GreenGrocerProductCaseProfile
+GreenGrocerOrderLineSnapshot
+DespatchDriver
 ```
 
-Domain katmaninin gorevi:
+Domain'in gorevi:
 
 ```text
-Entity alanlarini normalize etmek
-Bos/hatali degerleri engellemek
-Temel iliski modelini tasimak
-Auth tarafindaki user-role-permission zincirini temsil etmek
+entity alanlarini normalize etmek
+zorunlu degerleri korumak
+temel audit alanlarini tasimak
+DB iliski modelini ifade etmek
 ```
 
-Domain katmaninda HTTP, controller, EF query veya dis entegrasyon detayi tutulmaz.
+Domain katmaninda HTTP, controller, EF sorgu detayi veya dis servis payload'u tutulmaz.
 
-## 4. Application Katmani
+## Application Katmani
 
-Application katmani projenin kontrat ve dil katmanidir.
+Application projenin kontrat ve dil katmanidir.
 
-Burada genelde sunlar bulunur:
+Burada sunlar bulunur:
 
 ```text
-Request modelleri
-Response / DTO modelleri
-Use case interface'leri
-Servis interface'leri
-Permission catalog
-Permission tree builder
-Policy/permission code tanimlari
+request modelleri
+response / DTO modelleri
+use case interface'leri
+servis interface'leri
+permission catalog
+permission tree builder
+ortak enum/constant tanimlari
 ```
 
-Ornek:
+Ornekler:
 
 ```text
 src/FurpaMerkezApi.Application/Security/PermissionCatalog.cs
 src/FurpaMerkezApi.Application/Security/PermissionCodes.cs
 src/FurpaMerkezApi.Application/Security/PermissionTreeBuilder.cs
-src/FurpaMerkezApi.Application/Modules/...
+src/FurpaMerkezApi.Application/Modules/AyarIslemleri/Soforler/
+src/FurpaMerkezApi.Application/Modules/GreenGrocer/ProductCases/
 ```
 
-Bu katman genelde "ne yapilabilir?" sorusunu cevaplar. "Nasil yapilir?" sorusunun cevabi cogu zaman `Infrastructure` icindedir.
+Bu katman "ne yapilabilir?" sorusuna cevap verir. "Nasil yapilir?" sorusu genelde Infrastructure katmanindadir.
 
-## 5. Infrastructure Katmani
+## Infrastructure Katmani
 
-Infrastructure katmani sistemin calisan motorudur.
+Infrastructure sistemin calisan motorudur.
 
-Burada sunlar bulunur:
+Burada sunlar vardir:
 
 ```text
 DbContext'ler
 EF configuration'lar
-Migration'lar
-Auth servisleri
-JWT token uretimi
-Password hashing
-Use case implementasyonlari
-Query executor'lar
-Write service'ler
+AuthDbContext migration'lari
+Auth/JWT/password servisleri
+use case implementasyonlari
+query executor'lar
+write service'ler
 Mikro REST API client
 Uyumsoft servisleri
-Axata senkronizasyon servisleri
-Background worker'lar
-Offline sync servisleri
+Axata servisleri
+background queue/worker siniflari
+offline sync servisleri
 ```
 
-Temel fikir:
+Genel fikir:
 
 ```text
 Application interface tanimlar.
@@ -146,51 +158,56 @@ Infrastructure interface'i gercekler.
 WebApi controller interface'i cagirir.
 ```
 
-## 6. WebApi Katmani
+## WebApi Katmani
 
-WebApi katmani HTTP giris kapisidir.
+WebApi HTTP giris kapisidir.
 
-Burada sunlar vardir:
+Burada sunlar bulunur:
 
 ```text
 Program.cs
-Controller'lar
-Authentication/Authorization konfigurasyonu
-Swagger konfigurasyonu
+controller'lar
+authentication / authorization konfigurasyonu
+Swagger
 CORS
-Health checks
-Exception middleware
-Request logging
-Correlation id middleware
-Startup database initialization
+health checks
+exception middleware
+request logging
+correlation id middleware
+startup database initialization
 ```
 
-Controller'in hedefi hafif kalmaktir:
+Controller hafif kalmalidir:
 
 ```text
 HTTP request'i al
-Claim veya route/query/body bilgilerini oku
-Use case/servis cagir
-Sonucu HTTP response olarak don
+route/query/body/claim bilgisini coz
+yetkili depo bilgisini belirle
+use case veya servisi cagir
+sonucu HTTP response olarak don
 ```
 
 Agir is kurali controller icinde tutulmamalidir.
 
-## 7. Veritabani ve Dis Kaynaklar
+## Veri Kaynaklari
 
-Projede tek veritabani yoktur. Birden fazla veri kaynagi vardir.
+Projede tek DB yoktur. Her context'in ayri amaci vardir.
 
-| Bilesen | Kaynak | Kullanim |
+| Bilesen | Config | Kullanim |
 |---|---|---|
-| `AuthDbContext` | `AuthConnection` | kullanici, rol, permission, auth migration |
-| `MikroDbContext` | `MikroConnection` veya profile'a gore test | Mikro okuma, liste, detay, rapor |
-| `MikroWriteDbContext` | `MikroWriteConnection`, `testMikroConnection` veya profile'a gore live | Mikro DB yazma operasyonlari |
-| `FurpaDbContext` | `FurpaConnection` | API'ye ozel tablo/gorunumler, branch, label, operasyon destek verileri |
-| `AxataDbContext` | `AxataConnection` | Axata senkronizasyonu, config varsa kaydedilir |
-| `ShopigoCiroDbContext` | `ShopigoCiroConnection` | Shopigo ciro verileri, config varsa kaydedilir |
+| `AuthDbContext` | `AuthConnection` | kullanici, rol, permission, duyuru, sikayet, belge akis, stock anomaly, GreenGrocer profil/snapshot, sofor tanimi |
+| `MikroDbContext` | `MikroConnection` veya profile | Mikro okuma, liste, detay, rapor |
+| `MikroWriteDbContext` | `MikroWriteConnection` / `testMikroConnection` / profile | Mikro yazma operasyonlari |
+| `FurpaDbContext` | `FurpaConnection` | Furpa ozel tablolar, sube ayarlari, etiket, cihaz, manav etiket ortalamalari |
+| `AxataDbContext` | `AxataConnection` | Axata senkronizasyonu, config varsa aktif |
+| `ShopigoCiroDbContext` | `ShopigoCiroConnection` | yeni kasa/Shopigo ciro verileri, config varsa aktif |
 | `MikroApiClient` | `MikroApi:BaseUrl` | Mikro REST API cagrilari |
 
-SQL command timeout ayarlari `DatabaseCommandTimeouts` konfigurasyonundan yonetilir:
+## SQL Timeout Mantigi
+
+SQL command timeout degerleri `DatabaseCommandTimeouts` konfigurasyonundan okunur.
+
+Ornek:
 
 ```json
 {
@@ -206,13 +223,38 @@ SQL command timeout ayarlari `DatabaseCommandTimeouts` konfigurasyonundan yoneti
 }
 ```
 
-`MikroReadSeconds` liste/detay/rapor okumalari, `MikroWriteSeconds` create/update/delete yazma islemleri icin kullanilir. Degerler ortam degiskeniyle `DatabaseCommandTimeouts__MikroWriteSeconds=300` formatinda override edilebilir. Uygulama degerleri 30 ile 1800 saniye arasinda sinirlar.
+Anlamlari:
 
-## 8. AuthDbContext
+```text
+MikroReadSeconds       -> liste, detay, rapor, arama
+MikroWriteSeconds      -> create/update/delete yazma islemleri
+AuthSeconds            -> Auth DB islemleri
+FurpaSeconds           -> Furpa DB islemleri
+AxataSeconds           -> Axata DB islemleri
+ShopigoCiroSeconds     -> Shopigo ciro islemleri
+```
 
-`AuthDbContext`, auth ve yetki sisteminin ana DB context'idir.
+Degerler environment variable ile override edilebilir:
 
-Tablolar:
+```text
+DatabaseCommandTimeouts__MikroWriteSeconds=300
+```
+
+Terminal/mobil/web istemciler de HTTP client timeout degerini buna uygun tutmalidir. Interneti zayif subelerde API DB yazimini bitirirken istemci erken timeout olursa kullanici tekrar basabilir ve duplicate evrak riski dogar.
+
+Pratik UI kural:
+
+```text
+create istegi timeout olduysa hemen tekrar yeni evrak basma
+once liste/detaydan evrak olustu mu kontrol et
+mumkunse clientRequestId/idempotency destekli akis kullan
+```
+
+## AuthDbContext
+
+Auth DB uygulamanin kendi verisidir.
+
+Guncel ana tablolar:
 
 ```text
 app_users
@@ -223,23 +265,33 @@ app_role_permissions
 mobile_offline_sync_requests
 uyumsoft_inbox_invoices
 feedback_items
+announcements
+announcement_targets
+announcement_reads
+document_flows
+document_flow_events
+mikro_api_write_audits
+stock_anomalies
+stock_anomaly_events
+green_grocer_product_case_profiles
+green_grocer_order_line_snapshots
+despatch_drivers
 ```
 
-Bu context migration ile yonetilir. Uygulama acilisinda `StartupTasks:ApplyAuthMigrations` aktifse migration'lar otomatik uygulanir.
+Bu context migration ile yonetilir. Uygulama acilisinda `StartupTasks:ApplyAuthMigrations=true` ise migration'lar otomatik uygulanir.
 
 Not:
 
 ```text
-AuthConnection SQL Server veya PostgreSQL olabilir.
-Connection string SQL Server gibi gorunuyorsa UseSqlServer kullanilir.
+AuthConnection SQL Server gibi gorunuyorsa UseSqlServer kullanilir.
 Aksi halde Npgsql kullanilir.
 ```
 
-## 9. Mikro Okuma ve Yazma Ayrimi
+## Mikro Okuma ve Yazma Ayrimi
 
-Mikro tarafinda okuma ve yazma baglantilari ayrilabilir.
+Mikro okuma ve yazma baglantilari ayrilabilir.
 
-`MikroDatabase:Profile` ayari:
+`MikroDatabase:Profile`:
 
 ```text
 Split -> okuma MikroConnection, yazma MikroWriteConnection varsa o; yoksa testMikroConnection
@@ -247,118 +299,63 @@ Test  -> okuma ve yazma testMikroConnection
 Live  -> okuma ve yazma MikroConnection
 ```
 
-Bu ayrim ozellikle kritik yazma operasyonlarinda onemlidir.
-
 Genel karar:
 
 ```text
-Liste/detay/rapor -> MikroDbContext
-Create/update/delete -> mevcut modullerde cogunlukla MikroWriteDbContext
-API'ye ozel yardimci veri -> FurpaDbContext
+liste/detay/rapor     -> MikroDbContext
+create/update/delete  -> MikroWriteDbContext veya MikroApiClient
+API'ye ozel yardimci  -> AuthDbContext veya FurpaDbContext
 ```
 
-Mikro DB harici bir sistemdir. Mikro tablo semasini bu projenin migration'lariyla yonetmek standart senaryo degildir.
+Mikro harici sistemdir. Mikro tablo semasi bu API migration'lariyla yonetilmez.
 
-## 10. FurpaDbContext
+## FurpaDbContext
 
-`FurpaDbContext`, API'nin kendi ihtiyaclari icin kullandigi SQL Server tarafidir.
+Furpa DB API'nin is destek tablolarini ve eski sistemden gelen bazi kaynaklari okur.
 
-Ornek kullanimlar:
+Ornek kullanim:
 
 ```text
+DeviceDetails
+DeviceTypes
+BranchDetails
+CashRegistryDetails
+Cashiers
 LabelDocuments
 LabelDocumentDetails
-AuthorizationFiles
-Cashiers
-BranchDetails
+Manav_Depo_Mal_Kabul_Etiket
 VwKunyeNet gibi gorunumler
 ```
 
-Furpa tarafinda API'nin sahip oldugu tablo/gorunum ihtiyaci varsa bu context kullanilir.
+GreenGrocer kasa ortalamasi Furpa tarafindaki manav etiket gecmisinden hesaplanabilir.
 
-## 11. Mikro REST API Client
+## Uygulama Acilis Akisi
 
-Projede Mikro REST API icin `MikroApiClient` altyapisi vardir.
-
-Ilgili klasor:
+`Program.cs` temel akisi:
 
 ```text
-src/FurpaMerkezApi.Infrastructure/Services/MikroApi
+configuration okunur
+appsettings.Local.json varsa override edilir
+logging ayarlanir
+CORS, DataProtection, forwarded headers ayarlanir
+AddCleanArchitecture ile WebApi + Infrastructure servisleri kaydedilir
+JWT ve permission policy'leri kurulur
+WebApplication build edilir
+InitializeDatabaseAsync calisir
+middleware pipeline kurulur
+controller endpoint'leri map edilir
 ```
 
-Ana siniflar:
+`appsettings.Local.json` local secret/config icindir; repoya gonderilmemelidir.
+
+## StartupTasks
+
+Startup DB isleri config ile kontrol edilir:
 
 ```text
-MikroApiOptions
-MikroApiClient
-MikroApiAuthBlockFactory
-MikroApiResult
-MikroApiException
-```
-
-Mikro REST auth mantigi:
-
-```text
-Her istekte ortak Mikro auth blogu uretilir.
-Sifre icin gunluk MD5 hash kullanilir.
-Formul: MD5("yyyy-MM-dd <SifreAnahtari>")
-Varsayilan saat offset'i Turkiye saatine uygun olacak sekilde ayarlanabilir.
-```
-
-Client metotlari:
-
-```text
-GetAsync<TResponse>
-PostAsync<TResponse>
-PostWithMikroEnvelopeAsync<TResponse>
-PostWithMikroPayloadAsync<TResponse>
-PostLoginAsync<TResponse>
-```
-
-Onemli karar:
-
-```text
-MikroApiClient controller'a dogrudan baglanmamalidir.
-Use case veya write service icinde kullanilmalidir.
-Mikro API payload modeli frontend request modeline sizdirilmemelidir.
-```
-
-Bu altyapi olsa bile her modul otomatik Mikro REST API kullanmaz. Bir modul acikca `MikroApiClient` enjekte edip kullanmadikca mevcut DB okuma/yazma davranisi devam eder.
-
-## 12. Uygulama Acilis Akisi
-
-Uygulama `Program.cs` ile ayaga kalkar.
-
-Acilis sirasinda temel akis:
-
-```text
-Encoding provider kaydedilir.
-WebApplicationBuilder olusturulur.
-appsettings.Local.json varsa configuration'a eklenir.
-Hosting, reverse proxy, CORS, DataProtection ayarlari okunur.
-Production config validasyonu yapilir.
-Logging provider'lari ayarlanir.
-Controllers, health checks, routing, http context accessor kaydedilir.
-Forwarded headers, CORS, DataProtection ayarlanir.
-AddCleanArchitecture ile WebApi + Infrastructure servisleri kaydedilir.
-Application build edilir.
-InitializeDatabaseAsync calisir.
-Middleware pipeline kurulur.
-Controller endpoint'leri map edilir.
-```
-
-`appsettings.Local.json` opsiyoneldir ve sonradan eklendigi icin ayni key'leri override edebilir. Lokal secret'lar icin uygundur; repoya gonderilmemelidir.
-
-## 13. StartupTasks
-
-Uygulama acilisinda DB ile ilgili bazi isler `StartupTasks` ayarlarina baglidir.
-
-Varsayilanlar:
-
-```text
-ApplyAuthMigrations = true
-SynchronizePermissionCatalog = true
-SynchronizeWarehouseUsers = true
+ApplyAuthMigrations
+SynchronizePermissionCatalog
+SynchronizeWarehouseUsers
 ```
 
 Anlamlari:
@@ -368,25 +365,20 @@ ApplyAuthMigrations
   AuthDbContext migration'larini uygular.
 
 SynchronizePermissionCatalog
-  PermissionCatalog.Definitions listesini app_permissions ile senkronlar.
+  PermissionCatalog.Definitions ile app_permissions tablosunu senkronlar.
   Eksik permission'lari ekler.
-  Name/description degistiyse gunceller.
+  Name/description farklarini gunceller.
   Administrator role'e eksik katalog permission'larini ekler.
 
 SynchronizeWarehouseUsers
-  Mikro kaynakli depo/kullanici senkronizasyonunu calistirir.
+  Mikro/Furpa kaynakli depo kullanici senkronizasyonunu calistirir.
 ```
 
-Production notu:
+Production'da bu ayarlar bilincli acik/kapali tutulmalidir. Kontrollu deployment icin migration repo icinde bulunmalidir.
 
-```text
-Production'da bu ayarlar bilincli acik/kapali tutulmalidir.
-Migration ve permission ekleme islemleri kontrollu deployment akisi ile yapilmalidir.
-```
+## Middleware Pipeline
 
-## 14. Middleware Pipeline
-
-Pipeline sirasi ozetle:
+Pipeline ozet:
 
 ```text
 Forwarded headers
@@ -403,18 +395,14 @@ Health checks
 Controllers
 ```
 
-CORS, exception middleware'den once konumlandirilmis. Bu sayede hata cevaplarinda da CORS davranisi daha saglam olur.
-
-Health endpoint'leri:
+Health endpointleri:
 
 ```text
 /health/live
 /health/ready
 ```
 
-`/health/ready` core dependency ve operasyon export path gibi kontrolleri calistirir.
-
-## 15. Authentication Akisi
+## Authentication
 
 Login endpoint'i:
 
@@ -425,22 +413,43 @@ POST /api/auth/login
 Akis:
 
 ```text
-Username veya email normalize edilir.
-Kullanici bulunur.
-Kullanici rolleri ve role permission'lari Include ile yuklenir.
-Kullanici aktif mi kontrol edilir.
-Sifre hash'i dogrulanir.
-Terminal role kullanicilarda gelen IPv4 adresinin ilk 3 blogu kullanicinin kendi BranchDetails.BranchIpAddress ilk 3 bloguyla eslesmelidir.
-Auth:TerminalLogin:SharedNetworkWarehouseGroups icinde ayni gruba alinan depolar, gruptaki diger depolarin BranchDetails IP agindan da terminal girisi yapabilir. Ornek: 50 ve 56 ayni interneti kullaniyorsa [50, 56] grubu tanimlanir.
-JWT token uretilir.
-AuthResponse icinde token, expire bilgisi ve UserDto doner.
+username/email normalize edilir
+kullanici, rolleri ve permission'lari okunur
+kullanici aktif mi kontrol edilir
+sifre hash'i dogrulanir
+terminal kullanicisi ise IP kontrolu yapilir
+JWT token uretilir
+AuthResponse icinde token ve UserDto doner
 ```
 
-Register akisi ilk kullaniciyi administrator role'e baglayabilir.
+## Terminal IP Kontrolu
 
-## 16. JWT Icindeki Bilgiler
+Terminal role kullanicilarda IP kontrolu vardir.
 
-JWT icine temel claim'ler yazilir:
+Temel mantik:
+
+```text
+kullanicinin deposu 100 altindaysa terminal IP kontrolu atlanir
+terminal/sube kullanicisinda gelen IPv4 ile BranchDetails.BranchIpAddress karsilastirilir
+ilk 3 IP blogu ayniysa giris serbesttir
+```
+
+Ek olarak paylasimli internet kullanan depolar config ile ayni gruba alinabilir:
+
+```text
+Auth:TerminalLogin:SharedNetworkWarehouseGroups
+```
+
+Ornek:
+
+```text
+50 ve 56 ayni interneti kullaniyorsa [50, 56] grubu tanimlanir.
+56 kullanicisi 50 deposunun tanimli agindan da girebilir.
+```
+
+## JWT Icindeki Bilgiler
+
+JWT claim'leri:
 
 ```text
 sub
@@ -453,491 +462,472 @@ last_name
 warehouse_no
 warehouse_name
 jti
-role claim'leri
-permission claim'leri
+role
+permission
 ```
 
-Permission claim'leri cok onemlidir:
+Permission claim ornegi:
 
 ```text
 permission = kasa-islemleri.kasa-sayimlari.list
-permission = kasa-islemleri.kasa-sayimlari.detail
+permission = ayar-islemleri.soforler.manage
 ```
 
-Endpoint yetki kontrolu bu claim'ler uzerinden yapilir.
+Role veya permission degisirse mevcut token kendiliginden degismez. Kullanici yeniden login olmali veya token refresh akisi varsa yeni token almalidir.
 
-Role veya permission degistiginde mevcut JWT otomatik degismez. Kullanici yeniden login olmali veya token refresh mekanizmasi varsa yeni token almalidir.
+## Authorization ve Permission
 
-## 17. Authorization ve Permission Mantigi
-
-Projede authorization policy tabanlidir.
-
-Startup'ta `PermissionCatalog.Codes` uzerinden her permission icin policy uretilir:
-
-```csharp
-options.AddPolicy(permissionCode, policy => policy.RequireClaim("permission", permissionCode));
-```
-
-Controller'da:
-
-```csharp
-[Authorize(Policy = "kasa-islemleri.kasa-sayimlari.list")]
-```
-
-Bu durumda token icinde ayni permission claim'i yoksa istek `403 Forbidden` olur.
-
-En onemli kural:
+Yetki tanimi koddan gelir, kime verildigi DB'den gelir.
 
 ```text
-Yetkinin tanimi koddan gelir.
-Yetkinin kime verildigi DB'den gelir.
+PermissionCatalog.cs -> bilinen yetkiler
+app_permissions      -> DB kaydi
+app_role_permissions -> rol atamasi
+JWT permission claim -> login anindaki yetki
+[Authorize] policy   -> endpoint kontrolu
 ```
 
-## 18. PermissionCatalog ve Menu Agaci
-
-Permission sistemi ayni zamanda frontend menu gorunurlugunu besler.
-
-Hiyerarsi:
-
-```text
-Module -> Menu -> Action
-```
-
-Ornek API aksiyonu:
-
-```text
-Module: kasa-islemleri
-Menu:   kasa-sayimlari
-Action: list
-Code:   kasa-islemleri.kasa-sayimlari.list
-```
-
-Ornek menu/route erisimi:
-
-```text
-Normal ekran:        kasa-islemleri.kasa-sayimlari.page
-Tanim/yonetim ekran: green-grocer.product-case-profiles.manage
-```
-
-`PermissionCatalog.cs` sistemde bilinen permission'lari tanimlar.
-
-Bu katalog:
-
-```text
-Authorization policy'lerinin olusmasini saglar.
-DB permission senkronizasyonuna kaynak olur.
-Permission tree olusturmaya kaynak olur.
-Frontend menu/buton gorunurlugunu besler.
-```
-
-DB'ye elle permission eklemek yeni modul/menu/API endpoint olusturmaz. Yeni menu veya endpoint icin dogru baslangic `PermissionCatalog.cs` dosyasidir.
+UI menu/buton kararlari permission listesine gore verilmelidir. Role name'e gore ekran acilmamalidir.
 
 Detayli rehber:
 
 [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 
-## 19. Rol ve Yetki Zinciri
+## Page / Manage / Action Modeli
 
-Sistemde erisim zinciri:
+Guncel karar:
+
+```text
+normal menu/route          -> *.page
+yonetim/tanim menu/route   -> *.manage
+liste/veri cekme           -> *.list
+detay                      -> *.detail
+ekle                       -> *.create
+duzenle                    -> *.update
+sil/pasife al              -> *.delete
+arsivle                    -> *.archive
+aktar                      -> *.transfer
+depo secici                -> *.all-warehouses
+```
+
+`list/detail/create/update/delete` yetkileri tek basina menu/route acma sebebi olmamalidir.
+
+Ornek:
+
+```text
+ayar-islemleri.soforler.manage -> Soforler ekrani gorunur
+ayar-islemleri.soforler.list   -> sofor listesi/arama API'si calisir
+```
+
+## Rol ve Yetki Zinciri
+
+Erisim zinciri:
 
 ```text
 User -> UserRoles -> Role -> RolePermissions -> Permission -> JWT Claim -> Policy -> Endpoint
 ```
 
-Tablolar:
-
-```text
-app_users
-app_roles
-app_permissions
-app_user_roles
-app_role_permissions
-```
-
-Role permission atama:
+Role permission atama endpoint'i:
 
 ```text
 POST /api/roles/{roleId}/permissions
 ```
 
-Dikkat:
+Bu endpoint mevcut role permission'larini silip gelen listeyi bastan yazar. Bu yuzden sadece yeni permission ID'si degil, rolun sahip olmasi gereken tum permission ID listesi gonderilmelidir.
 
-```text
-RoleService.AssignPermissionsAsync mevcut role permission'larini siler ve gelen listeyi yeniden ekler.
-Bu endpoint'e sadece yeni permission ID'si degil, rolun sahip olmasi gereken tum permission ID listesi gonderilmelidir.
-```
+## Depo Yetkisi ve all-warehouses
 
-User role atama:
-
-```text
-POST /api/users/{userId}/roles
-```
-
-Sadece aktif roller kullaniciya atanabilir.
-
-## 20. Frontend Menu ve Buton Mantigi
-
-Frontend tarafinda menu gorunurlugu kullanicinin permission listesine gore yapilmalidir.
-
-Dogru yaklasim:
-
-```text
-Normal menu/route gorunurlugu     -> *.page permission
-Tanim/yonetim menu/route gorunumu -> *.manage permission
-Liste verisi veya tablo refresh   -> *.list permission
-Detay butonu                      -> *.detail permission
-Ekle butonu                       -> *.create permission
-Duzenle butonu                    -> *.update permission
-Ozel aksiyon                      -> ilgili ozel permission
-```
-
-`list/detail/create/update/delete` yetkileri API ve buton aksiyonlari icindir. UI sol menu veya route guard icin bu aksiyonlari alias olarak kullanmamalidir.
-
-Frontend menuyu gizlese bile gercek guvenlik backend `[Authorize]` kontroludur. UI kontrolu sadece kullanici deneyimi icindir.
-
-## 21. Bir Istek Sistemde Nasil Ilerler?
-
-Tipik okuma istegi:
-
-```text
-Frontend istek atar.
-Authentication JWT'yi dogrular.
-Authorization permission claim'i kontrol eder.
-Controller route/query/body/claim bilgilerini okur.
-Use case interface'i cagrilir.
-Infrastructure implementation devreye girer.
-QueryExecutor veya servis DB'ye gider.
-DTO listesi veya response olusturulur.
-Controller 200 OK doner.
-```
-
-Tipik yazma istegi:
-
-```text
-Frontend body gonderir.
-Authorization create/update permission kontrol eder.
-Controller request'i use case'e aktarir.
-Use case / write service validasyon yapar.
-MikroWriteDbContext, FurpaDbContext veya entegrasyon client kullanilir.
-Gerekirse transaction acilir.
-Sonuc DTO olarak doner.
-```
-
-Mikro REST API kullanilan bir istek:
-
-```text
-Use case veya write service MikroApiClient kullanir.
-Request DTO Mikro API payload'una map edilir.
-Mikro auth blogu MikroApiAuthBlockFactory ile uretilir.
-HTTP request Mikro API'ye gider.
-Response MikroApiResult<T> olarak normalize edilir.
-Gerekirse DB'den geri okuma/dogrulama yapilir.
-API kendi DTO'sunu doner.
-```
-
-## 22. Okuma ve Yazma Desenleri
-
-Projede sik gorulen sinif tipleri:
-
-```text
-...Controller
-IList...UseCase
-IGet...DetailUseCase
-ICreate...UseCase
-...QueryExecutor
-...WriteService
-...Service
-```
-
-Okuma tarafinda:
-
-```text
-MikroDbContext
-FurpaDbContext
-AsNoTracking
-Select ile DTO projection
-Raw SQL veya EF query
-```
-
-Yazma tarafinda:
-
-```text
-MikroWriteDbContext
-FurpaDbContext
-WriteService
-Transaction
-Validasyon
-Sonuc DTO
-```
-
-Controller DB detayini bilmemelidir. Query ve write detaylari Infrastructure icinde kalmalidir.
-
-## 23. Claims ve Depo Mantigi
-
-JWT icinde depo bilgileri vardir:
+JWT icinde kullanicinin ana deposu vardir:
 
 ```text
 warehouse_no
 warehouse_name
 ```
 
-Bircok endpoint depo bilgisini query'den almak yerine claim'den okuyabilir.
+Kullanici kendi deposu disina cikacaksa ilgili ekran icin `*.all-warehouses` yetkisi gerekir.
 
-Ornek:
-
-```csharp
-var warehouseNo = User.GetRequiredWarehouseNo();
-```
-
-Avantaj:
+UI depo secici gostermek icin role bakmamalidir:
 
 ```text
-Kullanici kendi deposu disina kolayca tasamaz.
-Frontend daha az parametre gonderir.
-Endpoint davranisi standartlasir.
+ilgili menu icin *.all-warehouses varsa depo secici ac
+yoksa depo alanini gizle veya kilitle
 ```
 
-Bazi merkez/rapor endpoint'lerinde query ile depo secimi gerekebilir. Bu durumda endpoint'in permission seviyesi dikkatli belirlenmelidir.
+Backend farkli depo gonderilip yetki yoksa `403 Forbidden` doner.
 
-## 24. Exception ve Hata Yonetimi
+## Hata Yonetimi
 
-Projede merkezi exception middleware bulunur.
+Merkezi exception middleware hata cevaplarini `ProblemDetails` olarak doner.
 
 Genel eslesmeler:
 
 ```text
-ArgumentException         -> 400 Bad Request
+ArgumentException           -> 400 Bad Request
 UnauthorizedAccessException -> 401 Unauthorized
-InvalidOperationException -> 409 Conflict
-KeyNotFoundException      -> 404 Not Found
-Diger exception'lar       -> 500 Internal Server Error
+ForbiddenAccessException    -> 403 Forbidden
+KeyNotFoundException        -> 404 Not Found
+InvalidOperationException   -> 409 Conflict
+TimeoutException            -> 504 Gateway Timeout
+Diger hatalar               -> 500 Internal Server Error
 ```
 
 Controller icinde gereksiz `try/catch` yazmak yerine anlamli exception firlatmak tercih edilir.
 
-## 25. Background Job ve Entegrasyonlar
+## E-Irsaliye Akisi
 
-Projede sadece request-response endpoint'leri yoktur. Uzun surebilecek isler background worker ile islenebilir.
+E-irsaliye gonderimi mevcut Mikro evraklarindan uretilir. Yeni sevk/iade kaydi olusturmaz.
 
-### Axata Senkronizasyonu
-
-Ana bilesenler:
+Desteklenen akisler:
 
 ```text
-AxataSynchronizationQueue
-AxataSynchronizationWorker
-AxataSynchronizationScheduler
-AxataSynchronizationExecutionCoordinator
-Task handler'lar
+firma sevki
+firma iadesi
+depolar arasi sevk
+depo iadesi
 ```
 
-Akis:
+Gonderim request'i ortak model kullanir:
 
 ```text
-Is kuyruga eklenir.
-Worker isi alir.
-Ilgili task handler calisir.
-Sonuc audit/log olarak islenir.
-Scheduler aktifse belirli araliklarla otomatik is uretir.
+SendEDespatchHttpRequest
 ```
 
-### Operations Dosya Uretimi
-
-Ana bilesenler:
+Sofor bilgisi iki sekilde gelir:
 
 ```text
-OperationsJobQueue
-OperationsJobWorker
-OperationsService
-OperationsFileGenerationService
+driverId yoksa:
+  plaque, driverNameSurname, driverTckn manuel zorunlu
+
+driverId varsa:
+  backend Auth DB despatch_drivers tablosundan aktif soforu okur
+  bos gelen alanlari kayittan doldurur
+  dolu manuel alanlar kaydin ustune yazilir
 ```
 
-Amac:
+Bu sayede UI ister eski gibi elle giris yapar, ister kayitli sofor secip otomatik doldurur.
+
+UBL tarafinda `DriverPerson` sirasi:
 
 ```text
-Uzun surebilecek dosya uretimini HTTP request disina tasimak.
-Kullaniciya job id vermek.
-Sonra job durumunu sorgulatmak.
+FirstName
+FamilyName
+NationalityID
 ```
 
-## 26. Modul Gruplari
+Bu sira Uyumsoft XML schema hatalarini onlemek icin korunmalidir.
 
-Projede ana module gruplari PermissionCatalog icinde gorulebilir.
+## Soforler Modulu
+
+Sofor tanimlari Auth DB'dedir:
+
+```text
+despatch_drivers
+```
+
+Endpointler:
+
+```text
+GET    /api/ayar-islemleri/soforler
+GET    /api/ayar-islemleri/soforler/{id}
+POST   /api/ayar-islemleri/soforler
+PUT    /api/ayar-islemleri/soforler/{id}
+DELETE /api/ayar-islemleri/soforler/{id}
+```
+
+Yetki modeli:
+
+```text
+ayar-islemleri.soforler.manage -> ekran/route
+ayar-islemleri.soforler.list   -> liste/arama
+ayar-islemleri.soforler.detail -> detay
+ayar-islemleri.soforler.create -> ekle
+ayar-islemleri.soforler.update -> guncelle
+ayar-islemleri.soforler.delete -> pasife al
+```
+
+Delete fiziksel silmez; kaydi pasife alir. E-irsaliye gonderiminde sadece aktif soforler cozulur.
+
+## GreenGrocer / Manav Kasa Mantigi
+
+GreenGrocer manav depo siparis/sevk isini daha dogru anlamak icin eklenen ozel bolumdur.
+
+Konfig:
+
+```json
+{
+  "GreenGrocerProductCases": {
+    "Enabled": true,
+    "OrderLinkingEnabled": false
+  }
+}
+```
+
+Anlam:
+
+```text
+Enabled
+  kasa profil/cozumleme modulu tamamen acik mi?
+
+OrderLinkingEnabled
+  manav sevkinde siparis satiri GUID linki aktif mi?
+```
+
+Auth DB tablolari:
+
+```text
+green_grocer_product_case_profiles
+green_grocer_order_line_snapshots
+```
+
+Temel is kurali:
+
+```text
+Subeler manav siparisini kasa adedi gibi girer.
+Mikro ana birim KG/ADET oldugu icin miktar Mikro'da farkli gorunebilir.
+API kasa profilinden veya etiket gecmisinden ortalama kg/kasa hesaplar.
+UI hem kasa adedini hem tahmini KG bilgisini gosterir.
+Sevk tarafinda gercek okutulan KG/ADET Mikro hareket miktaridir.
+```
+
+Order linking kapaliyken:
+
+```text
+sourceWarehouseNo = 56
+model kodu 10/11/12 olan manav urunlerinde
+warehouseOrderLineGuid yok sayilir
+eski canli mantik korunur
+```
+
+Order linking acikken:
+
+```text
+UI gercek siparis satiri GUID'ini gonderir.
+Sevk siparise baglanir.
+Kalan/teslim miktari kurallari calisir.
+```
+
+Detayli dokuman:
+
+[MANAV_KASA_SIPARIS_SEVK_AKISI.md](MANAV_KASA_SIPARIS_SEVK_AKISI.md)
+
+## Barkod Cozumleme ve Arama
+
+Barkod arama/okutma tarafinda yeni merkezi cozumleme akisi bulunur.
+
+Ana hedef:
+
+```text
+barkod bulundu mu?
+urun barkodu mu, koli barkodu mu, alternatif barkod mu?
+koli ici adet nedir?
+islem icin uygun mu?
+sevk/siparis/iade/fire icin blok/uyari var mi?
+```
+
+Detayli dokuman:
+
+[BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md](BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md)
+
+## Document Flow
+
+Belge akis izleme Auth DB tarafindadir:
+
+```text
+document_flows
+document_flow_events
+```
+
+Siparis, sevk, iade, mal kabul ve e-irsaliye adimlari burada izlenebilir.
+
+Kullanim:
+
+```text
+home oncelik kartlari
+operasyon paneli
+basarisiz e-irsaliye takibi
+bekleyen mal kabul takibi
+```
+
+Bu tablolar Mikro evraginin yerine gecmez; operasyonel takip/audit icindir.
+
+## Background Jobs
+
+Projede uzun surebilecek isler queue/worker ile calisir.
 
 Ornekler:
 
 ```text
-kullanici-islemleri
-arama-islemleri
-green-grocer
-ortak-islemler
-ayar-islemleri
-siparis-islemleri
-sevk-islemleri
-iade-islemleri
-mal-kabul-islemleri
-stok-islemleri
-rapor-islemleri
-operasyon-islemleri
-duzeltme-islemleri
-entegrasyon-islemleri
-fatura-islemleri
-kasa-islemleri
+AxataSynchronizationQueue / Worker / Scheduler
+OperationsJobQueue / Worker
+InvoiceViewingAutomaticSynchronizationScheduler
+InvoiceViewingSynchronizationJobQueue
 ```
 
-Yeni ekran eklenirken once hangi module altina girecegi netlestirilmelidir.
-
-## 27. Yeni Modul veya Endpoint Eklerken Genel Yol
-
-Genel adimlar:
+Amaç:
 
 ```text
-1. Module/menu/action karari ver.
-2. PermissionCatalog.cs icine gerekli permission'lari ekle.
-3. Controller route ve policy const'larini yaz.
-4. Application katmaninda request/response/interface ekle.
-5. Infrastructure katmaninda implementation yaz.
-6. QueryExecutor veya WriteService gerekiyorsa ekle.
-7. DI kaydini ekle.
-8. Permission migration gerekip gerekmedigine karar ver.
-9. Frontend route/menu/buton gorunurlugunu permission'a bagla.
-10. Kullanici/role yetki atamasini yap.
-11. Kullaniciya tekrar login yaptir veya token yenilet.
+HTTP request'i uzun is boyunca bloklamamak
+progress/status bilgisini ayri endpoint ile gostermek
+tekrar deneme ve audit davranisini merkezi yapmak
 ```
 
-Detayli permission/migration adimlari icin:
+## Mikro REST API Client
+
+Mikro REST API altyapisi:
+
+```text
+src/FurpaMerkezApi.Infrastructure/Services/MikroApi
+```
+
+Ana siniflar:
+
+```text
+MikroApiClient
+MikroApiOptions
+MikroApiAuthBlockFactory
+MikroApiResult
+MikroApiException
+MikroApiWriteAuditService
+```
+
+Mikro REST API controller'a dogrudan baglanmamalidir. Use case veya write service icinden kullanilmalidir.
+
+Detayli dokumanlar:
+
+- [MIKRO_REST_API_GECIS_ANALIZI.md](MIKRO_REST_API_GECIS_ANALIZI.md)
+- [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md)
+
+## Yeni Modul veya Endpoint Ekleme
+
+Genel yol:
+
+```text
+1. Module/menu/action kararini ver.
+2. PermissionCatalog.cs icine yetkileri ekle.
+3. Controller route ve policy const'larini yaz.
+4. Application request/response/interface ekle.
+5. Infrastructure implementation yaz.
+6. DbContext/QueryExecutor/WriteService gerekiyorsa ekle.
+7. DI kaydini yap.
+8. Auth entity veya permission seed varsa migration olustur.
+9. UI_API_DOKUMANI.md guncelle.
+10. Frontend menu/route/buton gorunurlugunu permission'a bagla.
+11. Build/test ve pending migration kontrolu yap.
+```
+
+Detay:
 
 [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 
-## 28. Migration Ne Zaman Gerekir?
+## Migration Ne Zaman Gerekir?
 
-Bu konu projede kritik.
-
-### AuthDbContext Icin Gerekir
-
-Su durumlarda Auth migration gerekir:
+AuthDbContext icin migration gerekir:
 
 ```text
-Auth entity semasi degisirse
-Yeni auth tablosu eklenirse
-Auth seed verisi kontrollu deployment ile tasinacaksa
-Permission'lar production'a migration ile gidecekse
+yeni Auth entity/tablo
+entity kolon/iliski degisikligi
+permission seed degisikligi kontrollu deployment ile tasinacaksa
+GreenGrocer profil/snapshot gibi Auth DB tablolari
+despatch_drivers gibi tanim tablolari
 ```
 
-PermissionCatalog startup senkronizasyonu permission'lari DB'ye ekleyebilir. Ancak production icin en kontrollu yontem yeni permission'lari migration ile tasimaktir.
+FurpaDbContext icin migration sadece API'nin sahip oldugu Furpa tablo semasi degisiyorsa dusunulur.
 
-### FurpaDbContext Icin Gerekebilir
+MikroDbContext icin normalde migration yazilmaz; Mikro harici ERP semasidir.
 
-Furpa tarafinda API'nin sahip oldugu tablo semasi degisiyorsa migration gerekebilir.
-
-Ornek:
+Sadece su degisikliklerde genelde migration gerekmez:
 
 ```text
-LabelDocuments benzeri API tablolari
-Feedback veya operasyon destek tablolari
-Yeni EF entity ile fiziksel tablo beklenmesi
+yeni controller action
+yeni query/use case
+yeni DTO
+sadece endpoint davranisi
+sadece dokuman guncellemesi
 ```
 
-### MikroDbContext Icin Genelde Gerekmez
+Kontrol komutu:
 
-Mikro harici sistemdir. Mikro tablo semasi normalde bu API migration'lari ile yonetilmez.
-
-### Sadece Kod Degisikliginde Gerekmez
-
-Genelde migration gerekmez:
-
-```text
-Yeni controller action
-Yeni query/use case
-Yeni DTO
-Sadece endpoint davranisi degisikligi
-Sadece frontend menu gorunurlugu degisikligi
+```powershell
+dotnet ef migrations has-pending-model-changes --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
 ```
 
-Ama yeni permission production'a garanti gitsin isteniyorsa permission migration yazilmalidir.
+## Build ve Test
 
-## 29. Secret ve Config Kurallari
+Genel dogrulama:
 
-Secret yonetiminde temel kural:
-
-```text
-Gercek sifre, API key, JWT secret ve connection string public repo veya paylasimli dokumanda tutulmaz.
+```powershell
+dotnet build FurpaMerkezApi.sln
+dotnet test FurpaMerkezApi.sln --no-build
+dotnet ef migrations has-pending-model-changes --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
 ```
 
-Lokal calisma:
+API acilisinda pending model hatasi gorulurse once migration/snapshot uyumu kontrol edilmelidir.
+
+## Secret ve Config Kurallari
+
+Gercek sifre, API key, JWT secret ve connection string track edilen dosyalara yazilmamalidir.
+
+Local override:
 
 ```text
 src/FurpaMerkezApi.WebApi/appsettings.Local.json
 ```
 
-Bu dosya opsiyonel olarak okunur ve local override icin kullanilir. Repoya gonderilmemelidir.
-
 Production:
 
 ```text
-Environment variable
-Server-side config
-Secret manager
-Deployment pipeline secret store
+environment variable
+server-side config
+secret manager
+deployment pipeline secret store
 ```
 
-Eger bir secret track edilen dosyaya yazilip push edilirse:
+Secret yanlislikla paylasildiysa sadece dosyadan silmek yetmez; secret rotate edilmelidir.
 
-```text
-Sonradan silmek tek basina yeterli degildir.
-Secret rotate edilmelidir.
-```
+## Kod Okuma Sirasi
 
-Production validasyonlari:
-
-```text
-AuthConnection zorunlu
-FurpaConnection zorunlu
-Mikro read/write connection zorunlu
-Axata aciksa AxataConnection zorunlu
-JWT SecretKey placeholder olamaz
-HTTPS veya reverse proxy ayari zorunlu
-```
-
-## 30. Kod Okumaya Nereden Baslanmali?
-
-Projeyi ilk kez okuyacak biri icin tavsiye edilen sira:
+Projeyi ilk kez okuyacak biri icin:
 
 1. [../README.md](../README.md)
 2. [README.md](README.md)
 3. [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md)
 4. `src/FurpaMerkezApi.WebApi/Program.cs`
-5. `src/FurpaMerkezApi.WebApi/Configuration/ServiceCollectionExtensions.cs`
-6. `src/FurpaMerkezApi.Infrastructure/DependencyInjection/ServiceCollectionExtensions.cs`
-7. `src/FurpaMerkezApi.Application/Security/PermissionCatalog.cs`
-8. `src/FurpaMerkezApi.Infrastructure/Services/AuthService.cs`
-9. `src/FurpaMerkezApi.Infrastructure/Authentication/JwtTokenFactory.cs`
-10. Ilgili module controller'i
-11. Controller'in kullandigi Application interface'i
-12. Infrastructure implementation
-13. QueryExecutor veya WriteService
+5. `src/FurpaMerkezApi.Infrastructure/DependencyInjection/ServiceCollectionExtensions.cs`
+6. `src/FurpaMerkezApi.Application/Security/PermissionCatalog.cs`
+7. `src/FurpaMerkezApi.Infrastructure/Services/AuthService.cs`
+8. `src/FurpaMerkezApi.Infrastructure/Authentication/JwtTokenFactory.cs`
+9. Ilgili controller
+10. Controller'in kullandigi Application interface'i
+11. Infrastructure implementation
+12. QueryExecutor veya WriteService
 
-Mikro REST API icin:
+Ozel konular:
 
-- `src/FurpaMerkezApi.Infrastructure/Services/MikroApi`
-- [MIKRO_REST_API_GECIS_ANALIZI.md](MIKRO_REST_API_GECIS_ANALIZI.md)
-- [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md)
+```text
+Yetki/migration:
+  YENI_MENU_YETKI_MIGRATION_REHBERI.md
 
-Permission/migration icin:
+UI endpoint:
+  UI_API_DOKUMANI.md
 
-[YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
+Manav kasa:
+  MANAV_KASA_SIPARIS_SEVK_AKISI.md
 
-## 31. Sik Yapilan Hatalar
+Barkod:
+  BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md
+
+Etiket basim:
+  ETIKET_BASIM_API.md
+
+E-fatura / e-irsaliye:
+  E_FATURA_E_IRSALIYE_SERVIS_DOKUMANI.md
+```
+
+## Sik Yapilan Hatalar
 
 ### DB'ye Permission Ekleyince Menu Olusacak Sanmak
 
-Yanlis:
-
-```text
-app_permissions tablosuna kayit attim, modul/menu otomatik olusur.
-```
-
-Dogru:
+Dogru model:
 
 ```text
 PermissionCatalog'a eklenir.
@@ -946,118 +936,83 @@ Frontend menu/route tanimi yapilir.
 DB sadece permission kaydi ve rol baglantisini tutar.
 ```
 
+### List Yetkisini Route Yetkisi Gibi Kullanmak
+
+Dogru model:
+
+```text
+normal ekran -> *.page
+yonetim ekran -> *.manage
+API liste -> *.list
+```
+
 ### Role Permission Atarken Sadece Yeni Permission Gondermek
 
-Yanlis:
+`POST /api/roles/{id}/permissions` mevcut listeyi bastan yazar. Tum permission ID listesi gonderilmelidir.
 
-```text
-POST /api/roles/{id}/permissions -> sadece yeni permission ID
-```
+### Yetki Verip Eski Token ile Test Etmek
 
-Dogru:
-
-```text
-Rolun sahip olmasi gereken tum permission ID listesi gonderilir.
-```
-
-### Kullaniciya Yetki Verilip Eski Token ile Test Etmek
-
-Yanlis:
-
-```text
-Role yetki verdim ama kullanici hala 403 aliyor, sistem bozuk.
-```
-
-Dogru:
-
-```text
-Kullanici yeniden login olmali veya token yenilenmeli.
-```
+Kullanici yeniden login olmadan JWT icindeki permission claim'leri degismez.
 
 ### Controller'a DB/Integration Detayi Koymak
 
-Yanlis:
+Controller use case/service cagirir. DB ve entegrasyon detayi Infrastructure icinde kalir.
 
-```text
-Controller icinde kompleks EF query veya Mikro API payload hazirlamak.
-```
+### Timeout Sonrasi Tekrar Tekrar Create Basmak
 
-Dogru:
-
-```text
-Controller use case/service cagirir.
-DB ve entegrasyon detayi Infrastructure icinde kalir.
-```
+Internet zayifsa istemci timeout olabilir ama API yazma islemi DB'de tamamlanmis olabilir. UI once evrak olustu mu kontrol etmelidir.
 
 ### Mikro REST API'ye Toplu ve Kontrolsuz Gecmek
 
-Yanlis:
+Mikro REST gecisi modul bazli yapilmalidir. Payload, response, duplicate, seri/sira ve geri okuma dogrulamalari test edilmelidir.
+
+## Kisa Zihinsel Model
+
+Katman:
 
 ```text
-Mevcut DB write akislarini tek seferde Mikro REST'e tasimak.
-```
-
-Dogru:
-
-```text
-Modul bazli pilot gecis.
-Payload ve response semasini test etmek.
-Gerekirse DB'den geri okuma ile dogrulamak.
-Duplicate ve seri/sira/GUID riskini kontrol etmek.
-```
-
-## 32. Kisa Zihinsel Model
-
-Projeyi akilda tutmanin en kolay hali:
-
-```text
-Domain         -> cekirdek entity ve temel kurallar
-Application    -> kontratlar, DTO'lar, permission dili
-Infrastructure -> DB, servis, use case implementation, entegrasyon
+Domain         -> entity ve temel kurallar
+Application    -> kontrat, DTO, permission dili
+Infrastructure -> DB, servis, use case, entegrasyon
 WebApi         -> HTTP giris kapisi
 ```
 
-Bir kullanicinin erisim modeli:
+Yetki:
 
 ```text
-User -> Role -> Permission -> JWT Claim -> Policy -> Endpoint
+PermissionCatalog -> DB permission -> Role -> User -> JWT claim -> Policy -> Endpoint
 ```
 
-Bir menu'nun modeli:
+Menu:
 
 ```text
-PermissionCatalog -> Permission Tree -> auth/me -> Frontend Menu
+*.page / *.manage -> route/menu
+*.list/detail/... -> API ve buton
+*.all-warehouses  -> depo secici
 ```
 
-Bir endpoint'in modeli:
+Endpoint:
 
 ```text
-Controller -> UseCase -> QueryExecutor/WriteService -> Db/Integration -> DTO
+Controller -> UseCase/Service -> QueryExecutor/WriteService -> DB/Integration -> DTO
 ```
 
-Bir permission'in dogru yasam dongusu:
+Migration:
 
 ```text
-PermissionCatalog'a ekle
-DB'ye senkronla veya migration ile tasi
-Role'e ata
-Kullaniciyi yeniden login ettir
-Endpoint'te policy olarak kullan
-Frontend'de menu/buton gorunurlugune bagla
+Model veya seed degisti -> migration
+Migration eklendi -> snapshot kontrol
+Snapshot temiz -> build/test
 ```
 
-## 33. Ilgili Dokumanlar
+## Ilgili Dokumanlar
 
-Dokumanlar artik `docs/` klasoru altinda toplanir. Ana indeks:
-
-[README.md](README.md)
-
-Genel ve yetki:
+Genel:
 
 - [../README.md](../README.md)
 - [README.md](README.md)
-- [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 - [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md)
+- [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
 - [PRODUCTION_HAZIRLIK.md](PRODUCTION_HAZIRLIK.md)
 
 Operasyon:
@@ -1066,25 +1021,17 @@ Operasyon:
 - [OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md](OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md)
 - [STOK_ANOMALI_MERKEZI.md](STOK_ANOMALI_MERKEZI.md)
 
-Fatura ve muhasebe:
+Fatura ve entegrasyon:
 
 - [FATURA_GONDERIM_SISTEMI.md](FATURA_GONDERIM_SISTEMI.md)
+- [E_FATURA_E_IRSALIYE_SERVIS_DOKUMANI.md](E_FATURA_E_IRSALIYE_SERVIS_DOKUMANI.md)
 - [UBL_FATURA_MANTIGI.md](UBL_FATURA_MANTIGI.md)
 - [MIKRO_MUHASEBE_AKIS_REHBERI.md](MIKRO_MUHASEBE_AKIS_REHBERI.md)
 
-Mal kabul, siparis ve stok:
+Mikro ve modul rehberleri:
 
-- [DEPO_MAL_KABUL_ISLEYIS.md](DEPO_MAL_KABUL_ISLEYIS.md)
-- [FIRMA_MAL_KABUL_SENARYO.md](FIRMA_MAL_KABUL_SENARYO.md)
-- [DEPO_ONERILEN_SIPARIS.md](DEPO_ONERILEN_SIPARIS.md)
-- [FIRMA_ONERILEN_SIPARIS.md](FIRMA_ONERILEN_SIPARIS.md)
-
-Mikro ve entegrasyon:
-
-- [MIKRO_PROSEDUR_ANALIZI.md](MIKRO_PROSEDUR_ANALIZI.md)
 - [MIKRO_REST_API_GECIS_ANALIZI.md](MIKRO_REST_API_GECIS_ANALIZI.md)
 - [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md)
-- [AXATA_ENTEGRASYON_ALTYAPISI.md](AXATA_ENTEGRASYON_ALTYAPISI.md)
-
-Bu dosya buyuk resmi anlatir. Modul veya entegrasyon bazli detaylar icin ilgili
-dokumana bakilmalidir.
+- [BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md](BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md)
+- [MANAV_KASA_SIPARIS_SEVK_AKISI.md](MANAV_KASA_SIPARIS_SEVK_AKISI.md)
+- [ETIKET_BASIM_API.md](ETIKET_BASIM_API.md)
