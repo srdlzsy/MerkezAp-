@@ -45,12 +45,12 @@ public sealed class GreenGrocerOperationsUseCase(
         CancellationToken cancellationToken)
     {
         var normalized = NormalizeOverview(request);
-        var warehouseNameTask = GetWarehouseNameAsync(normalized.WarehouseNo, cancellationToken);
         var rows = await ListOperationRowsAsync(normalized, cancellationToken);
         var caseInfoByStockCode = await GetOrderCaseInfoByStockCodeAsync(
             normalized,
             rows.Select(row => row.StockCode).ToArray(),
             cancellationToken);
+        var warehouseName = await GetWarehouseNameAsync(normalized.WarehouseNo, cancellationToken);
 
         var items = rows
             .Select(row => BuildItem(row, caseInfoByStockCode.GetValueOrDefault(row.StockCode)))
@@ -75,7 +75,7 @@ public sealed class GreenGrocerOperationsUseCase(
 
         return new GreenGrocerOperationsOverviewDto(
             normalized.WarehouseNo,
-            await warehouseNameTask,
+            warehouseName,
             normalized.StartDate,
             normalized.EndDate,
             items.Length,
