@@ -160,7 +160,7 @@ public sealed class CashSummaryLookupsUseCase(
                 orderby paymentType.PaymentName, cashRegister.TerminalId
                 select new
                 {
-                    paymentType.PaymentName,
+                    PaymentName = paymentType.PaymentName ?? string.Empty,
                     paymentType.PaymentTypeNo,
                     AccountCode = paymentType.AccountCode ?? string.Empty,
                     TerminalId = cashRegister.TerminalId ?? string.Empty
@@ -222,6 +222,12 @@ public sealed class CashSummaryLookupsUseCase(
         var paymentTypes = await mikroDbContext.PaymentTypes
             .AsNoTracking()
             .OrderBy(item => item.PaymentName)
+            .Select(item => new
+            {
+                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentTypeNo,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
             .ToArrayAsync(cancellationToken);
 
         return paymentTypes
@@ -244,6 +250,12 @@ public sealed class CashSummaryLookupsUseCase(
             .AsNoTracking()
             .Where(item => item.PaymentGenus == paymentGenus)
             .OrderBy(item => item.PaymentName)
+            .Select(item => new
+            {
+                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentTypeNo,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
             .ToArrayAsync(cancellationToken);
 
         return paymentTypes
