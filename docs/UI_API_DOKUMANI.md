@@ -10716,6 +10716,8 @@ Route'lar:
 
 `odeme-tipleri/banka` eski `Summaries/GetPaymentTypesByBanks` davranisi ile uyumludur. Backend `cashRegisterNo` ile `CashRegisterDetails` satirlarini bulur, bu satirlardaki `Bank` degeri ile `PaymentTypes.PaymentName` alanini eslestirir ve sadece `PaymentGenus = 1` banka odeme tiplerini dondurur. Ayni kasa numarasina bagli birden fazla banka/terminal varsa response birden fazla satir dondurur; UI bunlari tek bankaya dusurmemelidir. `terminalId` ilgili `CashRegisterDetails.TerminalId`, `accountCode` ilgili `PaymentTypes.AccountCode` degeridir.
 
+`odeme-tipleri/yemek-ceki` response'unda yemek ceki tipi adi `paymentName` alanindadir. Backend eski API ile uyumlu olarak `PaymentTypes.PaymentGenus = 2` olan yemek ceki odeme tiplerini listeler ve `accountCode` alanini `PaymentTypes.AccountCode` degeriyle doldurur. UI yemek ceki seciminde gorunen ad olarak `paymentName`, kayit payload'inda odeme tipi olarak `paymentTypeNo` kullanmalidir.
+
 Kisa response ornekleri:
 
 ```json
@@ -10746,6 +10748,23 @@ Kisa response ornekleri:
 ```json
 [
   {
+    "value": 1,
+    "quantity": 0,
+    "total": 0,
+    "giftCheckType": 11
+  },
+  {
+    "value": 25,
+    "quantity": 0,
+    "total": 0,
+    "giftCheckType": 1
+  }
+]
+```
+
+```json
+[
+  {
     "paymentName": "Akbank",
     "paymentTypeNo": 1,
     "terminalId": "TERM-01",
@@ -10758,6 +10777,29 @@ Kisa response ornekleri:
     "paymentTypeNo": 2,
     "terminalId": "TERM-02",
     "accountCode": "108.01.002",
+    "slipNumber": 0,
+    "amountValue": 0
+  }
+]
+```
+
+`odeme-tipleri/yemek-ceki` response ornegi:
+
+```json
+[
+  {
+    "paymentName": "Sodexo POS",
+    "paymentTypeNo": 50,
+    "terminalId": "",
+    "accountCode": "108.02.001",
+    "slipNumber": 0,
+    "amountValue": 0
+  },
+  {
+    "paymentName": "Ticket POS",
+    "paymentTypeNo": 52,
+    "terminalId": "",
+    "accountCode": "108.02.002",
     "slipNumber": 0,
     "amountValue": 0
   }

@@ -180,9 +180,7 @@ public sealed class CashSummaryLookupsUseCase(
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListFoodCheckPaymentTypesAsync(
         CancellationToken cancellationToken) =>
-        await ListPaymentTypesByPredicateAsync(
-            CashSummaryCategoryMatcher.IsFoodCheckPaymentType,
-            cancellationToken);
+        await ListPaymentTypesByGenusAsync(2, cancellationToken);
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListOnlineSalesPaymentTypesAsync(
         CancellationToken cancellationToken) =>
@@ -232,7 +230,28 @@ public sealed class CashSummaryLookupsUseCase(
                 item.PaymentName,
                 item.PaymentTypeNo,
                 string.Empty,
+                item.AccountCode ?? string.Empty,
+                0,
+                0d))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListPaymentTypesByGenusAsync(
+        int paymentGenus,
+        CancellationToken cancellationToken)
+    {
+        var paymentTypes = await mikroDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item => item.PaymentGenus == paymentGenus)
+            .OrderBy(item => item.PaymentName)
+            .ToArrayAsync(cancellationToken);
+
+        return paymentTypes
+            .Select(item => new PaymentTypeItemDto(
+                item.PaymentName,
+                item.PaymentTypeNo,
                 string.Empty,
+                item.AccountCode ?? string.Empty,
                 0,
                 0d))
             .ToArray();
@@ -245,4 +264,5 @@ public sealed class CashSummaryLookupsUseCase(
             throw new ArgumentException("Value must be greater than zero.", paramName);
         }
     }
+
 }
