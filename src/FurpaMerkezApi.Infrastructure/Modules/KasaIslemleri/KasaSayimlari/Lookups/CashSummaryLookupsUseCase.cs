@@ -151,23 +151,28 @@ public sealed class CashSummaryLookupsUseCase(
         }
 
         var cashRegisterNo = request.CashRegisterNo.Trim();
-        var cashRegister = await mikroDbContext.CashRegisterDetails
-            .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.CashRegisterNo == cashRegisterNo, cancellationToken);
-        var bankName = cashRegister?.Bank;
-
-        var paymentTypes = await mikroDbContext.PaymentTypes
-            .AsNoTracking()
-            .OrderBy(item => item.PaymentName)
+        var paymentTypes = await (
+                from paymentType in mikroDbContext.PaymentTypes.AsNoTracking()
+                join cashRegister in mikroDbContext.CashRegisterDetails.AsNoTracking()
+                    on paymentType.PaymentName equals cashRegister.Bank
+                where paymentType.PaymentGenus == 1 &&
+                      cashRegister.CashRegisterNo == cashRegisterNo
+                orderby paymentType.PaymentName, cashRegister.TerminalId
+                select new
+                {
+                    paymentType.PaymentName,
+                    paymentType.PaymentTypeNo,
+                    AccountCode = paymentType.AccountCode ?? string.Empty,
+                    TerminalId = cashRegister.TerminalId ?? string.Empty
+                })
             .ToArrayAsync(cancellationToken);
 
         return paymentTypes
-            .Where(item => CashSummaryCategoryMatcher.IsBankPaymentMatch(item.PaymentName, bankName))
             .Select(item => new PaymentTypeItemDto(
                 item.PaymentName,
                 item.PaymentTypeNo,
-                cashRegister?.TerminalId ?? string.Empty,
-                string.Empty,
+                item.TerminalId,
+                item.AccountCode,
                 0,
                 0d))
             .ToArray();

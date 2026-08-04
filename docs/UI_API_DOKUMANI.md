@@ -10714,6 +10714,8 @@ Route'lar:
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi`
 - `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari`
 
+`odeme-tipleri/banka` eski `Summaries/GetPaymentTypesByBanks` davranisi ile uyumludur. Backend `cashRegisterNo` ile `CashRegisterDetails` satirlarini bulur, bu satirlardaki `Bank` degeri ile `PaymentTypes.PaymentName` alanini eslestirir ve sadece `PaymentGenus = 1` banka odeme tiplerini dondurur. Ayni kasa numarasina bagli birden fazla banka/terminal varsa response birden fazla satir dondurur; UI bunlari tek bankaya dusurmemelidir. `terminalId` ilgili `CashRegisterDetails.TerminalId`, `accountCode` ilgili `PaymentTypes.AccountCode` degeridir.
+
 Kisa response ornekleri:
 
 ```json
@@ -10744,10 +10746,18 @@ Kisa response ornekleri:
 ```json
 [
   {
-    "paymentName": "Akbank POS",
-    "paymentTypeNo": 5,
+    "paymentName": "Akbank",
+    "paymentTypeNo": 1,
     "terminalId": "TERM-01",
-    "accountCode": "",
+    "accountCode": "108.01.001",
+    "slipNumber": 0,
+    "amountValue": 0
+  },
+  {
+    "paymentName": "Halkbank",
+    "paymentTypeNo": 2,
+    "terminalId": "TERM-02",
+    "accountCode": "108.01.002",
     "slipNumber": 0,
     "amountValue": 0
   }

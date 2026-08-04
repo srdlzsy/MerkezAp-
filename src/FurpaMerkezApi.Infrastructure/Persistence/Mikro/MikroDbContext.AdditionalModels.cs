@@ -293,6 +293,7 @@ public partial class MikroDbContext
             entity.HasKey(item => item.PaymentTypeNo);
             entity.Property(item => item.PaymentTypeNo).ValueGeneratedNever();
             entity.Property(item => item.PaymentName).HasMaxLength(100);
+            entity.Property(item => item.AccountCode).HasMaxLength(40);
         });
 
         modelBuilder.Entity<BanknoteTypeEntity>(entity =>

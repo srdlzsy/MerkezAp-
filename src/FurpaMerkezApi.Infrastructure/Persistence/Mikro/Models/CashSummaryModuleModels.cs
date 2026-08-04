@@ -111,6 +111,10 @@ public sealed class PaymentTypeEntity
     public int PaymentTypeNo { get; set; }
 
     public string PaymentName { get; set; } = string.Empty;
+
+    public int PaymentGenus { get; set; }
+
+    public string AccountCode { get; set; } = string.Empty;
 }
 
 public sealed class BanknoteTypeEntity
