@@ -102,7 +102,7 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                 INNER JOIN SonKunye sk
                     ON sk.StokId = ms.Stokid
                     AND sk.RN = 1
-                WHERE s.sto_model_kodu IN ('10', '11', '12')
+                WHERE s.sto_model_kodu IN ('10', '11', '12', '23')
                     AND ISNULL(s.sto_satis_dursun, 0) = 0
                     AND ISNULL(s.sto_siparis_dursun, 0) = 0
                     AND ISNULL(s.sto_malkabul_dursun, 0) = 0

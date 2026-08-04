@@ -7,7 +7,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkle
 internal static class GreenGrocerShipmentLineNormalizer
 {
     private const int GreenGrocerSourceWarehouseNo = 56;
-    private static readonly string[] GreenGrocerModelCodes = ["10", "11", "12"];
+    private static readonly string[] GreenGrocerModelCodes = ["10", "11", "12", "23"];
 
     public static bool IsGreenGrocerSourceWarehouse(int sourceWarehouseNo) =>
         sourceWarehouseNo == GreenGrocerSourceWarehouseNo;

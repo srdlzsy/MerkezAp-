@@ -1,4 +1,4 @@
-namespace FurpaMerkezApi.Application.Security;
+﻿namespace FurpaMerkezApi.Application.Security;
 
 public static class PermissionCatalog
 {
@@ -177,6 +177,13 @@ public static class PermissionCatalog
         AllWarehousesAction
     ];
 
+    private static readonly PermissionActionDefinition[] GreenGrocerOperationsActions =
+    [
+        PageAction,
+        ListAction,
+        CreateAction,
+        AllWarehousesAction
+    ];
     private static readonly PermissionActionDefinition[] EtiketBasimActions =
     [
         PageAction,
@@ -229,6 +236,7 @@ public static class PermissionCatalog
 
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
         ..CreateMenuPermissions("green-grocer", "GreenGrocer", "product-case-profiles", "ProductCaseProfiles", ProductCaseProfileActions),
+        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "operations", "Operations", GreenGrocerOperationsActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "duyurular", "Duyurular", AnnouncementActions),
 
@@ -316,3 +324,5 @@ public static class PermissionCatalog
 
     private sealed record PermissionActionDefinition(string Code, string Name);
 }
+
+

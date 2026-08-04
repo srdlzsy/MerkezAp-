@@ -1,4 +1,4 @@
-# FurpaMerkezApi UI API Dokumani
+﻿# FurpaMerkezApi UI API Dokumani
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
@@ -90,6 +90,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `arama-islemleri` | `cari-bul` | `arama-islemleri.cari-bul.page` | `arama-islemleri.cari-bul.list` | `arama-islemleri.cari-bul.all-warehouses` |
 | `green-grocer` | `reports` | `green-grocer.reports.page` | `green-grocer.reports.list`<br>`green-grocer.reports.detail`<br>`green-grocer.reports.update` | `green-grocer.reports.all-warehouses` |
 | `green-grocer` | `product-case-profiles` | `green-grocer.product-case-profiles.manage` | `green-grocer.product-case-profiles.list`<br>`green-grocer.product-case-profiles.detail`<br>`green-grocer.product-case-profiles.create`<br>`green-grocer.product-case-profiles.update`<br>`green-grocer.product-case-profiles.delete` | `green-grocer.product-case-profiles.all-warehouses` |
+| `green-grocer` | `operations` | `green-grocer.operations.page` | `green-grocer.operations.list`<br>`green-grocer.operations.create` | `green-grocer.operations.all-warehouses` |
 | `ortak-islemler` | `sikayet-oneri` | `ortak-islemler.sikayet-oneri.page` | `ortak-islemler.sikayet-oneri.list`<br>`ortak-islemler.sikayet-oneri.detail`<br>`ortak-islemler.sikayet-oneri.update`<br>`ortak-islemler.sikayet-oneri.list-all` | `-` |
 | `ortak-islemler` | `duyurular` | `ortak-islemler.duyurular.page` | `ortak-islemler.duyurular.list`<br>`ortak-islemler.duyurular.detail`<br>`ortak-islemler.duyurular.create`<br>`ortak-islemler.duyurular.update`<br>`ortak-islemler.duyurular.archive` | `ortak-islemler.duyurular.all-warehouses` |
 | `ayar-islemleri` | `cihazlar` | `ayar-islemleri.cihazlar.manage` | `ayar-islemleri.cihazlar.list`<br>`ayar-islemleri.cihazlar.detail`<br>`ayar-islemleri.cihazlar.create`<br>`ayar-islemleri.cihazlar.update` | `ayar-islemleri.cihazlar.all-warehouses` |
@@ -2456,7 +2457,7 @@ Manav siparis/sevk is kurali:
 - Canli Mikro gecmisinde `56 MANAV DEPO` kaynakli manav siparisleri `DEPOLAR_ARASI_SIPARISLER` uzerinde talep/kasa niyeti gibi kullanilir; `ssip_miktar` Mikro'da stok ana birimi nedeniyle KG/ADET gorunse de sevk limiti olarak yorumlanmaz.
 - Gercek sevk miktari depolar arasi sevkte `STOK_HAREKETLERI.sth_miktar` alanina yazilan KG/ADET degeridir. Bu miktar etiket/terazi barkodu okutularak olusur.
 - Manav sevklerinde siparis satiri teslim kapatma akisi kullanilmaz. Canli DB pratiginde `STOK_HAREKETLERI_EK.sth_subesip_uid` linki ve `ssip_teslim_miktar` guncellemesi yoktur.
-- `GreenGrocerProductCases:OrderLinkingEnabled=false` ise UI manav sevkinde `warehouseOrderLineGuid` gondermemelidir. Gonderilirse backend `sourceWarehouseNo = 56` ve `STOKLAR.sto_model_kodu in ('10','11','12')` olan satirlarda bu GUID'i yok sayar.
+- `GreenGrocerProductCases:OrderLinkingEnabled=false` ise UI manav sevkinde `warehouseOrderLineGuid` gondermemelidir. Gonderilirse backend `sourceWarehouseNo = 56` ve `STOKLAR.sto_model_kodu in ('10','11','12','23')` olan satirlarda bu GUID'i yok sayar.
 - `GreenGrocerProductCases:OrderLinkingEnabled=true` ise UI manav sevkinde gercek siparis satiri GUID'ini `warehouseOrderLineGuid` olarak gonderebilir. Bu durumda sevk satiri siparis satirina baglanir ve kalan/teslim miktari kurallari calisir.
 - Manav raporlarinda siparis miktari "sube talebi/kasa niyeti", sevk miktari ise "gercek KG/ADET" olarak ayri okunmalidir.
 
@@ -2471,8 +2472,14 @@ Yetki:
 - `green-grocer.product-case-profiles.update`: kasa profil kaydetme
 - `green-grocer.product-case-profiles.delete`: kasa profil pasife alma
 - `green-grocer.product-case-profiles.all-warehouses`: tum depo/sube kapsaminda profil ve cozumleme goruntuleme
+- `green-grocer.operations.page`: manav operasyon paneli menu/route gorunurlugu
+- `green-grocer.operations.list`: manav operasyon ozetini ve MNV duzeltme onizlemesini goruntuleme
+- `green-grocer.operations.create`: kontrollu MNV tartim farki/stok duzeltmesi yazma
+- `green-grocer.operations.all-warehouses`: paneli veya duzeltme yazimini farkli depo kapsaminda kullanma
 
 UI notu: `product-case-profiles` ekrani sol menude ve route guard'da sadece `manage` ile acilmalidir. `list/detail/create/update/delete` yetkileri endpoint ve buton aksiyonlari icindir; `all-warehouses` tum depo/sube kapsamidir. Sube kullanicisinda cozumleme/liste yetkisi bulunabilir ama bu durum profil yonetim ekranini acmamalidir.
+
+`operations` ekrani sol menude ve route guard'da `green-grocer.operations.page` ile acilmalidir. Panel verisi ve MNV onizleme icin `list`, yazma/kaydet butonu icin `create`, depo secici icin `all-warehouses` kullanilir.
 
 Tarih query alani:
 
@@ -2486,7 +2493,7 @@ Ortak query:
 date                 opsiyonel; rapor tarihi, verilmezse bugun
 dateToGet            opsiyonel; date icin geriye uyum alias'i
 warehouseNo          opsiyonel; `green-grocer.reports.all-warehouses` yoksa backend JWT deposunu uygular, yetki varsa bos birakilirsa tum subeler
-typeCode             opsiyonel; 10, 11, 12, yesillik veya all/tum
+typeCode             opsiyonel; 10, 11, 12, 23, yesillik, sarf veya all/tum
 search               opsiyonel; urun kodu, urun adi, sube adi veya evrak serisinde arar
 includeLazyBranches  opsiyonel; default true, siparis girmeyen subeleri de dondurur
 take                 opsiyonel; default 1000, max 5000
@@ -2772,6 +2779,263 @@ UI onerisi:
 - Depo siparisi kaydederken `outWarehouseNo=56` ve `resolution-preview` kullanildiysa satirda `quantity = estimatedQuantity` gonderilmeli, response'taki cozumleme bilgileri de `greenGrocerCase` nesnesine aynen tasinmalidir. Backend bu bilgiyi `green_grocer_order_line_snapshots` tablosuna satir GUID'iyle yazar.
 - `isOrderLinkable=true` ve `GreenGrocerProductCases:OrderLinkingEnabled=true` ise sevk ekraninda ilgili siparis satiri GUID'i `warehouseOrderLineGuid` olarak gonderilebilir.
 
+### Manav Operasyon Paneli
+
+Bu panel `56 MANAV DEPO` icin alis, ic tartim farki, sube kasa talepleri, gercek sevk, son sayim ve guncel stok bilgisini tek urun satirinda toplar. Amac kullanicinin "halden fatura ile gelen miktar ne, Furpa ic tartim farki ne, subeler kac kasa istemis, Mikro'ya tahmini kac KG/ADET yazilmis, gercek sevk kac KG/ADET olmus, son sayim ne diyor?" sorularini tek ekrandan cevaplamaktir.
+
+Panel okuma agirliklidir. Yazma sadece yetkili kullanicinin onizleme sonrasi kontrollu MNV tartim farki/stok duzeltmesi olusturmasi icindir. Bu endpoint fatura, siparis, sevk veya sayim evragi olusturmaz; sadece Mikro `STOK_HAREKETLERI` uzerinde `sth_cins=10` olan ic hareket/duzeltme satiri yazar.
+
+Root:
+
+```text
+/api/green-grocer/operations
+```
+
+Yetki:
+
+- `green-grocer.operations.page`: menu/route
+- `green-grocer.operations.list`: overview ve duzeltme onizleme
+- `green-grocer.operations.create`: duzeltme yazma
+- `green-grocer.operations.all-warehouses`: varsayilan 56 disinda depo secme/yazma
+
+#### `GET /api/green-grocer/operations/overview`
+
+Alias:
+
+```text
+GET /api/green-grocer/operations/ozet
+```
+
+Query:
+
+```text
+startDate          opsiyonel; verilmezse endDate - 7 gun
+endDate            opsiyonel; verilmezse bugun
+warehouseNo        opsiyonel; default 56, all-warehouses yoksa JWT deposu uygulanir
+typeCode           opsiyonel; 10, 11, 12, 23, all veya tum
+search             opsiyonel; stok kodu veya stok adinda arar
+onlyWithActivity   opsiyonel; default true, aktivitesi olmayan urunleri gizler
+take               opsiyonel; default 500, max 2000
+```
+
+Kaynak eslesmesi:
+
+- `currentStockQuantity`: `dbo.fn_DepodakiMiktar(stokKodu, warehouseNo, endDate)`
+- `purchaseQuantity`, `purchaseAmount`, `purchaseUnitPrice`: `STOK_HAREKETLERI` alis/fatura hareketleri; `sth_giris_depo_no=warehouseNo`, `sth_tip=0`, `sth_evraktip=3`, `sth_cins=16`
+- `adjustmentInQuantity`, `adjustmentOutQuantity`, `adjustmentNetQuantity`: MNV/MERC ic tartim farki hareketleri; `sth_cins=10`, seri `MNV%` veya `MERC`
+- `orderInputQuantity`: Auth DB `green_grocer_order_line_snapshots.input_quantity`; kullanicinin girdigi kasa/koli miktari
+- `orderEstimatedQuantity`: snapshot uzerindeki tahmini KG/ADET
+- `orderMicroQuantity`: Mikro `DEPOLAR_ARASI_SIPARISLER.ssip_miktar`; manav icin kaynak depo `ssip_cikdepo=warehouseNo`
+- `shipmentQuantity`: `STOK_HAREKETLERI` gercek sevk miktari; `sth_cikis_depo_no=warehouseNo`, `sth_tip=2`, `sth_evraktip=17`, `sth_cins=6`
+- `lastCountQuantity`: `SAYIM_SONUCLARI` icindeki stok bazli son sayim
+
+Response:
+
+```json
+{
+  "warehouseNo": 56,
+  "warehouseName": "MANAV DEPO",
+  "startDate": "2026-08-01T00:00:00",
+  "endDate": "2026-08-04T00:00:00",
+  "productCount": 1,
+  "totalCurrentStockQuantity": 184.35,
+  "totalPurchaseQuantity": 300,
+  "totalPurchaseAmount": 9000,
+  "totalAdjustmentInQuantity": 12.4,
+  "totalAdjustmentOutQuantity": 3.1,
+  "totalAdjustmentNetQuantity": 9.3,
+  "totalOrderInputQuantity": 18,
+  "totalOrderEstimatedQuantity": 225,
+  "totalShipmentQuantity": 210.75,
+  "totalLatestCountQuantity": 180,
+  "statusSummaries": [
+    {
+      "statusCode": "balanced",
+      "statusName": "Dengeli",
+      "productCount": 1,
+      "currentStockQuantity": 184.35,
+      "purchaseQuantity": 300,
+      "adjustmentNetQuantity": 9.3,
+      "orderEstimatedQuantity": 225,
+      "shipmentQuantity": 210.75
+    }
+  ],
+  "items": [
+    {
+      "stockCode": "001082",
+      "stockName": "MNV SEFTALI KG",
+      "modelCode": "10",
+      "unitName": "KG",
+      "currentStockQuantity": 184.35,
+      "purchaseQuantity": 300,
+      "purchaseAmount": 9000,
+      "purchaseUnitPrice": 30,
+      "purchaseDocumentCount": 2,
+      "lastPurchaseDate": "2026-08-04T00:00:00",
+      "lastPurchaseDocument": "FTR-123",
+      "lastSupplierCode": "320.01.001",
+      "lastSupplierName": "HAL TEDARIKCI",
+      "adjustmentInQuantity": 12.4,
+      "adjustmentOutQuantity": 3.1,
+      "adjustmentNetQuantity": 9.3,
+      "adjustmentDocumentCount": 2,
+      "lastAdjustmentDate": "2026-08-04T00:00:00",
+      "lastAdjustmentDocument": "MNVE-45",
+      "lastAdjustmentSeries": "MNVE",
+      "lastAdjustmentReason": "weighing-difference",
+      "orderInputQuantity": 18,
+      "orderEstimatedQuantity": 225,
+      "orderMicroQuantity": 225,
+      "orderLineCount": 8,
+      "orderBranchCount": 5,
+      "shipmentQuantity": 210.75,
+      "shipmentDocumentCount": 3,
+      "shipmentBranchCount": 3,
+      "lastShipmentDate": "2026-08-04T00:00:00",
+      "lastShipmentDocument": "S-456",
+      "lastCountDate": "2026-08-03T00:00:00",
+      "lastCountDocumentNo": 812,
+      "lastCountQuantity": 180,
+      "systemQuantityAtCountDate": 176.2,
+      "countDifferenceAtCountDate": 3.8,
+      "primaryStatusCode": "balanced",
+      "primaryStatusName": "Dengeli",
+      "flags": []
+    }
+  ]
+}
+```
+
+#### `POST /api/green-grocer/operations/adjustments/preview`
+
+Alias:
+
+```text
+POST /api/green-grocer/operations/duzeltmeler/onizleme
+```
+
+Body:
+
+```json
+{
+  "warehouseNo": 56,
+  "direction": "increase",
+  "movementDate": "2026-08-04T00:00:00",
+  "documentSerie": "MNVE",
+  "reasonCode": "weighing-difference",
+  "lines": [
+    {
+      "stockCode": "001082",
+      "quantity": 12.4,
+      "unitPointer": 1,
+      "unitPrice": 0,
+      "description": "Hal faturasi ic tartim farki"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "warehouseNo": 56,
+  "counterWarehouseNo": 1,
+  "direction": "increase",
+  "directionName": "Stok Artis",
+  "documentSerie": "MNVE",
+  "movementType": 0,
+  "movementGenre": 10,
+  "documentType": 12,
+  "reasonCode": "weighing-difference",
+  "reasonName": "Ic Tartim Farki",
+  "lineCount": 1,
+  "totalQuantity": 12.4,
+  "totalAmount": 0
+}
+```
+
+#### `POST /api/green-grocer/operations/adjustments`
+
+Alias:
+
+```text
+POST /api/green-grocer/operations/duzeltmeler
+```
+
+Body:
+
+```json
+{
+  "clientRequestId": "7af26109-960a-46e5-9b3c-9d9c6b6ff6a5",
+  "warehouseNo": 56,
+  "direction": "decrease",
+  "movementDate": "2026-08-04T00:00:00",
+  "documentDate": "2026-08-04T00:00:00",
+  "documentNo": "IC-TARTIM-20260804",
+  "documentSerie": "MNVF",
+  "counterWarehouseNo": 1,
+  "reasonCode": "weighing-difference",
+  "description": "Fatura kg ile ic tartim farki",
+  "creator": "MANAV",
+  "acceptor": "MERKEZ",
+  "lines": [
+    {
+      "stockCode": "001082",
+      "quantity": 3.1,
+      "unitPointer": 1,
+      "unitPrice": 0,
+      "description": "Eksik tartim"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "clientRequestId": "7af26109-960a-46e5-9b3c-9d9c6b6ff6a5",
+  "status": "created",
+  "warehouseNo": 56,
+  "counterWarehouseNo": 1,
+  "direction": "decrease",
+  "documentSerie": "MNVF",
+  "documentOrderNo": 46,
+  "movementDate": "2026-08-04T00:00:00",
+  "documentDate": "2026-08-04T00:00:00",
+  "documentNo": "IC-TARTIM-20260804",
+  "reasonCode": "weighing-difference",
+  "reasonName": "Ic Tartim Farki",
+  "lineCount": 1,
+  "totalQuantity": 3.1,
+  "totalAmount": 0,
+  "connectionStringName": "MikroWriteConnection",
+  "movementGuids": [
+    "49f26b26-9f37-4d64-98e7-1e2f7a5e2d41"
+  ]
+}
+```
+
+Yazma kurallari:
+
+- UI kaydetmeden once mutlaka `adjustments/preview` cagirip kullaniciya hareket tipini, seriyi ve toplam miktari gostermelidir.
+- `clientRequestId` UI kaydetme denemesi basinda uretilir ve timeout/retry durumunda degistirilmez. Yeni GUID uretilirse ayni MNV evragi tekrar yazilabilir.
+- `direction=increase` stok artisi yazar; default seri `MNVE`, Mikro sablonu `sth_evraktip=12`, `sth_tip=0`, `sth_cins=10`.
+- `direction=decrease` stok azalisi yazar; default seri `MNVF`, Mikro sablonu `sth_evraktip=0`, `sth_tip=1`, `sth_cins=10`.
+- `MNVE`, `MNVG`, `MNVI` sadece artis icin; `MNVF` sadece azalis icin kullanilir.
+- Sadece `sto_model_kodu` `10`, `11`, `12`, `23` olan manav/yesillik/sarf urunleri yazilabilir.
+- Endpoint `MikroWriteConnection` ile yazar ve her satirin aciklamasina trace anahtari ekler. Timeout sonrasi ayni `clientRequestId` ile tekrar denenirse backend onceki kaydi bulup ayni cevabi toparlamaya calisir.
+- Bu endpoint Mikro alis faturasi, depo siparisi, depolar arasi sevk veya sayim sonucu olusturmaz. O evraklar kendi ekranlarindan yonetilmeye devam eder.
+
+UI onerisi:
+
+- Panel ilk acilista `overview` ile son 7 gunu getirir.
+- Satirda kullaniciya `alis`, `MNV net fark`, `sube kasa talebi`, `tahmini KG/ADET`, `gercek sevk`, `son sayim`, `guncel stok` kolonlari birlikte gosterilir.
+- `green-grocer.operations.create` yoksa MNV duzeltme butonu hic gosterilmez.
+- Yazma ekraninda kullanici `increase/decrease`, stok, miktar, aciklama ve gerekirse seri secer; once onizleme, sonra kaydetme yapilir.
+- Kaydet butonu pending iken kilitlenir. Timeout olursa UI ayni `clientRequestId` ile tekrar dener ve basarili response geldikten sonra paneli yeniler.
+
 Tip secenekleri:
 
 `GET /api/green-grocer/reports/type-options`
@@ -2793,6 +3057,11 @@ Response:
     "typeCode": "12",
     "typeName": "Yesillik",
     "isGreens": true
+  },
+  {
+    "typeCode": "23",
+    "typeName": "Manav Sarf",
+    "isGreens": false
   }
 ]
 ```
@@ -2873,7 +3142,7 @@ Alias:
 
 Amac:
 
-- `DEPOLAR_ARASI_SIPARISLER` kayitlarini `STOKLAR.sto_model_kodu in ('10','11','12')` filtresiyle urun/tip bazinda toplar.
+- `DEPOLAR_ARASI_SIPARISLER` kayitlarini `STOKLAR.sto_model_kodu in ('10','11','12','23')` filtresiyle urun/tip bazinda toplar.
 
 Response item:
 
@@ -4312,7 +4581,7 @@ Onemli not:
 - Satirda `warehouseOrderLineGuid` verilirse depo siparis satirina baglanir. `MikroWriteRouting:InterWarehouseShipment=Database` modunda backend `STOK_HAREKETLERI_EK.sth_subesip_uid` linkini DB'de kurar; `MikroApi` modunda ayni GUID `DahiliStokHareketKaydetV2` satirina `sth_subesip_uid` olarak gonderilir ve link/teslim etkisi Mikro tarafina birakilir.
 - `warehouseOrderLineGuid` verilmezse satir normalde siparissiz sevk olarak olusur; otomatik depo siparisi kurali devredeyse backend once Mikro API ile depo siparisi olusturup satiri bu yeni siparis GUID'ine baglar.
 - Siparise bagli satirda stok kodu, kaynak depo, hedef depo ve kalan miktar kontrol edilir.
-- Manav istisnasi: `sourceWarehouseNo = 56` ve stok model kodu `10`, `11` veya `12` ise `GreenGrocerProductCases:OrderLinkingEnabled=false` durumunda satirdaki `warehouseOrderLineGuid` yok sayilir, otomatik depo siparisi/linki uretilmez ve kalan siparis miktari kontrolu uygulanmaz. `OrderLinkingEnabled=true` ise UI'nin gonderdigi gercek siparis satiri GUID'i korunur, sevk siparise baglanir ve kalan/teslim miktari kontrolleri calisir. Bu satirlarda `quantity` gercek okutulan KG/ADET sevk miktaridir.
+- Manav istisnasi: `sourceWarehouseNo = 56` ve stok model kodu `10`, `11`, `12` veya `23` ise `GreenGrocerProductCases:OrderLinkingEnabled=false` durumunda satirdaki `warehouseOrderLineGuid` yok sayilir, otomatik depo siparisi/linki uretilmez ve kalan siparis miktari kontrolu uygulanmaz. `OrderLinkingEnabled=true` ise UI'nin gonderdigi gercek siparis satiri GUID'i korunur, sevk siparise baglanir ve kalan/teslim miktari kontrolleri calisir. Bu satirlarda `quantity` gercek okutulan KG/ADET sevk miktaridir.
 - Plaka, sofor adi ve TCKN bu create request'inde gonderilmez. E-irsaliye gonderiminde manuel akista bu alanlar zorunludur; kayitli sofor secilirse `driverId` yeterlidir.
 
 Siparissiz request:
@@ -7460,7 +7729,7 @@ Not:
 - response modeli `KunyeLabelTagDto` doner
 - veri Mikro `dbo.STOKLAR`, `[KUNYENET].[dbo].[MuhStok]`, `[KUNYENET].[dbo].[FaturaIslem]` ve `[Furpa].[dbo].[VwKunyeNet]` joinlerinden okunur
 - `FaturaIslem.StokId` bazinda `ROW_NUMBER() OVER (PARTITION BY StokId ORDER BY ShippingDate DESC)` kullanilarak her stok icin son kunye kaydi secilir
-- sadece Mikro `STOKLAR.sto_model_kodu` degeri `10`, `11`, `12` olan stoklar doner
+- sadece Mikro `STOKLAR.sto_model_kodu` degeri `10`, `11`, `12`, `23` olan stoklar doner
 - `salesPrice` alani Mikro `dbo.fn_StokSatisFiyati(stockCode, '1', branchNo, '1')` fonksiyonundan gelir
 - `dateToGet` verilirse tarih filtresi secilen gunun tamamini kapsar; verilmezse `ShippingDate` son 1 ay ile sinirlanir
 - liste `ShippingDate desc` siralanir
@@ -9075,7 +9344,7 @@ Response:
 
 #### Yeni Kasa Saglik Ozeti
 
-Secilen tarih araliginda sube/kasa bazinda fiÅŸ sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
+Secilen tarih araliginda sube/kasa bazinda fiÃ…Å¸ sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
 
 `GET /api/kasa-islemleri/yeni-kasa-analizleri/saglik-ozeti?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
 
@@ -9499,8 +9768,8 @@ filterValue filterType/scope ile eslesen kod veya arama degeri
 Notlar:
 
 - `filterType` icin Turkce aliaslar da kabul edilir: `stok`, `kategori`, `uretici`, `tedarikci`, `satin-almaci`, `satinalmaci`, `model`.
-- Turkce karakterli aliaslar da kabul edilir: `urun`, `Ã¼rÃ¼n`, `Ã¼retici`, `tedarikÃ§i`, `satÄ±n-almacÄ±`.
-- `filterType` ve `filterValue` birlikte kullanÄ±lmalÄ±dÄ±r; sadece biri gÃ¶nderilirse backend 400 dÃ¶ner.
+- Turkce karakterli aliaslar da kabul edilir: `urun`, `ÃƒÂ¼rÃƒÂ¼n`, `ÃƒÂ¼retici`, `tedarikÃƒÂ§i`, `satÃ„Â±n-almacÃ„Â±`.
+- `filterType` ve `filterValue` birlikte kullanÃ„Â±lmalÃ„Â±dÃ„Â±r; sadece biri gÃƒÂ¶nderilirse backend 400 dÃƒÂ¶ner.
 - `scope` bos verilirse karlilik raporu `producer` kirilimi ile doner.
 - Sayisal toplamlar backend tarafinda 2 ondaliga yuvarlanir.
 - Barkod alanlari master/birim-1 barkod onceligiyle secilir.
@@ -10955,6 +11224,17 @@ Kasa Islemleri / Etiket Basim
   -> raporlar icin GET /api/kasa-islemleri/etiket-basim/reports/received-products ve /reports/depot-stock
   -> Mikro aktarim endpoint'i 501 dondugu icin UI'da kapali veya "hazir degil" olarak gosterilmelidir
 
+GreenGrocer / Manav Operasyon Paneli
+  -> menu/route permission'i: green-grocer.operations.page
+  -> panel verisi ve onizleme icin green-grocer.operations.list
+  -> MNV duzeltme kaydet butonu icin green-grocer.operations.create
+  -> ekran acilisinda GET /api/green-grocer/operations/overview?warehouseNo=56&startDate=...&endDate=...
+  -> kullanici urun satirinda alis, MNV net fark, sube kasa talebi, tahmini KG/ADET, gercek sevk, son sayim ve guncel stok kolonlarini birlikte gorur
+  -> duzeltme yazilacaksa once POST /api/green-grocer/operations/adjustments/preview
+  -> onaydan sonra ayni clientRequestId ile POST /api/green-grocer/operations/adjustments
+  -> timeout/retry durumunda yeni clientRequestId uretilmez; ayni istek tekrar denenir
+  -> kayit sonrasi overview tekrar cagrilir
+
 Stok Islemleri / Virmanlar
   -> liste filtreleri: tarih araligi, opsiyonel depo
   -> GET /api/stok-islemleri/virmanlar
@@ -11099,7 +11379,7 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
    - `send` endpoint'i hiz icin `/validate` kontrolunu tekrar calistirmaz; UI "Kontrol Et" butonunu ayri aksiyon olarak sunmalidir
    - backend ayni belge icin eszamanli ikinci `send` istegini Uyumsoft'a gitmeden durdurur; UI bu durumda satir bazli hata mesajini gosterip ilk istegin sonucunu beklemelidir
-   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruÄŸa alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
+   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruÃ„Å¸a alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
 7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
 8. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
 9. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
@@ -12289,7 +12569,7 @@ Response `SendInvoiceDocumentsResponse`:
 
 Davranis:
 
-- secimler duplicate ise backend tekilleÅŸtirir
+- secimler duplicate ise backend tekilleÃ…Å¸tirir
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - hiz icin UBL-TR is kurali ve XSD dogrulamalari burada tekrar calistirilmaz; bu kontroller icin kullanici once `/validate` endpoint'ini cagirir
@@ -18058,6 +18338,10 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `GreenGrocerProductCaseProfileListHttpRequest`: `Search`, `IncludeInactive`, `Take`
 - `SaveGreenGrocerProductCaseProfileHttpRequest`: `IsActive`, `InputMode`, `ConversionMode`, `ManualKgPerCase`, `ManualUnitsPerCase`, `MinExpectedKgPerCase`, `MaxExpectedKgPerCase`, `AverageWindowDays`, `MinAverageRecordCount`, `MinAverageCaseCount`, `MaxCoefficientOfVariation`, `RequiresManualApproval`, `AllowOrderLinking`, `OverDeliveryTolerancePercent`, `Notes`
 - `GreenGrocerProductCaseResolutionHttpRequest`: `StockCode`, `OrderDate`, `SourceWarehouseNo`, `InputQuantity`
+- `GreenGrocerOperationsOverviewHttpRequest`: `StartDate`, `EndDate`, `WarehouseNo`, `TypeCode`, `Search`, `OnlyWithActivity`, `Take`
+- `GreenGrocerOperationsAdjustmentPreviewHttpRequest`: `WarehouseNo`, `Direction`, `MovementDate`, `DocumentSerie`, `ReasonCode`, `Lines`
+- `GreenGrocerOperationsAdjustmentApplyHttpRequest`: `ClientRequestId`, `WarehouseNo`, `Direction`, `MovementDate`, `DocumentDate`, `DocumentNo`, `DocumentSerie`, `CounterWarehouseNo`, `ReasonCode`, `Description`, `Creator`, `Acceptor`, `Lines`
+- `GreenGrocerOperationsAdjustmentLineHttpRequest`: `StockCode`, `Quantity`, `UnitPointer`, `UnitPrice`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`
 
 ### Arama Request Modelleri
 
@@ -18313,3 +18597,5 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - Cok sayida detay endpointi ayri request class'i kullanmaz; path parametreleri ve opsiyonel `warehouseNo` query parametresi ile calisir.
 - `GET /api/kasa-islemleri/etiket-belgeleri`, `GET /api/kasa-islemleri/etiket-belgeleri/son`, `GET /api/kasa-islemleri/etiket-belgeleri/tumu` ve `GET /api/kasa-islemleri/etiket-belgeleri/{documentId}` endpointleri ayri request class'i yerine dogrudan action parametreleri kullanir.
 - `LabelPriceChangedProductListHttpRequest.DateTimeFilter` alaninin beklenen formati `dd.MM.yyyy HH:mm:ss` degeridir.
+
+

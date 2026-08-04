@@ -1,0 +1,148 @@
+﻿namespace FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
+
+public sealed record GreenGrocerOperationsOverviewRequest(
+    DateTime StartDate,
+    DateTime EndDate,
+    int WarehouseNo = 56,
+    string? TypeCode = null,
+    string? Search = null,
+    bool OnlyWithActivity = true,
+    int Take = 500);
+
+public sealed record GreenGrocerOperationsOverviewDto(
+    int WarehouseNo,
+    string WarehouseName,
+    DateTime StartDate,
+    DateTime EndDate,
+    int ProductCount,
+    double TotalCurrentStockQuantity,
+    double TotalPurchaseQuantity,
+    double TotalPurchaseAmount,
+    double TotalAdjustmentInQuantity,
+    double TotalAdjustmentOutQuantity,
+    double TotalAdjustmentNetQuantity,
+    double TotalOrderInputQuantity,
+    double TotalOrderEstimatedQuantity,
+    double TotalShipmentQuantity,
+    double TotalLatestCountQuantity,
+    IReadOnlyCollection<GreenGrocerOperationsStatusSummaryDto> StatusSummaries,
+    IReadOnlyCollection<GreenGrocerOperationsProductItemDto> Items);
+
+public sealed record GreenGrocerOperationsStatusSummaryDto(
+    string StatusCode,
+    string StatusName,
+    int ProductCount,
+    double CurrentStockQuantity,
+    double PurchaseQuantity,
+    double AdjustmentNetQuantity,
+    double OrderEstimatedQuantity,
+    double ShipmentQuantity);
+
+public sealed record GreenGrocerOperationsProductItemDto(
+    string StockCode,
+    string StockName,
+    string ModelCode,
+    string UnitName,
+    double CurrentStockQuantity,
+    double PurchaseQuantity,
+    double PurchaseAmount,
+    double PurchaseUnitPrice,
+    int PurchaseDocumentCount,
+    DateTime? LastPurchaseDate,
+    string LastPurchaseDocument,
+    string LastSupplierCode,
+    string LastSupplierName,
+    double AdjustmentInQuantity,
+    double AdjustmentOutQuantity,
+    double AdjustmentNetQuantity,
+    int AdjustmentDocumentCount,
+    DateTime? LastAdjustmentDate,
+    string LastAdjustmentDocument,
+    string LastAdjustmentSeries,
+    string LastAdjustmentReason,
+    double OrderInputQuantity,
+    double OrderEstimatedQuantity,
+    double OrderMicroQuantity,
+    int OrderLineCount,
+    int OrderBranchCount,
+    double ShipmentQuantity,
+    int ShipmentDocumentCount,
+    int ShipmentBranchCount,
+    DateTime? LastShipmentDate,
+    string LastShipmentDocument,
+    DateTime? LastCountDate,
+    int? LastCountDocumentNo,
+    double? LastCountQuantity,
+    double? SystemQuantityAtCountDate,
+    double? CountDifferenceAtCountDate,
+    string PrimaryStatusCode,
+    string PrimaryStatusName,
+    IReadOnlyCollection<string> Flags);
+
+public sealed record GreenGrocerOperationsAdjustmentPreviewRequest(
+    int WarehouseNo,
+    string Direction,
+    DateTime? MovementDate,
+    string? DocumentSerie,
+    string? ReasonCode,
+    IReadOnlyCollection<GreenGrocerOperationsAdjustmentLineRequest> Lines);
+
+public sealed record GreenGrocerOperationsAdjustmentApplyRequest(
+    Guid RequestedByUserId,
+    Guid ClientRequestId,
+    int WarehouseNo,
+    string Direction,
+    DateTime? MovementDate,
+    DateTime? DocumentDate,
+    string? DocumentNo,
+    string? DocumentSerie,
+    int CounterWarehouseNo,
+    string? ReasonCode,
+    string? Description,
+    string? Creator,
+    string? Acceptor,
+    IReadOnlyCollection<GreenGrocerOperationsAdjustmentLineRequest> Lines);
+
+public sealed record GreenGrocerOperationsAdjustmentLineRequest(
+    string StockCode,
+    double Quantity,
+    int UnitPointer = 1,
+    double UnitPrice = 0,
+    string? Description = null,
+    string? PartyCode = null,
+    int LotNo = 0,
+    string? ProjectCode = null);
+
+public sealed record GreenGrocerOperationsAdjustmentPreviewDto(
+    int WarehouseNo,
+    int CounterWarehouseNo,
+    string Direction,
+    string DirectionName,
+    string DocumentSerie,
+    int MovementType,
+    int MovementGenre,
+    int DocumentType,
+    string ReasonCode,
+    string ReasonName,
+    int LineCount,
+    double TotalQuantity,
+    double TotalAmount);
+
+public sealed record GreenGrocerOperationsAdjustmentApplyResponse(
+    Guid ClientRequestId,
+    string Status,
+    int WarehouseNo,
+    int CounterWarehouseNo,
+    string Direction,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    DateTime MovementDate,
+    DateTime DocumentDate,
+    string DocumentNo,
+    string ReasonCode,
+    string ReasonName,
+    int LineCount,
+    double TotalQuantity,
+    double TotalAmount,
+    string ConnectionStringName,
+    IReadOnlyCollection<Guid> MovementGuids);

@@ -1,4 +1,4 @@
-using FurpaMerkezApi.Application.Abstractions.Time;
+﻿using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Soforler;
@@ -15,6 +15,7 @@ using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchWarehouses;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
@@ -113,6 +114,7 @@ using FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchWarehouses;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Infrastructure.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
@@ -466,6 +468,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetMobileCustomerCatalogUseCase, GetMobileCustomerCatalogUseCase>();
         services.AddScoped<IGetMobileWarehouseCatalogUseCase, GetMobileWarehouseCatalogUseCase>();
         services.AddScoped<IGreenGrocerProductCaseService, GreenGrocerProductCaseService>();
+        services.AddScoped<IGreenGrocerOperationsUseCase, GreenGrocerOperationsUseCase>();
         services.AddScoped<IGreenGrocerReportsUseCase, GreenGrocerReportsUseCase>();
         services.AddScoped<IDeleteGreenGrocerOrderUseCase, DeleteGreenGrocerOrderUseCase>();
         services.AddScoped<CompanyOrderDetailQueryExecutor>();
@@ -667,3 +670,5 @@ public static class ServiceCollectionExtensions
         return Math.Clamp(seconds, 30, 1_800);
     }
 }
+
+

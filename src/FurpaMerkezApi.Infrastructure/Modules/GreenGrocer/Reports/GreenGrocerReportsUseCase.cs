@@ -16,13 +16,14 @@ public sealed class GreenGrocerReportsUseCase(
     private const int MaxTake = 5000;
     private const int DashboardTopProductTake = 10;
 
-    private static readonly string[] GreenGrocerTypeCodes = ["10", "11", "12"];
+    private static readonly string[] GreenGrocerTypeCodes = ["10", "11", "12", "23"];
 
     private static readonly IReadOnlyCollection<GreenGrocerTypeOptionDto> TypeOptions =
     [
         new("10", "Manav Tip 10", false),
         new("11", "Manav Tip 11", false),
-        new("12", "Yesillik", true)
+        new("12", "Yesillik", true),
+        new("23", "Manav Sarf", false)
     ];
 
     public IReadOnlyCollection<GreenGrocerTypeOptionDto> GetTypeOptions() => TypeOptions;
@@ -554,6 +555,7 @@ public sealed class GreenGrocerReportsUseCase(
             "10" => "10",
             "11" => "11",
             "12" or "green" or "greens" or "yesillik" => GreensTypeCode,
+            "23" or "sarf" or "ambalaj" => "23",
             _ => throw new ArgumentException("Unsupported green grocer type code.")
         };
     }
