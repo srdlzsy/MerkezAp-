@@ -16,6 +16,9 @@ public sealed class MikroDocumentEditingService(
     private const int DefaultSearchTake = 50;
     private const int MaxSearchTake = 200;
 
+    public MikroDocumentFieldCatalogDto GetFieldCatalog() =>
+        MikroDocumentFieldCatalog.GetCatalog();
+
     public async Task<IReadOnlyCollection<StockCardListItemDto>> SearchStockCardsAsync(
         StockCardSearchRequest request,
         CancellationToken cancellationToken)
@@ -1768,11 +1771,16 @@ public sealed class MikroDocumentEditingService(
                     row.sth_masraf2 ?? 0d,
                     row.sth_masraf3 ?? 0d,
                     row.sth_masraf4 ?? 0d,
+                    row.sth_masraf_vergi_pntr ?? 0,
+                    row.sth_masraf_vergi ?? 0d,
                     row.sth_vergi_pntr ?? 0,
                     row.sth_vergi ?? 0d,
                     row.sth_netagirlik ?? 0d,
                     row.sth_brutagirlik ?? 0d,
                     row.sth_aciklama ?? string.Empty,
+                    row.sth_special1 ?? string.Empty,
+                    row.sth_special2 ?? string.Empty,
+                    row.sth_special3 ?? string.Empty,
                     row.sth_parti_kodu ?? string.Empty,
                     row.sth_lot_no ?? 0,
                     row.sth_proje_kodu ?? string.Empty,
@@ -1874,6 +1882,9 @@ public sealed class MikroDocumentEditingService(
                     row.cha_vergi4 ?? 0d,
                     row.cha_vergi5 ?? 0d,
                     row.cha_aciklama ?? string.Empty,
+                    row.cha_special1 ?? string.Empty,
+                    row.cha_special2 ?? string.Empty,
+                    row.cha_special3 ?? string.Empty,
                     row.cha_satici_kodu ?? string.Empty,
                     row.cha_projekodu ?? string.Empty,
                     row.cha_srmrkkodu ?? string.Empty,
@@ -1962,6 +1973,10 @@ public sealed class MikroDocumentEditingService(
                     Math.Max(0d, quantity - deliveredQuantity),
                     row.sip_b_fiyat ?? (quantity == 0d ? 0d : amount / quantity),
                     amount,
+                    row.sip_fiyat_liste_no ?? 0,
+                    row.sip_gecerlilik_tarihi,
+                    row.sip_rezervasyon_miktari ?? 0d,
+                    row.sip_rezerveden_teslim_edilen ?? 0d,
                     row.sip_iskonto_1 ?? 0d,
                     row.sip_iskonto_2 ?? 0d,
                     row.sip_iskonto_3 ?? 0d,
@@ -1976,6 +1991,9 @@ public sealed class MikroDocumentEditingService(
                     row.sip_vergi ?? 0d,
                     row.sip_aciklama ?? string.Empty,
                     row.sip_aciklama2 ?? string.Empty,
+                    row.sip_special1 ?? string.Empty,
+                    row.sip_special2 ?? string.Empty,
+                    row.sip_special3 ?? string.Empty,
                     row.sip_paket_kod ?? string.Empty,
                     row.sip_parti_kodu ?? string.Empty,
                     row.sip_lot_no ?? 0,
@@ -2076,6 +2094,13 @@ public sealed class MikroDocumentEditingService(
                     row.ssip_b_fiyat ?? (quantity == 0d ? 0d : amount / quantity),
                     amount,
                     row.ssip_aciklama ?? string.Empty,
+                    row.ssip_fiyat_liste_no ?? 0,
+                    row.ssip_gecerlilik_tarihi,
+                    row.ssip_rezervasyon_miktari ?? 0d,
+                    row.ssip_rezerveden_teslim_edilen ?? 0d,
+                    row.ssip_special1 ?? string.Empty,
+                    row.ssip_special2 ?? string.Empty,
+                    row.ssip_special3 ?? string.Empty,
                     row.ssip_girdepo ?? 0,
                     ResolveWarehouseName(warehouses, row.ssip_girdepo),
                     row.ssip_cikdepo ?? 0,
@@ -2372,6 +2397,9 @@ public sealed class MikroDocumentEditingService(
             warehouse.dep_muh_kodu ?? string.Empty,
             warehouse.dep_sor_mer_kodu ?? string.Empty,
             warehouse.dep_proje_kodu ?? string.Empty,
+            warehouse.dep_special1 ?? string.Empty,
+            warehouse.dep_special2 ?? string.Empty,
+            warehouse.dep_special3 ?? string.Empty,
             warehouse.dep_DepoSevkUygFiyat ?? 0,
             warehouse.dep_KilitTarihi,
             warehouse.dep_cadde ?? string.Empty,
@@ -2410,6 +2438,9 @@ public sealed class MikroDocumentEditingService(
             customer.cari_kod ?? string.Empty,
             customer.cari_unvan1 ?? string.Empty,
             customer.cari_unvan2 ?? string.Empty,
+            customer.cari_special1 ?? string.Empty,
+            customer.cari_special2 ?? string.Empty,
+            customer.cari_special3 ?? string.Empty,
             customer.cari_hareket_tipi ?? 0,
             customer.cari_baglanti_tipi ?? 0,
             customer.cari_stok_alim_cinsi ?? 0,
@@ -2480,6 +2511,9 @@ public sealed class MikroDocumentEditingService(
             stock.sto_uretici_kodu ?? string.Empty,
             stock.sto_urun_sorkod ?? string.Empty,
             stock.sto_yer_kod ?? string.Empty,
+            stock.sto_special1 ?? string.Empty,
+            stock.sto_special2 ?? string.Empty,
+            stock.sto_special3 ?? string.Empty,
             ToBool(stock.sto_satis_dursun),
             ToBool(stock.sto_siparis_dursun),
             ToBool(stock.sto_malkabul_dursun),
@@ -2681,6 +2715,9 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.AccountingCode, value => warehouse.dep_muh_kodu = NormalizeText(value, 40, nameof(patch.AccountingCode)), ref changed);
         SetIfPresent(patch.ResponsibilityCenter, value => warehouse.dep_sor_mer_kodu = NormalizeText(value, 25, nameof(patch.ResponsibilityCenter)), ref changed);
         SetIfPresent(patch.ProjectCode, value => warehouse.dep_proje_kodu = NormalizeText(value, 25, nameof(patch.ProjectCode)), ref changed);
+        SetIfPresent(patch.Special1, value => warehouse.dep_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => warehouse.dep_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => warehouse.dep_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.ShipmentAppliedPriceNo, value => warehouse.dep_DepoSevkUygFiyat = ValidateNonNegative(value, nameof(patch.ShipmentAppliedPriceNo)), ref changed);
         SetIfPresent(patch.LockDate, value => warehouse.dep_KilitTarihi = value.Date, ref changed);
         SetIfPresent(patch.Street, value => warehouse.dep_cadde = NormalizeText(value, 50, nameof(patch.Street)), ref changed);
@@ -2719,6 +2756,9 @@ public sealed class MikroDocumentEditingService(
         var changed = false;
         SetIfPresent(patch.Title1, value => customer.cari_unvan1 = NormalizeText(value, 127, nameof(patch.Title1)), ref changed);
         SetIfPresent(patch.Title2, value => customer.cari_unvan2 = NormalizeText(value, 127, nameof(patch.Title2)), ref changed);
+        SetIfPresent(patch.Special1, value => customer.cari_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => customer.cari_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => customer.cari_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.MovementType, value => customer.cari_hareket_tipi = value, ref changed);
         SetIfPresent(patch.ConnectionType, value => customer.cari_baglanti_tipi = value, ref changed);
         SetIfPresent(patch.PurchaseStockType, value => customer.cari_stok_alim_cinsi = value, ref changed);
@@ -2790,6 +2830,9 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.ManufacturerCode, value => stock.sto_uretici_kodu = NormalizeText(value, 25, nameof(patch.ManufacturerCode)), ref changed);
         SetIfPresent(patch.ResponsibilityCode, value => stock.sto_urun_sorkod = NormalizeText(value, 25, nameof(patch.ResponsibilityCode)), ref changed);
         SetIfPresent(patch.ShelfCode, value => stock.sto_yer_kod = NormalizeText(value, 25, nameof(patch.ShelfCode)), ref changed);
+        SetIfPresent(patch.Special1, value => stock.sto_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => stock.sto_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => stock.sto_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.SalesStopped, value => stock.sto_satis_dursun = ToByteFlag(value), ref changed);
         SetIfPresent(patch.OrderStopped, value => stock.sto_siparis_dursun = ToByteFlag(value), ref changed);
         SetIfPresent(patch.ReceivingStopped, value => stock.sto_malkabul_dursun = ToByteFlag(value), ref changed);
@@ -2842,11 +2885,16 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.Expense2, value => row.sth_masraf2 = ValidateNonNegative(value, nameof(patch.Expense2)), ref changed);
         SetIfPresent(patch.Expense3, value => row.sth_masraf3 = ValidateNonNegative(value, nameof(patch.Expense3)), ref changed);
         SetIfPresent(patch.Expense4, value => row.sth_masraf4 = ValidateNonNegative(value, nameof(patch.Expense4)), ref changed);
+        SetIfPresent(patch.ExpenseTaxPointer, value => row.sth_masraf_vergi_pntr = value, ref changed);
+        SetIfPresent(patch.ExpenseTaxAmount, value => row.sth_masraf_vergi = ValidateNonNegative(value, nameof(patch.ExpenseTaxAmount)), ref changed);
         SetIfPresent(patch.TaxPointer, value => row.sth_vergi_pntr = value, ref changed);
         SetIfPresent(patch.TaxAmount, value => row.sth_vergi = ValidateNonNegative(value, nameof(patch.TaxAmount)), ref changed);
         SetIfPresent(patch.NetWeight, value => row.sth_netagirlik = ValidateNonNegative(value, nameof(patch.NetWeight)), ref changed);
         SetIfPresent(patch.GrossWeight, value => row.sth_brutagirlik = ValidateNonNegative(value, nameof(patch.GrossWeight)), ref changed);
         SetIfPresent(patch.Description, value => row.sth_aciklama = NormalizeText(value, 50, nameof(patch.Description)), ref changed);
+        SetIfPresent(patch.Special1, value => row.sth_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => row.sth_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => row.sth_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.PartyCode, value => row.sth_parti_kodu = NormalizeText(value, 25, nameof(patch.PartyCode)), ref changed);
         SetIfPresent(patch.LotNo, value => row.sth_lot_no = ValidateNonNegative(value, nameof(patch.LotNo)), ref changed);
         SetIfPresent(patch.ProjectCode, value => row.sth_proje_kodu = NormalizeText(value, 25, nameof(patch.ProjectCode)), ref changed);
@@ -2901,6 +2949,9 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.Tax4, value => row.cha_vergi4 = ValidateNonNegative(value, nameof(patch.Tax4)), ref changed);
         SetIfPresent(patch.Tax5, value => row.cha_vergi5 = ValidateNonNegative(value, nameof(patch.Tax5)), ref changed);
         SetIfPresent(patch.Description, value => row.cha_aciklama = NormalizeText(value, 40, nameof(patch.Description)), ref changed);
+        SetIfPresent(patch.Special1, value => row.cha_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => row.cha_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => row.cha_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.SellerCode, value => row.cha_satici_kodu = NormalizeText(value, 25, nameof(patch.SellerCode)), ref changed);
         SetIfPresent(patch.ProjectCode, value => row.cha_projekodu = NormalizeText(value, 25, nameof(patch.ProjectCode)), ref changed);
         SetIfPresent(patch.ResponsibilityCenter, value => row.cha_srmrkkodu = NormalizeText(value, 25, nameof(patch.ResponsibilityCenter)), ref changed);
@@ -2947,6 +2998,10 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.DeliveredQuantity, value => row.sip_teslim_miktar = ValidateNonNegative(value, nameof(patch.DeliveredQuantity)), ref changed);
         SetIfPresent(patch.UnitPrice, value => row.sip_b_fiyat = ValidateNonNegative(value, nameof(patch.UnitPrice)), ref changed);
         SetIfPresent(patch.Amount, value => row.sip_tutar = ValidateNonNegative(value, nameof(patch.Amount)), ref changed);
+        SetIfPresent(patch.PriceListNo, value => row.sip_fiyat_liste_no = ValidateNonNegative(value, nameof(patch.PriceListNo)), ref changed);
+        SetIfPresent(patch.ValidUntil, value => row.sip_gecerlilik_tarihi = value.Date, ref changed);
+        SetIfPresent(patch.ReservedQuantity, value => row.sip_rezervasyon_miktari = ValidateNonNegative(value, nameof(patch.ReservedQuantity)), ref changed);
+        SetIfPresent(patch.DeliveredFromReservation, value => row.sip_rezerveden_teslim_edilen = ValidateNonNegative(value, nameof(patch.DeliveredFromReservation)), ref changed);
         SetIfPresent(patch.Discount1, value => row.sip_iskonto_1 = ValidateNonNegative(value, nameof(patch.Discount1)), ref changed);
         SetIfPresent(patch.Discount2, value => row.sip_iskonto_2 = ValidateNonNegative(value, nameof(patch.Discount2)), ref changed);
         SetIfPresent(patch.Discount3, value => row.sip_iskonto_3 = ValidateNonNegative(value, nameof(patch.Discount3)), ref changed);
@@ -2961,6 +3016,9 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.TaxAmount, value => row.sip_vergi = ValidateNonNegative(value, nameof(patch.TaxAmount)), ref changed);
         SetIfPresent(patch.Description1, value => row.sip_aciklama = NormalizeText(value, 50, nameof(patch.Description1)), ref changed);
         SetIfPresent(patch.Description2, value => row.sip_aciklama2 = NormalizeText(value, 50, nameof(patch.Description2)), ref changed);
+        SetIfPresent(patch.Special1, value => row.sip_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => row.sip_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => row.sip_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.PackageCode, value => row.sip_paket_kod = NormalizeText(value, 25, nameof(patch.PackageCode)), ref changed);
         SetIfPresent(patch.PartyCode, value => row.sip_parti_kodu = NormalizeText(value, 25, nameof(patch.PartyCode)), ref changed);
         SetIfPresent(patch.LotNo, value => row.sip_lot_no = ValidateNonNegative(value, nameof(patch.LotNo)), ref changed);
@@ -3005,6 +3063,13 @@ public sealed class MikroDocumentEditingService(
         SetIfPresent(patch.UnitPrice, value => row.ssip_b_fiyat = ValidateNonNegative(value, nameof(patch.UnitPrice)), ref changed);
         SetIfPresent(patch.Amount, value => row.ssip_tutar = ValidateNonNegative(value, nameof(patch.Amount)), ref changed);
         SetIfPresent(patch.Description, value => row.ssip_aciklama = NormalizeText(value, 50, nameof(patch.Description)), ref changed);
+        SetIfPresent(patch.PriceListNo, value => row.ssip_fiyat_liste_no = ValidateNonNegative(value, nameof(patch.PriceListNo)), ref changed);
+        SetIfPresent(patch.ValidUntil, value => row.ssip_gecerlilik_tarihi = value.Date, ref changed);
+        SetIfPresent(patch.ReservedQuantity, value => row.ssip_rezervasyon_miktari = ValidateNonNegative(value, nameof(patch.ReservedQuantity)), ref changed);
+        SetIfPresent(patch.DeliveredFromReservation, value => row.ssip_rezerveden_teslim_edilen = ValidateNonNegative(value, nameof(patch.DeliveredFromReservation)), ref changed);
+        SetIfPresent(patch.Special1, value => row.ssip_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => row.ssip_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => row.ssip_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
         SetIfPresent(patch.InWarehouseNo, value => row.ssip_girdepo = ValidateNonNegative(value, nameof(patch.InWarehouseNo)), ref changed);
         SetIfPresent(patch.OutWarehouseNo, value => row.ssip_cikdepo = ValidateNonNegative(value, nameof(patch.OutWarehouseNo)), ref changed);
         SetIfPresent(patch.IsClosed, value => row.ssip_kapat_fl = value, ref changed);
@@ -3349,6 +3414,9 @@ public sealed class MikroDocumentEditingService(
         patch.AccountingCode is not null ||
         patch.ResponsibilityCenter is not null ||
         patch.ProjectCode is not null ||
+        patch.Special1 is not null ||
+        patch.Special2 is not null ||
+        patch.Special3 is not null ||
         patch.ShipmentAppliedPriceNo.HasValue ||
         patch.LockDate.HasValue ||
         patch.Street is not null ||
@@ -3382,6 +3450,9 @@ public sealed class MikroDocumentEditingService(
     private static bool HasCustomerCardPatch(CustomerCardPatchDto patch) =>
         patch.Title1 is not null ||
         patch.Title2 is not null ||
+        patch.Special1 is not null ||
+        patch.Special2 is not null ||
+        patch.Special3 is not null ||
         patch.MovementType.HasValue ||
         patch.ConnectionType.HasValue ||
         patch.PurchaseStockType.HasValue ||

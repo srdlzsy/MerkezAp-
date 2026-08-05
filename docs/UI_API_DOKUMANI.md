@@ -5770,11 +5770,14 @@ Genel kurallar:
 - Depo karti ve cari karti endpointleri yeni kart olusturmaz; sadece mevcut Mikro kartini gunceller.
 - Cari kartinda `parentCustomerCode`, `defaultInputWarehouseNo`, `defaultOutputWarehouseNo` gonderilirse backend ilgili cari/depo kaydinin varligini kontrol eder.
 - Depo kartinda GPS alanlari icin `latitude` -90..90, `longitude` -180..180 araliginda olmalidir.
+- UI alan isimlerini kendi icinde hardcoded map'lememelidir. Ekran acilisinda `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/alan-haritasi` cagrilip `displayName`, `mikroTable`, `mikroColumn`, `valueType`, `editable` alanlari kullanilmalidir.
+- Alan haritasinda `editable=false` olan alanlar response/lookup bilgisidir; UI bunlari gosterir ama PUT body icinde gondermez. Ornek: stok hareketi `unitPrice` response'ta hesaplanan alandir, Mikro'da direkt `sth_b_fiyat` kolonu yoktur.
 
 Endpoint ozeti:
 
 | Endpoint | Request kaynagi | Request modeli | Response | Yetki |
 |---|---|---|---|---|
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/alan-haritasi` | - | - | `MikroDocumentFieldCatalogDto` | `list` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari` | query | `StockCardSearchHttpRequest` | `StockCardListItemDto[]` | `list` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path | `stockCode` | `StockCardDetailDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | path + body | `StockCardPatchHttpRequest` | `StockCardUpdateResponse` | `update` |
@@ -5802,6 +5805,80 @@ Endpoint ozeti:
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | query | `WarehouseOrderDocumentLookupHttpRequest` | `WarehouseOrderDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | body | `UpdateWarehouseOrderDocumentHttpRequest` | `WarehouseOrderDocumentUpdateResponse` | `update` |
 | `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | query | `WarehouseOrderDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
+
+### Alan Haritasi
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/alan-haritasi`
+
+UI bu endpoint'i form metadata kaynagi olarak kullanmalidir. Backend her duzenlenebilir bolum icin API field path, kullaniciya gosterilecek ad, Mikro tablo/kolon karsiligi ve veri tipini dondurur.
+
+Response modeli:
+
+```json
+{
+  "sections": [
+    {
+      "code": "stock-card",
+      "title": "Stok Karti",
+      "endpoint": "PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}",
+      "requestModel": "StockCardPatchHttpRequest",
+      "fields": [
+        {
+          "apiField": "name",
+          "displayName": "Stok adi",
+          "scope": "body",
+          "valueType": "string",
+          "mikroTable": "STOKLAR",
+          "mikroColumn": "sto_isim",
+          "editable": true,
+          "description": ""
+        },
+        {
+          "apiField": "lines[].unitPrice",
+          "displayName": "Birim fiyat",
+          "scope": "line",
+          "valueType": "double",
+          "mikroTable": "STOK_HAREKETLERI",
+          "mikroColumn": "-",
+          "editable": false,
+          "description": "STOK_HAREKETLERI tablosunda direkt kolon yoktur; API response'ta amount / quantity olarak hesaplanir."
+        }
+      ]
+    }
+  ]
+}
+```
+
+UI kullanim kurali:
+
+- Form label'i icin `displayName` kullanilir.
+- Teknik bilgi/tooltip icin `mikroTable + "." + mikroColumn` gosterilebilir.
+- `apiField` request body field path'idir; UI kendi alan adi sozlugunu bunun yerine kullanmamalidir.
+- `editable=false` alanlar sadece bilgi/lookup alanidir, PUT body'ye dahil edilmez.
+- `special1`, `special2`, `special3` alanlari Mikro'da 4 karakterlik ozel kod alanlaridir; UI input uzunlugunu 4 ile sinirlamalidir.
+
+Kritik alan karsiliklari:
+
+| Bolum | API alani | UI adi | Mikro tablo/kolon | Not |
+|---|---|---|---|---|
+| Stok karti | `special1/2/3` | Ozel kod 1/2/3 | `STOKLAR.sto_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
+| Depo karti | `special1/2/3` | Ozel kod 1/2/3 | `DEPOLAR.dep_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
+| Cari karti | `special1/2/3` | Ozel kod 1/2/3 | `CARI_HESAPLAR.cari_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
+| Stok hareket satiri | `expenseTaxPointer` | Masraf vergi pointer | `STOK_HAREKETLERI.sth_masraf_vergi_pntr` | Yeni guncellenebilir alan |
+| Stok hareket satiri | `expenseTaxAmount` | Masraf vergi tutari | `STOK_HAREKETLERI.sth_masraf_vergi` | Yeni guncellenebilir alan |
+| Stok hareket satiri | `special1/2/3` | Ozel kod 1/2/3 | `STOK_HAREKETLERI.sth_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
+| Stok hareket satiri | `unitPrice` | Birim fiyat | - | Read-only; `amount / quantity` hesaplanir |
+| Cari hareket satiri | `special1/2/3` | Ozel kod 1/2/3 | `CARI_HESAP_HAREKETLERI.cha_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
+| Firma siparis satiri | `priceListNo` | Fiyat liste no | `SIPARISLER.sip_fiyat_liste_no` | Yeni guncellenebilir alan |
+| Firma siparis satiri | `validUntil` | Gecerlilik tarihi | `SIPARISLER.sip_gecerlilik_tarihi` | Yeni guncellenebilir alan |
+| Firma siparis satiri | `reservedQuantity` | Rezervasyon miktari | `SIPARISLER.sip_rezervasyon_miktari` | Yeni guncellenebilir alan |
+| Firma siparis satiri | `deliveredFromReservation` | Rezerveden teslim edilen | `SIPARISLER.sip_rezerveden_teslim_edilen` | Yeni guncellenebilir alan |
+| Firma siparis satiri | `special1/2/3` | Ozel kod 1/2/3 | `SIPARISLER.sip_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
+| Depo siparis satiri | `priceListNo` | Fiyat liste no | `DEPOLAR_ARASI_SIPARISLER.ssip_fiyat_liste_no` | Yeni guncellenebilir alan |
+| Depo siparis satiri | `validUntil` | Gecerlilik tarihi | `DEPOLAR_ARASI_SIPARISLER.ssip_gecerlilik_tarihi` | Yeni guncellenebilir alan |
+| Depo siparis satiri | `reservedQuantity` | Rezervasyon miktari | `DEPOLAR_ARASI_SIPARISLER.ssip_rezervasyon_miktari` | Yeni guncellenebilir alan |
+| Depo siparis satiri | `deliveredFromReservation` | Rezerveden teslim edilen | `DEPOLAR_ARASI_SIPARISLER.ssip_rezerveden_teslim_edilen` | Yeni guncellenebilir alan |
+| Depo siparis satiri | `special1/2/3` | Ozel kod 1/2/3 | `DEPOLAR_ARASI_SIPARISLER.ssip_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
 
 ### Stok Karti Arama
 
@@ -18774,23 +18851,26 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Mikro Evrak Duzenleme Request Modelleri
 
 - `StockCardSearchHttpRequest`: `SearchText`, `IncludePassive`, `Take`
-- `StockCardPatchHttpRequest`: `Name`, `ShortName`, `ForeignName`, `SupplierCode`, `StockType`, `CurrencyType`, `TrackingType`, `Unit1Name`, `Unit2Name`, `Unit3Name`, `Unit4Name`, `RetailTaxPointer`, `WholesaleTaxPointer`, `CategoryCode`, `MainGroupCode`, `SubGroupCode`, `BrandCode`, `SectorCode`, `RayonCode`, `ManufacturerCode`, `ResponsibilityCode`, `ShelfCode`, `SalesStopped`, `OrderStopped`, `ReceivingStopped`, `IsPassive`, `DiscountDisabled`
+- `StockCardPatchHttpRequest`: `Name`, `ShortName`, `ForeignName`, `SupplierCode`, `StockType`, `CurrencyType`, `TrackingType`, `Unit1Name`, `Unit2Name`, `Unit3Name`, `Unit4Name`, `RetailTaxPointer`, `WholesaleTaxPointer`, `CategoryCode`, `MainGroupCode`, `SubGroupCode`, `BrandCode`, `SectorCode`, `RayonCode`, `ManufacturerCode`, `ResponsibilityCode`, `ShelfCode`, `Special1`, `Special2`, `Special3`, `SalesStopped`, `OrderStopped`, `ReceivingStopped`, `IsPassive`, `DiscountDisabled`
+- `WarehouseCardPatchHttpRequest`: `Name`, `GroupCode`, `WarehouseType`, `ShipmentAutoPriceType`, `MovementType`, `AccountingCode`, `ResponsibilityCenter`, `ProjectCode`, `Special1`, `Special2`, `Special3`, `ShipmentAppliedPriceNo`, `LockDate`, adres/telefon/GPS alanlari, `ExcludedFromInventory`, `DetailTrackingType`, `RegionCode`, `OutgoingEDespatchEnabled`, `IncomingEDespatchEnabled`, `IsPassive`, `IsHidden`, `IsLocked`
+- `CustomerCardPatchHttpRequest`: `Title1`, `Title2`, `Special1`, `Special2`, `Special3`, `MovementType`, `ConnectionType`, `PurchaseStockType`, `SalesStockType`, muhasebe/doviz/vergi alanlari, `SalesPriceListNo`, odeme/adres/grup/bolge/temsilci alanlari, `IsClosed`, `IsLocked`, e-fatura/e-irsaliye alanlari, iletisim alanlari, `RetailCustomer`
+- `MikroDocumentFieldCatalogDto`: `Sections[]`; her section icinde `Code`, `Title`, `Endpoint`, `RequestModel`, `Fields[]`; her field icinde `ApiField`, `DisplayName`, `Scope`, `ValueType`, `MikroTable`, `MikroColumn`, `Editable`, `Description`
 - `StockMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `WarehouseNo`
 - `UpdateStockMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `StockMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `GoodsAcceptanceDate`, `DocumentNo`, `CustomerCode`, `InputWarehouseNo`, `OutputWarehouseNo`, `Description`, `MovementGroupCode1`, `MovementGroupCode2`, `MovementGroupCode3`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `ProjectCode`
-- `StockMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `GoodsAcceptanceDate`, `StockCode`, `UnitPointer`, `Quantity`, `SecondaryQuantity`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `NetWeight`, `GrossWeight`, `Description`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `InputWarehouseNo`, `OutputWarehouseNo`
+- `StockMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `GoodsAcceptanceDate`, `StockCode`, `UnitPointer`, `Quantity`, `SecondaryQuantity`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `ExpenseTaxPointer`, `ExpenseTaxAmount`, `TaxPointer`, `TaxAmount`, `NetWeight`, `GrossWeight`, `Description`, `Special1`, `Special2`, `Special3`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `InputWarehouseNo`, `OutputWarehouseNo`
 - `CustomerMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `CustomerCode`
 - `UpdateCustomerMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `CustomerMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `TurnoverCustomerCode`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
-- `CustomerMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `CustomerCode`, `TurnoverCustomerCode`, `Quantity`, `Amount`, `SubAmount`, `DueDay`, `Discount1..Discount6`, `Expense1..Expense4`, `Tax1..Tax5`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
+- `CustomerMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `CustomerCode`, `TurnoverCustomerCode`, `Quantity`, `Amount`, `SubAmount`, `DueDay`, `Discount1..Discount6`, `Expense1..Expense4`, `Tax1..Tax5`, `Description`, `Special1`, `Special2`, `Special3`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`
 - `CompanyOrderDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `OrderType`, `OrderKind`, `WarehouseNo`, `CustomerCode`, `HardDelete`
 - `UpdateCompanyOrderDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `CompanyOrderHeaderPatchHttpRequest`: `OrderDate`, `DeliveryDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `WarehouseNo`, `SellerCode`, `Description1`, `Description2`, `DeliveryType`, `AddressNo`, `CurrencyType`, `CurrencyRate`, `AlternativeCurrencyRate`, `CanBeCalled`, `IsClosed`, `CloseReasonCode`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`
-- `CompanyOrderLinePatchHttpRequest`: `OrderGuid`, `RowNo`, `DeliveryDate`, `StockCode`, `UnitPointer`, `Quantity`, `DeliveredQuantity`, `UnitPrice`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `Description1`, `Description2`, `PackageCode`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `CanBeCalled`, `IsClosed`, `CloseReasonCode`
+- `CompanyOrderLinePatchHttpRequest`: `OrderGuid`, `RowNo`, `DeliveryDate`, `StockCode`, `UnitPointer`, `Quantity`, `DeliveredQuantity`, `UnitPrice`, `Amount`, `PriceListNo`, `ValidUntil`, `ReservedQuantity`, `DeliveredFromReservation`, `Discount1..Discount6`, `Expense1..Expense4`, `TaxPointer`, `TaxAmount`, `Description1`, `Description2`, `Special1`, `Special2`, `Special3`, `PackageCode`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `CanBeCalled`, `IsClosed`, `CloseReasonCode`
 - `WarehouseOrderDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `WarehouseNo`, `InWarehouseNo`, `OutWarehouseNo`, `HardDelete`
 - `UpdateWarehouseOrderDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `WarehouseOrderHeaderPatchHttpRequest`: `OrderDate`, `DeliveryDate`, `DocumentDate`, `DocumentNo`, `InWarehouseNo`, `OutWarehouseNo`, `Description`, `IsClosed`, `CloseReasonCode`, `ProjectCode`, `ResponsibilityCenter`
-- `WarehouseOrderLinePatchHttpRequest`: `OrderGuid`, `RowNo`, `DeliveryDate`, `StockCode`, `UnitPointer`, `Quantity`, `DeliveredQuantity`, `UnitPrice`, `Amount`, `Description`, `InWarehouseNo`, `OutWarehouseNo`, `IsClosed`, `CloseReasonCode`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
+- `WarehouseOrderLinePatchHttpRequest`: `OrderGuid`, `RowNo`, `DeliveryDate`, `StockCode`, `UnitPointer`, `Quantity`, `DeliveredQuantity`, `UnitPrice`, `Amount`, `Description`, `PriceListNo`, `ValidUntil`, `ReservedQuantity`, `DeliveredFromReservation`, `Special1`, `Special2`, `Special3`, `InWarehouseNo`, `OutWarehouseNo`, `IsClosed`, `CloseReasonCode`, `PackageCode`, `ProjectCode`, `ResponsibilityCenter`
 
 ### Ayar Request Modelleri
 

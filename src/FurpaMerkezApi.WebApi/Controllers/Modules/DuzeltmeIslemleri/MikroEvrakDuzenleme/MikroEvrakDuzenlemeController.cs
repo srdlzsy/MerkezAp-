@@ -29,6 +29,12 @@ public sealed class MikroEvrakDuzenlemeController(
     private const string UpdatePolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.update";
     private const string DeletePolicy = "duzeltme-islemleri.mikro-evrak-duzenleme.delete";
 
+    [HttpGet("alan-haritasi")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(MikroDocumentFieldCatalogDto), StatusCodes.Status200OK)]
+    public ActionResult<MikroDocumentFieldCatalogDto> GetFieldCatalog() =>
+        Ok(service.GetFieldCatalog());
+
     [HttpGet("stok-kartlari")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<StockCardListItemDto>), StatusCodes.Status200OK)]
@@ -902,6 +908,15 @@ public sealed class StockCardPatchHttpRequest
     [StringLength(25)]
     public string? ShelfCode { get; init; }
 
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
+
     public bool? SalesStopped { get; init; }
 
     public bool? OrderStopped { get; init; }
@@ -936,6 +951,9 @@ public sealed class StockCardPatchHttpRequest
             ManufacturerCode,
             ResponsibilityCode,
             ShelfCode,
+            Special1,
+            Special2,
+            Special3,
             SalesStopped,
             OrderStopped,
             ReceivingStopped,
@@ -1003,6 +1021,15 @@ public sealed class WarehouseCardPatchHttpRequest
 
     [StringLength(25)]
     public string? ProjectCode { get; init; }
+
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
 
     [Range(0, int.MaxValue)]
     public int? ShipmentAppliedPriceNo { get; init; }
@@ -1093,6 +1120,9 @@ public sealed class WarehouseCardPatchHttpRequest
             AccountingCode,
             ResponsibilityCenter,
             ProjectCode,
+            Special1,
+            Special2,
+            Special3,
             ShipmentAppliedPriceNo,
             LockDate,
             Street,
@@ -1142,6 +1172,15 @@ public sealed class CustomerCardPatchHttpRequest
 
     [StringLength(127)]
     public string? Title2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
 
     [Range(0, byte.MaxValue)]
     public byte? MovementType { get; init; }
@@ -1270,6 +1309,9 @@ public sealed class CustomerCardPatchHttpRequest
         new(
             Title1,
             Title2,
+            Special1,
+            Special2,
+            Special3,
             MovementType,
             ConnectionType,
             PurchaseStockType,
@@ -1520,6 +1562,12 @@ public sealed class StockMovementLinePatchHttpRequest
     public double? Expense4 { get; init; }
 
     [Range(0, byte.MaxValue)]
+    public byte? ExpenseTaxPointer { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? ExpenseTaxAmount { get; init; }
+
+    [Range(0, byte.MaxValue)]
     public byte? TaxPointer { get; init; }
 
     [Range(0, double.MaxValue)]
@@ -1533,6 +1581,15 @@ public sealed class StockMovementLinePatchHttpRequest
 
     [StringLength(50)]
     public string? Description { get; init; }
+
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
 
     [StringLength(25)]
     public string? PartyCode { get; init; }
@@ -1575,11 +1632,16 @@ public sealed class StockMovementLinePatchHttpRequest
             Expense2,
             Expense3,
             Expense4,
+            ExpenseTaxPointer,
+            ExpenseTaxAmount,
             TaxPointer,
             TaxAmount,
             NetWeight,
             GrossWeight,
             Description,
+            Special1,
+            Special2,
+            Special3,
             PartyCode,
             LotNo,
             ProjectCode,
@@ -1757,6 +1819,15 @@ public sealed class CustomerMovementLinePatchHttpRequest
     [StringLength(40)]
     public string? Description { get; init; }
 
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
+
     [StringLength(25)]
     public string? SellerCode { get; init; }
 
@@ -1792,6 +1863,9 @@ public sealed class CustomerMovementLinePatchHttpRequest
             Tax4,
             Tax5,
             Description,
+            Special1,
+            Special2,
+            Special3,
             SellerCode,
             ProjectCode,
             ResponsibilityCenter);
@@ -1956,6 +2030,17 @@ public sealed class CompanyOrderLinePatchHttpRequest
     [Range(0, double.MaxValue)]
     public double? Amount { get; init; }
 
+    [Range(0, int.MaxValue)]
+    public int? PriceListNo { get; init; }
+
+    public DateTime? ValidUntil { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? ReservedQuantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? DeliveredFromReservation { get; init; }
+
     [Range(0, double.MaxValue)]
     public double? Discount1 { get; init; }
 
@@ -1998,6 +2083,15 @@ public sealed class CompanyOrderLinePatchHttpRequest
     [StringLength(50)]
     public string? Description2 { get; init; }
 
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
+
     [StringLength(25)]
     public string? PackageCode { get; init; }
 
@@ -2034,6 +2128,10 @@ public sealed class CompanyOrderLinePatchHttpRequest
             DeliveredQuantity,
             UnitPrice,
             Amount,
+            PriceListNo,
+            ValidUntil,
+            ReservedQuantity,
+            DeliveredFromReservation,
             Discount1,
             Discount2,
             Discount3,
@@ -2048,6 +2146,9 @@ public sealed class CompanyOrderLinePatchHttpRequest
             TaxAmount,
             Description1,
             Description2,
+            Special1,
+            Special2,
+            Special3,
             PackageCode,
             PartyCode,
             LotNo,
@@ -2183,6 +2284,26 @@ public sealed class WarehouseOrderLinePatchHttpRequest
     public string? Description { get; init; }
 
     [Range(0, int.MaxValue)]
+    public int? PriceListNo { get; init; }
+
+    public DateTime? ValidUntil { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? ReservedQuantity { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? DeliveredFromReservation { get; init; }
+
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
+
+    [Range(0, int.MaxValue)]
     public int? InWarehouseNo { get; init; }
 
     [Range(0, int.MaxValue)]
@@ -2214,6 +2335,13 @@ public sealed class WarehouseOrderLinePatchHttpRequest
             UnitPrice,
             Amount,
             Description,
+            PriceListNo,
+            ValidUntil,
+            ReservedQuantity,
+            DeliveredFromReservation,
+            Special1,
+            Special2,
+            Special3,
             InWarehouseNo,
             OutWarehouseNo,
             IsClosed,

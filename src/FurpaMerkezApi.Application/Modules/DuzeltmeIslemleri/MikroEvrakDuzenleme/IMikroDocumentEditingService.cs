@@ -2,6 +2,8 @@ namespace FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenle
 
 public interface IMikroDocumentEditingService
 {
+    MikroDocumentFieldCatalogDto GetFieldCatalog();
+
     Task<IReadOnlyCollection<StockCardListItemDto>> SearchStockCardsAsync(
         StockCardSearchRequest request,
         CancellationToken cancellationToken);
