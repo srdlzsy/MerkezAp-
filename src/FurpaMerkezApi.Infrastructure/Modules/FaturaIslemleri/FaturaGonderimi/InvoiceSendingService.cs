@@ -2103,11 +2103,11 @@ public sealed class InvoiceSendingService(
                     new XElement(
                         basic + "Amount",
                         new XAttribute("currencyID", CurrencyCode),
-                        FormatAmount(discount)),
+                        FormatAllowanceAmount(discount)),
                     new XElement(
                         basic + "BaseAmount",
                         new XAttribute("currencyID", CurrencyCode),
-                        FormatAmount(remainingBase))));
+                        FormatAllowanceAmount(remainingBase))));
             remainingBase = Math.Max(0m, remainingBase - discount);
         }
 
@@ -2851,10 +2851,13 @@ public sealed class InvoiceSendingService(
     }
 
     private static decimal RoundMoney(decimal value) =>
-        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+        InvoiceSendingAmountFormatter.RoundMoney(value);
 
     private static string FormatAmount(decimal value) =>
-        RoundMoney(value).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        InvoiceSendingAmountFormatter.FormatMoneyAmount(value);
+
+    private static string FormatAllowanceAmount(decimal value) =>
+        InvoiceSendingAmountFormatter.FormatAllowanceAmount(value);
 
     private static string FormatQuantity(decimal value) =>
         value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);

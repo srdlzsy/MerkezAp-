@@ -12671,6 +12671,7 @@ Davranis:
 - karekod icerigi ve gorseli tamamen secilen embedded veya fallback XSLT'nin sorumlulugundadir
 - satir ve `Mal Hizmet Toplam Tutari` alanlari iskonto oncesi brut tutari gosterir; ilk `AllowanceCharge/BaseAmount` satir brutunun kaynagidir
 - `Toplam Iskonto` UBL `AllowanceTotalAmount`, `Iskonto Sonrasi Vergi Haric Tutar` ise `TaxExclusiveAmount` alanindan gosterilir
+- satir iskonto yuzdesinin bozulmamasi icin `AllowanceCharge/Amount` ve `AllowanceCharge/BaseAmount` en fazla 4 ondalik hassasiyetle yazilir; genel para toplamlari (`LineExtensionAmount`, `TaxAmount`, `PayableAmount`, `AllowanceTotalAmount`) 2 ondalik kalir
 - bu endpoint sadece onizleme/render icindir; Uyumsoft'a gonderim yapmaz
 
 ### Fatura Gonderimi Render
@@ -12841,6 +12842,7 @@ UBL / gonderim kurallari:
   - aksi halde `SATIS`
 - stok satirlarinda iskonto alanlari `AllowanceCharge` olarak satir bazinda XML'e yazilir
 - `AllowanceCharge/MultiplierFactorNumeric` ondalik katsayi olarak yazilir; ornegin `%3 = 0.03`, `%5 = 0.05`. XSLT ekranda bu degeri `100` ile carparak yuzdeyi gosterir.
+- `AllowanceCharge/Amount` ve `AllowanceCharge/BaseAmount` 4 ondaliga kadar hassas yazilir. Ornek: Mikro `sth_iskonto1 = 0.6042` ise UBL `Amount` degeri `0.6042` olur; bu sayede `20.14` baz tutarda %3 iskonto Uyumsoft/alici ekraninda %2.98 gibi gorunmez.
 - e-arsiv gonderiminde `EArchiveInvoiceInfo DeliveryType="Electronic"` kullanilir
 
 ### Fatura Gonderimi Retry

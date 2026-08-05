@@ -346,6 +346,12 @@ Listeleme ve UBL uretimi agirlikli olarak su kaynaklari kullanir:
 | `EBELGE_EVRAK_HAREKETLERI` | Iade fatura referansi | `ebh_related_uid`, `ebh_iade_fat_no1`, `ebh_iade_fat_tarihi1` |
 | `Furpa.dbo.FaturaSeries` | Seri e-fatura/e-arsiv ayrimi | `seri`, `efatura` |
 
+Iskonto hassasiyeti:
+
+- Stok satir iskontolari Mikro `STOK_HAREKETLERI.sth_iskonto1..6` alanlarindan okunur.
+- UBL satir iskonto oraninin bozulmamasi icin `cac:InvoiceLine/cac:AllowanceCharge/cbc:Amount` ve `cbc:BaseAmount` en fazla 4 ondalik hassasiyetle yazilir. Ornek: `sth_tutar = 20.14` ve `sth_iskonto1 = 0.6042` ise UBL `Amount` degeri `0.6042` olur.
+- Fatura genel para toplamlari (`LineExtensionAmount`, `TaxAmount`, `AllowanceTotalAmount`, `PayableAmount`) 2 ondalik yazilmaya devam eder.
+
 Kritik Mikro yazimlari:
 
 - Send basarili olursa `CARI_HESAP_HAREKETLERI` satirlarina `cha_belge_no`, `cha_uuid`, `cha_kilitli`, `cha_degisti`, `cha_lastup_user`, `cha_lastup_date` yazilir.
