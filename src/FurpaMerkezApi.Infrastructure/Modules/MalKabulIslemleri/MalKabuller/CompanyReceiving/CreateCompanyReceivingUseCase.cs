@@ -2017,9 +2017,9 @@ public sealed class CreateCompanyReceivingUseCase(
 
         if (request.DocumentDate.HasValue &&
             request.MovementDate.HasValue &&
-            request.DocumentDate.Value.Date < request.MovementDate.Value.Date)
+            request.DocumentDate.Value.Date > request.MovementDate.Value.Date)
         {
-            throw new ArgumentException("Document date can not be earlier than movement date.", nameof(request.DocumentDate));
+            throw new ArgumentException("Document date can not be later than movement date.", nameof(request.DocumentDate));
         }
 
         if (request.Lines is null || request.Lines.Count == 0)
