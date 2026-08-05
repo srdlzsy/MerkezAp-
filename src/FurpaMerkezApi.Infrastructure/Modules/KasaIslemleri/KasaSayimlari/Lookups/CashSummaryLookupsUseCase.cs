@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Lookups;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
@@ -44,16 +45,32 @@ public sealed class CashSummaryLookupsUseCase(
     {
         ValidatePositive(request.BranchNo, nameof(request.BranchNo));
 
-        return await furpaDbContext.CashRegistryDetails
+        var cashRegisters = await furpaDbContext.CashRegistryDetails
             .AsNoTracking()
             .Where(item => item.BranchNo == request.BranchNo)
             .OrderBy(item => item.CashRegisterNo)
-            .Select(item => new CashRegistryItemDto(
+            .Select(item => new
+            {
                 item.DetailId,
                 item.BranchNo,
                 item.CashRegisterNo,
-                item.CashRegisterType))
+                item.CashRegisterType
+            })
             .ToArrayAsync(cancellationToken);
+
+        return cashRegisters
+            .Select(item =>
+            {
+                var option = SettingsTypeCatalog.ResolveCashTypeOption(item.CashRegisterType);
+                return new CashRegistryItemDto(
+                    item.DetailId,
+                    item.BranchNo,
+                    item.CashRegisterNo,
+                    item.CashRegisterType,
+                    option.Name,
+                    option.Description);
+            })
+            .ToArray();
     }
 
     public async Task<CashRegisterDetailDto?> GetCashRegisterDetailAsync(

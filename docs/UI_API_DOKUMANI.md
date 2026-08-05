@@ -1849,12 +1849,12 @@ Kasiyer listelerinde sifre donmez. Yeni kasiyer olusturma ve sifre sifirlama res
 UI icin tip/lookup kullanimi:
 
 - Sube ayarlari ekrani acilirken `GET /api/ayar-islemleri/sube-ayarlari/secenekler` cagrilip `scalesTypes` ve `cashTypes` dropdown'lari doldurulabilir.
-- Kasa/POS terminal ekrani acilirken `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` cagrilip `cashTypes` dropdown'i doldurulabilir.
+- Kasa/POS terminal ekrani acilirken `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` cagrilip `cashTypes` ve `terminalBanks` dropdown'lari doldurulabilir.
 - Cihaz tipi dropdown'i icin mevcut `GET /api/ayar-islemleri/cihazlar/tipler` endpoint'i kullanilir.
 - E-irsaliye gonderme modalinda sofor secimi icin `GET /api/ayar-islemleri/soforler?search=ali&take=20` kullanilir. Secilen kaydin `id` degeri e-irsaliye body icinde `driverId` olarak gonderilebilir; UI isterse `fullName`, `plateNumber` ve `tckn` alanlarini forma otomatik basar.
-- Numeric alanlar geriye uyumluluk icin korunur; response'larda yanina `scalesTypeName`, `cashTypeName`, `stateName` ve aciklama alanlari eklenir.
+- Numeric alanlar geriye uyumluluk icin korunur; response'larda yanina `scalesTypeName`, `cashTypeName`, `cashRegisterTypeName`, `stateName` ve aciklama alanlari eklenir.
 - `ScalesType` desteklenen kesin katalogdur: `0 = CAS 16`, `1 = CAS 500`.
-- `CashType` is kurali adi eski veri sozlugunde netlesmedigi icin simdilik merkezi ve notr adlarla (`Kasa Tipi 0`, `Kasa Tipi 1`) doner. Dogru is adlari teyit edilince sadece servis katalogu guncellenmelidir.
+- `CashType` katalogu UI icin anlamli adlarla doner: `0 = Standart POS Kasasi`, `1 = Ek POS Kasasi`. UI dropdown/liste etiketlerinde numeric degeri degil `name`/`cashTypeName`/`cashRegisterTypeName` alanini gostermelidir.
 - Lookup endpointleri sabit kataloglari ve veritabaninda mevcut tanimsiz degerleri birlikte dondurur; tanimsiz degerlerde `isKnown=false` gelir.
 
 Yetki kodlari:
@@ -2036,17 +2036,17 @@ Response:
   "cashTypes": [
     {
       "value": 0,
-      "code": "cash-type-0",
-      "name": "Kasa Tipi 0",
-      "description": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
-      "isKnown": false
+      "code": "standard-pos-cash-register",
+      "name": "Standart POS Kasasi",
+      "description": "Subenin POSKON/MESAJ dosya islemlerine dahil edilen standart satis kasasi.",
+      "isKnown": true
     },
     {
       "value": 1,
-      "code": "cash-type-1",
-      "name": "Kasa Tipi 1",
-      "description": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
-      "isKnown": false
+      "code": "additional-pos-cash-register",
+      "name": "Ek POS Kasasi",
+      "description": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+      "isKnown": true
     }
   ]
 }
@@ -2086,8 +2086,8 @@ Response:
     "branchNo": 110,
     "cashNo": 1,
     "cashType": 1,
-    "cashTypeName": "Kasa Tipi 1",
-    "cashTypeDescription": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi."
+    "cashTypeName": "Ek POS Kasasi",
+    "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir."
   }
 ]
 ```
@@ -2138,7 +2138,7 @@ Body `CreateBranchSettingsHttpRequest` ile ayni sube alanlarini alir; `cashRegis
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler`
 
-Kasa/POS terminal ekleme formundaki kasa tipi seciminin dropdown kaynagidir.
+Kasa/POS terminal ekleme formundaki kasa tipi ve banka/odeme tipi secimlerinin dropdown kaynagidir. UI terminal bankasini serbest metin gibi yazdirmamali; `terminalBanks[].displayName` gorunen etiket, `terminalBanks[].paymentName` kayit body icindeki `bank` alanidir.
 
 Response:
 
@@ -2147,17 +2147,25 @@ Response:
   "cashTypes": [
     {
       "value": 0,
-      "code": "cash-type-0",
-      "name": "Kasa Tipi 0",
-      "description": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
-      "isKnown": false
+      "code": "standard-pos-cash-register",
+      "name": "Standart POS Kasasi",
+      "description": "Subenin POSKON/MESAJ dosya islemlerine dahil edilen standart satis kasasi.",
+      "isKnown": true
     },
     {
       "value": 1,
-      "code": "cash-type-1",
-      "name": "Kasa Tipi 1",
-      "description": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
-      "isKnown": false
+      "code": "additional-pos-cash-register",
+      "name": "Ek POS Kasasi",
+      "description": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+      "isKnown": true
+    }
+  ],
+  "terminalBanks": [
+    {
+      "paymentName": "Akbank",
+      "paymentTypeNo": 1,
+      "accountCode": "POS-AKBANK",
+      "displayName": "Akbank - POS-AKBANK"
     }
   ]
 }
@@ -2192,8 +2200,8 @@ Response `201 Created`:
   "branchNo": 110,
   "cashNo": 1,
   "cashType": 1,
-  "cashTypeName": "Kasa Tipi 1",
-  "cashTypeDescription": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
+  "cashTypeName": "Ek POS Kasasi",
+  "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
   "terminals": [
     {
       "id": 15,
@@ -2241,8 +2249,8 @@ Response:
     "branchNo": 110,
     "cashNo": 1,
     "cashType": 1,
-    "cashTypeName": "Kasa Tipi 1",
-    "cashTypeDescription": "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
+    "cashTypeName": "Ek POS Kasasi",
+    "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
     "state": 0,
     "stateName": "1071 bulundu",
     "filePath": "\\\\192.168.1.5\\POSKON\\MESAJ.001",
@@ -10405,7 +10413,7 @@ Response:
 UI beklentisi:
 
 - ekran tek menu olarak acilabilir; `Import`, `Rapor`, `Mikro Aktarim` sekmeleri yeterlidir
-- ekran acilisinda `subeler`, sube secilince `subeler/{branchNo}/kasalar` cagrilmalidir
+- ekran acilisinda `subeler`, sube secilince `subeler/{branchNo}/kasalar` cagrilmalidir; kasa filtresi etiketinde `cashRegisterTypeName` kullanilmalidir
 - import dialogunda tarih araligi zorunlu, sube/kasa filtreleri opsiyonel olmalidir
 - `dryRun` bir onizleme modu gibi sunulmalidir; sonuc adetleri ve `warnings/errors` satir bazli gosterilmelidir
 - `skipExisting=true` varsayilani korunmalidir; tekrar import gereken durumlarda kullanici bilincli olarak kapatmalidir
@@ -10696,7 +10704,7 @@ Response:
 
 ### Kasa Lookup Endpointleri
 
-Bu endpointler kasa sayim formundaki secim kutulari ve yardimci alanlar icindir.
+Bu endpointler kasa sayim formundaki secim kutulari ve yardimci alanlar icindir. Kasa listelerinde `cashRegisterType` numeric degeri geriye uyumluluk icin korunur; UI gorunen metin olarak `cashRegisterTypeName` ve gerekirse yardim metni olarak `cashRegisterTypeDescription` kullanmalidir.
 
 Yetki:
 
@@ -10718,7 +10726,7 @@ Route'lar:
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi`
 - `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari`
 
-`odeme-tipleri/banka` eski `Summaries/GetPaymentTypesByBanks` davranisi ile uyumludur. Backend `cashRegisterNo` ile `CashRegisterDetails` satirlarini bulur, bu satirlardaki `Bank` degeri ile `PaymentTypes.PaymentName` alanini eslestirir ve sadece `PaymentGenus = 1` banka odeme tiplerini dondurur. Ayni kasa numarasina bagli birden fazla banka/terminal varsa response birden fazla satir dondurur; UI bunlari tek bankaya dusurmemelidir. `terminalId` ilgili `CashRegisterDetails.TerminalId`, `accountCode` ilgili `PaymentTypes.AccountCode` degeridir.
+`odeme-tipleri/banka` eski `Summaries/GetPaymentTypesByBanks` davranisi ile uyumludur. Backend `cashRegisterNo` ile `CashRegisterDetails` satirlarini bulur, bu satirlardaki `Bank` degeri ile `PaymentTypes.PaymentName` alanini eslestirir ve sadece `PaymentGenus = 1` banka odeme tiplerini dondurur. Ayni kasa numarasina bagli birden fazla banka/terminal varsa response birden fazla satir dondurur; UI bunlari tek bankaya dusurmemelidir. `terminalId` ilgili `CashRegisterDetails.TerminalId`, `accountCode` ilgili `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi icin de `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` kullanilmalidir; boylece buradaki eslestirme kayit sonrasinda dogru calisir.
 
 `odeme-tipleri/yemek-ceki` response'unda yemek ceki tipi adi `paymentName` alanindadir. Backend eski API ile uyumlu olarak `PaymentTypes.PaymentGenus = 2` olan yemek ceki odeme tiplerini listeler ve `accountCode` alanini `PaymentTypes.AccountCode` degeriyle doldurur. UI yemek ceki seciminde gorunen ad olarak `paymentName`, kayit payload'inda odeme tipi olarak `paymentTypeNo` kullanmalidir.
 
@@ -11368,7 +11376,7 @@ Kasa Islemleri / Kasa Ciro Aktarimi
 
 Kasa Islemleri / Kasa Hareket Aktarimi
   -> ekran acilisinda sube filtresi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler
-  -> kullanici sube secince kasa filtresi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler/{branchNo}/kasalar
+  -> kullanici sube secince kasa filtresi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/subeler/{branchNo}/kasalar; kasa tipi etiketi icin cashRegisterTypeName kullanilir
   -> HR hareket dosyalarini staging'e almak icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar
   -> IP iptal dosyalarini staging'e almak icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/iptal-belgeleri/aktar
   -> zamanli/gunluk toplu calistirma icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir
@@ -17399,7 +17407,14 @@ public sealed record BranchSettingsLookupsDto(
     IReadOnlyCollection<SettingsTypeOptionDto> CashTypes);
 
 public sealed record CashRegisterSettingsLookupsDto(
-    IReadOnlyCollection<SettingsTypeOptionDto> CashTypes);
+    IReadOnlyCollection<SettingsTypeOptionDto> CashTypes,
+    IReadOnlyCollection<TerminalBankOptionDto> TerminalBanks);
+
+public sealed record TerminalBankOptionDto(
+    string PaymentName,
+    int PaymentTypeNo,
+    string AccountCode,
+    string DisplayName);
 
 public sealed record DeviceTypeDto(
     int Id,
@@ -17625,7 +17640,9 @@ public sealed record CashRegistryItemDto(
     int DetailId,
     int BranchNo,
     int CashRegisterNo,
-    byte CashRegisterType);
+    byte CashRegisterType,
+    string CashRegisterTypeName,
+    string CashRegisterTypeDescription);
 
 public sealed record CashRegisterDetailDto(
     int Id,
@@ -17905,7 +17922,9 @@ public sealed record KasaHareketBranchDto(
 public sealed record KasaHareketCashRegisterDto(
     int BranchNo,
     int CashRegisterNo,
-    byte CashRegisterType);
+    byte CashRegisterType,
+    string CashRegisterTypeName,
+    string CashRegisterTypeDescription);
 
 public sealed record KasaHareketImportResultDto(
     string RunId,
@@ -18780,7 +18799,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UpdateBranchSettingsHttpRequest`: `BranchIpAddress`, `BranchScalesFolderPath`, `ScalesType` (`0=CAS 16`, `1=CAS 500`), `PoskonFolderPath`, `PosGenelFolderPath`
 - `CreateCashRegistryHttpRequest`: `CashNo`, `CashType`
 - `CreateCashRegisterHttpRequest`: `BranchNo`, `CashNo`, `CashType`, `Terminals`
-- `CreateCashRegisterTerminalHttpRequest`: `TerminalNo`, `Bank`, `TerminalId`, `MerchantNo`
+- `CreateCashRegisterTerminalHttpRequest`: `TerminalNo`, `Bank`, `TerminalId`, `MerchantNo`. `Bank` UI tarafinda `kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks[].paymentName` degerinden secilmelidir; gorunen etiket icin `displayName` kullanilir.
 - `CreateCashierHttpRequest`: `CashierName`, `CashierAuthorization`
 - `UpdateCashierHttpRequest`: `CashierName`, `CashierAuthorization`, `CashierState`
 - `DespatchDriverListHttpRequest`: `Search`, `IncludeInactive`, `Take`

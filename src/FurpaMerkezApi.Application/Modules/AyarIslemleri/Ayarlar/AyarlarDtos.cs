@@ -12,7 +12,14 @@ public sealed record BranchSettingsLookupsDto(
     IReadOnlyCollection<SettingsTypeOptionDto> CashTypes);
 
 public sealed record CashRegisterSettingsLookupsDto(
-    IReadOnlyCollection<SettingsTypeOptionDto> CashTypes);
+    IReadOnlyCollection<SettingsTypeOptionDto> CashTypes,
+    IReadOnlyCollection<TerminalBankOptionDto> TerminalBanks);
+
+public sealed record TerminalBankOptionDto(
+    string PaymentName,
+    int PaymentTypeNo,
+    string AccountCode,
+    string DisplayName);
 
 public sealed record DeviceTypeDto(
     int Id,

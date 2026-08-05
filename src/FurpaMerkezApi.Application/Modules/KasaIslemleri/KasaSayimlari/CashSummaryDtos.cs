@@ -112,7 +112,9 @@ public sealed record CashRegistryItemDto(
     int DetailId,
     int BranchNo,
     int CashRegisterNo,
-    byte CashRegisterType);
+    byte CashRegisterType,
+    string CashRegisterTypeName,
+    string CashRegisterTypeDescription);
 
 public sealed record CashRegisterDetailDto(
     int Id,

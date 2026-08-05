@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -50,15 +51,30 @@ public sealed class KasaHareketAktarimiService(
             throw new ArgumentException("Branch no must be greater than zero.", nameof(branchNo));
         }
 
-        return await furpaDbContext.CashRegistryDetails
+        var cashRegisters = await furpaDbContext.CashRegistryDetails
             .AsNoTracking()
             .Where(item => item.BranchNo == branchNo)
             .OrderBy(item => item.CashRegisterNo)
-            .Select(item => new KasaHareketCashRegisterDto(
+            .Select(item => new
+            {
                 item.BranchNo,
                 item.CashRegisterNo,
-                item.CashRegisterType))
+                item.CashRegisterType
+            })
             .ToArrayAsync(cancellationToken);
+
+        return cashRegisters
+            .Select(item =>
+            {
+                var option = SettingsTypeCatalog.ResolveCashTypeOption(item.CashRegisterType);
+                return new KasaHareketCashRegisterDto(
+                    item.BranchNo,
+                    item.CashRegisterNo,
+                    item.CashRegisterType,
+                    option.Name,
+                    option.Description);
+            })
+            .ToArray();
     }
 
     public Task<KasaHareketImportResultDto> ImportMovementsAsync(

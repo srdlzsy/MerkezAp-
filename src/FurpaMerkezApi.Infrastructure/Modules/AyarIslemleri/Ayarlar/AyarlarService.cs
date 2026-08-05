@@ -20,36 +20,6 @@ public sealed class AyarlarService(
 {
     private const int DevicePingTimeoutMilliseconds = 1000;
     private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");
-    private static readonly IReadOnlyCollection<SettingsTypeOptionDto> ScalesTypeOptions =
-    [
-        new(
-            0,
-            "cas-16",
-            "CAS 16",
-            "Terazi.plu formatinda CAS 16 terazi dosyasi uretir.",
-            true),
-        new(
-            1,
-            "cas-500",
-            "CAS 500",
-            "ART_STM.txt formatinda CAS 500 terazi dosyasi uretir.",
-            true)
-    ];
-    private static readonly IReadOnlyCollection<SettingsTypeOptionDto> CashTypeOptions =
-    [
-        new(
-            0,
-            "cash-type-0",
-            "Kasa Tipi 0",
-            "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
-            false),
-        new(
-            1,
-            "cash-type-1",
-            "Kasa Tipi 1",
-            "Mevcut veri sozlugunde is kurali adi netlestirilmemis kasa tipi.",
-            false)
-    ];
 
     public async Task<BranchSettingsLookupsDto> GetBranchSettingsLookupsAsync(
         CancellationToken cancellationToken) =>
@@ -59,7 +29,9 @@ public sealed class AyarlarService(
 
     public async Task<CashRegisterSettingsLookupsDto> GetCashRegisterSettingsLookupsAsync(
         CancellationToken cancellationToken) =>
-        new(await ListCashTypeOptionsAsync(cancellationToken));
+        new(
+            await ListCashTypeOptionsAsync(cancellationToken),
+            await ListTerminalBankOptionsAsync(cancellationToken));
 
     public async Task<IReadOnlyCollection<DeviceTypeDto>> ListDeviceTypesAsync(
         CancellationToken cancellationToken) =>
@@ -797,7 +769,10 @@ public sealed class AyarlarService(
             .Distinct()
             .ToArrayAsync(cancellationToken);
 
-        return MergeTypeOptions(ScalesTypeOptions, configuredValues, ResolveScalesTypeOption);
+        return MergeTypeOptions(
+            SettingsTypeCatalog.GetScalesTypeOptions(),
+            configuredValues,
+            SettingsTypeCatalog.ResolveScalesTypeOption);
     }
 
     private async Task<IReadOnlyCollection<SettingsTypeOptionDto>> ListCashTypeOptionsAsync(
@@ -809,9 +784,38 @@ public sealed class AyarlarService(
             .Distinct()
             .ToArrayAsync(cancellationToken);
 
-        return MergeTypeOptions(CashTypeOptions, configuredValues, ResolveCashTypeOption);
+        return MergeTypeOptions(
+            SettingsTypeCatalog.GetCashTypeOptions(),
+            configuredValues,
+            SettingsTypeCatalog.ResolveCashTypeOption);
     }
 
+    private async Task<IReadOnlyCollection<TerminalBankOptionDto>> ListTerminalBankOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var paymentTypes = await mikroWriteDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item => item.PaymentGenus == 1)
+            .OrderBy(item => item.PaymentName)
+            .Select(item => new
+            {
+                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentTypeNo,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return paymentTypes
+            .Where(item => !string.IsNullOrWhiteSpace(item.PaymentName))
+            .Select(item => new TerminalBankOptionDto(
+                item.PaymentName,
+                item.PaymentTypeNo,
+                item.AccountCode,
+                string.IsNullOrWhiteSpace(item.AccountCode)
+                    ? item.PaymentName
+                    : item.PaymentName + " - " + item.AccountCode))
+            .ToArray();
+    }
     private static BranchDetailDto ToBranchDto(BranchDetailEntity item) =>
         new(
             item.BranchNo,
@@ -963,41 +967,24 @@ public sealed class AyarlarService(
 
     private static void ValidateScalesType(byte value, string parameterName)
     {
-        if (!ScalesTypeOptions.Any(item => item.Value == value))
+        if (!SettingsTypeCatalog.GetScalesTypeOptions().Any(item => item.Value == value))
         {
             throw new ArgumentException("Scales type must be 0 (CAS 16) or 1 (CAS 500).", parameterName);
         }
     }
 
     private static string ResolveScalesTypeName(byte value) =>
-        ResolveScalesTypeOption(value).Name;
+        SettingsTypeCatalog.ResolveScalesTypeOption(value).Name;
 
     private static string ResolveScalesTypeDescription(byte value) =>
-        ResolveScalesTypeOption(value).Description;
+        SettingsTypeCatalog.ResolveScalesTypeOption(value).Description;
 
     private static string ResolveCashTypeName(byte value) =>
-        ResolveCashTypeOption(value).Name;
+        SettingsTypeCatalog.ResolveCashTypeOption(value).Name;
 
     private static string ResolveCashTypeDescription(byte value) =>
-        ResolveCashTypeOption(value).Description;
+        SettingsTypeCatalog.ResolveCashTypeOption(value).Description;
 
-    private static SettingsTypeOptionDto ResolveScalesTypeOption(byte value) =>
-        ScalesTypeOptions.FirstOrDefault(item => item.Value == value)
-        ?? new SettingsTypeOptionDto(
-            value,
-            $"scales-type-{value.ToString(CultureInfo.InvariantCulture)}",
-            $"Terazi Tipi {value.ToString(CultureInfo.InvariantCulture)}",
-            "Tanimlanmamis terazi tipi.",
-            false);
-
-    private static SettingsTypeOptionDto ResolveCashTypeOption(byte value) =>
-        CashTypeOptions.FirstOrDefault(item => item.Value == value)
-        ?? new SettingsTypeOptionDto(
-            value,
-            $"cash-type-{value.ToString(CultureInfo.InvariantCulture)}",
-            $"Kasa Tipi {value.ToString(CultureInfo.InvariantCulture)}",
-            "Tanimlanmamis kasa tipi.",
-            false);
 
     private static IReadOnlyCollection<SettingsTypeOptionDto> MergeTypeOptions(
         IReadOnlyCollection<SettingsTypeOptionDto> defaultOptions,

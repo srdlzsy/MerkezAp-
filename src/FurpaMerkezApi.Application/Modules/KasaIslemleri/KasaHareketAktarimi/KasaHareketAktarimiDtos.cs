@@ -8,7 +8,9 @@ public sealed record KasaHareketBranchDto(
 public sealed record KasaHareketCashRegisterDto(
     int BranchNo,
     int CashRegisterNo,
-    byte CashRegisterType);
+    byte CashRegisterType,
+    string CashRegisterTypeName,
+    string CashRegisterTypeDescription);
 
 public sealed record KasaHareketImportRequest(
     DateTime StartDate,
