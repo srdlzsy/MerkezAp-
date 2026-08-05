@@ -469,10 +469,19 @@ internal sealed class AxataSynchronizationService(
             : new AxataSynchronizationTaskOptions();
 
     private static bool SupportsManualDocuments(string taskCode) =>
-        taskCode is "issued-warehouse-order-sync" or "company-receiving-sync" or "inventory-count-sync";
+        taskCode is "issued-warehouse-order-sync"
+            or "received-company-order-sync"
+            or "warehouse-inbound-order-sync"
+            or "company-receiving-sync"
+            or "inventory-count-sync";
 
     private static bool SupportsLiveDispatch(string taskCode) =>
-        taskCode is "product-master-sync" or "issued-warehouse-order-sync" or "company-receiving-sync";
+        taskCode is "firm-master-sync"
+            or "product-master-sync"
+            or "issued-warehouse-order-sync"
+            or "received-company-order-sync"
+            or "warehouse-inbound-order-sync"
+            or "company-receiving-sync";
 
     private static string? ResolveLiveOperationName(
         string taskCode,
@@ -491,8 +500,11 @@ internal sealed class AxataSynchronizationService(
 
         return taskCode switch
         {
+            "firm-master-sync" => "addFirmMaster+addFirmAddress",
             "product-master-sync" => "addSKUMaster",
             "issued-warehouse-order-sync" => "addOutboundOrder",
+            "received-company-order-sync" => "addOutboundOrder",
+            "warehouse-inbound-order-sync" => "addInboundOrder",
             "company-receiving-sync" => "addInboundOrder",
             _ => null
         };

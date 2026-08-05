@@ -33,8 +33,8 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "C02",
             "0",
-            "LiveQueuePreviewOnly",
-            "/api/integrations/axata-sync/live/axata/outbound-deliveries/preview?movementType=C02",
+            "LiveCompanyShipmentImport",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c02/import",
             true),
         new(
             "c03-outbound-delivery",
@@ -49,8 +49,8 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "C03",
             "0",
-            "LiveQueuePreviewOnly",
-            "/api/integrations/axata-sync/live/axata/outbound-deliveries/preview?movementType=C03",
+            "LiveLegacyCompanyReturnImport",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c03/import",
             true),
         new(
             "c04-outbound-delivery",
@@ -65,8 +65,8 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "C4",
             "0",
-            "LiveQueuePreviewOnly",
-            "/api/integrations/axata-sync/live/axata/outbound-deliveries/preview?movementType=C4",
+            "LiveLegacyTransferImport",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c04/import",
             true),
         new(
             "g01-inbound-atf",
@@ -81,9 +81,9 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "G01",
             "0",
-            "ManualAxataNativeImport",
-            "/api/integrations/axata-sync/manual/axata/inbound-atf/company-receivings",
-            false),
+            "LiveCompanyReceivingImport",
+            "/api/integrations/axata-sync/live/axata/inbound-atf/g01/import",
+            true),
         new(
             "g02-inbound-delivery",
             "G02 Depolar Arasi Giris Teslimati",
@@ -97,9 +97,9 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "G02",
             "0",
-            "PlannedLiveFetchImport",
-            null,
-            false),
+            "LiveWarehouseReceivingAccept",
+            "/api/integrations/axata-sync/live/axata/inbound-deliveries/g02/import",
+            true),
         new(
             "inventory-count-ext-view",
             "AXATA EXT Dinamik Sayim",
@@ -113,9 +113,9 @@ internal static class AxataSynchronizationFetchProfileCatalog
             "01",
             "vw_stok_duzeltme",
             "0",
-            "ManualIncomingImport",
-            "/api/integrations/axata-sync/manual/incoming/inventory-counts",
-            false)
+            "LiveDynamicCensusImport",
+            "/api/integrations/axata-sync/live/axata/dynamic-census/import",
+            true)
     ];
 }
 

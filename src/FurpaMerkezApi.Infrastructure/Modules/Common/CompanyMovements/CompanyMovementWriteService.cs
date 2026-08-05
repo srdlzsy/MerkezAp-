@@ -449,7 +449,7 @@ public sealed class CompanyMovementWriteService(
             sth_netagirlik = 0d,
             sth_odeme_op = 0,
             sth_aciklama = NormalizeText(line.Description ?? request.Description),
-            sth_sip_uid = Guid.Empty,
+            sth_sip_uid = line.OrderLineGuid ?? Guid.Empty,
             sth_fat_uid = Guid.Empty,
             sth_giris_depo_no = 0,
             sth_cikis_depo_no = request.WarehouseNo,

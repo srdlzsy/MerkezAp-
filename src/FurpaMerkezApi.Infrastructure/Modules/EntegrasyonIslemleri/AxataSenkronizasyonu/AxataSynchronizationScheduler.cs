@@ -74,9 +74,7 @@ internal sealed class AxataSynchronizationScheduler(
 
             queue.Enqueue(
                 definition,
-                definition.Code.Equals("product-master-sync", StringComparison.OrdinalIgnoreCase)
-                    ? AxataSynchronizationJobExecutionMode.Live
-                    : AxataSynchronizationJobExecutionMode.Outbox,
+                ResolveScheduledExecutionMode(taskOptions),
                 AxataSynchronizationJobTriggerSource.Scheduled,
                 taskOptions.DefaultWarehouseNo,
                 Guid.Empty);
@@ -96,4 +94,10 @@ internal sealed class AxataSynchronizationScheduler(
         options.Tasks.TryGetValue(taskCode, out var taskOptions)
             ? taskOptions
             : new AxataSynchronizationTaskOptions();
+
+    private static AxataSynchronizationJobExecutionMode ResolveScheduledExecutionMode(
+        AxataSynchronizationTaskOptions taskOptions) =>
+        !string.IsNullOrWhiteSpace(taskOptions.LiveOperationName)
+            ? AxataSynchronizationJobExecutionMode.Live
+            : AxataSynchronizationJobExecutionMode.Outbox;
 }

@@ -59,4 +59,6 @@ public sealed class CreateCompanyMovementLineHttpRequest
 
     [StringLength(25)]
     public string? ProductResponsibilityCenter { get; init; }
+
+    public Guid? OrderLineGuid { get; init; }
 }

@@ -221,7 +221,8 @@ public sealed class FirmaSevkleriController(
                         line.LotNo,
                         line.ProjectCode,
                         line.CustomerResponsibilityCenter,
-                        line.ProductResponsibilityCenter))
+                        line.ProductResponsibilityCenter,
+                        line.OrderLineGuid))
                     .ToArray()),
             cancellationToken);
 

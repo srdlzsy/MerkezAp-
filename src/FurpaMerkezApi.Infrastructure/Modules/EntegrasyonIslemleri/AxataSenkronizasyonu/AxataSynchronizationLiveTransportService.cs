@@ -6,6 +6,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using Microsoft.Extensions.Options;
 using AxataInbound = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main.WMSServiceCore.Models.Inbounds;
 using AxataMain = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main;
+using AxataModels = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main.WMSServiceCore.Models;
 using AxataOutbound = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main.WMSServiceCore.Models.Outbound;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
@@ -21,7 +22,83 @@ internal sealed class AxataSynchronizationLiveTransportService(
     private const string DefaultOutboundOperationName = "addOutboundOrder";
     private const string DefaultInboundOperationName = "addInboundOrder";
     private const string DefaultOutboundMovementCode = "C01";
+    private const string DefaultCustomerOutboundMovementCode = "C02";
     private const string DefaultInboundMovementCode = "G01";
+    private const string DefaultWarehouseInboundMovementCode = "G02";
+    private const string DefaultFirmMasterOperationName = "addFirmMaster";
+    private const string DefaultFirmAddressOperationName = "addFirmAddress";
+
+    public async Task<AxataLiveDispatchResult> DispatchFirmMasterAsync(
+        AxataSynchronizationTaskExecutionContext context,
+        FirmMasterPayloadItem item,
+        CancellationToken cancellationToken)
+    {
+        var configuration = GetRequiredConfiguration();
+        var masterOperationName = ResolveOperationName(context.Definition.Code, DefaultFirmMasterOperationName);
+        var addressOperationName = DefaultFirmAddressOperationName;
+        var payload = BuildFirmMasterPayload(item);
+        var addressPayload = BuildFirmAddressPayload(item);
+        var masterResponse = await AddFirmMasterAsync(
+            configuration,
+            masterOperationName,
+            payload,
+            cancellationToken);
+        var masterServiceResponse = ToServiceResponse(masterResponse.State, masterResponse.Message, masterOperationName);
+
+        if (!masterServiceResponse.IsSuccess)
+        {
+            return new AxataLiveDispatchResult(
+                masterOperationName,
+                configuration.MainEndpointUrl,
+                false,
+                masterServiceResponse.State,
+                masterServiceResponse.Message,
+                AxataSynchronizationPayloadFactory.Serialize(payload),
+                AxataSynchronizationPayloadFactory.Serialize(payload),
+                SerializeResponsePayload(masterOperationName, masterResponse.State, masterResponse.Message, masterResponse.ProcessResults),
+                [$"Firma master kaydi `{masterOperationName}` ile gonderildi ancak AXATA basarisiz dondu."]);
+        }
+
+        var addressResponse = await AddFirmAddressAsync(
+            configuration,
+            addressOperationName,
+            addressPayload,
+            cancellationToken);
+        var addressServiceResponse = ToServiceResponse(addressResponse.State, addressResponse.Message, addressOperationName);
+        var isSuccess = masterServiceResponse.IsSuccess && addressServiceResponse.IsSuccess;
+
+        return new AxataLiveDispatchResult(
+            $"{masterOperationName}+{addressOperationName}",
+            configuration.MainEndpointUrl,
+            isSuccess,
+            isSuccess ? addressServiceResponse.State : addressServiceResponse.State,
+            isSuccess
+                ? $"{masterServiceResponse.Message} / {addressServiceResponse.Message}"
+                : addressServiceResponse.Message,
+            AxataSynchronizationPayloadFactory.Serialize(new { master = payload, address = addressPayload }),
+            AxataSynchronizationPayloadFactory.Serialize(new { master = payload, address = addressPayload }),
+            AxataSynchronizationPayloadFactory.Serialize(new
+            {
+                master = new
+                {
+                    operationName = masterOperationName,
+                    masterResponse.State,
+                    masterResponse.Message,
+                    masterResponse.ProcessResults
+                },
+                address = new
+                {
+                    operationName = addressOperationName,
+                    addressResponse.State,
+                    addressResponse.Message,
+                    addressResponse.ProcessResults
+                }
+            }),
+            [
+                $"Firma master `{masterOperationName}` ve adres `{addressOperationName}` WCF client ile gonderildi.",
+                $"Cari kodu {item.CustomerCode} kullanildi."
+            ]);
+    }
 
     public async Task<AxataLiveDispatchResult> DispatchWarehouseOrderAsync(
         AxataSynchronizationTaskExecutionContext context,
@@ -53,6 +130,37 @@ internal sealed class AxataSynchronizationLiveTransportService(
             ]);
     }
 
+    public async Task<AxataLiveDispatchResult> DispatchCustomerOutboundOrderAsync(
+        AxataSynchronizationTaskExecutionContext context,
+        CompanyOrderDetailDto detail,
+        CancellationToken cancellationToken)
+    {
+        var configuration = GetRequiredConfiguration();
+        var operationName = ResolveOperationName(context.Definition.Code, DefaultOutboundOperationName);
+        var payload = BuildCustomerOutboundOrderPayload(detail);
+        var response = await AddOutboundOrderAsync(
+            configuration,
+            operationName,
+            payload,
+            cancellationToken);
+        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
+
+        return new AxataLiveDispatchResult(
+            operationName,
+            configuration.MainEndpointUrl,
+            serviceResponse.IsSuccess,
+            serviceResponse.State,
+            serviceResponse.Message,
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
+            [
+                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
+                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
+                $"C02 alici/musteri kodu {detail.Header.CustomerCode} olarak gonderildi."
+            ]);
+    }
+
     public async Task<AxataLiveDispatchResult> DispatchCompanyReceivingAsync(
         AxataSynchronizationTaskExecutionContext context,
         CompanyMovementDetailDto detail,
@@ -80,6 +188,37 @@ internal sealed class AxataSynchronizationLiveTransportService(
             [
                 $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
                 $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi."
+            ]);
+    }
+
+    public async Task<AxataLiveDispatchResult> DispatchWarehouseInboundOrderAsync(
+        AxataSynchronizationTaskExecutionContext context,
+        WarehouseOrderDetailDto detail,
+        CancellationToken cancellationToken)
+    {
+        var configuration = GetRequiredConfiguration();
+        var operationName = ResolveOperationName(context.Definition.Code, DefaultInboundOperationName);
+        var payload = BuildWarehouseInboundOrderPayload(detail);
+        var response = await AddInboundOrderAsync(
+            configuration,
+            operationName,
+            payload,
+            cancellationToken);
+        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
+
+        return new AxataLiveDispatchResult(
+            operationName,
+            configuration.MainEndpointUrl,
+            serviceResponse.IsSuccess,
+            serviceResponse.State,
+            serviceResponse.Message,
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
+            [
+                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
+                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
+                $"G02 firma/depo kodu kaynak depo {detail.Header.OutWarehouseNo} olarak gonderildi."
             ]);
     }
 
@@ -141,6 +280,65 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 .ToArray());
     }
 
+    private static AxataLegacyOutboundOrderPayload BuildCustomerOutboundOrderPayload(CompanyOrderDetailDto detail)
+    {
+        var documentNumber = BuildDocumentNumber(detail.Header.DocumentSerie, detail.Header.DocumentOrderNo);
+        var movementCode = DefaultCustomerOutboundMovementCode;
+        var depotCode = DefaultBranchCode;
+
+        return new AxataLegacyOutboundOrderPayload(
+            documentNumber,
+            movementCode,
+            new AxataLegacyOutboundOrderMaster(
+                DefaultBranchCode,
+                documentNumber,
+                DefaultExternalChannel,
+                detail.Header.CustomerCode,
+                detail.Header.CustomerCode,
+                DefaultAddressCode,
+                DefaultFormType,
+                string.Empty,
+                movementCode,
+                movementCode),
+            detail.Items
+                .OrderBy(item => item.LineNo)
+                .Where(item => item.RemainingQuantity > 0d || item.Quantity > 0d)
+                .Select(item => new AxataLegacyOutboundOrderLine(
+                    DefaultBranchCode,
+                    documentNumber,
+                    item.LineNo,
+                    item.StockCode,
+                    item.RemainingQuantity > 0d ? item.RemainingQuantity : item.Quantity,
+                    depotCode))
+                .ToArray());
+    }
+
+    private static AxataFirmMasterPayload BuildFirmMasterPayload(FirmMasterPayloadItem item) =>
+        new(
+            new AxataFirmMasterFields(
+                DefaultBranchCode,
+                item.CustomerCode,
+                2m,
+                Truncate(item.DisplayName, 20),
+                Truncate(item.DisplayName, 100),
+                Truncate(item.AddressLine1, 100),
+                Truncate(item.AddressLine2, 100),
+                string.Empty,
+                Truncate(item.TaxOfficeNo, 25),
+                Truncate(item.TaxNumber, 25),
+                Truncate(item.Email, 100),
+                Truncate(item.MobilePhone, 25)));
+
+    private static AxataFirmAddressPayload BuildFirmAddressPayload(FirmMasterPayloadItem item) =>
+        new(
+            new AxataFirmAddressFields(
+                DefaultBranchCode,
+                DefaultAddressCode,
+                item.CustomerCode,
+                Truncate(item.AddressLine1, 100),
+                Truncate(item.AddressLine2, 100),
+                string.Empty));
+
     private static AxataLegacyInboundOrderPayload BuildInboundOrderPayload(CompanyMovementDetailDto detail)
     {
         var documentNumber = BuildDocumentNumber(detail.Header.DocumentSerie, detail.Header.DocumentOrderNo);
@@ -170,6 +368,41 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     item.StockCode,
                     detail.Header.CustomerCode,
                     item.Quantity,
+                    orderDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture),
+                    deliveryDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)))
+                .ToArray());
+    }
+
+    private static AxataLegacyInboundOrderPayload BuildWarehouseInboundOrderPayload(WarehouseOrderDetailDto detail)
+    {
+        var documentNumber = BuildDocumentNumber(detail.Header.DocumentSerie, detail.Header.DocumentOrderNo);
+        var movementCode = DefaultWarehouseInboundMovementCode;
+        var firmCode = detail.Header.OutWarehouseNo.ToString(CultureInfo.InvariantCulture);
+        var orderDate = detail.Header.DocumentDate.Date;
+        var deliveryDate = (detail.Header.DeliveryDate ?? detail.Header.DocumentDate).Date;
+
+        return new AxataLegacyInboundOrderPayload(
+            documentNumber,
+            movementCode,
+            new AxataLegacyInboundOrderMaster(
+                DefaultBranchCode,
+                movementCode,
+                documentNumber,
+                DefaultActionCode,
+                firmCode,
+                orderDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture),
+                deliveryDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)),
+            detail.Items
+                .OrderBy(item => item.LineNo)
+                .Select(item => new AxataLegacyInboundOrderLine(
+                    DefaultBranchCode,
+                    movementCode,
+                    documentNumber,
+                    DefaultActionCode,
+                    item.LineNo,
+                    item.StockCode,
+                    firmCode,
+                    item.RemainingQuantity > 0d ? item.RemainingQuantity : item.Quantity,
                     orderDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture),
                     deliveryDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)))
                 .ToArray());
@@ -216,6 +449,76 @@ internal sealed class AxataSynchronizationLiveTransportService(
 
             throw new NotSupportedException(
                 $"AXATA WCF outbound dispatch operation '{operationName}' is not supported.");
+        }
+        catch
+        {
+            AbortWcfClient(client);
+            throw;
+        }
+    }
+
+    private static async Task<AxataWcfDispatchResponse> AddFirmMasterAsync(
+        AxataSynchronizationLiveTransportConfiguration configuration,
+        string operationName,
+        AxataFirmMasterPayload payload,
+        CancellationToken cancellationToken)
+    {
+        if (!operationName.Equals(DefaultFirmMasterOperationName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException(
+                $"AXATA WCF firm master dispatch operation '{operationName}' is not supported.");
+        }
+
+        var client = CreateMainClient(configuration.MainEndpointUrl);
+        var firmMaster = ToWcfFirmMaster(payload);
+
+        try
+        {
+            var response = await client
+                .addFirmMasterAsync(
+                    new AxataMain.addFirmMaster_Req(
+                        configuration.Username,
+                        configuration.Password,
+                        [firmMaster]))
+                .WaitAsync(cancellationToken);
+
+            CloseWcfClient(client);
+            return new AxataWcfDispatchResponse(response.state, response.message, response.processResult);
+        }
+        catch
+        {
+            AbortWcfClient(client);
+            throw;
+        }
+    }
+
+    private static async Task<AxataWcfDispatchResponse> AddFirmAddressAsync(
+        AxataSynchronizationLiveTransportConfiguration configuration,
+        string operationName,
+        AxataFirmAddressPayload payload,
+        CancellationToken cancellationToken)
+    {
+        if (!operationName.Equals(DefaultFirmAddressOperationName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException(
+                $"AXATA WCF firm address dispatch operation '{operationName}' is not supported.");
+        }
+
+        var client = CreateMainClient(configuration.MainEndpointUrl);
+        var firmAddress = ToWcfFirmAddress(payload);
+
+        try
+        {
+            var response = await client
+                .addFirmAddressAsync(
+                    new AxataMain.addFirmAddress_Req(
+                        configuration.Username,
+                        configuration.Password,
+                        [firmAddress]))
+                .WaitAsync(cancellationToken);
+
+            CloseWcfClient(client);
+            return new AxataWcfDispatchResponse(response.state, response.message, response.processResult);
         }
         catch
         {
@@ -300,6 +603,40 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     S01DEPO = line.S01DEPO
                 })
                 .ToArray()
+        };
+
+    private static AxataModels.FirmMaster ToWcfFirmMaster(AxataFirmMasterPayload payload) =>
+        new()
+        {
+            ENT002 = new AxataMain.ENT002
+            {
+                S02SKOD = payload.Fields.S02SKOD,
+                S02BAYK = payload.Fields.S02BAYK,
+                S02BAYT = payload.Fields.S02BAYT,
+                S02MUSK = payload.Fields.S02MUSK,
+                S02MUSA = payload.Fields.S02MUSA,
+                S02ADR1 = payload.Fields.S02ADR1,
+                S02ADR2 = payload.Fields.S02ADR2,
+                S02ADR3 = payload.Fields.S02ADR3,
+                S02VERD = payload.Fields.S02VERD,
+                S02VERN = payload.Fields.S02VERN,
+                S02EMAIL = payload.Fields.S02EMAIL,
+                S02TEL1 = payload.Fields.S02TEL1
+            }
+        };
+
+    private static AxataModels.FirmAddress ToWcfFirmAddress(AxataFirmAddressPayload payload) =>
+        new()
+        {
+            ENT002_ADR = new AxataMain.ENT002_ADR
+            {
+                S02SKOD = payload.Fields.S02SKOD,
+                S02SIRA = payload.Fields.S02SIRA,
+                S02BAYK = payload.Fields.S02BAYK,
+                S02ADR1 = payload.Fields.S02ADR1,
+                S02ADR2 = payload.Fields.S02ADR2,
+                S02ADR3 = payload.Fields.S02ADR3
+            }
         };
 
     private static AxataInbound.InboundOrderV1 ToWcfInboundOrder(AxataLegacyInboundOrderPayload payload) =>
@@ -391,6 +728,14 @@ internal sealed class AxataSynchronizationLiveTransportService(
     private static string BuildDocumentNumber(string documentSerie, int documentOrderNo) =>
         $"{documentSerie.Trim()}.{documentOrderNo.ToString(CultureInfo.InvariantCulture)}";
 
+    private static string Truncate(string? value, int maxLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
+    }
+
     private string ResolveOperationName(string taskCode, string fallbackOperationName)
     {
         if (options.CurrentValue.Tasks.TryGetValue(taskCode, out var taskOptions) &&
@@ -481,3 +826,31 @@ internal sealed record AxataLegacyInboundOrderLine(
     double S13MIKT,
     string S13SIPT,
     string S13TEST);
+
+internal sealed record AxataFirmMasterPayload(
+    AxataFirmMasterFields Fields);
+
+internal sealed record AxataFirmMasterFields(
+    string S02SKOD,
+    string S02BAYK,
+    decimal S02BAYT,
+    string S02MUSK,
+    string S02MUSA,
+    string S02ADR1,
+    string S02ADR2,
+    string S02ADR3,
+    string S02VERD,
+    string S02VERN,
+    string S02EMAIL,
+    string S02TEL1);
+
+internal sealed record AxataFirmAddressPayload(
+    AxataFirmAddressFields Fields);
+
+internal sealed record AxataFirmAddressFields(
+    string S02SKOD,
+    string S02SIRA,
+    string S02BAYK,
+    string S02ADR1,
+    string S02ADR2,
+    string S02ADR3);

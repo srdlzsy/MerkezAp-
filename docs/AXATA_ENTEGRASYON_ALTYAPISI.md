@@ -1,6 +1,6 @@
 # AXATA Entegrasyon Altyapisi
 
-Bu dokuman, `FurpaMerkezApi` icindeki AXATA senkronizasyon modulunun 2026-06-12 itibariyla kodda dogrulanan durumunu anlatir. Ek olarak, paylasilan `Furpa.WorkerService` teknik dokumanindaki eski worker davranislariyla mevcut API davranisini karsilastirir.
+Bu dokuman, `FurpaMerkezApi` icindeki AXATA senkronizasyon modulunun 2026-08-05 itibariyla kodda dogrulanan durumunu anlatir. Ek olarak, paylasilan `Furpa.WorkerService` teknik dokumanindaki eski worker davranislariyla mevcut API davranisini karsilastirir.
 
 Guvenlik notu:
 
@@ -14,7 +14,7 @@ Mevcut API modulu uc isi birlikte yapar:
 
 - `Mikro -> AXATA` yonunde Mikro verisinden preview/outbox payload uretir.
 - Secili task'larda AXATA ana servisine WCF client ile canli dispatch yapar.
-- `AXATA -> Mikro` yonunde C01 outbound delivery icin canli fetch/import/ack, diger akislarda manuel body tabanli kurtarma saglar.
+- `AXATA -> Mikro` yonunde C01/C02/C03/C4 outbound delivery, G01 inbound ATF, G02 inbound delivery ve DynamicCensus icin canli fetch/import/ack saglar; ayrica manuel body tabanli kurtarma endpointleri korunur.
 
 Bugunku net durum:
 
@@ -27,16 +27,18 @@ Bugunku net durum:
 | DryRun | Var |
 | Outbox JSON artifact | Var |
 | `issued-warehouse-order-sync` canli dispatch | Var, `addOutboundOrder*`, hareket kodu `C01` |
+| `warehouse-inbound-order-sync` canli dispatch | Var, `addInboundOrder*`, hareket kodu `G02` |
 | `company-receiving-sync` canli dispatch | Var, `addInboundOrder*`, hareket kodu `G01` |
-| `inventory-count-sync` canli dispatch | Yok |
-| Firma master canli dispatch | Yok, preview/outbox var |
+| `inventory-count-sync` canli import | Var, AXATA EXT `vw_stok_duzeltme` -> Mikro dynamic census |
+| Firma master canli dispatch | Var, `addFirmMaster` + `addFirmAddress` |
 | Urun master canli dispatch | Var, `addSKUMaster`; toplu ve urun koduyla tekli route var |
 | C01 AXATA pending delivery live fetch | Var |
 | C01 AXATA -> Mikro sevk import | Var |
 | C01 import sonrasi AXATA ack | Var, opsiyonel ama default true |
-| C02/C03/C4 AXATA pending delivery live preview | Var, kuyruk seviyesinde okur |
-| C02/C03/C4 AXATA -> Mikro live import | Yok |
-| G01/G02 AXATA -> Mikro live fetch/import | Yok, manuel body endpointleri var |
+| C02/C03/C4 AXATA pending delivery live preview | Var |
+| C02/C03/C4 AXATA -> Mikro live import | Var, basarili Mikro yazimdan sonra opsiyonel ack; C02 `MikroWriteRouting:CompanyMovement` ayarina uyar |
+| G01 AXATA -> Mikro live fetch/import | Var, `getInboundATFListAsync`, `ENT016_IRS.S16STAT=1` ack; `MikroWriteRouting:CompanyReceiving` ayarina uyar |
+| G02 AXATA -> Mikro live fetch/import | Var, `getInboundDeliveryListAsync`, hareket kodu `G02` |
 | Kalici job/audit/retry tablosu | Yok |
 
 En kritik kural:
@@ -51,26 +53,25 @@ Paylasilan eski `Furpa.WorkerService` dokumanina gore aktif worker servisinde su
 
 | Eski worker | Yon | Eski secim veya hareket tipi | API durumu |
 |---|---|---|---|
-| `FirmWorker` | Furpa/Mikro -> AXATA | firma master/adres | Preview/outbox var, canli dispatch yok |
-| `ProductWorker` | Furpa/Mikro -> AXATA | SKU barkod/master/palet | Preview/outbox var, canli dispatch yok |
+| `FirmWorker` | Furpa/Mikro -> AXATA | firma master/adres | `firm-master-sync` preview/outbox/live dispatch var |
+| `ProductWorker` | Furpa/Mikro -> AXATA | SKU barkod/master/palet | `product-master-sync` preview/outbox/live dispatch var |
 | `C_01_OutboundOrderWorker` | Mikro -> AXATA | `OutWarehouseNo == 50`, `C01`, `addOutboundOrderV2Async` | `issued-warehouse-order-sync` ile preview/outbox/live dispatch var |
 | `C_01_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C01`, `Status=0` | live preview/import/ack var |
-| `C_02_OutboundOrderWorker` | Mikro -> AXATA | `OrderType=0`, `C02` | API'de ayri C02 order task'i yok |
-| `C_02_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C02`, `Status=0` | live queue preview var, import yok |
-| `C_03_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C03`, `Status=0` | live queue preview var, import yok |
-| `C_04_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C4`, `Status=0` | live queue preview var, import yok |
+| `C_02_OutboundOrderWorker` | Mikro -> AXATA | `OrderType=0`, `C02` | `received-company-order-sync` ile preview/outbox/live dispatch var |
+| `C_02_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C02`, `Status=0` | live preview/import/ack var |
+| `C_03_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C03`, `Status=0` | live preview/import/ack var |
+| `C_04_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C4`, `Status=0` | live preview/import/ack var |
 | `G_01_InboundOrderWorker` | Mikro -> AXATA | `WarehouseNo == 50`, `G01`, `addInboundOrderV2Async` | `company-receiving-sync` ile preview/outbox/live dispatch var |
-| `G_01_InboundDeliveryWorker` | AXATA -> Mikro | `MovementType=G01`, ATF | manuel/native inbound ATF body endpoint var, live fetch yok |
-| `G_02_InboundOrderWorker` | Mikro -> AXATA | `InWarehouseNo == 50`, `G02` | API'de ayri G02 order task'i yok |
-| `G_02_InboundDeliveryWorker` | AXATA -> Mikro | `MovementType=G02` | planli profil var, import yok |
-| `DynamicCensusWorker` | AXATA EXT -> Mikro | `vw_stok_duzeltme` | manuel incoming inventory count body endpoint var, live EXT polling yok |
+| `G_01_InboundDeliveryWorker` | AXATA -> Mikro | `MovementType=G01`, ATF | live preview/import/ack var; manuel/native inbound ATF body endpoint de korunur |
+| `G_02_InboundOrderWorker` | Mikro -> AXATA | `InWarehouseNo == 50`, `G02` | `warehouse-inbound-order-sync` ile preview/outbox/live dispatch var |
+| `G_02_InboundDeliveryWorker` | AXATA -> Mikro | `MovementType=G02` | live preview/import/ack var; mevcut Mikro bekleyen sevk fisi kabul edilir |
+| `DynamicCensusWorker` | AXATA EXT -> Mikro | `vw_stok_duzeltme` | `inventory-count-sync` Live ve `live/axata/dynamic-census/*` ile var |
 
 Bu tablo su anlama gelir:
 
-- API, eski worker'in tamamini birebir iceri tasimis degildir.
-- C01 cikis siparisi ve G01 firma mal kabul siparisi icin en kritik canli dispatch yollarini destekler.
-- C01 teslimat tarafinda eski worker'a gore daha guvenli bir import sirasi vardir: once Mikro yazilir, sonra istenirse AXATA ack atilir.
-- Diger hareket tipleri icin UI "planli profil" veya "manuel body kurtarma" olarak davranmalidir.
+- API, eski worker'in ana canli akislari icin API icinden preview/import/dispatch saglar.
+- C01/C02/C03/C4/G01/G02/DynamicCensus import tarafinda eski worker'a gore daha guvenli sira vardir: once Mikro yazilir, sonra istenirse AXATA ack atilir.
+- Manuel body endpointleri kaldirilmamistir; operasyonel kurtarma ve elle gelen AXATA body verisi icin kullanilmaya devam eder.
 
 ## Yonalimlar
 
@@ -82,11 +83,13 @@ Desteklenen task'lar:
 
 | Task | Depo gerekir mi? | Preview | DryRun/Outbox | Live dispatch | Hareket kodu |
 |---|---:|---|---|---|---|
-| `firm-master-sync` | Hayir | Var | Var | Yok | - |
+| `firm-master-sync` | Hayir | Var | Var | Var | `addFirmMaster` + `addFirmAddress` |
 | `product-master-sync` | Hayir | Var | Var | Var | `addSKUMaster` |
 | `issued-warehouse-order-sync` | Evet | Var | Var | Var | `C01` |
+| `received-company-order-sync` | Evet | Var | Var | Var | `C02` |
+| `warehouse-inbound-order-sync` | Evet | Var | Var | Var | `G02` |
 | `company-receiving-sync` | Evet | Var | Var | Var | `G01` |
-| `inventory-count-sync` | Evet | Var | Var | Yok | - |
+| `inventory-count-sync` | Evet | Var | Var | Var | Live modda `vw_stok_duzeltme` -> Mikro |
 
 `issued-warehouse-order-sync` icin ozel not:
 
@@ -95,9 +98,16 @@ Desteklenen task'lar:
 - Bu nedenle manuel aday listesi, genel preview, queue execute ve dispatch ayni `ssip_cikdepo = warehouseNo` evrenine bakar.
 - `warehouseNo=50` icin hedef depo 150 olan `O150.5219` gibi evraklar beklenen adaylardir.
 
+`warehouse-inbound-order-sync` icin ozel not:
+
+- AXATA G02 eski worker mantiginda hedef/giris depo Mikro `ssip_girdepo` alanidir.
+- API icinde bu task, shared depo siparisi executor'ini `WarehouseOrderListDirection.Issued` ile kullanir.
+- Bu nedenle manuel aday listesi, preview, outbox execute ve dispatch ayni `ssip_girdepo = warehouseNo` evrenine bakar.
+- `warehouseNo=50` icin kaynak/cikis deposu sube olan, merkez depoya gelen depolar arasi siparisler beklenen adaylardir.
+
 ### AXATA -> Mikro
 
-Bu yonde bugun iki farkli seviye vardir:
+Bu yonde bugun alti farkli canli import seviyesi vardir:
 
 1. Canli C01 fetch/import:
    - AXATA ana servisten `getOutBoundDeliveryListAsync` ile `MovementType=C01`, `Status=0` okunur.
@@ -107,7 +117,47 @@ Bu yonde bugun iki farkli seviye vardir:
    - `STOK_HAREKETLERI_EK.sth_subesip_uid` linki ve teslim miktari kontrol edilir.
    - Basarili Mikro yazimdan sonra istenirse AXATA EXT `updIntegrationTableAsync` ile `ENT006.S06STAT=1` yapilir.
 
-2. Manuel body tabanli kurtarma:
+2. Canli G02 fetch/import:
+   - AXATA ana servisten `getInboundDeliveryListAsync` ile `MovementType=G02`, `Status=0` okunur.
+   - Mikro siparis satirlari `S16BNUM` -> `DocumentSerie.DocumentOrderNo` ile bulunur.
+   - Siparise bagli mevcut sevk fisi `STOK_HAREKETLERI_EK.sth_subesip_uid` linkiyle bulunur.
+   - Backend yeni sevk fisi olusturmaz; mevcut bekleyen sevk fisini `AcceptWarehouseReceivingUseCase` ile kabul eder.
+   - `ssip_teslim_miktar` AXATA kabul miktarina gore guncellenir, `ssip_kapat_fl` yeniden hesaplanir.
+   - Basarili Mikro yazimdan sonra istenirse AXATA EXT `updIntegrationTableAsync` ile `ENT016_MST.S16STAT=1`, `IDField=S16ID` yapilir.
+
+3. Canli C02 fetch/import:
+   - AXATA ana servisten `getOutBoundDeliveryListAsync` ile `MovementType=C02`, `Status=0` okunur.
+   - `S06TESL` seri.sira formatinda Mikro alinan firma siparisine baglanir.
+   - Satirlar `S07KALN + S07SKOD` ile Mikro `SIPARISLER.sip_satirno + sip_stok_kod` satirina eslestirilir.
+   - Mikro firma sevki standart firma sevk akisiyle olusturulur ve satir siparis linki `sth_sip_uid` ile korunur.
+   - `MikroWriteRouting:CompanyMovement=Database` ise eski worker parity icin `STOK_HAREKETLERI` dogrudan transaction icinde yazilir, `sip_teslim_miktar` ayni save akisi icinde guncellenir.
+   - `MikroWriteRouting:CompanyMovement=MikroApi` ise `POST /Api/apiMethods/IrsaliyeKaydetV2` kullanilir; API sonrasi `sth_sip_uid` linkleri geri okunup dogrulanmadan `sip_teslim_miktar` guncellenmez ve AXATA ack atilmaz.
+   - Duplicate riski icin siparis bagli mevcut firma sevki veya ayni AXATA belge no/aciklamasiyla olusmus hareket varsa tekrar fis olusturulmaz.
+   - Basarili Mikro yazim ve gerekli link dogrulamasi tamamlandiktan sonra istenirse `ENT006.S06STAT=1` ack atilir.
+
+4. Canli C03/C4 legacy fetch/import:
+   - C03 `MovementType=C03`, C4 `MovementType=C4` olarak AXATA pending kuyrugundan okunur.
+   - C03 eski worker davranisina uygun `F50`, type/cins/iade kombinasyonu ile firma iade/ozel cikis hareketi yazar; cari kodu AXATA `S06FIRM` alanindan alinir.
+   - C4 eski worker davranisina uygun `F50`, type 2/cins 6 ve 50 -> 51 depo hareketi yazar.
+   - AXATA `S06SIRA` degeri duplicate kontrolu icin hareket grup kodunda saklanir.
+   - Basarili Mikro yazimdan sonra istenirse `ENT006.S06STAT=1` ack atilir.
+
+5. Canli G01 inbound ATF fetch/import:
+   - AXATA ana servisten `getInboundATFListAsync` ile `MovementType=G01`, `Status=0` okunur.
+   - `S16SIPN` seri.sira formatinda Mikro firma siparisi, `S16KALN` siparis satir no kabul edilir.
+   - Satirlar Mikro `SIPARISLER` ile eslesirse `DocumentType=13` firma mal kabul hareketine cevrilir.
+   - `MikroWriteRouting:CompanyReceiving=Database` ise eski worker parity icin dogrudan DB transaction yolu kullanilir; `S16SIRA -> sth_HareketGrupKodu1` izi korunur ve `sip_teslim_miktar` ayni transaction icinde artirilir.
+   - `MikroWriteRouting:CompanyReceiving=MikroApi` ise mevcut firma mal kabul use case yolu calisir, `POST /Api/apiMethods/IrsaliyeKaydetV2` kullanilir, siparis linkleri `sth_sip_uid` ile geri okunup dogrulanmadan AXATA ack atilmaz.
+   - MikroApi yolunda ayni siparis satiri AXATA tarafinda parcalanmis gelirse miktarlar siparis GUID bazinda toplanarak tek mal kabul satirina indirilir; duplicate kontrolu mevcut `sth_sip_uid` linkleriyle yapilir.
+   - Basarili Mikro yazimdan sonra istenirse AXATA EXT `ENT016_IRS.S16STAT=1`, `IDField=S16SIRA` ack atilir.
+
+6. Canli DynamicCensus fetch/import:
+   - AXATA EXT `getViewDataAsync` ile `vw_stok_duzeltme` okunur.
+   - `S11STIP=1` giris duzeltmesi, diger tipler cikis duzeltmesi olarak Mikro `STOK_HAREKETLERI` kaydina cevrilir.
+   - Eski worker'dan farkli olarak `S11SIRA` Mikro hareket grup koduna `AXATA-S11:{rowNo}` seklinde yazilir ve duplicate engeli olarak kullanilir.
+   - Basarili Mikro yazimdan sonra istenirse AXATA EXT `ENT011.S11STAT=1`, `IDField=S11SIRA` ack atilir.
+
+7. Manuel body tabanli kurtarma:
    - AXATA outbound delivery body eldeyse Mikro depolar arasi sevk yazilir.
    - AXATA inbound ATF body eldeyse Mikro firma mal kabul yazilir.
    - Serbest body ile firma mal kabul ve sayim sonucu yazilabilir.
@@ -115,9 +165,6 @@ Bu yonde bugun iki farkli seviye vardir:
 
 Bugun olmayanlar:
 
-- C02/C03/C4 icin Mikro'ya yazan live import/ack.
-- G01/G02 icin live fetch/import.
-- AXATA EXT `getViewDataAsync` polling ile otomatik sayim import.
 - C01 disindaki hareket tipleri icin belge numarasi verip AXATA'dan tek belge fetch/import eden endpoint.
 - Kalici retry/ack monitor.
 
@@ -237,7 +284,7 @@ GET /api/integrations/axata-sync/tasks/{taskCode}/preview?warehouseNo=50&take=10
 
 Not:
 
-- `issued-warehouse-order-sync`, `company-receiving-sync`, `inventory-count-sync` icin `warehouseNo` gerekir.
+- `issued-warehouse-order-sync`, `warehouse-inbound-order-sync`, `company-receiving-sync`, `inventory-count-sync` icin `warehouseNo` gerekir.
 - `firm-master-sync` ve `product-master-sync` depo bagimsizdir.
 
 ### Manuel Mikro -> AXATA Evrak Islemleri
@@ -253,6 +300,7 @@ POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/execute-batc
 Destekleyen task'lar:
 
 - `issued-warehouse-order-sync`
+- `warehouse-inbound-order-sync`
 - `company-receiving-sync`
 - `inventory-count-sync`
 
@@ -263,6 +311,12 @@ Destekleyen task'lar:
 - Aday listesi `skip/take` ile sayfalanir; `take` en fazla 100'dur.
 - 150 aday varsa once `skip=0&take=100`, sonra `skip=100&take=100` cagrilir.
 - Response item icinde `documentSerie`, `documentOrderNo`, `lineCount`, `totalQuantity` dogrudan preview/execute body'lerine tasinabilir.
+
+`warehouse-inbound-order-sync` aday listesi:
+
+- Query'deki `warehouseNo`, AXATA hedef/giris depodur.
+- Mikro filtresi `ssip_girdepo = warehouseNo` olur.
+- Response item icindeki `documentSerie`, `documentOrderNo`, `lineCount`, `totalQuantity` dogrudan preview/execute body'lerine tasinabilir.
 
 ### Canli Mikro -> AXATA Dispatch
 
@@ -285,6 +339,19 @@ Destekleyen task'lar:
     - `S00HTP1 = C01`
     - `S00HTP2 = C01`
     - `S00FBLK = OutWarehouseNo`
+- `warehouse-inbound-order-sync`
+  - Varsayilan WCF operation fallback: `addInboundOrder`
+  - Config ile genelde `addInboundOrderV2`
+  - Hareket tipi: `G02`
+  - AXATA basarili donerse worker basari bayragi `ssip_special1=1` olarak isaretlenir; filtre `ssip_girdepo = warehouseNo` evrenindedir.
+  - Master alanlari worker parity:
+    - `S13HKOD = G02`
+    - `S13BNUM = DocumentSerie.DocumentOrderNo`
+    - `S13FIRM = OutWarehouseNo`
+  - Satir alanlari worker parity:
+    - `S13KALN = LineNo`
+    - `S13SKU = StockCode`
+    - `S13MIKT = RemainingQuantity > 0 ? RemainingQuantity : Quantity`
 - `company-receiving-sync`
   - Varsayilan WCF operation fallback: `addInboundOrder`
   - Config ile genelde `addInboundOrderV2`
@@ -322,7 +389,7 @@ Kontroller:
 - Tarih filtresi `ssip_tarih` uzerinden calisir; `ssip_lastup_date` sadece problem listelerinde en yeni guncellenen belgeyi one almak icin kullanilir.
 - AXATA pending outbound delivery kuyrugunu `C01`, `C02`, `C03`, `C4` icin `Status=0` olarak okur.
 - C01 icin Mikro siparis satiri, depo uyumu, kalan miktar ve sevk fisi linkini kontrol eder.
-- C02/C03/C4 icin kuyruk seviyesinde rapor verir.
+- C02/C03/C4 icin pending kuyruk ve import edilebilirlik endpointleri vardir.
 
 Response'taki kritik alanlar:
 
@@ -342,7 +409,7 @@ Response'taki kritik alanlar:
 `operations` alani UI'nin kontrol kulesi ekraninda kullanacagi operasyon kartlarini verir:
 
 - `warehouse-orders-not-sent-to-axata`: Mikro siparis AXATA'ya gitmemis/eksik gitmis; manuel dispatch route'u vardir.
-- `axata-pending-outbound-deliveries`: AXATA `Status=0` bekleyen sevk kuyrugu; C01 icin import route'u vardir.
+- `axata-pending-outbound-deliveries`: AXATA `Status=0` bekleyen sevk kuyrugu; C01/C02/C03/C4 icin ilgili live import route'u vardir.
 - `sent-to-axata-missing-mikro-shipment`: AXATA'ya gonderildi isaretli ama belge genelinde Mikro sevk linki yok; liste overview icindedir, C01 belge bazli rescue route'u vardir.
 - `sent-to-axata-shipment-differences`: Belgede en az bir Mikro sevk linki var ama eksik link veya miktar farki bulunur; kismi sevk/satir farki olarak aksiyonsuz incelenir.
 
@@ -397,7 +464,7 @@ Bu endpoint:
 - `CompanyCode=01`, `WarehouseCode=01`, secili `MovementType`, `Status=0` ile okur.
 - Mikro'ya yazmaz.
 - AXATA status guncellemez.
-- UI'nin C02/C03/C4 kuyrugunu audit ekranindan bagimsiz incelemesini saglar.
+- UI'nin C01/C02/C03/C4 kuyrugunu audit ekranindan bagimsiz incelemesini saglar.
 
 Response `AxataOutboundDeliveryQueuePreviewDto` doner. Her belge icin:
 
@@ -412,7 +479,7 @@ Response `AxataOutboundDeliveryQueuePreviewDto` doner. Her belge icin:
 - `currentHandling`
 - `warning`
 
-`C01` icin `hasLiveImport=true` gelir, ancak detayli Mikro eslesme ve import uygunlugu icin asagidaki C01 endpoint'i kullanilmalidir. `C02/C03/C4` icin bu endpoint sadece kuyruk preview'dur.
+`hasLiveImport=true` gelen kayitlarda detayli Mikro eslesme ve import uygunlugu icin ilgili hareket tipinin ozel preview endpoint'i kullanilmalidir: `c01`, `c02`, `c03` veya `c04`.
 
 ### C01 Live AXATA -> Mikro Import
 
@@ -455,6 +522,48 @@ Guvenli sira:
 5. Istenirse AXATA ack atilir.
 
 Bu sira eski worker'daki "once AXATA stat update, sonra lokal DB" riskini azaltir.
+
+### G02 Live AXATA -> Mikro Import
+
+```text
+GET  /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/preview?take=20
+POST /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/import
+GET  /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/documents/F50/15035/preview?status=1
+POST /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/documents/F50/15035/import
+```
+
+Preview:
+
+- AXATA ana servisten `getInboundDeliveryListAsync` cagirir.
+- `CompanyCode=01`, `WarehouseCode=01`, `MovementType=G02`, `Status=0`.
+- Mikro'ya yazmaz.
+- AXATA status guncellemez.
+- `S16BNUM=seri.sira` ile Mikro depolar arasi siparis bulunur.
+- `STOK_HAREKETLERI_EK.sth_subesip_uid` ile siparise bagli bekleyen sevk fisi bulunur.
+
+Import:
+
+- `take`, `continueOnError`, `acknowledge` alir.
+- Uygun G02 teslimatlarini yeni fis yaratmadan mevcut Mikro bekleyen sevk fisine kabul olarak uygular.
+- Mal kabul yazimi mevcut `AcceptWarehouseReceivingUseCase` uzerinden yapilir; routing `MikroWriteRouting:WarehouseReceivingAcceptance` ayarina uyar.
+- Kabulden sonra siparis `ssip_teslim_miktar` alanlari AXATA kabul miktarina gore guncellenir ve `ssip_kapat_fl` yeniden hesaplanir.
+- `acknowledge=true` ise Mikro yazim basarili olduktan sonra `updIntegrationTableAsync` ile `ENT016_MST.S16STAT=1`, `IDField=S16ID` yapar.
+- Mikro kabul zaten varsa duplicate kabul yapmaz; uygun durumda sadece ack atabilir.
+
+Belge bazli rescue:
+
+- AXATA ana servisten `OrderNumber=seri.sira`, `MovementType=G02` ile teslimat detayini arar.
+- `status` verilmezse once `0`, sonra `1` denenir.
+- AXATA satirlari Mikro siparis ve mevcut sevk satirlariyla guvenli eslesirse kabul uygular.
+- POST body: `{ "status": "1", "acknowledge": false }`; kontrollu rescue icin once `acknowledge=false` ile yazim sonucu izlenebilir.
+
+Guvenli sira:
+
+1. AXATA G02 delivery okunur.
+2. Mikro siparis satiri ve bekleyen sevk fisi linki dogrulanir.
+3. Mikro bekleyen sevk fisi kabul edilir.
+4. Siparis teslim miktari AXATA kabul miktarina gore guncellenir.
+5. Istenirse AXATA `ENT016_MST` ack atilir.
 
 ### Manuel AXATA-Native Body Import
 
@@ -552,12 +661,12 @@ Bugunku katalog:
 | Kod | Fetch operation | Movement/Profile | Durum |
 |---|---|---|---|
 | `c01-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C01` | Implemented |
-| `c02-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C02` | Live queue preview var, import yok |
-| `c03-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C03` | Live queue preview var, import yok |
-| `c04-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C4` | Live queue preview var, import yok |
-| `g01-inbound-atf` | `getInboundATFListAsync` | `G01` | Manual body route var, live fetch yok |
-| `g02-inbound-delivery` | `getInboundDeliveryListAsync` | `G02` | Planned |
-| `inventory-count-ext-view` | `getViewDataAsync` | `vw_stok_duzeltme` | Manual incoming route var, live polling yok |
+| `c02-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C02` | Implemented, live preview/import/ack var |
+| `c03-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C03` | Implemented, live preview/import/ack var |
+| `c04-outbound-delivery` | `getOutBoundDeliveryListAsync` | `C4` | Implemented, live preview/import/ack var |
+| `g01-inbound-atf` | `getInboundATFListAsync` | `G01` | Implemented, live preview/import/ack var |
+| `g02-inbound-delivery` | `getInboundDeliveryListAsync` | `G02` | Implemented, live preview/import/ack var |
+| `inventory-count-ext-view` | `getViewDataAsync` | `vw_stok_duzeltme` | Implemented, live preview/import/ack var |
 
 ## Konfigurasyon
 
@@ -610,7 +719,11 @@ C01 import + ack icin ek zorunlu:
 Operation secimi:
 
 - `issued-warehouse-order-sync` icin `LiveOperationName` genelde `addOutboundOrderV2` olmalidir.
+- `received-company-order-sync` icin `LiveOperationName` genelde `addOutboundOrderV2` olmalidir.
+- `warehouse-inbound-order-sync` icin `LiveOperationName` genelde `addInboundOrderV2` olmalidir.
 - `company-receiving-sync` icin `LiveOperationName` genelde `addInboundOrderV2` olmalidir.
+- `firm-master-sync` icin `LiveOperationName` `addFirmMaster+addFirmAddress` olarak tutulur.
+- `inventory-count-sync` Live modda `getViewData(vw_stok_duzeltme)+updIntegrationTable(ENT011)` davranisiyla AXATA EXT -> Mikro calisir.
 - Config bos ise fallback olarak `addOutboundOrder` / `addInboundOrder` kullanilir.
 
 ## Auth ve Migration
@@ -653,26 +766,29 @@ UI su ayrimi net yapmalidir:
 - `dispatch` endpointleri AXATA'ya WCF client ile canli yazim yapar.
 - `live/axata/outbound-deliveries/preview` C01/C02/C03/C4 kuyrugunu canli okur ama veri yazmaz.
 - `live/axata/outbound-deliveries/by-date` AXATA `ENT006.S06ITAR` tarihine gore sevkleri listeler; veri yazmaz ve pending filtrelemez.
-- `live/axata/outbound-deliveries/c01/import` AXATA'dan canli okur ve Mikro'ya yazar.
+- `live/axata/outbound-deliveries/c01|c02|c03|c04/import` AXATA'dan canli okur ve Mikro'ya yazar.
+- `live/axata/inbound-atf/g01/import` AXATA G01 ATF satirlarini firma mal kabul hareketine cevirir.
+- `live/axata/inbound-deliveries/g02/import` AXATA'dan canli okur ve mevcut Mikro bekleyen sevk fisini kabul eder.
+- `live/axata/dynamic-census/import` AXATA EXT `vw_stok_duzeltme` satirlarini Mikro dynamic census hareketine cevirir.
 - `manual/axata/*` endpointleri AXATA'dan canli okumaz; body UI veya operasyon tarafindan saglanir.
-- `inventory-count-sync` icin live dispatch butonu gosterilmemelidir.
-- `firm-master-sync` icin live dispatch butonu gosterilmemelidir.
+- `inventory-count-sync` Live modda Mikro sayim payload'i degil, AXATA EXT dynamic census importu calistirir; UI bunu acik etiketlemelidir.
+- `firm-master-sync` icin live dispatch butonu gosterilebilir.
 - `product-master-sync` icin toplu live dispatch ve urun koduyla tekli dispatch butonu gosterilebilir.
 - `issued-warehouse-order-sync` aday listesinde `warehouseNo`, hedef depo degil AXATA kaynak/cikis depodur.
 - `live/audit/overview` veri yazmaz; kontrol ve karar ekranidir.
-- C02/C03/C4 icin UI preview butonu acabilir, import/ack butonu acmamalidir.
-- G01/G02 fetch-import icin UI henuz aktif execute butonu acmamalidir.
+- C02/C03/C4 icin UI preview ve import/ack butonu acabilir; yazmadan once ozel preview sonucunda `canImport=true` aranmalidir.
+- C02 import `CompanyMovement` yazma rotasina uyar: `Database` modunda DB transaction, `MikroApi` modunda `IrsaliyeKaydetV2` calisir. UI ayni endpointi kullanir; mod secimi backend config isidir.
+- C03/C4 legacy importlar su an DB yazimidir; Mikro API kontrati netlesmeden `MikroWriteRouting` ile API yoluna alinmamalidir.
+- G01 icin `live/axata/inbound-atf/g01/*`, G02 icin `live/axata/inbound-deliveries/g02/*` route'lari kullanilmalidir.
 
 ## Bilinen Sinirlar
 
 - Job listesi ve sonuc detaylari kalici DB'de tutulmaz.
 - Outbox basarisi "AXATA kabul etti" anlamina gelmez.
-- Firma master task'i canli WCF dispatch yapmaz.
+- Firma master task'i canli WCF dispatch yapar; `addFirmMaster` ve `addFirmAddress` birlikte cagrilir.
 - Urun master task'i `Live` modunda `ENT004`, `ENT003_List` ve `ENT004_UNIT_List` iceren `addSKUMaster` paketlerini canli gonderir.
-- C02/C03/C4 live queue preview vardir ama live import/ack henuz yoktur.
-- G01/G02 live fetch-import henuz yoktur.
-- C01 belge bazli rescue vardir; C02/C03/C4/G01/G02 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.
-- EXT `getViewDataAsync` tabanli otomatik sayim polling yoktur.
+- C01 ve G02 belge bazli rescue vardir; C02/C03/C4/G01 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.
+- EXT `getViewDataAsync` tabanli DynamicCensus import vardir; kalici inbox/retry tablosu yoktur.
 - Dispatch request/response XML'i response body'de doner; hassas veri icerebilecegi icin UI bunu dikkatli gostermelidir.
 
 ## Build ve Dogrulama
@@ -705,16 +821,11 @@ Canli AXATA dogrulamasi icin sahada kontrol edilmesi gerekenler:
 
 ## Sonraki Faz Onerisi
 
-1. C02/C03/C4 live import/ack handler'lari.
-2. G01/G02 live fetch/import handler'lari.
-3. EXT `getViewDataAsync` dynamic census polling.
-4. Master data icin canli dispatch:
-   - `addFirmMaster`
-   - `addFirmAddress`
-   - `addSKUMaster`
+1. Kalici job/audit/retry tablolari.
+2. Ack/retry monitor ekrani.
+3. Dispatch sonucunu DB'de saklayan reconcile katmani.
+4. C02/C03/C4/G01 icin belge numarasi ile AXATA'dan tek belge fetch/import endpointleri.
+5. C03/C4 legacy hareketleri ve DynamicCensus stok duzeltmeleri icin Mikro API kontrati netlesirse route bazli `MikroApi` yazma destegi.
+6. Master data icin ek canli dispatch aileleri:
    - `addSKUBarcode`
    - `addSKUPalet`
-5. Kalici job/audit/retry tablolari.
-6. C02/C03/C4/G01/G02 icin belge numarasi ile AXATA'dan tek belge fetch endpointleri.
-7. Ack/retry monitor ekrani.
-8. Dispatch sonucunu DB'de saklayan reconcile katmani.

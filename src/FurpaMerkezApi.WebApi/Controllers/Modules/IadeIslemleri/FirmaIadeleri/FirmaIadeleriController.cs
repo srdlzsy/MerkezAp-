@@ -102,7 +102,8 @@ public sealed class FirmaIadeleriController(
                         line.LotNo,
                         line.ProjectCode,
                         line.CustomerResponsibilityCenter,
-                        line.ProductResponsibilityCenter))
+                        line.ProductResponsibilityCenter,
+                        line.OrderLineGuid))
                     .ToArray()),
             cancellationToken);
 

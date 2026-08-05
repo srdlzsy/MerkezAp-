@@ -56,6 +56,7 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
                     request.WarehouseNo,
                     FormatDate(movementDate),
                     NormalizeText(line.Description ?? description, 50),
+                    NormalizeGuid(line.OrderLineGuid),
                     customerAddressNo,
                     NormalizeText(line.PartyCode, 25),
                     line.LotNo,
@@ -92,6 +93,9 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
 
     private static string FormatDate(DateTime value) =>
         value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+
+    private static string NormalizeGuid(Guid? value) =>
+        value.HasValue && value.Value != Guid.Empty ? value.Value.ToString() : string.Empty;
 
     private static string NormalizeText(string? value, int maxLength)
     {
@@ -144,6 +148,7 @@ internal sealed record CompanyMovementIrsaliyeMikroApiLine(
     int sth_cikis_depo_no,
     string sth_malkbl_sevk_tarihi,
     string sth_aciklama,
+    string sth_sip_uid,
     int sth_adres_no,
     string sth_parti_kodu,
     int sth_lot_no,

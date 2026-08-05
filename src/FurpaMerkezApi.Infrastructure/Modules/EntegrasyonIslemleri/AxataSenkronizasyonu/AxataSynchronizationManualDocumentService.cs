@@ -17,6 +17,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkro
 internal sealed class AxataSynchronizationManualDocumentService(
     WarehouseOrderListQueryExecutor warehouseOrderListQueryExecutor,
     WarehouseOrderDetailQueryExecutor warehouseOrderDetailQueryExecutor,
+    CompanyOrderListQueryExecutor companyOrderListQueryExecutor,
+    CompanyOrderDetailQueryExecutor companyOrderDetailQueryExecutor,
     CompanyMovementListQueryExecutor companyMovementListQueryExecutor,
     CompanyMovementDetailQueryExecutor companyMovementDetailQueryExecutor,
     InventoryCountListQueryExecutor inventoryCountListQueryExecutor,
@@ -28,7 +30,9 @@ internal sealed class AxataSynchronizationManualDocumentService(
     MikroApiClient mikroApiClient,
     ILogger<AxataSynchronizationManualDocumentService> logger)
 {
-    private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
+    private const WarehouseOrderListDirection AxataOutboundWarehouseOrderDirection = WarehouseOrderListDirection.Received;
+    private const WarehouseOrderListDirection AxataInboundWarehouseOrderDirection = WarehouseOrderListDirection.Issued;
+    private const CompanyOrderListDirection AxataReceivedCompanyOrderDirection = CompanyOrderListDirection.Received;
     private const short MikroUserNo = 39;
     private const string CompletedStatus = "1";
     private const string DepolarArasiSiparisDuzeltPath = "/Api/apiMethods/DepolarArasiSiparisDuzeltV2";
@@ -100,7 +104,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
             {
                 var documents = await warehouseOrderListQueryExecutor.ExecuteAsync(
                     new WarehouseOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
-                    AxataWarehouseOrderDirection,
+                    AxataOutboundWarehouseOrderDirection,
                     cancellationToken);
                 totalRecordCount = documents.Count;
                 items = documents
@@ -118,6 +122,54 @@ internal sealed class AxataSynchronizationManualDocumentService(
                         document.TotalQuantity))
                     .ToArray();
                 notes.Add("AXATA C01 kaynak/cikis depo siparisleri Mikro listesinden okundu.");
+                break;
+            }
+            case "warehouse-inbound-order-sync":
+            {
+                var documents = await warehouseOrderListQueryExecutor.ExecuteAsync(
+                    new WarehouseOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
+                    AxataInboundWarehouseOrderDirection,
+                    cancellationToken);
+                totalRecordCount = documents.Count;
+                items = documents
+                    .Skip(criteria.Skip)
+                    .Take(criteria.Take)
+                    .Select(document => new AxataSynchronizationManualDocumentCandidateItemDto(
+                        $"{document.DocumentSerie}.{document.DocumentOrderNo}",
+                        $"{document.LineCount} satir / {document.TotalQuantity:0.##} miktar / kaynak depo {document.RelatedWarehouseName}",
+                        document.DocumentSerie,
+                        document.DocumentOrderNo,
+                        null,
+                        document.DocumentDate,
+                        document.DocumentNumber,
+                        document.LineCount,
+                        document.TotalQuantity))
+                    .ToArray();
+                notes.Add("AXATA G02 hedef/giris depo siparisleri Mikro listesinden okundu.");
+                break;
+            }
+            case "received-company-order-sync":
+            {
+                var documents = await companyOrderListQueryExecutor.ExecuteAsync(
+                    new CompanyOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
+                    AxataReceivedCompanyOrderDirection,
+                    cancellationToken);
+                totalRecordCount = documents.Count;
+                items = documents
+                    .Skip(criteria.Skip)
+                    .Take(criteria.Take)
+                    .Select(document => new AxataSynchronizationManualDocumentCandidateItemDto(
+                        $"{document.DocumentSerie}.{document.DocumentOrderNo}",
+                        $"{document.CustomerDisplayName} / {document.LineCount} satir / {document.TotalRemainingQuantity:0.##} kalan miktar",
+                        document.DocumentSerie,
+                        document.DocumentOrderNo,
+                        null,
+                        document.DocumentDate,
+                        document.DocumentNumber,
+                        document.LineCount,
+                        document.TotalRemainingQuantity))
+                    .ToArray();
+                notes.Add("AXATA C02 alinan firma siparisleri Mikro listesinden okundu.");
                 break;
             }
             case "company-receiving-sync":
@@ -345,12 +397,38 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 var detailRequest = CreateWarehouseOrderRequest(input, warehouseNo);
                 var detail = await warehouseOrderDetailQueryExecutor.ExecuteAsync(
                     detailRequest,
-                    AxataWarehouseOrderDirection,
+                    AxataOutboundWarehouseOrderDirection,
                     cancellationToken);
 
                 payload = AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail);
                 documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
                 notes.Add("AXATA C01 kaynak/cikis depo siparisi Mikro'dan okunup payload formatina hazirlandi.");
+                break;
+            }
+            case "warehouse-inbound-order-sync":
+            {
+                var detailRequest = CreateWarehouseOrderRequest(input, warehouseNo);
+                var detail = await warehouseOrderDetailQueryExecutor.ExecuteAsync(
+                    detailRequest,
+                    AxataInboundWarehouseOrderDirection,
+                    cancellationToken);
+
+                payload = AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail);
+                documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
+                notes.Add("AXATA G02 hedef/giris depo siparisi Mikro'dan okunup payload formatina hazirlandi.");
+                break;
+            }
+            case "received-company-order-sync":
+            {
+                var detailRequest = CreateCompanyOrderRequest(input, warehouseNo);
+                var detail = await companyOrderDetailQueryExecutor.ExecuteAsync(
+                    detailRequest,
+                    AxataReceivedCompanyOrderDirection,
+                    cancellationToken);
+
+                payload = AxataSynchronizationPayloadFactory.BuildCompanyOrderDocument(detail);
+                documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
+                notes.Add("AXATA C02 alinan firma siparisi Mikro'dan okunup payload formatina hazirlandi.");
                 break;
             }
             case "company-receiving-sync":
@@ -429,7 +507,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 var detailRequest = CreateWarehouseOrderRequest(input, warehouseNo);
                 var detail = await warehouseOrderDetailQueryExecutor.ExecuteAsync(
                     detailRequest,
-                    AxataWarehouseOrderDirection,
+                    AxataOutboundWarehouseOrderDirection,
                     cancellationToken);
 
                 documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
@@ -441,12 +519,59 @@ internal sealed class AxataSynchronizationManualDocumentService(
 
                 if (dispatchResult.IsSuccess)
                 {
-                    var markResult = await MarkWarehouseOrderAsSentAsync(detailRequest, cancellationToken);
+                    var markResult = await MarkWarehouseOrderAsSentAsync(
+                        detailRequest,
+                        AxataOutboundWarehouseOrderDirection,
+                        cancellationToken);
                     notes.Add(markResult.LineCount > 0
                         ? $"{markResult.LineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
                         : "UYARI: AXATA Success dondu ancak Mikro ssip_special1 bayragi icin eslesen satir bulunamadi.");
                 }
 
+                break;
+            }
+            case "warehouse-inbound-order-sync":
+            {
+                var detailRequest = CreateWarehouseOrderRequest(input, warehouseNo);
+                var detail = await warehouseOrderDetailQueryExecutor.ExecuteAsync(
+                    detailRequest,
+                    AxataInboundWarehouseOrderDirection,
+                    cancellationToken);
+
+                documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
+                dispatchResult = await liveTransportService.DispatchWarehouseInboundOrderAsync(
+                    context,
+                    detail,
+                    cancellationToken);
+                notes.Add("AXATA G02 hedef/giris depo siparisi task bazli canli dispatch akisi ile gonderildi.");
+
+                if (dispatchResult.IsSuccess)
+                {
+                    var markResult = await MarkWarehouseOrderAsSentAsync(
+                        detailRequest,
+                        AxataInboundWarehouseOrderDirection,
+                        cancellationToken);
+                    notes.Add(markResult.LineCount > 0
+                        ? $"{markResult.LineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
+                        : "UYARI: AXATA Success dondu ancak Mikro ssip_special1 bayragi icin eslesen G02 satiri bulunamadi.");
+                }
+
+                break;
+            }
+            case "received-company-order-sync":
+            {
+                var detailRequest = CreateCompanyOrderRequest(input, warehouseNo);
+                var detail = await companyOrderDetailQueryExecutor.ExecuteAsync(
+                    detailRequest,
+                    AxataReceivedCompanyOrderDirection,
+                    cancellationToken);
+
+                documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
+                dispatchResult = await liveTransportService.DispatchCustomerOutboundOrderAsync(
+                    context,
+                    detail,
+                    cancellationToken);
+                notes.Add("AXATA C02 alinan firma siparisi task bazli canli dispatch akisi ile gonderildi.");
                 break;
             }
             case "company-receiving-sync":
@@ -495,18 +620,19 @@ internal sealed class AxataSynchronizationManualDocumentService(
 
     private async Task<WarehouseOrderSentFlagMarkResult> MarkWarehouseOrderAsSentAsync(
         WarehouseOrderDetailRequest request,
+        WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
         return mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
         {
             MikroWriteMode.MikroApi => new WarehouseOrderSentFlagMarkResult(
-                await MarkWarehouseOrderAsSentWithMikroApiAsync(request, cancellationToken),
+                await MarkWarehouseOrderAsSentWithMikroApiAsync(request, direction, cancellationToken),
                 "MikroApi:DepolarArasiSiparisDuzeltV2"),
             MikroWriteMode.Database => new WarehouseOrderSentFlagMarkResult(
-                await MarkWarehouseOrderAsSentInDatabaseAsync(request, cancellationToken),
+                await MarkWarehouseOrderAsSentInDatabaseAsync(request, direction, cancellationToken),
                 "Database"),
             MikroWriteMode.DualShadow => new WarehouseOrderSentFlagMarkResult(
-                await MarkWarehouseOrderAsSentInDatabaseAsync(request, cancellationToken),
+                await MarkWarehouseOrderAsSentInDatabaseAsync(request, direction, cancellationToken),
                 "Database:DualShadowFallback"),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
@@ -515,17 +641,21 @@ internal sealed class AxataSynchronizationManualDocumentService(
 
     private async Task<int> MarkWarehouseOrderAsSentInDatabaseAsync(
         WarehouseOrderDetailRequest request,
+        WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
         var documentSerie = request.DocumentSerie.Trim();
         var now = DateTime.Now;
+        var isInboundWarehouseOrder = direction == AxataInboundWarehouseOrderDirection;
 
         return await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
             .Where(order =>
                 order.ssip_iptal != true &&
                 order.ssip_evrakno_seri == documentSerie &&
                 order.ssip_evrakno_sira == request.DocumentOrderNo &&
-                order.ssip_cikdepo == request.WarehouseNo)
+                (isInboundWarehouseOrder
+                    ? order.ssip_girdepo == request.WarehouseNo
+                    : order.ssip_cikdepo == request.WarehouseNo))
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(order => order.ssip_special1, CompletedStatus)
                 .SetProperty(order => order.ssip_lastup_user, MikroUserNo)
@@ -535,9 +665,10 @@ internal sealed class AxataSynchronizationManualDocumentService(
 
     private async Task<int> MarkWarehouseOrderAsSentWithMikroApiAsync(
         WarehouseOrderDetailRequest request,
+        WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
-        var lineGuids = await GetWarehouseOrderLineGuidsAsync(request, cancellationToken);
+        var lineGuids = await GetWarehouseOrderLineGuidsAsync(request, direction, cancellationToken);
 
         if (lineGuids.Length == 0)
         {
@@ -581,9 +712,11 @@ internal sealed class AxataSynchronizationManualDocumentService(
 
     private async Task<Guid[]> GetWarehouseOrderLineGuidsAsync(
         WarehouseOrderDetailRequest request,
+        WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
         var documentSerie = request.DocumentSerie.Trim();
+        var isInboundWarehouseOrder = direction == AxataInboundWarehouseOrderDirection;
 
         return await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
             .AsNoTracking()
@@ -591,7 +724,9 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 order.ssip_iptal != true &&
                 order.ssip_evrakno_seri == documentSerie &&
                 order.ssip_evrakno_sira == request.DocumentOrderNo &&
-                order.ssip_cikdepo == request.WarehouseNo)
+                (isInboundWarehouseOrder
+                    ? order.ssip_girdepo == request.WarehouseNo
+                    : order.ssip_cikdepo == request.WarehouseNo))
             .Select(order => order.ssip_Guid)
             .ToArrayAsync(cancellationToken);
     }
@@ -683,6 +818,26 @@ internal sealed class AxataSynchronizationManualDocumentService(
         }
 
         return new CompanyMovementDetailRequest(
+            warehouseNo,
+            input.DocumentSerie.Trim(),
+            input.DocumentOrderNo.Value);
+    }
+
+    private static CompanyOrderDetailRequest CreateCompanyOrderRequest(
+        AxataSynchronizationManualDocumentInput input,
+        int warehouseNo)
+    {
+        if (string.IsNullOrWhiteSpace(input.DocumentSerie))
+        {
+            throw new ArgumentException("Document serie is required for received company order sync.", nameof(input));
+        }
+
+        if (!input.DocumentOrderNo.HasValue || input.DocumentOrderNo.Value < 0)
+        {
+            throw new ArgumentException("Document order no must be zero or greater for received company order sync.", nameof(input));
+        }
+
+        return new CompanyOrderDetailRequest(
             warehouseNo,
             input.DocumentSerie.Trim(),
             input.DocumentOrderNo.Value);

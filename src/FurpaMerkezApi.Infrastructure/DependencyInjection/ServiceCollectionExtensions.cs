@@ -600,6 +600,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AxataOutboundDeliveryImportService>();
         services.AddScoped<IAxataOutboundDeliveryImportService>(serviceProvider =>
             serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
+        services.AddScoped<IAxataG01InboundAtfImportService, AxataG01InboundAtfImportService>();
+        services.AddScoped<IAxataDynamicCensusImportService, AxataDynamicCensusImportService>();
         services.AddScoped<IAxataIntegrationAuditService>(serviceProvider =>
             serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
         services.AddScoped<AxataSynchronizationConnectionProbeService>();
@@ -608,6 +610,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAxataSynchronizationTaskHandler, FirmMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, ProductMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, IssuedWarehouseOrderSyncTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, ReceivedCompanyOrderSyncTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, WarehouseInboundOrderSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, CompanyReceivingSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, InventoryCountSyncTaskHandler>();
         services.AddHostedService<AxataSynchronizationWorker>();

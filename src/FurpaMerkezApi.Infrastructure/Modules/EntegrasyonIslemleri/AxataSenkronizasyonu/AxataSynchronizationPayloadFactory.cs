@@ -13,6 +13,12 @@ internal static class AxataSynchronizationPayloadFactory
         lines = detail.Items
     };
 
+    public static object BuildCompanyOrderDocument(CompanyOrderDetailDto detail) => new
+    {
+        header = detail.Header,
+        lines = detail.Items
+    };
+
     public static object BuildCompanyReceivingDocument(CompanyMovementDetailDto detail) => new
     {
         header = detail.Header,

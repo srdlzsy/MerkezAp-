@@ -19,4 +19,5 @@ public sealed record CreateCompanyMovementLineRequest(
     int LotNo = 0,
     string? ProjectCode = null,
     string? CustomerResponsibilityCenter = null,
-    string? ProductResponsibilityCenter = null);
+    string? ProductResponsibilityCenter = null,
+    Guid? OrderLineGuid = null);

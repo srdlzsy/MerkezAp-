@@ -29,6 +29,22 @@ internal static class AxataSynchronizationCatalog
             "Mikro",
             "AXATA"),
         new(
+            "received-company-order-sync",
+            "Alinan Firma Siparisi C02 Senkronizasyonu",
+            "Alinan firma/musteri siparislerini AXATA C02 outbound order formatina cevirir.",
+            "Mikro -> AXATA",
+            true,
+            "Mikro",
+            "AXATA"),
+        new(
+            "warehouse-inbound-order-sync",
+            "Merkez Depo Giris Siparisi Senkronizasyonu",
+            "Merkez depoya gelen depolar arasi siparisleri AXATA G02 inbound order formatina cevirir.",
+            "Mikro -> AXATA",
+            true,
+            "Mikro",
+            "AXATA"),
+        new(
             "company-receiving-sync",
             "Firma Mal Kabul Senkronizasyonu",
             "Firma mal kabul belgelerini manuel veya zamanli entegrasyon akisi icin hazirlar.",

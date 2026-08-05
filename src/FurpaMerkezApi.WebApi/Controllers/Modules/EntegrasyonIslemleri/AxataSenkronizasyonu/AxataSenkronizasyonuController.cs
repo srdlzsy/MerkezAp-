@@ -25,6 +25,8 @@ public sealed class AxataSenkronizasyonuController(
     IAxataSynchronizationService synchronizationService,
     IAxataProductSynchronizationService productSynchronizationService,
     IAxataOutboundDeliveryImportService outboundDeliveryImportService,
+    IAxataG01InboundAtfImportService g01InboundAtfImportService,
+    IAxataDynamicCensusImportService dynamicCensusImportService,
     IAxataIntegrationAuditService integrationAuditService,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
     ICreateInterWarehouseShipmentUseCase createInterWarehouseShipmentUseCase,
@@ -410,6 +412,198 @@ public sealed class AxataSenkronizasyonuController(
                 documentSerie,
                 documentOrderNo,
                 request.Status,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/outbound-deliveries/c02/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewC02OutboundDeliveryImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewC02Async(
+            new AxataOutboundDeliveryImportPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/outbound-deliveries/c02/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteC02OutboundDeliveryImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteC02Async(
+            new AxataOutboundDeliveryImportExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/outbound-deliveries/c03/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewC03OutboundDeliveryImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewC03Async(
+            new AxataOutboundDeliveryImportPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/outbound-deliveries/c03/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteC03OutboundDeliveryImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteC03Async(
+            new AxataOutboundDeliveryImportExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/outbound-deliveries/c04/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewC04OutboundDeliveryImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewC04Async(
+            new AxataOutboundDeliveryImportPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/outbound-deliveries/c04/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteC04OutboundDeliveryImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteC04Async(
+            new AxataOutboundDeliveryImportExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/inbound-deliveries/g02/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewG02InboundDeliveryImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewG02Async(
+            new AxataOutboundDeliveryImportPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/inbound-deliveries/g02/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteG02InboundDeliveryImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteG02Async(
+            new AxataOutboundDeliveryImportExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/inbound-deliveries/g02/documents/{documentSerie}/{documentOrderNo:int}/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportPreviewDto>> PreviewG02InboundDeliveryDocumentImport(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.PreviewG02DocumentAsync(
+            new AxataOutboundDeliveryDocumentImportPreviewRequest(
+                documentSerie,
+                documentOrderNo,
+                status),
+            cancellationToken));
+
+    [HttpPost("live/axata/inbound-deliveries/g02/documents/{documentSerie}/{documentOrderNo:int}/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataOutboundDeliveryImportExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AxataOutboundDeliveryImportExecuteDto>> ExecuteG02InboundDeliveryDocumentImport(
+        string documentSerie,
+        int documentOrderNo,
+        [FromBody] AxataOutboundDeliveryDocumentImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await outboundDeliveryImportService.ExecuteG02DocumentAsync(
+            new AxataOutboundDeliveryDocumentImportExecuteRequest(
+                documentSerie,
+                documentOrderNo,
+                request.Status,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/inbound-atf/g01/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataG01InboundAtfPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataG01InboundAtfPreviewDto>> PreviewG01InboundAtfImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await g01InboundAtfImportService.PreviewAsync(
+            new AxataG01InboundAtfPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/inbound-atf/g01/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataG01InboundAtfExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataG01InboundAtfExecuteDto>> ExecuteG01InboundAtfImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await g01InboundAtfImportService.ExecuteAsync(
+            new AxataG01InboundAtfExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
+                request.Acknowledge),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpGet("live/axata/dynamic-census/preview")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(AxataDynamicCensusPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataDynamicCensusPreviewDto>> PreviewDynamicCensusImport(
+        [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await dynamicCensusImportService.PreviewAsync(
+            new AxataDynamicCensusPreviewRequest(request.Take),
+            cancellationToken));
+
+    [HttpPost("live/axata/dynamic-census/import")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(AxataDynamicCensusExecuteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataDynamicCensusExecuteDto>> ExecuteDynamicCensusImport(
+        [FromBody] AxataOutboundDeliveryImportExecuteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await dynamicCensusImportService.ExecuteAsync(
+            new AxataDynamicCensusExecuteRequest(
+                request.Take,
+                request.ContinueOnError,
                 request.Acknowledge),
             User.GetRequiredUserId(),
             cancellationToken));
@@ -916,7 +1110,7 @@ public sealed class AxataSynchronizationExecuteHttpRequest
     public string TaskCode { get; init; } = string.Empty;
 
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(DryRun|Outbox)$")]
+    [RegularExpression("^(DryRun|Outbox|Live)$")]
     public string ExecutionMode { get; init; } = "DryRun";
 
     [Range(1, int.MaxValue)]
@@ -926,7 +1120,7 @@ public sealed class AxataSynchronizationExecuteHttpRequest
 public sealed class AxataSynchronizationExecuteTaskHttpRequest
 {
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(DryRun|Outbox)$")]
+    [RegularExpression("^(DryRun|Outbox|Live)$")]
     public string ExecutionMode { get; init; } = "DryRun";
 
     [Range(1, int.MaxValue)]
@@ -1052,7 +1246,7 @@ public sealed class AxataSynchronizationManualDocumentExecuteHttpRequest
     : AxataSynchronizationManualDocumentHttpRequest
 {
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(DryRun|Outbox)$")]
+    [RegularExpression("^(DryRun|Outbox|Live)$")]
     public string ExecutionMode { get; init; } = "DryRun";
 }
 
@@ -1087,7 +1281,7 @@ public sealed class AxataSynchronizationManualDocumentBatchExecuteHttpRequest
     : AxataSynchronizationManualDocumentBatchHttpRequest
 {
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(DryRun|Outbox)$")]
+    [RegularExpression("^(DryRun|Outbox|Live)$")]
     public string ExecutionMode { get; init; } = "DryRun";
 }
 

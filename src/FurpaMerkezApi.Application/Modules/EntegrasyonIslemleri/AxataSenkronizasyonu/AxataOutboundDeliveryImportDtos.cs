@@ -23,6 +23,51 @@ public interface IAxataOutboundDeliveryImportService
         AxataOutboundDeliveryDocumentImportExecuteRequest request,
         Guid requestedByUserId,
         CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportPreviewDto> PreviewC02Async(
+        AxataOutboundDeliveryImportPreviewRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportExecuteDto> ExecuteC02Async(
+        AxataOutboundDeliveryImportExecuteRequest request,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportPreviewDto> PreviewC03Async(
+        AxataOutboundDeliveryImportPreviewRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportExecuteDto> ExecuteC03Async(
+        AxataOutboundDeliveryImportExecuteRequest request,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportPreviewDto> PreviewC04Async(
+        AxataOutboundDeliveryImportPreviewRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportExecuteDto> ExecuteC04Async(
+        AxataOutboundDeliveryImportExecuteRequest request,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportPreviewDto> PreviewG02Async(
+        AxataOutboundDeliveryImportPreviewRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportExecuteDto> ExecuteG02Async(
+        AxataOutboundDeliveryImportExecuteRequest request,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportPreviewDto> PreviewG02DocumentAsync(
+        AxataOutboundDeliveryDocumentImportPreviewRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AxataOutboundDeliveryImportExecuteDto> ExecuteG02DocumentAsync(
+        AxataOutboundDeliveryDocumentImportExecuteRequest request,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record AxataOutboundDeliveryQueuePreviewRequest(
