@@ -189,6 +189,27 @@ public sealed class FirmaMalKabulleriController(
             cancellationToken));
     }
 
+    [HttpGet("resmi-belge/ettn/{ettn}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(InboundDespatchLookupResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<InboundDespatchLookupResponse>> ResolveOfficialDocumentByEttn(
+        string ettn,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        [FromQuery] string? documentKind,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy);
+
+        return Ok(await getInboundDespatchLookupUseCase.ExecuteAsync(
+            new InboundDespatchLookupRequest(
+                resolvedWarehouseNo,
+                MenuCode,
+                ettn,
+                documentKind),
+            cancellationToken));
+    }
+
     [HttpPut("{id}")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]

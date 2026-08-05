@@ -61,6 +61,7 @@ Controller'da acik olan pratik alias/canonical route'lar:
 - `GET /api/mal-kabul-islemleri/depo-mal-kabulleri/{documentSerie}/{documentOrderNo}` ve `POST /api/mal-kabul-islemleri/depo-mal-kabulleri/{documentSerie}/{documentOrderNo}/kabul`
 - `GET /api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/{documentSerie}/{documentOrderNo}` ve `POST /api/mal-kabul-islemleri/mal-kabuller/depo-sevkleri/{documentSerie}/{documentOrderNo}/kabul`, depo mal kabul detay/kabul endpointinin eski menu uyum alias'idir.
 - `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/{documentSerie}/{documentOrderNo}`
+- `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/resmi-belge/ettn/{ettn}` ve geriye uyumlu `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/{ettn}`
 - `GET /api/stok-islemleri/zayiat-fisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/stok-islemleri/masraf-fisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/stok-islemleri/virmanlar/{documentSerie}/{documentOrderNo}`
@@ -5374,11 +5375,22 @@ Onemli not:
 - Response modeli `CompanyMovementDetailDto` ile aynidir.
 - Bu endpoint create kaynagi degil, yapilmis fis detayini gostermek icindir.
 
-### Firma Mal Kabul Icin E-Irsaliye ETTN Cozumleme
+### Firma Mal Kabul Icin E-Belge ETTN/UUID Cozumleme
 
-Kullanici tedarikci irsaliyesinin QR bilgisinden ETTN/UUID elde ettiyse resmi e-irsaliye ust bilgi, kalemler ve olasi cari eslesmelerini almak icin:
+Kullanici tedarikci belgesinin QR bilgisinden ETTN/UUID elde ettiyse resmi ust bilgi, kalemler ve olasi cari eslesmelerini almak icin:
+
+`GET /api/mal-kabul-islemleri/firma-mal-kabulleri/resmi-belge/ettn/3fd0e4f4-87a2-43f2-b5ca-f2a4fd778111?warehouseNo=110&documentKind=auto`
+
+Geriye uyumlu eski alias:
 
 `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/3fd0e4f4-87a2-43f2-b5ca-f2a4fd778111?warehouseNo=110`
+
+Request/query:
+
+- `warehouseNo`: opsiyonel. `*.all-warehouses` yoksa UI gondermez; backend token deposunu kullanir.
+- `documentKind`: opsiyonel. `auto`, `e-despatch` veya `e-invoice` gonderilebilir. Bos/eksik ise `auto` kabul edilir.
+- `auto`: backend once Uyumsoft gelen e-irsaliye kutusunda `GetInboxDespatches` ile arar; bulunamazsa Uyumsoft gelen e-fatura tarafinda once `GetInboxInvoice`, sonra `GetInboxInvoices` ile UUID/fatura no adaylarini dener.
+- Eski `/e-irsaliye/ettn/{ettn}` alias'i da artik `auto` davranir; terminal eski endpoint'i cagirmaya devam etse bile e-fatura bulunabilir.
 
 Yetki:
 
@@ -5387,11 +5399,19 @@ Yetki:
 Onemli not:
 
 - Bu endpoint create request'i yerine gecmez; sadece create ekranina on bilgi ve on dolum verir.
-- Uyumsoft gelen e-irsaliye baslik bilgileri `sender`, `receiver`, `despatchNumber`, `issueDate`, `notes` alanlarinda toplanir.
+- `sourceDocumentKind` belge turunu soyler: `e-despatch`, `e-invoice` veya bulunamadiysa `auto`.
+- `sourceDocumentLabel` UI etiketi icindir: `E-Irsaliye`, `E-Fatura` veya `E-Belge`.
+- `sourceDocumentNumber` resmi belge numarasidir. Geriye uyumluluk icin `despatchNumber` alani da kaynak belge numarasini tasir; e-fatura bulundugunda burada fatura no gelir.
+- E-irsaliye icin baslik bilgileri `sender`, `receiver`, `despatchNumber`, `issueDate`, `actualDespatchDate`, `actualDespatchTime`, `plaque`, `driverNameSurname`, `driverTckn`, `notes` alanlarinda toplanir.
+- E-fatura icin `invoiceNumber`, `invoiceDate`, `invoiceTotal`, `taxExclusiveAmount`, `taxTotal`, `currencyCode` ve varsa `despatchReferences` ayrica dolar. `despatchAdviceTypeCode` alani geriye uyumluluk icin e-faturada `InvoiceTypeCode` degerini tasir.
 - `suggestedCustomers` alani gonderici firma VKN/TCKN ve unvanina gore Mikro cari adaylari dondurur.
 - `primaryCustomerSuggestion` alanini UI varsayilan cari adayi gibi kullanabilir.
 - Kalemlerde stok kodlari birebir tutusmasa bile ust bilgi yine de kullanilabilir; bu yuzden `matchedLineCount = 0` olsa bile `isFound = true` create ekrani icin degerlidir.
 - Ic stok eslesmesi bulunan satirlarda `internalStockCode`, `internalStockName` ve `matchReason` dolar; bulunamayan satirlar UI'da manuel eslestirme icin ayrica gosterilmelidir.
+- Kalemlerde `quantitySource = despatch` ise miktar irsaliye sevk miktarindan, `quantitySource = invoice` ise fatura miktarindan gelmistir.
+- E-fatura satirlarinda UBL'de varsa `unitPrice` ve `lineAmount` gelir. Bunlar on dolum/gosterim bilgisidir; kaydetmede son soz yine `POST /api/mal-kabul-islemleri/firma-mal-kabulleri` body alanlaridir.
+- UI QR okutunca once bu endpoint'i cagirir. `sourceDocumentKind = e-invoice` ise ekranda "E-Fatura" etiketi, `sourceDocumentKind = e-despatch` ise "E-Irsaliye" etiketi gosterilmelidir.
+- `warnings` bos degilse UI uyari bandinda gosterebilir. E-fatura bulundu ama irsaliye referansi yoksa backend bunu uyarida belirtir; bu durumda mal kabul fatura uzerinden taslaklanir, kullanici fiili kabul miktarini yine kontrol eder.
 
 Response:
 
@@ -5401,6 +5421,9 @@ Response:
   "warehouseNo": 110,
   "receivingContext": "firma-mal-kabulleri",
   "ettn": "3fd0e4f4-87a2-43f2-b5ca-f2a4fd778111",
+  "sourceDocumentKind": "e-despatch",
+  "sourceDocumentLabel": "E-Irsaliye",
+  "sourceDocumentNumber": "IRS2026000001234",
   "despatchNumber": "IRS2026000001234",
   "issueDate": "2026-05-06T00:00:00",
   "actualDespatchDate": "2026-05-06T00:00:00",
@@ -5410,6 +5433,14 @@ Response:
   "driverTckn": "49216016986",
   "profileId": "TEMELIRSALIYE",
   "despatchAdviceTypeCode": "SEVK",
+  "invoiceNumber": null,
+  "invoiceDate": null,
+  "invoiceTotal": null,
+  "taxExclusiveAmount": null,
+  "taxTotal": null,
+  "currencyCode": null,
+  "despatchReferences": [],
+  "warnings": [],
   "notes": [
     "Sofor bilgisi kagit irsaliyede ayrica yaziyor."
   ],
@@ -5460,7 +5491,10 @@ Response:
       "matchReason": "buyer-item-code",
       "isMatched": true,
       "isGoodsAcceptanceBlocked": false,
-      "canUseForGoodsAcceptance": true
+      "canUseForGoodsAcceptance": true,
+      "unitPrice": null,
+      "lineAmount": null,
+      "quantitySource": "despatch"
     },
     {
       "lineNo": 2,
@@ -5477,9 +5511,79 @@ Response:
       "matchReason": null,
       "isMatched": false,
       "isGoodsAcceptanceBlocked": false,
-      "canUseForGoodsAcceptance": false
+      "canUseForGoodsAcceptance": false,
+      "unitPrice": null,
+      "lineAmount": null,
+      "quantitySource": "despatch"
     }
   ]
+}
+```
+
+E-fatura bulunursa ayni response modeli kullanilir; farkli dolan alanlar ornegi:
+
+```json
+{
+  "isFound": true,
+  "sourceDocumentKind": "e-invoice",
+  "sourceDocumentLabel": "E-Fatura",
+  "sourceDocumentNumber": "FTR2026000000456",
+  "ettn": "2f2a4fd7-7811-43f2-b5ca-3fd0e4f487a2",
+  "despatchNumber": "FTR2026000000456",
+  "issueDate": "2026-05-06T00:00:00",
+  "actualDespatchDate": null,
+  "actualDespatchTime": null,
+  "profileId": "TEMELFATURA",
+  "despatchAdviceTypeCode": "SATIS",
+  "invoiceNumber": "FTR2026000000456",
+  "invoiceDate": "2026-05-06T00:00:00",
+  "invoiceTotal": 11800.0,
+  "taxExclusiveAmount": 10000.0,
+  "taxTotal": 1800.0,
+  "currencyCode": "TRY",
+  "despatchReferences": [
+    "IRS2026000000123"
+  ],
+  "warnings": [
+    "Belge e-fatura olarak bulundu.",
+    "E-fatura irsaliye referansi iceriyor: IRS2026000000123"
+  ],
+  "lines": [
+    {
+      "lineNo": 1,
+      "productName": "Stok Adi",
+      "quantity": 10,
+      "unitCode": "KGM",
+      "internalStockCode": "015792",
+      "internalStockName": "Stok Adi",
+      "isMatched": true,
+      "canUseForGoodsAcceptance": true,
+      "unitPrice": 1000.0,
+      "lineAmount": 10000.0,
+      "quantitySource": "invoice"
+    }
+  ]
+}
+```
+
+Bulunamadi response ornegi:
+
+```json
+{
+  "isFound": false,
+  "warehouseNo": 110,
+  "receivingContext": "firma-mal-kabulleri",
+  "ettn": "3fd0e4f4-87a2-43f2-b5ca-f2a4fd778111",
+  "sourceDocumentKind": "auto",
+  "sourceDocumentLabel": "E-Belge",
+  "warnings": [
+    "Uyumsoft gelen e-irsaliye ve e-fatura kutusunda belge bulunamadi."
+  ],
+  "totalLineCount": 0,
+  "matchedLineCount": 0,
+  "unmatchedLineCount": 0,
+  "suggestedCustomers": [],
+  "lines": []
 }
 ```
 
@@ -5691,7 +5795,7 @@ Firma mal kabul UI akisi:
 - Liste satirinda seri/sira, cari, belge tarihi, depo, satir sayisi, toplam kabul miktari ve toplam tutar gosterilir.
 - Kullanici listedeki fisi acarsa `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/{seri}/{sira}` cagrilir ve ekran salt okunur detay gibi davranir.
 - Yeni fis icin kullanici `Yeni Mal Kabul` aksiyonuna basar. Create ekraninda cari secimi zorunludur; cari secilmeden satir kaydetme ve `Siparis Bagla` pasif kalmalidir.
-- Kullanici QR'dan ETTN okutursa UI ilk adimda `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/{ettn}` cagirabilir.
+- Kullanici QR'dan ETTN/UUID okutursa UI ilk adimda `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/resmi-belge/ettn/{ettn}?documentKind=auto` cagirabilir. Bu akista backend once e-irsaliye, bulunamazsa e-fatura gelen kutusunu dener.
 - Bu response'tan `primaryCustomerSuggestion` varsa cari alani icin varsayilan onerilir; `despatchNumber` ve `issueDate` alanlari `documentNo` ve `documentDate` icin on dolum adayi olarak kullanilabilir.
 - `lines[].isMatched = true` olan satirlar tek tikla create satirina aktarilabilir; `isMatched = false` olanlar ayrica "manuel eslestir" listesine dusurulebilir.
 - `DocumentNo` artik zorunlu degildir. E-belge/e-irsaliye no varsa UI tam `seri + 9 haneli sayisal sira` formatinda gonderebilir; yoksa bos gonderebilir.
@@ -5700,7 +5804,7 @@ Firma mal kabul UI akisi:
 - Cari secildikten sonra kullanici manuel satir ekleyebilir. Manuel satirlarda `orderGuid = null` gonderilir.
 - `Siparis Bagla` aksiyonunda UI secili carinin acik verilen firma siparislerini `GET /api/siparis-islemleri/verilen-firma-siparisleri?WarehouseNo=...&CustomerCode=...&OnlyOpen=true` ile listeler.
 - Kullanici bir siparis secerse siparis detayi `GET /api/siparis-islemleri/verilen-firma-siparisleri/{seri}/{sira}?warehouseNo=...` ile acilir ve detaydaki `items[].orderGuid` mal kabul satirina tasinir.
-- Siparisten veya e-irsaliyeden gelen satirda UI resmi/irsaliye miktarini `dispatchQuantity`, fiili sayilan miktari `acceptedQuantity` olarak tutmalidir. Normal durumda iki alan esit onerilir.
+- Siparisten veya e-belgeden gelen satirda UI resmi miktari `dispatchQuantity`, fiili sayilan miktari `acceptedQuantity` olarak tutmalidir. Normal durumda iki alan esit onerilir.
 - Kullanici eksik kabul ederse UI farki anlik hesaplamalidir: `returnQuantity = dispatchQuantity - acceptedQuantity`. Bu fark backend tarafinda otomatik firma iadesine donusebilir.
 - UI `acceptedQuantity > dispatchQuantity` durumuna izin vermemelidir.
 - UI `autoCreateReturnForPartialAcceptance` alanini varsayilan `true` gonderebilir veya hic gondermeyebilir. Operasyon ozellikle otomatik iade istemiyorsa `false` gonderilir ve response'ta `IadeBekliyor` statusu takip edilir.
@@ -11294,8 +11398,9 @@ Mal Kabul Islemleri / Firma Mal Kabulleri
   -> kullanici satira tiklar
   -> GET /api/mal-kabul-islemleri/firma-mal-kabulleri/{seri}/{sira}
   -> kullanici 'Yeni Mal Kabul' derse create ekranina gecer
-  -> QR'dan gelen ETTN ile e-irsaliye ust bilgi ve kalemleri cekebilir
-  -> GET /api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/{ettn}
+  -> QR'dan gelen ETTN/UUID ile e-irsaliye veya e-fatura ust bilgi ve kalemlerini cekebilir
+  -> GET /api/mal-kabul-islemleri/firma-mal-kabulleri/resmi-belge/ettn/{ettn}?documentKind=auto
+  -> eski alias: GET /api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/{ettn}
   -> acik siparis baglamak icin GET /api/siparis-islemleri/verilen-firma-siparisleri?OnlyOpen=true&CustomerCode=...
   -> kaydetmek icin POST /api/mal-kabul-islemleri/firma-mal-kabulleri
 

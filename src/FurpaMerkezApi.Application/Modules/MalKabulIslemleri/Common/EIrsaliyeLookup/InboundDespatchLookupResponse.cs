@@ -22,7 +22,30 @@ public sealed record InboundDespatchLookupResponse(
     int MatchedLineCount,
     int UnmatchedLineCount,
     IReadOnlyCollection<InboundDespatchCustomerSuggestionDto> SuggestedCustomers,
-    IReadOnlyCollection<InboundDespatchLineDto> Lines);
+    IReadOnlyCollection<InboundDespatchLineDto> Lines)
+{
+    public string SourceDocumentKind { get; init; } = "e-despatch";
+
+    public string SourceDocumentLabel { get; init; } = "E-Irsaliye";
+
+    public string? SourceDocumentNumber { get; init; }
+
+    public string? InvoiceNumber { get; init; }
+
+    public DateTime? InvoiceDate { get; init; }
+
+    public decimal? InvoiceTotal { get; init; }
+
+    public decimal? TaxExclusiveAmount { get; init; }
+
+    public decimal? TaxTotal { get; init; }
+
+    public string? CurrencyCode { get; init; }
+
+    public IReadOnlyCollection<string> DespatchReferences { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyCollection<string> Warnings { get; init; } = Array.Empty<string>();
+}
 
 public sealed record InboundDespatchPartyDto(
     string? Title,
@@ -52,4 +75,11 @@ public sealed record InboundDespatchLineDto(
     string? MatchReason,
     bool IsMatched,
     bool IsGoodsAcceptanceBlocked,
-    bool CanUseForGoodsAcceptance);
+    bool CanUseForGoodsAcceptance)
+{
+    public double? UnitPrice { get; init; }
+
+    public decimal? LineAmount { get; init; }
+
+    public string? QuantitySource { get; init; }
+}

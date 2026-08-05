@@ -3,4 +3,5 @@ namespace FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeL
 public sealed record InboundDespatchLookupRequest(
     int WarehouseNo,
     string ReceivingContext,
-    string Ettn);
+    string Ettn,
+    string? DocumentKind = null);

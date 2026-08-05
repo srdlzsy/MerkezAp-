@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLookup;
@@ -12,6 +13,9 @@ public sealed class GetInboundDespatchLookupUseCase(
     IUyumsoftConnectedQueryService uyumsoftConnectedQueryService)
     : IGetInboundDespatchLookupUseCase
 {
+    private const string AutoDocumentKind = "auto";
+    private const string EDespatchDocumentKind = "e-despatch";
+    private const string EInvoiceDocumentKind = "e-invoice";
     private const int MaxCustomerSuggestionCount = 10;
 
     public async Task<InboundDespatchLookupResponse> ExecuteAsync(
@@ -26,6 +30,40 @@ public sealed class GetInboundDespatchLookupUseCase(
         var ettn = NormalizeOrNull(request.Ettn)
             ?? throw new ArgumentException("ETTN is required.", nameof(request.Ettn));
         var receivingContext = NormalizeOrNull(request.ReceivingContext) ?? "mal-kabulu";
+
+        return NormalizeDocumentKind(request.DocumentKind) switch
+        {
+            EDespatchDocumentKind => await ResolveDespatchAsync(request.WarehouseNo, receivingContext, ettn, cancellationToken)
+                                     ?? CreateNotFoundResponse(
+                                         request.WarehouseNo,
+                                         receivingContext,
+                                         ettn,
+                                         EDespatchDocumentKind,
+                                         ["Uyumsoft gelen e-irsaliye kutusunda belge bulunamadi."]),
+            EInvoiceDocumentKind => await ResolveInvoiceAsync(request.WarehouseNo, receivingContext, ettn, cancellationToken)
+                                    ?? CreateNotFoundResponse(
+                                        request.WarehouseNo,
+                                        receivingContext,
+                                        ettn,
+                                        EInvoiceDocumentKind,
+                                        ["Uyumsoft gelen e-fatura kutusunda belge bulunamadi."]),
+            _ => await ResolveDespatchAsync(request.WarehouseNo, receivingContext, ettn, cancellationToken)
+                 ?? await ResolveInvoiceAsync(request.WarehouseNo, receivingContext, ettn, cancellationToken)
+                 ?? CreateNotFoundResponse(
+                     request.WarehouseNo,
+                     receivingContext,
+                     ettn,
+                     AutoDocumentKind,
+                     ["Uyumsoft gelen e-irsaliye ve e-fatura kutusunda belge bulunamadi."])
+        };
+    }
+
+    private async Task<InboundDespatchLookupResponse?> ResolveDespatchAsync(
+        int warehouseNo,
+        string receivingContext,
+        string ettn,
+        CancellationToken cancellationToken)
+    {
         var uyumsoftResponse = await uyumsoftConnectedQueryService.InvokeGetOperationAsync(
             UyumsoftConnectedServiceKind.EDespatch,
             new UyumsoftOperationInvocationRequest(
@@ -39,29 +77,7 @@ public sealed class GetInboundDespatchLookupUseCase(
 
         if (despatchAdvice is null)
         {
-            return new InboundDespatchLookupResponse(
-                false,
-                request.WarehouseNo,
-                receivingContext,
-                ettn,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                Array.Empty<string>(),
-                null,
-                null,
-                null,
-                0,
-                0,
-                0,
-                Array.Empty<InboundDespatchCustomerSuggestionDto>(),
-                Array.Empty<InboundDespatchLineDto>());
+            return null;
         }
 
         var sender = ParseParty(
@@ -108,13 +124,14 @@ public sealed class GetInboundDespatchLookupUseCase(
             "ShipmentStage",
             "DriverPerson",
             "NationalityID");
+        var despatchNumber = NormalizeOrNull(GetPathValue(despatchAdvice, "ID"));
 
         return new InboundDespatchLookupResponse(
             true,
-            request.WarehouseNo,
+            warehouseNo,
             receivingContext,
             NormalizeOrNull(GetPathValue(despatchAdvice, "UUID")) ?? ettn,
-            NormalizeOrNull(GetPathValue(despatchAdvice, "ID")),
+            despatchNumber,
             ParseDateOrNull(GetPathValue(despatchAdvice, "IssueDate")),
             actualDespatchDate,
             actualDespatchTime,
@@ -131,8 +148,212 @@ public sealed class GetInboundDespatchLookupUseCase(
             matchedLineCount,
             resolvedLines.Length - matchedLineCount,
             customerSuggestions,
-            resolvedLines);
+            resolvedLines)
+        {
+            SourceDocumentKind = EDespatchDocumentKind,
+            SourceDocumentLabel = "E-Irsaliye",
+            SourceDocumentNumber = despatchNumber
+        };
     }
+
+    private async Task<InboundDespatchLookupResponse?> ResolveInvoiceAsync(
+        int warehouseNo,
+        string receivingContext,
+        string ettn,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await TryGetInvoiceRootAsync(ettn, cancellationToken);
+        if (invoice is null)
+        {
+            return null;
+        }
+
+        var sender = ParseParty(FindChild(invoice, "AccountingSupplierParty"));
+        var receiver = ParseParty(FindChild(invoice, "AccountingCustomerParty"));
+        var notes = invoice.Elements()
+            .Where(element => element.Name.LocalName == "Note")
+            .Select(element => NormalizeOrNull(element.Value))
+            .Where(note => note is not null)
+            .Cast<string>()
+            .ToArray();
+        var lineDrafts = invoice.Elements()
+            .Where(element => element.Name.LocalName == "InvoiceLine")
+            .Select(ParseInvoiceLineDraft)
+            .ToArray();
+        var resolvedLines = await ResolveLinesAsync(lineDrafts, cancellationToken);
+        var customerSuggestions = await ResolveCustomerSuggestionsAsync(sender, cancellationToken);
+        var primaryCustomerSuggestion = customerSuggestions.FirstOrDefault();
+        var matchedLineCount = resolvedLines.Count(line => line.IsMatched);
+        var invoiceNumber = NormalizeOrNull(GetPathValue(invoice, "ID"));
+        var issueDate = ParseDateOrNull(GetPathValue(invoice, "IssueDate"));
+        var despatchReferences = invoice.Elements()
+            .Where(element => element.Name.LocalName == "DespatchDocumentReference")
+            .Select(element => NormalizeOrNull(GetPathValue(element, "ID")))
+            .Where(value => value is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warnings = despatchReferences.Length == 0
+            ? new[] { "Belge e-fatura olarak bulundu; e-faturada irsaliye referansi yok." }
+            : new[]
+            {
+                "Belge e-fatura olarak bulundu.",
+                $"E-fatura irsaliye referansi iceriyor: {string.Join(", ", despatchReferences)}"
+            };
+
+        return new InboundDespatchLookupResponse(
+            true,
+            warehouseNo,
+            receivingContext,
+            NormalizeOrNull(GetPathValue(invoice, "UUID")) ?? ettn,
+            invoiceNumber,
+            issueDate,
+            null,
+            null,
+            null,
+            null,
+            null,
+            NormalizeOrNull(GetPathValue(invoice, "ProfileID")),
+            NormalizeOrNull(GetPathValue(invoice, "InvoiceTypeCode")),
+            notes,
+            sender,
+            receiver,
+            primaryCustomerSuggestion,
+            resolvedLines.Length,
+            matchedLineCount,
+            resolvedLines.Length - matchedLineCount,
+            customerSuggestions,
+            resolvedLines)
+        {
+            SourceDocumentKind = EInvoiceDocumentKind,
+            SourceDocumentLabel = "E-Fatura",
+            SourceDocumentNumber = invoiceNumber,
+            InvoiceNumber = invoiceNumber,
+            InvoiceDate = issueDate,
+            InvoiceTotal = ParseDecimalOrNull(GetPathValue(invoice, "LegalMonetaryTotal", "PayableAmount")),
+            TaxExclusiveAmount = ParseDecimalOrNull(GetPathValue(invoice, "LegalMonetaryTotal", "TaxExclusiveAmount")),
+            TaxTotal = invoice.Elements()
+                .Where(element => element.Name.LocalName == "TaxTotal")
+                .Select(element => ParseDecimalOrNull(GetPathValue(element, "TaxAmount")))
+                .Where(value => value.HasValue)
+                .Sum(value => value!.Value),
+            CurrencyCode = NormalizeOrNull(GetPathValue(invoice, "DocumentCurrencyCode")) ??
+                           FindChild(FindChild(invoice, "LegalMonetaryTotal"), "PayableAmount")
+                               ?.Attribute("currencyID")
+                               ?.Value,
+            DespatchReferences = despatchReferences,
+            Warnings = warnings
+        };
+    }
+
+    private async Task<XElement?> TryGetInvoiceRootAsync(
+        string ettn,
+        CancellationToken cancellationToken)
+    {
+        var directInvoice = await TryGetInvoiceRootByIdAsync(ettn, swallowNotFound: true, cancellationToken);
+        if (directInvoice is not null)
+        {
+            return directInvoice;
+        }
+
+        var invoiceLookupIds = await ResolveInboxInvoiceLookupIdsAsync(ettn, cancellationToken);
+        foreach (var invoiceLookupId in invoiceLookupIds)
+        {
+            var invoice = await TryGetInvoiceRootByIdAsync(invoiceLookupId, swallowNotFound: false, cancellationToken);
+            if (invoice is not null)
+            {
+                return invoice;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<XElement?> TryGetInvoiceRootByIdAsync(
+        string invoiceId,
+        bool swallowNotFound,
+        CancellationToken cancellationToken)
+    {
+        UyumsoftOperationResponseDto uyumsoftResponse;
+
+        try
+        {
+            uyumsoftResponse = await uyumsoftConnectedQueryService.InvokeGetOperationAsync(
+                UyumsoftConnectedServiceKind.EInvoice,
+                new UyumsoftOperationInvocationRequest(
+                    "GetInboxInvoice",
+                    [new UyumsoftOperationParameterRequest("invoiceId", invoiceId)]),
+                cancellationToken);
+        }
+        catch (InvalidOperationException) when (swallowNotFound)
+        {
+            return null;
+        }
+
+        return TryFindInvoiceXml(uyumsoftResponse, out var invoiceXml)
+            ? XDocument.Parse(invoiceXml, LoadOptions.PreserveWhitespace).Root
+            : null;
+    }
+
+    private async Task<IReadOnlyCollection<string>> ResolveInboxInvoiceLookupIdsAsync(
+        string ettn,
+        CancellationToken cancellationToken)
+    {
+        var invoiceLookupIds = new List<string>();
+
+        foreach (var operation in BuildInboxInvoiceListLookupOperations(ettn))
+        {
+            var uyumsoftResponse = await uyumsoftConnectedQueryService.InvokeGetOperationAsync(
+                UyumsoftConnectedServiceKind.EInvoice,
+                operation,
+                cancellationToken);
+
+            invoiceLookupIds.AddRange(
+                uyumsoftResponse.InvoiceList?.Items
+                    .Select(item => NormalizeOrNull(item.InvoiceUuid))
+                    .Where(value => value is not null)
+                    .Cast<string>() ?? []);
+        }
+
+        return invoiceLookupIds
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static InboundDespatchLookupResponse CreateNotFoundResponse(
+        int warehouseNo,
+        string receivingContext,
+        string ettn,
+        string documentKind,
+        IReadOnlyCollection<string> warnings) =>
+        new(
+            false,
+            warehouseNo,
+            receivingContext,
+            ettn,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            Array.Empty<string>(),
+            null,
+            null,
+            null,
+            0,
+            0,
+            0,
+            Array.Empty<InboundDespatchCustomerSuggestionDto>(),
+            Array.Empty<InboundDespatchLineDto>())
+        {
+            SourceDocumentKind = documentKind,
+            SourceDocumentLabel = ResolveDocumentLabel(documentKind),
+            Warnings = warnings
+        };
 
     private async Task<InboundDespatchLineDto[]> ResolveLinesAsync(
         IReadOnlyCollection<LineDraft> lines,
@@ -311,7 +532,12 @@ public sealed class GetInboundDespatchLookupUseCase(
             matchReason,
             matchedStock is not null,
             isGoodsAcceptanceBlocked,
-            matchedStock is not null && !isGoodsAcceptanceBlocked);
+            matchedStock is not null && !isGoodsAcceptanceBlocked)
+        {
+            UnitPrice = line.UnitPrice,
+            LineAmount = line.LineAmount,
+            QuantitySource = line.QuantitySource
+        };
     }
 
     private static LineDraft ParseLineDraft(XElement lineElement)
@@ -335,7 +561,48 @@ public sealed class GetInboundDespatchLookupUseCase(
             GetPathValue(itemElement, "BuyersItemIdentification", "ID"),
             GetPathValue(itemElement, "SellersItemIdentification", "ID"),
             GetPathValue(itemElement, "ManufacturersItemIdentification", "ID"),
-            GetPathValue(itemElement, "StandardItemIdentification", "ID"));
+            GetPathValue(itemElement, "StandardItemIdentification", "ID"))
+        {
+            QuantitySource = "despatch"
+        };
+    }
+
+    private static LineDraft ParseInvoiceLineDraft(XElement lineElement)
+    {
+        var itemElement = FindChild(lineElement, "Item");
+        var quantityElement = FindChild(lineElement, "InvoicedQuantity") ??
+                              FindChild(lineElement, "CreditedQuantity") ??
+                              FindChild(lineElement, "BaseQuantity");
+        var itemDescriptions = string.Join(
+            " | ",
+            itemElement?.Elements()
+                .Where(element => element.Name.LocalName == "Description")
+                .Select(element => NormalizeOrNull(element.Value))
+                .Where(value => value is not null)
+                .Cast<string>() ?? Array.Empty<string>());
+        var lineNotes = string.Join(
+            " | ",
+            lineElement.Elements()
+                .Where(element => element.Name.LocalName == "Note")
+                .Select(element => NormalizeOrNull(element.Value))
+                .Where(value => value is not null)
+                .Cast<string>());
+
+        return new LineDraft(
+            ParseIntOrNull(GetPathValue(lineElement, "ID")),
+            GetPathValue(itemElement, "Name"),
+            JoinNonEmpty(itemDescriptions, lineNotes),
+            ParseDoubleOrDefault(quantityElement?.Value),
+            quantityElement?.Attribute("unitCode")?.Value,
+            GetPathValue(itemElement, "BuyersItemIdentification", "ID"),
+            GetPathValue(itemElement, "SellersItemIdentification", "ID"),
+            GetPathValue(itemElement, "ManufacturersItemIdentification", "ID"),
+            GetPathValue(itemElement, "StandardItemIdentification", "ID"))
+        {
+            UnitPrice = ParseDoubleOrNull(GetPathValue(lineElement, "Price", "PriceAmount")),
+            LineAmount = ParseDecimalOrNull(GetPathValue(lineElement, "LineExtensionAmount")),
+            QuantitySource = "invoice"
+        };
     }
 
     private static InboundDespatchPartyDto? ParseParty(XElement? wrapperElement)
@@ -375,27 +642,149 @@ public sealed class GetInboundDespatchLookupUseCase(
         new("DespatchIds", ettn)
     ];
 
+    private static IEnumerable<UyumsoftOperationInvocationRequest> BuildInboxInvoiceListLookupOperations(string ettn)
+    {
+        yield return new UyumsoftOperationInvocationRequest(
+            "GetInboxInvoices",
+            [
+                new UyumsoftOperationParameterRequest("PageIndex", "0"),
+                new UyumsoftOperationParameterRequest("PageSize", "5"),
+                new UyumsoftOperationParameterRequest("OnlyNewestInvoices", "false"),
+                new UyumsoftOperationParameterRequest("InvoiceIds", ettn)
+            ]);
+        yield return new UyumsoftOperationInvocationRequest(
+            "GetInboxInvoices",
+            [
+                new UyumsoftOperationParameterRequest("PageIndex", "0"),
+                new UyumsoftOperationParameterRequest("PageSize", "5"),
+                new UyumsoftOperationParameterRequest("OnlyNewestInvoices", "false"),
+                new UyumsoftOperationParameterRequest("InvoiceNumbers", ettn)
+            ]);
+    }
+
     private static bool TryFindDespatchAdviceXml(
         UyumsoftOperationResponseDto response,
         out string despatchAdviceXml)
     {
         foreach (var value in response.Nodes.SelectMany(FlattenNodeValues))
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (TryFindXmlDocument(value, "DespatchAdvice", out despatchAdviceXml))
             {
-                continue;
-            }
-
-            var trimmed = value.Trim();
-            if (trimmed.Contains("<DespatchAdvice", StringComparison.OrdinalIgnoreCase))
-            {
-                despatchAdviceXml = trimmed;
                 return true;
             }
         }
 
         despatchAdviceXml = string.Empty;
         return false;
+    }
+
+    private static bool TryFindInvoiceXml(
+        UyumsoftOperationResponseDto response,
+        out string invoiceXml)
+    {
+        foreach (var value in response.Nodes.SelectMany(FlattenNodeValues))
+        {
+            if (TryFindXmlDocument(value, "Invoice", out invoiceXml))
+            {
+                return true;
+            }
+        }
+
+        invoiceXml = string.Empty;
+        return false;
+    }
+
+    private static bool TryFindXmlDocument(
+        string? value,
+        string rootLocalName,
+        out string documentXml)
+    {
+        foreach (var candidate in EnumerateXmlCandidates(value))
+        {
+            if (!candidate.Contains($"<{rootLocalName}", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (TryExtractXmlRoot(candidate, rootLocalName, out documentXml))
+            {
+                return true;
+            }
+        }
+
+        documentXml = string.Empty;
+        return false;
+    }
+
+    private static bool TryExtractXmlRoot(
+        string xmlCandidate,
+        string rootLocalName,
+        out string documentXml)
+    {
+        try
+        {
+            var document = XDocument.Parse(xmlCandidate, LoadOptions.PreserveWhitespace);
+            var root = document.Root?.Name.LocalName == rootLocalName
+                ? document.Root
+                : document.Descendants().FirstOrDefault(element => element.Name.LocalName == rootLocalName);
+
+            if (root is not null)
+            {
+                documentXml = root.ToString(SaveOptions.DisableFormatting);
+                return true;
+            }
+        }
+        catch (System.Xml.XmlException)
+        {
+            if (TrySliceXmlDocument(xmlCandidate, rootLocalName, out documentXml))
+            {
+                return true;
+            }
+        }
+
+        documentXml = string.Empty;
+        return false;
+    }
+
+    private static bool TrySliceXmlDocument(
+        string xmlCandidate,
+        string rootLocalName,
+        out string documentXml)
+    {
+        var startIndex = xmlCandidate.IndexOf($"<{rootLocalName}", StringComparison.OrdinalIgnoreCase);
+        if (startIndex < 0)
+        {
+            documentXml = string.Empty;
+            return false;
+        }
+
+        var closeTag = $"</{rootLocalName}>";
+        var endIndex = xmlCandidate.LastIndexOf(closeTag, StringComparison.OrdinalIgnoreCase);
+        if (endIndex < startIndex)
+        {
+            documentXml = string.Empty;
+            return false;
+        }
+
+        documentXml = xmlCandidate[startIndex..(endIndex + closeTag.Length)].Trim();
+        return true;
+    }
+
+    private static IEnumerable<string> EnumerateXmlCandidates(string? value)
+    {
+        var normalized = NormalizeOrNull(value);
+        if (normalized is null)
+        {
+            yield break;
+        }
+
+        yield return normalized;
+
+        var decoded = WebUtility.HtmlDecode(normalized);
+        if (!string.Equals(decoded, normalized, StringComparison.Ordinal))
+        {
+            yield return decoded;
+        }
     }
 
     private static IEnumerable<string?> FlattenNodeValues(UyumsoftResponseNodeDto node)
@@ -428,6 +817,29 @@ public sealed class GetInboundDespatchLookupUseCase(
 
         return "unvan-benzer";
     }
+
+    private static string NormalizeDocumentKind(string? documentKind)
+    {
+        var normalized = NormalizeOrNull(documentKind)
+            ?.Replace("_", "-", StringComparison.OrdinalIgnoreCase)
+            .ToLowerInvariant();
+
+        return normalized switch
+        {
+            null or "" or "auto" or "e-belge" or "ebelge" or "resmi-belge" or "official-document" => AutoDocumentKind,
+            "e-irsaliye" or "eirsaliye" or "irsaliye" or "e-despatch" or "edespatch" or "despatch" => EDespatchDocumentKind,
+            "e-fatura" or "efatura" or "fatura" or "e-invoice" or "einvoice" or "invoice" => EInvoiceDocumentKind,
+            _ => throw new ArgumentException("DocumentKind must be auto, e-despatch or e-invoice.", nameof(documentKind))
+        };
+    }
+
+    private static string ResolveDocumentLabel(string documentKind) =>
+        documentKind switch
+        {
+            EDespatchDocumentKind => "E-Irsaliye",
+            EInvoiceDocumentKind => "E-Fatura",
+            _ => "E-Belge"
+        };
 
     private static int DetermineCustomerMatchRank(
         CustomerLookup customer,
@@ -562,6 +974,16 @@ public sealed class GetInboundDespatchLookupUseCase(
             ? parsed
             : 0d;
 
+    private static double? ParseDoubleOrNull(string? value) =>
+        double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+
+    private static decimal? ParseDecimalOrNull(string? value) =>
+        decimal.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+
     private static string? NormalizeDigits(string? value)
     {
         var normalized = NormalizeOrNull(value);
@@ -616,5 +1038,12 @@ public sealed class GetInboundDespatchLookupUseCase(
         string? BuyerItemCode,
         string? SellerItemCode,
         string? ManufacturerItemCode,
-        string? Barcode);
+        string? Barcode)
+    {
+        public double? UnitPrice { get; init; }
+
+        public decimal? LineAmount { get; init; }
+
+        public string? QuantitySource { get; init; }
+    }
 }
