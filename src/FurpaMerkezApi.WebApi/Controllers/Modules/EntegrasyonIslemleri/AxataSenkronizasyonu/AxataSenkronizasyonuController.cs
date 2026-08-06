@@ -127,16 +127,19 @@ public sealed class AxataSenkronizasyonuController(
     public async Task<ActionResult<AxataIntegrationAuditDto>> GetLiveAuditOverview(
         [FromQuery] AxataIntegrationAuditHttpRequest request,
         CancellationToken cancellationToken) =>
-        Ok(await integrationAuditService.GetOverviewAsync(
-            new AxataIntegrationAuditRequest(
-                request.StartDate,
-                request.EndDate,
-                request.WarehouseNo,
-                request.Take,
-                request.DocumentSerie,
-                request.DocumentOrderNo,
-                request.Statuses),
-            cancellationToken));
+        Ok(await integrationAuditService.GetOverviewAsync(MapAuditRequest(request), cancellationToken));
+
+    [HttpGet("panel")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(AxataSynchronizationPanelDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataSynchronizationPanelDto>> GetPanel(
+        [FromQuery] AxataIntegrationAuditHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var audit = await integrationAuditService.GetOverviewAsync(MapAuditRequest(request), cancellationToken);
+        return Ok(MapPanel(audit));
+    }
 
     [HttpGet("tasks/{taskCode}/preview")]
     [Authorize(Policy = DetailPolicy)]
@@ -1060,6 +1063,264 @@ public sealed class AxataSenkronizasyonuController(
                 document.DocumentDate))
             .ToArray();
     }
+
+    private static AxataIntegrationAuditRequest MapAuditRequest(AxataIntegrationAuditHttpRequest request) =>
+        new(
+            request.StartDate,
+            request.EndDate,
+            request.WarehouseNo,
+            request.Take,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            request.Statuses);
+
+    private static AxataSynchronizationPanelDto MapPanel(AxataIntegrationAuditDto audit)
+    {
+        var flow = audit.FlowOverview;
+        var summary = audit.Summary;
+        var unsentDocumentCount = summary.UnsentWarehouseOrderDocumentCount +
+                                  summary.PartiallySentWarehouseOrderDocumentCount;
+
+        return new AxataSynchronizationPanelDto(
+            flow.Title,
+            flow.State,
+            flow.Severity,
+            flow.Narrative,
+            audit.IsInSync,
+            audit.GeneratedAtUtc,
+            audit.StartDate,
+            audit.EndDate,
+            audit.WarehouseNo,
+            BuildPanelMetrics(audit, unsentDocumentCount),
+            flow.Steps
+                .Select(step => new AxataSynchronizationPanelFlowStepDto(
+                    step.Code,
+                    step.Title,
+                    step.State,
+                    step.Severity,
+                    step.CurrentDocumentCount,
+                    step.ExpectedDocumentCount,
+                    step.DifferenceDocumentCount,
+                    step.Description,
+                    step.ListRoute))
+                .ToArray(),
+            audit.Operations
+                .OrderBy(operation => GetSeverityRank(operation.Severity))
+                .ThenByDescending(operation => operation.DocumentCount)
+                .Select(operation => new AxataSynchronizationPanelActionDto(
+                    operation.Code,
+                    operation.Title,
+                    operation.State,
+                    operation.Severity,
+                    operation.DocumentCount,
+                    operation.LineCount,
+                    operation.Quantity,
+                    operation.CanExecute,
+                    operation.WritesData,
+                    operation.ListRoute,
+                    operation.PreviewRoute,
+                    operation.ExecuteRoute,
+                    operation.Description))
+                .ToArray(),
+            audit.OrderLifecycles
+                .Where(document =>
+                    document.RecommendedAction.RequiresManualAction ||
+                    document.RecommendedAction.CanExecute)
+                .OrderBy(document => GetSeverityRank(document.RecommendedAction.Severity))
+                .ThenByDescending(document => document.RecommendedAction.CanExecute)
+                .ThenBy(document => document.DocumentDate)
+                .ThenBy(document => document.DocumentSerie)
+                .ThenBy(document => document.DocumentOrderNo)
+                .Take(50)
+                .Select(document => new AxataSynchronizationPanelDocumentDto(
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    document.DocumentNo,
+                    document.DocumentDate,
+                    document.SourceWarehouseNo,
+                    document.TargetWarehouseNo,
+                    document.SynchronizationState,
+                    document.RecommendedAction.Severity,
+                    document.RecommendedAction.Code,
+                    document.RecommendedAction.Title,
+                    document.RecommendedAction.CanExecute,
+                    document.RecommendedAction.PreviewRoute,
+                    document.RecommendedAction.ExecuteRoute,
+                    document.MikroOrderQuantity,
+                    document.AxataShipmentQuantity,
+                    document.MikroLinkedShipmentQuantity,
+                    document.RecommendedAction.Reason))
+                .ToArray(),
+            BuildPanelEndpoints(),
+            audit.Notes);
+
+        IReadOnlyCollection<AxataSynchronizationPanelMetricDto> BuildPanelMetrics(
+            AxataIntegrationAuditDto source,
+            int notSentDocumentCount) =>
+        [
+            new(
+                "mikro-orders",
+                "Mikro siparisi",
+                source.WorkflowSummary.MikroOrderDocumentCount,
+                source.WorkflowSummary.MikroOrderDocumentCount == 0 ? "Info" : "Success",
+                "Secilen aralikta kontrol edilen Mikro depolar arasi siparis belge sayisi."),
+            new(
+                "not-sent-to-axata",
+                "AXATA'ya gitmemis",
+                notSentDocumentCount,
+                notSentDocumentCount == 0 ? "Success" : "Warning",
+                "Mikro'da olup AXATA gonderim bayragi eksik veya kismi olan siparisler."),
+            new(
+                "waiting-axata-shipment",
+                "AXATA sevki bekleyen",
+                source.WorkflowSummary.WaitingForAxataShipmentDocumentCount,
+                source.WorkflowSummary.WaitingForAxataShipmentDocumentCount == 0 ? "Success" : "Info",
+                "AXATA'da siparisi var ama henuz pozitif sevki olusmamis belgeler."),
+            new(
+                "ready-to-import-mikro",
+                "Mikro'ya islenecek",
+                source.FlowOverview.ReadyToImportToMikroDocumentCount,
+                source.FlowOverview.ReadyToImportToMikroDocumentCount == 0 ? "Success" : "Critical",
+                "AXATA sevki hazir olup Mikro sevk linki eksik olan ve import edilebilecek belgeler."),
+            new(
+                "ack-only",
+                "Sadece AXATA onayi",
+                source.FlowOverview.AckOnlyDocumentCount,
+                source.FlowOverview.AckOnlyDocumentCount == 0 ? "Success" : "Warning",
+                "Mikro'da sevk linki var ama AXATA status henuz kapanmamis belgeler."),
+            new(
+                "manual-review",
+                "Manuel inceleme",
+                source.FlowOverview.ManualReviewDocumentCount,
+                source.FlowOverview.ManualReviewDocumentCount == 0 ? "Success" : "Critical",
+                "Miktar, satir veya baglanti farki nedeniyle otomatik islem onerilmeyen belgeler."),
+            new(
+                "fully-synchronized",
+                "Tamamlanan",
+                source.WorkflowSummary.FullySynchronizedDocumentCount,
+                "Success",
+                "Mikro siparis, AXATA siparis, AXATA sevk ve Mikro linki uyumlu belgeler.")
+        ];
+    }
+
+    private static IReadOnlyCollection<AxataSynchronizationPanelEndpointDto> BuildPanelEndpoints() =>
+    [
+        new(
+            "panel",
+            "Sade panel",
+            "GET",
+            "/api/integrations/axata-sync/panel",
+            false,
+            "UI ana ekrani icin ozet kartlari, akis adimlari, aksiyonlar ve oncelikli belgeleri dondurur."),
+        new(
+            "audit-overview",
+            "Detayli fark analizi",
+            "GET",
+            "/api/integrations/axata-sync/live/audit/overview",
+            false,
+            "Teknik detay, ham listeler ve derin inceleme icin kullanilir."),
+        new(
+            "connection-test",
+            "Baglanti testi",
+            "GET",
+            "/api/integrations/axata-sync/health",
+            false,
+            "Mikro, Furpa ve AXATA erisimlerini kontrol eder."),
+        new(
+            "dispatch-product-master",
+            "Urunleri AXATA'ya gonder",
+            "POST",
+            "/api/integrations/axata-sync/live/products/dispatch",
+            true,
+            "Mikro stok master, barkod ve birim bilgilerini AXATA'ya canli gonderir."),
+        new(
+            "send-order-to-axata",
+            "C01 depo siparisini AXATA'ya gonder",
+            "POST",
+            "/api/integrations/axata-sync/manual/tasks/issued-warehouse-order-sync/documents/dispatch",
+            true,
+            "Mikro'da olup AXATA'ya gitmeyen tek depolar arasi siparisi canli gonderir."),
+        new(
+            "send-g02-order-to-axata",
+            "G02 giris siparisini AXATA'ya gonder",
+            "POST",
+            "/api/integrations/axata-sync/manual/tasks/warehouse-inbound-order-sync/documents/dispatch",
+            true,
+            "Merkez depoya gelen depolar arasi siparisi AXATA G02 inbound order olarak gonderir."),
+        new(
+            "send-g01-company-receiving-to-axata",
+            "G01 firma mal kabulunu AXATA'ya gonder",
+            "POST",
+            "/api/integrations/axata-sync/manual/tasks/company-receiving-sync/documents/dispatch",
+            true,
+            "Mikro firma mal kabul belgesini AXATA G01 inbound order olarak gonderir."),
+        new(
+            "import-c01-to-mikro",
+            "AXATA sevkini Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import",
+            true,
+            "AXATA C01 bekleyen sevklerini Mikro depolar arasi sevk fisine cevirir."),
+        new(
+            "import-c02-to-mikro",
+            "C02 firma sevkini Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c02/import",
+            true,
+            "AXATA C02 bekleyen teslimatini Mikro firma sevk hareketine cevirir."),
+        new(
+            "import-c03-to-mikro",
+            "C03 legacy hareketi Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c03/import",
+            true,
+            "AXATA C03 bekleyen teslimatini Mikro legacy firma iade/ozel cikis hareketine cevirir."),
+        new(
+            "import-c04-to-mikro",
+            "C04 legacy hareketi Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c04/import",
+            true,
+            "AXATA C4 bekleyen teslimatini Mikro 50 -> 51 legacy hareketine cevirir."),
+        new(
+            "rescue-c01-document",
+            "Eksik C01 sevki kurtar",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import",
+            true,
+            "AXATA'da sevki kesilmis ama Mikro linki eksik tek C01 belgeyi Mikro'ya dusurur."),
+        new(
+            "import-g02-to-mikro",
+            "G02 kabulunu Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/inbound-deliveries/g02/import",
+            true,
+            "AXATA G02 bekleyen kabulunu mevcut Mikro bekleyen sevk fisine uygular."),
+        new(
+            "import-g01-atf-to-mikro",
+            "G01 ATF mal kabulunu Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/inbound-atf/g01/import",
+            true,
+            "AXATA G01 ATF satirlarini Mikro firma mal kabul hareketine cevirir."),
+        new(
+            "import-dynamic-census-to-mikro",
+            "Stok duzeltmeleri Mikro'ya isle",
+            "POST",
+            "/api/integrations/axata-sync/live/axata/dynamic-census/import",
+            true,
+            "AXATA EXT vw_stok_duzeltme satirlarini Mikro stok duzeltme hareketine cevirir.")
+    ];
+
+    private static int GetSeverityRank(string severity) =>
+        severity switch
+        {
+            "Critical" => 0,
+            "Warning" => 1,
+            "Info" => 2,
+            "Success" => 3,
+            _ => 4
+        };
 
     private static async Task<AxataBatchExecutionResult<TResult>> ExecuteBatchAsync<TItem, TResult>(
         IReadOnlyCollection<TItem> items,

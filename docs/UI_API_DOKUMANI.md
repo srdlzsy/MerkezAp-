@@ -14250,7 +14250,14 @@ Operasyon modulu notlari:
 
 ## Entegrasyon Islemleri
 
-Bu modul, eski `Furpa.WorkerService` akisini yeni API icinde worker + manuel endpoint ayrimi ile yonetmek icin eklendi. UI tarafinda bu ekran "entegrasyon gorevi sec, preview al, dry-run yap veya outbox'a at, sonra job durumunu izle" mantigiyla kurgulanmalidir.
+Bu modul, eski `Furpa.WorkerService` akisini yeni API icinde worker + manuel endpoint ayrimi ile yonetmek icin eklendi. UI tarafinda ana ekran sade panel mantigiyla, teknik detaylar ise gelismis bolumlerde kurgulanmalidir.
+
+Yeni sade panel yaklasimi:
+
+- UI ana ekrani once `GET /api/integrations/axata-sync/panel` endpointini cagirmalidir.
+- Bu endpoint veri yazmaz; `live/audit/overview` sonucunu ozet kartlar, akis adimlari, aksiyonlar ve oncelikli belgeler seklinde sade doner.
+- Ana ekranda kullaniciya once `summaryCards`, sonra `actions`, sonra `priorityDocuments` gosterilmelidir.
+- Teknik listeler, raw farklar, job/outbox ve payload detaylari "Gelismis/teknik detay" olarak `live/audit/overview` ve diger endpointlerden acilmalidir.
 
 Sonuc odakli kullanim icin onerilen ana yollar:
 
@@ -14316,6 +14323,11 @@ Mevcut endpointler:
   - eski worker parity icin planlanan AXATA fetch/import profillerini listeler
   - her profil icin bugunku fallback route ve implementasyon durumu gorulebilir
   - response `AxataSynchronizationFetchProfilesOverviewDto`
+- `GET /api/integrations/axata-sync/panel?startDate=2026-08-05&endDate=2026-08-06&warehouseNo=50&take=50`
+  - UI ana ekrani icin sade kontrol paneli doner
+  - Mikro -> AXATA -> Mikro akis durumunu tek response'ta ozetler
+  - veri yazmaz; manuel mudahale icin kullanilacak route bilgilerini `actions` ve `primaryEndpoints` icinde verir
+  - response `AxataSynchronizationPanelDto`
 - `GET /api/integrations/axata-sync/live/products/preview?productCode=URUN001&take=20`
   - Mikro aktif stok, tum barkod ve birimlerini AXATA `addSKUMaster` paketinde onizler; veri yazmaz
   - response `AxataProductSynchronizationPreviewDto`
@@ -14527,6 +14539,101 @@ Mevcut endpointler:
   - birden fazla bekleyen depo mal kabulunu toplu kabul eder
   - response `AxataManualIncomingWarehouseReceivingBatchResponse`
 
+Sade panel response ana alanlari:
+
+```json
+{
+  "title": "Mikro -> AXATA -> Mikro fark kontrolu",
+  "state": "MikroTransferRequired",
+  "severity": "Critical",
+  "message": "Mikro'da 120 siparis var; AXATA siparis eslesmesi 120, AXATA sevk 80, Mikro'ya baglanan sevk 75...",
+  "isInSync": false,
+  "generatedAtUtc": "2026-08-06T09:00:00Z",
+  "startDate": "2026-08-05T00:00:00",
+  "endDate": "2026-08-06T00:00:00",
+  "warehouseNo": 50,
+  "summaryCards": [
+    {
+      "code": "ready-to-import-mikro",
+      "label": "Mikro'ya islenecek",
+      "value": 5,
+      "severity": "Critical",
+      "description": "AXATA sevki hazir olup Mikro sevk linki eksik olan ve import edilebilecek belgeler."
+    }
+  ],
+  "flowSteps": [
+    {
+      "code": "mikro-transfer",
+      "label": "4. Mikro sevk donusu",
+      "state": "Difference",
+      "severity": "Critical",
+      "currentDocumentCount": 75,
+      "expectedDocumentCount": 80,
+      "differenceDocumentCount": 5,
+      "description": "AXATA'da sevki olusmus belgelerin Mikro STOK_HAREKETLERI_EK siparis linki var mi kontrol eder.",
+      "listRoute": "/api/integrations/axata-sync/live/audit/overview#interventionCandidates"
+    }
+  ],
+  "actions": [
+    {
+      "code": "sent-to-axata-missing-mikro-shipment",
+      "label": "AXATA sevk kesilmis Mikro donus eksik",
+      "state": "ActionRequired",
+      "severity": "Critical",
+      "documentCount": 5,
+      "lineCount": 20,
+      "quantity": 430.0,
+      "canExecute": true,
+      "writesData": true,
+      "listRoute": "/api/integrations/axata-sync/live/audit/overview#sentWarehouseOrdersMissingMikroShipments",
+      "previewRoute": "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/preview",
+      "executeRoute": "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import",
+      "description": "AXATA C01 outbound delivery kaydi bulunan pozitif miktarli sevklerde Mikro link yoksa rescue yapilabilir."
+    }
+  ],
+  "priorityDocuments": [
+    {
+      "documentSerie": "F50",
+      "documentOrderNo": 16122,
+      "documentNo": "F50.16122",
+      "documentDate": "2026-08-05T00:00:00",
+      "sourceWarehouseNo": 50,
+      "targetWarehouseNo": 172,
+      "synchronizationState": "WaitingForMikroTransfer",
+      "severity": "Critical",
+      "recommendedActionCode": "RESCUE_COMPLETED_C01",
+      "recommendedActionTitle": "Tamamlanmis SEV icin rescue yap",
+      "canExecute": true,
+      "previewRoute": "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/F50/16122/preview?status=1",
+      "executeRoute": "/api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/F50/16122/import",
+      "mikroOrderQuantity": 430.0,
+      "axataShipmentQuantity": 430.0,
+      "mikroLinkedShipmentQuantity": 0.0,
+      "reason": "AXATA'da 430 miktar SEV var, Mikro siparisine bagli sevk bulunamadi."
+    }
+  ],
+  "primaryEndpoints": [
+    {
+      "code": "panel",
+      "label": "Sade panel",
+      "method": "GET",
+      "route": "/api/integrations/axata-sync/panel",
+      "writesData": false,
+      "description": "UI ana ekrani icin ozet kartlari, akis adimlari, aksiyonlar ve oncelikli belgeleri dondurur."
+    }
+  ],
+  "notes": []
+}
+```
+
+Sade panel UI yerlesimi:
+
+- Ust satir: `summaryCards`.
+- Orta alan: `flowSteps`; her adim icin durum rengi `severity` alanindan alinmali.
+- Sag/alt aksiyon listesi: `actions`; `writesData=true` aksiyonlarda onay modali acilmali.
+- Belge listesi: `priorityDocuments`; `canExecute=true` ise once `previewRoute`, kullanici onayindan sonra `executeRoute` cagrilmali.
+- Teknik detay butonu: ayni query ile `GET /api/integrations/axata-sync/live/audit/overview`.
+
 AXATA live import ortak request modeli:
 
 ```json
@@ -14680,6 +14787,7 @@ UI icin endpoint davranis rehberi:
 
 | UI bolumu | Endpoint | Ne yapar | Veri yazar mi? | UI aksiyonu |
 |---|---|---|---|---|
+| Sade Panel | `GET /api/integrations/axata-sync/panel` | Ozet kartlar, akis adimlari, aksiyonlar ve oncelikli belgeleri tek response'ta verir | Hayir | Sayfa ana verisi olarak cagir |
 | Genel Durum | `GET /api/integrations/axata-sync` | Task listesini, aktif/pasif durumlari, worker/scheduler bilgisini ve son job'lari getirir | Hayir | Sayfa acilisinda cagir |
 | Genel Durum | `GET /api/integrations/axata-sync/health` | Mikro SQL, Furpa SQL, AXATA Main ve EXT endpoint erisimini kontrol eder | Hayir | "Baglanti testi" veya otomatik durum karti |
 | Profil Katalogu | `GET /api/integrations/axata-sync/fetch-profiles` | AXATA servislerinden hangi profillerin okunabilecegini ve backendde hangi seviyede desteklendigini listeler | Hayir | UI butonlarini capability'ye gore ac/kapat |
@@ -15017,6 +15125,7 @@ Import davranisi:
 - Mikro eslesme: `S06TESL` degeri `DocumentSerie.DocumentOrderNo` olarak okunur
 - Satir eslesme: once `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod`, sonra 1-bazli satir no farki, son olarak tekil stok + kalan miktar kontrolu
 - Mikro yazim: depolar arasi sevk fisi ve bagli satirlarda `sth_subesip_uid` ile Mikro tarafinda siparis linki/teslim etkisi
+- Mikro tarih kuralı: C01 sevk Mikro'ya hangi gun import ediliyorsa `STOK_HAREKETLERI.sth_tarih` ve `sth_belge_tarih` o gun olur. AXATA `ENT006.S06ITAR` siparis/sevk izleme ve filtreleme bilgisidir; Mikro fis tarihi olarak kullanilmaz.
 - AXATA ack: Mikro yazim basarili olursa `AxataServicePoolEXT.svc/updIntegrationTableAsync` ile `ENT006.S06STAT=1`, `IDField=S06SIRA`
 - `acknowledge=false` verilirse Mikro yazilir ama AXATA status guncellenmez; bu sadece kontrollu test/kurtarma icin kullanilmalidir
 
@@ -18666,6 +18775,83 @@ public sealed record AxataSynchronizationTaskDto(
     bool SupportsManualDocuments,
     bool SupportsLiveDispatch,
     string? LiveOperationName);
+
+public sealed record AxataSynchronizationPanelDto(
+    string Title,
+    string State,
+    string Severity,
+    string Message,
+    bool IsInSync,
+    DateTime GeneratedAtUtc,
+    DateTime StartDate,
+    DateTime EndDate,
+    int? WarehouseNo,
+    IReadOnlyCollection<AxataSynchronizationPanelMetricDto> SummaryCards,
+    IReadOnlyCollection<AxataSynchronizationPanelFlowStepDto> FlowSteps,
+    IReadOnlyCollection<AxataSynchronizationPanelActionDto> Actions,
+    IReadOnlyCollection<AxataSynchronizationPanelDocumentDto> PriorityDocuments,
+    IReadOnlyCollection<AxataSynchronizationPanelEndpointDto> PrimaryEndpoints,
+    IReadOnlyCollection<string> Notes);
+
+public sealed record AxataSynchronizationPanelMetricDto(
+    string Code,
+    string Label,
+    int Value,
+    string Severity,
+    string Description);
+
+public sealed record AxataSynchronizationPanelFlowStepDto(
+    string Code,
+    string Label,
+    string State,
+    string Severity,
+    int CurrentDocumentCount,
+    int ExpectedDocumentCount,
+    int DifferenceDocumentCount,
+    string Description,
+    string? ListRoute);
+
+public sealed record AxataSynchronizationPanelActionDto(
+    string Code,
+    string Label,
+    string State,
+    string Severity,
+    int DocumentCount,
+    int LineCount,
+    double Quantity,
+    bool CanExecute,
+    bool WritesData,
+    string? ListRoute,
+    string? PreviewRoute,
+    string? ExecuteRoute,
+    string Description);
+
+public sealed record AxataSynchronizationPanelDocumentDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string DocumentNo,
+    DateTime DocumentDate,
+    int SourceWarehouseNo,
+    int TargetWarehouseNo,
+    string SynchronizationState,
+    string Severity,
+    string RecommendedActionCode,
+    string RecommendedActionTitle,
+    bool CanExecute,
+    string? PreviewRoute,
+    string? ExecuteRoute,
+    double MikroOrderQuantity,
+    double AxataShipmentQuantity,
+    double MikroLinkedShipmentQuantity,
+    string Reason);
+
+public sealed record AxataSynchronizationPanelEndpointDto(
+    string Code,
+    string Label,
+    string Method,
+    string Route,
+    bool WritesData,
+    string Description);
 
 public sealed record AxataSynchronizationFetchProfilesOverviewDto(
     DateTime GeneratedAtUtc,

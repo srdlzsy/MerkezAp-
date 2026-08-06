@@ -4029,13 +4029,16 @@ internal sealed class AxataOutboundDeliveryImportService(
         };
     }
 
-    private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(C01DeliveryAnalysis analysis) =>
-        new(
+    private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(C01DeliveryAnalysis analysis)
+    {
+        var importDate = DateTime.Today;
+
+        return new(
             analysis.Document.SourceWarehouseNo,
             analysis.Document.TargetWarehouseNo,
             TransitWarehouseNo,
-            analysis.Document.AxataDate ?? DateTime.Today,
-            analysis.Document.AxataDate ?? DateTime.Today,
+            importDate,
+            importDate,
             "",
             analysis.Document.AxataDeliveryNo,
             analysis.MatchedLines
@@ -4054,6 +4057,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                     line.OrderLine.ssip_sormerkezi))
                 .ToArray(),
             true);
+    }
 
     private static CreateCompanyMovementRequest BuildCreateCompanyShipmentRequest(C02DeliveryAnalysis analysis) =>
         new(

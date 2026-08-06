@@ -16,6 +16,22 @@ Mevcut API modulu uc isi birlikte yapar:
 - Secili task'larda AXATA ana servisine WCF client ile canli dispatch yapar.
 - `AXATA -> Mikro` yonunde C01/C02/C03/C4 outbound delivery, G01 inbound ATF, G02 inbound delivery ve DynamicCensus icin canli fetch/import/ack saglar; ayrica manuel body tabanli kurtarma endpointleri korunur.
 
+Operasyon ekrani icin ana giris:
+
+```text
+GET /api/integrations/axata-sync/panel?startDate=2026-08-05&endDate=2026-08-06&warehouseNo=50&take=50
+```
+
+Bu endpoint teknik audit response'unu sade bir panele indirger:
+
+- `summaryCards`: kullanicinin ilk bakista gorecegi sayilar.
+- `flowSteps`: Mikro siparis -> AXATA siparis -> AXATA sevk -> Mikro sevk donusu adimlari.
+- `actions`: yapilabilecek guvenli operasyonlar ve route bilgisi.
+- `priorityDocuments`: once bakilmasi gereken belgeler.
+- `primaryEndpoints`: UI'nin ana butonlari icin kisa endpoint katalogu.
+
+UI ana ekranda once `panel` sonucunu gostermelidir. `live/audit/overview` teknik detay ve derin inceleme icindir.
+
 Bugunku net durum:
 
 | Alan | Durum |
@@ -501,6 +517,7 @@ Import:
 
 - `take`, `continueOnError`, `acknowledge` alir.
 - Uygun C01 teslimatlarini Mikro depolar arasi sevk fisine cevirir.
+- Mikro fis tarihi import gunudur. AXATA `ENT006.S06ITAR` dun/onceki gun olsa bile Mikro `STOK_HAREKETLERI.sth_tarih` ve `sth_belge_tarih` backendin Mikro'ya yazdigi gun olarak set edilir.
 - `acknowledge=true` ise Mikro yazim basarili olduktan sonra `updIntegrationTableAsync` ile `ENT006.S06STAT=1` yapar.
 - Mikro sevk linki zaten varsa duplicate fis acmaz; uygun durumda sadece ack atabilir.
 
