@@ -76,3 +76,82 @@ public sealed record AxataSynchronizationPanelEndpointDto(
     string Route,
     bool WritesData,
     string Description);
+
+public sealed record AxataSynchronizationWorkbenchDto(
+    string Title,
+    string Purpose,
+    string State,
+    string Severity,
+    string Message,
+    AxataSynchronizationPanelDto Panel,
+    IReadOnlyCollection<AxataSynchronizationWorkbenchScreenSectionDto> ScreenSections,
+    IReadOnlyCollection<AxataSynchronizationWorkbenchOperationGroupDto> OperationGroups,
+    IReadOnlyCollection<AxataSynchronizationWorkbenchEndpointGroupDto> EndpointGroups,
+    IReadOnlyCollection<AxataSynchronizationWorkbenchGlossaryItemDto> Glossary,
+    IReadOnlyCollection<string> Rules);
+
+public sealed record AxataSynchronizationWorkbenchScreenSectionDto(
+    string Code,
+    string Title,
+    int SortOrder,
+    string DataSource,
+    string Purpose,
+    string UiBehavior);
+
+public sealed record AxataSynchronizationWorkbenchOperationGroupDto(
+    string Code,
+    string Title,
+    string Direction,
+    string Description,
+    IReadOnlyCollection<AxataSynchronizationWorkbenchOperationDto> Operations);
+
+public sealed record AxataSynchronizationWorkbenchOperationDto(
+    string Code,
+    string Title,
+    string ShortTitle,
+    string Direction,
+    string SourceSystem,
+    string TargetSystem,
+    string? MovementType,
+    string Purpose,
+    string NormalFlow,
+    string WhenToUse,
+    string State,
+    string Severity,
+    int DocumentCount,
+    int LineCount,
+    double Quantity,
+    bool CanExecute,
+    bool WritesData,
+    string WriteScope,
+    string PrimaryButtonLabel,
+    string ConfirmationMessage,
+    string? ListRoute,
+    string? PreviewRoute,
+    string? ExecuteRoute,
+    IReadOnlyCollection<string> EndpointCodes);
+
+public sealed record AxataSynchronizationWorkbenchEndpointGroupDto(
+    string Code,
+    string Title,
+    string Description,
+    IReadOnlyCollection<AxataSynchronizationWorkbenchEndpointDto> Endpoints);
+
+public sealed record AxataSynchronizationWorkbenchEndpointDto(
+    string Code,
+    string Title,
+    string Method,
+    string Route,
+    string Level,
+    bool WritesData,
+    string WriteScope,
+    string ButtonLabel,
+    string Description,
+    string? RequestModel,
+    string? ResponseModel);
+
+public sealed record AxataSynchronizationWorkbenchGlossaryItemDto(
+    string Term,
+    string UiLabel,
+    string Meaning,
+    string UserWarning);

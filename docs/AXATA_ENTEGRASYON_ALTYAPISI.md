@@ -19,18 +19,31 @@ Mevcut API modulu uc isi birlikte yapar:
 Operasyon ekrani icin ana giris:
 
 ```text
-GET /api/integrations/axata-sync/panel?startDate=2026-08-05&endDate=2026-08-06&warehouseNo=50&take=50
+GET /api/integrations/axata-sync/workbench?startDate=2026-08-05&endDate=2026-08-06&warehouseNo=50&take=50
+GET /api/integrations/axata-sync/is-merkezi?startDate=2026-08-05&endDate=2026-08-06&warehouseNo=50&take=50
 ```
 
-Bu endpoint teknik audit response'unu sade bir panele indirger:
+Bu endpoint teknik audit response'unu sade ve islevsel bir is merkezine indirger:
 
-- `summaryCards`: kullanicinin ilk bakista gorecegi sayilar.
-- `flowSteps`: Mikro siparis -> AXATA siparis -> AXATA sevk -> Mikro sevk donusu adimlari.
-- `actions`: yapilabilecek guvenli operasyonlar ve route bilgisi.
-- `priorityDocuments`: once bakilmasi gereken belgeler.
-- `primaryEndpoints`: UI'nin ana butonlari icin kisa endpoint katalogu.
+- `panel`: kullanicinin ilk bakista gorecegi ozet, akis, aksiyon ve oncelikli belgeler.
+- `screenSections`: UI'nin sayfayi hangi bolumlerle kuracagini anlatan sade yerlesim sozlugu.
+- `operationGroups`: kontrol, master veri, Mikro -> AXATA, AXATA -> Mikro ve manuel kurtarma operasyonlari.
+- `endpointGroups`: her endpointin ne ise yaradigini, okuma/yazma durumunu ve write scope bilgisini anlatan sozluk.
+- `glossary`: preview/dispatch/import/ack/rescue/C01/G02 gibi terimlerin UI karsiligi.
+- `rules`: ekranda kaybolmamak icin uygulanacak ana operasyon kurallari.
 
-UI ana ekranda once `panel` sonucunu gostermelidir. `live/audit/overview` teknik detay ve derin inceleme icindir.
+UI ana ekranda once `workbench` veya Turkce alias olan `is-merkezi` sonucunu gostermelidir. `panel` daha kucuk ozet response'tur; `live/audit/overview` teknik detay ve derin inceleme icindir.
+
+Sade route aileleri:
+
+| Route ailesi | Amac | Not |
+|---|---|---|
+| `workbench`, `is-merkezi` | Tum ekran sozlugu ve canli durum | UI'nin ana girisidir |
+| `panel` | Hafif ozet response | Workbench icindeki `panel` alaninin tekil halidir |
+| `operations/...` | Normal operasyon akislari | Preview, dispatch, import ve belge rescue burada gosterilir |
+| `recovery/...` | Manuel kurtarma araclari | Body'den yazim, serbest mal kabul/sayim, bekleyen kabul |
+| `advanced/...` | Teknik job/outbox/task detaylari | Normal kullaniciya baskin gosterilmemelidir |
+| `live/...`, `manual/...` | Eski teknik route'lar | Geriye uyumluluk icin kalir; yeni UI bunlari ana route olarak kullanmaz |
 
 Bugunku net durum:
 

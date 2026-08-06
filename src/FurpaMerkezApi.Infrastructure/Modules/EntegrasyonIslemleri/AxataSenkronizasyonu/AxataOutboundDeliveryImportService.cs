@@ -383,7 +383,11 @@ internal sealed class AxataOutboundDeliveryImportService(
                 if (analysis.ImportDto.CanImport)
                 {
                     var shipmentResponse = await createInterWarehouseShipmentUseCase.ExecuteAsync(
-                        BuildCreateShipmentRequest(analysis),
+                        BuildCreateShipmentRequest(
+                            analysis,
+                            request.DateMode,
+                            request.MovementDate,
+                            request.DocumentDate),
                         cancellationToken);
                     var acknowledged = false;
 
@@ -405,7 +409,11 @@ internal sealed class AxataOutboundDeliveryImportService(
                         acknowledged,
                         acknowledged
                             ? "Mikro sevk fisi olusturuldu ve AXATA ENT006.S06STAT=1 yapildi."
-                            : "Mikro sevk fisi olusturuldu; AXATA ack istenmedigi icin status degistirilmedi."));
+                            : "Mikro sevk fisi olusturuldu; AXATA ack istenmedigi icin status degistirilmedi.",
+                        analysis.Document.AxataDate,
+                        shipmentResponse.MovementDate,
+                        shipmentResponse.DocumentDate,
+                        shipmentResponse.DocumentNo));
 
                     continue;
                 }
@@ -520,7 +528,11 @@ internal sealed class AxataOutboundDeliveryImportService(
             if (analysis.ImportDto.CanImport)
             {
                 var shipmentResponse = await createInterWarehouseShipmentUseCase.ExecuteAsync(
-                    BuildCreateShipmentRequest(analysis),
+                    BuildCreateShipmentRequest(
+                        analysis,
+                        request.DateMode,
+                        request.MovementDate,
+                        request.DocumentDate),
                     cancellationToken);
                 var acknowledged = false;
 
@@ -542,7 +554,11 @@ internal sealed class AxataOutboundDeliveryImportService(
                     acknowledged,
                     acknowledged
                         ? "Belge bazli Mikro sevk fisi olusturuldu ve AXATA ENT006.S06STAT=1 yapildi."
-                        : "Belge bazli Mikro sevk fisi olusturuldu; AXATA status degistirilmedi."));
+                        : "Belge bazli Mikro sevk fisi olusturuldu; AXATA status degistirilmedi.",
+                    analysis.Document.AxataDate,
+                    shipmentResponse.MovementDate,
+                    shipmentResponse.DocumentDate,
+                    shipmentResponse.DocumentNo));
             }
             else if (request.Acknowledge && CanAcknowledgeExistingMikroShipment(analysis))
             {
@@ -4029,16 +4045,24 @@ internal sealed class AxataOutboundDeliveryImportService(
         };
     }
 
-    private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(C01DeliveryAnalysis analysis)
+    private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(
+        C01DeliveryAnalysis analysis,
+        string? dateMode = null,
+        DateTime? movementDate = null,
+        DateTime? documentDate = null)
     {
-        var importDate = DateTime.Today;
+        var shipmentDates = ResolveC01ShipmentDates(
+            analysis.Document.AxataDate,
+            dateMode,
+            movementDate,
+            documentDate);
 
         return new(
             analysis.Document.SourceWarehouseNo,
             analysis.Document.TargetWarehouseNo,
             TransitWarehouseNo,
-            importDate,
-            importDate,
+            shipmentDates.MovementDate,
+            shipmentDates.DocumentDate,
             "",
             analysis.Document.AxataDeliveryNo,
             analysis.MatchedLines
@@ -4058,6 +4082,37 @@ internal sealed class AxataOutboundDeliveryImportService(
                 .ToArray(),
             true);
     }
+
+    private static C01ShipmentDates ResolveC01ShipmentDates(
+        DateTime? axataDate,
+        string? dateMode,
+        DateTime? movementDate,
+        DateTime? documentDate)
+    {
+        var normalizedDateMode = NormalizeQueryValue(dateMode)?.ToLowerInvariant();
+
+        var resolvedMovementDate = normalizedDateMode switch
+        {
+            null or "" or "today" or "bugun" or "current" or "api-date" =>
+                DateTime.Today,
+            "axata" or "axata-date" or "teslimat" or "teslimat-tarihi" =>
+                (axataDate ?? DateTime.Today).Date,
+            "custom" or "manual" or "elle" =>
+                (movementDate ?? documentDate)?.Date
+                    ?? throw new ArgumentException(
+                        "MovementDate is required when C01 import DateMode is custom/manual/elle.",
+                        nameof(movementDate)),
+            _ => throw new ArgumentException(
+                "DateMode must be one of: today/bugun, axata, custom/manual/elle.",
+                nameof(dateMode))
+        };
+
+        return new C01ShipmentDates(
+            resolvedMovementDate,
+            (documentDate ?? resolvedMovementDate).Date);
+    }
+
+    private sealed record C01ShipmentDates(DateTime MovementDate, DateTime DocumentDate);
 
     private static CreateCompanyMovementRequest BuildCreateCompanyShipmentRequest(C02DeliveryAnalysis analysis) =>
         new(

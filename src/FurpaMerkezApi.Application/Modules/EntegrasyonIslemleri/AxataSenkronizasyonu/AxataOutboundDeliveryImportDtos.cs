@@ -80,7 +80,10 @@ public sealed record AxataOutboundDeliveryImportPreviewRequest(
 public sealed record AxataOutboundDeliveryImportExecuteRequest(
     int? Take,
     bool ContinueOnError,
-    bool Acknowledge);
+    bool Acknowledge,
+    string? DateMode = null,
+    DateTime? MovementDate = null,
+    DateTime? DocumentDate = null);
 
 public sealed record AxataOutboundDeliveryDocumentImportPreviewRequest(
     string DocumentSerie,
@@ -91,7 +94,10 @@ public sealed record AxataOutboundDeliveryDocumentImportExecuteRequest(
     string DocumentSerie,
     int DocumentOrderNo,
     string? Status,
-    bool Acknowledge);
+    bool Acknowledge,
+    string? DateMode = null,
+    DateTime? MovementDate = null,
+    DateTime? DocumentDate = null);
 
 public sealed record AxataOutboundDeliveryQueuePreviewDto(
     string MovementType,
@@ -174,7 +180,11 @@ public sealed record AxataOutboundDeliveryImportResultDto(
     int CreatedMovementLineCount,
     double CreatedMovementQuantity,
     bool Acknowledged,
-    string Message);
+    string Message,
+    DateTime? AxataDate = null,
+    DateTime? MovementDate = null,
+    DateTime? DocumentDate = null,
+    string? MovementDocumentNo = null);
 
 public sealed record AxataOutboundDeliveryImportFailureDto(
     long? AxataSequenceNo,
