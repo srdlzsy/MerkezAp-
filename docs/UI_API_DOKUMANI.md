@@ -14639,15 +14639,21 @@ Sade panel response ana alanlari:
       "sourceWarehouseNo": 50,
       "targetWarehouseNo": 172,
       "synchronizationState": "WaitingForMikroTransfer",
+      "synchronizationStateLabel": "AXATA sevki var, Mikro sevk linki yok",
       "severity": "Critical",
       "recommendedActionCode": "RESCUE_COMPLETED_C01",
-      "recommendedActionTitle": "Tamamlanmis SEV icin rescue yap",
+      "recommendedActionTitle": "Tamamlanmis AXATA SEV'inin eksik Mikro linkini isle",
       "canExecute": true,
       "previewRoute": "/api/integrations/axata-sync/operations/c01-shipment/documents/F50/16122/preview?status=1",
       "executeRoute": "/api/integrations/axata-sync/operations/c01-shipment/documents/F50/16122/import",
       "mikroOrderQuantity": 430.0,
+      "mikroDeliveredQuantity": 0.0,
       "axataShipmentQuantity": 430.0,
       "mikroLinkedShipmentQuantity": 0.0,
+      "existingMikroShipmentLineCount": 0,
+      "existingMikroShipmentQuantity": 0.0,
+      "existingMikroShipmentDocumentNo": null,
+      "quantitySummary": "Siparis 430 / Teslim 0 / AXATA sevk 430 / Mikro link 0",
       "reason": "AXATA'da 430 miktar SEV var, Mikro siparisine bagli sevk bulunamadi."
     }
   ],
@@ -14670,7 +14676,11 @@ Sade panel UI yerlesimi:
 - Ust satir: `summaryCards`.
 - Orta alan: `flowSteps`; her adim icin durum rengi `severity` alanindan alinmali.
 - Sag/alt aksiyon listesi: `actions`; `writesData=true` aksiyonlarda onay modali acilmali.
-- Belge listesi: `priorityDocuments`; `canExecute=true` ise once `previewRoute`, kullanici onayindan sonra `executeRoute` cagrilmali.
+- Belge listesi: `priorityDocuments`; UI gorunen durum icin `synchronizationStateLabel`, miktar ozet satiri icin `quantitySummary`, aksiyon butonu icin `recommendedActionTitle` kullanmali. `synchronizationState` teknik kod olarak filtre/renk/esleme icin saklanmali.
+- `canExecute=true` ise once `previewRoute`, kullanici onayindan sonra `executeRoute` cagrilmali.
+- `WaitingForMikroTransfer` teknik olarak "AXATA sevki var ama Mikro siparis satirlarina bagli `STOK_HAREKETLERI_EK.sth_subesip_uid` hareketi bulunamadi" anlamina gelir. `Siparis x / AXATA sevk x / Mikro link 0` goruluyorsa belge AXATA'da tamamlanmis olabilir ama Mikro'ya donus linki eksiktir; bu durumda C01 belge rescue/import preview ile kontrol edilmelidir.
+- `MikroOrderDeliveredMissingLink` / `REVIEW_DELIVERED_ORDER_MISSING_LINK`: Mikro siparisinde `ssip_teslim_miktar` doludur ama `STOK_HAREKETLERI_EK.sth_subesip_uid` linki yoktur. Bu durumda UI import/execute butonu gostermemeli; cunku AXATA miktari kalan siparisten buyuk gorunur ve tekrar import duplicate/fazla sevk riski tasir.
+- `MikroShipmentLinkMissing` / `REVIEW_EXISTING_MIKRO_SHIPMENT_LINK`: Mikro'da sevk fisi bulunur ama siparis satiri linki yoktur. UI bunu link/evrak izi onarimi veya manuel inceleme olarak gostermeli; otomatik C01 import butonu acilmamalidir.
 - Teknik detay butonu: ayni query ile `GET /api/integrations/axata-sync/audit`.
 
 AXATA live import ortak request modeli:
@@ -15102,7 +15112,7 @@ Bu cagri veri yazmaz. Amaci eski worker calisirken durumu anlamaktir:
 - Her Mikro siparisi AXATA `ENT000/ENT001` icinde evrak numarasi ile dogrudan aranir; `ssip_special1=1` yalnizca worker gonderim bayragidir ve AXATA'da gercek kayit bulundugunun yerine kullanilmaz
 - Secilen Mikro siparisine ait AXATA C01 `ENT006/ENT007` SEV kayitlari sevk tarihinden bagimsiz aranir; boylece bir gun acilan siparisin sonraki gun kesilen sevki ayni yasam dongusunde gorulur
 - Bir siparise ait birden fazla SEV miktari toplanir ve `PartiallyShipped`, `FullyShipped` veya `OverShipped` olarak siniflandirilir
-- Mikro donusu `STOK_HAREKETLERI_EK.sth_subesip_uid` ile bagli gercek `STOK_HAREKETLERI.sth_miktar` toplami uzerinden `WaitingForMikroTransfer`, `PartiallyLinked` veya `FullyLinked` olarak siniflandirilir
+- Mikro donusu once `STOK_HAREKETLERI_EK.sth_subesip_uid` ile bagli gercek `STOK_HAREKETLERI.sth_miktar` toplami uzerinden siniflandirilir. Link yoksa ek olarak `ssip_teslim_miktar` ve mevcut Mikro sevk fisi kontrol edilir; mevcut sevk aramasi siparis tarihinden 1 gun once baslar, 7 gun sonrasina kadar ayni depo + aciklama veya ayni stok/miktar imzasi arar. Sonuc `WaitingForMikroTransfer`, `MikroOrderMarkedDeliveredMissingLink`, `ExistingMikroShipmentMissingLink`, `PartiallyLinked` veya `FullyLinked` olabilir.
 - `orderLifecycles[].recommendedAction` yeniden siparis gonderme, C01 import, tamamlanmis SEV rescue, sadece AXATA ACK, bekleme veya manuel fark inceleme kararini evrak bazinda verir
 - `isInSync=true` ise secili tarih araliginda Mikro kaynakli siparis gonderim bayraklari tamam, AXATA `Status=0` bekleyen sevk kuyrugu bos, iptal/zero olmayan AXATA sevkleri Mikro'ya dusmus/baglanmis ve AXATA sevk kayitlarinda satirsiz/anomali belge yok demektir
 - `unsyncedWarehouseOrders` Mikro'da olup worker basari bayragi tum satirlarda `1` olmayan depolar arasi siparisleri gosterir
@@ -18902,6 +18912,7 @@ public sealed record AxataSynchronizationPanelDocumentDto(
     int SourceWarehouseNo,
     int TargetWarehouseNo,
     string SynchronizationState,
+    string SynchronizationStateLabel,
     string Severity,
     string RecommendedActionCode,
     string RecommendedActionTitle,
@@ -18909,8 +18920,13 @@ public sealed record AxataSynchronizationPanelDocumentDto(
     string? PreviewRoute,
     string? ExecuteRoute,
     double MikroOrderQuantity,
+    double MikroDeliveredQuantity,
     double AxataShipmentQuantity,
     double MikroLinkedShipmentQuantity,
+    int ExistingMikroShipmentLineCount,
+    double ExistingMikroShipmentQuantity,
+    string? ExistingMikroShipmentDocumentNo,
+    string QuantitySummary,
     string Reason);
 
 public sealed record AxataSynchronizationPanelEndpointDto(

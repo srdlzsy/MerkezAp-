@@ -1226,6 +1226,7 @@ public sealed class AxataSenkronizasyonuController(
                     document.SourceWarehouseNo,
                     document.TargetWarehouseNo,
                     document.SynchronizationState,
+                    GetSynchronizationStateLabel(document.SynchronizationState),
                     document.RecommendedAction.Severity,
                     document.RecommendedAction.Code,
                     document.RecommendedAction.Title,
@@ -1233,8 +1234,18 @@ public sealed class AxataSenkronizasyonuController(
                     document.RecommendedAction.PreviewRoute,
                     document.RecommendedAction.ExecuteRoute,
                     document.MikroOrderQuantity,
+                    document.MikroDeliveredQuantity,
                     document.AxataShipmentQuantity,
                     document.MikroLinkedShipmentQuantity,
+                    document.ExistingMikroShipmentLineCount,
+                    document.ExistingMikroShipmentQuantity,
+                    document.ExistingMikroShipmentDocumentNo,
+                    BuildQuantitySummary(
+                        document.MikroOrderQuantity,
+                        document.MikroDeliveredQuantity,
+                        document.AxataShipmentQuantity,
+                        document.MikroLinkedShipmentQuantity,
+                        document.ExistingMikroShipmentQuantity),
                     document.RecommendedAction.Reason))
                 .ToArray(),
             BuildPanelEndpoints(),
@@ -2211,6 +2222,43 @@ public sealed class AxataSenkronizasyonuController(
             true,
             "AXATA EXT vw_stok_duzeltme satirlarini Mikro stok duzeltme hareketine cevirir.")
     ];
+
+    private static string GetSynchronizationStateLabel(string state) =>
+        state switch
+        {
+            "WaitingForAxataOrder" => "AXATA siparisi bekleniyor",
+            "WaitingForAxataShipment" => "AXATA sevki bekleniyor",
+            "WaitingForMikroTransfer" => "AXATA sevki var, Mikro sevk linki yok",
+            "MikroShipmentLinkMissing" => "Mikro sevki var, siparis linki yok",
+            "ExistingMikroShipmentMissingLink" => "Mikro sevki var, siparis linki yok",
+            "MikroOrderDeliveredMissingLink" => "Siparis teslim kapanmis, sevk linki yok",
+            "MikroOrderMarkedDeliveredMissingLink" => "Siparis teslim kapanmis, sevk linki yok",
+            "PartiallyLinked" => "Mikro sevk linki kismi",
+            "PartiallyLinkedInMikro" => "Mikro sevk linki kismi",
+            "FullyLinked" => "Mikro sevk linki tamam",
+            "FullySynchronized" => "Tum adimlar tamam",
+            "WaitingForAxataAck" => "AXATA onayi bekleniyor",
+            "MissingAxataOrder" => "AXATA siparisi yok",
+            "QuantityMismatch" => "Miktar farki var",
+            "ManualReviewRequired" => "Manuel inceleme gerekli",
+            "Ignored" => "Islem beklenmiyor",
+            _ => state
+        };
+
+    private static string BuildQuantitySummary(
+        double mikroOrderQuantity,
+        double mikroDeliveredQuantity,
+        double axataShipmentQuantity,
+        double mikroLinkedShipmentQuantity,
+        double existingMikroShipmentQuantity)
+    {
+        var summary =
+            $"Siparis {mikroOrderQuantity:0.###} / Teslim {mikroDeliveredQuantity:0.###} / AXATA sevk {axataShipmentQuantity:0.###} / Mikro link {mikroLinkedShipmentQuantity:0.###}";
+
+        return existingMikroShipmentQuantity > 0
+            ? $"{summary} / Mikro sevk {existingMikroShipmentQuantity:0.###}"
+            : summary;
+    }
 
     private static int GetSeverityRank(string severity) =>
         severity switch

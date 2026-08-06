@@ -58,6 +58,7 @@ public sealed record AxataSynchronizationPanelDocumentDto(
     int SourceWarehouseNo,
     int TargetWarehouseNo,
     string SynchronizationState,
+    string SynchronizationStateLabel,
     string Severity,
     string RecommendedActionCode,
     string RecommendedActionTitle,
@@ -65,8 +66,13 @@ public sealed record AxataSynchronizationPanelDocumentDto(
     string? PreviewRoute,
     string? ExecuteRoute,
     double MikroOrderQuantity,
+    double MikroDeliveredQuantity,
     double AxataShipmentQuantity,
     double MikroLinkedShipmentQuantity,
+    int ExistingMikroShipmentLineCount,
+    double ExistingMikroShipmentQuantity,
+    string? ExistingMikroShipmentDocumentNo,
+    string QuantitySummary,
     string Reason);
 
 public sealed record AxataSynchronizationPanelEndpointDto(

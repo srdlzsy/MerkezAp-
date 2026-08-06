@@ -818,6 +818,9 @@ UI su ayrimi net yapmalidir:
 - Firma master task'i canli WCF dispatch yapar; `addFirmMaster` ve `addFirmAddress` birlikte cagrilir.
 - Urun master task'i `Live` modunda `ENT004`, `ENT003_List` ve `ENT004_UNIT_List` iceren `addSKUMaster` paketlerini canli gonderir.
 - C01 ve G02 belge bazli rescue vardir; C02/C03/C4/G01 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.
+- C01 audit/panel iki ayri eksigi ayirir: gercekten Mikro sevk/link yoksa C01 import/rescue calistirilabilir; Mikro sipariste `ssip_teslim_miktar` doluysa veya mevcut sevk fisi bulunuyorsa otomatik import kapatilir ve belge manuel link/evrak izi incelemesine dusurulur.
+- `AXATA teslim miktari Mikro siparis kalan miktarindan buyuk` hatasi genelde siparis teslim miktari zaten kapanmisken ayni AXATA sevkini tekrar Mikro'ya cevirmeye calismak anlamina gelir. Bu durumda ikinci sevk basilmamali; mevcut Mikro evragi ve `STOK_HAREKETLERI_EK.sth_subesip_uid` linki kontrol edilmelidir.
+- Mevcut C01 Mikro sevk aramasi performans icin `STOK_HAREKETLERI` uzerinde tarih, depo, hareket tipi ve stok kodu ile daraltilir; bellek tarafinda once aciklama=siparis no, sonra ayni stok/miktar imzasi eslestirilir. Pencere siparis tarihinden 1 gun once baslar ve 7 gun sonrasina kadar bakar.
 - EXT `getViewDataAsync` tabanli DynamicCensus import vardir; kalici inbox/retry tablosu yoktur.
 - Dispatch request/response XML'i response body'de doner; hassas veri icerebilecegi icin UI bunu dikkatli gostermelidir.
 
