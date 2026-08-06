@@ -14689,8 +14689,23 @@ AXATA live import ortak request modeli:
 - `take`: kac belge/satir islenecek. Outbound/G01/G02 icin 1-200, DynamicCensus icin backend 500'e kadar kabul eder.
 - `continueOnError`: `true` ise hatali belge `failures` listesine eklenir ve digerleri denenir.
 - `acknowledge`: `true` ise Mikro yazimi basarili olduktan sonra AXATA EXT status alanlari `1` yapilir. Yazim basarisizsa ack atilmaz.
-- `dateMode`: C01 AXATA -> Mikro depo sevki icin kullanilir. Bos/null veya `today/bugun/current` gonderilirse Mikro `sth_tarih` ve `sth_belge_tarih` bugun olur. `axata/teslimat` gonderilirse AXATA `S06ITAR` teslimat tarihi kullanilir. `custom/manual/elle` gonderilirse `movementDate` zorunludur, `documentDate` bos ise `movementDate` kullanilir. C02/C03/C04/G02 akislari bu alanlari dikkate almaz.
-- UI sade kullanim icin kisa route'lari tercih edebilir: `c01/preview`, `c01/import`, `c01/documents/{serie}/{sira}/preview`, `c01/documents/{serie}/{sira}/import`. Eski `live/axata/outbound-deliveries/...` route'lari geriye uyumluluk icin calismaya devam eder.
+- `dateMode`: C01 AXATA -> Mikro depo sevki icin kullanilir. Bos/null veya `today/bugun/current/api-date` gonderilirse Mikro `sth_tarih` ve `sth_belge_tarih` bugun olur. `axata/axata-date/teslimat/teslimat-tarihi` gonderilirse AXATA `S06ITAR` teslimat tarihi kullanilir. `custom/manual/elle` gonderilirse `movementDate` zorunludur, `documentDate` bos ise `movementDate` kullanilir. C02/C03/C04/G02/G01 akislari bu alanlari dikkate almaz.
+- UI sade kullanim icin kisa route'lari tercih etmelidir; eski `live/axata/...` ve `operations/...` route'lari geriye uyumluluk icin calismaya devam eder.
+
+AXATA import kisa route ozeti:
+
+| Islem | Kisa route | Eski/uyumlu route |
+| --- | --- | --- |
+| Outbound kuyruk | `GET /api/integrations/axata-sync/outbound-deliveries?movementType=C01&take=20` | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/preview` |
+| C01 preview | `GET /api/integrations/axata-sync/c01/preview?take=20` | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/preview` |
+| C01 import | `POST /api/integrations/axata-sync/c01/import` | `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import` |
+| C01 belge preview | `GET /api/integrations/axata-sync/c01/documents/{documentSerie}/{documentOrderNo}/preview?status=1` | `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/preview` |
+| C01 belge import | `POST /api/integrations/axata-sync/c01/documents/{documentSerie}/{documentOrderNo}/import` | `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import` |
+| C02 preview/import | `GET/POST /api/integrations/axata-sync/c02/preview|import` | `GET/POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c02/preview|import` |
+| C03 preview/import | `GET/POST /api/integrations/axata-sync/c03/preview|import` | `GET/POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c03/preview|import` |
+| C04 preview/import | `GET/POST /api/integrations/axata-sync/c04/preview|import` | `GET/POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c04/preview|import` |
+| G02 preview/import | `GET/POST /api/integrations/axata-sync/g02/preview|import` | `GET/POST /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/preview|import` |
+| G02 belge preview/import | `GET/POST /api/integrations/axata-sync/g02/documents/{documentSerie}/{documentOrderNo}/preview|import` | `GET/POST /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/documents/{documentSerie}/{documentOrderNo}/preview|import` |
 
 C01/C02/C03/C04/G02 import preview response ortak ana alanlari:
 
@@ -14752,7 +14767,11 @@ C01/C02/C03/C04/G02 import execute response ortak ana alanlari:
       "createdMovementLineCount": 3,
       "createdMovementQuantity": 30.0,
       "acknowledged": true,
-      "message": "Mikro kaydi olusturuldu ve AXATA ack atildi."
+      "message": "Mikro kaydi olusturuldu ve AXATA ack atildi.",
+      "axataDate": "2026-08-05T00:00:00",
+      "movementDate": "2026-08-06T00:00:00",
+      "documentDate": "2026-08-06T00:00:00",
+      "movementDocumentNo": "F50-15035"
     }
   ],
   "failures": [
@@ -14765,6 +14784,11 @@ C01/C02/C03/C04/G02 import execute response ortak ana alanlari:
   "notes": []
 }
 ```
+
+- `axataDate`: AXATA teslimat/kabul kaydindan gelen tarih. C01 icin kaynak `ENT006.S06ITAR`.
+- `movementDate`: Mikro hareket tarihi. C01 defaultta import gunudur; `dateMode=axata` verilirse AXATA tarihi olur.
+- `documentDate`: Mikro belge tarihi. Bos birakilirsa `movementDate` ile ayni yazilir.
+- `movementDocumentNo`: UI'da gostermek icin olusan Mikro evrak numarasi (`movementSerie-movementOrderNo`).
 
 G01 preview response ana farklari:
 
