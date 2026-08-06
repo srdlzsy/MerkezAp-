@@ -17,7 +17,7 @@ public sealed class OperationsController(IOperationsService operationsService)
     private const string ModuleCode = "operasyon-islemleri";
     private const string ModuleName = "OperasyonIslemleri";
     private const string MenuCode = "operations";
-    private const string MenuName = "Operations";
+    private const string MenuName = "Operasyonlar";
     private const string ListPolicy = "operasyon-islemleri.operations.list";
     private const string DetailPolicy = "operasyon-islemleri.operations.detail";
     private const string CreatePolicy = "operasyon-islemleri.operations.create";

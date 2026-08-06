@@ -4,6 +4,7 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FurpaMerkezApi.Infrastructure.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    partial class AuthDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260806073159_RenamePermissionMenuDisplayNames")]
+    partial class RenamePermissionMenuDisplayNames
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2755,52 +2758,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                             Description = "KasaIslemleri > BanknotTakipleri > Tum Depolar yetkisi.",
                             Name = "BanknotTakipleri Tum Depolar"
                         });
-                });
-
-            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppRefreshToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("expires_at_utc");
-
-                    b.Property<string>("ReplacedByTokenHash")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)")
-                        .HasColumnName("replaced_by_token_hash");
-
-                    b.Property<DateTime?>("RevokedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("revoked_at_utc");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)")
-                        .HasColumnName("token_hash");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique()
-                        .HasDatabaseName("ux_app_refresh_tokens_token_hash");
-
-                    b.HasIndex("UserId", "ExpiresAtUtc")
-                        .HasDatabaseName("ix_app_refresh_tokens_user_expires_at");
-
-                    b.ToTable("app_refresh_tokens", (string)null);
                 });
 
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppRole", b =>
@@ -6102,17 +6059,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Announcement");
-                });
-
-            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppRefreshToken", b =>
-                {
-                    b.HasOne("FurpaMerkezApi.Domain.Entities.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppRolePermission", b =>

@@ -89,9 +89,9 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `home` | `depo-oncelikleri` | `home.depo-oncelikleri.page` | - | `home.depo-oncelikleri.all-warehouses` |
 | `arama-islemleri` | `fiyat-gor` | `arama-islemleri.fiyat-gor.page` | `arama-islemleri.fiyat-gor.list` | `arama-islemleri.fiyat-gor.all-warehouses` |
 | `arama-islemleri` | `cari-bul` | `arama-islemleri.cari-bul.page` | `arama-islemleri.cari-bul.list` | `arama-islemleri.cari-bul.all-warehouses` |
-| `green-grocer` | `reports` | `green-grocer.reports.page` | `green-grocer.reports.list`<br>`green-grocer.reports.detail`<br>`green-grocer.reports.update` | `green-grocer.reports.all-warehouses` |
-| `green-grocer` | `product-case-profiles` | `green-grocer.product-case-profiles.manage` | `green-grocer.product-case-profiles.list`<br>`green-grocer.product-case-profiles.detail`<br>`green-grocer.product-case-profiles.create`<br>`green-grocer.product-case-profiles.update`<br>`green-grocer.product-case-profiles.delete` | `green-grocer.product-case-profiles.all-warehouses` |
-| `green-grocer` | `operations` | `green-grocer.operations.page` | `green-grocer.operations.list`<br>`green-grocer.operations.create` | `green-grocer.operations.all-warehouses` |
+| `green-grocer` (`Manav`) | `reports` (`ManavRaporlari`) | `green-grocer.reports.page` | `green-grocer.reports.list`<br>`green-grocer.reports.detail`<br>`green-grocer.reports.update` | `green-grocer.reports.all-warehouses` |
+| `green-grocer` (`Manav`) | `product-case-profiles` (`ManavKasaProfilleri`) | `green-grocer.product-case-profiles.manage` | `green-grocer.product-case-profiles.list`<br>`green-grocer.product-case-profiles.detail`<br>`green-grocer.product-case-profiles.create`<br>`green-grocer.product-case-profiles.update`<br>`green-grocer.product-case-profiles.delete` | `green-grocer.product-case-profiles.all-warehouses` |
+| `green-grocer` (`Manav`) | `operations` (`ManavOperasyonPaneli`) | `green-grocer.operations.page` | `green-grocer.operations.list`<br>`green-grocer.operations.create` | `green-grocer.operations.all-warehouses` |
 | `ortak-islemler` | `sikayet-oneri` | `ortak-islemler.sikayet-oneri.page` | `ortak-islemler.sikayet-oneri.list`<br>`ortak-islemler.sikayet-oneri.detail`<br>`ortak-islemler.sikayet-oneri.update`<br>`ortak-islemler.sikayet-oneri.list-all` | `-` |
 | `ortak-islemler` | `duyurular` | `ortak-islemler.duyurular.page` | `ortak-islemler.duyurular.list`<br>`ortak-islemler.duyurular.detail`<br>`ortak-islemler.duyurular.create`<br>`ortak-islemler.duyurular.update`<br>`ortak-islemler.duyurular.archive` | `ortak-islemler.duyurular.all-warehouses` |
 | `ayar-islemleri` | `cihazlar` | `ayar-islemleri.cihazlar.manage` | `ayar-islemleri.cihazlar.list`<br>`ayar-islemleri.cihazlar.detail`<br>`ayar-islemleri.cihazlar.create`<br>`ayar-islemleri.cihazlar.update` | `ayar-islemleri.cihazlar.all-warehouses` |
@@ -124,7 +124,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `rapor-islemleri` | `stok-raporlari` | `rapor-islemleri.stok-raporlari.page` | `rapor-islemleri.stok-raporlari.list` | `rapor-islemleri.stok-raporlari.all-warehouses` |
 | `rapor-islemleri` | `promosyon-raporlari` | `rapor-islemleri.promosyon-raporlari.page` | `rapor-islemleri.promosyon-raporlari.list` | `rapor-islemleri.promosyon-raporlari.all-warehouses` |
 | `rapor-islemleri` | `tedarikci-performans-karnesi` | `rapor-islemleri.tedarikci-performans-karnesi.page` | `rapor-islemleri.tedarikci-performans-karnesi.list`<br>`rapor-islemleri.tedarikci-performans-karnesi.detail` | `rapor-islemleri.tedarikci-performans-karnesi.all-warehouses` |
-| `operasyon-islemleri` | `operations` | `operasyon-islemleri.operations.page` | `operasyon-islemleri.operations.list`<br>`operasyon-islemleri.operations.detail`<br>`operasyon-islemleri.operations.create`<br>`operasyon-islemleri.operations.update` | `operasyon-islemleri.operations.all-warehouses` |
+| `operasyon-islemleri` | `operations` (`Operasyonlar`) | `operasyon-islemleri.operations.page` | `operasyon-islemleri.operations.list`<br>`operasyon-islemleri.operations.detail`<br>`operasyon-islemleri.operations.create`<br>`operasyon-islemleri.operations.update` | `operasyon-islemleri.operations.all-warehouses` |
 | `operasyon-islemleri` | `belge-akis-takibi` | `operasyon-islemleri.belge-akis-takibi.page` | `operasyon-islemleri.belge-akis-takibi.list`<br>`operasyon-islemleri.belge-akis-takibi.detail` | `operasyon-islemleri.belge-akis-takibi.all-warehouses` |
 | `operasyon-islemleri` | `depo-operasyon-paneli` | `operasyon-islemleri.depo-operasyon-paneli.page` | `operasyon-islemleri.depo-operasyon-paneli.list` | `operasyon-islemleri.depo-operasyon-paneli.all-warehouses` |
 | `operasyon-islemleri` | `urun-dagilimlari` | `operasyon-islemleri.urun-dagilimlari.page` | `operasyon-islemleri.urun-dagilimlari.list`<br>`operasyon-islemleri.urun-dagilimlari.detail`<br>`operasyon-islemleri.urun-dagilimlari.create`<br>`operasyon-islemleri.urun-dagilimlari.update`<br>`operasyon-islemleri.urun-dagilimlari.delete` | `operasyon-islemleri.urun-dagilimlari.all-warehouses` |
@@ -147,7 +147,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `kasa-islemleri` | `manav-kunye-etiket-yazdirma` | `kasa-islemleri.manav-kunye-etiket-yazdirma.page` | `kasa-islemleri.manav-kunye-etiket-yazdirma.list` | `kasa-islemleri.manav-kunye-etiket-yazdirma.all-warehouses` |
 | `kasa-islemleri` | `banknot-takipleri` | `kasa-islemleri.banknot-takipleri.page` | `kasa-islemleri.banknot-takipleri.list`<br>`kasa-islemleri.banknot-takipleri.detail`<br>`kasa-islemleri.banknot-takipleri.create` | `kasa-islemleri.banknot-takipleri.all-warehouses` |
 
-## Home / Depo Oncelikleri
+## AnaSayfa / Depo Oncelikleri
 
 Bu endpoint home acilisinda eski hizli erisim menusu yerine "bugun neye bakmaliyim?" paneli icin eklendi. Amac, giris yapan depo kullanicisinin kendi deposundaki acil operasyon konularini tek kartta gormesidir.
 
@@ -273,7 +273,7 @@ UI onerisi:
 - `priorities` bos ise pozitif bos durum goster: `headline` zaten "Bugun acil oncelik yok" doner.
 - `home.depo-oncelikleri.all-warehouses` yetkisi olan kullanicida depo filtresi eklenebilir; diger kullanicida depo secici gosterilmemelidir.
 
-## Home / Ortak Sikayet Oneri
+## AnaSayfa / Ortak Sikayet Oneri
 
 Bu modul home sayfasinda kucuk bir "Sikayet / Oneri" kutusu acmak ve yonetim tarafinda gelen kayitlari permission'a gore izlemek icin eklendi.
 
@@ -571,7 +571,7 @@ Not:
 - Endpoint `ortak-islemler.sikayet-oneri.update` ister.
 - Baska kullanicinin kaydi icin ayrica `ortak-islemler.sikayet-oneri.list-all` gerekir.
 
-## Home / Ortak Duyurular
+## AnaSayfa / Ortak Duyurular
 
 Bu modul yetkili kullanicinin tum depolara, belirli depolara veya belirli kullanicilara duyuru yayinlamasi icin eklendi. Home tarafinda kullanici kendisine dusen aktif duyurulari gorur ve okundu isaretler; yonetim tarafinda yetkili kullanici duyuru olusturur, gunceller, arsivler ve hedef kapsamlarini izler.
 
@@ -1408,19 +1408,23 @@ Olasi durumlar:
 UI akisi:
 
 1. `POST /api/auth/login`
-2. `accessToken` al
-3. token'i `Authorization: Bearer {token}` ile sakla/gonder
+2. `accessToken`, `refreshToken`, `expiresAtUtc` ve `refreshTokenExpiresAtUtc` al
+3. API isteklerinde sadece `accessToken` degerini `Authorization: Bearer {token}` olarak gonder
 4. `GET /api/auth/me` ile kullanici, roller, permission listesi ve module-menu-action agacini al
 5. sol menu ve butonlari bu cevapla ciz
+6. access token suresi dolmadan veya 401 alindiginda `POST /api/auth/refresh` ile yeni access/refresh token al
+7. kullanici cikis yaparsa `POST /api/auth/logout` ile refresh token'i iptal et
 
 Token ve yetki notu:
 
-- UI request/response contract'i degismedi; login yine `accessToken`, `expiresAtUtc`, `user` doner.
+- Login/register/refresh response modeli `AuthResponse` doner: `accessToken`, `expiresAtUtc`, `user`, `refreshToken`, `refreshTokenExpiresAtUtc`.
 - `Authorization` header'inda sadece `accessToken` gonderilir. Tum login response'u, `user` objesi veya `permissions/modules` listesi header'a konmaz.
+- `refreshToken` header'a konmaz; sadece `/api/auth/refresh` ve `/api/auth/logout` body alaninda kullanilir.
 - Backend JWT'yi header limitlerine takilmamak icin kompakt tutar. Token icinde tum permission listesi garanti edilmez.
 - UI, JWT decode ederek menu/buton yetkisi uretmemelidir. Full yetki listesi icin `login.user.permissions` veya `GET /api/auth/me` cevabindaki `permissions` kullanilir.
 - `400 Bad Request - Request Too Long` gorulurse ilk kontrol `Authorization` header'idir; `Bearer eyJ...` disinda JSON/obje veya asiri uzun header gonderiliyor olabilir.
-- Bu kompakt token davranisi deploy edildikten sonra mevcut eski tokenlar degismez; kullanici logout/login yapmali veya UI storage temizlenmelidir.
+- Refresh token rotate edilir: `/refresh` basarili olunca eski refresh token iptal olur, response'taki yeni `refreshToken` saklanir.
+- Kullanici yonetiminde `newPassword` ile sifre degistirilirse kullanicinin aktif refresh token'lari iptal edilir. Access token suresi dolana kadar calisabilir; yeni token almak icin tekrar login gerekir.
 
 ## Auth Endpointleri
 
@@ -1445,6 +1449,8 @@ Response:
 {
   "accessToken": "jwt-token",
   "expiresAtUtc": "2026-04-15T12:00:00Z",
+  "refreshToken": "refresh-token",
+  "refreshTokenExpiresAtUtc": "2026-04-29T12:00:00Z",
   "user": {
     "id": "8c2c3d56-3f0d-4ab3-8b2d-4f2d17d6d100",
     "username": "admin",
@@ -1465,6 +1471,46 @@ Response:
   }
 }
 ```
+
+### `POST /api/auth/refresh`
+
+Amac:
+
+- access token suresi dolunca tekrar kullanici sifresi istemeden yeni access token almak
+- refresh token'i rotate etmek
+
+Request:
+
+```json
+{
+  "refreshToken": "refresh-token"
+}
+```
+
+Response:
+
+- `POST /api/auth/login` ile ayni `AuthResponse` modelini doner.
+- Response icindeki yeni `refreshToken` saklanmali, eski refresh token kullanilmamalidir.
+- Refresh token gecersiz, suresi dolmus, iptal edilmis veya kullanici pasifse `401 Unauthorized` doner.
+
+### `POST /api/auth/logout`
+
+Amac:
+
+- refresh token'i iptal etmek
+
+Request:
+
+```json
+{
+  "refreshToken": "refresh-token"
+}
+```
+
+Response:
+
+- `204 No Content`
+- Access token server tarafinda aninda geri cekilmez; istemci kendi access token'ini storage'dan silmelidir.
 
 ### `POST /api/auth/register`
 
@@ -1489,7 +1535,7 @@ Request:
 Response modeli:
 
 - `POST /api/auth/login` ile ayni `AuthResponse` modelini doner.
-- Yani response alanlari `accessToken`, `expiresAtUtc` ve `user` alanlaridir.
+- Yani response alanlari `accessToken`, `expiresAtUtc`, `user`, `refreshToken` ve `refreshTokenExpiresAtUtc` alanlaridir.
 - `400` validation hatasi, `409` ayni username/email zaten varsa conflict doner.
 
 ### `GET /api/auth/me`
@@ -1789,9 +1835,12 @@ Request:
   "lastName": "Doe",
   "warehouseNo": "110",
   "warehouseName": "KESTEL 1",
-  "isActive": true
+  "isActive": true,
+  "newPassword": null
 }
 ```
+
+`newPassword` opsiyoneldir. Bos/null gonderilirse mevcut sifre korunur. Dolu gonderilirse en az 6 karakter olmalidir, sifre hash'lenerek kaydedilir ve kullanicinin aktif refresh token'lari iptal edilir.
 
 Response modeli:
 
@@ -2457,7 +2506,7 @@ E-irsaliye modal entegrasyonu:
 4. Kullanici secilen sofor bilgisini formda degistirdiyse `driverId` ile birlikte manuel alanlar da gonderilebilir. Manuel dolu alanlar, secili sofor kaydinin ustune yazilir.
 5. Kullanici listeden secmeden eski akisi kullanacaksa `driverId` gondermez; bu durumda `plaque`, `driverNameSurname`, `driverTckn` zorunludur.
 
-## GreenGrocer / Manav Yesillik Raporlari
+## Manav / Manav Raporlari
 
 Bu modul eski `Furpa.GreenGrocerWebUI` icindeki manav/yesillik raporlarini yeni API'ye tasir.
 
@@ -2502,7 +2551,7 @@ Ortak query:
 date                 opsiyonel; rapor tarihi, verilmezse bugun
 dateToGet            opsiyonel; date icin geriye uyum alias'i
 warehouseNo          opsiyonel; `green-grocer.reports.all-warehouses` yoksa backend JWT deposunu uygular, yetki varsa bos birakilirsa tum subeler
-typeCode             opsiyonel; 10, 11, 12, 23, yesillik, sarf veya all/tum
+typeCode             opsiyonel; 10/meyve, 11/sebze, 12/yesillik, 23/sarf/manav-sarf/ambalaj veya all/tum/tumu
 search               opsiyonel; urun kodu, urun adi, sube adi veya evrak serisinde arar
 includeLazyBranches  opsiyonel; default true, siparis girmeyen subeleri de dondurur
 take                 opsiyonel; default 1000, max 5000
@@ -2821,7 +2870,7 @@ Query:
 startDate          opsiyonel; verilmezse endDate - 7 gun
 endDate            opsiyonel; verilmezse bugun
 warehouseNo        opsiyonel; default 56, all-warehouses yoksa JWT deposu uygulanir
-typeCode           opsiyonel; 10, 11, 12, 23, all veya tum
+typeCode           opsiyonel; 10/meyve, 11/sebze, 12/yesillik, 23/sarf/manav-sarf/ambalaj veya all/tum/tumu
 search             opsiyonel; stok kodu veya stok adinda arar
 onlyWithActivity   opsiyonel; default true, aktivitesi olmayan urunleri gizler
 take               opsiyonel; default 500, max 2000
@@ -2874,6 +2923,7 @@ Response:
       "stockCode": "001082",
       "stockName": "MNV SEFTALI KG",
       "modelCode": "10",
+      "modelName": "Meyve",
       "unitName": "KG",
       "currentStockQuantity": 184.35,
       "purchaseQuantity": 300,
@@ -11710,7 +11760,7 @@ Kasa Islemleri / Etiket Basim
   -> raporlar icin GET /api/kasa-islemleri/etiket-basim/reports/received-products ve /reports/depot-stock
   -> Mikro aktarim endpoint'i 501 dondugu icin UI'da kapali veya "hazir degil" olarak gosterilmelidir
 
-GreenGrocer / Manav Operasyon Paneli
+Manav / Manav Operasyon Paneli
   -> menu/route permission'i: green-grocer.operations.page
   -> panel verisi ve onizleme icin green-grocer.operations.list
   -> MNV duzeltme kaydet butonu icin green-grocer.operations.create
@@ -16777,7 +16827,9 @@ public sealed record UyumsoftInvoiceListItemDto(
 public sealed record AuthResponse(
     string AccessToken,
     DateTime ExpiresAtUtc,
-    UserDto User);
+    UserDto User,
+    string RefreshToken,
+    DateTime RefreshTokenExpiresAtUtc);
 
 public sealed record UserDto(
     Guid Id,
@@ -19078,10 +19130,11 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 
 - `RegisterUserRequest`: `Username`, `Email`, `Password`, `FirstName`, `LastName`, `WarehouseNo`, `WarehouseName`
 - `LoginUserRequest`: `UsernameOrEmail`, `Password`
+- `RefreshTokenBody`: `RefreshToken`
 - `SavePermissionBody`: `Code`, `Name`, `Description`
 - `SaveRoleBody`: `Name`, `Description`, `IsActive`
 - `AssignPermissionsBody`: `PermissionIds`
-- `UpdateUserBody`: `Username`, `Email`, `FirstName`, `LastName`, `WarehouseNo`, `WarehouseName`, `IsActive`
+- `UpdateUserBody`: `Username`, `Email`, `FirstName`, `LastName`, `WarehouseNo`, `WarehouseName`, `IsActive`, `NewPassword`
 - `AssignRolesBody`: `RoleIds`
 
 ### Ortak Request Modelleri
@@ -19380,6 +19433,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - Cok sayida detay endpointi ayri request class'i kullanmaz; path parametreleri ve opsiyonel `warehouseNo` query parametresi ile calisir.
 - `GET /api/kasa-islemleri/etiket-belgeleri`, `GET /api/kasa-islemleri/etiket-belgeleri/son`, `GET /api/kasa-islemleri/etiket-belgeleri/tumu` ve `GET /api/kasa-islemleri/etiket-belgeleri/{documentId}` endpointleri ayri request class'i yerine dogrudan action parametreleri kullanir.
 - `LabelPriceChangedProductListHttpRequest.DateTimeFilter` alaninin beklenen formati `dd.MM.yyyy HH:mm:ss` degeridir.
+
 
 
 

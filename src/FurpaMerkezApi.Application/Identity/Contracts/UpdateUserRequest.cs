@@ -7,4 +7,5 @@ public sealed record UpdateUserRequest(
     string LastName,
     string WarehouseNo,
     string WarehouseName,
-    bool IsActive);
+    bool IsActive,
+    string? NewPassword = null);

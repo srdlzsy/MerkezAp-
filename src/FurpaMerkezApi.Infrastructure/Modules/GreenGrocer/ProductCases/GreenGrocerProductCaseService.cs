@@ -1003,7 +1003,7 @@ public sealed class GreenGrocerProductCaseService(
             "10" => "Meyve",
             "11" => "Sebze",
             "12" => "Yesillik",
-            "23" => "Sarf Manav",
+            "23" => "Manav Sarf",
             _ => string.Empty
         };
 

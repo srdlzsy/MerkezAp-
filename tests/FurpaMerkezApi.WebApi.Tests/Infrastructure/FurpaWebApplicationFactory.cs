@@ -95,13 +95,27 @@ internal sealed class FakeKunyeLabelTagsUseCase : IListKunyeLabelTagsUseCase
 internal sealed class FakeAuthService : IAuthService
 {
     public Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(new AuthResponse("fake-token", DateTime.UtcNow.AddHours(1), CreateUser()));
+        Task.FromResult(CreateAuthResponse());
 
     public Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(new AuthResponse("fake-token", DateTime.UtcNow.AddHours(1), CreateUser()));
+        Task.FromResult(CreateAuthResponse());
+
+    public Task<AuthResponse> RefreshAsync(RefreshTokenRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(CreateAuthResponse());
+
+    public Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     public Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken) =>
         Task.FromResult(CreateUser());
+
+    private static AuthResponse CreateAuthResponse() =>
+        new(
+            "fake-token",
+            DateTime.UtcNow.AddHours(1),
+            CreateUser(),
+            "fake-refresh-token",
+            DateTime.UtcNow.AddDays(14));
 
     private static UserDto CreateUser() =>
         new(

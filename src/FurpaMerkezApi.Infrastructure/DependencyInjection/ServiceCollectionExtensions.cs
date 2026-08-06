@@ -286,7 +286,10 @@ public static class ServiceCollectionExtensions
             Issuer = jwtSection["Issuer"] ?? string.Empty,
             Audience = jwtSection["Audience"] ?? string.Empty,
             SecretKey = jwtSection["SecretKey"] ?? string.Empty,
-            ExpiryMinutes = int.TryParse(jwtSection["ExpiryMinutes"], out var expiryMinutes) ? expiryMinutes : 120
+            ExpiryMinutes = int.TryParse(jwtSection["ExpiryMinutes"], out var expiryMinutes) ? expiryMinutes : 120,
+            RefreshTokenExpiryDays = int.TryParse(jwtSection["RefreshTokenExpiryDays"], out var refreshTokenExpiryDays)
+                ? refreshTokenExpiryDays
+                : 14
         };
 
         services.AddHttpClient();

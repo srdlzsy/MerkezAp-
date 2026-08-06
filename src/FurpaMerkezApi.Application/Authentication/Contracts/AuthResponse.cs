@@ -5,4 +5,6 @@ namespace FurpaMerkezApi.Application.Authentication.Contracts;
 public sealed record AuthResponse(
     string AccessToken,
     DateTime ExpiresAtUtc,
-    UserDto User);
+    UserDto User,
+    string RefreshToken,
+    DateTime RefreshTokenExpiresAtUtc);

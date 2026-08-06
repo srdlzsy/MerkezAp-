@@ -15,6 +15,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<AppRolePermission> RolePermissions => Set<AppRolePermission>();
 
+    public DbSet<AppRefreshToken> RefreshTokens => Set<AppRefreshToken>();
+
     public DbSet<MobileOfflineSyncRequest> MobileOfflineSyncRequests => Set<MobileOfflineSyncRequest>();
 
     public DbSet<UyumsoftInboxInvoice> UyumsoftInboxInvoices => Set<UyumsoftInboxInvoice>();

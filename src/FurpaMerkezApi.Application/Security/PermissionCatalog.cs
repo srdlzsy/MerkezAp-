@@ -229,14 +229,14 @@ public static class PermissionCatalog
             "manage",
             "Yonet"),
 
-        ..CreateMenuPermissions("home", "Home", "depo-oncelikleri", "DepoOncelikleri", HomeWarehousePriorityActions),
+        ..CreateMenuPermissions("home", "AnaSayfa", "depo-oncelikleri", "DepoOncelikleri", HomeWarehousePriorityActions),
 
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "fiyat-gor", "FiyatGor", ListActions),
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
-        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "reports", "Reports", ReadUpdateActions),
-        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "product-case-profiles", "ProductCaseProfiles", ProductCaseProfileActions),
-        ..CreateMenuPermissions("green-grocer", "GreenGrocer", "operations", "Operations", GreenGrocerOperationsActions),
+        ..CreateMenuPermissions("green-grocer", "Manav", "reports", "ManavRaporlari", ReadUpdateActions),
+        ..CreateMenuPermissions("green-grocer", "Manav", "product-case-profiles", "ManavKasaProfilleri", ProductCaseProfileActions),
+        ..CreateMenuPermissions("green-grocer", "Manav", "operations", "ManavOperasyonPaneli", GreenGrocerOperationsActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "sikayet-oneri", "SikayetOneri", FeedbackActions),
         ..CreateMenuPermissions("ortak-islemler", "OrtakIslemler", "duyurular", "Duyurular", AnnouncementActions),
 
@@ -273,7 +273,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "stok-raporlari", "StokRaporlari", ReportListActions),
         ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "promosyon-raporlari", "PromosyonRaporlari", ReportListActions),
         ..CreateMenuPermissions("rapor-islemleri", "RaporIslemleri", "tedarikci-performans-karnesi", "TedarikciPerformansKarnesi", ReportReadActions),
-        ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operations"),
+        ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operasyonlar"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "depo-operasyon-paneli", "DepoOperasyonPaneli", ListActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "urun-dagilimlari", "UrunDagilimlari", ProductDistributionActions),

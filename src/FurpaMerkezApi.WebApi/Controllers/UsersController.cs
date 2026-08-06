@@ -42,7 +42,8 @@ public sealed class UsersController(IUserManagementService userManagementService
                 request.LastName,
                 request.WarehouseNo,
                 request.WarehouseName,
-                request.IsActive),
+                request.IsActive,
+                request.NewPassword),
             cancellationToken));
 
     [HttpPost("{id:guid}/roles")]
@@ -86,6 +87,9 @@ public sealed class UsersController(IUserManagementService userManagementService
         public required string WarehouseName { get; init; }
 
         public required bool IsActive { get; init; }
+
+        [StringLength(200)]
+        public string? NewPassword { get; init; }
     }
 
     public sealed class AssignRolesBody

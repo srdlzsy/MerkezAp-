@@ -42,6 +42,7 @@ public sealed record GreenGrocerOperationsProductItemDto(
     string StockCode,
     string StockName,
     string ModelCode,
+    string ModelName,
     string UnitName,
     double CurrentStockQuantity,
     double PurchaseQuantity,

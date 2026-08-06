@@ -849,6 +849,7 @@ public sealed class GreenGrocerOperationsUseCase(
             row.StockCode,
             row.StockName,
             row.ModelCode,
+            GetModelName(row.ModelCode),
             row.UnitName,
             Round(row.CurrentStockQuantity),
             Round(row.PurchaseQuantity),
@@ -1308,13 +1309,23 @@ public sealed class GreenGrocerOperationsUseCase(
         return normalized switch
         {
             null or "all" or "tum" or "tumu" => null,
-            "10" => "10",
-            "11" => "11",
+            "10" or "meyve" => "10",
+            "11" or "sebze" => "11",
             "12" or "green" or "greens" or "yesillik" => "12",
-            "23" => "23",
+            "23" or "sarf" or "ambalaj" or "manav-sarf" or "manav sarf" => "23",
             _ => throw new ArgumentException("Unsupported green grocer type code.")
         };
     }
+
+    private static string GetModelName(string modelCode) =>
+        modelCode switch
+        {
+            "10" => "Meyve",
+            "11" => "Sebze",
+            "12" => "Yesillik",
+            "23" => "Manav Sarf",
+            _ => string.Empty
+        };
 
     private static int NormalizeTake(int take) =>
         take <= 0 ? DefaultTake : Math.Min(take, MaxTake);

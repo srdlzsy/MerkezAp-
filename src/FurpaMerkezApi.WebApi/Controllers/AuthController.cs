@@ -50,6 +50,22 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
         return authService.LoginAsync(new LoginRequest(request.UsernameOrEmail, request.Password, ip), cancellationToken);
     }
 
+    [AllowAnonymous]
+    [HttpPost("refresh")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public Task<AuthResponse> Refresh([FromBody] RefreshTokenBody request, CancellationToken cancellationToken) =>
+        authService.RefreshAsync(new RefreshTokenRequest(request.RefreshToken), cancellationToken);
+
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenBody request, CancellationToken cancellationToken)
+    {
+        await authService.LogoutAsync(new LogoutRequest(request.RefreshToken), cancellationToken);
+        return NoContent();
+    }
+
     [Authorize]
     [HttpGet("me")]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
@@ -107,5 +123,12 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
         [Required(AllowEmptyStrings = false)]
         [StringLength(200)]
         public required string Password { get; init; }
+    }
+
+    public sealed class RefreshTokenBody
+    {
+        [Required(AllowEmptyStrings = false)]
+        [StringLength(500)]
+        public required string RefreshToken { get; init; }
     }
 }

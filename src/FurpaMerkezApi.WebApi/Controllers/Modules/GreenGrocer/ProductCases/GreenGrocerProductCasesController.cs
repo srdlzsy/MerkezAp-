@@ -16,9 +16,9 @@ public sealed class GreenGrocerProductCasesController(
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "green-grocer";
-    private const string ModuleName = "GreenGrocer";
+    private const string ModuleName = "Manav";
     private const string MenuCode = "product-case-profiles";
-    private const string MenuName = "ProductCaseProfiles";
+    private const string MenuName = "ManavKasaProfilleri";
     private const string ListPolicy = "green-grocer.product-case-profiles.list";
     private const string DetailPolicy = "green-grocer.product-case-profiles.detail";
     private const string UpdatePolicy = "green-grocer.product-case-profiles.update";

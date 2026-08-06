@@ -9,6 +9,7 @@ using FurpaMerkezApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Services;
@@ -38,6 +39,8 @@ public sealed class AuthServiceTests
 
         Assert.Equal("token-56", response.AccessToken);
         Assert.Equal("56", response.User.WarehouseNo);
+        Assert.False(string.IsNullOrWhiteSpace(response.RefreshToken));
+        Assert.Equal(Now.AddDays(14), response.RefreshTokenExpiresAtUtc);
     }
 
     [Fact]
@@ -74,6 +77,55 @@ public sealed class AuthServiceTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task RefreshAsync_RotatesRefreshToken()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+        await AddTerminalUserAsync(authDbContext, "terminal120", "120");
+        await AddBranchAsync(furpaDbContext, 120, "10.0.120.15");
+
+        var service = CreateService(authDbContext, furpaDbContext);
+        var loginResponse = await service.LoginAsync(
+            new LoginRequest("terminal120", Password, "10.0.120.88"),
+            CancellationToken.None);
+
+        authDbContext.ChangeTracker.Clear();
+
+        var refreshResponse = await service.RefreshAsync(
+            new RefreshTokenRequest(loginResponse.RefreshToken),
+            CancellationToken.None);
+
+        var refreshTokens = await authDbContext.RefreshTokens.ToArrayAsync();
+
+        Assert.NotEqual(loginResponse.RefreshToken, refreshResponse.RefreshToken);
+        Assert.Equal("token-120", refreshResponse.AccessToken);
+        Assert.Equal(2, refreshTokens.Length);
+        Assert.Single(refreshTokens, token => token.RevokedAtUtc is null);
+        Assert.Single(refreshTokens, token => token.RevokedAtUtc is not null);
+    }
+
+    [Fact]
+    public async Task LogoutAsync_RevokesRefreshToken()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+        await AddTerminalUserAsync(authDbContext, "terminal120", "120");
+        await AddBranchAsync(furpaDbContext, 120, "10.0.120.15");
+
+        var service = CreateService(authDbContext, furpaDbContext);
+        var loginResponse = await service.LoginAsync(
+            new LoginRequest("terminal120", Password, "10.0.120.88"),
+            CancellationToken.None);
+
+        authDbContext.ChangeTracker.Clear();
+
+        await service.LogoutAsync(new LogoutRequest(loginResponse.RefreshToken), CancellationToken.None);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.RefreshAsync(new RefreshTokenRequest(loginResponse.RefreshToken), CancellationToken.None));
+    }
+
     private static AuthService CreateService(
         AuthDbContext authDbContext,
         FurpaDbContext furpaDbContext,
@@ -84,6 +136,7 @@ public sealed class AuthServiceTests
             new TestPasswordHasher(),
             new TestJwtTokenFactory(),
             new FixedClock(Now),
+            Options.Create(new JwtOptions { RefreshTokenExpiryDays = 14 }),
             CreateConfiguration(sharedNetworkGroups),
             NullLogger<AuthService>.Instance);
 

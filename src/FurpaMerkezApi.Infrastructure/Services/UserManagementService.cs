@@ -2,12 +2,16 @@ using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Identity.Contracts;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
-public sealed class UserManagementService(AuthDbContext dbContext, IClock clock) : IUserManagementService
+public sealed class UserManagementService(
+    AuthDbContext dbContext,
+    IClock clock,
+    IPasswordHasher passwordHasher) : IUserManagementService
 {
     public async Task<IReadOnlyCollection<UserDto>> GetAllAsync(CancellationToken cancellationToken)
     {
@@ -55,7 +59,8 @@ public sealed class UserManagementService(AuthDbContext dbContext, IClock clock)
             throw new InvalidOperationException("Email already exists.");
         }
 
-        user.RenameUsername(request.Username, clock.UtcNow);
+        var now = clock.UtcNow;
+        user.RenameUsername(request.Username, now);
         user.UpdateProfile(
             request.Email,
             request.FirstName,
@@ -63,7 +68,31 @@ public sealed class UserManagementService(AuthDbContext dbContext, IClock clock)
             request.WarehouseNo,
             request.WarehouseName,
             request.IsActive,
-            clock.UtcNow);
+            now);
+
+        if (!string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            var normalizedPassword = request.NewPassword.Trim();
+
+            if (normalizedPassword.Length < 6)
+            {
+                throw new ArgumentException("New password must be at least 6 characters.", nameof(request.NewPassword));
+            }
+
+            user.ChangePassword(passwordHasher.Hash(normalizedPassword), now);
+
+            var activeRefreshTokens = await dbContext.RefreshTokens
+                .Where(token =>
+                    token.UserId == userId &&
+                    token.RevokedAtUtc == null &&
+                    token.ExpiresAtUtc > now)
+                .ToArrayAsync(cancellationToken);
+
+            foreach (var refreshToken in activeRefreshTokens)
+            {
+                refreshToken.Revoke(now);
+            }
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

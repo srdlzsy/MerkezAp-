@@ -674,11 +674,11 @@ public sealed class GreenGrocerReportsUseCase(
 
         return normalized switch
         {
-            null or "all" or "tum" => null,
-            "10" => "10",
-            "11" => "11",
+            null or "all" or "tum" or "tumu" => null,
+            "10" or "meyve" => "10",
+            "11" or "sebze" => "11",
             "12" or "green" or "greens" or "yesillik" => GreensTypeCode,
-            "23" or "sarf" or "ambalaj" => "23",
+            "23" or "sarf" or "ambalaj" or "manav-sarf" or "manav sarf" => "23",
             _ => throw new ArgumentException("Unsupported green grocer type code.")
         };
     }

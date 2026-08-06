@@ -16,9 +16,9 @@ public sealed class GreenGrocerOperationsController(
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "green-grocer";
-    private const string ModuleName = "GreenGrocer";
+    private const string ModuleName = "Manav";
     private const string MenuCode = "operations";
-    private const string MenuName = "Operations";
+    private const string MenuName = "ManavOperasyonPaneli";
     private const string ListPolicy = "green-grocer.operations.list";
     private const string CreatePolicy = "green-grocer.operations.create";
 

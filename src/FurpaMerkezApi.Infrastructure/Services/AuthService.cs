@@ -10,6 +10,9 @@ using FurpaMerkezApi.Infrastructure.Persistence.SeedData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
@@ -19,10 +22,12 @@ public sealed class AuthService(
     IPasswordHasher passwordHasher,
     IJwtTokenFactory jwtTokenFactory,
     IClock clock,
+    IOptions<JwtOptions> jwtOptions,
     IConfiguration configuration,
     ILogger<AuthService> logger) : IAuthService
 {
     private static readonly Guid TerminalRoleId = Guid.Parse("3c1daafe-5922-466e-9f79-6d2ca34ce84d");
+    private readonly JwtOptions _jwtOptions = jwtOptions.Value;
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
     {
@@ -63,7 +68,7 @@ public sealed class AuthService(
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var createdUser = await LoadUserAsync(user.Id, cancellationToken);
-        return CreateAuthResponse(createdUser);
+        return await CreateAuthResponseAsync(createdUser, cancellationToken);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
@@ -93,7 +98,57 @@ public sealed class AuthService(
             await ValidateTerminalUserNetworkAsync(user, request.IpAddress, cancellationToken);
         }
 
-        return CreateAuthResponse(user);
+        return await CreateAuthResponseAsync(user, cancellationToken);
+    }
+
+    public async Task<AuthResponse> RefreshAsync(RefreshTokenRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            throw new UnauthorizedAccessException("Refresh token is invalid.");
+        }
+
+        var now = clock.UtcNow;
+        var tokenHash = HashRefreshToken(request.RefreshToken);
+        var storedToken = await dbContext.RefreshTokens
+            .Include(token => token.User)
+                .ThenInclude(user => user.UserRoles)
+                    .ThenInclude(userRole => userRole.Role)
+                        .ThenInclude(role => role.RolePermissions)
+                            .ThenInclude(rolePermission => rolePermission.Permission)
+            .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
+
+        if (storedToken is null || !storedToken.IsActive(now) || !storedToken.User.IsActive)
+        {
+            throw new UnauthorizedAccessException("Refresh token is invalid or expired.");
+        }
+
+        var refreshToken = CreateRefreshToken(storedToken.UserId, now);
+        storedToken.Revoke(now, refreshToken.Entity.TokenHash);
+        dbContext.RefreshTokens.Add(refreshToken.Entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return CreateAuthResponse(storedToken.User, refreshToken.Token, refreshToken.Entity.ExpiresAtUtc);
+    }
+
+    public async Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            return;
+        }
+
+        var tokenHash = HashRefreshToken(request.RefreshToken);
+        var storedToken = await dbContext.RefreshTokens
+            .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
+
+        if (storedToken is null)
+        {
+            return;
+        }
+
+        storedToken.Revoke(clock.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
@@ -102,10 +157,24 @@ public sealed class AuthService(
         return user.ToDto();
     }
 
-    private AuthResponse CreateAuthResponse(AppUser user)
+    private async Task<AuthResponse> CreateAuthResponseAsync(AppUser user, CancellationToken cancellationToken)
+    {
+        var refreshToken = CreateRefreshToken(user.Id, clock.UtcNow);
+        dbContext.RefreshTokens.Add(refreshToken.Entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return CreateAuthResponse(user, refreshToken.Token, refreshToken.Entity.ExpiresAtUtc);
+    }
+
+    private AuthResponse CreateAuthResponse(AppUser user, string refreshToken, DateTime refreshTokenExpiresAtUtc)
     {
         var token = jwtTokenFactory.Create(user);
-        return new AuthResponse(token.AccessToken, token.ExpiresAtUtc, user.ToDto());
+        return new AuthResponse(
+            token.AccessToken,
+            token.ExpiresAtUtc,
+            user.ToDto(),
+            refreshToken,
+            refreshTokenExpiresAtUtc);
     }
 
     private async Task<AppUser> LoadUserAsync(Guid userId, CancellationToken cancellationToken)
@@ -219,5 +288,31 @@ public sealed class AuthService(
         }
 
         return value.Trim().ToUpperInvariant();
+    }
+
+    private (string Token, AppRefreshToken Entity) CreateRefreshToken(Guid userId, DateTime nowUtc)
+    {
+        var expiryDays = _jwtOptions.RefreshTokenExpiryDays <= 0
+            ? 14
+            : _jwtOptions.RefreshTokenExpiryDays;
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        var entity = new AppRefreshToken(
+            Guid.NewGuid(),
+            userId,
+            HashRefreshToken(token),
+            nowUtc,
+            nowUtc.AddDays(expiryDays));
+
+        return (token, entity);
+    }
+
+    private static string HashRefreshToken(string refreshToken)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            throw new ArgumentException("Refresh token is required.", nameof(refreshToken));
+        }
+
+        return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken.Trim())));
     }
 }
