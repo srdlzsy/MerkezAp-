@@ -1,4 +1,4 @@
-# FurpaMerkezApi UI API Dokumani
+﻿# FurpaMerkezApi UI API Dokumani
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
@@ -3059,7 +3059,12 @@ Response:
 [
   {
     "typeCode": "10",
-    "typeName": "Manav Tip 10",
+    "typeName": "Meyve",
+    "isGreens": false
+  },
+  {
+    "typeCode": "11",
+    "typeName": "Sebze",
     "isGreens": false
   },
   {
@@ -3097,7 +3102,7 @@ Ortak product modeli:
   "displayName": "ELMA",
   "productName": "ELMA",
   "modelCode": "10",
-  "modelName": "Manav Tip 10",
+  "modelName": "Meyve",
   "unitName": "KG",
   "globalProductCode": "8690000000000",
   "primaryBarcode": "2801620100000"
@@ -3182,7 +3187,7 @@ Response:
   "topProducts": [
     {
       "typeCode": "10",
-      "typeName": "Manav Tip 10",
+      "typeName": "Meyve",
       "productCode": "016201",
       "productName": "ELMA",
       "stockCode": "016201",
@@ -3198,7 +3203,7 @@ Response:
         "displayName": "ELMA",
         "productName": "ELMA",
         "modelCode": "10",
-        "modelName": "Manav Tip 10",
+        "modelName": "Meyve",
         "unitName": "KG",
         "globalProductCode": "8690000000000",
         "primaryBarcode": "2801620100000"
@@ -3239,7 +3244,7 @@ Response item:
 ```json
 {
   "typeCode": "10",
-  "typeName": "Manav Tip 10",
+  "typeName": "Meyve",
   "productCode": "016201",
   "productName": "ELMA",
   "stockCode": "016201",
@@ -3255,7 +3260,7 @@ Response item:
     "displayName": "ELMA",
     "productName": "ELMA",
     "modelCode": "10",
-    "modelName": "Manav Tip 10",
+    "modelName": "Meyve",
     "unitName": "KG",
     "globalProductCode": "8690000000000",
     "primaryBarcode": "2801620100000"
@@ -3307,7 +3312,7 @@ Response:
         "documentNo": "F110/1234"
       },
       "typeCode": "10",
-      "typeName": "Manav Tip 10",
+      "typeName": "Meyve",
       "productCode": "016201",
       "productName": "ELMA",
       "stockCode": "016201",
@@ -3323,7 +3328,7 @@ Response:
         "displayName": "ELMA",
         "productName": "ELMA",
         "modelCode": "10",
-        "modelName": "Manav Tip 10",
+        "modelName": "Meyve",
         "unitName": "KG",
         "globalProductCode": "8690000000000",
         "primaryBarcode": "2801620100000"
@@ -3380,7 +3385,7 @@ Response item:
 ```json
 {
   "typeCode": "10",
-  "typeName": "Manav Tip 10",
+  "typeName": "Meyve",
   "productCode": "016201",
   "productName": "ELMA",
   "stockCode": "016201",
@@ -3396,7 +3401,7 @@ Response item:
     "displayName": "ELMA",
     "productName": "ELMA",
     "modelCode": "10",
-    "modelName": "Manav Tip 10",
+    "modelName": "Meyve",
     "unitName": "KG",
     "globalProductCode": "8690000000000",
     "primaryBarcode": "2801620100000"
@@ -9772,7 +9777,7 @@ Response:
 
 #### Yeni Kasa Saglik Ozeti
 
-Secilen tarih araliginda sube/kasa bazinda fiÃ…Å¸ sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
+Secilen tarih araliginda sube/kasa bazinda fiÃƒâ€¦Ã…Â¸ sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
 
 `GET /api/kasa-islemleri/yeni-kasa-analizleri/saglik-ozeti?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
 
@@ -10196,8 +10201,8 @@ filterValue filterType/scope ile eslesen kod veya arama degeri
 Notlar:
 
 - `filterType` icin Turkce aliaslar da kabul edilir: `stok`, `kategori`, `uretici`, `tedarikci`, `satin-almaci`, `satinalmaci`, `model`.
-- Turkce karakterli aliaslar da kabul edilir: `urun`, `ÃƒÂ¼rÃƒÂ¼n`, `ÃƒÂ¼retici`, `tedarikÃƒÂ§i`, `satÃ„Â±n-almacÃ„Â±`.
-- `filterType` ve `filterValue` birlikte kullanÃ„Â±lmalÃ„Â±dÃ„Â±r; sadece biri gÃƒÂ¶nderilirse backend 400 dÃƒÂ¶ner.
+- Turkce karakterli aliaslar da kabul edilir: `urun`, `ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼n`, `ÃƒÆ’Ã‚Â¼retici`, `tedarikÃƒÆ’Ã‚Â§i`, `satÃƒâ€Ã‚Â±n-almacÃƒâ€Ã‚Â±`.
+- `filterType` ve `filterValue` birlikte kullanÃƒâ€Ã‚Â±lmalÃƒâ€Ã‚Â±dÃƒâ€Ã‚Â±r; sadece biri gÃƒÆ’Ã‚Â¶nderilirse backend 400 dÃƒÆ’Ã‚Â¶ner.
 - `scope` bos verilirse karlilik raporu `producer` kirilimi ile doner.
 - Sayisal toplamlar backend tarafinda 2 ondaliga yuvarlanir.
 - Barkod alanlari master/birim-1 barkod onceligiyle secilir.
@@ -11860,7 +11865,7 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
    - `send` endpoint'i hiz icin `/validate` kontrolunu tekrar calistirmaz; UI "Kontrol Et" butonunu ayri aksiyon olarak sunmalidir
    - backend ayni belge icin eszamanli ikinci `send` istegini Uyumsoft'a gitmeden durdurur; UI bu durumda satir bazli hata mesajini gosterip ilk istegin sonucunu beklemelidir
-   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruÃ„Å¸a alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
+   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruÃƒâ€Ã…Â¸a alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
 7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
 8. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
 9. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
@@ -13051,7 +13056,7 @@ Response `SendInvoiceDocumentsResponse`:
 
 Davranis:
 
-- secimler duplicate ise backend tekilleÃ…Å¸tirir
+- secimler duplicate ise backend tekilleÃƒâ€¦Ã…Â¸tirir
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - hiz icin UBL-TR is kurali ve XSD dogrulamalari burada tekrar calistirilmaz; bu kontroller icin kullanici once `/validate` endpoint'ini cagirir
@@ -19375,5 +19380,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - Cok sayida detay endpointi ayri request class'i kullanmaz; path parametreleri ve opsiyonel `warehouseNo` query parametresi ile calisir.
 - `GET /api/kasa-islemleri/etiket-belgeleri`, `GET /api/kasa-islemleri/etiket-belgeleri/son`, `GET /api/kasa-islemleri/etiket-belgeleri/tumu` ve `GET /api/kasa-islemleri/etiket-belgeleri/{documentId}` endpointleri ayri request class'i yerine dogrudan action parametreleri kullanir.
 - `LabelPriceChangedProductListHttpRequest.DateTimeFilter` alaninin beklenen formati `dd.MM.yyyy HH:mm:ss` degeridir.
+
+
 
 

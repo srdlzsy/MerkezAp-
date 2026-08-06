@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -21,8 +21,8 @@ public sealed class GreenGrocerReportsUseCase(
 
     private static readonly IReadOnlyCollection<GreenGrocerTypeOptionDto> TypeOptions =
     [
-        new("10", "Manav Tip 10", false),
-        new("11", "Manav Tip 11", false),
+        new("10", "Meyve", false),
+        new("11", "Sebze", false),
         new("12", "Yesillik", true),
         new("23", "Manav Sarf", false)
     ];
@@ -790,3 +790,4 @@ public sealed class GreenGrocerReportsUseCase(
         string DocumentSerie,
         int DocumentOrderNo);
 }
+
