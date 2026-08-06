@@ -1,3 +1,4 @@
+using System.Globalization;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -39,7 +40,7 @@ public sealed class GreenGrocerReportsUseCase(
             : [];
         var topProducts = BuildProductSummary(items)
             .OrderByDescending(item => item.Quantity)
-            .ThenBy(item => item.ProductName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Product.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Take(DashboardTopProductTake)
             .ToArray();
         var typeSummaries = items
@@ -52,25 +53,22 @@ public sealed class GreenGrocerReportsUseCase(
             .Select(group => new GreenGrocerTypeSummaryDto(
                 group.Key.TypeCode,
                 group.Key.TypeName,
-                group.Select(item => item.BranchNo).Distinct().Count(),
+                group.Select(item => item.Branch.WarehouseNo).Distinct().Count(),
                 CountDocuments(group),
-                group.Select(item => item.ProductCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                group.Select(item => item.Product.StockCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
                 Round(group.Sum(item => item.Quantity)),
                 AggregateCaseInfo(group.Select(item => item.CaseInfo))))
             .ToArray();
         var branchSummaries = items
-            .GroupBy(item => new
-            {
-                item.BranchNo,
-                item.BranchName
-            })
-            .OrderBy(group => group.Key.BranchName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(group => group.Key.BranchNo)
+            .GroupBy(item => item.Branch)
+            .OrderBy(group => group.Key.WarehouseName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(group => group.Key.WarehouseNo)
             .Select(group => new GreenGrocerBranchSummaryDto(
-                group.Key.BranchNo,
-                group.Key.BranchName,
+                group.Key.WarehouseNo,
+                group.Key.WarehouseName,
+                group.Key,
                 CountDocuments(group),
-                group.Select(item => item.ProductCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                group.Select(item => item.Product.StockCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
                 Round(group.Sum(item => item.Quantity)),
                 AggregateCaseInfo(group.Select(item => item.CaseInfo))))
             .Take(normalized.Take)
@@ -79,10 +77,10 @@ public sealed class GreenGrocerReportsUseCase(
         return new GreenGrocerDashboardDto(
             normalized.Date,
             normalized.WarehouseNo,
-            items.Select(item => item.BranchNo).Distinct().Count(),
+            items.Select(item => item.Branch.WarehouseNo).Distinct().Count(),
             lazyBranches.Count,
             CountDocuments(items),
-            items.Select(item => item.ProductCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            items.Select(item => item.Product.StockCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
             Round(items.Sum(item => item.Quantity)),
             AggregateCaseInfo(items.Select(item => item.CaseInfo)),
             typeSummaries,
@@ -103,10 +101,10 @@ public sealed class GreenGrocerReportsUseCase(
 
         return new GreenGrocerBranchReportDto(
             items
-                .OrderBy(item => item.BranchName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(item => item.BranchNo)
+                .OrderBy(item => item.Branch.WarehouseName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Branch.WarehouseNo)
                 .ThenBy(item => item.TypeCode, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(item => item.ProductName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Product.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .Take(normalized.Take)
                 .ToArray(),
             lazyBranches);
@@ -138,12 +136,17 @@ public sealed class GreenGrocerReportsUseCase(
                 OrderDate = order.ssip_tarih,
                 BranchNo = branch.dep_no,
                 BranchName = branch.dep_adi,
+                BranchRegionCode = branch.dep_bolge_kodu,
                 DocumentSerie = order.ssip_evrakno_seri,
                 DocumentOrderNo = order.ssip_evrakno_sira,
                 RowNo = order.ssip_satirno,
                 TypeCode = product.sto_model_kodu,
                 ProductCode = order.ssip_stok_kod,
                 ProductName = productName,
+                StockName = product.sto_isim,
+                ProductShortName = product.sto_kisa_ismi,
+                UnitName = product.sto_birim1_ad,
+                GlobalProductCode = product.sto_kuresel_urun_numarasi,
                 Quantity = order.ssip_miktar,
                 LatestCreateDate = order.ssip_create_date
             };
@@ -153,6 +156,9 @@ public sealed class GreenGrocerReportsUseCase(
             query = query.Where(row =>
                 (row.ProductCode != null && row.ProductCode.Contains(normalized.Search)) ||
                 (row.ProductName != null && row.ProductName.Contains(normalized.Search)) ||
+                (row.StockName != null && row.StockName.Contains(normalized.Search)) ||
+                (row.ProductShortName != null && row.ProductShortName.Contains(normalized.Search)) ||
+                (row.GlobalProductCode != null && row.GlobalProductCode.Contains(normalized.Search)) ||
                 (row.BranchName != null && row.BranchName.Contains(normalized.Search)) ||
                 (row.DocumentSerie != null && row.DocumentSerie.Contains(normalized.Search)));
         }
@@ -163,26 +169,51 @@ public sealed class GreenGrocerReportsUseCase(
             .ThenBy(row => row.RowNo)
             .Take(normalized.Take)
             .ToListAsync(cancellationToken);
+        var primaryBarcodeByStockCode = await GetPrimaryBarcodeByStockCodeAsync(
+            rows.Select(row => row.ProductCode).ToArray(),
+            cancellationToken);
         var caseInfoByLineGuid = await GetCaseInfoByLineGuidAsync(
             rows.Select(row => row.LineGuid).ToArray(),
             cancellationToken);
 
         return rows
-            .Select(row => new GreenGrocerGreenReportItemDto(
-                row.OrderDate ?? normalized.Date,
-                row.BranchNo ?? 0,
-                row.BranchName ?? string.Empty,
-                row.DocumentSerie ?? string.Empty,
-                row.DocumentOrderNo ?? 0,
-                row.RowNo ?? 0,
-                row.TypeCode ?? string.Empty,
-                GetTypeName(row.TypeCode),
-                row.ProductCode ?? string.Empty,
-                row.ProductName ?? string.Empty,
-                Round(row.Quantity ?? 0d),
-                row.LatestCreateDate,
-                CanDelete(row.LatestCreateDate, now),
-                caseInfoByLineGuid.GetValueOrDefault(row.LineGuid)))
+            .Select(row =>
+            {
+                var product = BuildProduct(
+                    row.ProductCode,
+                    row.StockName,
+                    row.ProductShortName,
+                    row.TypeCode,
+                    row.UnitName,
+                    row.GlobalProductCode,
+                    primaryBarcodeByStockCode.GetValueOrDefault(NormalizeForResponse(row.ProductCode)));
+                var branch = BuildBranch(row.BranchNo, row.BranchName, row.BranchRegionCode);
+                var document = BuildDocument(row.DocumentSerie, row.DocumentOrderNo);
+
+                return new GreenGrocerGreenReportItemDto(
+                    row.OrderDate ?? normalized.Date,
+                    branch.WarehouseNo,
+                    branch.WarehouseName,
+                    branch,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    document,
+                    row.RowNo ?? 0,
+                    product.ModelCode,
+                    product.ModelName,
+                    product.StockCode,
+                    product.DisplayName,
+                    product.StockCode,
+                    product.StockName,
+                    product.UnitName,
+                    product.PrimaryBarcode,
+                    product.GlobalProductCode,
+                    product,
+                    Round(row.Quantity ?? 0d),
+                    row.LatestCreateDate,
+                    CanDelete(row.LatestCreateDate, now),
+                    caseInfoByLineGuid.GetValueOrDefault(row.LineGuid));
+            })
             .ToArray();
     }
 
@@ -208,30 +239,32 @@ public sealed class GreenGrocerReportsUseCase(
         var branchItems = await ListBranchItemsAsync(normalized, cancellationToken);
 
         return branchItems
-            .GroupBy(item => new
-            {
-                item.TypeCode,
-                item.TypeName,
-                item.ProductCode,
-                item.ProductName
-            })
-            .OrderBy(group => group.Key.ProductName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(group => group.Key.TypeCode, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(item => item.Product)
+            .OrderBy(group => group.Key.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(group => group.Key.ModelCode, StringComparer.OrdinalIgnoreCase)
             .Select(group => new GreenGrocerProductReportGroupDto(
-                group.Key.TypeCode,
-                group.Key.TypeName,
-                group.Key.ProductCode,
-                group.Key.ProductName,
+                group.Key.ModelCode,
+                group.Key.ModelName,
+                group.Key.StockCode,
+                group.Key.DisplayName,
+                group.Key.StockCode,
+                group.Key.StockName,
+                group.Key.UnitName,
+                group.Key.PrimaryBarcode,
+                group.Key.GlobalProductCode,
+                group.Key,
                 Round(group.Sum(item => item.Quantity)),
                 AggregateCaseInfo(group.Select(item => item.CaseInfo)),
                 group
-                    .OrderBy(item => item.BranchName, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(item => item.Branch.WarehouseName, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(item => item.DocumentOrderNo)
                     .Select(item => new GreenGrocerProductBranchItemDto(
                         item.BranchNo,
                         item.BranchName,
+                        item.Branch,
                         item.DocumentSerie,
                         item.DocumentOrderNo,
+                        item.Document,
                         item.Quantity,
                         item.LatestCreateDate,
                         item.CanDelete,
@@ -267,11 +300,16 @@ public sealed class GreenGrocerReportsUseCase(
                 OrderDate = order.ssip_tarih,
                 BranchNo = branch.dep_no,
                 BranchName = branch.dep_adi,
+                BranchRegionCode = branch.dep_bolge_kodu,
                 DocumentSerie = order.ssip_evrakno_seri,
                 DocumentOrderNo = order.ssip_evrakno_sira,
                 TypeCode = product.sto_model_kodu,
                 ProductCode = order.ssip_stok_kod,
                 ProductName = productName,
+                StockName = product.sto_isim,
+                ProductShortName = product.sto_kisa_ismi,
+                UnitName = product.sto_birim1_ad,
+                GlobalProductCode = product.sto_kuresel_urun_numarasi,
                 Quantity = order.ssip_miktar,
                 LatestCreateDate = order.ssip_create_date
             };
@@ -281,6 +319,9 @@ public sealed class GreenGrocerReportsUseCase(
             query = query.Where(row =>
                 (row.ProductCode != null && row.ProductCode.Contains(request.Search)) ||
                 (row.ProductName != null && row.ProductName.Contains(request.Search)) ||
+                (row.StockName != null && row.StockName.Contains(request.Search)) ||
+                (row.ProductShortName != null && row.ProductShortName.Contains(request.Search)) ||
+                (row.GlobalProductCode != null && row.GlobalProductCode.Contains(request.Search)) ||
                 (row.BranchName != null && row.BranchName.Contains(request.Search)) ||
                 (row.DocumentSerie != null && row.DocumentSerie.Contains(request.Search)));
         }
@@ -292,6 +333,9 @@ public sealed class GreenGrocerReportsUseCase(
             .ThenBy(row => row.DocumentOrderNo)
             .ThenBy(row => row.LineGuid)
             .ToListAsync(cancellationToken);
+        var primaryBarcodeByStockCode = await GetPrimaryBarcodeByStockCodeAsync(
+            rawRows.Select(row => row.ProductCode).ToArray(),
+            cancellationToken);
         var caseInfoByLineGuid = await GetCaseInfoByLineGuidAsync(
             rawRows.Select(row => row.LineGuid).ToArray(),
             cancellationToken);
@@ -302,22 +346,32 @@ public sealed class GreenGrocerReportsUseCase(
                 row.OrderDate,
                 row.BranchNo,
                 row.BranchName,
+                row.BranchRegionCode,
                 row.DocumentSerie,
                 row.DocumentOrderNo,
                 row.TypeCode,
                 row.ProductCode,
-                row.ProductName
+                row.ProductName,
+                row.StockName,
+                row.ProductShortName,
+                row.UnitName,
+                row.GlobalProductCode
             })
             .Select(group => new
             {
                 group.Key.OrderDate,
                 group.Key.BranchNo,
                 group.Key.BranchName,
+                group.Key.BranchRegionCode,
                 group.Key.DocumentSerie,
                 group.Key.DocumentOrderNo,
                 group.Key.TypeCode,
                 group.Key.ProductCode,
                 group.Key.ProductName,
+                group.Key.StockName,
+                group.Key.ProductShortName,
+                group.Key.UnitName,
+                group.Key.GlobalProductCode,
                 Quantity = group.Sum(item => item.Quantity ?? 0d),
                 LatestCreateDate = group.Max(item => item.LatestCreateDate),
                 CaseInfo = AggregateCaseInfo(group.Select(item =>
@@ -326,20 +380,42 @@ public sealed class GreenGrocerReportsUseCase(
             .ToArray();
 
         return rows
-            .Select(row => new GreenGrocerBranchReportItemDto(
-                row.OrderDate ?? request.Date,
-                row.BranchNo ?? 0,
-                row.BranchName ?? string.Empty,
-                row.DocumentSerie ?? string.Empty,
-                row.DocumentOrderNo ?? 0,
-                row.TypeCode ?? string.Empty,
-                GetTypeName(row.TypeCode),
-                row.ProductCode ?? string.Empty,
-                row.ProductName ?? string.Empty,
-                Round(row.Quantity),
-                row.LatestCreateDate,
-                CanDelete(row.LatestCreateDate, now),
-                row.CaseInfo))
+            .Select(row =>
+            {
+                var product = BuildProduct(
+                    row.ProductCode,
+                    row.StockName,
+                    row.ProductShortName,
+                    row.TypeCode,
+                    row.UnitName,
+                    row.GlobalProductCode,
+                    primaryBarcodeByStockCode.GetValueOrDefault(NormalizeForResponse(row.ProductCode)));
+                var branch = BuildBranch(row.BranchNo, row.BranchName, row.BranchRegionCode);
+                var document = BuildDocument(row.DocumentSerie, row.DocumentOrderNo);
+
+                return new GreenGrocerBranchReportItemDto(
+                    row.OrderDate ?? request.Date,
+                    branch.WarehouseNo,
+                    branch.WarehouseName,
+                    branch,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo,
+                    document,
+                    product.ModelCode,
+                    product.ModelName,
+                    product.StockCode,
+                    product.DisplayName,
+                    product.StockCode,
+                    product.StockName,
+                    product.UnitName,
+                    product.PrimaryBarcode,
+                    product.GlobalProductCode,
+                    product,
+                    Round(row.Quantity),
+                    row.LatestCreateDate,
+                    CanDelete(row.LatestCreateDate, now),
+                    row.CaseInfo);
+            })
             .ToArray();
     }
 
@@ -377,31 +453,78 @@ public sealed class GreenGrocerReportsUseCase(
 
         return branches
             .Where(branch => !reportedBranches.Contains(branch.BranchNo))
-            .Select(branch => new GreenGrocerLazyBranchDto(
-                branch.BranchNo,
-                branch.BranchName ?? string.Empty,
-                branch.RegionCode ?? string.Empty))
+            .Select(branch =>
+            {
+                var branchInfo = BuildBranch(branch.BranchNo, branch.BranchName, branch.RegionCode);
+
+                return new GreenGrocerLazyBranchDto(
+                    branchInfo.WarehouseNo,
+                    branchInfo.WarehouseName,
+                    branchInfo,
+                    branchInfo.RegionCode);
+            })
             .ToArray();
     }
 
     private static IReadOnlyCollection<GreenGrocerProductReportItemDto> BuildProductSummary(
         IEnumerable<GreenGrocerBranchReportItemDto> branchItems) =>
         branchItems
-            .GroupBy(item => new
-            {
-                item.TypeCode,
-                item.TypeName,
-                item.ProductCode,
-                item.ProductName
-            })
+            .GroupBy(item => item.Product)
             .Select(group => new GreenGrocerProductReportItemDto(
-                group.Key.TypeCode,
-                group.Key.TypeName,
-                group.Key.ProductCode,
-                group.Key.ProductName,
+                group.Key.ModelCode,
+                group.Key.ModelName,
+                group.Key.StockCode,
+                group.Key.DisplayName,
+                group.Key.StockCode,
+                group.Key.StockName,
+                group.Key.UnitName,
+                group.Key.PrimaryBarcode,
+                group.Key.GlobalProductCode,
+                group.Key,
                 Round(group.Sum(item => item.Quantity)),
                 AggregateCaseInfo(group.Select(item => item.CaseInfo))))
             .ToArray();
+
+    private async Task<IReadOnlyDictionary<string, string>> GetPrimaryBarcodeByStockCodeAsync(
+        IReadOnlyCollection<string?> stockCodes,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStockCodes = stockCodes
+            .Select(NormalizeOrNull)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalizedStockCodes.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var rows = await mikroDbContext.BARKOD_TANIMLARIs
+            .AsNoTracking()
+            .Where(barcode =>
+                barcode.bar_iptal != true &&
+                barcode.bar_stokkodu != null &&
+                normalizedStockCodes.Contains(barcode.bar_stokkodu) &&
+                barcode.bar_kodu != null &&
+                barcode.bar_kodu != string.Empty)
+            .OrderByDescending(barcode => barcode.bar_master == true)
+            .ThenBy(barcode => barcode.bar_birimpntr ?? byte.MaxValue)
+            .ThenBy(barcode => barcode.bar_kodu)
+            .Select(barcode => new
+            {
+                StockCode = barcode.bar_stokkodu,
+                Barcode = barcode.bar_kodu
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(row => row.StockCode!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => NormalizeForResponse(group.Select(row => row.Barcode).FirstOrDefault()),
+                StringComparer.OrdinalIgnoreCase);
+    }
 
     private async Task<IReadOnlyDictionary<Guid, GreenGrocerReportCaseInfoDto>> GetCaseInfoByLineGuidAsync(
         IReadOnlyCollection<Guid> lineGuids,
@@ -565,6 +688,60 @@ public sealed class GreenGrocerReportsUseCase(
         ?? typeCode
         ?? string.Empty;
 
+    private static GreenGrocerReportProductDto BuildProduct(
+        string? stockCode,
+        string? stockName,
+        string? shortName,
+        string? modelCode,
+        string? unitName,
+        string? globalProductCode,
+        string? primaryBarcode)
+    {
+        var normalizedStockCode = NormalizeForResponse(stockCode);
+        var normalizedStockName = NormalizeForResponse(stockName);
+        var normalizedShortName = NormalizeForResponse(shortName);
+        var displayName = FirstNonEmpty(normalizedShortName, normalizedStockName, normalizedStockCode);
+        var normalizedModelCode = NormalizeForResponse(modelCode);
+
+        return new GreenGrocerReportProductDto(
+            normalizedStockCode,
+            normalizedStockCode,
+            normalizedStockName,
+            normalizedShortName,
+            displayName,
+            displayName,
+            normalizedModelCode,
+            GetTypeName(normalizedModelCode),
+            NormalizeForResponse(unitName),
+            NormalizeForResponse(globalProductCode),
+            NormalizeForResponse(primaryBarcode));
+    }
+
+    private static GreenGrocerReportWarehouseDto BuildBranch(
+        int? warehouseNo,
+        string? warehouseName,
+        string? regionCode) =>
+        new(
+            warehouseNo ?? 0,
+            NormalizeForResponse(warehouseName),
+            NormalizeForResponse(regionCode));
+
+    private static GreenGrocerReportDocumentDto BuildDocument(
+        string? documentSerie,
+        int? documentOrderNo)
+    {
+        var normalizedSerie = NormalizeForResponse(documentSerie);
+        var normalizedOrderNo = documentOrderNo ?? 0;
+        var documentNo = normalizedSerie.Length == 0
+            ? normalizedOrderNo.ToString(CultureInfo.InvariantCulture)
+            : $"{normalizedSerie}/{normalizedOrderNo.ToString(CultureInfo.InvariantCulture)}";
+
+        return new GreenGrocerReportDocumentDto(
+            normalizedSerie,
+            normalizedOrderNo,
+            documentNo);
+    }
+
     private static int CountDocuments(IEnumerable<GreenGrocerBranchReportItemDto> items) =>
         items
             .Select(item => new GreenGrocerDocumentKey(
@@ -585,6 +762,12 @@ public sealed class GreenGrocerReportsUseCase(
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
+
+    private static string NormalizeForResponse(string? value) =>
+        NormalizeOrNull(value) ?? string.Empty;
+
+    private static string FirstNonEmpty(params string[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
     private static double Round(double value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
