@@ -10719,6 +10719,7 @@ Mevcut backend durumu:
 - zamanli importta `Date` verilmezse `KasaHareketAktarimi:ScheduledAddDay` kullanilir; default `-1`, yani dunun dosyalarini okur
 - dosya yolu `{root}\{subeNo}\HRddMMyy.*` ve `{root}\{subeNo}\IPddMMyy.*` desenindedir
 - `cashRegisters` filtresi verilirse dosya adi `{prefix}{ddMMyy}.{kasaNo:000}` olarak aranir
+- HR/IP satir formatinda virgullu, noktali virgul, tab ve bosluk ayraclari desteklenir; guncel kasa dosyalari genellikle `1,00006,01,FIS,...` seklinde virgullu gelir
 - `skipExisting=true` iken duplicate kontrolu `Sube + KasaNo + FisNo + BelgeTuru + Tarih` alanlariyla yapilir
 - `dryRun=true` import dosyalarini parse eder, barkod lookup ve hata/uyari listesi uretir, staging'e yazmaz
 - barkod lookup Mikro barkod tanimlarindan urun kodu bulmaya calisir; bulunamayan barkodlar response `warnings` icinde doner

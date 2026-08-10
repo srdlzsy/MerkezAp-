@@ -1403,7 +1403,9 @@ public sealed class KasaHareketAktarimiService(
 
         var separator = rawLine.Contains(';', StringComparison.Ordinal)
             ? ';'
-            : rawLine.Contains('\t', StringComparison.Ordinal) ? '\t' : ' ';
+            : rawLine.Contains(',', StringComparison.Ordinal)
+                ? ','
+                : rawLine.Contains('\t', StringComparison.Ordinal) ? '\t' : ' ';
 
         return rawLine
             .Split(separator, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
