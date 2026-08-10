@@ -26,12 +26,7 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
             config.EndpointUrl,
             config.WsdlUrl,
             config.ContractName,
-            catalog.Operations
-                .Select(operation => operation with
-                {
-                    SoapAction = operation.OperationName
-                })
-                .ToArray()));
+            BuildOperationDefinitions(serviceKind, catalog.Operations)));
     }
 
     public Task<IReadOnlyCollection<UyumsoftOperationDefinitionDto>> GetOperationsAsync(
@@ -42,12 +37,8 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
 
         var catalog = UyumsoftConnectedServiceCatalog.GetService(serviceKind);
 
-        IReadOnlyCollection<UyumsoftOperationDefinitionDto> operations = catalog.Operations
-            .Select(operation => operation with
-            {
-                SoapAction = operation.OperationName
-            })
-            .ToArray();
+        IReadOnlyCollection<UyumsoftOperationDefinitionDto> operations =
+            BuildOperationDefinitions(serviceKind, catalog.Operations);
 
         return Task.FromResult(operations);
     }
@@ -137,6 +128,232 @@ public sealed class UyumsoftConnectedQueryService(IOptions<UyumsoftConnectedServ
 
         return resolved;
     }
+
+    private static IReadOnlyCollection<UyumsoftOperationDefinitionDto> BuildOperationDefinitions(
+        UyumsoftConnectedServiceKind serviceKind,
+        IReadOnlyCollection<UyumsoftOperationDefinitionDto> operations)
+    {
+        var contractType = serviceKind switch
+        {
+            UyumsoftConnectedServiceKind.EInvoice => typeof(UyumsoftInvoice.IBasicIntegration),
+            UyumsoftConnectedServiceKind.EDespatch => typeof(UyumsoftDespatch.IBasicDespatchIntegration),
+            _ => throw new ArgumentOutOfRangeException(nameof(serviceKind), serviceKind, "Unsupported Uyumsoft service.")
+        };
+
+        return operations
+            .Select(operation => operation with
+            {
+                SoapAction = operation.OperationName,
+                Parameters = BuildOperationParameterDefinitions(contractType, operation.OperationName)
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<UyumsoftOperationParameterDefinitionDto> BuildOperationParameterDefinitions(
+        Type contractType,
+        string operationName)
+    {
+        var method = FindOperationMethod(contractType, operationName);
+        if (method is null)
+        {
+            return Array.Empty<UyumsoftOperationParameterDefinitionDto>();
+        }
+
+        var parameters = new List<UyumsoftOperationParameterDefinitionDto>();
+
+        foreach (var parameter in method.GetParameters())
+        {
+            if (IsUyumsoftUserInformation(parameter.ParameterType))
+            {
+                continue;
+            }
+
+            var parameterName = parameter.Name ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(parameterName))
+            {
+                continue;
+            }
+
+            if (IsSupportedScalarParameter(parameter.ParameterType))
+            {
+                parameters.Add(CreateParameterDefinition(parameterName, parameter.ParameterType, isRequired: true));
+                continue;
+            }
+
+            foreach (var property in GetSupportedProperties(parameter.ParameterType))
+            {
+                parameters.Add(CreateParameterDefinition(property.Name, property.PropertyType, isRequired: false));
+            }
+        }
+
+        return parameters
+            .GroupBy(parameter => NormalizeParameterName(parameter.Name), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+    }
+
+    private static MethodInfo? FindOperationMethod(Type contractType, string operationName)
+    {
+        var methodName = $"{operationName}Async";
+
+        return contractType
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(item =>
+                string.Equals(item.Name, methodName, StringComparison.OrdinalIgnoreCase) &&
+                typeof(Task).IsAssignableFrom(item.ReturnType));
+    }
+
+    private static bool IsUyumsoftUserInformation(Type targetType) =>
+        targetType == typeof(UyumsoftInvoice.UserInformation) ||
+        targetType == typeof(UyumsoftDespatch.UserInformation);
+
+    private static IReadOnlyCollection<PropertyInfo> GetSupportedProperties(Type modelType)
+    {
+        var typeHierarchy = new Stack<Type>();
+        for (var currentType = modelType; currentType is not null && currentType != typeof(object); currentType = currentType.BaseType)
+        {
+            typeHierarchy.Push(currentType);
+        }
+
+        var properties = new List<PropertyInfo>();
+        while (typeHierarchy.Count > 0)
+        {
+            var currentType = typeHierarchy.Pop();
+            properties.AddRange(currentType
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                .Where(property =>
+                    property.CanWrite &&
+                    property.GetIndexParameters().Length == 0 &&
+                    IsSupportedScalarParameter(property.PropertyType)));
+        }
+
+        return properties;
+    }
+
+    private static bool IsSupportedScalarParameter(Type targetType)
+    {
+        if (targetType.IsArray)
+        {
+            return IsSimpleType(targetType.GetElementType()!);
+        }
+
+        return IsSimpleType(targetType);
+    }
+
+    private static UyumsoftOperationParameterDefinitionDto CreateParameterDefinition(
+        string name,
+        Type parameterType,
+        bool isRequired)
+    {
+        var isArray = parameterType.IsArray;
+        var valueType = isArray ? parameterType.GetElementType()! : parameterType;
+        var actualType = Nullable.GetUnderlyingType(valueType) ?? valueType;
+
+        return new UyumsoftOperationParameterDefinitionDto(
+            name,
+            $"{GetParameterTypeName(actualType)}{(isArray ? "[]" : string.Empty)}",
+            isArray,
+            isRequired,
+            GetParameterDescription(name, isArray),
+            actualType.IsEnum ? Enum.GetNames(actualType) : Array.Empty<string>());
+    }
+
+    private static string GetParameterTypeName(Type targetType)
+    {
+        targetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+        if (targetType == typeof(string))
+        {
+            return "string";
+        }
+
+        if (targetType == typeof(bool))
+        {
+            return "bool";
+        }
+
+        if (targetType == typeof(int))
+        {
+            return "int";
+        }
+
+        if (targetType == typeof(long))
+        {
+            return "long";
+        }
+
+        if (targetType == typeof(decimal))
+        {
+            return "decimal";
+        }
+
+        if (targetType == typeof(DateTime))
+        {
+            return "dateTime";
+        }
+
+        if (targetType == typeof(Guid))
+        {
+            return "guid";
+        }
+
+        return targetType.IsEnum ? targetType.Name : targetType.Name;
+    }
+
+    private static string? GetParameterDescription(string name, bool isArray) =>
+        name switch
+        {
+            "PageIndex" => "0 tabanli sayfa indexi. Bos veya eksi gelirse 0 kabul edilir.",
+            "PageSize" => "Sayfa boyutu. Bos veya 0 gelirse 50 kabul edilir.",
+            "ExecutionStartDate" => "Belge/duzenleme tarihi baslangic filtresi.",
+            "ExecutionEndDate" => "Belge/duzenleme tarihi bitis filtresi.",
+            "ActualDespatchStartDate" => "Fiili sevk tarihi baslangic filtresi.",
+            "ActualDespatchEndDate" => "Fiili sevk tarihi bitis filtresi.",
+            "CreateStartDate" => "Uyumsoft kayit/olusturma tarihi baslangic filtresi.",
+            "CreateEndDate" => "Uyumsoft kayit/olusturma tarihi bitis filtresi.",
+            "SystemCreateDateBegin" => "Sistem kullanicisi olusturma tarihi baslangic filtresi.",
+            "SystemCreateDateEnd" => "Sistem kullanicisi olusturma tarihi bitis filtresi.",
+            "FirstCreateDateBegin" => "Ilk olusturma tarihi baslangic filtresi.",
+            "FirstCreateDateEnd" => "Ilk olusturma tarihi bitis filtresi.",
+            "UpdateDateBegin" => "Guncelleme tarihi baslangic filtresi.",
+            "UpdateDateEnd" => "Guncelleme tarihi bitis filtresi.",
+            "Filter" => "Metin arama filtresi.",
+            "InvoiceIds" => "Fatura UUID filtreleri.",
+            "InvoiceNumbers" => "Fatura numarasi filtreleri.",
+            "DespatchIds" => "Irsaliye UUID filtreleri.",
+            "DespatchNumbers" => "Irsaliye numarasi filtreleri.",
+            "ReceiptAdviceIds" => "Makbuz UUID filtreleri.",
+            "ReceiptAdviceNumbers" => "Makbuz numarasi filtreleri.",
+            "Status" => "Tek durum filtresi.",
+            "Statuses" => "Durum filtreleri.",
+            "StatusInList" => "Dahil edilecek durum listesi.",
+            "StatusNotInList" => "Haric tutulacak durum listesi.",
+            "SortColumn" => "Siralama kolonu.",
+            "SortMode" => "Siralama yonu.",
+            "IsArchived" => "Arsiv durum filtresi.",
+            "OnlyNewestInvoices" => "Ayni belge icin sadece en guncel fatura kaydini getirir.",
+            "OnlyNewestDespatches" => "Ayni belge icin sadece en guncel irsaliye kaydini getirir.",
+            "SetTaken" => "Gelen belgeyi Uyumsoft tarafinda alindi/isleniyor olarak isaretler.",
+            "TargetTitle" => "Alici/unvan filtresi.",
+            "TargetTcknVkn" => "Alici VKN/TCKN filtresi.",
+            "Scenario" => "Fatura senaryo filtresi.",
+            "startDate" => "Rapor baslangic tarihi.",
+            "endDate" => "Rapor bitis tarihi.",
+            "periodFormat" => "Rapor periyot formati.",
+            "invoiceId" => "Fatura UUID bilgisi.",
+            "despatchId" => "Irsaliye UUID bilgisi.",
+            "isInbox" => "true ise gelen kutusu, false ise giden kutusu.",
+            "format" => "Tarih format degeri.",
+            "vknTckn" => "VKN/TCKN bilgisi.",
+            _ when isArray => "Ayni parameter adi tekrar edilerek coklu deger gonderilebilir; tekil ad da kabul edilir.",
+            _ => null
+        };
+
+    private static string NormalizeParameterName(string name) =>
+        name.Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .Trim()
+            .ToLowerInvariant();
 
     private static async Task<UyumsoftOperationResponseDto> InvokeInvoiceOperationAsync(
         UyumsoftServiceCatalogEntry catalog,

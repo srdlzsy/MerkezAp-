@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using Microsoft.AspNetCore.Http;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Common;
 
@@ -68,6 +69,28 @@ public abstract class UyumsoftConnectedControllerBase(
         return parameterPairs
             .Select(ParseParameter)
             .ToArray();
+    }
+
+    protected static IReadOnlyCollection<UyumsoftOperationParameterRequest> ParseParameters(
+        IQueryCollection query,
+        string[]? parameterPairs)
+    {
+        var parsedParameters = ParseParameters(parameterPairs).ToList();
+
+        foreach (var queryParameter in query)
+        {
+            if (string.Equals(queryParameter.Key, "parameter", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var value in queryParameter.Value)
+            {
+                parsedParameters.Add(new UyumsoftOperationParameterRequest(queryParameter.Key, value));
+            }
+        }
+
+        return parsedParameters;
     }
 
     private static UyumsoftOperationParameterRequest ParseParameter(string parameterPair)

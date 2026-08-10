@@ -49,7 +49,7 @@ public sealed class UyumsoftEFaturaController(IUyumsoftConnectedQueryService que
         CancellationToken cancellationToken) =>
         Ok(await InvokeOperationAsync(
             operationName,
-            ParseParameters(parameters),
+            ParseParameters(Request.Query, parameters),
             cancellationToken));
 
     [HttpGet("system/date")]

@@ -16105,7 +16105,53 @@ UI'da kullanim:
 
 - dropdown veya operasyon explorer
 - kategori bazli filtreleme
-- request formunu operasyon tipine gore dinamik cizme
+- `parameters` alanina bakarak request formunu operasyon tipine gore dinamik cizme
+- enum alanlarda `allowedValues` listesini dropdown olarak sunma
+- array alanlarda ayni parametre adiyla coklu satir gonderebilme
+
+Kisaltilmis response ornegi:
+
+```json
+[
+  {
+    "operationName": "GetOutboxInvoiceList",
+    "groupName": "Giden Fatura",
+    "soapAction": "GetOutboxInvoiceList",
+    "requestHint": "Liste sorgusu alanlarini parameter olarak gonderin.",
+    "parameters": [
+      {
+        "name": "PageIndex",
+        "type": "int",
+        "isArray": false,
+        "isRequired": false,
+        "description": "0 tabanli sayfa indexi. Bos veya eksi gelirse 0 kabul edilir.",
+        "allowedValues": []
+      },
+      {
+        "name": "PageSize",
+        "type": "int",
+        "isArray": false,
+        "isRequired": false,
+        "description": "Sayfa boyutu. Bos veya 0 gelirse 50 kabul edilir.",
+        "allowedValues": []
+      },
+      {
+        "name": "StatusInList",
+        "type": "InvoiceStatus[]",
+        "isArray": true,
+        "isRequired": false,
+        "description": "Dahil edilecek durum listesi.",
+        "allowedValues": ["NotPrepared", "NotSend", "Draft", "Canceled", "Queued", "Processing", "SentToGib", "Approved", "WaitingForAprovement", "Declined", "Return", "EArchivedCanceled", "Error"]
+      }
+    ]
+  }
+]
+```
+
+Not:
+
+- `allowedValues` Uyumsoft generated enum isimlerinden gelir; UI bu isimleri request'te aynen gondermelidir.
+- `parameters` listesi WCF operasyon imzasindan otomatik uretilir. Bu yuzden e-fatura ve e-irsaliye generic operasyon ekranlari ayni mantikla form cizebilir.
 
 #### `GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/{operationName}`
 
@@ -16116,6 +16162,8 @@ Amac:
 Query:
 
 - `parameter` tekrar eden query parametresidir ve `name=value` formatinda gonderilir
+- direkt query alanlari da desteklenir; ornek `?PageIndex=0&PageSize=50&IsArchived=false`
+- iki format birlikte gelirse hepsi ayni parameter listesine eklenir
 
 Response:
 
@@ -16177,7 +16225,9 @@ Tek endpoint uzerinden farkli operasyonlar `query string` ile de cagrilabilir.
 
 Format:
 
-- her scalar parametre icin ayri `parameter=name=value` query parametresi gonderilir
+- her scalar parametre icin ayri `parameter=name=value` query parametresi gonderilebilir
+- veya parametreler direkt query alanlari olarak gonderilebilir
+- array alanlarda direkt query formatinda ayni key tekrar edilebilir; ornek `?InvoiceIds=uuid1&InvoiceIds=uuid2`
 
 Ornekler:
 
@@ -16185,6 +16235,13 @@ Sistem tarihi formatli alma:
 
 ```http
 GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/GetSystemDateWithFormat?parameter=format=yyyy-MM-dd%20HH:mm:ss
+Authorization: Bearer {token}
+```
+
+Direkt query ile gelen fatura listesi:
+
+```http
+GET /api/entegrasyon-islemleri/uyumsoft/e-fatura/get/GetInboxInvoiceList?PageIndex=0&PageSize=50&ExecutionStartDate=2026-08-01T00:00:00&ExecutionEndDate=2026-08-10T23:59:59&OnlyNewestInvoices=true
 Authorization: Bearer {token}
 ```
 
@@ -16214,7 +16271,29 @@ Alan kurallari:
 - `parameters`
   - scalar metod argumanlari ve query model property'leri icin kullanilir
   - ornek: `format`, `invoiceId`, `despatchId`, `isInbox`, `PageIndex`, `PageSize`, `IsArchived`
-  - array alanlarda ayni `name` birden fazla kez gonderilebilir; ornek `despatchId` / `despatchIds`
+  - array alanlarda ayni `name` birden fazla kez gonderilebilir; ornek `InvoiceIds`, `StatusInList`, `DespatchIds`
+  - array alanlar icin tekil ad da kabul edilir; ornek `InvoiceId` -> `InvoiceIds`, `DespatchId` -> `DespatchIds`
+  - tarih alanlari ISO formatta gonderilmelidir; ornek `2026-08-01T00:00:00`
+  - bool alanlar `true` / `false` olarak gonderilmelidir
+  - enum alanlar icin `GET .../operations` cevabindaki `allowedValues` degerleri kullanilmalidir
+
+### E-Fatura Generic Operasyon Parametreleri
+
+UI sabit liste yazmak zorunda degildir; asagidaki liste `GET /operations` cevabindaki `parameters` alanindan okunmalidir. Yine de ana kullanim icin beklenen alanlar sunlardir:
+
+- Tekil fatura operasyonlari: `invoiceId`
+- Zarf operasyonu: `invoiceId`, `isInbox`
+- Sistem tarihi formatli: `format`
+- Kullanici alias sorgusu: `vknTckn`
+- Kullanici listesi: `PageIndex`, `PageSize`
+- Sistem kullanicisi filtreleri: `PageIndex`, `PageSize`, `Filter`, `SystemCreateDateBegin`, `SystemCreateDateEnd`, `FirstCreateDateBegin`, `FirstCreateDateEnd`, `UpdateDateBegin`, `UpdateDateEnd`
+- Gelen fatura detay/veri sorgulari: `PageIndex`, `PageSize`, `ExecutionStartDate`, `ExecutionEndDate`, `InvoiceIds`, `InvoiceNumbers`, `SetTaken`, `OnlyNewestInvoices`
+- Giden fatura detay/veri sorgulari: `PageIndex`, `PageSize`, `ExecutionStartDate`, `ExecutionEndDate`, `InvoiceIds`, `InvoiceNumbers`
+- Gelen fatura liste sorgusu: `PageIndex`, `PageSize`, `ExecutionStartDate`, `ExecutionEndDate`, `CreateStartDate`, `CreateEndDate`, `Status`, `InvoiceIds`, `InvoiceNumbers`, `StatusInList`, `StatusNotInList`, `SortColumn`, `SortMode`, `IsArchived`, `TargetTitle`, `TargetTcknVkn`, `OnlyNewestInvoices`
+- Giden fatura liste sorgusu: `PageIndex`, `PageSize`, `ExecutionStartDate`, `ExecutionEndDate`, `CreateStartDate`, `CreateEndDate`, `Status`, `InvoiceIds`, `InvoiceNumbers`, `StatusInList`, `StatusNotInList`, `SortColumn`, `SortMode`, `IsArchived`, `TargetTitle`, `TargetTcknVkn`, `Scenario`
+- Ozet rapor: `startDate`, `endDate`, `periodFormat`
+
+Durum/siralama/senaryo gibi enum alanlarin gecerli degerleri dokumanda sabit tutulmamalidir; UI `operations[].parameters[].allowedValues` listesini esas almalidir.
 
 Ornekler:
 
@@ -16942,7 +17021,16 @@ public sealed record UyumsoftOperationDefinitionDto(
     string OperationName,
     string GroupName,
     string SoapAction,
-    string RequestHint);
+    string RequestHint,
+    IReadOnlyCollection<UyumsoftOperationParameterDefinitionDto> Parameters);
+
+public sealed record UyumsoftOperationParameterDefinitionDto(
+    string Name,
+    string Type,
+    bool IsArray,
+    bool IsRequired,
+    string? Description,
+    IReadOnlyCollection<string> AllowedValues);
 
 public sealed record UyumsoftOperationResponseDto(
     string ServiceKey,
