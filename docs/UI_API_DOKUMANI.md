@@ -3883,23 +3883,26 @@ UI kullanim notu:
 
 ### Urunden Cari Onerileri
 
-Secili urun icin varsayilan tedarikciyi ve yakin gecmiste ayni urunle hareket gormus cari onerilerini getirmek icin:
+Secili urun icin varsayilan tedarikciyi, aktif satinalma sarti carilerini ve yakin gecmiste ayni urunle hareket gormus cari onerilerini getirmek icin:
 
-`GET /api/arama-islemleri/urunler/015550/cari-onerileri?take=10`
+`GET /api/arama-islemleri/urunler/015550/cari-onerileri?warehouseNo=110&take=10`
 
 Query:
 
 ```text
+warehouseNo    opsiyonel; verilmezse JWT deposu kullanilir, SATINALMA_SARTLARI.sas_depo_no icin 0 veya bu depo kabul edilir
 take    opsiyonel; default 10, max 25
 ```
 
 Onemli not:
 
 - Endpoint once stok kartini bulur; bulunamazsa `isProductFound = false` ve bos liste doner.
-- Oneriler iki kaynaktan uretilir:
+- Oneriler uc kaynaktan uretilir:
   - `varsayilan-tedarikci`: stok kartindaki `sto_sat_cari_kod`
+  - `satinalma-sarti`: `SATINALMA_SARTLARI` icindeki aktif tedarikci kayitlari
   - `stok-hareketleri`: urunun bagli oldugu yakin tarihli stok hareketleri
-- Ayni cari iki kaynaktan da gelirse `sources` alaninda iki kaynak birlikte doner.
+- Ayni cari birden fazla kaynaktan gelirse `sources` alaninda kaynaklar birlikte doner.
+- Sira: once varsayilan tedarikci, sonra aktif satinalma sarti carileri, sonra stok hareket gecmisi gelir.
 - Bu endpoint otomatik cari set etmek zorunda degildir; sadece UI'a "onerilen firma" bilgisini verir.
 
 Response:
@@ -3921,6 +3924,7 @@ Response:
       "lastMovementDate": "2026-05-01T00:00:00",
       "lastDocumentNo": "ST12026000002395",
       "sources": [
+        "satinalma-sarti",
         "stok-hareketleri",
         "varsayilan-tedarikci"
       ]
@@ -3936,7 +3940,7 @@ UI kullanim notu:
 
 ### Barkoddan Cari Bul
 
-Arama Islemleri altinda menu olarak gosterilebilecek hizli cari/firma bulma ekranidir. Backend once barkodu stokla eslestirir, sonra stok kartindaki varsayilan tedarikciyi ve yakin gecmis stok hareketlerinden cari onerilerini doner.
+Arama Islemleri altinda menu olarak gosterilebilecek hizli cari/firma bulma ekranidir. Backend once barkodu stokla eslestirir, sonra stok kartindaki varsayilan tedarikciyi, aktif satinalma sarti carilerini ve yakin gecmis stok hareketlerinden cari onerilerini doner.
 
 `GET /api/arama-islemleri/cari-bul?barcode=8690000000000&warehouseNo=110&take=10`
 
@@ -3982,6 +3986,7 @@ Response:
       "lastMovementDate": "2026-05-01T00:00:00",
       "lastDocumentNo": "ST12026000002395",
       "sources": [
+        "satinalma-sarti",
         "stok-hareketleri",
         "varsayilan-tedarikci"
       ]
@@ -3995,6 +4000,7 @@ UI kullanim notu:
 - Sol menu altinda `AramaIslemleri > CariBul` gibi ayri bir hizli ekran olarak sunulabilir.
 - `isFound = false` ise barkod/stok eslesmesi yoktur; UI "urun bulunamadi" gibi kisa bir mesaj gosterebilir.
 - `suggestions` bos ama `defaultSupplierCode` doluysa UI varsayilan tedarikciyi tek onerilen firma gibi gosterebilir.
+- `sources` icinde `satinalma-sarti` varsa cari, urunun aktif satinalma sarti kaydindan gelmistir; mal kabul/siparis senaryolarinda diger gecmis hareket onerilerinden daha guvenilir adaydir.
 
 ### Cari Ara
 
@@ -19529,7 +19535,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `BarcodeResolutionHttpRequest`: `WarehouseNo`, `OperationType`, `TargetWarehouseNo`, `SupplierCode`, `CompanyCode`, `IsRefund`, `ScreenCode`
 - `BarcodeCustomerLookupHttpRequest`: `Barcode`, `WarehouseNo`, `Take`
 - `BarcodeCustomerLookupByPathHttpRequest`: `WarehouseNo`, `Take`
-- `ProductCustomerSuggestionHttpRequest`: `Take`
+- `ProductCustomerSuggestionHttpRequest`: `WarehouseNo`, `Take`
 
 ### Siparis Request Modelleri
 

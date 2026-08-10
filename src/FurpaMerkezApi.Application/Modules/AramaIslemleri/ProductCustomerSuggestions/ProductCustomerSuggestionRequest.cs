@@ -2,4 +2,5 @@ namespace FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSugge
 
 public sealed record ProductCustomerSuggestionRequest(
     string StockCode,
-    int Take);
+    int Take,
+    int? WarehouseNo = null);

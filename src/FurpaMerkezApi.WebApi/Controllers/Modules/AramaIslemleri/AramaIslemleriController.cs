@@ -207,12 +207,17 @@ public sealed class AramaIslemleriController(
     public async Task<ActionResult<ProductCustomerSuggestionResponse>> GetProductCustomerSuggestions(
         string stockCode,
         [FromQuery] ProductCustomerSuggestionHttpRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await getProductCustomerSuggestionsUseCase.ExecuteAsync(
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo);
+
+        return Ok(await getProductCustomerSuggestionsUseCase.ExecuteAsync(
             new ProductCustomerSuggestionRequest(
                 stockCode,
-                request.Take),
+                request.Take,
+                warehouseNo),
             cancellationToken));
+    }
 
     private async Task<BarcodeCustomerSuggestionResponse> FindCustomersByBarcodeAsync(
         int warehouseNo,
@@ -246,7 +251,7 @@ public sealed class AramaIslemleriController(
         }
 
         var suggestions = await getProductCustomerSuggestionsUseCase.ExecuteAsync(
-            new ProductCustomerSuggestionRequest(resolved.StockCode, take),
+            new ProductCustomerSuggestionRequest(resolved.StockCode, take, warehouseNo),
             cancellationToken);
 
         return new BarcodeCustomerSuggestionResponse(
@@ -390,6 +395,9 @@ public sealed class BarcodeCustomerLookupByPathHttpRequest
 
 public sealed class ProductCustomerSuggestionHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
     [Range(1, 25)]
     public int Take { get; init; } = 10;
 }

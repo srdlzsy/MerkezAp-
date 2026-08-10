@@ -307,8 +307,8 @@ Notlar:
 
 ## Cari Bulma
 
-Barkod okutulup urunun varsayilan veya gecmiste kullanilmis carileri
-onerilecekse:
+Barkod okutulup urunun varsayilan, satinalma sarti olan veya gecmiste
+kullanilmis carileri onerilecekse:
 
 ```http
 GET /api/arama-islemleri/cari-bul?barcode=8690000000000&warehouseNo=110
@@ -325,8 +325,11 @@ Akis:
 
 1. Backend once barkodu `ResolveBarcodeUseCase` ile urune cozer.
 2. Urun bulunursa `urunler/{stockCode}/cari-onerileri` mantigi calisir.
-3. Varsayilan tedarikci ve yakin gecmis stok hareketlerinden cari onerileri
-   doner.
+3. Varsayilan tedarikci, `SATINALMA_SARTLARI` icindeki aktif tedarikciler
+   ve yakin gecmis stok hareketlerinden cari onerileri doner.
+4. Oneri sirasi varsayilan tedarikci, satinalma sarti, stok hareket gecmisi
+   seklindedir. `sources` alaninda `satinalma-sarti` varsa cari urune tanimli
+   satin alma sartindan gelmistir.
 
 ## Offline Okutma
 
