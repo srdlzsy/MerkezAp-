@@ -1,4 +1,4 @@
-namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+﻿namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
 internal static class AxataSynchronizationCatalog
 {
@@ -46,8 +46,8 @@ internal static class AxataSynchronizationCatalog
             "AXATA"),
         new(
             "company-receiving-sync",
-            "Firma Mal Kabul Senkronizasyonu",
-            "Firma mal kabul belgelerini manuel veya zamanli entegrasyon akisi icin hazirlar.",
+            "Verilen Firma Siparisi G01 Senkronizasyonu",
+            "Verilen firma/satinalma siparislerini AXATA G01 inbound order formatina cevirir.",
             "Mikro -> AXATA",
             true,
             "Mikro",

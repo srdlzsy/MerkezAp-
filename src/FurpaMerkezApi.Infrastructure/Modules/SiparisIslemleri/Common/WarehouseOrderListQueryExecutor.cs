@@ -1,4 +1,4 @@
-using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+﻿using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,6 +39,11 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
             baseQuery = isIssued
                 ? baseQuery.Where(order => order.ssip_girdepo == request.WarehouseNo.Value)
                 : baseQuery.Where(order => order.ssip_cikdepo == request.WarehouseNo.Value);
+        }
+
+        if (request.ExcludeAxataSent)
+        {
+            baseQuery = baseQuery.Where(order => order.ssip_special1 != "1");
         }
 
         var query =

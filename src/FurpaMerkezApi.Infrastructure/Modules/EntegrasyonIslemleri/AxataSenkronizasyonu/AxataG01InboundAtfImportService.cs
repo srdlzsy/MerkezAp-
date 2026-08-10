@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.ServiceModel;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
@@ -448,7 +448,7 @@ internal sealed class AxataG01InboundAtfImportService(
                 .AsNoTracking()
                 .Where(order =>
                     order.sip_iptal != true &&
-                    order.sip_tip == 0 &&
+                    order.sip_tip == 1 &&
                     order.sip_cins == 0 &&
                     order.sip_evrakno_seri != null &&
                     series.Contains(order.sip_evrakno_seri) &&

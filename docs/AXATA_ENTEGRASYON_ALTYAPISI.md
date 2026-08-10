@@ -1,4 +1,4 @@
-# AXATA Entegrasyon Altyapisi
+﻿# AXATA Entegrasyon Altyapisi
 
 Bu dokuman, `FurpaMerkezApi` icindeki AXATA senkronizasyon modulunun 2026-08-05 itibariyla kodda dogrulanan durumunu anlatir. Ek olarak, paylasilan `Furpa.WorkerService` teknik dokumanindaki eski worker davranislariyla mevcut API davranisini karsilastirir.
 
@@ -57,7 +57,7 @@ Bugunku net durum:
 | Outbox JSON artifact | Var |
 | `issued-warehouse-order-sync` canli dispatch | Var, `addOutboundOrder*`, hareket kodu `C01` |
 | `warehouse-inbound-order-sync` canli dispatch | Var, `addInboundOrder*`, hareket kodu `G02` |
-| `company-receiving-sync` canli dispatch | Var, `addInboundOrder*`, hareket kodu `G01` |
+| `company-receiving-sync` canli dispatch | Var, Mikro verilen firma/satinalma siparisini `addInboundOrder*` ile `G01` olarak gonderir |
 | `inventory-count-sync` canli import | Var, AXATA EXT `vw_stok_duzeltme` -> Mikro dynamic census |
 | Firma master canli dispatch | Var, `addFirmMaster` + `addFirmAddress` |
 | Urun master canli dispatch | Var, `addSKUMaster`; toplu ve urun koduyla tekli route var |
@@ -90,7 +90,7 @@ Paylasilan eski `Furpa.WorkerService` dokumanina gore aktif worker servisinde su
 | `C_02_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C02`, `Status=0` | live preview/import/ack var |
 | `C_03_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C03`, `Status=0` | live preview/import/ack var |
 | `C_04_OutBoundDeliveryWorker` | AXATA -> Mikro | `MovementType=C4`, `Status=0` | live preview/import/ack var |
-| `G_01_InboundOrderWorker` | Mikro -> AXATA | `WarehouseNo == 50`, `G01`, `addInboundOrderV2Async` | `company-receiving-sync` ile preview/outbox/live dispatch var |
+| `G_01_InboundOrderWorker` | Mikro -> AXATA | `SIPARISLER.sip_tip=1`, `sip_depono=50`, `sip_special1 != 1`, `G01`, `addInboundOrderV2Async` | `company-receiving-sync` ile preview/outbox/live dispatch var |
 | `G_01_InboundDeliveryWorker` | AXATA -> Mikro | `MovementType=G01`, ATF | live preview/import/ack var; manuel/native inbound ATF body endpoint de korunur |
 | `G_02_InboundOrderWorker` | Mikro -> AXATA | `InWarehouseNo == 50`, `G02` | `warehouse-inbound-order-sync` ile preview/outbox/live dispatch var |
 | `G_02_InboundDeliveryWorker` | AXATA -> Mikro | `MovementType=G02` | live preview/import/ack var; mevcut Mikro bekleyen sevk fisi kabul edilir |
@@ -99,6 +99,7 @@ Paylasilan eski `Furpa.WorkerService` dokumanina gore aktif worker servisinde su
 Bu tablo su anlama gelir:
 
 - API, eski worker'in ana canli akislari icin API icinden preview/import/dispatch saglar.
+- C01/C02/G01/G02 siparis dispatch task'lari zamanli/canli calismada `Special1=1` olan kaynak siparis satirlarini tekrar aday yapmaz; AXATA basarili donerse kaynak sipariste `Special1=1` bayragi atilir.
 - C01/C02/C03/C4/G01/G02/DynamicCensus import tarafinda eski worker'a gore daha guvenli sira vardir: once Mikro yazilir, sonra istenirse AXATA ack atilir.
 - Manuel body endpointleri kaldirilmamistir; operasyonel kurtarma ve elle gelen AXATA body verisi icin kullanilmaya devam eder.
 
@@ -385,6 +386,9 @@ Destekleyen task'lar:
   - Varsayilan WCF operation fallback: `addInboundOrder`
   - Config ile genelde `addInboundOrderV2`
   - Hareket tipi: `G01`
+  - Kaynak Mikro evraki: verilen firma/satinalma siparisi, `SIPARISLER.sip_tip=1`
+  - Zamanli/live aday filtresi: acik siparis, `sip_special1 != 1`, kalan miktar
+  - Basarili live dispatch sonrasi kaynak satirlarda `sip_special1 = 1`
   - Master alanlari worker parity:
     - `S13HKOD = G01`
     - `S13BNUM = DocumentSerie.DocumentOrderNo`

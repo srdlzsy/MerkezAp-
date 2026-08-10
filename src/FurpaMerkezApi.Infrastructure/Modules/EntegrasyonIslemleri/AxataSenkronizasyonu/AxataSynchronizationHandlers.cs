@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
@@ -270,7 +270,8 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
     WarehouseOrderDetailQueryExecutor detailQueryExecutor,
     IOptionsMonitor<AxataSynchronizationOptions> options,
     AxataSynchronizationOutboxWriter outboxWriter,
-    AxataSynchronizationLiveTransportService liveTransportService)
+    AxataSynchronizationLiveTransportService liveTransportService,
+    AxataOrderSentFlagService sentFlagService)
     : IAxataSynchronizationTaskHandler
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
@@ -349,12 +350,19 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
                         $"AXATA C01 cikis siparisi gonderilemedi. Belge={document.DocumentSerie}.{document.DocumentOrderNo}, State={dispatch.ServiceState}, Message={dispatch.ServiceMessage}");
                 }
 
+                var markResult = await sentFlagService.MarkWarehouseOrderAsSentAsync(
+                    new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                    AxataWarehouseOrderDirection,
+                    cancellationToken);
+
                 payloadDocuments.Add(new
                 {
                     document = $"{document.DocumentSerie}.{document.DocumentOrderNo}",
                     dispatch.OperationName,
                     dispatch.ServiceState,
-                    dispatch.ServiceMessage
+                    dispatch.ServiceMessage,
+                    sentFlagLineCount = markResult.LineCount,
+                    sentFlagWriteChannel = markResult.WriteChannel
                 });
                 continue;
             }
@@ -394,7 +402,7 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
         var endDate = DateTime.Today;
         var startDate = endDate.AddDays(-(normalizedLookbackDays - 1));
 
-        return new WarehouseOrderListRequest(warehouseNo, startDate, endDate);
+        return new WarehouseOrderListRequest(warehouseNo, startDate, endDate, true);
     }
 
     private static int GetRequiredWarehouseNo(AxataSynchronizationTaskExecutionContext context) =>
@@ -421,7 +429,8 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
     CompanyOrderDetailQueryExecutor detailQueryExecutor,
     IOptionsMonitor<AxataSynchronizationOptions> options,
     AxataSynchronizationOutboxWriter outboxWriter,
-    AxataSynchronizationLiveTransportService liveTransportService)
+    AxataSynchronizationLiveTransportService liveTransportService,
+    AxataOrderSentFlagService sentFlagService)
     : IAxataSynchronizationTaskHandler
 {
     private const CompanyOrderListDirection AxataCompanyOrderDirection = CompanyOrderListDirection.Received;
@@ -499,12 +508,19 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
                         $"AXATA C02 cikis siparisi gonderilemedi. Belge={document.DocumentSerie}.{document.DocumentOrderNo}, State={dispatch.ServiceState}, Message={dispatch.ServiceMessage}");
                 }
 
+                var markResult = await sentFlagService.MarkCompanyOrderAsSentAsync(
+                    new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                    AxataCompanyOrderDirection,
+                    cancellationToken);
+
                 payloadDocuments.Add(new
                 {
                     document = $"{document.DocumentSerie}.{document.DocumentOrderNo}",
                     dispatch.OperationName,
                     dispatch.ServiceState,
-                    dispatch.ServiceMessage
+                    dispatch.ServiceMessage,
+                    sentFlagLineCount = markResult.LineCount,
+                    sentFlagWriteChannel = markResult.WriteChannel
                 });
                 continue;
             }
@@ -544,7 +560,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
         var endDate = DateTime.Today;
         var startDate = endDate.AddDays(-(normalizedLookbackDays - 1));
 
-        return new CompanyOrderListRequest(warehouseNo, startDate, endDate, null, true);
+        return new CompanyOrderListRequest(warehouseNo, startDate, endDate, null, true, true);
     }
 
     private static int GetRequiredWarehouseNo(AxataSynchronizationTaskExecutionContext context) =>
@@ -571,7 +587,8 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
     WarehouseOrderDetailQueryExecutor detailQueryExecutor,
     IOptionsMonitor<AxataSynchronizationOptions> options,
     AxataSynchronizationOutboxWriter outboxWriter,
-    AxataSynchronizationLiveTransportService liveTransportService)
+    AxataSynchronizationLiveTransportService liveTransportService,
+    AxataOrderSentFlagService sentFlagService)
     : IAxataSynchronizationTaskHandler
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Issued;
@@ -650,12 +667,19 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
                         $"AXATA G02 giris siparisi gonderilemedi. Belge={document.DocumentSerie}.{document.DocumentOrderNo}, State={dispatch.ServiceState}, Message={dispatch.ServiceMessage}");
                 }
 
+                var markResult = await sentFlagService.MarkWarehouseOrderAsSentAsync(
+                    new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                    AxataWarehouseOrderDirection,
+                    cancellationToken);
+
                 payloadDocuments.Add(new
                 {
                     document = $"{document.DocumentSerie}.{document.DocumentOrderNo}",
                     dispatch.OperationName,
                     dispatch.ServiceState,
-                    dispatch.ServiceMessage
+                    dispatch.ServiceMessage,
+                    sentFlagLineCount = markResult.LineCount,
+                    sentFlagWriteChannel = markResult.WriteChannel
                 });
                 continue;
             }
@@ -695,7 +719,7 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
         var endDate = DateTime.Today;
         var startDate = endDate.AddDays(-(normalizedLookbackDays - 1));
 
-        return new WarehouseOrderListRequest(warehouseNo, startDate, endDate);
+        return new WarehouseOrderListRequest(warehouseNo, startDate, endDate, true);
     }
 
     private static int GetRequiredWarehouseNo(AxataSynchronizationTaskExecutionContext context) =>
@@ -718,13 +742,16 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
 }
 
 internal sealed class CompanyReceivingSyncTaskHandler(
-    CompanyMovementListQueryExecutor listQueryExecutor,
-    CompanyMovementDetailQueryExecutor detailQueryExecutor,
+    CompanyOrderListQueryExecutor listQueryExecutor,
+    CompanyOrderDetailQueryExecutor detailQueryExecutor,
     IOptionsMonitor<AxataSynchronizationOptions> options,
     AxataSynchronizationOutboxWriter outboxWriter,
-    AxataSynchronizationLiveTransportService liveTransportService)
+    AxataSynchronizationLiveTransportService liveTransportService,
+    AxataOrderSentFlagService sentFlagService)
     : IAxataSynchronizationTaskHandler
 {
+    private const CompanyOrderListDirection AxataCompanyOrderDirection = CompanyOrderListDirection.Issued;
+
     public string Code => "company-receiving-sync";
 
     public async Task<AxataSynchronizationPreviewDto> PreviewAsync(
@@ -733,10 +760,10 @@ internal sealed class CompanyReceivingSyncTaskHandler(
         CancellationToken cancellationToken)
     {
         var warehouseNo = GetRequiredWarehouseNo(context);
-        var request = CreateCompanyMovementListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
+        var request = CreateCompanyOrderListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
         var documents = await listQueryExecutor.ExecuteAsync(
             request,
-            CompanyMovementKind.IncomingShipment,
+            AxataCompanyOrderDirection,
             cancellationToken);
 
         var selected = documents.Take(take).ToArray();
@@ -745,14 +772,14 @@ internal sealed class CompanyReceivingSyncTaskHandler(
         foreach (var document in selected)
         {
             var detail = await detailQueryExecutor.ExecuteAsync(
-                new CompanyMovementDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
-                CompanyMovementKind.IncomingShipment,
+                new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                AxataCompanyOrderDirection,
                 cancellationToken);
 
-            var payload = AxataSynchronizationPayloadFactory.BuildCompanyReceivingDocument(detail);
+            var payload = AxataSynchronizationPayloadFactory.BuildCompanyOrderDocument(detail);
             previewItems.Add(new AxataSynchronizationPreviewItemDto(
                 $"{document.DocumentSerie}.{document.DocumentOrderNo}",
-                $"{document.CustomerDisplayName} / {document.TotalQuantity:0.##} miktar",
+                $"{document.CustomerDisplayName} / {document.LineCount} satir / {document.TotalRemainingQuantity:0.##} kalan miktar",
                 JsonSerializer.Serialize(payload, AxataSynchronizationJson.Options)));
         }
 
@@ -764,7 +791,7 @@ internal sealed class CompanyReceivingSyncTaskHandler(
             previewItems.Count,
             DateTime.UtcNow,
             previewItems,
-            [$"Son {Math.Max(1, options.CurrentValue.DefaultLookbackDays)} gun icindeki firma mal kabul belgeleri tarandi."]);
+            [$"Son {Math.Max(1, options.CurrentValue.DefaultLookbackDays)} gun icindeki acik verilen firma/satinalma siparisleri AXATA G01 icin tarandi."]);
     }
 
     public async Task<AxataSynchronizationTaskExecutionResult> ExecuteAsync(
@@ -772,10 +799,10 @@ internal sealed class CompanyReceivingSyncTaskHandler(
         CancellationToken cancellationToken)
     {
         var warehouseNo = GetRequiredWarehouseNo(context);
-        var request = CreateCompanyMovementListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
+        var request = CreateCompanyOrderListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
         var documents = await listQueryExecutor.ExecuteAsync(
             request,
-            CompanyMovementKind.IncomingShipment,
+            AxataCompanyOrderDirection,
             cancellationToken);
 
         var payloadDocuments = new List<object>(documents.Count);
@@ -783,8 +810,8 @@ internal sealed class CompanyReceivingSyncTaskHandler(
         foreach (var document in documents)
         {
             var detail = await detailQueryExecutor.ExecuteAsync(
-                new CompanyMovementDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
-                CompanyMovementKind.IncomingShipment,
+                new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                AxataCompanyOrderDirection,
                 cancellationToken);
 
             if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
@@ -799,24 +826,31 @@ internal sealed class CompanyReceivingSyncTaskHandler(
                         $"AXATA G01 giris siparisi gonderilemedi. Belge={document.DocumentSerie}.{document.DocumentOrderNo}, State={dispatch.ServiceState}, Message={dispatch.ServiceMessage}");
                 }
 
+                var markResult = await sentFlagService.MarkCompanyOrderAsSentAsync(
+                    new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                    AxataCompanyOrderDirection,
+                    cancellationToken);
+
                 payloadDocuments.Add(new
                 {
                     document = $"{document.DocumentSerie}.{document.DocumentOrderNo}",
                     dispatch.OperationName,
                     dispatch.ServiceState,
-                    dispatch.ServiceMessage
+                    dispatch.ServiceMessage,
+                    sentFlagLineCount = markResult.LineCount,
+                    sentFlagWriteChannel = markResult.WriteChannel
                 });
                 continue;
             }
 
-            payloadDocuments.Add(AxataSynchronizationPayloadFactory.BuildCompanyReceivingDocument(detail));
+            payloadDocuments.Add(AxataSynchronizationPayloadFactory.BuildCompanyOrderDocument(detail));
         }
 
         if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
         {
             return new AxataSynchronizationTaskExecutionResult(
                 payloadDocuments.Count,
-                $"{payloadDocuments.Count} firma mal kabul belgesi AXATA G01 inbound order olarak canli gonderildi.",
+                $"{payloadDocuments.Count} verilen firma/satinalma siparisi AXATA G01 inbound order olarak canli gonderildi.",
                 Array.Empty<AxataSynchronizationJobArtifactDto>());
         }
 
@@ -834,17 +868,17 @@ internal sealed class CompanyReceivingSyncTaskHandler(
 
         return new AxataSynchronizationTaskExecutionResult(
             payloadDocuments.Count,
-            $"{payloadDocuments.Count} firma mal kabul belgesi payload'a donusturuldu.",
+            $"{payloadDocuments.Count} verilen firma/satinalma siparisi payload'a donusturuldu.",
             artifacts);
     }
 
-    private static CompanyMovementListRequest CreateCompanyMovementListRequest(int lookbackDays, int warehouseNo)
+    private static CompanyOrderListRequest CreateCompanyOrderListRequest(int lookbackDays, int warehouseNo)
     {
         var normalizedLookbackDays = Math.Max(1, lookbackDays);
         var endDate = DateTime.Today;
         var startDate = endDate.AddDays(-(normalizedLookbackDays - 1));
 
-        return new CompanyMovementListRequest(warehouseNo, startDate, endDate);
+        return new CompanyOrderListRequest(warehouseNo, startDate, endDate, null, true, true);
     }
 
     private static int GetRequiredWarehouseNo(AxataSynchronizationTaskExecutionContext context) =>

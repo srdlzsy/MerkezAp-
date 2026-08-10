@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.ServiceModel;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
@@ -163,7 +163,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
 
     public async Task<AxataLiveDispatchResult> DispatchCompanyReceivingAsync(
         AxataSynchronizationTaskExecutionContext context,
-        CompanyMovementDetailDto detail,
+        CompanyOrderDetailDto detail,
         CancellationToken cancellationToken)
     {
         var configuration = GetRequiredConfiguration();
@@ -187,7 +187,8 @@ internal sealed class AxataSynchronizationLiveTransportService(
             SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
             [
                 $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
-                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi."
+                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
+                $"G01 satici/tedarikci kodu {detail.Header.CustomerCode} olarak gonderildi."
             ]);
     }
 
@@ -339,12 +340,12 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 Truncate(item.AddressLine2, 100),
                 string.Empty));
 
-    private static AxataLegacyInboundOrderPayload BuildInboundOrderPayload(CompanyMovementDetailDto detail)
+    private static AxataLegacyInboundOrderPayload BuildInboundOrderPayload(CompanyOrderDetailDto detail)
     {
         var documentNumber = BuildDocumentNumber(detail.Header.DocumentSerie, detail.Header.DocumentOrderNo);
         var movementCode = DefaultInboundMovementCode;
-        var orderDate = (detail.Header.DocumentDate ?? detail.Header.MovementCreateDate).Date;
-        var deliveryDate = (detail.Header.MovementDate ?? detail.Header.DocumentDate ?? detail.Header.MovementCreateDate).Date;
+        var orderDate = detail.Header.DocumentDate.Date;
+        var deliveryDate = (detail.Header.DeliveryDate ?? detail.Header.DocumentDate).Date;
 
         return new AxataLegacyInboundOrderPayload(
             documentNumber,
@@ -359,6 +360,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 deliveryDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)),
             detail.Items
                 .OrderBy(item => item.LineNo)
+                .Where(item => item.RemainingQuantity > 0d || item.Quantity > 0d)
                 .Select(item => new AxataLegacyInboundOrderLine(
                     DefaultBranchCode,
                     movementCode,
@@ -367,7 +369,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     item.LineNo,
                     item.StockCode,
                     detail.Header.CustomerCode,
-                    item.Quantity,
+                    item.RemainingQuantity > 0d ? item.RemainingQuantity : item.Quantity,
                     orderDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture),
                     deliveryDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)))
                 .ToArray());

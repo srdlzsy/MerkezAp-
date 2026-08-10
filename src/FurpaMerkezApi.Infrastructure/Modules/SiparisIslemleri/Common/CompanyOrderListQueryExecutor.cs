@@ -1,4 +1,4 @@
-using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+﻿using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -47,6 +47,11 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
         if (onlyOpen)
         {
             orders = orders.Where(order => order.sip_iptal != true && order.sip_kapat_fl != true);
+        }
+
+        if (request.ExcludeAxataSent)
+        {
+            orders = orders.Where(order => order.sip_special1 != "1");
         }
 
         var groupedQuery =

@@ -14446,7 +14446,7 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - `issued-warehouse-order-sync` worker parity icin `C01` hareket kodu ile `addOutboundOrder*` operasyonunu kullanir
   - `issued-warehouse-order-sync` basarili donerse `ssip_special1=1` bayragi `MikroWriteRouting:IssuedWarehouseOrder=Database` iken DB update ile, `MikroApi` iken `POST /Api/apiMethods/DepolarArasiSiparisDuzeltV2` ile satir `ssip_Guid` degerleri uzerinden yazilir; MikroApi modunda DB fallback yoktur ve yazim read-only geri okuma ile dogrulanir
   - `warehouse-inbound-order-sync` worker parity icin `G02` hareket kodu ile `addInboundOrder*` operasyonunu kullanir; basarili donerse `ssip_special1=1` bayragi `ssip_girdepo = warehouseNo` evreninde isaretlenir
-  - `company-receiving-sync` worker parity icin `G01` hareket kodu ile `addInboundOrder*` operasyonunu kullanir
+  - `company-receiving-sync` worker parity icin verilen firma/satinalma siparisini `G01` hareket kodu ile `addInboundOrder*` operasyonuna gonderir; basarili donerse `sip_special1=1` bayragi isaretlenir
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/dispatch-batch`
   - secilen birden fazla evraki canli WCF dispatch ile toplu gonderir
   - response `AxataSynchronizationManualDispatchBatchDto`
@@ -15320,6 +15320,8 @@ Entegrasyon modulu notlari:
 - `issued-warehouse-order-sync`, `warehouse-inbound-order-sync`, `company-receiving-sync` ve `inventory-count-sync` task'larinda `warehouseNo` gerekir
 - `issued-warehouse-order-sync` icin `warehouseNo` AXATA kaynak/cikis depodur; aday liste, task preview, execute ve dispatch ayni `ssip_cikdepo` evrenine bakar
 - `warehouse-inbound-order-sync` icin `warehouseNo` AXATA hedef/giris depodur; aday liste, task preview, execute ve dispatch ayni `ssip_girdepo` evrenine bakar
+- `company-receiving-sync` ismine ragmen firma mal kabul fisini degil, `SIPARISLER.sip_tip=1` verilen firma/satinalma siparisini AXATA `G01` inbound order olarak gonderir
+- Zamanli/live C01/C02/G01/G02 dispatch task'lari `Special1=1` olan kaynak siparisleri tekrar aday yapmaz; AXATA basarili donerse kaynak siparis satirlari `Special1=1` olarak isaretlenir
 - `firm-master-sync` ve `product-master-sync` depo bagimsiz task'lardir
 - `manual/tasks/{taskCode}/documents/*` endpoint'leri yalnizca evrak bazli task'larda kullanilmalidir
 - `manual/tasks/{taskCode}/documents/dispatch*` endpoint'leri yalnizca AXATA'ya canli gonderim icindir; `Outbox` yerine kullanilir
@@ -15352,7 +15354,7 @@ UI task/aksiyon matrisi:
 | `issued-warehouse-order-sync` | Var | Var | Var | Var | Mikro -> AXATA manuel kurtarma icin ana task |
 | `received-company-order-sync` | Var | Var | Var | Var | Mikro -> AXATA C02 alinan firma siparisi |
 | `warehouse-inbound-order-sync` | Var | Var | Var | Var | Mikro -> AXATA G02 giris siparisi icin ana task |
-| `company-receiving-sync` | Var | Var | Var | Var | Mikro -> AXATA manuel kurtarma icin ana task |
+| `company-receiving-sync` | Var | Var | Var | Var | Mikro -> AXATA G01 verilen firma/satinalma siparisi |
 | `inventory-count-sync` | Var | Var | Var | Var | DryRun/Outbox Mikro sayim payload; Live AXATA DynamicCensus import |
 
 UI manuel aktarim senaryolari:
@@ -15364,7 +15366,7 @@ UI manuel aktarim senaryolari:
 - Mikro'da kesilmis `depolar-arasi-sevk` belgesi var ve bu belgenin AXATA'ya direkt gonderilmesi isteniyorsa:
   - su an hazir endpoint yok
   - UI bu belge tipi icin AXATA'ya manuel dispatch aksiyonu gostermemelidir
-- Mikro'da firma mal kabul belgesi var ve AXATA'ya yeniden gonderilecekse:
+- Mikro'da verilen firma/satinalma siparisi var ve AXATA G01 inbound order olarak yeniden gonderilecekse:
   - `manual/tasks/company-receiving-sync/documents/candidates`
   - `manual/tasks/company-receiving-sync/documents/preview`
   - gerekiyorsa `.../dispatch` veya `.../dispatch-batch`
@@ -19840,7 +19842,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `POST /api/integrations/axata-sync/live/axata/inbound-deliveries/g02/documents/{documentSerie}/{documentOrderNo}/import` body'de `status` ve `acknowledge` alir; `acknowledge=false` kontrollu rescue icin onerilir
 - `ExecutionMode` su an yalnizca `DryRun` veya `Outbox` olabilir
 - `dispatch` ve `dispatch-batch` endpoint'leri `ExecutionMode` almaz; bunlar dogrudan canli AXATA WCF gonderimidir
-- `issued-warehouse-order-sync` dispatch payload'i worker parity icin `C01`, `company-receiving-sync` dispatch payload'i `G01` hareket kodu ile gonderilir
+- `issued-warehouse-order-sync` dispatch payload'i worker parity icin `C01`, `company-receiving-sync` dispatch payload'i verilen firma/satinalma siparisinden uretilip `G01` hareket kodu ile gonderilir
   - `warehouse-inbound-order-sync` dispatch payload'i worker parity icin `G02` hareket kodu ile `addInboundOrder*` operasyonuna gider
 - `manual/tasks/{taskCode}/documents/preview` ve `manual/tasks/{taskCode}/documents/execute` request body alanlari task'a gore kullanilir:
   - `issued-warehouse-order-sync`: `DocumentSerie` + `DocumentOrderNo`

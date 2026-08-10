@@ -1,9 +1,7 @@
-using System.Text.Json;
-using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+﻿using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
-using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -19,12 +17,11 @@ internal sealed class AxataSynchronizationManualDocumentService(
     WarehouseOrderDetailQueryExecutor warehouseOrderDetailQueryExecutor,
     CompanyOrderListQueryExecutor companyOrderListQueryExecutor,
     CompanyOrderDetailQueryExecutor companyOrderDetailQueryExecutor,
-    CompanyMovementListQueryExecutor companyMovementListQueryExecutor,
-    CompanyMovementDetailQueryExecutor companyMovementDetailQueryExecutor,
     InventoryCountListQueryExecutor inventoryCountListQueryExecutor,
     InventoryCountDetailQueryExecutor inventoryCountDetailQueryExecutor,
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
+    AxataOrderSentFlagService sentFlagService,
     MikroWriteDbContext mikroWriteDbContext,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
@@ -33,6 +30,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
     private const WarehouseOrderListDirection AxataOutboundWarehouseOrderDirection = WarehouseOrderListDirection.Received;
     private const WarehouseOrderListDirection AxataInboundWarehouseOrderDirection = WarehouseOrderListDirection.Issued;
     private const CompanyOrderListDirection AxataReceivedCompanyOrderDirection = CompanyOrderListDirection.Received;
+    private const CompanyOrderListDirection AxataIssuedCompanyOrderDirection = CompanyOrderListDirection.Issued;
     private const short MikroUserNo = 39;
     private const string CompletedStatus = "1";
     private const string DepolarArasiSiparisDuzeltPath = "/Api/apiMethods/DepolarArasiSiparisDuzeltV2";
@@ -174,9 +172,9 @@ internal sealed class AxataSynchronizationManualDocumentService(
             }
             case "company-receiving-sync":
             {
-                var documents = await companyMovementListQueryExecutor.ExecuteAsync(
-                    new CompanyMovementListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
-                    CompanyMovementKind.IncomingShipment,
+                var documents = await companyOrderListQueryExecutor.ExecuteAsync(
+                    new CompanyOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate, null, true),
+                    AxataIssuedCompanyOrderDirection,
                     cancellationToken);
                 totalRecordCount = documents.Count;
                 items = documents
@@ -184,16 +182,16 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     .Take(criteria.Take)
                     .Select(document => new AxataSynchronizationManualDocumentCandidateItemDto(
                         $"{document.DocumentSerie}.{document.DocumentOrderNo}",
-                        $"{document.CustomerDisplayName} / {document.LineCount} satir / {document.TotalQuantity:0.##} miktar",
+                        $"{document.CustomerDisplayName} / {document.LineCount} satir / {document.TotalRemainingQuantity:0.##} kalan miktar",
                         document.DocumentSerie,
                         document.DocumentOrderNo,
                         null,
                         document.DocumentDate,
-                        document.DocumentNo,
+                        document.DocumentNumber,
                         document.LineCount,
-                        document.TotalQuantity))
+                        document.TotalRemainingQuantity))
                     .ToArray();
-                notes.Add("Firma mal kabul belgeleri Mikro listesinden okundu.");
+                notes.Add("AXATA G01 verilen firma/satinalma siparisleri Mikro listesinden okundu.");
                 break;
             }
             case "inventory-count-sync":
@@ -433,15 +431,15 @@ internal sealed class AxataSynchronizationManualDocumentService(
             }
             case "company-receiving-sync":
             {
-                var detailRequest = CreateCompanyMovementRequest(input, warehouseNo);
-                var detail = await companyMovementDetailQueryExecutor.ExecuteAsync(
+                var detailRequest = CreateCompanyOrderRequest(input, warehouseNo);
+                var detail = await companyOrderDetailQueryExecutor.ExecuteAsync(
                     detailRequest,
-                    CompanyMovementKind.IncomingShipment,
+                    AxataIssuedCompanyOrderDirection,
                     cancellationToken);
 
-                payload = AxataSynchronizationPayloadFactory.BuildCompanyReceivingDocument(detail);
+                payload = AxataSynchronizationPayloadFactory.BuildCompanyOrderDocument(detail);
                 documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
-                notes.Add("Firma mal kabul belgesi Mikro'dan okunup AXATA payload formatina hazirlandi.");
+                notes.Add("AXATA G01 verilen firma/satinalma siparisi Mikro'dan okunup payload formatina hazirlandi.");
                 break;
             }
             case "inventory-count-sync":
@@ -572,14 +570,26 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     detail,
                     cancellationToken);
                 notes.Add("AXATA C02 alinan firma siparisi task bazli canli dispatch akisi ile gonderildi.");
+
+                if (dispatchResult.IsSuccess)
+                {
+                    var markResult = await sentFlagService.MarkCompanyOrderAsSentAsync(
+                        detailRequest,
+                        AxataReceivedCompanyOrderDirection,
+                        cancellationToken);
+                    notes.Add(markResult.LineCount > 0
+                        ? $"{markResult.LineCount} Mikro siparis satirinda sip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
+                        : "UYARI: AXATA Success dondu ancak Mikro sip_special1 bayragi icin eslesen C02 satiri bulunamadi.");
+                }
+
                 break;
             }
             case "company-receiving-sync":
             {
-                var detailRequest = CreateCompanyMovementRequest(input, warehouseNo);
-                var detail = await companyMovementDetailQueryExecutor.ExecuteAsync(
+                var detailRequest = CreateCompanyOrderRequest(input, warehouseNo);
+                var detail = await companyOrderDetailQueryExecutor.ExecuteAsync(
                     detailRequest,
-                    CompanyMovementKind.IncomingShipment,
+                    AxataIssuedCompanyOrderDirection,
                     cancellationToken);
 
                 documentReference = $"{detailRequest.DocumentSerie}.{detailRequest.DocumentOrderNo}";
@@ -587,7 +597,19 @@ internal sealed class AxataSynchronizationManualDocumentService(
                     context,
                     detail,
                     cancellationToken);
-                notes.Add("Firma mal kabul belgesi task bazli AXATA canli dispatch akisi ile gonderildi.");
+                notes.Add("AXATA G01 verilen firma/satinalma siparisi task bazli canli dispatch akisi ile gonderildi.");
+
+                if (dispatchResult.IsSuccess)
+                {
+                    var markResult = await sentFlagService.MarkCompanyOrderAsSentAsync(
+                        detailRequest,
+                        AxataIssuedCompanyOrderDirection,
+                        cancellationToken);
+                    notes.Add(markResult.LineCount > 0
+                        ? $"{markResult.LineCount} Mikro siparis satirinda sip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
+                        : "UYARI: AXATA Success dondu ancak Mikro sip_special1 bayragi icin eslesen G01 satiri bulunamadi.");
+                }
+
                 break;
             }
             case "inventory-count-sync":
@@ -803,25 +825,6 @@ internal sealed class AxataSynchronizationManualDocumentService(
             input.DocumentOrderNo.Value);
     }
 
-    private static CompanyMovementDetailRequest CreateCompanyMovementRequest(
-        AxataSynchronizationManualDocumentInput input,
-        int warehouseNo)
-    {
-        if (string.IsNullOrWhiteSpace(input.DocumentSerie))
-        {
-            throw new ArgumentException("Document serie is required for company receiving sync.", nameof(input));
-        }
-
-        if (!input.DocumentOrderNo.HasValue || input.DocumentOrderNo.Value < 0)
-        {
-            throw new ArgumentException("Document order no must be zero or greater for company receiving sync.", nameof(input));
-        }
-
-        return new CompanyMovementDetailRequest(
-            warehouseNo,
-            input.DocumentSerie.Trim(),
-            input.DocumentOrderNo.Value);
-    }
 
     private static CompanyOrderDetailRequest CreateCompanyOrderRequest(
         AxataSynchronizationManualDocumentInput input,

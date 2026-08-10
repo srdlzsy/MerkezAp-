@@ -1,6 +1,7 @@
-namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+﻿namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 
 public sealed record WarehouseOrderListRequest(
     int? WarehouseNo,
     DateTime StartDate,
-    DateTime EndDate);
+    DateTime EndDate,
+    bool ExcludeAxataSent = false);

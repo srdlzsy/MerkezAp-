@@ -599,6 +599,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AxataSynchronizationManualDocumentService>();
         services.AddScoped<AxataSynchronizationOutboxWriter>();
         services.AddScoped<AxataSynchronizationLiveTransportService>();
+        services.AddScoped<AxataOrderSentFlagService>();
         services.AddScoped<IAxataProductSynchronizationService, AxataProductSynchronizationService>();
         services.AddScoped<AxataOutboundDeliveryImportService>();
         services.AddScoped<IAxataOutboundDeliveryImportService>(serviceProvider =>
