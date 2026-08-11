@@ -224,10 +224,11 @@ public sealed class CreateWarehouseReturnUseCase(
             documentSerie,
             documentOrderNo,
             request,
-            lines.Length,
+            lines,
             movementDate,
             documentDate,
             documentNo,
+            result.RawResponse,
             cancellationToken);
 
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
@@ -342,10 +343,11 @@ public sealed class CreateWarehouseReturnUseCase(
         string documentSerie,
         int documentOrderNo,
         CreateWarehouseReturnRequest request,
-        int expectedLineCount,
+        IReadOnlyList<CreateWarehouseReturnLineRequest> lines,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -354,7 +356,7 @@ public sealed class CreateWarehouseReturnUseCase(
                 documentSerie,
                 documentOrderNo,
                 request,
-                expectedLineCount,
+                lines.Count,
                 movementDate,
                 documentDate,
                 documentNo,
@@ -373,8 +375,64 @@ public sealed class CreateWarehouseReturnUseCase(
             }
         }
 
+        if (TryRecoverWarehouseReturnResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                documentNo,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API warehouse return create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private static bool TryRecoverWarehouseReturnResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        CreateWarehouseReturnRequest request,
+        IReadOnlyList<CreateWarehouseReturnLineRequest> lines,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string rawResponse,
+        out RecoveredWarehouseReturnCreate recovered)
+    {
+        recovered = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < lines.Count)
+        {
+            return false;
+        }
+
+        var movementGuidByRowNo = new Dictionary<int, Guid>(lines.Count);
+        for (var rowNo = 0; rowNo < lines.Count; rowNo++)
+        {
+            movementGuidByRowNo[rowNo] = responseRows[rowNo].Guid;
+        }
+
+        var firstRow = responseRows[0];
+        recovered = new RecoveredWarehouseReturnCreate(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            movementDate,
+            documentDate,
+            documentNo,
+            request.SourceWarehouseNo,
+            request.TargetWarehouseNo,
+            request.TransitWarehouseNo,
+            lines.Count,
+            lines.Sum(line => line.Quantity),
+            lines.Sum(line => line.Quantity * line.UnitPrice),
+            movementGuidByRowNo);
+
+        return true;
     }
 
     private async Task<RecoveredWarehouseReturnCreate?> TryRecoverWarehouseReturnResponseAsync(
@@ -555,6 +613,7 @@ public sealed class CreateWarehouseReturnUseCase(
             documentOrderNo,
             orderRequest,
             automaticRows,
+            result.RawResponse,
             cancellationToken);
         var recoveredGuid = recovered.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
@@ -571,6 +630,7 @@ public sealed class CreateWarehouseReturnUseCase(
         int documentOrderNo,
         CreateIssuedWarehouseOrderRequest orderRequest,
         IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -595,8 +655,42 @@ public sealed class CreateWarehouseReturnUseCase(
             }
         }
 
+        if (TryMapMikroApiAutomaticWarehouseOrderResponseRows(
+                rawResponse,
+                expectedRows,
+                out var responseRows))
+        {
+            return responseRows;
+        }
+
         throw new InvalidOperationException(
             "Mikro API automatic warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+    }
+
+    private static bool TryMapMikroApiAutomaticWarehouseOrderResponseRows(
+        string rawResponse,
+        IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        out Dictionary<int, Guid> result)
+    {
+        result = new Dictionary<int, Guid>(expectedRows.Count);
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < expectedRows.Count)
+        {
+            return false;
+        }
+
+        foreach (var expectedRow in expectedRows)
+        {
+            if (expectedRow.OrderRowNo < 0 || expectedRow.OrderRowNo >= responseRows.Count)
+            {
+                result.Clear();
+                return false;
+            }
+
+            result[expectedRow.OriginalRowNo] = responseRows[expectedRow.OrderRowNo].Guid;
+        }
+
+        return true;
     }
 
     private async Task<Dictionary<int, Guid>?> TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(

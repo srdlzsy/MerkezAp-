@@ -776,10 +776,11 @@ public sealed class CreateCompanyReceivingUseCase(
             documentOrderNo,
             request.WarehouseNo,
             customerCode,
-            movements.Count,
+            movements,
             movementDate,
             documentDate,
             documentNo,
+            result.RawResponse,
             cancellationToken);
 
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
@@ -796,12 +797,14 @@ public sealed class CreateCompanyReceivingUseCase(
         int documentOrderNo,
         int warehouseNo,
         string customerCode,
-        int expectedLineCount,
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
+        var expectedLineCount = movements.Count;
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
         {
             var response = await TryRecoverCompanyReceivingResponseAsync(
@@ -828,8 +831,68 @@ public sealed class CreateCompanyReceivingUseCase(
             }
         }
 
+        if (TryRecoverCompanyReceivingResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                warehouseNo,
+                customerCode,
+                movements,
+                movementDate,
+                documentDate,
+                documentNo,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API company receiving create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private static bool TryRecoverCompanyReceivingResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        string customerCode,
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string rawResponse,
+        out RecoveredCompanyReceivingCreate recovered)
+    {
+        recovered = default!;
+        var orderedMovements = movements
+            .OrderBy(movement => movement.sth_satirno ?? 0)
+            .ToArray();
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < orderedMovements.Length)
+        {
+            return false;
+        }
+
+        var movementGuidByRowNo = new Dictionary<int, Guid>(orderedMovements.Length);
+        for (var index = 0; index < orderedMovements.Length; index++)
+        {
+            movementGuidByRowNo[orderedMovements[index].sth_satirno ?? index] = responseRows[index].Guid;
+        }
+
+        var firstRow = responseRows[0];
+        recovered = new RecoveredCompanyReceivingCreate(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            movementDate,
+            documentDate,
+            documentNo,
+            warehouseNo,
+            customerCode,
+            orderedMovements.Length,
+            orderedMovements.Sum(movement => movement.sth_miktar ?? 0d),
+            orderedMovements.Sum(movement => movement.sth_tutar ?? 0d),
+            movementGuidByRowNo);
+
+        return true;
     }
 
     private async Task<RecoveredCompanyReceivingCreate?> TryRecoverCompanyReceivingResponseAsync(
@@ -982,10 +1045,11 @@ public sealed class CreateCompanyReceivingUseCase(
             documentOrderNo,
             request.WarehouseNo,
             customerCode,
-            orderedReturnMovements.Length,
+            orderedReturnMovements,
             movementDate,
             documentDate,
             documentNo,
+            result.RawResponse,
             cancellationToken);
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
@@ -1013,12 +1077,14 @@ public sealed class CreateCompanyReceivingUseCase(
         int documentOrderNo,
         int warehouseNo,
         string customerCode,
-        int expectedLineCount,
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
+        var expectedLineCount = movements.Count;
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
         {
             var response = await TryRecoverCompanyReceivingReturnResponseAsync(
@@ -1043,6 +1109,21 @@ public sealed class CreateCompanyReceivingUseCase(
                     TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
                     cancellationToken);
             }
+        }
+
+        if (TryRecoverCompanyReceivingResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                warehouseNo,
+                customerCode,
+                movements,
+                movementDate,
+                documentDate,
+                documentNo,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
         }
 
         throw new InvalidOperationException(

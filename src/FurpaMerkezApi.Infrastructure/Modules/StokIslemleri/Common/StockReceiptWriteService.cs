@@ -206,6 +206,7 @@ public sealed class StockReceiptWriteService(
             documentSerie,
             documentOrderNo,
             request,
+            lines,
             movementGenre,
             movementDate,
             documentDate,
@@ -213,6 +214,7 @@ public sealed class StockReceiptWriteService(
             creator,
             acceptor,
             options.ConnectionStringName,
+            result.RawResponse,
             cancellationToken);
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -237,6 +239,7 @@ public sealed class StockReceiptWriteService(
         string documentSerie,
         int documentOrderNo,
         CreateStockReceiptRequest request,
+        IReadOnlyList<CreateStockReceiptLineRequest> lines,
         byte movementGenre,
         DateTime movementDate,
         DateTime documentDate,
@@ -244,6 +247,7 @@ public sealed class StockReceiptWriteService(
         string creator,
         string acceptor,
         string writeConnectionName,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -274,8 +278,64 @@ public sealed class StockReceiptWriteService(
             }
         }
 
+        if (TryRecoverStockReceiptResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                documentNo,
+                creator,
+                acceptor,
+                writeConnectionName,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API stock receipt create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private static bool TryRecoverStockReceiptResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        CreateStockReceiptRequest request,
+        IReadOnlyList<CreateStockReceiptLineRequest> lines,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string creator,
+        string acceptor,
+        string writeConnectionName,
+        string rawResponse,
+        out CreateStockReceiptResponse response)
+    {
+        response = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < lines.Count)
+        {
+            return false;
+        }
+
+        var firstRow = responseRows[0];
+        response = new CreateStockReceiptResponse(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            movementDate,
+            documentDate,
+            documentNo,
+            request.WarehouseNo,
+            creator,
+            acceptor,
+            lines.Count,
+            lines.Sum(line => line.Quantity),
+            0d,
+            writeConnectionName);
+
+        return true;
     }
 
     private async Task<CreateStockReceiptResponse?> TryRecoverStockReceiptResponseAsync(

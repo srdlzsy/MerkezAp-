@@ -158,15 +158,29 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             documentSerie,
             documentOrderNo,
             request,
+            lines,
             orderDate,
             deliveryDate,
             options.ConnectionStringName,
+            result.RawResponse,
             cancellationToken);
+
+        var orderLineGuidByRowNo = await GetOrderLineGuidByRowNoAsync(
+            documentSerie,
+            documentOrderNo,
+            request,
+            cancellationToken);
+        if (orderLineGuidByRowNo.Count == 0)
+        {
+            orderLineGuidByRowNo = TryMapMikroApiResultRowsByRowNo(result.RawResponse, lines.Length, out var responseLineGuids)
+                ? responseLineGuids
+                : orderLineGuidByRowNo;
+        }
 
         await TryCreateGreenGrocerOrderLineSnapshotsAsync(
             request,
             lines,
-            await GetOrderLineGuidByRowNoAsync(documentSerie, documentOrderNo, request, cancellationToken),
+            orderLineGuidByRowNo,
             recovered.DocumentSerie,
             recovered.DocumentOrderNo,
             recovered.OrderDate,
@@ -193,9 +207,11 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         string documentSerie,
         int documentOrderNo,
         CreateIssuedWarehouseOrderRequest request,
+        IReadOnlyList<CreateIssuedWarehouseOrderLineRequest> lines,
         DateTime orderDate,
         DateTime deliveryDate,
         string writeConnectionName,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -222,8 +238,75 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             }
         }
 
+        if (TryRecoverWarehouseOrderResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                orderDate,
+                deliveryDate,
+                writeConnectionName,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API issued warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+    }
+
+    private static bool TryRecoverWarehouseOrderResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedWarehouseOrderRequest request,
+        IReadOnlyList<CreateIssuedWarehouseOrderLineRequest> lines,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        string writeConnectionName,
+        string rawResponse,
+        out CreateIssuedWarehouseOrderResponse response)
+    {
+        response = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < lines.Count)
+        {
+            return false;
+        }
+
+        var firstRow = responseRows[0];
+        response = new CreateIssuedWarehouseOrderResponse(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            orderDate,
+            deliveryDate,
+            request.InWarehouseNo,
+            request.OutWarehouseNo,
+            lines.Count,
+            lines.Sum(line => line.Quantity),
+            writeConnectionName);
+
+        return true;
+    }
+
+    private static bool TryMapMikroApiResultRowsByRowNo(
+        string rawResponse,
+        int expectedLineCount,
+        out Dictionary<int, Guid> result)
+    {
+        result = new Dictionary<int, Guid>(expectedLineCount);
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < expectedLineCount)
+        {
+            return false;
+        }
+
+        for (var rowNo = 0; rowNo < expectedLineCount; rowNo++)
+        {
+            result[rowNo] = responseRows[rowNo].Guid;
+        }
+
+        return true;
     }
 
     private async Task<CreateIssuedWarehouseOrderResponse?> TryRecoverWarehouseOrderResponseAsync(

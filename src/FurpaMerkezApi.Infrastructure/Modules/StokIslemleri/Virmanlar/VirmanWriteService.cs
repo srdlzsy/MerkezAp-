@@ -222,10 +222,12 @@ public sealed class VirmanWriteService(
             documentSerie,
             documentOrderNo,
             request,
+            lines,
             movementDate,
             documentDate,
             documentNo,
             options.ConnectionStringName,
+            result.RawResponse,
             cancellationToken);
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -249,10 +251,12 @@ public sealed class VirmanWriteService(
         string documentSerie,
         int documentOrderNo,
         CreateVirmanRequest request,
+        IReadOnlyList<CreateVirmanLineRequest> lines,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
         string writeConnectionName,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -280,8 +284,63 @@ public sealed class VirmanWriteService(
             }
         }
 
+        if (TryRecoverVirmanResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                documentNo,
+                writeConnectionName,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API virman create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private static bool TryRecoverVirmanResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        CreateVirmanRequest request,
+        IReadOnlyList<CreateVirmanLineRequest> lines,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string writeConnectionName,
+        string rawResponse,
+        out CreateVirmanResponse response)
+    {
+        response = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count == 0)
+        {
+            return false;
+        }
+
+        var firstRow = responseRows[0];
+        response = new CreateVirmanResponse(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            movementDate,
+            documentDate,
+            documentNo,
+            request.WarehouseNo,
+            lines
+                .SelectMany(line => ExpandMovementTypes(line.MovementType))
+                .Distinct()
+                .OrderBy(movementType => movementType)
+                .ToArray(),
+            responseRows.Count,
+            lines.Sum(line => line.Quantity),
+            0d,
+            writeConnectionName);
+
+        return true;
     }
 
     private async Task<CreateVirmanResponse?> TryRecoverVirmanResponseAsync(

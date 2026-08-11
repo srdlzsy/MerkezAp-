@@ -195,12 +195,14 @@ public sealed class CompanyMovementWriteService(
             documentSerie,
             documentOrderNo,
             request,
+            lines,
             customerCode,
             returnType,
             movementDate,
             documentDate,
             documentNo,
             options.ConnectionStringName,
+            result.RawResponse,
             cancellationToken);
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -225,12 +227,14 @@ public sealed class CompanyMovementWriteService(
         string documentSerie,
         int documentOrderNo,
         CreateCompanyMovementRequest request,
+        IReadOnlyList<CreateCompanyMovementLineRequest> lines,
         string customerCode,
         byte returnType,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
         string writeConnectionName,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -260,8 +264,61 @@ public sealed class CompanyMovementWriteService(
             }
         }
 
+        if (TryRecoverCompanyMovementResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                customerCode,
+                movementDate,
+                documentDate,
+                documentNo,
+                writeConnectionName,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API company movement create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+    }
+
+    private static bool TryRecoverCompanyMovementResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        CreateCompanyMovementRequest request,
+        IReadOnlyList<CreateCompanyMovementLineRequest> lines,
+        string customerCode,
+        DateTime movementDate,
+        DateTime documentDate,
+        string documentNo,
+        string writeConnectionName,
+        string rawResponse,
+        out CreateCompanyMovementResponse response)
+    {
+        response = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < lines.Count)
+        {
+            return false;
+        }
+
+        var firstRow = responseRows[0];
+        response = new CreateCompanyMovementResponse(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            movementDate,
+            documentDate,
+            documentNo,
+            request.WarehouseNo,
+            customerCode,
+            lines.Count,
+            lines.Sum(line => line.Quantity),
+            lines.Sum(line => line.Quantity * line.UnitPrice),
+            writeConnectionName);
+
+        return true;
     }
 
     private async Task<CreateCompanyMovementResponse?> TryRecoverCompanyMovementResponseAsync(

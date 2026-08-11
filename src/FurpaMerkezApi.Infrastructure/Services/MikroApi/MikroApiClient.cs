@@ -261,7 +261,10 @@ public sealed class MikroApiClient(
     {
         var responseInfo = ParseResponseInfo(rawResponse);
         var statusCode = responseInfo.StatusCode ?? (int)httpStatusCode;
-        var isError = !IsHttpSuccess(httpStatusCode) || responseInfo.IsError == true;
+        var isError =
+            !IsHttpSuccess(httpStatusCode) ||
+            responseInfo.IsError == true ||
+            responseInfo.StatusCode is >= 400;
         var errorMessage = ResolveErrorMessage(httpStatusCode, responseInfo, isError);
         var data = DeserializeResponse<TResponse>(rawResponse, path, httpStatusCode, statusCode, out var deserializeError);
 
@@ -320,7 +323,7 @@ public sealed class MikroApiClient(
         }
     }
 
-    private static MikroApiResponseInfo ParseResponseInfo(string rawResponse)
+    internal static MikroApiResponseInfo ParseResponseInfo(string rawResponse)
     {
         if (string.IsNullOrWhiteSpace(rawResponse))
         {
@@ -336,26 +339,93 @@ public sealed class MikroApiClient(
                 return new MikroApiResponseInfo(null, null, null);
             }
 
-            var isError = TryGetProperty(document.RootElement, "IsError", out var isErrorElement)
-                ? ReadBoolean(isErrorElement)
-                : null;
-            var statusCode = TryGetProperty(document.RootElement, "StatusCode", out var statusCodeElement)
-                ? ReadInt32(statusCodeElement)
-                : null;
-            var errorMessage =
-                TryGetStringProperty(document.RootElement, "ErrorMessage") ??
-                TryGetStringProperty(document.RootElement, "Message") ??
-                TryGetStringProperty(document.RootElement, "HataMesaji") ??
-                TryGetStringProperty(document.RootElement, "Error") ??
-                TryGetStringProperty(document.RootElement, "Aciklama");
+            var rootInfo = ReadResponseInfo(document.RootElement);
+            var nestedInfo = TryReadNestedResultInfo(document.RootElement);
 
-            return new MikroApiResponseInfo(isError, statusCode, errorMessage);
+            if (IsErrorInfo(rootInfo))
+            {
+                return rootInfo;
+            }
+
+            if (nestedInfo is not null && IsErrorInfo(nestedInfo))
+            {
+                return nestedInfo;
+            }
+
+            return new MikroApiResponseInfo(
+                rootInfo.IsError ?? nestedInfo?.IsError,
+                rootInfo.StatusCode ?? nestedInfo?.StatusCode,
+                rootInfo.ErrorMessage ?? nestedInfo?.ErrorMessage);
         }
         catch (JsonException)
         {
             return new MikroApiResponseInfo(null, null, null);
         }
     }
+
+    private static MikroApiResponseInfo ReadResponseInfo(JsonElement element)
+    {
+        var isError = TryGetProperty(element, "IsError", out var isErrorElement)
+            ? ReadBoolean(isErrorElement)
+            : null;
+        var statusCode = TryGetProperty(element, "StatusCode", out var statusCodeElement)
+            ? ReadInt32(statusCodeElement)
+            : null;
+        var errorMessage =
+            TryGetStringProperty(element, "ErrorMessage") ??
+            TryGetStringProperty(element, "Message") ??
+            TryGetStringProperty(element, "HataMesaji") ??
+            TryGetStringProperty(element, "Error") ??
+            TryGetStringProperty(element, "Aciklama");
+
+        if (isError != true && statusCode is >= 400)
+        {
+            isError = true;
+        }
+
+        return new MikroApiResponseInfo(isError, statusCode, errorMessage);
+    }
+
+    private static MikroApiResponseInfo? TryReadNestedResultInfo(JsonElement rootElement)
+    {
+        if (!TryGetProperty(rootElement, "result", out var resultElement))
+        {
+            return null;
+        }
+
+        if (resultElement.ValueKind == JsonValueKind.Object)
+        {
+            return ReadResponseInfo(resultElement);
+        }
+
+        if (resultElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        MikroApiResponseInfo? firstInfo = null;
+
+        foreach (var item in resultElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var itemInfo = ReadResponseInfo(item);
+            firstInfo ??= itemInfo;
+
+            if (IsErrorInfo(itemInfo))
+            {
+                return itemInfo;
+            }
+        }
+
+        return firstInfo;
+    }
+
+    private static bool IsErrorInfo(MikroApiResponseInfo info) =>
+        info.IsError == true || info.StatusCode is >= 400;
 
     private static string? ResolveErrorMessage(
         HttpStatusCode httpStatusCode,
@@ -389,7 +459,7 @@ public sealed class MikroApiClient(
 
         return value.ValueKind switch
         {
-            JsonValueKind.String => value.GetString()?.Trim(),
+            JsonValueKind.String => NormalizeOptional(value.GetString()),
             JsonValueKind.Number => value.GetRawText(),
             JsonValueKind.True => bool.TrueString,
             JsonValueKind.False => bool.FalseString,
@@ -411,6 +481,16 @@ public sealed class MikroApiClient(
 
         value = default;
         return false;
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
     }
 
     private static bool? ReadBoolean(JsonElement element)
@@ -526,7 +606,7 @@ public sealed class MikroApiClient(
             : path.StartsWith("/", StringComparison.Ordinal) ? path : $"/{path}";
     }
 
-    private sealed record MikroApiResponseInfo(
+    internal sealed record MikroApiResponseInfo(
         bool? IsError,
         int? StatusCode,
         string? ErrorMessage);

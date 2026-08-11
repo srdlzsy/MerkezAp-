@@ -9,7 +9,6 @@ internal static class WarehouseReceivingAcceptanceMikroApiPayloadFactory
         IReadOnlyCollection<STOK_HAREKETLERI> movements,
         IReadOnlyDictionary<Guid, double> receivedQuantitiesByMovementGuid)
     {
-        var updateUser = ResolveMikroUserNo(warehouseNo);
         var satirlar = movements
             .OrderBy(movement => movement.sth_satirno ?? 0)
             .ThenBy(movement => movement.sth_stok_kod)
@@ -18,14 +17,11 @@ internal static class WarehouseReceivingAcceptanceMikroApiPayloadFactory
                 var transitWarehouseNo = movement.sth_giris_depo_no ?? 0;
 
                 return new WarehouseReceivingAcceptanceMikroApiLine(
-                    movement.sth_Guid,
+                    movement.sth_Guid.ToString("D").ToUpperInvariant(),
                     receivedQuantitiesByMovementGuid[movement.sth_Guid],
                     warehouseNo,
                     transitWarehouseNo,
-                    1,
-                    updateUser,
-                    DateTime.Now,
-                    true);
+                    1);
             })
             .ToArray();
 
@@ -34,11 +30,6 @@ internal static class WarehouseReceivingAcceptanceMikroApiPayloadFactory
                 new WarehouseReceivingAcceptanceMikroApiDocument(satirlar)
             ]);
     }
-
-    private static short ResolveMikroUserNo(int warehouseNo) =>
-        warehouseNo is > 0 and <= short.MaxValue
-            ? Convert.ToInt16(warehouseNo)
-            : (short)39;
 }
 
 internal sealed record WarehouseReceivingAcceptanceMikroApiPayload(
@@ -48,11 +39,8 @@ internal sealed record WarehouseReceivingAcceptanceMikroApiDocument(
     IReadOnlyCollection<WarehouseReceivingAcceptanceMikroApiLine> satirlar);
 
 internal sealed record WarehouseReceivingAcceptanceMikroApiLine(
-    Guid sth_Guid,
+    string sth_Guid,
     double sth_FormulMiktar,
     int sth_giris_depo_no,
     int sth_nakliyedeposu,
-    byte sth_nakliyedurumu,
-    short sth_lastup_user,
-    DateTime sth_lastup_date,
-    bool sth_degisti);
+    byte sth_nakliyedurumu);

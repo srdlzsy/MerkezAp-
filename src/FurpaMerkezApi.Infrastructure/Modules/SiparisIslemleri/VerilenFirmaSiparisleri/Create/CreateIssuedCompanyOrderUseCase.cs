@@ -149,9 +149,11 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             documentSerie,
             documentOrderNo,
             request,
+            lines,
             orderDate,
             deliveryDate,
             options.ConnectionStringName,
+            result.RawResponse,
             cancellationToken);
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -175,9 +177,11 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         string documentSerie,
         int documentOrderNo,
         CreateIssuedCompanyOrderRequest request,
+        IReadOnlyList<CreateIssuedCompanyOrderLineRequest> lines,
         DateTime orderDate,
         DateTime deliveryDate,
         string writeConnectionName,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -204,8 +208,57 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             }
         }
 
+        if (TryRecoverCompanyOrderResponseFromMikroApiResult(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                orderDate,
+                deliveryDate,
+                writeConnectionName,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API issued company order create succeeded, but created SIPARISLER rows could not be read back.");
+    }
+
+    private static bool TryRecoverCompanyOrderResponseFromMikroApiResult(
+        string documentSerie,
+        int documentOrderNo,
+        CreateIssuedCompanyOrderRequest request,
+        IReadOnlyList<CreateIssuedCompanyOrderLineRequest> lines,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        string writeConnectionName,
+        string rawResponse,
+        out CreateIssuedCompanyOrderResponse response)
+    {
+        response = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < lines.Count)
+        {
+            return false;
+        }
+
+        var normalizedCustomerCode = request.CustomerCode.Trim();
+        var firstRow = responseRows[0];
+        response = new CreateIssuedCompanyOrderResponse(
+            firstRow.DocumentSerie ?? documentSerie,
+            firstRow.DocumentOrderNo ?? documentOrderNo,
+            orderDate,
+            deliveryDate,
+            request.WarehouseNo,
+            normalizedCustomerCode,
+            lines.Count,
+            lines.Sum(line => line.Quantity),
+            lines.Sum(line => line.Quantity * line.UnitPrice),
+            writeConnectionName);
+
+        return true;
     }
 
     private async Task<CreateIssuedCompanyOrderResponse?> TryRecoverCompanyOrderResponseAsync(

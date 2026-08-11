@@ -207,7 +207,11 @@ public sealed class InventoryCountWriteService(
         var recovered = await RecoverMikroApiCreateResponseAsync(
             request.WarehouseNo,
             traceKey,
+            documentDate,
+            name,
+            lines,
             options.ConnectionStringName,
+            result.RawResponse,
             cancellationToken);
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -356,7 +360,11 @@ public sealed class InventoryCountWriteService(
     private async Task<CreateInventoryCountResponse> RecoverMikroApiCreateResponseAsync(
         int warehouseNo,
         string traceKey,
+        DateTime documentDate,
+        string name,
+        IReadOnlyList<CreateInventoryCountLineRequest> lines,
         string writeConnectionName,
+        string rawResponse,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
@@ -380,8 +388,54 @@ public sealed class InventoryCountWriteService(
             }
         }
 
+        if (TryRecoverInventoryCountResponseFromMikroApiResult(
+                warehouseNo,
+                documentDate,
+                name,
+                lines,
+                writeConnectionName,
+                rawResponse,
+                out var recoveredFromResponse))
+        {
+            return recoveredFromResponse;
+        }
+
         throw new InvalidOperationException(
             "Mikro API inventory count create succeeded, but created SAYIM_SONUCLARI rows could not be read back.");
+    }
+
+    private static bool TryRecoverInventoryCountResponseFromMikroApiResult(
+        int warehouseNo,
+        DateTime documentDate,
+        string name,
+        IReadOnlyList<CreateInventoryCountLineRequest> lines,
+        string writeConnectionName,
+        string rawResponse,
+        out CreateInventoryCountResponse response)
+    {
+        response = default!;
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
+        if (responseRows.Count < lines.Count)
+        {
+            return false;
+        }
+
+        var documentNo = responseRows[0].DocumentOrderNo;
+        if (!documentNo.HasValue)
+        {
+            return false;
+        }
+
+        response = new CreateInventoryCountResponse(
+            documentNo.Value,
+            documentDate,
+            warehouseNo,
+            name,
+            lines.Count,
+            lines.Sum(line => line.Quantity),
+            writeConnectionName);
+
+        return true;
     }
 
     private async Task<CreateInventoryCountResponse?> TryRecoverInventoryCountResponseByTraceAsync(
