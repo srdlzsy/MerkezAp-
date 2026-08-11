@@ -1062,6 +1062,17 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - Stok hareketi yazan genisletilmis akislarda backend `clientRequestId` izini `FR` prefixli 24 karakterlik trace olarak Mikro `STOK_HAREKETLERI.sth_eticaret_kanal_kodu` alanina tasir. `MikroApi` rotasinda da ayni iz payload'a eklenir.
 - `FR` prefix'i bu alan ileride dolu goruldugunde kaydin Furpa guvenli retry izinden geldigini ayirt etmek icindir.
 
+UI davranis kurali:
+
+- `clientRequestId` form ekraninin kimligi degildir; tek mantiksal kaydetme denemesinin kimligidir.
+- UI ilk `Kaydet` aninda `clientRequestId` uretmeli, gonderilen body'nin snapshot'ini bu id ile birlikte saklamalidir.
+- Request devam ederken kaydet butonu ve form alanlari kilitlenmelidir.
+- Timeout, network kopmasi veya belirsiz sonuc olursa UI ayni body snapshot'i ve ayni `clientRequestId` ile `Tekrar Dene` yapmalidir.
+- Kullanici belirsiz kayit modundayken formu degistirmek isterse UI bunu yeni islem kabul etmeli, eski `clientRequestId` degerini birakip sonraki kaydetmede yeni `clientRequestId` uretmelidir.
+- Ayni `clientRequestId` ile farkli body gonderilip API `409 Conflict` donerse UI bunu teknik hata gibi degil, "Bu kayit denemesinin icerigi degismis; yeni islem olarak tekrar kaydedin." durumu gibi ele almalidir.
+- `409 Conflict` sonrasi kullanici devam edecekse UI yeni `clientRequestId` uretmeli ve guncel body'yi yeni kaydetme denemesi olarak gondermelidir.
+- En guvenli akista `Normal Edit Mode` alanlari degistirilebilir, `Pending/Retry Mode` alanlari kilitlidir; pending durumundan cikmak icin kullanici acikca `Yeni islem olarak duzenle` veya `Vazgec` aksiyonu secmelidir.
+
 Offline durum sorgu endpointleri:
 
 - `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}`
