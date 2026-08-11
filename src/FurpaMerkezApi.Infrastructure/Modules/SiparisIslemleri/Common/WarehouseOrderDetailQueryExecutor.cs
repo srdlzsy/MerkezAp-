@@ -9,6 +9,8 @@ public sealed class WarehouseOrderDetailQueryExecutor(
     MikroDbContext mikroDbContext,
     AuthDbContext authDbContext)
 {
+    private const double QuantityTolerance = 0.000001d;
+
     internal async Task<WarehouseOrderDetailDto> ExecuteAsync(
         WarehouseOrderDetailRequest request,
         WarehouseOrderListDirection direction,
@@ -125,6 +127,9 @@ public sealed class WarehouseOrderDetailQueryExecutor(
                 var unitPointer = NormalizeUnitPointer(row.ssip_birim_pntr);
                 var quantity = row.ssip_miktar ?? 0d;
                 var deliveredQuantity = row.ssip_teslim_miktar ?? 0d;
+                var remainingQuantity = quantity - deliveredQuantity;
+                var isClosed = row.ssip_kapat_fl == true ||
+                               deliveredQuantity + QuantityTolerance >= quantity;
 
                 return new WarehouseOrderLineItemDto(
                     row.ssip_Guid,
@@ -135,10 +140,10 @@ public sealed class WarehouseOrderDetailQueryExecutor(
                     unitPointer,
                     quantity,
                     deliveredQuantity,
-                    quantity - deliveredQuantity,
+                    remainingQuantity,
                     row.ssip_b_fiyat ?? 0d,
                     row.ssip_tutar ?? 0d,
-                    row.ssip_kapat_fl ?? false,
+                    isClosed,
                     row.ssip_aciklama ?? string.Empty,
                     row.ssip_paket_kod ?? string.Empty,
                     row.ssip_projekodu ?? string.Empty,

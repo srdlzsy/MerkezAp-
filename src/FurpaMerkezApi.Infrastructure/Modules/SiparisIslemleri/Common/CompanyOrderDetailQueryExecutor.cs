@@ -6,6 +6,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 
 public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContext)
 {
+    private const double QuantityTolerance = 0.000001d;
+
     internal async Task<CompanyOrderDetailDto> ExecuteAsync(
         CompanyOrderDetailRequest request,
         CompanyOrderListDirection direction,
@@ -130,6 +132,9 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
                 var unitPointer = NormalizeUnitPointer(row.sip_birim_pntr);
                 var quantity = row.sip_miktar ?? 0d;
                 var deliveredQuantity = row.sip_teslim_miktar ?? 0d;
+                var remainingQuantity = quantity - deliveredQuantity;
+                var isClosed = row.sip_kapat_fl == true ||
+                               deliveredQuantity + QuantityTolerance >= quantity;
 
                 return new CompanyOrderLineItemDto(
                     row.sip_satirno ?? 0,
@@ -139,10 +144,10 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
                     unitPointer,
                     quantity,
                     deliveredQuantity,
-                    quantity - deliveredQuantity,
+                    remainingQuantity,
                     row.sip_b_fiyat ?? 0d,
                     row.sip_tutar ?? 0d,
-                    row.sip_kapat_fl ?? false,
+                    isClosed,
                     row.sip_aciklama ?? string.Empty,
                     row.sip_paket_kod ?? string.Empty,
                     row.sip_projekodu ?? string.Empty,
