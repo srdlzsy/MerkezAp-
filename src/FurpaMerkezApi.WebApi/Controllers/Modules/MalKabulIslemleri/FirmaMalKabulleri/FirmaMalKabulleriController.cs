@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLookup;
@@ -122,12 +123,93 @@ public sealed class FirmaMalKabulleriController(
                 response.DocumentOrderNo,
                 DocumentFlowStep.DocumentCreated,
                 DocumentFlowStatus.Succeeded,
-                "Firma mal kabulu olusturuldu.",
+                BuildDocumentFlowMessage(request),
                 ChangedByUserId: User.GetRequiredUserId(),
-                DocumentNo: response.DocumentNo),
+                DocumentNo: response.DocumentNo,
+                ExternalDocumentNo: ResolveOfficialDocumentNo(request),
+                ExternalUuid: ResolveOfficialDocumentEttn(request)),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);
+    }
+
+    private static string BuildDocumentFlowMessage(CreateCompanyReceivingHttpRequest request)
+    {
+        var officialDocumentNo = ResolveOfficialDocumentNo(request);
+        var officialDocumentKind = ResolveOfficialDocumentKind(request);
+        var officialDocumentDate = ResolveOfficialDocumentDate(request);
+
+        if (officialDocumentNo is null && ResolveOfficialDocumentEttn(request) is null)
+        {
+            return "Firma mal kabulu olusturuldu.";
+        }
+
+        var label = officialDocumentKind switch
+        {
+            "e-invoice" => "E-Fatura",
+            "e-despatch" => "E-Irsaliye",
+            _ => "E-Belge"
+        };
+
+        var documentText = officialDocumentNo is null
+            ? label
+            : $"{label} {officialDocumentNo}";
+
+        if (officialDocumentDate.HasValue)
+        {
+            documentText += $" ({officialDocumentDate.Value:yyyy-MM-dd})";
+        }
+
+        return $"Firma mal kabulu olusturuldu. Resmi belge: {documentText}.";
+    }
+
+    private static string? ResolveOfficialDocumentKind(CreateCompanyReceivingHttpRequest request) =>
+        NormalizeOfficialDocumentKind(FirstNonEmpty(request.OfficialDocumentKind, request.SourceDocumentKind));
+
+    private static string? ResolveOfficialDocumentNo(CreateCompanyReceivingHttpRequest request) =>
+        FirstNonEmpty(
+            request.OfficialDocumentNo,
+            request.SourceDocumentNumber,
+            request.DespatchNumber,
+            request.InvoiceNumber);
+
+    private static DateTime? ResolveOfficialDocumentDate(CreateCompanyReceivingHttpRequest request) =>
+        request.OfficialDocumentDate
+        ?? request.SourceDocumentDate
+        ?? request.InvoiceDate
+        ?? request.IssueDate;
+
+    private static string? ResolveOfficialDocumentEttn(CreateCompanyReceivingHttpRequest request) =>
+        FirstNonEmpty(request.OfficialDocumentEttn, request.Ettn);
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeOfficialDocumentKind(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var normalized = value.Trim().ToLower(CultureInfo.InvariantCulture);
+
+        return normalized switch
+        {
+            "e-fatura" or "efatura" or "einvoice" or "e_invoice" or "e-invoice" => "e-invoice",
+            "e-irsaliye" or "eirsaliye" or "edespatch" or "e_despatch" or "e-despatch" => "e-despatch",
+            _ => normalized
+        };
     }
 
     private static CreateCompanyReceivingLineRequest MapLine(CreateCompanyReceivingLineHttpRequest line)
@@ -238,6 +320,38 @@ public sealed class CreateCompanyReceivingHttpRequest
         MaxCompanyReceivingDocumentNoLength,
         ErrorMessage = "DocumentNo can not be longer than 29 characters.")]
     public string? DocumentNo { get; init; }
+
+    [StringLength(30)]
+    public string? OfficialDocumentKind { get; init; }
+
+    [StringLength(50)]
+    public string? OfficialDocumentNo { get; init; }
+
+    public DateTime? OfficialDocumentDate { get; init; }
+
+    [StringLength(50)]
+    public string? OfficialDocumentEttn { get; init; }
+
+    [StringLength(30)]
+    public string? SourceDocumentKind { get; init; }
+
+    [StringLength(50)]
+    public string? SourceDocumentNumber { get; init; }
+
+    public DateTime? SourceDocumentDate { get; init; }
+
+    [StringLength(50)]
+    public string? DespatchNumber { get; init; }
+
+    public DateTime? IssueDate { get; init; }
+
+    [StringLength(50)]
+    public string? InvoiceNumber { get; init; }
+
+    public DateTime? InvoiceDate { get; init; }
+
+    [StringLength(50)]
+    public string? Ettn { get; init; }
 
     [StringLength(25)]
     public string? Deliverer { get; init; }

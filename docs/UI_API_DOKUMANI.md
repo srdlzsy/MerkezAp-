@@ -5916,6 +5916,9 @@ Onemli not:
 - Satirda `orderGuid` bos veya `null` ise siparis GUID'i bos gider ve siparis tablosuna dokunulmaz.
 - Siparis kalanindan fazla kabul varsayilan olarak engellenir. `allowOrderOverReceiving = true` gonderilirse kalan kadar siparisli, fazla kisim siparissiz hareket olarak bolunur.
 - `documentNo` opsiyoneldir. E-belge/e-irsaliye no varsa tam `seri + 9 haneli sayisal sira` formatinda gonderilebilir.
+- ETTN/UUID ile cozumlenen resmi belge varsa UI kaydetmede `officialDocumentKind`, `officialDocumentNo`, `officialDocumentDate` ve `officialDocumentEttn` alanlarini da gondermelidir. Backend bu bilgileri Mikro hareket satirina yazmaz; `document_flows.external_document_no` ve `document_flows.external_uuid` alanlarina iz olarak kaydeder.
+- UI lookup response'unu direkt tasimak isterse `sourceDocumentKind`, `sourceDocumentNumber`, `sourceDocumentDate`, `despatchNumber`, `issueDate`, `invoiceNumber`, `invoiceDate` ve `ettn` alias alanlari da kabul edilir. `officialDocument*` alanlari doluysa onlar onceliklidir.
+- `documentNo` Mikro `STOK_HAREKETLERI.sth_belge_no` alanina basilan tedarikci belge numarasidir. ETTN/UUID bu alana basilmaz; resmi belgeyi bulmak icin Belge Akis Takibi'nde `externalUuid` olarak aranir.
 - Ornek tam `documentNo` degerleri: `ST12026000002395`, `C682026000003472`, `FRM2026600059281`, `OY32026000000162`
 - Tam formatta `documentNo` gelirse `documentSerie` son 9 hane atilarak, `documentOrderNo` son 9 hane sayi olarak okunarak uretilir.
 - `documentNo` bos gelirse backend cari unvanindan seri uretir ve ayni depo/seri icin siradaki `documentOrderNo` degerini verir.
@@ -5937,6 +5940,10 @@ Request:
   "movementDate": "2026-04-20",
   "documentDate": "2026-04-20",
   "documentNo": "ST12026000002395",
+  "officialDocumentKind": "e-despatch",
+  "officialDocumentNo": "ST12026000002395",
+  "officialDocumentDate": "2026-04-20",
+  "officialDocumentEttn": "3fd0e4f4-87a2-43f2-b5ca-f2a4fd778111",
   "deliverer": "Teslim Eden",
   "receiver": "Teslim Alan",
   "description": "",
@@ -6093,6 +6100,9 @@ Firma mal kabul UI akisi:
 - Yeni fis icin kullanici `Yeni Mal Kabul` aksiyonuna basar. Create ekraninda cari secimi zorunludur; cari secilmeden satir kaydetme ve `Siparis Bagla` pasif kalmalidir.
 - Kullanici QR'dan ETTN/UUID okutursa UI ilk adimda `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/resmi-belge/ettn/{ettn}?documentKind=auto` cagirabilir. Bu akista backend once e-irsaliye, bulunamazsa e-fatura gelen kutusunu dener.
 - Bu response'tan `primaryCustomerSuggestion` varsa cari alani icin varsayilan onerilir; `despatchNumber` ve `issueDate` alanlari `documentNo` ve `documentDate` icin on dolum adayi olarak kullanilabilir.
+- Kaydetmede resmi belge izinin Belge Akis Takibi'ne dusmesi icin UI lookup response'undan `sourceDocumentKind`, `sourceDocumentNumber`, `issueDate` veya `invoiceDate` ve `ettn` alanlarini create body'deki `officialDocumentKind`, `officialDocumentNo`, `officialDocumentDate`, `officialDocumentEttn` alanlarina tasimalidir.
+- Backend ayrica `sourceDocumentKind`, `sourceDocumentNumber`, `sourceDocumentDate`, `despatchNumber`, `issueDate`, `invoiceNumber`, `invoiceDate` ve `ettn` alias alanlarini da kabul eder; fakat sade UI modeli icin `officialDocument*` alanlari onerilir.
+- Kayit sonrasi `documentNo` Mikro `sth_belge_no` alaninda, resmi belge no/ETTN ise Belge Akis Takibi listesinde `externalDocumentNo` ve `externalUuid` alanlarinda aranabilir olur.
 - `lines[].isMatched = true` olan satirlar tek tikla create satirina aktarilabilir; `isMatched = false` olanlar ayrica "manuel eslestir" listesine dusurulebilir.
 - `DocumentNo` artik zorunlu degildir. E-belge/e-irsaliye no varsa UI tam `seri + 9 haneli sayisal sira` formatinda gonderebilir; yoksa bos gonderebilir.
 - Kullanici e-belge olmayan firmalarda isterse `ABC`, `ULK`, cari unvanin ilk 2-3 harfi gibi harf iceren bir prefix girebilir. Backend bu prefix'ten seri uretip siradaki sira numarasini verir.
