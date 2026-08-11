@@ -63,8 +63,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 OutputWarehouseName = outputWarehouse.dep_adi,
                 movement.sth_evraktip,
                 movement.sth_tip,
-                movement.sth_normal_iade,
-                movement.sth_aciklama
+                movement.sth_normal_iade
             }
             into grouped
             orderby grouped.Key.sth_belge_tarih,
@@ -89,7 +88,10 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 grouped.Key.sth_evraktip,
                 grouped.Key.sth_tip,
                 grouped.Key.sth_normal_iade,
-                grouped.Key.sth_aciklama,
+                Description = grouped
+                    .OrderBy(item => item.sth_satirno)
+                    .Select(item => item.sth_aciklama)
+                    .FirstOrDefault(),
                 LineCount = grouped.Count(),
                 TotalQuantity = grouped.Sum(item => item.sth_miktar ?? 0d),
                 TotalAmount = grouped.Sum(item => item.sth_tutar ?? 0d)
@@ -127,7 +129,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                     document.sth_evraktip ?? 0,
                     document.sth_tip ?? 0,
                     document.sth_normal_iade ?? 0,
-                    document.sth_aciklama ?? string.Empty,
+                    document.Description ?? string.Empty,
                     document.LineCount,
                     document.TotalQuantity,
                     document.TotalAmount);
