@@ -20,7 +20,8 @@ internal static class WarehouseReturnMikroApiPayloadFactory
         string documentSerie,
         int documentOrderNo,
         string description,
-        IReadOnlyDictionary<int, Guid>? warehouseOrderLineGuidByRowNo = null)
+        IReadOnlyDictionary<int, Guid>? warehouseOrderLineGuidByRowNo = null,
+        string offlineTraceKey = "")
     {
         var satirlar = lines
             .Select((line, rowNo) =>
@@ -74,6 +75,7 @@ internal static class WarehouseReturnMikroApiPayloadFactory
                     string.Empty,
                     string.Empty,
                     FormatDate(movementDate),
+                    NormalizeText(offlineTraceKey, 25),
                     string.Empty,
                     [],
                     []);
@@ -165,6 +167,7 @@ internal sealed record WarehouseReturnMikroApiLine(
     string sth_HareketGrupKodu2,
     string sth_HareketGrupKodu3,
     string sth_teslim_tarihi,
+    string sth_eticaret_kanal_kodu,
     string seriler,
     IReadOnlyCollection<WarehouseReturnMikroApiColorSizeLine> renk_beden,
     IReadOnlyCollection<WarehouseReturnMikroApiUserTableLine> user_tablo);

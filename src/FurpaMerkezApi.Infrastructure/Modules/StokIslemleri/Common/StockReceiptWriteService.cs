@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -15,6 +16,7 @@ public sealed class StockReceiptWriteService(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
+    MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<StockReceiptWriteService> logger)
 {
     private const short MovementFileId = 16;
@@ -27,6 +29,8 @@ public sealed class StockReceiptWriteService(
     private const int FirstDocumentOrderNo = 0;
     private const string ExpenseWorkOrderCode = "0032";
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
+    private const string OutageOfflineOperationCode = "stok-islemleri.zayiat-fisleri.create";
+    private const string ExpenseOfflineOperationCode = "stok-islemleri.masraf-fisleri.create";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
@@ -38,15 +42,30 @@ public sealed class StockReceiptWriteService(
     {
         Validate(request);
 
-        return mikroWriteRoutingOptions.CurrentValue.StockReceipt switch
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            ResolveOfflineOperationCode(kind),
+            request.RequestedByUserId,
+            request.WarehouseNo,
+            request.ClientRequestId,
+            request,
+            (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, kind, innerCancellationToken),
+            innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
+            cancellationToken);
+    }
+
+    private Task<CreateStockReceiptResponse> ExecuteRoutedAsync(
+        CreateStockReceiptRequest request,
+        StockReceiptKind kind,
+        CancellationToken cancellationToken) =>
+        mikroWriteRoutingOptions.CurrentValue.StockReceipt switch
         {
-            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, kind, cancellationToken),
-            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, kind, cancellationToken),
-            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, kind, cancellationToken),
+            MikroWriteMode.Database => ExecuteDatabaseAsync(request, kind, cancellationToken),
+            MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, kind, cancellationToken),
+            MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, kind, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:StockReceipt mode '{mode}'.")
         };
-    }
 
     private async Task<CreateStockReceiptResponse> ExecuteDatabaseAsync(
         CreateStockReceiptRequest request,
@@ -65,6 +84,7 @@ public sealed class StockReceiptWriteService(
         var lines = request.Lines.ToArray();
         var movementGenre = ResolveMovementGenre(kind);
         var workOrderExpenseCode = ResolveWorkOrderExpenseCode(kind);
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -95,7 +115,8 @@ public sealed class StockReceiptWriteService(
                         documentDate,
                         documentNo,
                         documentSerie,
-                        documentOrderNo))
+                        documentOrderNo,
+                        offlineTraceKey))
                     .ToArray();
 
                 await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
@@ -140,6 +161,7 @@ public sealed class StockReceiptWriteService(
         var lines = request.Lines.ToArray();
         var movementGenre = ResolveMovementGenre(kind);
         var workOrderExpenseCode = ResolveWorkOrderExpenseCode(kind);
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(
             documentSerie,
             movementGenre,
@@ -156,7 +178,8 @@ public sealed class StockReceiptWriteService(
             documentOrderNo,
             creator,
             acceptor,
-            description);
+            description,
+            offlineTraceKey);
 
         logger.LogInformation(
             "Stock receipt create is routed to Mikro API {Path}. Kind={Kind}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, MovementGenre={MovementGenre}, LineCount={LineCount}",
@@ -331,6 +354,82 @@ public sealed class StockReceiptWriteService(
             writeConnectionName);
     }
 
+    private async Task<CreateStockReceiptResponse?> TryRecoverOfflineResponseAsync(
+        CreateStockReceiptRequest request,
+        StockReceiptKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (!request.ClientRequestId.HasValue)
+        {
+            return null;
+        }
+
+        var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var movementGenre = ResolveMovementGenre(kind);
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == StockReceiptDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cins == movementGenre &&
+                movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_eticaret_kanal_kodu == traceKey)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_HareketGrupKodu1,
+                movement.sth_HareketGrupKodu2,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one stock receipt document matched the same clientRequestId trace.");
+        }
+
+        var firstRow = rows[0];
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+
+        return new CreateStockReceiptResponse(
+            firstRow.sth_evrakno_seri ?? $"F{request.WarehouseNo}",
+            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo, 50),
+            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
+            firstRow.sth_HareketGrupKodu1 ?? NormalizeText(request.Creator, 25),
+            firstRow.sth_HareketGrupKodu2 ?? NormalizeText(request.Acceptor, 25),
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            mikroWriteOptions.Value.ConnectionStringName);
+    }
+
     private async Task<int> GetNextDocumentOrderNoAsync(
         string documentSerie,
         byte movementGenre,
@@ -362,7 +461,8 @@ public sealed class StockReceiptWriteService(
         DateTime documentDate,
         string documentNo,
         string documentSerie,
-        int documentOrderNo) =>
+        int documentOrderNo,
+        string offlineTraceKey) =>
         new()
         {
             sth_Guid = Guid.NewGuid(),
@@ -500,7 +600,7 @@ public sealed class StockReceiptWriteService(
             sth_matbu_fl = false,
             sth_satis_fiyat_doviz_cinsi = 0,
             sth_satis_fiyat_doviz_kuru = 1d,
-            sth_eticaret_kanal_kodu = string.Empty,
+            sth_eticaret_kanal_kodu = offlineTraceKey,
             sth_bagli_ithalat_kodu = string.Empty,
             sth_tevkifat_sifirlandi_fl = false
         };
@@ -520,6 +620,17 @@ public sealed class StockReceiptWriteService(
             StockReceiptKind.ExpenseReceipt => ExpenseWorkOrderCode,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported stock receipt kind.")
         };
+
+    private static string ResolveOfflineOperationCode(StockReceiptKind kind) =>
+        kind switch
+        {
+            StockReceiptKind.OutageReceipt => OutageOfflineOperationCode,
+            StockReceiptKind.ExpenseReceipt => ExpenseOfflineOperationCode,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported stock receipt kind.")
+        };
+
+    private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
+        clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
     private static void Validate(CreateStockReceiptRequest request)
     {

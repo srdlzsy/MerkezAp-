@@ -138,7 +138,9 @@ public sealed class DepoIadeleriController(
                         line.ProjectCode,
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
-                    .ToArray()),
+                    .ToArray(),
+                request.ClientRequestId,
+                User.GetRequiredUserId()),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -293,6 +295,8 @@ public sealed class DepoIadeleriController(
 
 public sealed class CreateWarehouseReturnHttpRequest
 {
+    public Guid? ClientRequestId { get; init; }
+
     [Range(1, int.MaxValue)]
     public int? SourceWarehouseNo { get; init; }
 

@@ -9,7 +9,9 @@ public sealed record CreateInterWarehouseShipmentRequest(
     string? DocumentNo,
     string? Description,
     IReadOnlyCollection<CreateInterWarehouseShipmentLineRequest> Lines,
-    bool UpdateLinkedOrderDeliveredQuantities = false);
+    bool UpdateLinkedOrderDeliveredQuantities = false,
+    Guid? ClientRequestId = null,
+    Guid? RequestedByUserId = null);
 
 public sealed record CreateInterWarehouseShipmentLineRequest(
     string StockCode,

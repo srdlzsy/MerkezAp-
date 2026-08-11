@@ -7,7 +7,9 @@ public sealed record CreateCompanyMovementRequest(
     DateTime? DocumentDate,
     string? DocumentNo,
     string? Description,
-    IReadOnlyCollection<CreateCompanyMovementLineRequest> Lines);
+    IReadOnlyCollection<CreateCompanyMovementLineRequest> Lines,
+    Guid? ClientRequestId = null,
+    Guid? RequestedByUserId = null);
 
 public sealed record CreateCompanyMovementLineRequest(
     string StockCode,

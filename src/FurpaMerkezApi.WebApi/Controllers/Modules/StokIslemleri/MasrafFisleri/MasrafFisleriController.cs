@@ -95,7 +95,9 @@ public sealed class MasrafFisleriController(
                         line.PartyCode,
                         line.LotNo,
                         line.ProjectCode))
-                    .ToArray()),
+                    .ToArray(),
+                request.ClientRequestId,
+                User.GetRequiredUserId()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

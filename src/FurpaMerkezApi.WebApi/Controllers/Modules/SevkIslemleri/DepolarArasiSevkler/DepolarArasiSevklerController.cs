@@ -224,7 +224,9 @@ public sealed class DepolarArasiSevklerController(
                         line.ProjectCode,
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
-                    .ToArray()),
+                    .ToArray(),
+                ClientRequestId: request.ClientRequestId,
+                RequestedByUserId: User.GetRequiredUserId()),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -296,6 +298,8 @@ public sealed class DepolarArasiSevklerController(
 
 public sealed class CreateInterWarehouseShipmentHttpRequest
 {
+    public Guid? ClientRequestId { get; init; }
+
     [Range(1, int.MaxValue)]
     public int? SourceWarehouseNo { get; init; }
 

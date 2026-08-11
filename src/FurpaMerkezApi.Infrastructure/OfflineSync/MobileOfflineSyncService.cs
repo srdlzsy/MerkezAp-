@@ -158,7 +158,7 @@ public sealed class MobileOfflineSyncService(
     internal static string ToTraceKey(Guid clientRequestId)
     {
         var encoded = Convert.ToBase64String(clientRequestId.ToByteArray());
-        return encoded
+        return "FR" + encoded
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');

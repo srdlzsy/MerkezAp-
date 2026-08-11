@@ -104,7 +104,9 @@ public sealed class FirmaIadeleriController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter,
                         line.OrderLineGuid))
-                    .ToArray()),
+                    .ToArray(),
+                request.ClientRequestId,
+                User.GetRequiredUserId()),
             cancellationToken);
 
         await documentFlowService.RecordAsync(

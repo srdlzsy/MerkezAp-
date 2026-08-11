@@ -8,7 +8,9 @@ public sealed record CreateWarehouseReturnRequest(
     DateTime? DocumentDate,
     string? DocumentNo,
     string? Description,
-    IReadOnlyCollection<CreateWarehouseReturnLineRequest> Lines);
+    IReadOnlyCollection<CreateWarehouseReturnLineRequest> Lines,
+    Guid? ClientRequestId = null,
+    Guid? RequestedByUserId = null);
 
 public sealed record CreateWarehouseReturnLineRequest(
     string StockCode,

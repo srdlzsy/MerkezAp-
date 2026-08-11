@@ -8,7 +8,9 @@ public sealed record CreateStockReceiptRequest(
     DateTime? DocumentDate,
     string? DocumentNo,
     string? Description,
-    IReadOnlyCollection<CreateStockReceiptLineRequest> Lines);
+    IReadOnlyCollection<CreateStockReceiptLineRequest> Lines,
+    Guid? ClientRequestId = null,
+    Guid? RequestedByUserId = null);
 
 public sealed record CreateStockReceiptLineRequest(
     string StockCode,

@@ -27,7 +27,8 @@ internal static class StockMovementMikroApiPayloadFactory
         int documentOrderNo,
         string creator,
         string acceptor,
-        string description)
+        string description,
+        string offlineTraceKey)
     {
         var satirlar = lines
             .Select((line, rowNo) => new StockMovementMikroApiLine(
@@ -64,6 +65,7 @@ internal static class StockMovementMikroApiPayloadFactory
                 NormalizeText(creator, 25),
                 NormalizeText(acceptor, 25),
                 string.Empty,
+                NormalizeText(offlineTraceKey, 25),
                 FormatDate(movementDate)))
             .ToArray();
 
@@ -81,7 +83,8 @@ internal static class StockMovementMikroApiPayloadFactory
         string documentNo,
         string documentSerie,
         int documentOrderNo,
-        string description)
+        string description,
+        string offlineTraceKey)
     {
         var satirlar = new List<StockMovementMikroApiLine>(lines.Count * 2);
         foreach (var line in lines)
@@ -122,6 +125,7 @@ internal static class StockMovementMikroApiPayloadFactory
                     string.Empty,
                     string.Empty,
                     string.Empty,
+                    NormalizeText(offlineTraceKey, 25),
                     FormatDate(VirmanLegacyDeliveryDate)));
             }
         }
@@ -199,4 +203,5 @@ internal sealed record StockMovementMikroApiLine(
     string sth_HareketGrupKodu1,
     string sth_HareketGrupKodu2,
     string sth_HareketGrupKodu3,
+    string sth_eticaret_kanal_kodu,
     string sth_teslim_tarihi);

@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -15,6 +16,7 @@ public sealed class CompanyMovementWriteService(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
+    MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<CompanyMovementWriteService> logger)
 {
     private const short MovementFileId = 16;
@@ -26,6 +28,8 @@ public sealed class CompanyMovementWriteService(
     private const byte ReturnMovement = 1;
     private const int FirstDocumentOrderNo = 0;
     private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
+    private const string CompanyShipmentOfflineOperationCode = "sevk-islemleri.giden-firma-sevkleri.create";
+    private const string CompanyReturnOfflineOperationCode = "iade-islemleri.firma-iadeleri.create";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
@@ -37,15 +41,30 @@ public sealed class CompanyMovementWriteService(
     {
         Validate(request);
 
-        return mikroWriteRoutingOptions.CurrentValue.CompanyMovement switch
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            ResolveOfflineOperationCode(kind),
+            request.RequestedByUserId,
+            request.WarehouseNo,
+            request.ClientRequestId,
+            request,
+            (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, kind, innerCancellationToken),
+            innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
+            cancellationToken);
+    }
+
+    private Task<CreateCompanyMovementResponse> ExecuteRoutedAsync(
+        CreateCompanyMovementRequest request,
+        CompanyMovementKind kind,
+        CancellationToken cancellationToken) =>
+        mikroWriteRoutingOptions.CurrentValue.CompanyMovement switch
         {
-            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, kind, cancellationToken),
-            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, kind, cancellationToken),
-            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, kind, cancellationToken),
+            MikroWriteMode.Database => ExecuteDatabaseAsync(request, kind, cancellationToken),
+            MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, kind, cancellationToken),
+            MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, kind, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:CompanyMovement mode '{mode}'.")
         };
-    }
 
     private async Task<CreateCompanyMovementResponse> ExecuteDatabaseAsync(
         CreateCompanyMovementRequest request,
@@ -61,6 +80,7 @@ public sealed class CompanyMovementWriteService(
         var documentNo = NormalizeText(request.DocumentNo);
         var lines = request.Lines.ToArray();
         var returnType = ResolveReturnType(kind);
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -88,7 +108,8 @@ public sealed class CompanyMovementWriteService(
                         documentDate,
                         documentNo,
                         documentSerie,
-                        documentOrderNo))
+                        documentOrderNo,
+                        offlineTraceKey))
                     .ToArray();
 
                 await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
@@ -130,6 +151,7 @@ public sealed class CompanyMovementWriteService(
         var description = NormalizeText(request.Description);
         var lines = request.Lines.ToArray();
         var returnType = ResolveReturnType(kind);
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var customer = await GetCustomerAsync(customerCode, cancellationToken);
         var customerAddressNo = ResolveCustomerAddressNo(customer);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);
@@ -144,7 +166,8 @@ public sealed class CompanyMovementWriteService(
             documentNo,
             documentSerie,
             documentOrderNo,
-            description);
+            description,
+            offlineTraceKey);
 
         logger.LogInformation(
             "Company movement create is routed to Mikro API {Path}. Kind={Kind}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, ReturnType={ReturnType}, LineCount={LineCount}",
@@ -316,6 +339,81 @@ public sealed class CompanyMovementWriteService(
             writeConnectionName);
     }
 
+    private async Task<CreateCompanyMovementResponse?> TryRecoverOfflineResponseAsync(
+        CreateCompanyMovementRequest request,
+        CompanyMovementKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (!request.ClientRequestId.HasValue)
+        {
+            return null;
+        }
+
+        var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var returnType = ResolveReturnType(kind);
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == returnType &&
+                movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_eticaret_kanal_kodu == traceKey)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_cari_kodu,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no,
+                row.sth_cari_kodu
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one company movement document matched the same clientRequestId trace.");
+        }
+
+        var firstRow = rows[0];
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+
+        return new CreateCompanyMovementResponse(
+            firstRow.sth_evrakno_seri ?? $"F{request.WarehouseNo}",
+            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo),
+            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
+            firstRow.sth_cari_kodu ?? request.CustomerCode.Trim(),
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            mikroWriteOptions.Value.ConnectionStringName);
+    }
+
     private async Task<CARI_HESAPLAR> GetCustomerAsync(
         string customerCode,
         CancellationToken cancellationToken)
@@ -360,7 +458,8 @@ public sealed class CompanyMovementWriteService(
         DateTime documentDate,
         string documentNo,
         string documentSerie,
-        int documentOrderNo)
+        int documentOrderNo,
+        string offlineTraceKey)
     {
         var unitPrice = line.UnitPrice;
         var amount = line.Quantity * unitPrice;
@@ -502,7 +601,7 @@ public sealed class CompanyMovementWriteService(
             sth_matbu_fl = false,
             sth_satis_fiyat_doviz_cinsi = 0,
             sth_satis_fiyat_doviz_kuru = 1d,
-            sth_eticaret_kanal_kodu = string.Empty,
+            sth_eticaret_kanal_kodu = offlineTraceKey,
             sth_bagli_ithalat_kodu = string.Empty,
             sth_tevkifat_sifirlandi_fl = false
         };
@@ -521,6 +620,17 @@ public sealed class CompanyMovementWriteService(
             CompanyMovementKind.PurchaseReturn => ReturnMovement,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported company movement kind for create.")
         };
+
+    private static string ResolveOfflineOperationCode(CompanyMovementKind kind) =>
+        kind switch
+        {
+            CompanyMovementKind.OutgoingShipment => CompanyShipmentOfflineOperationCode,
+            CompanyMovementKind.PurchaseReturn => CompanyReturnOfflineOperationCode,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported company movement kind for create.")
+        };
+
+    private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
+        clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
     private static void Validate(CreateCompanyMovementRequest request)
     {

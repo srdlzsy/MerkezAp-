@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -17,6 +18,7 @@ public sealed class VirmanWriteService(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
+    MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<VirmanWriteService> logger)
 {
     private const short MovementFileId = 16;
@@ -33,6 +35,7 @@ public sealed class VirmanWriteService(
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private const int StockSummaryDuplicateRetryAttemptCount = 3;
     private const int StockSummaryDuplicateRetryDelayMilliseconds = 150;
+    private const string OfflineOperationCode = "stok-islemleri.virmanlar.create";
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
     private static readonly DateTime LegacyDeliveryDate = new(1900, 1, 1);
 
@@ -42,15 +45,29 @@ public sealed class VirmanWriteService(
     {
         Validate(request);
 
-        return mikroWriteRoutingOptions.CurrentValue.Virman switch
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            OfflineOperationCode,
+            request.RequestedByUserId,
+            request.WarehouseNo,
+            request.ClientRequestId,
+            request,
+            (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
+            innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
+            cancellationToken);
+    }
+
+    private Task<CreateVirmanResponse> ExecuteRoutedAsync(
+        CreateVirmanRequest request,
+        CancellationToken cancellationToken) =>
+        mikroWriteRoutingOptions.CurrentValue.Virman switch
         {
-            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
-            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
-            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            MikroWriteMode.Database => ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:Virman mode '{mode}'.")
         };
-    }
 
     private async Task<CreateVirmanResponse> ExecuteDatabaseAsync(
         CreateVirmanRequest request,
@@ -93,6 +110,7 @@ public sealed class VirmanWriteService(
         var documentNo = NormalizeText(request.DocumentNo, 50);
         var description = NormalizeText(request.Description, 50);
         var lines = request.Lines.ToArray();
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -121,7 +139,8 @@ public sealed class VirmanWriteService(
                             documentDate,
                             documentNo,
                             documentSerie,
-                            documentOrderNo));
+                            documentOrderNo,
+                            offlineTraceKey));
                     }
                 }
 
@@ -167,6 +186,7 @@ public sealed class VirmanWriteService(
         var documentNo = NormalizeText(request.DocumentNo, 50);
         var description = NormalizeText(request.Description, 50);
         var lines = request.Lines.ToArray();
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var payload = StockMovementMikroApiPayloadFactory.CreateVirman(
             request,
@@ -176,7 +196,8 @@ public sealed class VirmanWriteService(
             documentNo,
             documentSerie,
             documentOrderNo,
-            description);
+            description,
+            offlineTraceKey);
 
         logger.LogInformation(
             "Virman create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, LineCount={LineCount}",
@@ -337,6 +358,81 @@ public sealed class VirmanWriteService(
             writeConnectionName);
     }
 
+    private async Task<CreateVirmanResponse?> TryRecoverOfflineResponseAsync(
+        CreateVirmanRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!request.ClientRequestId.HasValue)
+        {
+            return null;
+        }
+
+        var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == VirmanDocumentType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cins == VirmanMovementGenre &&
+                movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_eticaret_kanal_kodu == traceKey)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_tip,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one virman document matched the same clientRequestId trace.");
+        }
+
+        var firstRow = rows[0];
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+
+        return new CreateVirmanResponse(
+            firstRow.sth_evrakno_seri ?? $"F{request.WarehouseNo}",
+            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo, 50),
+            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
+            rows
+                .Select(row => row.sth_tip ?? 0)
+                .Distinct()
+                .OrderBy(movementType => movementType)
+                .ToArray(),
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            mikroWriteOptions.Value.ConnectionStringName);
+    }
+
     private async Task<int> GetNextDocumentOrderNoAsync(
         string documentSerie,
         CancellationToken cancellationToken)
@@ -363,7 +459,8 @@ public sealed class VirmanWriteService(
         DateTime documentDate,
         string documentNo,
         string documentSerie,
-        int documentOrderNo) =>
+        int documentOrderNo,
+        string offlineTraceKey) =>
         new()
         {
             sth_Guid = Guid.NewGuid(),
@@ -501,7 +598,7 @@ public sealed class VirmanWriteService(
             sth_matbu_fl = false,
             sth_satis_fiyat_doviz_cinsi = 0,
             sth_satis_fiyat_doviz_kuru = 1d,
-            sth_eticaret_kanal_kodu = string.Empty,
+            sth_eticaret_kanal_kodu = offlineTraceKey,
             sth_bagli_ithalat_kodu = string.Empty,
             sth_tevkifat_sifirlandi_fl = false
         };
@@ -576,6 +673,9 @@ public sealed class VirmanWriteService(
         var trimmed = value.Trim();
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
+
+    private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
+        clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
     private static bool IsStockSummaryDuplicateKeyException(DbUpdateException exception)
     {

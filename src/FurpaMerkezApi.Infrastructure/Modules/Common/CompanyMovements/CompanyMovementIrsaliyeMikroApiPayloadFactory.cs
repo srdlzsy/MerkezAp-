@@ -20,7 +20,8 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
         string documentNo,
         string documentSerie,
         int documentOrderNo,
-        string description)
+        string description,
+        string offlineTraceKey = "")
     {
         var satirlar = lines
             .Select((line, rowNo) =>
@@ -68,6 +69,7 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
                     string.Empty,
                     string.Empty,
                     FormatDate(movementDate),
+                    NormalizeText(offlineTraceKey, 25),
                     string.Empty,
                     string.Empty,
                     [],
@@ -161,6 +163,7 @@ internal sealed record CompanyMovementIrsaliyeMikroApiLine(
     string sth_HareketGrupKodu2,
     string sth_HareketGrupKodu3,
     string sth_teslim_tarihi,
+    string sth_eticaret_kanal_kodu,
     string seriler,
     IReadOnlyCollection<CompanyMovementIrsaliyeMikroApiColorSizeLine> renk_beden,
     IReadOnlyCollection<CompanyMovementIrsaliyeMikroApiUserTableLine> user_tablo);

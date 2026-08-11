@@ -5,6 +5,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -20,6 +21,7 @@ public sealed class CreateWarehouseReturnUseCase(
     IOptions<AxataSynchronizationOptions> axataOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
+    MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<CreateWarehouseReturnUseCase> logger)
     : ICreateWarehouseReturnUseCase
 {
@@ -33,6 +35,7 @@ public sealed class CreateWarehouseReturnUseCase(
     private const int FirstDocumentOrderNo = 0;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
+    private const string OfflineOperationCode = "iade-islemleri.giden-depo-iadeleri.create";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
@@ -43,15 +46,29 @@ public sealed class CreateWarehouseReturnUseCase(
     {
         Validate(request);
 
-        return mikroWriteRoutingOptions.CurrentValue.WarehouseReturn switch
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            OfflineOperationCode,
+            request.RequestedByUserId,
+            request.SourceWarehouseNo,
+            request.ClientRequestId,
+            request,
+            (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
+            innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
+            cancellationToken);
+    }
+
+    private Task<CreateWarehouseReturnResponse> ExecuteRoutedAsync(
+        CreateWarehouseReturnRequest request,
+        CancellationToken cancellationToken) =>
+        mikroWriteRoutingOptions.CurrentValue.WarehouseReturn switch
         {
-            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
-            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
-            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            MikroWriteMode.Database => ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:WarehouseReturn mode '{mode}'.")
         };
-    }
 
     private async Task<CreateWarehouseReturnResponse> ExecuteDatabaseAsync(
         CreateWarehouseReturnRequest request,
@@ -64,6 +81,7 @@ public sealed class CreateWarehouseReturnUseCase(
         var documentSerie = $"F{request.SourceWarehouseNo}";
         var documentNo = NormalizeText(request.DocumentNo);
         var lines = request.Lines.ToArray();
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -96,7 +114,8 @@ public sealed class CreateWarehouseReturnUseCase(
                         documentDate,
                         documentNo,
                         documentSerie,
-                        documentOrderNo);
+                        documentOrderNo,
+                        offlineTraceKey);
 
                     movements.Add(movement);
 
@@ -158,6 +177,7 @@ public sealed class CreateWarehouseReturnUseCase(
         var documentNo = NormalizeText(request.DocumentNo);
         var description = NormalizeText(request.Description);
         var lines = request.Lines.ToArray();
+        var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
 
         mikroWriteDbContext.ChangeTracker.Clear();
         var automaticWarehouseOrderLineGuids = await CreateMikroApiAutomaticWarehouseOrderLineGuidsAsync(
@@ -176,7 +196,8 @@ public sealed class CreateWarehouseReturnUseCase(
             documentSerie,
             documentOrderNo,
             description,
-            automaticWarehouseOrderLineGuids);
+            automaticWarehouseOrderLineGuids,
+            offlineTraceKey);
 
         logger.LogInformation(
             "Warehouse return create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, TransitWarehouseNo={TransitWarehouseNo}, LineCount={LineCount}",
@@ -239,6 +260,82 @@ public sealed class CreateWarehouseReturnUseCase(
             "MikroWriteRouting:WarehouseReturn is DualShadow. DahiliStokHareketKaydetV2 has no dry-run contract, so only the database write path will run.");
 
         return await ExecuteDatabaseAsync(request, cancellationToken);
+    }
+
+    private async Task<CreateWarehouseReturnResponse?> TryRecoverOfflineResponseAsync(
+        CreateWarehouseReturnRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!request.ClientRequestId.HasValue)
+        {
+            return null;
+        }
+
+        var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_tip == MovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_cikis_depo_no == request.SourceWarehouseNo &&
+                movement.sth_eticaret_kanal_kodu == traceKey)
+            .Select(movement => new
+            {
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cikis_depo_no,
+                movement.sth_nakliyedeposu,
+                movement.sth_giris_depo_no,
+                movement.sth_miktar,
+                movement.sth_tutar
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var headerCount = rows
+            .Select(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_cikis_depo_no,
+                row.sth_nakliyedeposu,
+                row.sth_giris_depo_no
+            })
+            .Distinct()
+            .Count();
+
+        if (headerCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one warehouse return matched the same clientRequestId trace.");
+        }
+
+        var firstRow = rows[0];
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+
+        return new CreateWarehouseReturnResponse(
+            firstRow.sth_evrakno_seri ?? $"F{request.SourceWarehouseNo}",
+            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
+            firstRow.sth_tarih?.Date ?? movementDate,
+            firstRow.sth_belge_tarih?.Date ?? documentDate,
+            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo),
+            firstRow.sth_cikis_depo_no ?? request.SourceWarehouseNo,
+            firstRow.sth_nakliyedeposu ?? request.TargetWarehouseNo,
+            firstRow.sth_giris_depo_no ?? request.TransitWarehouseNo,
+            rows.Count,
+            rows.Sum(row => row.sth_miktar ?? 0d),
+            rows.Sum(row => row.sth_tutar ?? 0d),
+            mikroWriteOptions.Value.ConnectionStringName);
     }
 
     private async Task<RecoveredWarehouseReturnCreate> RecoverMikroApiCreateResponseAsync(
@@ -664,7 +761,8 @@ public sealed class CreateWarehouseReturnUseCase(
         DateTime documentDate,
         string documentNo,
         string documentSerie,
-        int documentOrderNo)
+        int documentOrderNo,
+        string offlineTraceKey)
     {
         var unitPrice = line.UnitPrice;
         var amount = line.Quantity * unitPrice;
@@ -806,7 +904,7 @@ public sealed class CreateWarehouseReturnUseCase(
             sth_matbu_fl = false,
             sth_satis_fiyat_doviz_cinsi = 0,
             sth_satis_fiyat_doviz_kuru = 1d,
-            sth_eticaret_kanal_kodu = string.Empty,
+            sth_eticaret_kanal_kodu = offlineTraceKey,
             sth_bagli_ithalat_kodu = string.Empty,
             sth_tevkifat_sifirlandi_fl = false
         };
@@ -877,6 +975,9 @@ public sealed class CreateWarehouseReturnUseCase(
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
+        clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
     private sealed record AutomaticWarehouseOrderRow(
         int OriginalRowNo,

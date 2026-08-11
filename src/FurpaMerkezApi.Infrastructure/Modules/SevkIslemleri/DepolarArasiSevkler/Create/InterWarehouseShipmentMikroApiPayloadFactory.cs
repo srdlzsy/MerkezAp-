@@ -19,7 +19,8 @@ internal static class InterWarehouseShipmentMikroApiPayloadFactory
         string documentNo,
         string documentSerie,
         int documentOrderNo,
-        string description)
+        string description,
+        string offlineTraceKey = "")
     {
         var satirlar = lines
             .Select((line, rowNo) =>
@@ -70,6 +71,7 @@ internal static class InterWarehouseShipmentMikroApiPayloadFactory
                     string.Empty,
                     string.Empty,
                     FormatDate(movementDate),
+                    NormalizeText(offlineTraceKey, 25),
                     string.Empty,
                     [],
                     []);
@@ -161,6 +163,7 @@ internal sealed record InterWarehouseShipmentMikroApiLine(
     string sth_HareketGrupKodu2,
     string sth_HareketGrupKodu3,
     string sth_teslim_tarihi,
+    string sth_eticaret_kanal_kodu,
     string seriler,
     IReadOnlyCollection<InterWarehouseShipmentMikroApiColorSizeLine> renk_beden,
     IReadOnlyCollection<InterWarehouseShipmentMikroApiUserTableLine> user_tablo);

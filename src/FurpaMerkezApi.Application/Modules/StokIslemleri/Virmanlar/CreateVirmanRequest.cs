@@ -6,7 +6,9 @@ public sealed record CreateVirmanRequest(
     DateTime? DocumentDate,
     string? DocumentNo,
     string? Description,
-    IReadOnlyCollection<CreateVirmanLineRequest> Lines);
+    IReadOnlyCollection<CreateVirmanLineRequest> Lines,
+    Guid? ClientRequestId = null,
+    Guid? RequestedByUserId = null);
 
 public sealed record CreateVirmanLineRequest(
     string StockCode,
