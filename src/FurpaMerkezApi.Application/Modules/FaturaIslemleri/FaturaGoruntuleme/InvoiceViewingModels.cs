@@ -21,7 +21,8 @@ public sealed record InvoiceViewingListRequest(
     InvoiceViewingSearchField? SearchField,
     string? SearchText,
     int PageNumber,
-    int PageSize);
+    int PageSize,
+    bool ApplyDateFilterWithSearch = false);
 
 public sealed record InvoiceViewingSynchronizationRequest(
     DateTime StartDate,

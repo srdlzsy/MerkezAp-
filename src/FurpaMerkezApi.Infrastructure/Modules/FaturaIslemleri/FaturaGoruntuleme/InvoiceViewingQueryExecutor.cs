@@ -187,7 +187,7 @@ public sealed class InvoiceViewingQueryExecutor(
         var query = authDbContext.UyumsoftInboxInvoices
             .AsNoTracking();
 
-        if (!HasTextSearchCriteria(request))
+        if (!HasTextSearchCriteria(request) || request.ApplyDateFilterWithSearch)
         {
             var startDate = request.StartDate.Date;
             var endDateExclusive = request.EndDate.Date.AddDays(1);

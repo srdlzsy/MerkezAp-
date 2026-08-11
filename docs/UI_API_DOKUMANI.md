@@ -11985,6 +11985,10 @@ Geriye uyumlu ornek:
 
 `GET /api/fatura-islemleri/fatura-goruntuleme?StartDate=2026-05-01&EndDate=2026-05-05&ProcessedState=-1&PrintedState=-1&SearchField=InvoiceId&SearchText=INV-2026&PageNumber=1&PageSize=50`
 
+Arama metnini tarih araligiyla birlikte daraltma:
+
+`GET /api/fatura-islemleri/fatura-goruntuleme?StartDate=2026-05-01&EndDate=2026-05-05&SearchField=InvoiceId&SearchText=INV-2026&applyDateFilterWithSearch=true`
+
 Yetki:
 
 - `fatura-islemleri.fatura-goruntuleme.list`
@@ -12011,6 +12015,7 @@ maxInvoiceTotal opsiyonel; toplam tutar ust siniri
 hasDespatchId   opsiyonel; true=irsaliyeli faturalar, false=irsaliye no bos olanlar
 SearchField     opsiyonel; InvoiceDate, InvoiceId, DocumentId, CustomerTitle, CustomerTcknVkn, InvoiceTotal, DespatchId, Any, Status, InvoiceType, EnvelopeIdentifier, OrderDocumentId, Message
 SearchText      opsiyonel; SearchField verilmezse genel arama olarak uygulanir
+applyDateFilterWithSearch opsiyonel; default false. true ise arama/structured filtreler dolu olsa bile StartDate/EndDate de uygulanir. Alias: useDateFilterWithSearch
 page            opsiyonel; UI icin onerilen alias, default 1
 PageNumber      opsiyonel; default 1
 PageSize        opsiyonel; geriye uyumluluk icin kabul edilir, liste sonucu artik PageSize ile kesilmez
@@ -12021,7 +12026,9 @@ UI notu:
 - yeni UI gelistirmelerinde `isProcessed`, `isPrinted` ve `page` kullanilmasi tavsiye edilir
 - eski istemciler icin `ProcessedState`, `PrintedState` ve `PageNumber` hala desteklenir
 - ayni request'te hem yeni hem eski alias gonderilirse yeni aliaslar (`isProcessed`, `isPrinted`, `page`) oncelikli kabul edilir
-- arama alani bossa listeleme `StartDate` / `EndDate` araligina gore yapilir; `SearchText`, `invoiceId/invoiceNo`, `despatchId/despatchNo`, `customerTitle`, `customerTcknVkn/tcknVkn`, `documentId/ettn`, `orderDocumentId`, `status` veya `invoiceType` doluysa tarih filtresi devre disi kalir
+- arama alani bossa listeleme `StartDate` / `EndDate` araligina gore yapilir.
+- `SearchText`, `invoiceId/invoiceNo`, `despatchId/despatchNo`, `customerTitle`, `customerTcknVkn/tcknVkn`, `documentId/ettn`, `orderDocumentId`, `status` veya `invoiceType` doluysa varsayilan olarak tarih filtresi devre disi kalir; bu eski hizli belge bulma davranisidir.
+- Kullanici "tarih icinde ara" isterse UI `applyDateFilterWithSearch=true` gondermelidir. Bu durumda once `StartDate` / `EndDate` araligi uygulanir, sonra arama ve diger filtreler uygulanir.
 - filtreleme iki asamali dusunulmelidir:
   - backend filtreleri tarih araligindaki genis veri setini daraltir ve DB/cache uzerinden calisir
   - frontend/grid filtreleri backend'den donen aday set uzerinde anlik lokal filtreleme yapar

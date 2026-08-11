@@ -58,7 +58,8 @@ public sealed class FaturaGoruntulemeController(
                 request.SearchField,
                 request.SearchText,
                 request.ResolvePageNumber(),
-                request.PageSize),
+                request.PageSize,
+                request.ResolveApplyDateFilterWithSearch()),
             cancellationToken));
 
     [HttpPost("senkronize")]
@@ -183,6 +184,11 @@ public sealed class InvoiceViewingListHttpRequest
 
     public string? SearchText { get; init; }
 
+    public bool ApplyDateFilterWithSearch { get; init; }
+
+    [FromQuery(Name = "useDateFilterWithSearch")]
+    public bool? UseDateFilterWithSearch { get; init; }
+
     public string? InvoiceId { get; init; }
 
     [FromQuery(Name = "invoiceNo")]
@@ -232,6 +238,8 @@ public sealed class InvoiceViewingListHttpRequest
     public int ResolvePrintedState() => IsPrinted ?? PrintedState;
 
     public int ResolvePageNumber() => Page ?? PageNumber;
+
+    public bool ResolveApplyDateFilterWithSearch() => UseDateFilterWithSearch ?? ApplyDateFilterWithSearch;
 
     public string? ResolveInvoiceId() => string.IsNullOrWhiteSpace(InvoiceId) ? InvoiceNo : InvoiceId;
 

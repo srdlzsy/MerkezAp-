@@ -70,9 +70,41 @@ public sealed class InvoiceViewingQueryExecutorTests
         Assert.Equal("S902026000236986", result.Items.Single().InvoiceId);
     }
 
+    [Fact]
+    public async Task ListAsync_WhenSearchTextAndDateFilterFlagAreProvided_AppliesDateRange()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        var now = new DateTime(2026, 7, 29, 9, 0, 0, DateTimeKind.Utc);
+
+        authDbContext.UyumsoftInboxInvoices.Add(CreateInvoice(
+            "DOC-IN-DATE",
+            "S902026000236986",
+            new DateTime(2026, 7, 29),
+            now));
+        authDbContext.UyumsoftInboxInvoices.Add(CreateInvoice(
+            "DOC-OUT-DATE",
+            "S902026000236986",
+            new DateTime(2026, 7, 20),
+            now));
+        await authDbContext.SaveChangesAsync();
+
+        var executor = new InvoiceViewingQueryExecutor(authDbContext, new FixedClock(now));
+
+        var result = await executor.ListAsync(
+            CreateRequest(
+                InvoiceViewingSearchField.InvoiceId,
+                "S902026000236986",
+                applyDateFilterWithSearch: true),
+            CancellationToken.None);
+
+        Assert.Single(result.Items);
+        Assert.Equal("DOC-IN-DATE", result.Items.Single().DocumentId);
+    }
+
     private static InvoiceViewingListRequest CreateRequest(
         InvoiceViewingSearchField? searchField,
-        string? searchText) =>
+        string? searchText,
+        bool applyDateFilterWithSearch = false) =>
         new(
             new DateTime(2026, 7, 29),
             new DateTime(2026, 7, 29),
@@ -92,7 +124,8 @@ public sealed class InvoiceViewingQueryExecutorTests
             searchField,
             searchText,
             PageNumber: 1,
-            PageSize: 50);
+            PageSize: 50,
+            ApplyDateFilterWithSearch: applyDateFilterWithSearch);
 
     private static UyumsoftInboxInvoice CreateInvoice(
         string documentId,
