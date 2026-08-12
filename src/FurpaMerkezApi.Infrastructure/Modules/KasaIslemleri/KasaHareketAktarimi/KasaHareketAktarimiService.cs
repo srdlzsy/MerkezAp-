@@ -2387,8 +2387,20 @@ public sealed class KasaHareketAktarimiService(
         }
 
         var normalized = value.Trim();
-        var hasExplicitDecimalSeparator = normalized.Contains('.') ||
-                                          normalized.Contains(',');
+        var separatorIndex = normalized.LastIndexOfAny(['.', ',']);
+        if (separatorIndex >= 0)
+        {
+            var wholePart = normalized[..separatorIndex];
+            var fractionPart = normalized[(separatorIndex + 1)..];
+            if (fractionPart.All(item => item == '0') &&
+                wholePart.Length > 2 &&
+                wholePart.All(char.IsDigit))
+            {
+                return Round(decimal.Parse(wholePart, CultureInfo.InvariantCulture) / 100m);
+            }
+        }
+
+        var hasExplicitDecimalSeparator = separatorIndex >= 0;
         var parsed = ParseDecimal(normalized);
 
         return !hasExplicitDecimalSeparator && normalized.All(char.IsDigit)
