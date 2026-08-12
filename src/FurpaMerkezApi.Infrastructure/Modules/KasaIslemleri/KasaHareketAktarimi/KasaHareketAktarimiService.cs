@@ -216,10 +216,10 @@ public sealed class KasaHareketAktarimiService(
                     TRY_CONVERT(int, invoice.KasaNo) AS CashRegisterNo,
                     SUM(CASE
                         WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
-                        ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                        ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                     END) AS NetAmount,
                     SUM(CASE
-                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                         ELSE 0
                     END) AS Expense
                 FROM dbo.PosFaturas AS invoice WITH (NOLOCK)
@@ -604,10 +604,10 @@ public sealed class KasaHareketAktarimiService(
                     NULLIF(LTRIM(RTRIM(COALESCE(invoice.KullaniciKodu, N''))), N'') AS CashierCode,
                     SUM(CASE
                         WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
-                        ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                        ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                     END) AS NetAmount,
                     SUM(CASE
-                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                         ELSE 0
                     END) AS Expense
                 FROM dbo.PosFaturas AS invoice WITH (NOLOCK)
@@ -922,19 +922,19 @@ public sealed class KasaHareketAktarimiService(
                 ISNULL(invoice.FaturaIndirimi, 0) AS DiscountAmount,
                 CASE
                     WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
-                    ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                 END AS NetAmount,
                 CASE
-                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                     ELSE 0
                 END AS ExpenseAmount,
                 ISNULL(payment.CheckAmount, 0) AS CheckAmount,
                 CASE
                     WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
-                    ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                 END
                 - CASE
-                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
                     ELSE 0
                 END
                 - ISNULL(payment.CheckAmount, 0) AS ZReportAmount,
@@ -2359,22 +2359,23 @@ public sealed class KasaHareketAktarimiService(
             return 0m;
         }
 
-        var normalized = value.Trim();
-        if (decimal.TryParse(
-                normalized,
-                NumberStyles.Any,
-                CultureInfo.GetCultureInfo("tr-TR"),
-                out var parsed))
+        var normalized = value.Trim().Replace(" ", string.Empty, StringComparison.Ordinal);
+        var lastDotIndex = normalized.LastIndexOf('.');
+        var lastCommaIndex = normalized.LastIndexOf(',');
+
+        if (lastDotIndex >= 0 || lastCommaIndex >= 0)
         {
-            return parsed;
+            var decimalSeparator = lastDotIndex > lastCommaIndex ? '.' : ',';
+            var groupSeparator = decimalSeparator == '.' ? "," : ".";
+            normalized = normalized.Replace(groupSeparator, string.Empty, StringComparison.Ordinal);
+            normalized = normalized.Replace(decimalSeparator, '.');
         }
 
-        normalized = normalized.Replace(',', '.');
         return decimal.TryParse(
             normalized,
             NumberStyles.Any,
             CultureInfo.InvariantCulture,
-            out parsed)
+            out var parsed)
             ? parsed
             : 0m;
     }
@@ -2387,20 +2388,8 @@ public sealed class KasaHareketAktarimiService(
         }
 
         var normalized = value.Trim();
-        var separatorIndex = normalized.LastIndexOfAny(['.', ',']);
-        if (separatorIndex >= 0)
-        {
-            var wholePart = normalized[..separatorIndex];
-            var fractionPart = normalized[(separatorIndex + 1)..];
-            if (fractionPart.All(item => item == '0') &&
-                wholePart.Length > 2 &&
-                wholePart.All(char.IsDigit))
-            {
-                return Round(decimal.Parse(wholePart, CultureInfo.InvariantCulture) / 100m);
-            }
-        }
-
-        var hasExplicitDecimalSeparator = separatorIndex >= 0;
+        var hasExplicitDecimalSeparator = normalized.Contains('.', StringComparison.Ordinal) ||
+                                          normalized.Contains(',', StringComparison.Ordinal);
         var parsed = ParseDecimal(normalized);
 
         return !hasExplicitDecimalSeparator && normalized.All(char.IsDigit)
