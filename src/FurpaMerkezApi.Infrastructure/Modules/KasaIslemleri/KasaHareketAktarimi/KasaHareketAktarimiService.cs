@@ -746,7 +746,7 @@ public sealed class KasaHareketAktarimiService(
                     WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
                     ELSE COALESCE(pt.PaymentName, N'')
                 END AS PaymentTypeName,
-                COALESCE(pt.AccountCode, N'') AS AccountCode,
+                N'' AS AccountCode,
                 SUM(ISNULL(ds.SlipNumber, 0)) AS SlipCount,
                 SUM(ISNULL(ds.Amount, 0)) AS Amount
             FROM DistinctSummaries AS ds
@@ -757,8 +757,7 @@ public sealed class KasaHareketAktarimiService(
                 CASE
                     WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
                     ELSE COALESCE(pt.PaymentName, N'')
-                END,
-                COALESCE(pt.AccountCode, N'')
+                END
             ORDER BY ds.PaymentTypeID;
             """;
 
@@ -1032,7 +1031,7 @@ public sealed class KasaHareketAktarimiService(
                 ISNULL(invoice.BelgeTuru, 0) AS DocumentKind,
                 COALESCE(invoice.KullaniciKodu, N'') AS CashierCode,
                 COALESCE(invoice.KartNumarasi, N'') AS CardNumber,
-                COALESCE(invoice.MusteriCariKodu, N'') AS CustomerCurrentCode,
+                N'' AS CustomerCurrentCode,
                 ISNULL(invoice.Toplam, 0) AS GrossAmount,
                 ISNULL(invoice.ToplamKdv, 0) AS TaxAmount,
                 ISNULL(invoice.FaturaIndirimi, 0) AS DiscountAmount,
@@ -1044,7 +1043,7 @@ public sealed class KasaHareketAktarimiService(
                 0 AS PaymentCount,
                 0 AS PromotionCount,
                 COALESCE(invoice.KasaMaliBellekKodu, N'') AS FiscalMemoryCode,
-                COALESCE(invoice.IslemSonuc, N'') AS ProcessResult,
+                N'' AS ProcessResult,
                 ISNULL(invoice.IptalNedeni, 0) AS CancelReason
             FROM dbo.PosFaturaIptals AS invoice WITH (NOLOCK)
             LEFT JOIN LineTotals AS line ON invoice.FaturaGuid = line.FaturaGuid
@@ -1833,13 +1832,13 @@ public sealed class KasaHareketAktarimiService(
                 KullaniciKodu, KartNumarasi, Toplam, ToplamKdv, FaturaIndirimi,
                 VergiMatrahi18, VergiMatrahi08, VergiMatrahi01, VergiMatrahi00,
                 VergiToplami18, VergiToplami08, VergiToplami01, VergiToplami00,
-                createDate, KasaMaliBellekKodu, IptalNedeni, MusteriCariKodu, IslemSonuc)
+                createDate, KasaMaliBellekKodu, IptalNedeni)
             VALUES (
                 @FaturaGuid, @Sube, @Tarih, @Saat, @BelgeTuru, @ZNo, @FisNo, @KasaNo,
                 @KullaniciKodu, @KartNumarasi, @Toplam, @ToplamKdv, @FaturaIndirimi,
                 @VergiMatrahi18, @VergiMatrahi08, @VergiMatrahi01, @VergiMatrahi00,
                 @VergiToplami18, @VergiToplami08, @VergiToplami01, @VergiToplami00,
-                @createDate, @KasaMaliBellekKodu, @IptalNedeni, @MusteriCariKodu, @IslemSonuc);
+                @createDate, @KasaMaliBellekKodu, @IptalNedeni);
             """;
 
         var parameters = CreateReceiptParameters(receipt).ToList();
