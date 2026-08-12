@@ -52,6 +52,12 @@ public sealed record KasaHareketCashSummaryComparisonRequest(
     int? CashRegisterNo,
     decimal Tolerance);
 
+public sealed record KasaHareketDetailRequest(
+    DateTime Date,
+    int BranchNo,
+    int CashRegisterNo,
+    int ReceiptTake);
+
 public sealed record KasaHareketImportResultDto(
     string RunId,
     string ImportType,
@@ -132,3 +138,96 @@ public sealed record KasaHareketCashSummaryComparisonRowDto(
     decimal DifferenceAmount,
     string Status,
     string StatusName);
+
+public sealed record KasaHareketDetailDto(
+    DateTime Date,
+    int BranchNo,
+    string BranchName,
+    int CashRegisterNo,
+    KasaHareketReportRowDto? MovementReport,
+    KasaHareketCashSummaryComparisonRowDto Comparison,
+    KasaHareketDetailSummaryDto Summary,
+    IReadOnlyCollection<KasaHareketCashierSummaryDto> CashierSummaries,
+    IReadOnlyCollection<KasaHareketPaymentSummaryDto> MovementPaymentSummaries,
+    IReadOnlyCollection<KasaHareketCashSummaryPaymentDto> CashSummaryPayments,
+    IReadOnlyCollection<KasaHareketCashSummaryDocumentDto> CashSummaryDocuments,
+    IReadOnlyCollection<KasaHareketReceiptDto> Receipts);
+
+public sealed record KasaHareketDetailSummaryDto(
+    int ReceiptCount,
+    int MovementLineCount,
+    int MovementPaymentCount,
+    int CashSummaryDocumentCount,
+    int CashSummaryPaymentCount,
+    decimal MovementNetAmount,
+    decimal MovementExpense,
+    decimal MovementCheckAmount,
+    decimal MovementZReportAmount,
+    decimal CashSummaryAmount,
+    decimal DifferenceAmount);
+
+public sealed record KasaHareketCashierSummaryDto(
+    string CashierCode,
+    string CashierName,
+    int ReceiptCount,
+    int LineCount,
+    decimal NetAmount,
+    decimal Expense,
+    decimal CheckAmount,
+    decimal ZReportAmount);
+
+public sealed record KasaHareketPaymentSummaryDto(
+    int PaymentType,
+    string PaymentTypeName,
+    int PaymentCount,
+    decimal Amount);
+
+public sealed record KasaHareketCashSummaryPaymentDto(
+    int PaymentTypeId,
+    string PaymentTypeName,
+    string AccountCode,
+    int SlipCount,
+    decimal Amount,
+    bool IsIncludedInComparison);
+
+public sealed record KasaHareketCashSummaryDocumentDto(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    string DocumentNo,
+    int CashNo,
+    int ZReportNo,
+    int CashierNo,
+    string CashierName,
+    int ManagerNo,
+    string ManagerName,
+    DateTime SummaryDate,
+    decimal TotalAmount,
+    int PaymentLineCount,
+    DateTime CreateDate);
+
+public sealed record KasaHareketReceiptDto(
+    Guid InvoiceGuid,
+    DateTime Date,
+    TimeSpan Time,
+    int BranchNo,
+    int CashRegisterNo,
+    int ReceiptNo,
+    string ZNo,
+    byte DocumentKind,
+    string DocumentKindName,
+    string CashierCode,
+    string CashierName,
+    string CardNumber,
+    string CustomerCurrentCode,
+    decimal GrossAmount,
+    decimal TaxAmount,
+    decimal DiscountAmount,
+    decimal NetAmount,
+    decimal ExpenseAmount,
+    decimal CheckAmount,
+    decimal ZReportAmount,
+    int LineCount,
+    int PaymentCount,
+    int PromotionCount,
+    string FiscalMemoryCode,
+    string ProcessResult);

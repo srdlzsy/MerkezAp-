@@ -2515,6 +2515,11 @@ Accept: text/csv
 Authorization: Bearer {{token}}
 
 ###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay?Date=2026-07-08&BranchNo=1&CashRegisterNo=1&ReceiptTake=500
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 DELETE {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/staging
 Accept: application/json
 Authorization: Bearer {{token}}

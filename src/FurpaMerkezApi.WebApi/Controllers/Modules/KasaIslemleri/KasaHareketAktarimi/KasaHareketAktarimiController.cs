@@ -210,6 +210,24 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
             $"kasa-hareket-icmal-karsilastirma-{request.Date!.Value:yyyyMMdd}.csv");
     }
 
+    [HttpGet("icmal-karsilastirma/detay")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(KasaHareketDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<KasaHareketDetailDto>> CashSummaryComparisonDetail(
+        [FromQuery] KasaHareketDetailHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var branchNo = User.ResolveWarehouseScopeForPolicy(request.BranchNo, DetailPolicy);
+        return Ok(await service.GetDetailAsync(
+            new KasaHareketDetailRequest(
+                request.Date!.Value,
+                branchNo!.Value,
+                request.CashRegisterNo!.Value,
+                request.ReceiptTake ?? 500),
+            cancellationToken));
+    }
+
     private static FileContentResult CsvFile(string csv, string fileName)
     {
         var preamble = Encoding.UTF8.GetPreamble();
@@ -385,4 +403,21 @@ public sealed class KasaHareketCashSummaryComparisonHttpRequest
 
     [Range(typeof(decimal), "0", "999999999")]
     public decimal? Tolerance { get; init; }
+}
+
+public sealed class KasaHareketDetailHttpRequest
+{
+    [Required]
+    public DateTime? Date { get; init; }
+
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? BranchNo { get; init; }
+
+    [Required]
+    [Range(0, 999)]
+    public int? CashRegisterNo { get; init; }
+
+    [Range(0, 5000)]
+    public int? ReceiptTake { get; init; } = 500;
 }

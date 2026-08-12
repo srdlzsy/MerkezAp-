@@ -401,6 +401,107 @@ public sealed class KasaHareketAktarimiService(
             rows);
     }
 
+    public async Task<KasaHareketDetailDto> GetDetailAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateDate(request.Date, nameof(request.Date));
+
+        if (request.BranchNo <= 0)
+        {
+            throw new ArgumentException("Branch no must be greater than zero.", nameof(request.BranchNo));
+        }
+
+        if (request.CashRegisterNo < 0)
+        {
+            throw new ArgumentException("Cash register no can not be negative.", nameof(request.CashRegisterNo));
+        }
+
+        var receiptTake = Math.Clamp(request.ReceiptTake, 0, 5000);
+        var exactReportRequest = new KasaHareketReportRequest(
+            request.Date,
+            request.BranchNo,
+            request.CashRegisterNo);
+        var movementReport = (await GetReportAsync(exactReportRequest, cancellationToken)).FirstOrDefault();
+        var comparison = await GetCashSummaryComparisonAsync(
+            new KasaHareketCashSummaryComparisonRequest(
+                request.Date,
+                request.BranchNo,
+                request.CashRegisterNo,
+                0.01m),
+            cancellationToken);
+        var comparisonRow = comparison.Rows.FirstOrDefault()
+            ?? CreateEmptyComparisonRow(request.Date.Date, request.BranchNo, request.CashRegisterNo);
+
+        var cashierSummaries = (await GetCashierSummariesAsync(request, cancellationToken)).ToArray();
+        var movementPaymentSummaries = await GetMovementPaymentSummariesAsync(request, cancellationToken);
+        var cashSummaryPayments = await GetCashSummaryPaymentsAsync(request, cancellationToken);
+        var cashSummaryDocuments = (await GetCashSummaryDocumentsAsync(request, cancellationToken)).ToArray();
+        var receipts = receiptTake > 0
+            ? (await GetReceiptsAsync(request with { ReceiptTake = receiptTake }, cancellationToken)).ToArray()
+            : [];
+
+        var cashierCodes = cashierSummaries
+            .Select(item => item.CashierCode)
+            .Concat(receipts.Select(item => item.CashierCode))
+            .Concat(cashSummaryDocuments.Select(item => item.CashierNo.ToString(CultureInfo.InvariantCulture)))
+            .Concat(cashSummaryDocuments.Select(item => item.ManagerNo.ToString(CultureInfo.InvariantCulture)));
+        var cashierNames = await GetCashierNamesAsync(cashierCodes, cancellationToken);
+        cashierSummaries = cashierSummaries
+            .Select(item => item with
+            {
+                CashierName = ResolveCashierName(item.CashierCode, item.CashierName, cashierNames)
+            })
+            .ToArray();
+        receipts = receipts
+            .Select(item => item with
+            {
+                CashierName = ResolveCashierName(item.CashierCode, item.CashierName, cashierNames)
+            })
+            .ToArray();
+        cashSummaryDocuments = cashSummaryDocuments
+            .Select(item => item with
+            {
+                CashierName = ResolveCashierName(item.CashierNo, item.CashierName, cashierNames),
+                ManagerName = ResolveCashierName(item.ManagerNo, item.ManagerName, cashierNames)
+            })
+            .ToArray();
+
+        var branchNames = await GetBranchNamesAsync([request.BranchNo], cancellationToken);
+        var branchName = ResolveBranchName(request.BranchNo, movementReport?.BranchName, branchNames);
+        comparisonRow = comparisonRow with
+        {
+            BranchName = branchName
+        };
+
+        var summary = new KasaHareketDetailSummaryDto(
+            receipts.Length,
+            receipts.Sum(item => item.LineCount),
+            receipts.Sum(item => item.PaymentCount),
+            cashSummaryDocuments.Length,
+            cashSummaryPayments.Count,
+            comparisonRow.MovementNetAmount,
+            comparisonRow.MovementExpense,
+            comparisonRow.MovementCheckAmount,
+            comparisonRow.MovementZReportAmount,
+            comparisonRow.CashSummaryAmount,
+            comparisonRow.DifferenceAmount);
+
+        return new KasaHareketDetailDto(
+            request.Date.Date,
+            request.BranchNo,
+            branchName,
+            request.CashRegisterNo,
+            movementReport,
+            comparisonRow,
+            summary,
+            cashierSummaries,
+            movementPaymentSummaries,
+            cashSummaryPayments,
+            cashSummaryDocuments,
+            receipts);
+    }
+
     private async Task<IReadOnlyCollection<CashSummarySqlRow>> GetCashSummaryRowsAsync(
         KasaHareketCashSummaryComparisonRequest request,
         CancellationToken cancellationToken)
@@ -455,6 +556,417 @@ public sealed class KasaHareketAktarimiService(
                 ReadInt(reader, "CashRegisterNo"),
                 ReadDecimal(reader, "CashSummaryAmount"),
                 ReadInt(reader, "DocumentCount")),
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<KasaHareketCashierSummaryDto>> GetCashierSummariesAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            WITH ReceiptTotals AS (
+                SELECT
+                    invoice.FaturaGuid,
+                    NULLIF(LTRIM(RTRIM(COALESCE(invoice.KullaniciKodu, N''))), N'') AS CashierCode,
+                    SUM(CASE
+                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
+                        ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    END) AS NetAmount,
+                    SUM(CASE
+                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                        ELSE 0
+                    END) AS Expense
+                FROM dbo.PosFaturas AS invoice WITH (NOLOCK)
+                WHERE invoice.Tarih >= @date
+                  AND invoice.Tarih < @nextDate
+                  AND TRY_CONVERT(int, invoice.Sube) = @branchNo
+                  AND TRY_CONVERT(int, invoice.KasaNo) = @cashRegisterNo
+                GROUP BY
+                    invoice.FaturaGuid,
+                    NULLIF(LTRIM(RTRIM(COALESCE(invoice.KullaniciKodu, N''))), N'')
+            ),
+            LineTotals AS (
+                SELECT
+                    line.FaturaGuid,
+                    COUNT(1) AS LineCount
+                FROM dbo.PosFaturaSatirs AS line WITH (NOLOCK)
+                WHERE line.Tarih >= @date
+                  AND line.Tarih < @nextDate
+                  AND TRY_CONVERT(int, line.Sube) = @branchNo
+                  AND TRY_CONVERT(int, line.KasaKodu) = @cashRegisterNo
+                GROUP BY line.FaturaGuid
+            ),
+            CheckTotals AS (
+                SELECT
+                    payment.FaturaGuid,
+                    SUM(CASE WHEN ISNULL(payment.OdemeTipi, 0) = 4 THEN ISNULL(payment.Tutar, 0) ELSE 0 END) AS CheckAmount
+                FROM dbo.PosFaturaOdemes AS payment WITH (NOLOCK)
+                WHERE payment.Tarih >= @date
+                  AND payment.Tarih < @nextDate
+                  AND TRY_CONVERT(int, payment.Sube) = @branchNo
+                  AND TRY_CONVERT(int, payment.KasaKodu) = @cashRegisterNo
+                GROUP BY payment.FaturaGuid
+            )
+            SELECT
+                COALESCE(receipt.CashierCode, N'') AS CashierCode,
+                COUNT(1) AS ReceiptCount,
+                SUM(ISNULL(line.LineCount, 0)) AS LineCount,
+                SUM(ISNULL(receipt.NetAmount, 0)) AS NetAmount,
+                SUM(ISNULL(receipt.Expense, 0)) AS Expense,
+                SUM(ISNULL(checks.CheckAmount, 0)) AS CheckAmount,
+                SUM(ISNULL(receipt.NetAmount, 0) - ISNULL(receipt.Expense, 0) - ISNULL(checks.CheckAmount, 0)) AS ZReportAmount
+            FROM ReceiptTotals AS receipt
+            LEFT JOIN LineTotals AS line ON receipt.FaturaGuid = line.FaturaGuid
+            LEFT JOIN CheckTotals AS checks ON receipt.FaturaGuid = checks.FaturaGuid
+            GROUP BY COALESCE(receipt.CashierCode, N'')
+            ORDER BY COALESCE(receipt.CashierCode, N'');
+            """;
+
+        return await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+            },
+            reader => new KasaHareketCashierSummaryDto(
+                ReadString(reader, "CashierCode"),
+                string.Empty,
+                ReadInt(reader, "ReceiptCount"),
+                ReadInt(reader, "LineCount"),
+                ReadDecimal(reader, "NetAmount"),
+                ReadDecimal(reader, "Expense"),
+                ReadDecimal(reader, "CheckAmount"),
+                ReadDecimal(reader, "ZReportAmount")),
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<KasaHareketPaymentSummaryDto>> GetMovementPaymentSummariesAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            SELECT
+                ISNULL(payment.OdemeTipi, 0) AS PaymentType,
+                COUNT(1) AS PaymentCount,
+                SUM(ISNULL(payment.Tutar, 0)) AS Amount
+            FROM dbo.PosFaturaOdemes AS payment WITH (NOLOCK)
+            WHERE payment.Tarih >= @date
+              AND payment.Tarih < @nextDate
+              AND TRY_CONVERT(int, payment.Sube) = @branchNo
+              AND TRY_CONVERT(int, payment.KasaKodu) = @cashRegisterNo
+            GROUP BY ISNULL(payment.OdemeTipi, 0)
+            ORDER BY ISNULL(payment.OdemeTipi, 0);
+            """;
+
+        return await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+            },
+            reader =>
+            {
+                var paymentType = ReadInt(reader, "PaymentType");
+                return new KasaHareketPaymentSummaryDto(
+                    paymentType,
+                    ResolveMovementPaymentTypeName(paymentType),
+                    ReadInt(reader, "PaymentCount"),
+                    ReadDecimal(reader, "Amount"));
+            },
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<KasaHareketCashSummaryPaymentDto>> GetCashSummaryPaymentsAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            WITH DistinctSummaries AS (
+                SELECT DISTINCT
+                    s.DocumentSerie,
+                    s.DocumentOrderNo,
+                    s.PaymentTypeID,
+                    s.Amount,
+                    s.SlipNumber,
+                    s.AccountCode
+                FROM dbo.Summaries AS s WITH (NOLOCK)
+                WHERE s.SummaryDate >= @date
+                  AND s.SummaryDate < @nextDate
+                  AND s.BranchNo = @branchNo
+                  AND s.CashNo = @cashRegisterNo
+            )
+            SELECT
+                ds.PaymentTypeID AS PaymentTypeId,
+                CASE
+                    WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
+                    ELSE COALESCE(pt.PaymentName, N'')
+                END AS PaymentTypeName,
+                COALESCE(pt.AccountCode, ds.AccountCode, N'') AS AccountCode,
+                SUM(ISNULL(ds.SlipNumber, 0)) AS SlipCount,
+                SUM(ISNULL(ds.Amount, 0)) AS Amount
+            FROM DistinctSummaries AS ds
+            LEFT JOIN dbo.PaymentTypes AS pt WITH (NOLOCK)
+                ON ds.PaymentTypeID = pt.PaymentTypeNo
+            GROUP BY
+                ds.PaymentTypeID,
+                CASE
+                    WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
+                    ELSE COALESCE(pt.PaymentName, N'')
+                END,
+                COALESCE(pt.AccountCode, ds.AccountCode, N'')
+            ORDER BY ds.PaymentTypeID;
+            """;
+
+        return await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+            },
+            reader =>
+            {
+                var paymentTypeId = ReadInt(reader, "PaymentTypeId");
+                return new KasaHareketCashSummaryPaymentDto(
+                    paymentTypeId,
+                    ReadString(reader, "PaymentTypeName"),
+                    ReadString(reader, "AccountCode"),
+                    ReadInt(reader, "SlipCount"),
+                    ReadDecimal(reader, "Amount"),
+                    IsCashSummaryPaymentIncluded(paymentTypeId));
+            },
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<KasaHareketCashSummaryDocumentDto>> GetCashSummaryDocumentsAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            WITH DistinctSummaries AS (
+                SELECT DISTINCT
+                    s.DocumentSerie,
+                    s.DocumentOrderNo,
+                    s.CashNo,
+                    s.ZReportNo,
+                    s.CashierNo,
+                    s.ManagerNo,
+                    s.SummaryDate,
+                    s.PaymentTypeID,
+                    s.Amount,
+                    s.CreateDate
+                FROM dbo.Summaries AS s WITH (NOLOCK)
+                WHERE s.SummaryDate >= @date
+                  AND s.SummaryDate < @nextDate
+                  AND s.BranchNo = @branchNo
+                  AND s.CashNo = @cashRegisterNo
+            )
+            SELECT
+                COALESCE(DocumentSerie, N'') AS DocumentSerie,
+                ISNULL(DocumentOrderNo, 0) AS DocumentOrderNo,
+                MAX(ISNULL(CashNo, 0)) AS CashNo,
+                MAX(ISNULL(ZReportNo, 0)) AS ZReportNo,
+                MAX(ISNULL(CashierNo, 0)) AS CashierNo,
+                MAX(ISNULL(ManagerNo, 0)) AS ManagerNo,
+                MAX(SummaryDate) AS SummaryDate,
+                SUM(CASE WHEN PaymentTypeID < 100 OR PaymentTypeID = 500 THEN ISNULL(Amount, 0) ELSE 0 END) AS TotalAmount,
+                COUNT(1) AS PaymentLineCount,
+                MAX(CreateDate) AS CreateDate
+            FROM DistinctSummaries
+            GROUP BY
+                COALESCE(DocumentSerie, N''),
+                ISNULL(DocumentOrderNo, 0)
+            ORDER BY
+                MAX(SummaryDate),
+                COALESCE(DocumentSerie, N''),
+                ISNULL(DocumentOrderNo, 0);
+            """;
+
+        return await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+            },
+            reader =>
+            {
+                var documentSerie = ReadString(reader, "DocumentSerie");
+                var documentOrderNo = ReadInt(reader, "DocumentOrderNo");
+                return new KasaHareketCashSummaryDocumentDto(
+                    documentSerie,
+                    documentOrderNo,
+                    $"{documentSerie}/{documentOrderNo}",
+                    ReadInt(reader, "CashNo"),
+                    ReadInt(reader, "ZReportNo"),
+                    ReadInt(reader, "CashierNo"),
+                    string.Empty,
+                    ReadInt(reader, "ManagerNo"),
+                    string.Empty,
+                    ReadDateTime(reader, "SummaryDate"),
+                    ReadDecimal(reader, "TotalAmount"),
+                    ReadInt(reader, "PaymentLineCount"),
+                    ReadDateTime(reader, "CreateDate"));
+            },
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<KasaHareketReceiptDto>> GetReceiptsAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            WITH LineTotals AS (
+                SELECT
+                    line.FaturaGuid,
+                    COUNT(1) AS LineCount
+                FROM dbo.PosFaturaSatirs AS line WITH (NOLOCK)
+                WHERE line.Tarih >= @date
+                  AND line.Tarih < @nextDate
+                  AND TRY_CONVERT(int, line.Sube) = @branchNo
+                  AND TRY_CONVERT(int, line.KasaKodu) = @cashRegisterNo
+                GROUP BY line.FaturaGuid
+            ),
+            PaymentTotals AS (
+                SELECT
+                    payment.FaturaGuid,
+                    COUNT(1) AS PaymentCount,
+                    SUM(CASE WHEN ISNULL(payment.OdemeTipi, 0) = 4 THEN ISNULL(payment.Tutar, 0) ELSE 0 END) AS CheckAmount
+                FROM dbo.PosFaturaOdemes AS payment WITH (NOLOCK)
+                WHERE payment.Tarih >= @date
+                  AND payment.Tarih < @nextDate
+                  AND TRY_CONVERT(int, payment.Sube) = @branchNo
+                  AND TRY_CONVERT(int, payment.KasaKodu) = @cashRegisterNo
+                GROUP BY payment.FaturaGuid
+            ),
+            PromotionTotals AS (
+                SELECT
+                    promotion.FaturaGuid,
+                    COUNT(1) AS PromotionCount
+                FROM dbo.PosFaturaPromosyons AS promotion WITH (NOLOCK)
+                WHERE promotion.Tarih >= @date
+                  AND promotion.Tarih < @nextDate
+                  AND TRY_CONVERT(int, promotion.Sube) = @branchNo
+                  AND TRY_CONVERT(int, promotion.KasaNo) = @cashRegisterNo
+                GROUP BY promotion.FaturaGuid
+            )
+            SELECT TOP (@take)
+                invoice.FaturaGuid,
+                invoice.Tarih,
+                invoice.Saat,
+                TRY_CONVERT(int, invoice.Sube) AS BranchNo,
+                TRY_CONVERT(int, invoice.KasaNo) AS CashRegisterNo,
+                TRY_CONVERT(int, invoice.FisNo) AS ReceiptNo,
+                COALESCE(invoice.ZNo, N'') AS ZNo,
+                ISNULL(invoice.BelgeTuru, 0) AS DocumentKind,
+                COALESCE(invoice.KullaniciKodu, N'') AS CashierCode,
+                COALESCE(invoice.KartNumarasi, N'') AS CardNumber,
+                COALESCE(invoice.MusteriCariKodu, N'') AS CustomerCurrentCode,
+                ISNULL(invoice.Toplam, 0) AS GrossAmount,
+                ISNULL(invoice.ToplamKdv, 0) AS TaxAmount,
+                ISNULL(invoice.FaturaIndirimi, 0) AS DiscountAmount,
+                CASE
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
+                    ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                END AS NetAmount,
+                CASE
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    ELSE 0
+                END AS ExpenseAmount,
+                ISNULL(payment.CheckAmount, 0) AS CheckAmount,
+                CASE
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
+                    ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                END
+                - CASE
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0) - ISNULL(invoice.FaturaIndirimi, 0)
+                    ELSE 0
+                END
+                - ISNULL(payment.CheckAmount, 0) AS ZReportAmount,
+                ISNULL(line.LineCount, 0) AS LineCount,
+                ISNULL(payment.PaymentCount, 0) AS PaymentCount,
+                ISNULL(promotion.PromotionCount, 0) AS PromotionCount,
+                COALESCE(invoice.KasaMaliBellekKodu, N'') AS FiscalMemoryCode,
+                COALESCE(invoice.IslemSonuc, N'') AS ProcessResult
+            FROM dbo.PosFaturas AS invoice WITH (NOLOCK)
+            LEFT JOIN LineTotals AS line ON invoice.FaturaGuid = line.FaturaGuid
+            LEFT JOIN PaymentTotals AS payment ON invoice.FaturaGuid = payment.FaturaGuid
+            LEFT JOIN PromotionTotals AS promotion ON invoice.FaturaGuid = promotion.FaturaGuid
+            WHERE invoice.Tarih >= @date
+              AND invoice.Tarih < @nextDate
+              AND TRY_CONVERT(int, invoice.Sube) = @branchNo
+              AND TRY_CONVERT(int, invoice.KasaNo) = @cashRegisterNo
+            ORDER BY
+                invoice.Saat,
+                TRY_CONVERT(int, invoice.FisNo),
+                invoice.FaturaGuid;
+            """;
+
+        return await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+                AddParameter(command, "@take", request.ReceiptTake);
+            },
+            reader =>
+            {
+                var documentKind = Convert.ToByte(ReadInt(reader, "DocumentKind"), CultureInfo.InvariantCulture);
+                return new KasaHareketReceiptDto(
+                    ReadGuid(reader, "FaturaGuid"),
+                    ReadDateTime(reader, "Tarih"),
+                    ReadTimeSpan(reader, "Saat"),
+                    ReadInt(reader, "BranchNo"),
+                    ReadInt(reader, "CashRegisterNo"),
+                    ReadInt(reader, "ReceiptNo"),
+                    ReadString(reader, "ZNo"),
+                    documentKind,
+                    ResolveDocumentKindName(documentKind),
+                    ReadString(reader, "CashierCode"),
+                    string.Empty,
+                    ReadString(reader, "CardNumber"),
+                    ReadString(reader, "CustomerCurrentCode"),
+                    ReadDecimal(reader, "GrossAmount"),
+                    ReadDecimal(reader, "TaxAmount"),
+                    ReadDecimal(reader, "DiscountAmount"),
+                    ReadDecimal(reader, "NetAmount"),
+                    ReadDecimal(reader, "ExpenseAmount"),
+                    ReadDecimal(reader, "CheckAmount"),
+                    ReadDecimal(reader, "ZReportAmount"),
+                    ReadInt(reader, "LineCount"),
+                    ReadInt(reader, "PaymentCount"),
+                    ReadInt(reader, "PromotionCount"),
+                    ReadString(reader, "FiscalMemoryCode"),
+                    ReadString(reader, "ProcessResult"));
+            },
             cancellationToken);
     }
 
@@ -1849,6 +2361,106 @@ public sealed class KasaHareketAktarimiService(
             : ("difference", "Fark Var");
     }
 
+    private async Task<IReadOnlyDictionary<string, string>> GetCashierNamesAsync(
+        IEnumerable<string> cashierCodes,
+        CancellationToken cancellationToken)
+    {
+        var codes = cashierCodes
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => int.TryParse(item, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : 0)
+            .Where(item => item > 0)
+            .Distinct()
+            .ToArray();
+
+        if (codes.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var rows = await furpaDbContext.Cashiers
+            .AsNoTracking()
+            .Where(item => codes.Contains(item.CashierCode))
+            .Select(item => new
+            {
+                Code = item.CashierCode,
+                item.CashierName
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return rows.ToDictionary(
+            item => item.Code.ToString(CultureInfo.InvariantCulture),
+            item => item.CashierName,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveCashierName(
+        int cashierCode,
+        string currentName,
+        IReadOnlyDictionary<string, string> cashierNames) =>
+        ResolveCashierName(cashierCode.ToString(CultureInfo.InvariantCulture), currentName, cashierNames);
+
+    private static string ResolveCashierName(
+        string cashierCode,
+        string currentName,
+        IReadOnlyDictionary<string, string> cashierNames)
+    {
+        if (!string.IsNullOrWhiteSpace(currentName))
+        {
+            return currentName;
+        }
+
+        return cashierNames.TryGetValue(cashierCode.Trim(), out var cashierName)
+            ? cashierName
+            : string.Empty;
+    }
+
+    private static KasaHareketCashSummaryComparisonRowDto CreateEmptyComparisonRow(
+        DateTime date,
+        int branchNo,
+        int cashRegisterNo)
+    {
+        var status = ResolveComparisonStatus(null, null, 0m, 0.01m);
+        return new KasaHareketCashSummaryComparisonRowDto(
+            date,
+            branchNo,
+            string.Empty,
+            cashRegisterNo,
+            0m,
+            0m,
+            0m,
+            0m,
+            0m,
+            0,
+            0m,
+            status.Code,
+            status.Name);
+    }
+
+    private static bool IsCashSummaryPaymentIncluded(int paymentTypeId) =>
+        paymentTypeId < 100 || paymentTypeId == 500;
+
+    private static string ResolveMovementPaymentTypeName(int paymentType) =>
+        paymentType switch
+        {
+            1 => "Nakit",
+            2 => "Kredi Karti",
+            3 => "Yemek Karti",
+            4 => "Cek",
+            _ => $"Odeme Tipi {paymentType}"
+        };
+
+    private static string ResolveDocumentKindName(byte documentKind) =>
+        documentKind switch
+        {
+            1 => "Fis",
+            2 => "Fatura",
+            4 => "Gider Pusulasi",
+            _ => $"Belge Turu {documentKind}"
+        };
+
     private static DateTime ReadDateTime(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -1871,6 +2483,49 @@ public sealed class KasaHareketAktarimiService(
         return reader.IsDBNull(ordinal)
             ? 0m
             : Convert.ToDecimal(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+    }
+
+    private static string ReadString(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? string.Empty
+            : Convert.ToString(reader.GetValue(ordinal), CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private static Guid ReadGuid(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return Guid.Empty;
+        }
+
+        var value = reader.GetValue(ordinal);
+        return value is Guid guid
+            ? guid
+            : Guid.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out var parsed)
+                ? parsed
+                : Guid.Empty;
+    }
+
+    private static TimeSpan ReadTimeSpan(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return TimeSpan.Zero;
+        }
+
+        var value = reader.GetValue(ordinal);
+        return value switch
+        {
+            TimeSpan timeSpan => timeSpan,
+            DateTime dateTime => dateTime.TimeOfDay,
+            _ => TimeSpan.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : TimeSpan.Zero
+        };
     }
 
     private static readonly HashSet<string> KnownRecordCodes = new(StringComparer.OrdinalIgnoreCase)

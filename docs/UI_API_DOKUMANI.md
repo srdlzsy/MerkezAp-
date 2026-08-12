@@ -10793,6 +10793,7 @@ Endpoint'ler:
 | `GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel` | query | `KasaHareketReportHttpRequest` | `text/csv` dosya | `detail` |
 | `GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma` | query | `KasaHareketCashSummaryComparisonHttpRequest` | `KasaHareketCashSummaryComparisonDto` | `detail` |
 | `GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel` | query | `KasaHareketCashSummaryComparisonHttpRequest` | `text/csv` dosya | `detail` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay` | query | `KasaHareketDetailHttpRequest` | `KasaHareketDetailDto` | `detail` |
 
 Import request:
 
@@ -11066,6 +11067,163 @@ missing-cash-summary  aktarim/staging raporu var, icmal kaydi yok
 missing-movement      icmal kaydi var, aktarim/staging raporu yok
 ```
 
+Icmal karsilastirma detay:
+
+`GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay?date=2026-06-09&branchNo=110&cashRegisterNo=1&receiptTake=500`
+
+Amac:
+
+- Karsilastirma satirina tiklandiginda farkin nereden geldigini arastirmak icin detayli drill-down datasini doner.
+- Backend burada Excel dosyasi uretmez; UI bu JSON response'u grid/sheet olarak kullanip kendi Excel export'unu uretebilir.
+- `branchNo` ve `cashRegisterNo` zorunludur; detay endpointi tum sube/tum kasa icin calistirilmamalidir.
+
+Query:
+
+```text
+date            zorunlu; is gunu
+branchNo        zorunlu; sube/depo no
+cashRegisterNo  zorunlu; kasa no
+receiptTake     opsiyonel; default 500, max 5000. Fis listesinde getirilecek maksimum satir
+```
+
+Response ana bolumleri:
+
+```text
+movementReport             aktarim raporundaki sube+kasa satiri
+comparison                 aktarim Z raporu ile Mikro icmal toplam farki
+summary                    detay ekraninin ust KPI toplamları
+cashierSummaries           aktarim fislerinden kasiyer bazli ozet
+movementPaymentSummaries   aktarim fislerinin odeme tipi kirilimi
+cashSummaryPayments        Mikro Summaries odeme tipi kirilimi
+cashSummaryDocuments       Mikro icmal belge listesi
+receipts                   Furpa PosFaturas fis listesi
+```
+
+Ornek response:
+
+```json
+{
+  "date": "2026-06-09T00:00:00",
+  "branchNo": 110,
+  "branchName": "KESTEL 1",
+  "cashRegisterNo": 1,
+  "movementReport": {
+    "date": "2026-06-09T00:00:00",
+    "branchNo": 110,
+    "branchName": "KESTEL 1",
+    "cashRegisterNo": 1,
+    "netAmount": 24500.75,
+    "expense": 350.25,
+    "checkAmount": 1250,
+    "difference": 22900.5
+  },
+  "comparison": {
+    "movementZReportAmount": 22900.5,
+    "cashSummaryAmount": 22850.5,
+    "differenceAmount": 50,
+    "status": "difference",
+    "statusName": "Fark Var"
+  },
+  "summary": {
+    "receiptCount": 320,
+    "movementLineCount": 1250,
+    "movementPaymentCount": 340,
+    "cashSummaryDocumentCount": 1,
+    "cashSummaryPaymentCount": 8,
+    "movementNetAmount": 24500.75,
+    "movementExpense": 350.25,
+    "movementCheckAmount": 1250,
+    "movementZReportAmount": 22900.5,
+    "cashSummaryAmount": 22850.5,
+    "differenceAmount": 50
+  },
+  "cashierSummaries": [
+    {
+      "cashierCode": "1001",
+      "cashierName": "MEHMET YILMAZ",
+      "receiptCount": 120,
+      "lineCount": 420,
+      "netAmount": 9200,
+      "expense": 0,
+      "checkAmount": 400,
+      "zReportAmount": 8800
+    }
+  ],
+  "movementPaymentSummaries": [
+    {
+      "paymentType": 1,
+      "paymentTypeName": "Nakit",
+      "paymentCount": 80,
+      "amount": 10000
+    }
+  ],
+  "cashSummaryPayments": [
+    {
+      "paymentTypeId": 500,
+      "paymentTypeName": "Nakit",
+      "accountCode": "",
+      "slipCount": 1,
+      "amount": 9800,
+      "isIncludedInComparison": true
+    }
+  ],
+  "cashSummaryDocuments": [
+    {
+      "documentSerie": "KS110",
+      "documentOrderNo": 12,
+      "documentNo": "KS110/12",
+      "cashNo": 1,
+      "zReportNo": 125,
+      "cashierNo": 1001,
+      "cashierName": "MEHMET YILMAZ",
+      "managerNo": 1002,
+      "managerName": "AYSE DEMIR",
+      "summaryDate": "2026-06-09T00:00:00",
+      "totalAmount": 22850.5,
+      "paymentLineCount": 8,
+      "createDate": "2026-06-09T23:05:00"
+    }
+  ],
+  "receipts": [
+    {
+      "invoiceGuid": "8d4a5a77-1b3f-4f2a-93a1-b90a1b7d3c11",
+      "date": "2026-06-09T00:00:00",
+      "time": "13:45:10",
+      "branchNo": 110,
+      "cashRegisterNo": 1,
+      "receiptNo": 1450,
+      "zNo": "125",
+      "documentKind": 1,
+      "documentKindName": "Fis",
+      "cashierCode": "1001",
+      "cashierName": "MEHMET YILMAZ",
+      "cardNumber": "",
+      "customerCurrentCode": "",
+      "grossAmount": 120,
+      "taxAmount": 20,
+      "discountAmount": 0,
+      "netAmount": 140,
+      "expenseAmount": 0,
+      "checkAmount": 0,
+      "zReportAmount": 140,
+      "lineCount": 3,
+      "paymentCount": 1,
+      "promotionCount": 0,
+      "fiscalMemoryCode": "ABC123",
+      "processResult": ""
+    }
+  ]
+}
+```
+
+UI onerisi:
+
+- `icmal-karsilastirma` gridinde sorunlu satira tiklaninca detay paneli veya sayfasi acilmali.
+- Detay ustunde `movementZReportAmount`, `cashSummaryAmount`, `differenceAmount`, `statusName` KPI olarak gosterilmeli.
+- Alt kisimda sekmeler: `Kasiyer Ozeti`, `Aktarim Odeme Kirilimi`, `Icmal Odeme Kirilimi`, `Icmal Belgeleri`, `Fisler`.
+- Excel export UI tarafinda bu response ile uretilirse her sekme ayri sheet yapilabilir; backend CSV endpointleri sadece basit/hizli indirme icin kalabilir.
+- `receiptTake=0` gonderilirse fis listesi bos gelir; sadece ozet/kirilim isteyen ekranlarda kullanilabilir.
+
 Icmal karsilastirma Excel/CSV export:
 
 `GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel?date=2026-06-09&branchNo=110`
@@ -11075,7 +11233,7 @@ Not:
 - Endpoint `text/csv; charset=utf-8` dosya doner.
 - Dosya adi `kasa-hareket-icmal-karsilastirma-yyyyMMdd.csv` formatindadir.
 - CSV kolonlari: tarih, sube, kasa, aktarim net tutar, gider pusulasi, cek, aktarim Z raporu, icmal toplam, icmal belge sayisi, fark ve durum.
-- UI bu dosyayi "Excel'e aktar" butonuyla yeni sekmede veya direkt indirerek sunabilir.
+- UI basit indirme icin bu dosyayi kullanabilir. Daha zengin Excel icin `icmal-karsilastirma/detay` response'u uzerinden client-side `.xlsx` uretilmesi onerilir.
 
 UI beklentisi:
 
@@ -11088,7 +11246,9 @@ UI beklentisi:
 - procedure response'unda adet bilgisi yoktur; UI mesaj alanini ve calistirilan filtreleri gostermelidir
 - rapor sekmesinde `rapor`, ust kartlar icin `rapor/ozet`, Excel butonu icin `rapor/excel` kullanilabilir
 - icmal kontrol sekmesinde `icmal-karsilastirma` response'u kullanilmali; `difference` ve `missing-*` durumlari renkli/filtrelenebilir gosterilmelidir
-- icmal karsilastirma Excel butonu `icmal-karsilastirma/excel` endpointini kullanabilir
+- icmal kontrol satirindan detay icin `icmal-karsilastirma/detay` cagrilmalidir
+- zengin Excel export UI tarafinda detay response'undaki `cashierSummaries`, `movementPaymentSummaries`, `cashSummaryPayments`, `cashSummaryDocuments` ve `receipts` koleksiyonlari ayri sheet yapilarak uretilmelidir
+- basit tek sheet export gerekirse `icmal-karsilastirma/excel` endpointi kullanilabilir
 
 ### Kasa Sayimlari Liste
 

@@ -47,4 +47,8 @@ public interface IKasaHareketAktarimiService
     Task<KasaHareketCashSummaryComparisonDto> GetCashSummaryComparisonAsync(
         KasaHareketCashSummaryComparisonRequest request,
         CancellationToken cancellationToken);
+
+    Task<KasaHareketDetailDto> GetDetailAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken);
 }
