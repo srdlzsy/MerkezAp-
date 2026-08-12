@@ -701,8 +701,7 @@ public sealed class KasaHareketAktarimiService(
                     s.DocumentOrderNo,
                     s.PaymentTypeID,
                     s.Amount,
-                    s.SlipNumber,
-                    s.AccountCode
+                    s.SlipNumber
                 FROM dbo.Summaries AS s WITH (NOLOCK)
                 WHERE s.SummaryDate >= @date
                   AND s.SummaryDate < @nextDate
@@ -715,7 +714,7 @@ public sealed class KasaHareketAktarimiService(
                     WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
                     ELSE COALESCE(pt.PaymentName, N'')
                 END AS PaymentTypeName,
-                COALESCE(pt.AccountCode, ds.AccountCode, N'') AS AccountCode,
+                COALESCE(pt.AccountCode, N'') AS AccountCode,
                 SUM(ISNULL(ds.SlipNumber, 0)) AS SlipCount,
                 SUM(ISNULL(ds.Amount, 0)) AS Amount
             FROM DistinctSummaries AS ds
@@ -727,7 +726,7 @@ public sealed class KasaHareketAktarimiService(
                     WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
                     ELSE COALESCE(pt.PaymentName, N'')
                 END,
-                COALESCE(pt.AccountCode, ds.AccountCode, N'')
+                COALESCE(pt.AccountCode, N'')
             ORDER BY ds.PaymentTypeID;
             """;
 
