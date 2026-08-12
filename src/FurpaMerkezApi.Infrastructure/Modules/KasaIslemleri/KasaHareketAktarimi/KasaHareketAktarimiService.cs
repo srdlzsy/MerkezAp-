@@ -284,15 +284,9 @@ public sealed class KasaHareketAktarimiService(
                 ReadDecimal(reader, "Difference")),
             cancellationToken);
 
-        var branchNames = await mikroDbContext.DEPOLARs
-            .AsNoTracking()
-            .Where(item => item.dep_no.HasValue)
-            .Select(item => new
-            {
-                BranchNo = item.dep_no ?? 0,
-                BranchName = item.dep_adi ?? string.Empty
-            })
-            .ToDictionaryAsync(item => item.BranchNo, item => item.BranchName, cancellationToken);
+        var branchNames = await GetBranchNamesAsync(
+            rows.Select(row => row.BranchNo),
+            cancellationToken);
 
         return rows
             .Select(row => new KasaHareketReportRowDto(
@@ -305,6 +299,188 @@ public sealed class KasaHareketAktarimiService(
                 row.CheckAmount,
                 row.Difference))
             .ToArray();
+    }
+
+    public async Task<KasaHareketReportSummaryDto> GetReportSummaryAsync(
+        KasaHareketReportRequest request,
+        CancellationToken cancellationToken)
+    {
+        var rows = await GetReportAsync(request, cancellationToken);
+
+        return new KasaHareketReportSummaryDto(
+            request.Date.Date,
+            request.BranchNo,
+            request.CashRegisterNo,
+            rows.Count,
+            Round(rows.Sum(row => row.NetAmount)),
+            Round(rows.Sum(row => row.Expense)),
+            Round(rows.Sum(row => row.CheckAmount)),
+            Round(rows.Sum(row => row.Difference)));
+    }
+
+    public async Task<KasaHareketCashSummaryComparisonDto> GetCashSummaryComparisonAsync(
+        KasaHareketCashSummaryComparisonRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateDate(request.Date, nameof(request.Date));
+
+        if (request.Tolerance < 0m)
+        {
+            throw new ArgumentException("Tolerance can not be negative.", nameof(request.Tolerance));
+        }
+
+        var reportRows = await GetReportAsync(
+            new KasaHareketReportRequest(request.Date, request.BranchNo, request.CashRegisterNo),
+            cancellationToken);
+        var cashSummaryRows = await GetCashSummaryRowsAsync(request, cancellationToken);
+        var reportByKey = reportRows.ToDictionary(
+            row => (row.BranchNo, row.CashRegisterNo),
+            row => row);
+        var cashSummaryByKey = cashSummaryRows.ToDictionary(
+            row => (row.BranchNo, row.CashRegisterNo),
+            row => row);
+        var keys = reportByKey.Keys
+            .Concat(cashSummaryByKey.Keys)
+            .Distinct()
+            .OrderBy(key => key.BranchNo)
+            .ThenBy(key => key.CashRegisterNo)
+            .ToArray();
+
+        var branchNames = await GetBranchNamesAsync(
+            keys.Select(key => key.BranchNo),
+            cancellationToken);
+
+        var rows = keys
+            .Select(key =>
+            {
+                reportByKey.TryGetValue(key, out var reportRow);
+                cashSummaryByKey.TryGetValue(key, out var cashSummaryRow);
+
+                var movementZReportAmount = reportRow?.Difference ?? 0m;
+                var cashSummaryAmount = cashSummaryRow?.CashSummaryAmount ?? 0m;
+                var differenceAmount = Round(movementZReportAmount - cashSummaryAmount);
+                var status = ResolveComparisonStatus(
+                    reportRow,
+                    cashSummaryRow,
+                    differenceAmount,
+                    request.Tolerance);
+
+                return new KasaHareketCashSummaryComparisonRowDto(
+                    request.Date.Date,
+                    key.BranchNo,
+                    ResolveBranchName(key.BranchNo, reportRow?.BranchName, branchNames),
+                    key.CashRegisterNo,
+                    reportRow?.NetAmount ?? 0m,
+                    reportRow?.Expense ?? 0m,
+                    reportRow?.CheckAmount ?? 0m,
+                    movementZReportAmount,
+                    cashSummaryAmount,
+                    cashSummaryRow?.DocumentCount ?? 0,
+                    differenceAmount,
+                    status.Code,
+                    status.Name);
+            })
+            .ToArray();
+
+        var summary = new KasaHareketCashSummaryComparisonSummaryDto(
+            rows.Length,
+            rows.Count(row => row.Status == "balanced"),
+            rows.Count(row => row.Status == "difference"),
+            rows.Count(row => row.Status == "missing-cash-summary"),
+            rows.Count(row => row.Status == "missing-movement"),
+            Round(rows.Sum(row => row.MovementZReportAmount)),
+            Round(rows.Sum(row => row.CashSummaryAmount)),
+            Round(rows.Sum(row => row.DifferenceAmount)));
+
+        return new KasaHareketCashSummaryComparisonDto(
+            request.Date.Date,
+            request.BranchNo,
+            request.CashRegisterNo,
+            request.Tolerance,
+            summary,
+            rows);
+    }
+
+    private async Task<IReadOnlyCollection<CashSummarySqlRow>> GetCashSummaryRowsAsync(
+        KasaHareketCashSummaryComparisonRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            WITH DistinctSummaries AS (
+                SELECT DISTINCT
+                    CAST(s.SummaryDate AS date) AS BusinessDate,
+                    s.BranchNo,
+                    s.CashNo,
+                    s.DocumentSerie,
+                    s.DocumentOrderNo,
+                    s.PaymentTypeID,
+                    s.Amount
+                FROM dbo.Summaries AS s WITH (NOLOCK)
+                WHERE s.SummaryDate >= @date
+                  AND s.SummaryDate < @nextDate
+                  AND (@branchNo IS NULL OR s.BranchNo = @branchNo)
+                  AND (@cashRegisterNo IS NULL OR s.CashNo = @cashRegisterNo)
+            )
+            SELECT
+                BusinessDate,
+                BranchNo,
+                CashNo AS CashRegisterNo,
+                SUM(CASE WHEN PaymentTypeID < 100 OR PaymentTypeID = 500 THEN ISNULL(Amount, 0) ELSE 0 END) AS CashSummaryAmount,
+                COUNT(DISTINCT ISNULL(DocumentSerie, N'') + N'/' + CONVERT(nvarchar(20), ISNULL(DocumentOrderNo, 0))) AS DocumentCount
+            FROM DistinctSummaries
+            GROUP BY
+                BusinessDate,
+                BranchNo,
+                CashNo
+            ORDER BY
+                BranchNo,
+                CashNo;
+            """;
+
+        return await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+            },
+            reader => new CashSummarySqlRow(
+                ReadDateTime(reader, "BusinessDate"),
+                ReadInt(reader, "BranchNo"),
+                ReadInt(reader, "CashRegisterNo"),
+                ReadDecimal(reader, "CashSummaryAmount"),
+                ReadInt(reader, "DocumentCount")),
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<int, string>> GetBranchNamesAsync(
+        IEnumerable<int> branchNumbers,
+        CancellationToken cancellationToken)
+    {
+        var branches = branchNumbers
+            .Where(item => item > 0)
+            .Distinct()
+            .ToArray();
+
+        if (branches.Length == 0)
+        {
+            return new Dictionary<int, string>();
+        }
+
+        return await mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .Where(item => item.dep_no.HasValue && branches.Contains(item.dep_no.Value))
+            .Select(item => new
+            {
+                BranchNo = item.dep_no ?? 0,
+                BranchName = item.dep_adi ?? string.Empty
+            })
+            .ToDictionaryAsync(item => item.BranchNo, item => item.BranchName, cancellationToken);
     }
 
     private async Task<KasaHareketImportResultDto> ExecuteImportAsync(
@@ -339,11 +515,14 @@ public sealed class KasaHareketAktarimiService(
 
                     var parsedFile = await ParseFileAsync(filePath, branchNo, kind, cancellationToken);
                     state.AddIssues(parsedFile.Issues);
+                    var existingReceiptKeys = request.SkipExisting
+                        ? await LoadExistingReceiptKeysAsync(parsedFile.Receipts, kind, cancellationToken)
+                        : new HashSet<ReceiptKey>();
 
                     foreach (var receipt in parsedFile.Receipts)
                     {
                         if (request.SkipExisting &&
-                            await ReceiptExistsAsync(receipt, cancellationToken))
+                            existingReceiptKeys.Contains(ReceiptKey.From(receipt)))
                         {
                             state.SkippedExistingInvoices++;
                             continue;
@@ -857,38 +1036,63 @@ public sealed class KasaHareketAktarimiService(
         return barcodeCache[barcode];
     }
 
-    private async Task<bool> ReceiptExistsAsync(
-        ParsedReceipt receipt,
+    private async Task<HashSet<ReceiptKey>> LoadExistingReceiptKeysAsync(
+        IReadOnlyCollection<ParsedReceipt> receipts,
+        MovementImportKind kind,
         CancellationToken cancellationToken)
     {
-        var tableName = receipt.Kind == MovementImportKind.Normal
+        if (receipts.Count == 0)
+        {
+            return [];
+        }
+
+        var branchNo = receipts.First().BranchNo;
+        var cashRegisterNos = receipts
+            .Select(item => item.CashRegisterNo)
+            .Distinct()
+            .ToArray();
+        var cashRegisterNo = cashRegisterNos.Length == 1
+            ? cashRegisterNos[0]
+            : (int?)null;
+        var startDate = receipts.Min(item => item.Date.Date);
+        var endDate = receipts.Max(item => item.Date.Date).AddDays(1);
+        var tableName = kind == MovementImportKind.Normal
             ? "dbo.PosFaturas"
             : "dbo.PosFaturaIptals";
 
         var sql = $"""
-            SELECT COUNT(1)
+            SELECT
+                CAST(Tarih AS date) AS Date,
+                TRY_CONVERT(int, Sube) AS BranchNo,
+                TRY_CONVERT(int, KasaNo) AS CashRegisterNo,
+                TRY_CONVERT(int, FisNo) AS ReceiptNo,
+                TRY_CONVERT(int, BelgeTuru) AS DocumentKind
             FROM {tableName} WITH (NOLOCK)
-            WHERE TRY_CONVERT(int, Sube) = @branchNo
-              AND TRY_CONVERT(int, KasaNo) = @cashRegisterNo
-              AND TRY_CONVERT(int, FisNo) = @receiptNo
-              AND TRY_CONVERT(int, BelgeTuru) = @documentKind
-              AND CAST(Tarih AS date) = @date;
+            WHERE Tarih >= @startDate
+              AND Tarih < @endDate
+              AND TRY_CONVERT(int, Sube) = @branchNo
+              AND (@cashRegisterNo IS NULL OR TRY_CONVERT(int, KasaNo) = @cashRegisterNo);
             """;
 
-        var count = await ExecuteScalarAsync<int>(
+        var rows = await ExecuteReaderAsync(
             furpaDbContext.Database.GetDbConnection(),
             sql,
             command =>
             {
-                AddParameter(command, "@branchNo", receipt.BranchNo);
-                AddParameter(command, "@cashRegisterNo", receipt.CashRegisterNo);
-                AddParameter(command, "@receiptNo", receipt.ReceiptNo);
-                AddParameter(command, "@documentKind", receipt.DocumentKind);
-                AddParameter(command, "@date", receipt.Date.Date);
+                AddParameter(command, "@startDate", startDate);
+                AddParameter(command, "@endDate", endDate);
+                AddParameter(command, "@branchNo", branchNo);
+                AddParameter(command, "@cashRegisterNo", cashRegisterNo);
             },
+            reader => new ReceiptKey(
+                ReadDateTime(reader, "Date").Date,
+                ReadInt(reader, "BranchNo"),
+                ReadInt(reader, "CashRegisterNo"),
+                ReadInt(reader, "ReceiptNo"),
+                (byte)ReadInt(reader, "DocumentKind")),
             cancellationToken);
 
-        return count > 0;
+        return rows.ToHashSet();
     }
 
     private async Task InsertReceiptAsync(
@@ -1609,6 +1813,42 @@ public sealed class KasaHareketAktarimiService(
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 
+    private static string ResolveBranchName(
+        int branchNo,
+        string? reportBranchName,
+        IReadOnlyDictionary<int, string> branchNames)
+    {
+        if (!string.IsNullOrWhiteSpace(reportBranchName))
+        {
+            return reportBranchName;
+        }
+
+        return branchNames.TryGetValue(branchNo, out var branchName)
+            ? branchName
+            : string.Empty;
+    }
+
+    private static (string Code, string Name) ResolveComparisonStatus(
+        KasaHareketReportRowDto? reportRow,
+        CashSummarySqlRow? cashSummaryRow,
+        decimal differenceAmount,
+        decimal tolerance)
+    {
+        if (reportRow is null)
+        {
+            return ("missing-movement", "Aktarim Kaydi Yok");
+        }
+
+        if (cashSummaryRow is null || cashSummaryRow.DocumentCount == 0)
+        {
+            return ("missing-cash-summary", "Icmal Kaydi Yok");
+        }
+
+        return Math.Abs(differenceAmount) <= tolerance
+            ? ("balanced", "Dengeli")
+            : ("difference", "Fark Var");
+    }
+
     private static DateTime ReadDateTime(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -1809,6 +2049,22 @@ public sealed class KasaHareketAktarimiService(
         public List<ParsedPromotion> Promotions { get; } = [];
     }
 
+    private sealed record ReceiptKey(
+        DateTime Date,
+        int BranchNo,
+        int CashRegisterNo,
+        int ReceiptNo,
+        byte DocumentKind)
+    {
+        public static ReceiptKey From(ParsedReceipt receipt) =>
+            new(
+                receipt.Date.Date,
+                receipt.BranchNo,
+                receipt.CashRegisterNo,
+                receipt.ReceiptNo,
+                receipt.DocumentKind);
+    }
+
     private sealed class ParsedLine
     {
         public Guid LineGuid { get; } = Guid.NewGuid();
@@ -1918,6 +2174,13 @@ public sealed class KasaHareketAktarimiService(
         decimal Expense,
         decimal CheckAmount,
         decimal Difference);
+
+    private sealed record CashSummarySqlRow(
+        DateTime Date,
+        int BranchNo,
+        int CashRegisterNo,
+        decimal CashSummaryAmount,
+        int DocumentCount);
 
     private enum MovementImportKind
     {

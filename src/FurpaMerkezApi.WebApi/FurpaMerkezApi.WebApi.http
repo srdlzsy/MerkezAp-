@@ -2495,6 +2495,26 @@ Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/rapor/ozet?Date=2026-07-08&BranchNo=1
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel?Date=2026-07-08&BranchNo=1
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma?Date=2026-07-08&BranchNo=1&CashRegisterNo=1&Tolerance=0.01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel?Date=2026-07-08&BranchNo=1&Tolerance=0.01
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
 DELETE {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/staging
 Accept: application/json
 Authorization: Bearer {{token}}

@@ -39,4 +39,12 @@ public interface IKasaHareketAktarimiService
     Task<IReadOnlyCollection<KasaHareketReportRowDto>> GetReportAsync(
         KasaHareketReportRequest request,
         CancellationToken cancellationToken);
+
+    Task<KasaHareketReportSummaryDto> GetReportSummaryAsync(
+        KasaHareketReportRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketCashSummaryComparisonDto> GetCashSummaryComparisonAsync(
+        KasaHareketCashSummaryComparisonRequest request,
+        CancellationToken cancellationToken);
 }

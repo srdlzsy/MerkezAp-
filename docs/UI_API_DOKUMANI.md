@@ -10789,6 +10789,10 @@ Endpoint'ler:
 | `DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/mikro` | body | `KasaHareketMikroTransferHttpRequest` | `KasaHareketProcedureResultDto` | `update` |
 | `POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar` | body | `KasaHareketMikroTransferRangeHttpRequest` | `KasaHareketProcedureResultDto` | `create` |
 | `GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor` | query | `KasaHareketReportHttpRequest` | `KasaHareketReportRowDto[]` | `detail` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/ozet` | query | `KasaHareketReportHttpRequest` | `KasaHareketReportSummaryDto` | `detail` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel` | query | `KasaHareketReportHttpRequest` | `text/csv` dosya | `detail` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma` | query | `KasaHareketCashSummaryComparisonHttpRequest` | `KasaHareketCashSummaryComparisonDto` | `detail` |
+| `GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel` | query | `KasaHareketCashSummaryComparisonHttpRequest` | `text/csv` dosya | `detail` |
 
 Import request:
 
@@ -10920,6 +10924,14 @@ Rapor:
 
 `GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor?date=2026-06-09&branchNo=110&cashRegisterNo=1`
 
+Query:
+
+```text
+date            zorunlu; rapor tarihi
+branchNo        opsiyonel; sube/depo no. all-warehouses yoksa backend JWT deposunu uygular
+cashRegisterNo  opsiyonel; kasa no
+```
+
 Response:
 
 ```json
@@ -10937,6 +10949,134 @@ Response:
 ]
 ```
 
+Alan notlari:
+
+- `netAmount`: `PosFaturas` icinde satis/fatura kabul edilen kayit toplamidir.
+- `expense`: `BelgeTuru = 4` gider pusulasi toplamidir.
+- `checkAmount`: `PosFaturaOdemes` icinde `OdemeTipi = 4` cek toplamidir.
+- `difference`: eski WinUI ekranindaki `Z Raporu` kolonudur; hesap `netAmount - expense - checkAmount` seklindedir.
+
+Rapor ozet:
+
+`GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/ozet?date=2026-06-09&branchNo=110`
+
+Response:
+
+```json
+{
+  "date": "2026-06-09T00:00:00",
+  "branchNo": 110,
+  "cashRegisterNo": null,
+  "rowCount": 2,
+  "totalNetAmount": 45000.75,
+  "totalExpense": 500.25,
+  "totalCheckAmount": 2500,
+  "totalDifference": 42000.5
+}
+```
+
+Excel/CSV export:
+
+`GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel?date=2026-06-09&branchNo=110`
+
+Not:
+
+- Endpoint `text/csv; charset=utf-8` dosya doner.
+- Dosya adi `kasa-hareket-rapor-yyyyMMdd.csv` formatindadir.
+- CSV `;` ayraclidir ve UTF-8 BOM icerir; Excel ile direkt acilabilir.
+- Gercek `.xlsx` uretilmez. UI isterse ayni `rapor` response'unu kendi grid/export mekanizmasi ile `.xlsx` olarak uretebilir.
+
+Icmal karsilastirma:
+
+`GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma?date=2026-06-09&branchNo=110&cashRegisterNo=1&tolerance=0.01`
+
+Amac:
+
+- Kasa hareket aktarim raporundaki eski `Z Raporu` degeri ile Mikro `Summaries` icmal kayitlarini sube+kasa bazinda karsilastirir.
+- Aktarim tarafi `PosFaturas` ve `PosFaturaOdemes` staging tablolarindan okunur.
+- Icmal tarafi Mikro `Summaries` tablosundan okunur.
+
+Query:
+
+```text
+date            zorunlu; is gunu
+branchNo        opsiyonel; sube/depo no. all-warehouses yoksa backend JWT deposunu uygular
+cashRegisterNo  opsiyonel; kasa no
+tolerance       opsiyonel; varsayilan 0.01. Mutabik kabul edilecek parasal tolerans
+```
+
+Karsilastirma hesabi:
+
+```text
+movementZReportAmount = netAmount - expense - checkAmount
+cashSummaryAmount     = Summaries icinde PaymentTypeID < 100 veya PaymentTypeID = 500 olan Amount toplami
+differenceAmount      = movementZReportAmount - cashSummaryAmount
+```
+
+Not:
+
+- `PaymentTypeID >= 100` gider/masraf gruplari karsilastirma toplaminda sayilmaz. Bu davranis `kasa-sayimlari` liste toplam mantigiyla aynidir.
+- Satir anahtari `branchNo + cashRegisterNo` seklindedir.
+- Sadece aktarimda veya sadece icmalde olan kasa satirlari da response'a dahil edilir.
+
+Response:
+
+```json
+{
+  "date": "2026-06-09T00:00:00",
+  "branchNo": 110,
+  "cashRegisterNo": 1,
+  "tolerance": 0.01,
+  "summary": {
+    "rowCount": 1,
+    "balancedCount": 0,
+    "differenceCount": 1,
+    "missingCashSummaryCount": 0,
+    "missingMovementCount": 0,
+    "totalMovementZReportAmount": 22900.5,
+    "totalCashSummaryAmount": 22850.5,
+    "totalDifferenceAmount": 50
+  },
+  "rows": [
+    {
+      "date": "2026-06-09T00:00:00",
+      "branchNo": 110,
+      "branchName": "KESTEL 1",
+      "cashRegisterNo": 1,
+      "movementNetAmount": 24500.75,
+      "movementExpense": 350.25,
+      "movementCheckAmount": 1250,
+      "movementZReportAmount": 22900.5,
+      "cashSummaryAmount": 22850.5,
+      "cashSummaryDocumentCount": 1,
+      "differenceAmount": 50,
+      "status": "difference",
+      "statusName": "Fark Var"
+    }
+  ]
+}
+```
+
+`status` degerleri:
+
+```text
+balanced              tolerans icinde mutabik
+difference            aktarim ve icmal var ama tutar farkli
+missing-cash-summary  aktarim/staging raporu var, icmal kaydi yok
+missing-movement      icmal kaydi var, aktarim/staging raporu yok
+```
+
+Icmal karsilastirma Excel/CSV export:
+
+`GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel?date=2026-06-09&branchNo=110`
+
+Not:
+
+- Endpoint `text/csv; charset=utf-8` dosya doner.
+- Dosya adi `kasa-hareket-icmal-karsilastirma-yyyyMMdd.csv` formatindadir.
+- CSV kolonlari: tarih, sube, kasa, aktarim net tutar, gider pusulasi, cek, aktarim Z raporu, icmal toplam, icmal belge sayisi, fark ve durum.
+- UI bu dosyayi "Excel'e aktar" butonuyla yeni sekmede veya direkt indirerek sunabilir.
+
 UI beklentisi:
 
 - ekran tek menu olarak acilabilir; `Import`, `Rapor`, `Mikro Aktarim` sekmeleri yeterlidir
@@ -10946,6 +11086,9 @@ UI beklentisi:
 - `skipExisting=true` varsayilani korunmalidir; tekrar import gereken durumlarda kullanici bilincli olarak kapatmalidir
 - `staging sil`, `Mikro'ya aktar`, `Mikro'dan sil` ve `aralik aktar` aksiyonlari ayri butonlar olmalidir
 - procedure response'unda adet bilgisi yoktur; UI mesaj alanini ve calistirilan filtreleri gostermelidir
+- rapor sekmesinde `rapor`, ust kartlar icin `rapor/ozet`, Excel butonu icin `rapor/excel` kullanilabilir
+- icmal kontrol sekmesinde `icmal-karsilastirma` response'u kullanilmali; `difference` ve `missing-*` durumlari renkli/filtrelenebilir gosterilmelidir
+- icmal karsilastirma Excel butonu `icmal-karsilastirma/excel` endpointini kullanabilir
 
 ### Kasa Sayimlari Liste
 
@@ -11910,6 +12053,10 @@ Kasa Islemleri / Kasa Hareket Aktarimi
   -> zamanli/gunluk toplu calistirma icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir
   -> import oncesi dryRun=true ile parse/lookup sonucu gosterilebilir
   -> rapor gridini doldurmak icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor?date=...
+  -> rapor ust kartlari icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/ozet?date=...
+  -> raporu Excel uyumlu CSV indirmek icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel?date=...
+  -> icmal ile aktarim Z raporu karsilastirmasi icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma?date=...
+  -> icmal karsilastirmasini Excel uyumlu CSV indirmek icin GET /api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel?date=...
   -> staging temizleme icin DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/staging
   -> staging hareketlerini Mikro'ya yazmak icin POST /api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar
   -> Mikro'ya yazilmis hareketleri silmek icin DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/mikro
