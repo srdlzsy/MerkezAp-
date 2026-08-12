@@ -10769,10 +10769,12 @@ Mevcut backend durumu:
 - dosya yolu `{root}\{subeNo}\HRddMMyy.*` ve `{root}\{subeNo}\IPddMMyy.*` desenindedir
 - `cashRegisters` filtresi verilirse dosya adi `{prefix}{ddMMyy}.{kasaNo:000}` olarak aranir
 - HR/IP satir formatinda virgullu, noktali virgul, tab ve bosluk ayraclari desteklenir; guncel kasa dosyalari genellikle `1,00006,01,FIS,...` seklinde virgullu gelir
+- HR para alanlari ayraçsiz numeric gelirse kurus kabul edilir ve 100'e bolunur; ornek `003342011` -> `33420.11`. Alan `33420.11` veya `33420,11` gibi acik ondalik ayraçla gelirse deger aynen decimal okunur.
 - `skipExisting=true` iken duplicate kontrolu `Sube + KasaNo + FisNo + BelgeTuru + Tarih` alanlariyla yapilir
 - `dryRun=true` import dosyalarini parse eder, barkod lookup ve hata/uyari listesi uretir, staging'e yazmaz
 - barkod lookup Mikro barkod tanimlarindan urun kodu bulmaya calisir; bulunamayan barkodlar response `warnings` icinde doner
 - HR import normal kasa hareketlerini, IP import iptal belgelerini staging'e alir
+- HR import `FIS`, `FAT`, `IRS` ve `GPS` belge basliklarini fis olarak okur; `FAT` satirlari `documentKind = 2` / `documentKindName = Fatura` olarak staging'e kaydedilir. Bu nedenle ayni fis numarasi `FIS` ve `FAT` olarak gelirse duplicate sayilmaz, belge turu ayrimi korunur.
 - Mikro aktar/sil endpointleri stored procedure calistirir; response sadece procedure adi, mesaj ve filtre bilgisini doner
 
 Endpoint'ler:
@@ -11097,6 +11099,7 @@ movementPaymentSummaries   aktarim fislerinin odeme tipi kirilimi
 cashSummaryPayments        Mikro Summaries odeme tipi kirilimi
 cashSummaryDocuments       Mikro icmal belge listesi
 receipts                   Furpa PosFaturas fis listesi
+canceledReceipts           Furpa PosFaturaIptals iptal fis listesi
 ```
 
 Ornek response:
@@ -11126,6 +11129,8 @@ Ornek response:
   },
   "summary": {
     "receiptCount": 320,
+    "returnedReceiptCount": 500,
+    "canceledReceiptCount": 2,
     "movementLineCount": 1250,
     "movementPaymentCount": 340,
     "cashSummaryDocumentCount": 1,
@@ -11135,7 +11140,10 @@ Ornek response:
     "movementCheckAmount": 1250,
     "movementZReportAmount": 22900.5,
     "cashSummaryAmount": 22850.5,
-    "differenceAmount": 50
+    "differenceAmount": 50,
+    "minReceiptNo": 1,
+    "maxReceiptNo": 330,
+    "missingReceiptNos": [18, 27]
   },
   "cashierSummaries": [
     {
@@ -11210,7 +11218,40 @@ Ornek response:
       "paymentCount": 1,
       "promotionCount": 0,
       "fiscalMemoryCode": "ABC123",
-      "processResult": ""
+      "processResult": "",
+      "cancelReason": 0,
+      "cancelReasonName": ""
+    }
+  ],
+  "canceledReceipts": [
+    {
+      "invoiceGuid": "5887c858-8083-4bf9-a9ef-0f95fbd90572",
+      "date": "2026-06-09T00:00:00",
+      "time": "15:12:40",
+      "branchNo": 110,
+      "cashRegisterNo": 1,
+      "receiptNo": 18,
+      "zNo": "125",
+      "documentKind": 1,
+      "documentKindName": "Fis",
+      "cashierCode": "1001",
+      "cashierName": "MEHMET YILMAZ",
+      "cardNumber": "",
+      "customerCurrentCode": "",
+      "grossAmount": 120,
+      "taxAmount": 20,
+      "discountAmount": 0,
+      "netAmount": 0,
+      "expenseAmount": 0,
+      "checkAmount": 0,
+      "zReportAmount": 0,
+      "lineCount": 3,
+      "paymentCount": 0,
+      "promotionCount": 0,
+      "fiscalMemoryCode": "ABC123",
+      "processResult": "",
+      "cancelReason": 1,
+      "cancelReasonName": "Iptal Nedeni 1"
     }
   ]
 }
@@ -11220,7 +11261,10 @@ UI onerisi:
 
 - `icmal-karsilastirma` gridinde sorunlu satira tiklaninca detay paneli veya sayfasi acilmali.
 - Detay ustunde `movementZReportAmount`, `cashSummaryAmount`, `differenceAmount`, `statusName` KPI olarak gosterilmeli.
-- Alt kisimda sekmeler: `Kasiyer Ozeti`, `Aktarim Odeme Kirilimi`, `Icmal Odeme Kirilimi`, `Icmal Belgeleri`, `Fisler`.
+- `summary.receiptCount` toplam normal fis sayisidir; `summary.returnedReceiptCount` response'ta donen normal fis sayisidir. `receiptTake` dusukse bu iki deger farkli olabilir.
+- `summary.canceledReceiptCount` iptal fis sayisidir; iptal fisler `canceledReceipts` koleksiyonunda ayrica doner ve aktarim Z raporu toplamlarini etkilemez.
+- `summary.missingReceiptNos`, normal fis numara araliginda eksik gorunen fis numaralarini verir; bu liste iptal fisler veya kaynak dosyada gelmeyen fisleri arastirmak icin kullanilmalidir.
+- Alt kisimda sekmeler: `Kasiyer Ozeti`, `Aktarim Odeme Kirilimi`, `Icmal Odeme Kirilimi`, `Icmal Belgeleri`, `Fisler`, `Iptal Fisler`, `Eksik Fis Numaralari`.
 - Excel export UI tarafinda bu response ile uretilirse her sekme ayri sheet yapilabilir; backend CSV endpointleri sadece basit/hizli indirme icin kalabilir.
 - `receiptTake=0` gonderilirse fis listesi bos gelir; sadece ozet/kirilim isteyen ekranlarda kullanilabilir.
 
@@ -11247,7 +11291,7 @@ UI beklentisi:
 - rapor sekmesinde `rapor`, ust kartlar icin `rapor/ozet`, Excel butonu icin `rapor/excel` kullanilabilir
 - icmal kontrol sekmesinde `icmal-karsilastirma` response'u kullanilmali; `difference` ve `missing-*` durumlari renkli/filtrelenebilir gosterilmelidir
 - icmal kontrol satirindan detay icin `icmal-karsilastirma/detay` cagrilmalidir
-- zengin Excel export UI tarafinda detay response'undaki `cashierSummaries`, `movementPaymentSummaries`, `cashSummaryPayments`, `cashSummaryDocuments` ve `receipts` koleksiyonlari ayri sheet yapilarak uretilmelidir
+- zengin Excel export UI tarafinda detay response'undaki `cashierSummaries`, `movementPaymentSummaries`, `cashSummaryPayments`, `cashSummaryDocuments`, `receipts`, `canceledReceipts` ve `summary.missingReceiptNos` koleksiyonlari ayri sheet yapilarak uretilmelidir
 - basit tek sheet export gerekirse `icmal-karsilastirma/excel` endpointi kullanilabilir
 
 ### Kasa Sayimlari Liste

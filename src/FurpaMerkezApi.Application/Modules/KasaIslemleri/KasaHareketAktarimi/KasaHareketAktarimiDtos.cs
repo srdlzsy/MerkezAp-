@@ -151,10 +151,13 @@ public sealed record KasaHareketDetailDto(
     IReadOnlyCollection<KasaHareketPaymentSummaryDto> MovementPaymentSummaries,
     IReadOnlyCollection<KasaHareketCashSummaryPaymentDto> CashSummaryPayments,
     IReadOnlyCollection<KasaHareketCashSummaryDocumentDto> CashSummaryDocuments,
-    IReadOnlyCollection<KasaHareketReceiptDto> Receipts);
+    IReadOnlyCollection<KasaHareketReceiptDto> Receipts,
+    IReadOnlyCollection<KasaHareketReceiptDto> CanceledReceipts);
 
 public sealed record KasaHareketDetailSummaryDto(
     int ReceiptCount,
+    int ReturnedReceiptCount,
+    int CanceledReceiptCount,
     int MovementLineCount,
     int MovementPaymentCount,
     int CashSummaryDocumentCount,
@@ -164,7 +167,10 @@ public sealed record KasaHareketDetailSummaryDto(
     decimal MovementCheckAmount,
     decimal MovementZReportAmount,
     decimal CashSummaryAmount,
-    decimal DifferenceAmount);
+    decimal DifferenceAmount,
+    int? MinReceiptNo,
+    int? MaxReceiptNo,
+    IReadOnlyCollection<int> MissingReceiptNos);
 
 public sealed record KasaHareketCashierSummaryDto(
     string CashierCode,
@@ -230,4 +236,6 @@ public sealed record KasaHareketReceiptDto(
     int PaymentCount,
     int PromotionCount,
     string FiscalMemoryCode,
-    string ProcessResult);
+    string ProcessResult,
+    byte CancelReason,
+    string CancelReasonName);

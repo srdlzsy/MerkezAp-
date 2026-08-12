@@ -440,10 +440,14 @@ public sealed class KasaHareketAktarimiService(
         var receipts = receiptTake > 0
             ? (await GetReceiptsAsync(request with { ReceiptTake = receiptTake }, cancellationToken)).ToArray()
             : [];
+        var canceledReceipts = receiptTake > 0
+            ? (await GetCanceledReceiptsAsync(request with { ReceiptTake = receiptTake }, cancellationToken)).ToArray()
+            : [];
 
         var cashierCodes = cashierSummaries
             .Select(item => item.CashierCode)
             .Concat(receipts.Select(item => item.CashierCode))
+            .Concat(canceledReceipts.Select(item => item.CashierCode))
             .Concat(cashSummaryDocuments.Select(item => item.CashierNo.ToString(CultureInfo.InvariantCulture)))
             .Concat(cashSummaryDocuments.Select(item => item.ManagerNo.ToString(CultureInfo.InvariantCulture)));
         var cashierNames = await GetCashierNamesAsync(cashierCodes, cancellationToken);
@@ -454,6 +458,12 @@ public sealed class KasaHareketAktarimiService(
             })
             .ToArray();
         receipts = receipts
+            .Select(item => item with
+            {
+                CashierName = ResolveCashierName(item.CashierCode, item.CashierName, cashierNames)
+            })
+            .ToArray();
+        canceledReceipts = canceledReceipts
             .Select(item => item with
             {
                 CashierName = ResolveCashierName(item.CashierCode, item.CashierName, cashierNames)
@@ -474,10 +484,28 @@ public sealed class KasaHareketAktarimiService(
             BranchName = branchName
         };
 
+        var receiptNos = receipts
+            .Select(item => item.ReceiptNo)
+            .Where(item => item > 0)
+            .Distinct()
+            .OrderBy(item => item)
+            .ToArray();
+        var minReceiptNo = receiptNos.Length > 0 ? receiptNos[0] : (int?)null;
+        var maxReceiptNo = receiptNos.Length > 0 ? receiptNos[^1] : (int?)null;
+        var missingReceiptNos = minReceiptNo.HasValue && maxReceiptNo.HasValue
+            ? Enumerable.Range(minReceiptNo.Value, maxReceiptNo.Value - minReceiptNo.Value + 1)
+                .Except(receiptNos)
+                .ToArray()
+            : [];
+        var totalReceiptCount = cashierSummaries.Sum(item => item.ReceiptCount);
+        var totalLineCount = cashierSummaries.Sum(item => item.LineCount);
+        var totalPaymentCount = movementPaymentSummaries.Sum(item => item.PaymentCount);
         var summary = new KasaHareketDetailSummaryDto(
+            totalReceiptCount,
             receipts.Length,
-            receipts.Sum(item => item.LineCount),
-            receipts.Sum(item => item.PaymentCount),
+            canceledReceipts.Length,
+            totalLineCount,
+            totalPaymentCount,
             cashSummaryDocuments.Length,
             cashSummaryPayments.Count,
             comparisonRow.MovementNetAmount,
@@ -485,7 +513,10 @@ public sealed class KasaHareketAktarimiService(
             comparisonRow.MovementCheckAmount,
             comparisonRow.MovementZReportAmount,
             comparisonRow.CashSummaryAmount,
-            comparisonRow.DifferenceAmount);
+            comparisonRow.DifferenceAmount,
+            minReceiptNo,
+            maxReceiptNo,
+            missingReceiptNos);
 
         return new KasaHareketDetailDto(
             request.Date.Date,
@@ -499,7 +530,8 @@ public sealed class KasaHareketAktarimiService(
             movementPaymentSummaries,
             cashSummaryPayments,
             cashSummaryDocuments,
-            receipts);
+            receipts,
+            canceledReceipts);
     }
 
     private async Task<IReadOnlyCollection<CashSummarySqlRow>> GetCashSummaryRowsAsync(
@@ -964,7 +996,111 @@ public sealed class KasaHareketAktarimiService(
                     ReadInt(reader, "PaymentCount"),
                     ReadInt(reader, "PromotionCount"),
                     ReadString(reader, "FiscalMemoryCode"),
-                    ReadString(reader, "ProcessResult"));
+                    ReadString(reader, "ProcessResult"),
+                    0,
+                    string.Empty);
+            },
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<KasaHareketReceiptDto>> GetCanceledReceiptsAsync(
+        KasaHareketDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const string sql = """
+            WITH LineTotals AS (
+                SELECT
+                    line.FaturaGuid,
+                    COUNT(1) AS LineCount
+                FROM dbo.PosFaturaIptalSatirs AS line WITH (NOLOCK)
+                WHERE line.Tarih >= @date
+                  AND line.Tarih < @nextDate
+                  AND TRY_CONVERT(int, line.Sube) = @branchNo
+                  AND TRY_CONVERT(int, line.KasaKodu) = @cashRegisterNo
+                GROUP BY line.FaturaGuid
+            )
+            SELECT TOP (@take)
+                invoice.FaturaGuid,
+                invoice.Tarih,
+                invoice.Saat,
+                TRY_CONVERT(int, invoice.Sube) AS BranchNo,
+                TRY_CONVERT(int, invoice.KasaNo) AS CashRegisterNo,
+                TRY_CONVERT(int, invoice.FisNo) AS ReceiptNo,
+                COALESCE(invoice.ZNo, N'') AS ZNo,
+                ISNULL(invoice.BelgeTuru, 0) AS DocumentKind,
+                COALESCE(invoice.KullaniciKodu, N'') AS CashierCode,
+                COALESCE(invoice.KartNumarasi, N'') AS CardNumber,
+                COALESCE(invoice.MusteriCariKodu, N'') AS CustomerCurrentCode,
+                ISNULL(invoice.Toplam, 0) AS GrossAmount,
+                ISNULL(invoice.ToplamKdv, 0) AS TaxAmount,
+                ISNULL(invoice.FaturaIndirimi, 0) AS DiscountAmount,
+                0 AS NetAmount,
+                0 AS ExpenseAmount,
+                0 AS CheckAmount,
+                0 AS ZReportAmount,
+                ISNULL(line.LineCount, 0) AS LineCount,
+                0 AS PaymentCount,
+                0 AS PromotionCount,
+                COALESCE(invoice.KasaMaliBellekKodu, N'') AS FiscalMemoryCode,
+                COALESCE(invoice.IslemSonuc, N'') AS ProcessResult,
+                ISNULL(invoice.IptalNedeni, 0) AS CancelReason
+            FROM dbo.PosFaturaIptals AS invoice WITH (NOLOCK)
+            LEFT JOIN LineTotals AS line ON invoice.FaturaGuid = line.FaturaGuid
+            WHERE invoice.Tarih >= @date
+              AND invoice.Tarih < @nextDate
+              AND TRY_CONVERT(int, invoice.Sube) = @branchNo
+              AND TRY_CONVERT(int, invoice.KasaNo) = @cashRegisterNo
+            ORDER BY
+                invoice.Saat,
+                TRY_CONVERT(int, invoice.FisNo),
+                invoice.FaturaGuid;
+            """;
+
+        return await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+                AddParameter(command, "@take", request.ReceiptTake);
+            },
+            reader =>
+            {
+                var documentKind = Convert.ToByte(ReadInt(reader, "DocumentKind"), CultureInfo.InvariantCulture);
+                var cancelReason = Convert.ToByte(ReadInt(reader, "CancelReason"), CultureInfo.InvariantCulture);
+                return new KasaHareketReceiptDto(
+                    ReadGuid(reader, "FaturaGuid"),
+                    ReadDateTime(reader, "Tarih"),
+                    ReadTimeSpan(reader, "Saat"),
+                    ReadInt(reader, "BranchNo"),
+                    ReadInt(reader, "CashRegisterNo"),
+                    ReadInt(reader, "ReceiptNo"),
+                    ReadString(reader, "ZNo"),
+                    documentKind,
+                    ResolveDocumentKindName(documentKind),
+                    ReadString(reader, "CashierCode"),
+                    string.Empty,
+                    ReadString(reader, "CardNumber"),
+                    ReadString(reader, "CustomerCurrentCode"),
+                    ReadDecimal(reader, "GrossAmount"),
+                    ReadDecimal(reader, "TaxAmount"),
+                    ReadDecimal(reader, "DiscountAmount"),
+                    ReadDecimal(reader, "NetAmount"),
+                    ReadDecimal(reader, "ExpenseAmount"),
+                    ReadDecimal(reader, "CheckAmount"),
+                    ReadDecimal(reader, "ZReportAmount"),
+                    ReadInt(reader, "LineCount"),
+                    ReadInt(reader, "PaymentCount"),
+                    ReadInt(reader, "PromotionCount"),
+                    ReadString(reader, "FiscalMemoryCode"),
+                    ReadString(reader, "ProcessResult"),
+                    cancelReason,
+                    ResolveCancelReasonName(cancelReason));
             },
             cancellationToken);
     }
@@ -1262,12 +1398,6 @@ public sealed class KasaHareketAktarimiService(
             return;
         }
 
-        if (state.Kind == MovementImportKind.Normal && code == "FAT")
-        {
-            state.Clear();
-            return;
-        }
-
         var cashAndUser = Token(tokens, 4);
         var receiptAndZNo = Token(tokens, 5);
 
@@ -1309,7 +1439,7 @@ public sealed class KasaHareketAktarimiService(
         var quantityToken = Token(tokens, 4);
         var amountToken = Token(tokens, 5);
         var quantity = ParseDecimal(SafeSubstring(quantityToken, 0, Math.Min(6, quantityToken.Length)));
-        var grossAmount = ParseDecimal(SafeSubstring(amountToken, 2, Math.Max(0, Math.Min(10, amountToken.Length - 2))));
+        var grossAmount = ParseMoney(SafeSubstring(amountToken, 2, Math.Max(0, Math.Min(10, amountToken.Length - 2))));
 
         state.PendingLine = new ParsedLine
         {
@@ -1364,7 +1494,7 @@ public sealed class KasaHareketAktarimiService(
     private static void ApplyDiscount(ParserState state, IReadOnlyList<string> tokens)
     {
         var receipt = state.RequireCurrent();
-        var discount = ParseDecimal(Token(tokens, 5));
+        var discount = ParseMoney(Token(tokens, 5));
 
         if (discount == 0m)
         {
@@ -1413,7 +1543,7 @@ public sealed class KasaHareketAktarimiService(
             LineGuid = line.LineGuid,
             Barcode = line.Barcode,
             ProductCode = line.ProductCode,
-            Amount = ParseDecimal(Token(tokens, 5)),
+            Amount = ParseMoney(Token(tokens, 5)),
             DiscountType = SafeSubstring(promotionToken, 0, Math.Min(2, promotionToken.Length)),
             PromotionCode = SafeSubstring(promotionToken, 2),
             BranchNo = receipt.BranchNo,
@@ -1445,8 +1575,8 @@ public sealed class KasaHareketAktarimiService(
                 _ => (byte)0
             },
             Amount = code == "CEK"
-                ? ParseDecimal(SafeSubstring(Token(tokens, 5), 4))
-                : ParseDecimal(Token(tokens, 5)),
+                ? ParseMoney(SafeSubstring(Token(tokens, 5), 4))
+                : ParseMoney(Token(tokens, 5)),
             BankCode = code == "KRD" ? Token(tokens, 4) : string.Empty,
             SdxTypeCode = code == "SDX" ? Token(tokens, 4) : string.Empty,
             CheckNumber = code == "CEK"
@@ -2249,6 +2379,23 @@ public sealed class KasaHareketAktarimiService(
             : 0m;
     }
 
+    private static decimal ParseMoney(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0m;
+        }
+
+        var normalized = value.Trim();
+        var hasExplicitDecimalSeparator = normalized.Contains('.') ||
+                                          normalized.Contains(',');
+        var parsed = ParseDecimal(normalized);
+
+        return !hasExplicitDecimalSeparator && normalized.All(char.IsDigit)
+            ? Round(parsed / 100m)
+            : parsed;
+    }
+
     private static int ParseInt(string value) =>
         int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
@@ -2459,6 +2606,11 @@ public sealed class KasaHareketAktarimiService(
             4 => "Gider Pusulasi",
             _ => $"Belge Turu {documentKind}"
         };
+
+    private static string ResolveCancelReasonName(byte cancelReason) =>
+        cancelReason == 0
+            ? string.Empty
+            : $"Iptal Nedeni {cancelReason}";
 
     private static DateTime ReadDateTime(DbDataReader reader, string columnName)
     {
