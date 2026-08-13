@@ -52,6 +52,18 @@ Mal henuz 110 numarali depo tarafindan kabul edilmedi.
 
 E-irsaliye gonderimi de `sth_miktar` uzerinden yapilir.
 
+Mal kabul yapilabilmesi icin gonderen taraf e-irsaliyesinin olusturulup gonderilmis olmasi zorunludur. Backend bunu sadece belge no doluluguna bakarak degil, e-irsaliye gonderim izleriyle kontrol eder:
+
+```text
+sth_kilitli  = true
+sth_belge_no = FRM ile baslayan e-irsaliye belge no
+sth_aciklama = e-irsaliye UUID
+```
+
+Bu izler yoksa alici depo evragi kabul edemez. UI bu durumda once gonderen tarafta e-irsaliye gonderimini tamamlatmalidir.
+
+Gonderen depo tarafinda e-irsaliye henuz gonderilmemisse yetkili kullanici giden sevk/iade detayindan miktar, tutar, tarih, hedef/transfer depo ve satir aciklamasi gibi alanlari guncelleyebilir. E-irsaliye gonderildikten veya alici depo kabul ettikten sonra bu duzeltme yolu kapanir.
+
 ## Bekleyen Mal Kabul Listesi
 
 Alici depo bekleyen mal kabul belgelerini su mantikla gorur. Bu liste normal gelen sevkleri ve gelen depo iadelerini birlikte kapsar:

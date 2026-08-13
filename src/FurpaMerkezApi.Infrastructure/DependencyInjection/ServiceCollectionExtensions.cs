@@ -55,6 +55,7 @@ using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCiroAktarimi;
+using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.List;
@@ -507,6 +508,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BanknoteTrackWriteService>();
         services.AddScoped<WarehouseShippingDetailQueryExecutor>();
         services.AddScoped<WarehouseShippingListQueryExecutor>();
+        services.AddScoped<IUpdateWarehouseShippingDocumentUseCase, UpdateWarehouseShippingDocumentUseCase>();
         services.AddScoped<IListReceivedCompanyOrdersUseCase, ListReceivedCompanyOrdersUseCase>();
         services.AddScoped<IGetReceivedCompanyOrderDetailUseCase, GetReceivedCompanyOrderDetailUseCase>();
         services.AddScoped<IListReceivedWarehouseOrdersUseCase, ListReceivedWarehouseOrdersUseCase>();

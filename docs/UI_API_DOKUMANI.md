@@ -5001,6 +5001,72 @@ Yetki:
 
 - `sevk-islemleri.giden-depolar-arasi-sevkler.detail`
 
+### Depolar Arasi Giden Sevk Guncelle
+
+E-irsaliyesi henuz olusturulup gonderilmemis giden depolar arasi sevk evragini detay ekranindan gunceller.
+
+`PUT /api/sevk-islemleri/depolar-arasi-sevkler/giden/F110/3694?warehouseNo=110`
+
+Geriye uyum icin root route da ayni update gibi calisir:
+
+`PUT /api/sevk-islemleri/depolar-arasi-sevkler/F110/3694?warehouseNo=110`
+
+Yetki:
+
+- `sevk-islemleri.giden-depolar-arasi-sevkler.update`
+
+Onemli not:
+
+- Bu endpoint sadece giden/kaynak depo tarafinda calisir; gelen depo mal kabul detayindan sevk evragi degistirilmez.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kaynak depo kabul eder. Bu yetki varsa baska kaynak depo icin `warehouseNo` query parametresi gonderilebilir.
+- Evrak e-irsaliye olarak gonderildiyse update reddedilir. Backend `sth_kilitli`, `sth_belge_no = FRM...` ve `sth_aciklama = UUID` izlerini kontrol eder.
+- Evrak alici depo tarafindan kabul edildiyse (`sth_nakliyedurumu = 1`) update reddedilir.
+- Satir eslestirmesi zorunlu olarak `movementGuid` ile yapilir; stok kodu tek basina kullanilmaz.
+- Bu endpoint mevcut satirlari gunceller; yeni satir ekleme veya satir silme yapmaz.
+- `quantity` alani `sth_miktar` degerini degistirir. `unitPrice` gonderilip `amount` bos birakilirsa backend `sth_tutar = quantity * unitPrice` hesaplar. `amount` gonderilirse tutar aynen kullanilir.
+- Siparise bagli sevkte miktar degisirse backend bagli depo siparis satirinin `ssip_teslim_miktar` alanini delta kadar gunceller; siparis miktarini asan update reddedilir.
+
+Request:
+
+```json
+{
+  "movementDate": "2026-04-17",
+  "documentDate": "2026-04-17",
+  "targetWarehouseNo": 50,
+  "transitWarehouseNo": 60,
+  "description": "Sevk duzeltildi",
+  "lines": [
+    {
+      "movementGuid": "8d4a5a77-1b3f-4f2a-93a1-b90a1b7d3c11",
+      "quantity": 8,
+      "unitPrice": 12.5,
+      "unitPointer": 1,
+      "description": "Miktar duzeltildi"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "documentSerie": "F110",
+  "documentOrderNo": 3694,
+  "sourceWarehouseNo": 110,
+  "targetWarehouseNo": 50,
+  "transitWarehouseNo": 60,
+  "isReturn": false,
+  "updatedLineCount": 1,
+  "lineCount": 1,
+  "totalQuantity": 8,
+  "totalAmount": 100,
+  "updatedAt": "2026-08-13T14:30:00",
+  "updateUser": 110,
+  "writeConnectionName": "testMikroConnection"
+}
+```
+
 ### Depolar Arasi Giden Sevki E-Irsaliyeye Cevir
 
 Detay ekranindaki mevcut evragi e-irsaliye olarak gondermek icin:
@@ -5525,6 +5591,7 @@ Onemli not:
 - `isReturn = false` normal gelen depo sevkini, `isReturn = true` gelen depo iadesini ifade eder.
 - `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `mal-kabul-islemleri.depo-mal-kabulleri.all-warehouses` yetkisi olan kullanici baska depo icin kabul yapacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Bekleyen kabul icin hareketlerde `sth_nakliyedeposu = kullaniciDeposu` ve `sth_nakliyedurumu != 1` olmalidir.
+- Kabul icin gonderen taraf e-irsaliyesi zorunludur. Backend `sth_kilitli = true`, `sth_belge_no` degerinin `FRM` ile baslamasi ve `sth_aciklama` degerinin UUID olmasi izlerini kontrol eder; bu iz yoksa kabul islemi reddedilir. UI kabul aksiyonunu e-irsaliye gonderilmeden aktif etmemelidir.
 - `sth_miktar` degistirilmez; resmi sevk/e-irsaliye miktari olarak korunur.
 - UI'dan gelen sayilan miktar `sth_FormulMiktar` alanina yazilir.
 - Kabulde depo swap yapilir: `sth_giris_depo_no = kullaniciDeposu`, `sth_nakliyedeposu = eski sth_giris_depo_no` ve `sth_nakliyedurumu = 1`.
@@ -9090,6 +9157,72 @@ Not:
 - `giden` detayda filtre `sth_evraktip = 17`, `sth_normal_iade = 1`, `sth_cikis_depo_no = warehouseNo` olarak uygulanir
 - `gelen` detayda ayni evrak, hedef/transfer alanlarina gore alici sube perspektifinden okunur
 - bu endpoint Mikro veritabaninda sadece SELECT yapar; insert/update/delete yoktur
+
+### Depo Iadesi Guncelle
+
+E-irsaliyesi henuz olusturulup gonderilmemis giden depo iade evragini detay ekranindan gunceller.
+
+`PUT /api/iade-islemleri/depo-iadeleri/giden/F110/42?warehouseNo=110`
+
+Geriye uyum icin root route da ayni update gibi calisir:
+
+`PUT /api/iade-islemleri/depo-iadeleri/F110/42?warehouseNo=110`
+
+Yetki:
+
+- `iade-islemleri.giden-depo-iadeleri.update`
+
+Onemli not:
+
+- Bu endpoint sadece giden/kaynak depo iadesinde calisir; gelen iade/mal kabul tarafindan iade evragi degistirilmez.
+- `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kaynak depo kabul eder. Bu yetki varsa baska kaynak depo icin `warehouseNo` query parametresi gonderilebilir.
+- Evrak e-irsaliye olarak gonderildiyse update reddedilir. Backend `sth_kilitli`, `sth_belge_no = FRM...` ve `sth_aciklama = UUID` izlerini kontrol eder.
+- Evrak karsi depo tarafindan kabul edildiyse (`sth_nakliyedurumu = 1`) update reddedilir.
+- Satir eslestirmesi zorunlu olarak `movementGuid` ile yapilir.
+- Bu endpoint mevcut satirlari gunceller; yeni satir ekleme veya satir silme yapmaz.
+- `quantity` alani `sth_miktar` degerini degistirir. `unitPrice` gonderilip `amount` bos birakilirsa backend `sth_tutar = quantity * unitPrice` hesaplar. `amount` gonderilirse tutar aynen kullanilir.
+- Iade icin otomatik depo siparis satiri olusturulduysa backend bagli `DEPOLAR_ARASI_SIPARISLER` satirini yeni miktar, tutar, stok, depo ve aciklama bilgileriyle aynalar.
+
+Request:
+
+```json
+{
+  "movementDate": "2026-04-17",
+  "documentDate": "2026-04-17",
+  "targetWarehouseNo": 50,
+  "transitWarehouseNo": 60,
+  "description": "Iade duzeltildi",
+  "lines": [
+    {
+      "movementGuid": "8d4a5a77-1b3f-4f2a-93a1-b90a1b7d3c11",
+      "quantity": 8,
+      "unitPrice": 12.5,
+      "unitPointer": 1,
+      "description": "Miktar duzeltildi"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "documentSerie": "F110",
+  "documentOrderNo": 42,
+  "sourceWarehouseNo": 110,
+  "targetWarehouseNo": 50,
+  "transitWarehouseNo": 60,
+  "isReturn": true,
+  "updatedLineCount": 1,
+  "lineCount": 1,
+  "totalQuantity": 8,
+  "totalAmount": 100,
+  "updatedAt": "2026-08-13T14:30:00",
+  "updateUser": 110,
+  "writeConnectionName": "testMikroConnection"
+}
+```
 
 ### Depo Iadesini E-Irsaliyeye Cevir
 

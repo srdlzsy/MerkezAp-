@@ -21,6 +21,7 @@ public sealed class DepolarArasiSevklerController(
     IListInterWarehouseShipmentsUseCase listInterWarehouseShipmentsUseCase,
     IGetInterWarehouseShipmentDetailUseCase getInterWarehouseShipmentDetailUseCase,
     ICreateInterWarehouseShipmentUseCase createInterWarehouseShipmentUseCase,
+    IUpdateWarehouseShippingDocumentUseCase updateWarehouseShippingDocumentUseCase,
     IDocumentFlowService documentFlowService,
     IEDespatchService eDespatchService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
@@ -108,6 +109,67 @@ public sealed class DepolarArasiSevklerController(
         [FromBody] CreateInterWarehouseShipmentHttpRequest request,
         CancellationToken cancellationToken) =>
         await CreateOutgoing(request, cancellationToken);
+
+    [HttpPut("{documentSerie}/{documentOrderNo:int}")]
+    [Authorize(Policy = OutgoingUpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateWarehouseShippingDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<UpdateWarehouseShippingDocumentResponse>> Update(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        [FromBody, Required] UpdateWarehouseShippingDocumentHttpRequest request,
+        CancellationToken cancellationToken) =>
+        await UpdateOutgoing(documentSerie, documentOrderNo, warehouseNo, request, cancellationToken);
+
+    [HttpPut("giden/{documentSerie}/{documentOrderNo:int}")]
+    [Authorize(Policy = OutgoingUpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateWarehouseShippingDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<UpdateWarehouseShippingDocumentResponse>> UpdateOutgoing(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        [FromBody, Required] UpdateWarehouseShippingDocumentHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingUpdatePolicy);
+
+        return Ok(await updateWarehouseShippingDocumentUseCase.ExecuteAsync(
+            new UpdateWarehouseShippingDocumentRequest(
+                resolvedWarehouseNo,
+                documentSerie,
+                documentOrderNo,
+                IsReturn: false,
+                request.MovementDate,
+                request.DocumentDate,
+                request.DocumentNo,
+                request.TargetWarehouseNo,
+                request.TransitWarehouseNo,
+                request.Description,
+                (request.Lines ?? Array.Empty<UpdateWarehouseShippingDocumentLineHttpRequest>())
+                    .Select(line => new UpdateWarehouseShippingDocumentLineRequest(
+                        line.MovementGuid,
+                        line.RowNo,
+                        line.StockCode,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.Amount,
+                        line.UnitPointer,
+                        line.Description,
+                        line.PartyCode,
+                        line.LotNo,
+                        line.ProjectCode,
+                        line.CustomerResponsibilityCenter,
+                        line.ProductResponsibilityCenter))
+                    .ToArray(),
+                RequestedByUserId: User.GetRequiredUserId()),
+            cancellationToken));
+    }
 
     [HttpPost("{documentSerie}/{documentOrderNo:int}/e-irsaliye")]
     [Authorize(Policy = OutgoingDetailPolicy)]
@@ -254,7 +316,7 @@ public sealed class DepolarArasiSevklerController(
     [HttpPut("{id}")]
     [Authorize(Policy = OutgoingUpdatePolicy)]
     [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
-    public ActionResult<ModuleActionScaffoldResponse> Update(string id, [FromBody] ModuleActionRequest request) =>
+    public ActionResult<ModuleActionScaffoldResponse> UpdateAction(string id, [FromBody] ModuleActionRequest request) =>
         UpdateNotImplemented(OutgoingUpdatePolicy, id);
 
     private async Task<ActionResult<IReadOnlyCollection<WarehouseShippingListItemDto>>> ListByDirection(

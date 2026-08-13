@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
+using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -323,8 +324,28 @@ public sealed class AcceptWarehouseReceivingUseCase(
             throw new InvalidOperationException("Warehouse receiving document does not contain a valid transit warehouse.");
         }
 
+        EnsureEDespatchWasSent(movements, documentSerie, documentOrderNo);
+
         return movements;
     }
+
+    private static void EnsureEDespatchWasSent(
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        string documentSerie,
+        int documentOrderNo)
+    {
+        var missingEDespatchMovement = movements.FirstOrDefault(movement => !HasSentEDespatch(movement));
+        if (missingEDespatchMovement is null)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Inter warehouse shipment {documentSerie}/{documentOrderNo} can not be accepted before e-despatch is sent.");
+    }
+
+    internal static bool HasSentEDespatch(STOK_HAREKETLERI movement)
+        => EDespatchMovementState.HasSentEDespatch(movement);
 
     private static IReadOnlyCollection<AcceptWarehouseReceivingLineResultDto> BuildLineResults(
         IReadOnlyCollection<STOK_HAREKETLERI> movements,
