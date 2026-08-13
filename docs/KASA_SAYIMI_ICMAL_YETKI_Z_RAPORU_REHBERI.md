@@ -204,8 +204,8 @@ Neden all yetkili kullanicida `warehouseNo` zorunlu?
 
 | Method | Endpoint | Policy | Aciklama |
 | --- | --- | --- | --- |
-| `PUT` | `/{documentSerie}/{documentOrderNo}/detaylar` | `kasa-sayimlari.update` | Odeme/detay satirlarini gunceller |
-| `PUT` | `/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | `kasa-sayimlari.update` | Banknot hareketlerini gunceller |
+| `PUT` | `/{documentSerie}/{documentOrderNo}/detaylar` | `kasa-sayimlari.update` | Odeme/masraf/detay satirlarini tam liste olarak yeniden yazar |
+| `PUT` | `/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | `kasa-sayimlari.update` | Banknot hareketlerini tam liste olarak yeniden yazar |
 
 Legacy uyum endpointleri:
 
@@ -219,6 +219,12 @@ Not:
 - Guncellemede hedef belge subesi `documentSerie` icinden cozulur.
 - `all-warehouses` yetkisi olan kullanici baska sube kaydini listeleyip secmis ise update yapabilir.
 - Yetki yoksa kullanici kendi JWT deposu disina cikamaz.
+- Update satir bazinda upsert gibi dusunulmelidir: UI son durumda belgede kalmasini istedigi tum satirlari gonderir; backend eski satirlari kaldirip gonderilen listeyi yeniden yazar.
+- Gonderilen listede eski satir varsa guncellenmis olur.
+- Gonderilen listede yeni satir varsa yeni satir olarak olusur.
+- Eski satir gonderilmezse silinmis/kaldirilmis kabul edilir.
+- UI sadece degisen tek satiri gondermemelidir; aksi halde diger satirlar kalkar.
+- Belge bazinda update create'e donmez. `{documentSerie}/{documentOrderNo}` DB'de yoksa yeni belge acilmaz; yeni belge icin Icmal Kaydi Girisi `POST` akisi kullanilir.
 
 ### Kasa Sayimi Silme
 
@@ -633,6 +639,26 @@ satir 2 -> 1      -> 94895.15
 
 `PUT /{documentSerie}/{documentOrderNo}/detaylar`
 
+Bu endpoint patch mantiginda calismaz; tam liste replace mantiginda calisir.
+
+UI kurali:
+
+```text
+Kullanici detay ekraninda ne kalmasini istiyorsa request.details icinde hepsini gonder.
+
+Var olan satir degistiyse:
+  yeni degerleriyle gonder -> guncellenir
+
+Yeni odeme/masraf satiri eklendiyse:
+  request.details icine ekle -> yeni satir olarak yazilir
+
+Var olan satir kaldirildiyse:
+  request.details icine koyma -> backend o satiri siler
+
+Sadece degisen tek satiri gonderme:
+  cunku backend diger detay satirlarini kaldirilmis kabul eder
+```
+
 Guncellenenler:
 
 - `Summaries` detay satirlari
@@ -648,9 +674,35 @@ zDifference = yeniDocumentTotal - mevcutZTotalMovement.cha_meblag
 
 Z toplam satiri update sirasinda degistirilmez; cunku update detay request'inde yeni `zTotalValue` alani yoktur.
 
+Nakit toplam satiri:
+
+```text
+PaymentTypeId = 500 veya TypeName nakit ise UI details icinde gonderebilir.
+Backend bunu normal detay satiri olarak yazmaz; nakit toplam satirini banknot toplamindan veya mevcut nakit bilgisinden yeniden uretir.
+```
+
+Belge yoksa:
+
+```text
+Update yeni belge olusturmaz.
+Belge bulunamazsa 404/KeyNotFound davranisi beklenir.
+Yeni belge icin POST /api/kasa-islemleri/kasa-sayimlari kullanilir.
+```
+
 ### Banknot Guncelleme
 
 `PUT /{documentSerie}/{documentOrderNo}/banknot-hareketleri`
+
+Bu endpoint de tam liste replace mantiginda calisir.
+
+UI kurali:
+
+```text
+Kasada son durumda hangi banknot tipleri kalacaksa hepsi gonderilir.
+Yeni banknot tipi eklendiyse listeye eklenir.
+Var olan banknot tipi kaldirildiyse quantity 0 gonderilebilir veya listeden cikarilabilir.
+Backend quantity > 0 olanlari yeniden yazar.
+```
 
 Guncellenenler:
 
@@ -659,6 +711,13 @@ Guncellenenler:
 - Belge toplam tutari
 - Ana CARI hareket tutari
 - Varsa Z fark satiri
+
+Belge yoksa:
+
+```text
+Update yeni belge olusturmaz.
+Yeni kasa sayimi/icmal kaydi gerekiyorsa create akisi kullanilir.
+```
 
 ## Silme Mantigi
 

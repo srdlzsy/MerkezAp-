@@ -11811,9 +11811,14 @@ Yetki:
 Not:
 
 - detay update request'inde `details` listesi zorunludur
-- detay update request'inde nakit/500 satiri gonderilmez; backend mevcut banknot toplamindan 500 satirini korur
+- detay update patch degildir; UI belgede kalmasini istedigi tum odeme/masraf detay satirlarini `details` icinde gondermelidir
+- detay listesinde eski satir yeni degerleriyle gelirse guncellenir; yeni satir gelirse olusur; eski satir gonderilmezse kaldirilir
+- UI sadece degisen tek satiri gondermemelidir; aksi halde diger detay satirlari kaldirilmis kabul edilir
+- nakit/500 satiri UI tarafindan normal detay gibi yonetilmez; backend mevcut banknot/nakit toplamindan 500 satirini yeniden uretir
+- banknot update de patch degildir; `banknoteMovements` son durumda kalacak tum banknotlari icermelidir
 - banknot update request'inde `banknoteMovements` bos gonderilirse mevcut banknot satirlari temizlenebilir
 - banknot update sonrasi backend `PaymentTypeID = 500` nakit toplam satirini ve ilgili cari hareket toplamlarini yeni belge toplamiyla gunceller
+- update belge yoksa yeni belge olusturmaz; yeni kasa sayimi/icmal kaydi icin create endpointi kullanilir
 - modern `DELETE` cagrisinda sube icin query `warehouseNo` veya JWT deposu kullanilir
 - legacy `POST DeleteSummary` cagrisinda `warehouseNo` yoksa backend `documentSerie` icinden subeyi cozer, ornek `F110.1` -> `110`
 
