@@ -246,13 +246,64 @@ Projede bazi ekranlar kendi setini kullanir:
 ```text
 FeedbackActions             -> page/list/detail/update/list-all
 AnnouncementActions         -> page/list/detail/create/update/archive/all-warehouses
+CashSummaryEntryActions     -> page/list/create/all-warehouses
 StockAnomalyActions         -> page/list/detail/update/scan/all-warehouses
 ProductCaseProfileActions   -> manage/list/detail/create/update/delete/all-warehouses
 EtiketBasimActions          -> page/list/detail/create/update/delete/transfer/all-warehouses
 ProductDistributionActions  -> page/list/detail/create/update/delete/all-warehouses
+GreenGrocerOperationsActions -> page/list/create/all-warehouses
 ```
 
 Ozel action gerekiyorsa isim kisa, kebab-case ve is anlamina uygun olmalidir.
+
+## Kasa Sayimlari ve Icmal Kaydi Girisi Ozel Ayrimi
+
+Kasa sayimi akisinda iki ayri UI gorevi vardir:
+
+```text
+Icmal Kaydi Girisi -> yeni kayit olusturma ekrani
+Kasa Sayimlari     -> liste, detay, secili kaydi duzenleme ve silme ekrani
+```
+
+Guncel yetki ayrimi:
+
+```text
+kasa-islemleri.icmal-kaydi-girisi.page
+kasa-islemleri.icmal-kaydi-girisi.list
+kasa-islemleri.icmal-kaydi-girisi.create
+kasa-islemleri.icmal-kaydi-girisi.all-warehouses
+
+kasa-islemleri.kasa-sayimlari.page
+kasa-islemleri.kasa-sayimlari.list
+kasa-islemleri.kasa-sayimlari.detail
+kasa-islemleri.kasa-sayimlari.update
+kasa-islemleri.kasa-sayimlari.delete
+kasa-islemleri.kasa-sayimlari.all-warehouses
+```
+
+Bu yuzden:
+
+```text
+POST /api/kasa-islemleri/kasa-sayimlari
+  -> kasa-islemleri.icmal-kaydi-girisi.create
+  -> icmal-kaydi-girisi.all-warehouses varsa UI secili subeyi body.warehouseNo ile gondermelidir
+  -> icmal-kaydi-girisi.all-warehouses yoksa backend JWT deposunu kullanir
+
+GET /api/kasa-islemleri/kasa-sayimlari...
+  -> kasa-islemleri.kasa-sayimlari.list/detail
+
+PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/detaylar
+PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
+POST /api/kasa-islemleri/kasa-sayimlari/UpdateSummaryDetails
+POST /api/kasa-islemleri/kasa-sayimlari/UpdateBanknoteMovements
+  -> kasa-islemleri.kasa-sayimlari.update
+
+DELETE /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
+POST /api/kasa-islemleri/kasa-sayimlari/DeleteSummary
+  -> kasa-islemleri.kasa-sayimlari.delete
+```
+
+UI'da `Icmal Kaydi Girisi` altinda duzenle/sil butonu cizilmemelidir. Bu aksiyonlar `Kasa Sayimlari` listesinden secilen kayit uzerinden gosterilir.
 
 ## Yeni Menu Ekleme
 
@@ -508,6 +559,32 @@ dotnet ef database update ile uygula
 
 EF, katalogdaki seed degisikligini migration'a `InsertData` olarak ekler.
 
+Onemli:
+
+```text
+Migration dosyasini sadece elle .cs olarak eklemek yeterli degildir.
+EF migration'in .Designer.cs dosyasini ve AuthDbContextModelSnapshot'u da guncellemelidir.
+```
+
+Dogru akis:
+
+```powershell
+dotnet ef migrations add MyPermissionChange --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
+```
+
+Sonra gerekiyorsa olusan migration'in `Up`/`Down` govdesi custom SQL ile duzenlenir. `.Designer.cs` ve snapshot korunur.
+
+Permission tasima/rename durumunda EF'in duz `DeleteData`/`InsertData` cikarmasi yeterli olmayabilir. Role atamalarini kaybetmemek icin migration:
+
+```text
+yeni permission kaydini eklemeli
+eski app_role_permissions satirlarini yeni permission'a kopyalamali
+Administrator role icin eksikse yeni baglantiyi eklemeli
+eski role-permission baglantilarini silmeli
+eski permission kaydini silmeli veya devre disi birakmali
+Down metodunda tersini yapmali
+```
+
 ## Deterministic Permission ID
 
 Permission ID'leri ortamdan ortama degismemelidir.
@@ -634,7 +711,7 @@ sevk-islemleri.giden-depolar-arasi-sevkler.list
 -> sevk-islemleri.giden-depolar-arasi-sevkler.all-warehouses
 ```
 
-UI role adına bakmamalidir. Depo secici icin ilgili permission koduna bakmalidir.
+UI role adina bakmamalidir. Depo secici icin ilgili permission koduna bakmalidir.
 
 ## Frontend Kurali
 
@@ -722,6 +799,14 @@ Down metodunda tersini yap
 
 Sadece `PermissionCatalog.cs` icinde code degistirmek production DB'de yetki kopmasina sebep olabilir.
 
+Katalogdan bir action'i baska menuye tasimak da rename gibi dusunulmelidir. Ornek:
+
+```text
+icmal-kaydi-girisi.update/delete -> kasa-sayimlari.update/delete
+```
+
+Bu durumda admin disi rollerin eski yetki atamalari yeni yetkiye tasinmazsa kullanicilar bir anda `403 Forbidden` almaya baslar.
+
 ## Checklist
 
 Yeni menu/endpoint icin:
@@ -739,7 +824,9 @@ Yeni menu/endpoint icin:
 [ ] DI kaydi eklendi
 [ ] Auth entity/tablo varsa EF configuration ve DbSet eklendi
 [ ] Migration olusturuldu
+[ ] Migration EF ile scaffold edildi; .Designer.cs ve snapshot olustu
 [ ] Migration diff'i incelendi
+[ ] Permission rename/tasima varsa role-permission baglantilari korundu
 [ ] AuthDbContextModelSnapshot kontrol edildi
 [ ] UI_API_DOKUMANI.md guncellendi
 [ ] dotnet build alindi
@@ -821,6 +908,7 @@ Muhtemel neden:
 ```text
 entity/seed degisti ama migration yok
 snapshot ile model uyumsuz
+elle migration .cs dosyasi eklendi ama .Designer.cs ve AuthDbContextModelSnapshot guncellenmedi
 ```
 
 Cozum:

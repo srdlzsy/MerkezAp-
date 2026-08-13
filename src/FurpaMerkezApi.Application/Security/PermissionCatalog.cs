@@ -150,8 +150,6 @@ public static class PermissionCatalog
         PageAction,
         ListAction,
         CreateAction,
-        UpdateAction,
-        DeleteAction,
         AllWarehousesAction
     ];
 
@@ -285,7 +283,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("fatura-islemleri", "FaturaIslemleri", "fatura-goruntuleme", "FaturaGoruntuleme", ReadUpdateActions),
         ..CreateMenuPermissions("fatura-islemleri", "FaturaIslemleri", "fatura-gonderimi", "FaturaGonderimi", ReadCreateActions),
 
-        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-sayimlari", "KasaSayimlari", ReadActions),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-sayimlari", "KasaSayimlari", ReadUpdateDeleteActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "icmal-kaydi-girisi", "IcmalKaydiGirisi", CashSummaryEntryActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-cirolari", "KasaCirolari", ReadActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "yeni-kasa-analizleri", "YeniKasaAnalizleri", ListActions),

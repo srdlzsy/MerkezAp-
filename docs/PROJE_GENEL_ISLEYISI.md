@@ -519,6 +519,65 @@ ayar-islemleri.soforler.manage -> Soforler ekrani gorunur
 ayar-islemleri.soforler.list   -> sofor listesi/arama API'si calisir
 ```
 
+## Kasa Sayimlari ve Icmal Kaydi Girisi
+
+Kasa sayimi modulunde create ekrani ile liste/edit ekrani ayridir.
+
+```text
+Icmal Kaydi Girisi -> yeni kasa sayimi/icmal kaydi olusturur
+Kasa Sayimlari     -> mevcut kayitlari listeler, detay acar, secili kaydi duzenler veya siler
+```
+
+Guncel yetki modeli:
+
+```text
+kasa-islemleri.icmal-kaydi-girisi.page
+kasa-islemleri.icmal-kaydi-girisi.list
+kasa-islemleri.icmal-kaydi-girisi.create
+kasa-islemleri.icmal-kaydi-girisi.all-warehouses
+
+kasa-islemleri.kasa-sayimlari.page
+kasa-islemleri.kasa-sayimlari.list
+kasa-islemleri.kasa-sayimlari.detail
+kasa-islemleri.kasa-sayimlari.update
+kasa-islemleri.kasa-sayimlari.delete
+kasa-islemleri.kasa-sayimlari.all-warehouses
+```
+
+Akis:
+
+```text
+Yeni kayit:
+  POST /api/kasa-islemleri/kasa-sayimlari
+  -> kasa-islemleri.icmal-kaydi-girisi.create
+  -> all-warehouses yoksa JWT deposuna yazar
+  -> all-warehouses varsa UI sube secmeli ve body'de warehouseNo gondermelidir
+
+Liste ve detay:
+  GET /api/kasa-islemleri/kasa-sayimlari
+  GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
+  -> kasa-islemleri.kasa-sayimlari.list/detail
+
+Secili kaydi duzenleme:
+  PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/detaylar
+  PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
+  -> kasa-islemleri.kasa-sayimlari.update
+
+Secili kaydi silme:
+  DELETE /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
+  -> kasa-islemleri.kasa-sayimlari.delete
+```
+
+Legacy uyumluluk route'lari ayni mantiktadir:
+
+```text
+POST /api/kasa-islemleri/kasa-sayimlari/UpdateSummaryDetails      -> kasa-sayimlari.update
+POST /api/kasa-islemleri/kasa-sayimlari/UpdateBanknoteMovements   -> kasa-sayimlari.update
+POST /api/kasa-islemleri/kasa-sayimlari/DeleteSummary             -> kasa-sayimlari.delete
+```
+
+UI'da `Icmal Kaydi Girisi` altinda duzenle/sil aksiyonu beklenmez. Kullanici once `Kasa Sayimlari` listesinden kaydi secer; yetkisi varsa duzenle/sil butonlari orada gorunur.
+
 ## Rol ve Yetki Zinciri
 
 Erisim zinciri:
@@ -827,6 +886,7 @@ AuthDbContext icin migration gerekir:
 yeni Auth entity/tablo
 entity kolon/iliski degisikligi
 permission seed degisikligi kontrollu deployment ile tasinacaksa
+permission code/menu/action tasima veya rename
 GreenGrocer profil/snapshot gibi Auth DB tablolari
 despatch_drivers gibi tanim tablolari
 ```
@@ -849,6 +909,17 @@ Kontrol komutu:
 
 ```powershell
 dotnet ef migrations has-pending-model-changes --project src\FurpaMerkezApi.Infrastructure --startup-project src\FurpaMerkezApi.WebApi --context AuthDbContext
+```
+
+Permission seed degisikliginde migration EF ile scaffold edilmelidir. Sadece elle `.cs` migration dosyasi eklemek `.Designer.cs` ve `AuthDbContextModelSnapshot` guncellenmedigi icin `dotnet run` sirasinda `PendingModelChangesWarning` hatasina yol acabilir.
+
+Permission tasima veya rename islerinde migration role atamalarini da korumalidir:
+
+```text
+eski permission -> yeni permission
+app_role_permissions kopyalanir
+eski permission baglantilari temizlenir
+Down metodunda ters yonde tasinir
 ```
 
 ## Build ve Test

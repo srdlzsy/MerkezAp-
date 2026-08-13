@@ -15,13 +15,6 @@ public sealed class CashSummaryCommandsUseCase(
     : ICashSummaryCommandsUseCase
 {
     private const short MikroUserNo = 39;
-    private const short CustomerMovementFileId = 1;
-    private const byte CustomerMovementDocumentType = 0;
-    private const byte CustomerMovementType = 0;
-    private const byte CustomerMovementGenre = 0;
-    private const byte CustomerMovementNormalReturn = 0;
-    private const byte CustomerMovementTpoz = 0;
-    private const byte CustomerMovementTradeType = 0;
     private const int FirstDocumentOrderNo = 1;
     private const int CashTotalPaymentTypeId = 500;
     private const int CashTotalSlipNumber = 1;
@@ -29,7 +22,6 @@ public sealed class CashSummaryCommandsUseCase(
     private const int StoreExpensePaymentTypeEnd = 113;
     private const string CashTotalTypeName = "Nakit";
     private const string CashTotalDescription = "Nakit Toplam";
-    private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCashSummaryResponse> CreateAsync(
         CreateCashSummaryRequest request,
@@ -82,18 +74,19 @@ public sealed class CashSummaryCommandsUseCase(
                 var giftCheckEntities = giftCheckLines
                     .Select(line => CreateGiftCheckMovementEntity(request, line, documentSerie, documentOrderNo, now))
                     .ToArray();
-                var customerMovement = CreateCustomerMovementEntity(
+                var customerMovements = CashSummaryCustomerMovementFactory.CreateMovements(
                     request,
                     summaryDate,
                     documentSerie,
                     documentOrderNo,
                     documentTotal,
-                    now);
+                    now)
+                    .ToArray();
 
                 await mikroWriteDbContext.Summaries.AddRangeAsync(summaryLines, cancellationToken);
                 await mikroWriteDbContext.BanknoteMovements.AddRangeAsync(banknoteEntities, cancellationToken);
                 await mikroWriteDbContext.GiftCheckMovements.AddRangeAsync(giftCheckEntities, cancellationToken);
-                await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AddAsync(customerMovement, cancellationToken);
+                await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AddRangeAsync(customerMovements, cancellationToken);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
@@ -389,12 +382,23 @@ public sealed class CashSummaryCommandsUseCase(
                 item.cha_evrakno_sira == documentOrderNo)
             .ToListAsync(cancellationToken);
 
-        foreach (var movement in customerMovements)
+        foreach (var movement in customerMovements.Where(CashSummaryCustomerMovementFactory.IsMainMovement))
         {
             movement.cha_meblag = totalAmount;
             movement.cha_aratoplam = totalAmount;
             movement.cha_lastup_user = MikroUserNo;
             movement.cha_lastup_date = now;
+        }
+
+        var zReportTotalMovement = customerMovements.FirstOrDefault(CashSummaryCustomerMovementFactory.IsZReportTotalMovement);
+        var zDifferenceMovement = customerMovements.FirstOrDefault(CashSummaryCustomerMovementFactory.IsZDifferenceMovement);
+        if (zReportTotalMovement is not null && zDifferenceMovement is not null)
+        {
+            var differenceAmount = Math.Round(totalAmount - (zReportTotalMovement.cha_meblag ?? 0d), 2);
+            zDifferenceMovement.cha_meblag = differenceAmount;
+            zDifferenceMovement.cha_aratoplam = differenceAmount;
+            zDifferenceMovement.cha_lastup_user = MikroUserNo;
+            zDifferenceMovement.cha_lastup_date = now;
         }
     }
 
@@ -730,190 +734,6 @@ public sealed class CashSummaryCommandsUseCase(
             GiftCheckType = line.GiftCheckType,
             Quantity = line.Quantity,
             Total = line.Total
-        };
-
-    private static CARI_HESAP_HAREKETLERI CreateCustomerMovementEntity(
-        CreateCashSummaryRequest request,
-        DateTime summaryDate,
-        string documentSerie,
-        int documentOrderNo,
-        double documentTotal,
-        DateTime now) =>
-        new()
-        {
-            cha_Guid = Guid.NewGuid(),
-            cha_DBCno = 0,
-            cha_SpecRecNo = 0,
-            cha_iptal = false,
-            cha_fileid = CustomerMovementFileId,
-            cha_hidden = false,
-            cha_kilitli = false,
-            cha_degisti = false,
-            cha_CheckSum = 0,
-            cha_create_user = MikroUserNo,
-            cha_create_date = now,
-            cha_lastup_user = MikroUserNo,
-            cha_lastup_date = now,
-            cha_special1 = string.Empty,
-            cha_special2 = string.Empty,
-            cha_special3 = string.Empty,
-            cha_firmano = 0,
-            cha_subeno = 0,
-            cha_evrak_tip = CustomerMovementDocumentType,
-            cha_evrakno_seri = documentSerie,
-            cha_evrakno_sira = documentOrderNo,
-            cha_satir_no = 0,
-            cha_tarihi = summaryDate,
-            cha_tip = CustomerMovementType,
-            cha_cinsi = CustomerMovementGenre,
-            cha_normal_Iade = CustomerMovementNormalReturn,
-            cha_tpoz = CustomerMovementTpoz,
-            cha_ticaret_turu = CustomerMovementTradeType,
-            cha_belge_no = $"{request.CashNo}-{request.ZReportNo}",
-            cha_belge_tarih = summaryDate,
-            cha_aciklama = $"Kasa sayimi {documentSerie}/{documentOrderNo}",
-            cha_satici_kodu = request.CashierNo.ToString(),
-            cha_cari_cins = 0,
-            cha_kod = $"KASA-{request.WarehouseNo}",
-            cha_d_cins = 0,
-            cha_d_kur = 1d,
-            cha_altd_kur = 0d,
-            cha_grupno = 0,
-            cha_srmrkkodu = string.Empty,
-            cha_kasa_hizmet = 0,
-            cha_kasa_hizkod = request.CashNo.ToString(),
-            cha_karsidcinsi = 0,
-            cha_karsid_kur = 1d,
-            cha_karsidgrupno = 0,
-            cha_karsisrmrkkodu = string.Empty,
-            cha_miktari = 1d,
-            cha_meblag = documentTotal,
-            cha_aratoplam = documentTotal,
-            cha_vade = 0,
-            cha_Vade_Farki_Yuz = 0d,
-            cha_ft_iskonto1 = 0d,
-            cha_ft_iskonto2 = 0d,
-            cha_ft_iskonto3 = 0d,
-            cha_ft_iskonto4 = 0d,
-            cha_ft_iskonto5 = 0d,
-            cha_ft_iskonto6 = 0d,
-            cha_ft_masraf1 = 0d,
-            cha_ft_masraf2 = 0d,
-            cha_ft_masraf3 = 0d,
-            cha_ft_masraf4 = 0d,
-            cha_isk_mas1 = 0,
-            cha_isk_mas2 = 0,
-            cha_isk_mas3 = 0,
-            cha_isk_mas4 = 0,
-            cha_isk_mas5 = 0,
-            cha_isk_mas6 = 0,
-            cha_isk_mas7 = 0,
-            cha_isk_mas8 = 0,
-            cha_isk_mas9 = 0,
-            cha_isk_mas10 = 0,
-            cha_sat_iskmas1 = false,
-            cha_sat_iskmas2 = false,
-            cha_sat_iskmas3 = false,
-            cha_sat_iskmas4 = false,
-            cha_sat_iskmas5 = false,
-            cha_sat_iskmas6 = false,
-            cha_sat_iskmas7 = false,
-            cha_sat_iskmas8 = false,
-            cha_sat_iskmas9 = false,
-            cha_sat_iskmas10 = false,
-            cha_yuvarlama = 0d,
-            cha_StFonPntr = 0,
-            cha_stopaj = 0d,
-            cha_savsandesfonu = 0d,
-            cha_avansmak_damgapul = 0d,
-            cha_vergipntr = 0,
-            cha_vergisiz_fl = false,
-            cha_otvtutari = 0d,
-            cha_otvvergisiz_fl = false,
-            cha_oiv_pntr = 0,
-            cha_oivtutari = 0d,
-            cha_oiv_vergi = 0d,
-            cha_oivergisiz_fl = false,
-            cha_fis_tarih = MikroEmptyDate,
-            cha_fis_sirano = 0,
-            cha_trefno = string.Empty,
-            cha_sntck_poz = 0,
-            cha_reftarihi = summaryDate,
-            cha_istisnakodu = 0,
-            cha_pos_hareketi = 0,
-            cha_meblag_ana_doviz_icin_gecersiz_fl = 0,
-            cha_meblag_alt_doviz_icin_gecersiz_fl = 0,
-            cha_meblag_orj_doviz_icin_gecersiz_fl = 0,
-            cha_sip_uid = Guid.Empty,
-            cha_kirahar_uid = Guid.Empty,
-            cha_vardiya_tarihi = summaryDate,
-            cha_vardiya_no = Convert.ToByte(Math.Clamp(request.CashNo, 0, byte.MaxValue)),
-            cha_vardiya_evrak_ti = 0,
-            cha_ebelge_turu = 0,
-            cha_tevkifat_toplam = 0d,
-            cha_e_islem_turu = 0,
-            cha_fatura_belge_turu = 0,
-            cha_diger_belge_adi = string.Empty,
-            cha_uuid = string.Empty,
-            cha_adres_no = 0,
-            cha_vergifon_toplam = 0d,
-            cha_ilk_belge_tarihi = summaryDate,
-            cha_ilk_belge_doviz_kuru = 1d,
-            cha_HareketGrupKodu1 = string.Empty,
-            cha_HareketGrupKodu2 = string.Empty,
-            cha_HareketGrupKodu3 = string.Empty,
-            cha_ebelgeno_seri = string.Empty,
-            cha_ebelgeno_sira = 0,
-            cha_hubid = string.Empty,
-            cha_hubglbid = string.Empty,
-            cha_disyazilimid = string.Empty,
-            cha_disyazilim_tip = 0,
-            cha_bsba_e_belge_mi = 0,
-            cha_eticaret_kanal_kodu = string.Empty,
-            cha_hizli_satis_kasa_no = Convert.ToInt16(Math.Clamp(request.CashNo, 0, short.MaxValue)),
-            cha_ebelge_Islemturu = 0,
-            cha_tevkifat_sifirlandi_fl = false,
-            cha_vergi1 = 0d,
-            cha_vergi2 = 0d,
-            cha_vergi3 = 0d,
-            cha_vergi4 = 0d,
-            cha_vergi5 = 0d,
-            cha_vergi6 = 0d,
-            cha_vergi7 = 0d,
-            cha_vergi8 = 0d,
-            cha_vergi9 = 0d,
-            cha_vergi10 = 0d,
-            cha_vergi11 = 0d,
-            cha_vergi12 = 0d,
-            cha_vergi13 = 0d,
-            cha_vergi14 = 0d,
-            cha_vergi15 = 0d,
-            cha_vergi16 = 0d,
-            cha_vergi17 = 0d,
-            cha_vergi18 = 0d,
-            cha_vergi19 = 0d,
-            cha_vergi20 = 0d,
-            cha_ilave_edilecek_kdv1 = 0d,
-            cha_ilave_edilecek_kdv2 = 0d,
-            cha_ilave_edilecek_kdv3 = 0d,
-            cha_ilave_edilecek_kdv4 = 0d,
-            cha_ilave_edilecek_kdv5 = 0d,
-            cha_ilave_edilecek_kdv6 = 0d,
-            cha_ilave_edilecek_kdv7 = 0d,
-            cha_ilave_edilecek_kdv8 = 0d,
-            cha_ilave_edilecek_kdv9 = 0d,
-            cha_ilave_edilecek_kdv10 = 0d,
-            cha_ilave_edilecek_kdv11 = 0d,
-            cha_ilave_edilecek_kdv12 = 0d,
-            cha_ilave_edilecek_kdv13 = 0d,
-            cha_ilave_edilecek_kdv14 = 0d,
-            cha_ilave_edilecek_kdv15 = 0d,
-            cha_ilave_edilecek_kdv16 = 0d,
-            cha_ilave_edilecek_kdv17 = 0d,
-            cha_ilave_edilecek_kdv18 = 0d,
-            cha_ilave_edilecek_kdv19 = 0d,
-            cha_ilave_edilecek_kdv20 = 0d,
-            cha_efatura_belge_tipi = 0
         };
 
     private static void Validate(CreateCashSummaryRequest request)

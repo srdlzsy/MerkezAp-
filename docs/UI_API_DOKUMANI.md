@@ -15,7 +15,10 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 - `Admin`/`Administrator` rolu backend tarafinda tam yetkili kabul edilir. UI tarafinda yine role name'e gore ekran acilmamalidir; menu, route, buton ve depo secici kararlari `login.user.permissions` veya `GET /api/auth/me` cevabindaki `permissions` listesine gore verilmelidir.
 - UI depo secici/filtresi gosterecegi zaman role bakmamalidir. Secili ekrandaki permission setinde ilgili `*.all-warehouses` kodu varsa depo secici acilir; yoksa depo alani gizlenir veya kilitlenir.
 - Liste/rapor endpointlerinde `*.all-warehouses` yetkisi olan kullanici `WarehouseNo`/`warehouseNo` alanini bos veya `null` gonderirse endpoint destekliyorsa tum depolar doner; belirli depo icin depo no gonderilir. Tek depo gerektiren create/update/detail islemlerinde `null` tum depo anlamina gelmez; backend token deposunu varsayar veya ilgili islem icin secili depo bekler.
-- Tum depolari listeleyen kullanici detay ekranina gecis icin UI, secilen satirdaki depo bilgisini kullanmalidir. Detay endpointine `warehouseNo=null` gonderilmemelidir; satirda gelen `warehouseNo`, `sourceWarehouseNo`, `targetWarehouseNo`, `branchNo` veya ilgili islem deposu query/body alanina yazilmalidir.
+- Tum depolari listeleyen kullanici detay ekranina gecis icin UI, secilen satirdaki depo bilgisini kullanmalidir. Detay endpointine mumkunse satirda gelen `warehouseNo`, `sourceWarehouseNo`, `targetWarehouseNo`, `branchNo` veya ilgili islem deposu query/body alanina yazilmalidir.
+- Kasa Sayimlari ozelinde UI `warehouseNo` bos gonderirse backend sadece kullanicida ilgili `kasa-islemleri.kasa-sayimlari.all-warehouses` yetkisi varsa `documentSerie` icinden subeyi cozer; ornek `F116.54` -> `116`. Bu yetki yoksa eski davranis korunur ve oturumdaki kullanici deposu kullanilir.
+- Kasa Sayimlari ozelinde kullanicida ilgili `kasa-islemleri.kasa-sayimlari.all-warehouses` yetkisi varsa ve `documentSerie` sube bilgisi iceriyorsa backend hedef subeyi seriden alir; ornek `F116.57?warehouseNo=1` isteginde hedef belge subesi `116` kabul edilir. Bu senaryoda `warehouseNo` UI/oturum deposu gibi gelse bile hedef belge subesi olarak yorumlanmaz.
+- Icmal Kaydi Girisi create ozelinde `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` yetkisi olan kullanici hedef subeyi secmeli ve body'de `warehouseNo` gondermelidir; bos gonderirse API `400 Bad Request` doner.
 - Ilgili `*.all-warehouses` yetkisi olmayan kullanici farkli `WarehouseNo`, `BranchNo` veya islem deposu gonderirse API `403 Forbidden` doner.
 - Tarih aralikli liste endpointlerinde `StartDate` ve `EndDate` zorunludur; depo yetkisi yoksa `WarehouseNo` verilmez ve backend JWT icindeki depoyu kullanir.
 - Development CORS originleri su an `http://localhost:5176`, `http://localhost:5173` ve `http://localhost:4200` icin aciktir.
@@ -135,8 +138,8 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `entegrasyon-islemleri` | `uyumsoft-e-irsaliye` | `entegrasyon-islemleri.uyumsoft-e-irsaliye.page` | `entegrasyon-islemleri.uyumsoft-e-irsaliye.list`<br>`entegrasyon-islemleri.uyumsoft-e-irsaliye.detail`<br>`entegrasyon-islemleri.uyumsoft-e-irsaliye.create`<br>`entegrasyon-islemleri.uyumsoft-e-irsaliye.update` | `entegrasyon-islemleri.uyumsoft-e-irsaliye.all-warehouses` |
 | `fatura-islemleri` | `fatura-goruntuleme` | `fatura-islemleri.fatura-goruntuleme.page` | `fatura-islemleri.fatura-goruntuleme.list`<br>`fatura-islemleri.fatura-goruntuleme.detail`<br>`fatura-islemleri.fatura-goruntuleme.update` | `fatura-islemleri.fatura-goruntuleme.all-warehouses` |
 | `fatura-islemleri` | `fatura-gonderimi` | `fatura-islemleri.fatura-gonderimi.page` | `fatura-islemleri.fatura-gonderimi.list`<br>`fatura-islemleri.fatura-gonderimi.detail`<br>`fatura-islemleri.fatura-gonderimi.create` | `fatura-islemleri.fatura-gonderimi.all-warehouses` |
-| `kasa-islemleri` | `kasa-sayimlari` | `kasa-islemleri.kasa-sayimlari.page` | `kasa-islemleri.kasa-sayimlari.list`<br>`kasa-islemleri.kasa-sayimlari.detail` | `kasa-islemleri.kasa-sayimlari.all-warehouses` |
-| `kasa-islemleri` | `icmal-kaydi-girisi` | `kasa-islemleri.icmal-kaydi-girisi.page` | `kasa-islemleri.icmal-kaydi-girisi.list`<br>`kasa-islemleri.icmal-kaydi-girisi.create`<br>`kasa-islemleri.icmal-kaydi-girisi.update`<br>`kasa-islemleri.icmal-kaydi-girisi.delete` | `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` |
+| `kasa-islemleri` | `kasa-sayimlari` | `kasa-islemleri.kasa-sayimlari.page` | `kasa-islemleri.kasa-sayimlari.list`<br>`kasa-islemleri.kasa-sayimlari.detail`<br>`kasa-islemleri.kasa-sayimlari.update`<br>`kasa-islemleri.kasa-sayimlari.delete` | `kasa-islemleri.kasa-sayimlari.all-warehouses` |
+| `kasa-islemleri` | `icmal-kaydi-girisi` | `kasa-islemleri.icmal-kaydi-girisi.page` | `kasa-islemleri.icmal-kaydi-girisi.list`<br>`kasa-islemleri.icmal-kaydi-girisi.create` | `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` |
 | `kasa-islemleri` | `kasa-cirolari` | `kasa-islemleri.kasa-cirolari.page` | `kasa-islemleri.kasa-cirolari.list`<br>`kasa-islemleri.kasa-cirolari.detail` | `kasa-islemleri.kasa-cirolari.all-warehouses` |
 | `kasa-islemleri` | `yeni-kasa-analizleri` | `kasa-islemleri.yeni-kasa-analizleri.page` | `kasa-islemleri.yeni-kasa-analizleri.list` | `kasa-islemleri.yeni-kasa-analizleri.all-warehouses` |
 | `kasa-islemleri` | `kasa-ciro-aktarimi` | `kasa-islemleri.kasa-ciro-aktarimi.page` | `kasa-islemleri.kasa-ciro-aktarimi.list`<br>`kasa-islemleri.kasa-ciro-aktarimi.detail`<br>`kasa-islemleri.kasa-ciro-aktarimi.create` | `kasa-islemleri.kasa-ciro-aktarimi.all-warehouses` |
@@ -11712,7 +11715,7 @@ Not:
 
 ### Icmal Kaydi Girisi / Olustur
 
-Secili kullanici deposu icin yeni kasa sayimi yazar.
+Secili sube icin yeni kasa sayimi yazar.
 
 `POST /api/kasa-islemleri/kasa-sayimlari`
 
@@ -11722,11 +11725,14 @@ Yetki:
 
 Onemli not:
 
-- `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina kasa sayimi/complete icmal kaydi olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir
+- `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir
+- `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` varsa UI sube secici gostermeli ve body'de secilen subeyi `warehouseNo` olarak gondermelidir; bos gonderilirse API `400 Bad Request` doner
 - en az bir `paymentTypes`, `storeExpenses` veya `banknoteMovements` satiri zorunludur
 - backend `Summaries`, `BanknoteMovements`, `GiftCheckMovements` ve `CARI_HESAP_HAREKETLERI` tarafina yazar
 - `documentSerie` backend tarafinda legacy kasa icmal formatinda `F{islemDepoNo}.{cashNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
+- `zReportNo` Z rapor numarasidir; `zTotalValue` Z rapor tutaridir
+- `zTotalValue` eski sistemle uyumlu sekilde `Summaries` satiri olarak saklanmaz; `CARI_HESAP_HAREKETLERI` tarafinda `400 = Z Rapor Toplami`, `300 = total - zTotalValue fark` satirlari olarak yazilir
 - nakit toplam `paymentTypes` icinde manuel gonderilmez; backend banknot hareketlerinden `PaymentTypeID = 500`, `description = "Nakit Toplam"` satirini garanti eder
 - UI yanlislikla `paymentTypes` icinde `Nakit` veya `paymentTypeNo = 500` gonderirse backend bunu ayri odeme satiri olarak yazmaz, 500 satirini banknot toplamindan uretir
 
@@ -11734,6 +11740,7 @@ Request:
 
 ```json
 {
+  "warehouseNo": 110,
   "cashNo": 1,
   "zReportNo": 125,
   "cashierNo": 1001,
@@ -11778,7 +11785,9 @@ Response:
 }
 ```
 
-### Icmal Kaydi Girisi / Guncelleme ve Silme
+### Kasa Sayimlari / Secili Kaydi Guncelleme ve Silme
+
+Bu akis Kasa Sayimlari liste ekranindan secilen kayit icindir. Icmal Kaydi Girisi sadece yeni kayit olusturma ekranidir.
 
 Belge uzerindeki satirlari ve fiziksel para detaylarini guncellemek icin ayri endpointler kullanilir.
 
@@ -11796,8 +11805,8 @@ Legacy uyumluluk route'lari:
 
 Yetki:
 
-- detay ve banknot update icin `kasa-islemleri.icmal-kaydi-girisi.update`
-- silme icin `kasa-islemleri.icmal-kaydi-girisi.delete`
+- detay ve banknot update icin `kasa-islemleri.kasa-sayimlari.update`
+- silme icin `kasa-islemleri.kasa-sayimlari.delete`
 
 Not:
 
@@ -12266,21 +12275,22 @@ Iade Islemleri / Depo Iadeleri
 Kasa Islemleri / Kasa Sayimlari
   -> ekran acilisinda o gunun belge listesi icin GET /api/kasa-islemleri/kasa-sayimlari?dateToGet=...
   -> ust rapor kartlari icin GET /api/kasa-islemleri/kasa-sayimlari/rapor?dateToGet=...
-  -> bu gorev sadece goruntuleme/listeleme icindir; icmal girisi butonu burada permission olarak cizilmemelidir
   -> kullanici satira tiklar
   -> GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
   -> gerekiyorsa banknot ve hediye ceki detaylarini ayri sekmelerde
   -> GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
   -> GET /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/hediye-ceki-hareketleri
+  -> kullanicida kasa-islemleri.kasa-sayimlari.update varsa 'Duzenle' aksiyonu gosterilir
+  -> detay duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/detaylar
+  -> banknot duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
+  -> kullanicida kasa-islemleri.kasa-sayimlari.delete varsa 'Sil' aksiyonu gosterilir
+  -> silme icin DELETE /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
 
 Kasa Islemleri / Icmal Kaydi Girisi
   -> UI bu gorevi Kasa Sayimlari'ndan ayri menu/task olarak gostermelidir
   -> lookup alanlari icin kasiyer, kasa, odeme tipi ve banknot tipi endpointlerini paralel cagir
   -> Z rapor karsilastirmasi icin GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?... 
   -> kaydetmek icin POST /api/kasa-islemleri/kasa-sayimlari
-  -> detay duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/detaylar
-  -> banknot duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
-  -> silme icin DELETE /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
 
 Kasa Islemleri / Banknot Takipleri
   -> fiziksel para teslim takibi icin GET /api/kasa-islemleri/banknot-takipleri?dateToGet=...

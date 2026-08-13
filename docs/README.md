@@ -40,6 +40,7 @@ Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 | [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md) | Projenin genel mimarisi, katmanlari, modul mantigi ve gelistirme standartlari. |
 | [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md) | Frontend/UI entegrasyonu icin API endpointleri ve response modelleri. |
 | [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md) | Yeni menu/API eklerken yetki katalogu, migration ve policy adimlari. |
+| [KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md](KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md) | Kasa Sayimlari, Icmal Kaydi Girisi, depo yetkisi, update/delete ve Z raporu Mikro yazim rehberi. |
 | [PRODUCTION_HAZIRLIK.md](PRODUCTION_HAZIRLIK.md) | Production hazirlik ve canliya alma notlari. |
 
 ### Operasyon

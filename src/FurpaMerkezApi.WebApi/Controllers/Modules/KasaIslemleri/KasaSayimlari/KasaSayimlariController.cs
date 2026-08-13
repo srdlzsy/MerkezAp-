@@ -28,10 +28,10 @@ public sealed class KasaSayimlariController(
     private const string MenuName = "KasaSayimlari";
     private const string ListPolicy = "kasa-islemleri.kasa-sayimlari.list";
     private const string DetailPolicy = "kasa-islemleri.kasa-sayimlari.detail";
+    private const string UpdatePolicy = "kasa-islemleri.kasa-sayimlari.update";
+    private const string DeletePolicy = "kasa-islemleri.kasa-sayimlari.delete";
     private const string EntryListPolicy = "kasa-islemleri.icmal-kaydi-girisi.list";
     private const string EntryCreatePolicy = "kasa-islemleri.icmal-kaydi-girisi.create";
-    private const string EntryUpdatePolicy = "kasa-islemleri.icmal-kaydi-girisi.update";
-    private const string EntryDeletePolicy = "kasa-islemleri.icmal-kaydi-girisi.delete";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -103,7 +103,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
+        var resolvedWarehouseNo = ResolveDocumentWarehouseNo(warehouseNo, documentSerie, DetailPolicy);
         var response = await cashSummaryQueriesUseCase.GetBanknoteMovementsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -124,7 +124,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
+        var resolvedWarehouseNo = ResolveDocumentWarehouseNo(warehouseNo, documentSerie, DetailPolicy);
         var response = await cashSummaryQueriesUseCase.GetGiftCheckMovementsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -278,7 +278,7 @@ public sealed class KasaSayimlariController(
         [FromQuery] ZReportValueHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, EntryListPolicy);
+        var resolvedWarehouseNo = ResolveDocumentWarehouseNo(request.WarehouseNo, request.DocumentSerie, EntryListPolicy);
         var response = await getCashSummaryZReportTotalUseCase.ExecuteAsync(
             new ZReportValueRequest(
                 resolvedWarehouseNo,
@@ -298,7 +298,7 @@ public sealed class KasaSayimlariController(
         [FromBody] CreateCashSummaryHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo, EntryCreatePolicy);
+        var warehouseNo = ResolveCreateWarehouseNo(request.WarehouseNo);
         var response = await cashSummaryCommandsUseCase.CreateAsync(
             new CreateCashSummaryRequest(
                 warehouseNo,
@@ -344,7 +344,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPut("{documentSerie}/{documentOrderNo:int}/detaylar")]
-    [Authorize(Policy = EntryUpdatePolicy)]
+    [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryDetailsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -354,7 +354,7 @@ public sealed class KasaSayimlariController(
         [FromBody] UpdateCashSummaryDetailsHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo, EntryUpdatePolicy);
+        var warehouseNo = ResolveDocumentWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
         var response = await cashSummaryCommandsUseCase.UpdateDetailsAsync(
             new UpdateCashSummaryDetailsRequest(
                 warehouseNo,
@@ -376,7 +376,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPut("{documentSerie}/{documentOrderNo:int}/banknot-hareketleri")]
-    [Authorize(Policy = EntryUpdatePolicy)]
+    [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryBanknotesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -386,7 +386,7 @@ public sealed class KasaSayimlariController(
         [FromBody] UpdateCashSummaryBanknotesHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = ResolveWriteWarehouseNo(request.WarehouseNo, EntryUpdatePolicy);
+        var warehouseNo = ResolveDocumentWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
         var response = await cashSummaryCommandsUseCase.UpdateBanknotesAsync(
             new UpdateCashSummaryBanknotesRequest(
                 warehouseNo,
@@ -405,7 +405,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPost("UpdateSummaryDetails")]
-    [Authorize(Policy = EntryUpdatePolicy)]
+    [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryDetailsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -415,7 +415,7 @@ public sealed class KasaSayimlariController(
     {
         var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
         var documentOrderNo = request.DocumentOrderNo!.Value;
-        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, EntryUpdatePolicy);
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
         var response = await cashSummaryCommandsUseCase.UpdateDetailsAsync(
             new UpdateCashSummaryDetailsRequest(
                 warehouseNo,
@@ -437,7 +437,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPost("UpdateBanknoteMovements")]
-    [Authorize(Policy = EntryUpdatePolicy)]
+    [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryBanknotesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -447,7 +447,7 @@ public sealed class KasaSayimlariController(
     {
         var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
         var documentOrderNo = request.DocumentOrderNo!.Value;
-        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, EntryUpdatePolicy);
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
         var response = await cashSummaryCommandsUseCase.UpdateBanknotesAsync(
             new UpdateCashSummaryBanknotesRequest(
                 warehouseNo,
@@ -466,7 +466,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpDelete("{documentSerie}/{documentOrderNo:int}")]
-    [Authorize(Policy = EntryDeletePolicy)]
+    [Authorize(Policy = DeletePolicy)]
     [ProducesResponseType(typeof(DeleteCashSummaryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DeleteCashSummaryResponse>> Delete(
@@ -475,7 +475,7 @@ public sealed class KasaSayimlariController(
         [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, EntryDeletePolicy);
+        var resolvedWarehouseNo = ResolveDocumentWarehouseNo(warehouseNo, documentSerie, DeletePolicy);
         var response = await cashSummaryCommandsUseCase.DeleteAsync(
             new DeleteCashSummaryRequest(
                 resolvedWarehouseNo,
@@ -487,7 +487,7 @@ public sealed class KasaSayimlariController(
     }
 
     [HttpPost("DeleteSummary")]
-    [Authorize(Policy = EntryDeletePolicy)]
+    [Authorize(Policy = DeletePolicy)]
     [ProducesResponseType(typeof(DeleteCashSummaryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DeleteCashSummaryResponse>> DeleteSummaryLegacy(
@@ -496,7 +496,7 @@ public sealed class KasaSayimlariController(
     {
         var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
         var documentOrderNo = request.DocumentOrderNo!.Value;
-        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, EntryDeletePolicy);
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, DeletePolicy);
         var response = await cashSummaryCommandsUseCase.DeleteAsync(
             new DeleteCashSummaryRequest(
                 warehouseNo,
@@ -513,7 +513,7 @@ public sealed class KasaSayimlariController(
         int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
+        var resolvedWarehouseNo = ResolveDocumentWarehouseNo(warehouseNo, documentSerie, DetailPolicy);
         var response = await cashSummaryQueriesUseCase.GetDetailsAsync(
             new CashSummaryDocumentRequest(
                 resolvedWarehouseNo,
@@ -532,11 +532,43 @@ public sealed class KasaSayimlariController(
     private int ResolveWriteWarehouseNo(int? warehouseNo, string actionPermissionCode)
         => User.ResolveWarehouseNoForPolicy(warehouseNo, actionPermissionCode);
 
+    private int ResolveCreateWarehouseNo(int? warehouseNo)
+    {
+        var allWarehousesPolicy = ClaimsPrincipalExtensions.ToAllWarehousesPermissionCode(EntryCreatePolicy);
+        if (!warehouseNo.HasValue && User.HasPermission(allWarehousesPolicy))
+        {
+            throw new ArgumentException("Warehouse no is required for users who can create cash summaries for all warehouses.");
+        }
+
+        return ResolveWriteWarehouseNo(warehouseNo, EntryCreatePolicy);
+    }
+
+    private int ResolveDocumentWarehouseNo(
+        int? warehouseNo,
+        string? documentSerie,
+        string actionPermissionCode)
+    {
+        var allWarehousesPolicy = ClaimsPrincipalExtensions.ToAllWarehousesPermissionCode(actionPermissionCode);
+        var warehouseNoFromSerie = TryResolveWarehouseNoFromDocumentSerie(documentSerie);
+
+        if (warehouseNoFromSerie.HasValue && User.HasPermission(allWarehousesPolicy))
+        {
+            return ResolveWriteWarehouseNo(warehouseNoFromSerie, actionPermissionCode);
+        }
+
+        if (warehouseNo.HasValue)
+        {
+            return ResolveWriteWarehouseNo(warehouseNo, actionPermissionCode);
+        }
+
+        return ResolveWriteWarehouseNo(null, actionPermissionCode);
+    }
+
     private int ResolveLegacyWriteWarehouseNo(
         int? warehouseNo,
         string documentSerie,
         string actionPermissionCode) =>
-        ResolveWriteWarehouseNo(warehouseNo ?? TryResolveWarehouseNoFromDocumentSerie(documentSerie), actionPermissionCode);
+        ResolveDocumentWarehouseNo(warehouseNo, documentSerie, actionPermissionCode);
 
     private static int? TryResolveWarehouseNoFromDocumentSerie(string? documentSerie)
     {
