@@ -39,7 +39,9 @@ public sealed class WarehouseOperationsDashboardService(
             .Where(flow =>
                 (flow.CreatedAtUtc >= startUtc && flow.CreatedAtUtc < endUtc &&
                  (flow.DocumentType == DocumentFlowType.CompanyShipment ||
-                  flow.DocumentType == DocumentFlowType.InterWarehouseShipment)) ||
+                  flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                  flow.DocumentType == DocumentFlowType.CompanyReturn ||
+                  flow.DocumentType == DocumentFlowType.WarehouseReturn)) ||
                 (flow.UpdatedAtUtc >= startUtc && flow.UpdatedAtUtc < endUtc &&
                  flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted) ||
                 ((flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
@@ -67,9 +69,9 @@ public sealed class WarehouseOperationsDashboardService(
             .ToArray();
 
         var busiestWarehouse = items
-            .OrderByDescending(item => item.TodayShipmentCount + item.TodayReceivingCount)
+            .OrderByDescending(item => item.TodayShipmentCount + item.TodayReturnCount + item.TodayReceivingCount)
             .ThenBy(item => item.WarehouseNo)
-            .FirstOrDefault(item => item.TodayShipmentCount + item.TodayReceivingCount > 0);
+            .FirstOrDefault(item => item.TodayShipmentCount + item.TodayReturnCount + item.TodayReceivingCount > 0);
 
         var slowestWarehouse = items
             .Where(item => item.AverageReceivingMinutes.HasValue)
@@ -91,6 +93,7 @@ public sealed class WarehouseOperationsDashboardService(
             new WarehouseOperationsDashboardSummaryDto(
                 items.Length,
                 items.Sum(item => item.TodayShipmentCount),
+                items.Sum(item => item.TodayReturnCount),
                 items.Sum(item => item.TodayReceivingCount),
                 items.Sum(item => item.PendingReceivingCount),
                 incompleteOperationCount,
@@ -100,7 +103,9 @@ public sealed class WarehouseOperationsDashboardService(
                 : new WarehouseOperationsDashboardHighlightDto(
                     busiestWarehouse.WarehouseNo,
                     busiestWarehouse.WarehouseName,
-                    busiestWarehouse.TodayShipmentCount + busiestWarehouse.TodayReceivingCount),
+                    busiestWarehouse.TodayShipmentCount +
+                    busiestWarehouse.TodayReturnCount +
+                    busiestWarehouse.TodayReceivingCount),
             slowestWarehouse is null
                 ? null
                 : new WarehouseOperationsDashboardHighlightDto(
@@ -122,6 +127,12 @@ public sealed class WarehouseOperationsDashboardService(
             flow.CreatedAtUtc >= startUtc &&
             flow.CreatedAtUtc < endUtc &&
             IsShipment(flow.DocumentType));
+
+        var todayReturnCount = flows.Count(flow =>
+            flow.SourceWarehouseNo == warehouseNo &&
+            flow.CreatedAtUtc >= startUtc &&
+            flow.CreatedAtUtc < endUtc &&
+            IsReturn(flow.DocumentType));
 
         var completedReceivings = flows
             .Where(flow =>
@@ -153,6 +164,7 @@ public sealed class WarehouseOperationsDashboardService(
             warehouseNo,
             warehouseName,
             todayShipmentCount,
+            todayReturnCount,
             completedReceivings.Length,
             pendingReceivingCount,
             incompleteOperationCount,
@@ -163,6 +175,9 @@ public sealed class WarehouseOperationsDashboardService(
 
     private static bool IsShipment(DocumentFlowType documentType) =>
         documentType is DocumentFlowType.CompanyShipment or DocumentFlowType.InterWarehouseShipment;
+
+    private static bool IsReturn(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.CompanyReturn or DocumentFlowType.WarehouseReturn;
 
     private static bool IsWarehouseMovement(DocumentFlowType documentType) =>
         documentType is DocumentFlowType.InterWarehouseShipment or DocumentFlowType.WarehouseReturn;

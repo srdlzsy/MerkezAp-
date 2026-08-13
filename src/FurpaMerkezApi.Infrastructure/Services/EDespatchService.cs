@@ -137,7 +137,7 @@ public sealed class EDespatchService(
         };
     }
 
-    private Task RecordEDespatchFlowAsync(
+    private async Task RecordEDespatchFlowAsync(
         SendEDespatchRequest request,
         DocumentFlowStatus status,
         string message,
@@ -154,7 +154,9 @@ public sealed class EDespatchService(
             _ => throw new ArgumentOutOfRangeException(nameof(request.DocumentType))
         };
 
-        return documentFlowService.RecordAsync(
+        var targetWarehouseNo = await ResolveDocumentFlowTargetWarehouseNoAsync(request, cancellationToken);
+
+        await documentFlowService.RecordAsync(
             new RecordDocumentFlowRequest(
                 DocumentFlowKeys.Create(
                     documentType,
@@ -163,7 +165,7 @@ public sealed class EDespatchService(
                     request.DocumentOrderNo),
                 documentType,
                 request.WarehouseNo,
-                null,
+                targetWarehouseNo,
                 request.DocumentSerie,
                 request.DocumentOrderNo,
                 DocumentFlowStep.EDespatchSubmission,
@@ -174,6 +176,68 @@ public sealed class EDespatchService(
                 ExternalUuid: response?.EDespatchUuid),
             cancellationToken);
     }
+
+    private async Task<int?> ResolveDocumentFlowTargetWarehouseNoAsync(
+        SendEDespatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.DocumentType is not (EDespatchDocumentType.InterWarehouseShipment or EDespatchDocumentType.WarehouseReturn))
+        {
+            return null;
+        }
+
+        try
+        {
+            var returnType = request.DocumentType == EDespatchDocumentType.WarehouseReturn
+                ? ReturnMovement
+                : NormalMovement;
+
+            return await TryLoadInterWarehouseTargetWarehouseNoAsync(
+                    mikroDbContext,
+                    request,
+                    returnType,
+                    cancellationToken)
+                ?? await TryLoadInterWarehouseTargetWarehouseNoAsync(
+                    mikroWriteDbContext,
+                    request,
+                    returnType,
+                    cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "E-despatch document flow target warehouse could not be resolved. DocumentType={DocumentType}, WarehouseNo={WarehouseNo}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}",
+                request.DocumentType,
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo);
+
+            return null;
+        }
+    }
+
+    private static async Task<int?> TryLoadInterWarehouseTargetWarehouseNoAsync(
+        MikroDbContext dbContext,
+        SendEDespatchRequest request,
+        byte returnType,
+        CancellationToken cancellationToken) =>
+        await dbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_normal_iade == returnType &&
+                movement.sth_evrakno_seri == request.DocumentSerie &&
+                movement.sth_evrakno_sira == request.DocumentOrderNo &&
+                movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_nakliyedeposu > 0)
+            .OrderBy(movement => movement.sth_satirno)
+            .Select(movement => movement.sth_nakliyedeposu)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<GetEDespatchPdfResponse> GetPdfAsync(
         GetEDespatchPdfRequest request,

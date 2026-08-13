@@ -19,6 +19,7 @@ public sealed record WarehouseOperationsDashboardDto(
 public sealed record WarehouseOperationsDashboardSummaryDto(
     int WarehouseCount,
     int TodayShipmentCount,
+    int TodayReturnCount,
     int TodayReceivingCount,
     int PendingReceivingCount,
     int IncompleteOperationCount,
@@ -33,6 +34,7 @@ public sealed record WarehouseOperationsDashboardItemDto(
     int WarehouseNo,
     string WarehouseName,
     int TodayShipmentCount,
+    int TodayReturnCount,
     int TodayReceivingCount,
     int PendingReceivingCount,
     int IncompleteOperationCount,
