@@ -11830,7 +11830,7 @@ Detay update response:
 
 ```json
 {
-  "documentSerie": "KS110",
+  "documentSerie": "F110.1",
   "documentOrderNo": 12,
   "updatedLineCount": 2,
   "totalAmount": 6500
@@ -11859,16 +11859,62 @@ Banknot update response modeli:
 - `updatedLineCount`
 - `totalAmount`
 
+Legacy detay update request:
+
+```json
+{
+  "documentSerie": "F110.1",
+  "documentOrderNo": 12,
+  "summariesDetails": [
+    {
+      "typeName": "Akbank POS",
+      "paymentTypeID": 1,
+      "accountCode": "POS-AKBANK",
+      "slipNumber": 12,
+      "amount": 2500,
+      "terminalId": "TERM-01",
+      "description": ""
+    }
+  ]
+}
+```
+
+Legacy banknot update request:
+
+```json
+{
+  "documentSerie": "F110.1",
+  "documentOrderNo": 12,
+  "banknoteMovements": [
+    {
+      "value": 200,
+      "banknoteTypeID": 1,
+      "quantity": 25,
+      "total": 5000
+    }
+  ]
+}
+```
+
 Delete response:
 
 ```json
 {
-  "documentSerie": "KS110",
+  "documentSerie": "F110.1",
   "documentOrderNo": 12,
   "deletedSummaryLineCount": 2,
   "deletedBanknoteLineCount": 1,
   "deletedGiftCheckLineCount": 0,
   "deletedCustomerMovementCount": 1
+}
+```
+
+Legacy delete request:
+
+```json
+{
+  "documentSerie": "F110.1",
+  "documentOrderNo": 12
 }
 ```
 
