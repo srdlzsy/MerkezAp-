@@ -404,6 +404,67 @@ public sealed class KasaSayimlariController(
         return Ok(response);
     }
 
+    [HttpPost("UpdateSummaryDetails")]
+    [Authorize(Policy = EntryUpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateCashSummaryDetailsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UpdateCashSummaryDetailsResponse>> UpdateSummaryDetailsLegacy(
+        [FromBody] LegacyUpdateCashSummaryDetailsHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
+        var documentOrderNo = request.DocumentOrderNo!.Value;
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, EntryUpdatePolicy);
+        var response = await cashSummaryCommandsUseCase.UpdateDetailsAsync(
+            new UpdateCashSummaryDetailsRequest(
+                warehouseNo,
+                documentSerie,
+                documentOrderNo,
+                request.SummariesDetails
+                    .Select(line => new UpdateCashSummaryDetailLineRequest(
+                        line.TypeName ?? string.Empty,
+                        ResolveLegacyPaymentTypeId(line.PaymentTypeId, line.PaymentTypeID),
+                        line.AccountCode ?? string.Empty,
+                        line.SlipNumber ?? 0,
+                        line.Amount,
+                        line.TerminalId ?? string.Empty,
+                        line.Description ?? string.Empty))
+                    .ToArray()),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpPost("UpdateBanknoteMovements")]
+    [Authorize(Policy = EntryUpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateCashSummaryBanknotesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UpdateCashSummaryBanknotesResponse>> UpdateBanknoteMovementsLegacy(
+        [FromBody] LegacyUpdateCashSummaryBanknotesHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
+        var documentOrderNo = request.DocumentOrderNo!.Value;
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, EntryUpdatePolicy);
+        var response = await cashSummaryCommandsUseCase.UpdateBanknotesAsync(
+            new UpdateCashSummaryBanknotesRequest(
+                warehouseNo,
+                documentSerie,
+                documentOrderNo,
+                request.BanknoteMovements
+                    .Select(line => new UpdateCashSummaryBanknoteLineRequest(
+                        line.Value,
+                        ResolveLegacyBanknoteType(line.BanknoteType, line.BanknoteTypeID),
+                        line.Quantity!.Value,
+                        line.Total))
+                    .ToArray()),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
     [HttpDelete("{documentSerie}/{documentOrderNo:int}")]
     [Authorize(Policy = EntryDeletePolicy)]
     [ProducesResponseType(typeof(DeleteCashSummaryResponse), StatusCodes.Status200OK)]
@@ -418,6 +479,27 @@ public sealed class KasaSayimlariController(
         var response = await cashSummaryCommandsUseCase.DeleteAsync(
             new DeleteCashSummaryRequest(
                 resolvedWarehouseNo,
+                documentSerie,
+                documentOrderNo),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpPost("DeleteSummary")]
+    [Authorize(Policy = EntryDeletePolicy)]
+    [ProducesResponseType(typeof(DeleteCashSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<DeleteCashSummaryResponse>> DeleteSummaryLegacy(
+        [FromBody] LegacyDeleteCashSummaryHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
+        var documentOrderNo = request.DocumentOrderNo!.Value;
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, EntryDeletePolicy);
+        var response = await cashSummaryCommandsUseCase.DeleteAsync(
+            new DeleteCashSummaryRequest(
+                warehouseNo,
                 documentSerie,
                 documentOrderNo),
             cancellationToken);
@@ -449,6 +531,51 @@ public sealed class KasaSayimlariController(
 
     private int ResolveWriteWarehouseNo(int? warehouseNo, string actionPermissionCode)
         => User.ResolveWarehouseNoForPolicy(warehouseNo, actionPermissionCode);
+
+    private int ResolveLegacyWriteWarehouseNo(
+        int? warehouseNo,
+        string documentSerie,
+        string actionPermissionCode) =>
+        ResolveWriteWarehouseNo(warehouseNo ?? TryResolveWarehouseNoFromDocumentSerie(documentSerie), actionPermissionCode);
+
+    private static int? TryResolveWarehouseNoFromDocumentSerie(string? documentSerie)
+    {
+        if (string.IsNullOrWhiteSpace(documentSerie))
+        {
+            return null;
+        }
+
+        var normalized = documentSerie.Trim();
+        if (normalized.StartsWith("F", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[1..];
+        }
+
+        var separatorIndex = normalized.IndexOf('.', StringComparison.Ordinal);
+        var warehousePart = separatorIndex >= 0
+            ? normalized[..separatorIndex]
+            : normalized;
+
+        return int.TryParse(warehousePart, out var warehouseNo) && warehouseNo > 0
+            ? warehouseNo
+            : null;
+    }
+
+    private static string NormalizeRequiredText(string? value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Document serie is required.", parameterName);
+        }
+
+        return value.Trim();
+    }
+
+    private static int ResolveLegacyPaymentTypeId(int? paymentTypeId, int? paymentTypeID) =>
+        paymentTypeId ?? paymentTypeID ?? throw new ArgumentException("Payment type is required.");
+
+    private static int ResolveLegacyBanknoteType(int? banknoteType, int? banknoteTypeID) =>
+        banknoteType ?? banknoteTypeID ?? throw new ArgumentException("Banknote type is required.");
 }
 
 public sealed class CashSummaryDateHttpRequest
@@ -677,6 +804,118 @@ public sealed class UpdateCashSummaryBanknoteLineHttpRequest
     [Required]
     [Range(0, int.MaxValue)]
     public int? Quantity { get; init; }
+
+    public double Total { get; init; }
+}
+
+public sealed class LegacyUpdateCashSummaryDetailsHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    [StringLength(20)]
+    public string? DocumentSerie { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? DocumentOrderNo { get; init; }
+
+    [Required]
+    [MinLength(1)]
+    public IReadOnlyCollection<LegacyUpdateCashSummaryDetailLineHttpRequest> SummariesDetails { get; init; } =
+        Array.Empty<LegacyUpdateCashSummaryDetailLineHttpRequest>();
+}
+
+public sealed class LegacyUpdateCashSummaryDetailLineHttpRequest
+{
+    [StringLength(50)]
+    public string? TypeName { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? PaymentTypeId { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? PaymentTypeID { get; init; }
+
+    [StringLength(40)]
+    public string? AccountCode { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? SlipNumber { get; init; }
+
+    public double Amount { get; init; }
+
+    [StringLength(40)]
+    public string? TerminalId { get; init; }
+
+    [StringLength(250)]
+    public string? Description { get; init; }
+}
+
+public sealed class LegacyUpdateCashSummaryBanknotesHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    [StringLength(20)]
+    public string? DocumentSerie { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? DocumentOrderNo { get; init; }
+
+    public IReadOnlyCollection<LegacyUpdateCashSummaryBanknoteLineHttpRequest> BanknoteMovements { get; init; } =
+        Array.Empty<LegacyUpdateCashSummaryBanknoteLineHttpRequest>();
+}
+
+public sealed class LegacyUpdateCashSummaryBanknoteLineHttpRequest
+{
+    public double Value { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? BanknoteType { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? BanknoteTypeID { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? Quantity { get; init; }
+
+    public double Total { get; init; }
+}
+
+public sealed class LegacyDeleteCashSummaryHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [StringLength(100)]
+    public string? Warehouse { get; init; }
+
+    [Required]
+    [StringLength(20)]
+    public string? DocumentSerie { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? DocumentOrderNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? CashNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? ZReportNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? CashierNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? ManagerNo { get; init; }
+
+    public DateTime? SummaryDate { get; init; }
 
     public double Total { get; init; }
 }

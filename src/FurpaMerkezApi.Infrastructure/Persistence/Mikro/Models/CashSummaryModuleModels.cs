@@ -2,11 +2,19 @@ namespace FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 
 public sealed class SummaryEntity
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
+
+    public int? CreateUser { get; set; }
 
     public string DocumentSerie { get; set; } = string.Empty;
 
     public int DocumentOrderNo { get; set; }
+
+    public int PaymentTypeId { get; set; }
+
+    public DateTime SummaryDate { get; set; }
+
+    public int WarehouseNo { get; set; }
 
     public int CashNo { get; set; }
 
@@ -16,75 +24,83 @@ public sealed class SummaryEntity
 
     public int ManagerNo { get; set; }
 
-    public DateTime SummaryDate { get; set; }
-
-    public double Total { get; set; }
-
-    public int PaymentTypeId { get; set; }
+    public int SlipNumber { get; set; }
 
     public double Amount { get; set; }
-
-    public int WarehouseNo { get; set; }
-
-    public string TypeName { get; set; } = string.Empty;
-
-    public string AccountCode { get; set; } = string.Empty;
-
-    public int SlipNumber { get; set; }
 
     public string TerminalId { get; set; } = string.Empty;
 
     public string Description { get; set; } = string.Empty;
 
-    public int? StoreExpenseType { get; set; }
-
     public DateTime CreateDate { get; set; }
+
+    public int? UpdateUser { get; set; }
+
+    public DateTime? UpdateDate { get; set; }
+
+    public double Total { get; set; }
+
+    public string TypeName { get; set; } = string.Empty;
+
+    public string AccountCode { get; set; } = string.Empty;
+
+    public int? StoreExpenseType { get; set; }
 }
 
 public sealed class BanknoteMovementEntity
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
+
+    public int? CreateUser { get; set; }
+
+    public DateTime CreateDate { get; set; }
+
+    public int? UpdateUser { get; set; }
+
+    public DateTime? UpdateDate { get; set; }
 
     public string DocumentSerie { get; set; } = string.Empty;
 
     public int DocumentOrderNo { get; set; }
 
-    public DateTime SummaryDate { get; set; }
+    public int BanknoteType { get; set; }
 
     public int WarehouseNo { get; set; }
 
-    public double Value { get; set; }
+    public int CashNo { get; set; }
 
-    public int BanknoteType { get; set; }
+    public DateTime SummaryDate { get; set; }
+
+    public double Value { get; set; }
 
     public int Quantity { get; set; }
 
     public double Total { get; set; }
-
-    public DateTime CreateDate { get; set; }
 }
 
 public sealed class GiftCheckMovementEntity
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
+
+    public DateTime CreateDate { get; set; }
 
     public string DocumentSerie { get; set; } = string.Empty;
 
     public int DocumentOrderNo { get; set; }
 
-    public DateTime SummaryDate { get; set; }
+    public int GiftCheckType { get; set; }
 
     public int WarehouseNo { get; set; }
 
-    public double Value { get; set; }
+    public int CashNo { get; set; }
 
-    public int GiftCheckType { get; set; }
+    public DateTime SummaryDate { get; set; }
+
+    public double Value { get; set; }
 
     public int Quantity { get; set; }
 
     public double Total { get; set; }
-
-    public DateTime CreateDate { get; set; }
 }
 
 public sealed class BanknoteTrackEntity

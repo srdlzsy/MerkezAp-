@@ -11725,7 +11725,7 @@ Onemli not:
 - `kasa-islemleri.icmal-kaydi-girisi.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina kasa sayimi/complete icmal kaydi olusturulacaksa body'de opsiyonel `warehouseNo` gonderilebilir
 - en az bir `paymentTypes`, `storeExpenses` veya `banknoteMovements` satiri zorunludur
 - backend `Summaries`, `BanknoteMovements`, `GiftCheckMovements` ve `CARI_HESAP_HAREKETLERI` tarafina yazar
-- `documentSerie` backend tarafinda `KS{islemDepoNo}` olarak uretilir
+- `documentSerie` backend tarafinda legacy kasa icmal formatinda `F{islemDepoNo}.{cashNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
 - nakit toplam `paymentTypes` icinde manuel gonderilmez; backend banknot hareketlerinden `PaymentTypeID = 500`, `description = "Nakit Toplam"` satirini garanti eder
 - UI yanlislikla `paymentTypes` icinde `Nakit` veya `paymentTypeNo = 500` gonderirse backend bunu ayri odeme satiri olarak yazmaz, 500 satirini banknot toplamindan uretir
@@ -11768,7 +11768,7 @@ Response:
 
 ```json
 {
-  "documentSerie": "KS110",
+  "documentSerie": "F110.1",
   "documentOrderNo": 12,
   "summaryDate": "2026-04-24T00:00:00",
   "warehouseNo": 110,
@@ -11784,9 +11784,15 @@ Belge uzerindeki satirlari ve fiziksel para detaylarini guncellemek icin ayri en
 
 Route'lar:
 
-- `PUT /api/kasa-islemleri/kasa-sayimlari/KS110/12/detaylar`
-- `PUT /api/kasa-islemleri/kasa-sayimlari/KS110/12/banknot-hareketleri`
-- `DELETE /api/kasa-islemleri/kasa-sayimlari/KS110/12`
+- `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/detaylar`
+- `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/banknot-hareketleri`
+- `DELETE /api/kasa-islemleri/kasa-sayimlari/F110.1/12`
+
+Legacy uyumluluk route'lari:
+
+- `POST /api/kasa-islemleri/kasa-sayimlari/UpdateSummaryDetails`
+- `POST /api/kasa-islemleri/kasa-sayimlari/UpdateBanknoteMovements`
+- `POST /api/kasa-islemleri/kasa-sayimlari/DeleteSummary`
 
 Yetki:
 
@@ -11799,7 +11805,8 @@ Not:
 - detay update request'inde nakit/500 satiri gonderilmez; backend mevcut banknot toplamindan 500 satirini korur
 - banknot update request'inde `banknoteMovements` bos gonderilirse mevcut banknot satirlari temizlenebilir
 - banknot update sonrasi backend `PaymentTypeID = 500` nakit toplam satirini ve ilgili cari hareket toplamlarini yeni belge toplamiyla gunceller
-- `DELETE` cagrisinda `warehouseNo` body'den alinmaz; JWT deposu kullanilir
+- modern `DELETE` cagrisinda sube icin query `warehouseNo` veya JWT deposu kullanilir
+- legacy `POST DeleteSummary` cagrisinda `warehouseNo` yoksa backend `documentSerie` icinden subeyi cozer, ornek `F110.1` -> `110`
 
 Detay update request:
 

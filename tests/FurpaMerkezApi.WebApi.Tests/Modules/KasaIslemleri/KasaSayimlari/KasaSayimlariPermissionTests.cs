@@ -35,6 +35,9 @@ public sealed class KasaSayimlariPermissionTests
     [InlineData(nameof(KasaSayimlariController.UpdateDetails), "kasa-islemleri.icmal-kaydi-girisi.update")]
     [InlineData(nameof(KasaSayimlariController.UpdateBanknotes), "kasa-islemleri.icmal-kaydi-girisi.update")]
     [InlineData(nameof(KasaSayimlariController.Delete), "kasa-islemleri.icmal-kaydi-girisi.delete")]
+    [InlineData(nameof(KasaSayimlariController.UpdateSummaryDetailsLegacy), "kasa-islemleri.icmal-kaydi-girisi.update")]
+    [InlineData(nameof(KasaSayimlariController.UpdateBanknoteMovementsLegacy), "kasa-islemleri.icmal-kaydi-girisi.update")]
+    [InlineData(nameof(KasaSayimlariController.DeleteSummaryLegacy), "kasa-islemleri.icmal-kaydi-girisi.delete")]
     public void WriteActions_UseCashSummaryEntryPolicies(string methodName, string expectedPolicy)
     {
         var authorizeAttribute = typeof(KasaSayimlariController)

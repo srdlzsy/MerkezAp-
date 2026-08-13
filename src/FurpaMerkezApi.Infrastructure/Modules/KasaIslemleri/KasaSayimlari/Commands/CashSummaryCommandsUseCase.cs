@@ -40,7 +40,7 @@ public sealed class CashSummaryCommandsUseCase(
         var options = mikroWriteOptions.Value;
         var now = DateTime.Now;
         var summaryDate = request.SummaryDate.Date;
-        var documentSerie = $"KS{request.WarehouseNo}";
+        var documentSerie = BuildDocumentSerie(request.WarehouseNo, request.CashNo);
         var banknoteLines = request.BanknoteMovements.ToArray();
         var cashAmount = ResolveCashTotalAmount(request.PaymentTypes, banknoteLines);
         var paymentLines = request.PaymentTypes
@@ -160,8 +160,13 @@ public sealed class CashSummaryCommandsUseCase(
                 var updatedSummaries = detailLines
                     .Select(detail => new SummaryEntity
                     {
+                        Id = Guid.NewGuid(),
                         DocumentSerie = header.DocumentSerie,
                         DocumentOrderNo = header.DocumentOrderNo,
+                        CreateUser = MikroUserNo,
+                        CreateDate = now,
+                        UpdateUser = MikroUserNo,
+                        UpdateDate = now,
                         CashNo = header.CashNo,
                         ZReportNo = header.ZReportNo,
                         CashierNo = header.CashierNo,
@@ -176,8 +181,7 @@ public sealed class CashSummaryCommandsUseCase(
                         SlipNumber = detail.SlipNumber,
                         TerminalId = NormalizeText(detail.TerminalId),
                         Description = NormalizeText(detail.Description),
-                        StoreExpenseType = ResolveStoreExpenseType(detail.PaymentTypeId),
-                        CreateDate = now
+                        StoreExpenseType = ResolveStoreExpenseType(detail.PaymentTypeId)
                     })
                     .Prepend(CreateCashTotalSummaryEntity(header, cashAmount, totalAmount, now))
                     .ToArray();
@@ -252,15 +256,20 @@ public sealed class CashSummaryCommandsUseCase(
                     .Where(item => item.Quantity > 0)
                     .Select(item => new BanknoteMovementEntity
                     {
+                        Id = Guid.NewGuid(),
+                        CreateUser = MikroUserNo,
+                        CreateDate = now,
+                        UpdateUser = MikroUserNo,
+                        UpdateDate = now,
                         DocumentSerie = request.DocumentSerie,
                         DocumentOrderNo = request.DocumentOrderNo,
                         SummaryDate = summaryHeader.SummaryDate,
                         WarehouseNo = request.WarehouseNo,
+                        CashNo = summaryHeader.CashNo,
                         Value = item.Value,
                         BanknoteType = item.BanknoteType,
                         Quantity = item.Quantity,
-                        Total = item.Total,
-                        CreateDate = now
+                        Total = item.Total
                     })
                     .ToArray();
                 var cashAmount = updatedBanknotes.Sum(item => item.Total);
@@ -539,6 +548,9 @@ public sealed class CashSummaryCommandsUseCase(
             ? paymentTypeId
             : null;
 
+    private static string BuildDocumentSerie(int warehouseNo, int cashNo) =>
+        $"F{warehouseNo}.{cashNo}";
+
     private static bool IsZero(double value) =>
         Math.Abs(value) < 0.000_001d;
 
@@ -549,6 +561,11 @@ public sealed class CashSummaryCommandsUseCase(
         DateTime now) =>
         new()
         {
+            Id = Guid.NewGuid(),
+            CreateUser = MikroUserNo,
+            CreateDate = now,
+            UpdateUser = MikroUserNo,
+            UpdateDate = now,
             CashNo = request.CashNo,
             ZReportNo = request.ZReportNo,
             CashierNo = request.CashierNo,
@@ -563,8 +580,7 @@ public sealed class CashSummaryCommandsUseCase(
             SlipNumber = IsZero(cashAmount) ? 0 : CashTotalSlipNumber,
             TerminalId = string.Empty,
             Description = CashTotalDescription,
-            StoreExpenseType = null,
-            CreateDate = now
+            StoreExpenseType = null
         };
 
     private static SummaryEntity CreateCashTotalSummaryEntity(
@@ -587,6 +603,15 @@ public sealed class CashSummaryCommandsUseCase(
     {
         summary.DocumentSerie = header.DocumentSerie;
         summary.DocumentOrderNo = header.DocumentOrderNo;
+        if (summary.Id == Guid.Empty)
+        {
+            summary.Id = Guid.NewGuid();
+        }
+
+        summary.CreateUser = MikroUserNo;
+        summary.CreateDate = now;
+        summary.UpdateUser = MikroUserNo;
+        summary.UpdateDate = now;
         summary.CashNo = header.CashNo;
         summary.ZReportNo = header.ZReportNo;
         summary.CashierNo = header.CashierNo;
@@ -602,7 +627,6 @@ public sealed class CashSummaryCommandsUseCase(
         summary.TerminalId = string.Empty;
         summary.Description = CashTotalDescription;
         summary.StoreExpenseType = null;
-        summary.CreateDate = now;
     }
 
     private static SummaryEntity CreateSummaryEntity(
@@ -612,6 +636,11 @@ public sealed class CashSummaryCommandsUseCase(
         DateTime now) =>
         new()
         {
+            Id = Guid.NewGuid(),
+            CreateUser = MikroUserNo,
+            CreateDate = now,
+            UpdateUser = MikroUserNo,
+            UpdateDate = now,
             CashNo = request.CashNo,
             ZReportNo = request.ZReportNo,
             CashierNo = request.CashierNo,
@@ -626,8 +655,7 @@ public sealed class CashSummaryCommandsUseCase(
             SlipNumber = line.SlipNumber,
             TerminalId = NormalizeText(line.TerminalId),
             Description = string.Empty,
-            StoreExpenseType = null,
-            CreateDate = now
+            StoreExpenseType = null
         };
 
     private static SummaryEntity CreateSummaryEntity(
@@ -637,6 +665,11 @@ public sealed class CashSummaryCommandsUseCase(
         DateTime now) =>
         new()
         {
+            Id = Guid.NewGuid(),
+            CreateUser = MikroUserNo,
+            CreateDate = now,
+            UpdateUser = MikroUserNo,
+            UpdateDate = now,
             CashNo = request.CashNo,
             ZReportNo = request.ZReportNo,
             CashierNo = request.CashierNo,
@@ -651,8 +684,7 @@ public sealed class CashSummaryCommandsUseCase(
             SlipNumber = 1,
             TerminalId = string.Empty,
             Description = NormalizeText(line.Description),
-            StoreExpenseType = line.StoreExpenseType,
-            CreateDate = now
+            StoreExpenseType = line.StoreExpenseType
         };
 
     private static BanknoteMovementEntity CreateBanknoteMovementEntity(
@@ -663,15 +695,20 @@ public sealed class CashSummaryCommandsUseCase(
         DateTime now) =>
         new()
         {
+            Id = Guid.NewGuid(),
+            CreateUser = MikroUserNo,
+            CreateDate = now,
+            UpdateUser = MikroUserNo,
+            UpdateDate = now,
             DocumentSerie = documentSerie,
             DocumentOrderNo = documentOrderNo,
             SummaryDate = request.SummaryDate.Date,
             WarehouseNo = request.WarehouseNo,
+            CashNo = request.CashNo,
             Value = line.Value,
             BanknoteType = line.BanknoteType,
             Quantity = line.Quantity,
-            Total = line.Total,
-            CreateDate = now
+            Total = line.Total
         };
 
     private static GiftCheckMovementEntity CreateGiftCheckMovementEntity(
@@ -682,15 +719,17 @@ public sealed class CashSummaryCommandsUseCase(
         DateTime now) =>
         new()
         {
+            Id = Guid.NewGuid(),
+            CreateDate = now,
             DocumentSerie = documentSerie,
             DocumentOrderNo = documentOrderNo,
             SummaryDate = request.SummaryDate.Date,
             WarehouseNo = request.WarehouseNo,
+            CashNo = request.CashNo,
             Value = line.Value,
             GiftCheckType = line.GiftCheckType,
             Quantity = line.Quantity,
-            Total = line.Total,
-            CreateDate = now
+            Total = line.Total
         };
 
     private static CARI_HESAP_HAREKETLERI CreateCustomerMovementEntity(

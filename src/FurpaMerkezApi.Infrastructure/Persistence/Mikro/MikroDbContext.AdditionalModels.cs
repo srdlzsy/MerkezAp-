@@ -246,34 +246,46 @@ public partial class MikroDbContext
         {
             entity.ToTable("Summaries");
             entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).ValueGeneratedOnAdd();
-            entity.Property(item => item.DocumentSerie).HasMaxLength(20);
-            entity.Property(item => item.TypeName).HasMaxLength(50);
-            entity.Property(item => item.AccountCode).HasMaxLength(40);
-            entity.Property(item => item.TerminalId).HasMaxLength(40);
-            entity.Property(item => item.Description).HasMaxLength(250);
+            entity.Property(item => item.Id).ValueGeneratedNever();
+            entity.Property(item => item.PaymentTypeId).HasColumnName("PaymentTypeID");
+            entity.Property(item => item.WarehouseNo).HasColumnName("BranchNo");
+            entity.Property(item => item.DocumentSerie).HasMaxLength(15);
+            entity.Property(item => item.TerminalId).HasMaxLength(20);
+            entity.Property(item => item.Description).HasMaxLength(100);
             entity.Property(item => item.SummaryDate).HasColumnType("datetime");
             entity.Property(item => item.CreateDate).HasColumnType("datetime");
+            entity.Property(item => item.UpdateDate).HasColumnType("datetime");
+            entity.Ignore(item => item.Total);
+            entity.Ignore(item => item.TypeName);
+            entity.Ignore(item => item.AccountCode);
+            entity.Ignore(item => item.StoreExpenseType);
         });
 
         modelBuilder.Entity<BanknoteMovementEntity>(entity =>
         {
             entity.ToTable("BanknoteMovements");
             entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).ValueGeneratedOnAdd();
-            entity.Property(item => item.DocumentSerie).HasMaxLength(20);
-            entity.Property(item => item.SummaryDate).HasColumnType("datetime");
+            entity.Property(item => item.Id).ValueGeneratedNever();
+            entity.Property(item => item.BanknoteType).HasColumnName("BanknoteTypeID");
+            entity.Property(item => item.WarehouseNo).HasColumnName("BranchNo");
+            entity.Property(item => item.DocumentSerie).HasMaxLength(15);
             entity.Property(item => item.CreateDate).HasColumnType("datetime");
+            entity.Property(item => item.UpdateDate).HasColumnType("datetime");
+            entity.Ignore(item => item.SummaryDate);
+            entity.Ignore(item => item.Value);
         });
 
         modelBuilder.Entity<GiftCheckMovementEntity>(entity =>
         {
             entity.ToTable("GiftCheckMovements");
             entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).ValueGeneratedOnAdd();
-            entity.Property(item => item.DocumentSerie).HasMaxLength(20);
-            entity.Property(item => item.SummaryDate).HasColumnType("datetime");
+            entity.Property(item => item.Id).ValueGeneratedNever();
+            entity.Property(item => item.GiftCheckType).HasColumnName("GiftCheckTypeID");
+            entity.Property(item => item.WarehouseNo).HasColumnName("BranchNo");
+            entity.Property(item => item.DocumentSerie).HasMaxLength(15);
             entity.Property(item => item.CreateDate).HasColumnType("datetime");
+            entity.Ignore(item => item.SummaryDate);
+            entity.Ignore(item => item.Value);
         });
 
         modelBuilder.Entity<BanknoteTrackEntity>(entity =>
