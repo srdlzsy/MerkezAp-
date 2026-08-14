@@ -66,6 +66,18 @@ public sealed record UpdateCashSummaryBanknoteLineRequest(
     int Quantity,
     double Total);
 
+public sealed record UpdateCashSummaryGiftChecksRequest(
+    int WarehouseNo,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    IReadOnlyCollection<UpdateCashSummaryGiftCheckLineRequest> GiftCheckMovements);
+
+public sealed record UpdateCashSummaryGiftCheckLineRequest(
+    int GiftCheckType,
+    int Quantity,
+    double Total,
+    double Value);
+
 public sealed record DeleteCashSummaryRequest(
     int WarehouseNo,
     string DocumentSerie,
@@ -87,6 +99,12 @@ public sealed record UpdateCashSummaryDetailsResponse(
     double TotalAmount);
 
 public sealed record UpdateCashSummaryBanknotesResponse(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    int UpdatedLineCount,
+    double TotalAmount);
+
+public sealed record UpdateCashSummaryGiftChecksResponse(
     string DocumentSerie,
     int DocumentOrderNo,
     int UpdatedLineCount,

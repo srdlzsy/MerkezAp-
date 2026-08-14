@@ -1,6 +1,7 @@
 using System.Data;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Commands;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Files;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -11,7 +12,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari.Comm
 
 public sealed class CashSummaryCommandsUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IGetCashSummaryZReportTotalUseCase getCashSummaryZReportTotalUseCase)
     : ICashSummaryCommandsUseCase
 {
     private const short MikroUserNo = 39;
@@ -68,6 +70,8 @@ public sealed class CashSummaryCommandsUseCase(
                     summary.DocumentOrderNo = documentOrderNo;
                 }
 
+                var customerMovementDocumentOrderNo = await GetNextCustomerMovementDocumentOrderNoAsync(cancellationToken);
+                var customerMovementLines = await BuildCustomerMovementLinesAsync(summaryLines, cancellationToken);
                 var banknoteEntities = banknoteLines
                     .Select(line => CreateBanknoteMovementEntity(request, line, documentSerie, documentOrderNo, now))
                     .ToArray();
@@ -75,11 +79,11 @@ public sealed class CashSummaryCommandsUseCase(
                     .Select(line => CreateGiftCheckMovementEntity(request, line, documentSerie, documentOrderNo, now))
                     .ToArray();
                 var customerMovements = CashSummaryCustomerMovementFactory.CreateMovements(
-                    request,
-                    summaryDate,
-                    documentSerie,
-                    documentOrderNo,
+                    summaryLines[0],
+                    customerMovementLines,
+                    request.ZTotalValue,
                     documentTotal,
+                    customerMovementDocumentOrderNo,
                     now)
                     .ToArray();
 
@@ -180,9 +184,9 @@ public sealed class CashSummaryCommandsUseCase(
                     .ToArray();
 
                 await mikroWriteDbContext.Summaries.AddRangeAsync(updatedSummaries, cancellationToken);
-                await UpdateCustomerMovementTotalsAsync(
-                    request.DocumentSerie,
-                    request.DocumentOrderNo,
+                await RebuildCustomerMovementsAsync(
+                    header,
+                    updatedSummaries,
                     totalAmount,
                     now,
                     cancellationToken);
@@ -271,9 +275,9 @@ public sealed class CashSummaryCommandsUseCase(
                 await mikroWriteDbContext.BanknoteMovements.AddRangeAsync(updatedBanknotes, cancellationToken);
                 EnsureCashTotalSummary(existingSummaries, summaryHeader, cashAmount, totalAmount, now);
                 UpdateSummaryDocumentTotals(existingSummaries, totalAmount);
-                await UpdateCustomerMovementTotalsAsync(
-                    request.DocumentSerie,
-                    request.DocumentOrderNo,
+                await RebuildCustomerMovementsAsync(
+                    summaryHeader,
+                    existingSummaries,
                     totalAmount,
                     now,
                     cancellationToken);
@@ -285,6 +289,69 @@ public sealed class CashSummaryCommandsUseCase(
                     request.DocumentOrderNo,
                     updatedBanknotes.Length,
                     cashAmount);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<UpdateCashSummaryGiftChecksResponse> UpdateGiftChecksAsync(
+        UpdateCashSummaryGiftChecksRequest request,
+        CancellationToken cancellationToken)
+    {
+        Validate(request);
+
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            try
+            {
+                var summaryHeader = await mikroWriteDbContext.Summaries
+                    .Where(item =>
+                        item.WarehouseNo == request.WarehouseNo &&
+                        item.DocumentSerie == request.DocumentSerie &&
+                        item.DocumentOrderNo == request.DocumentOrderNo)
+                    .OrderBy(item => item.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (summaryHeader is null)
+                {
+                    throw new KeyNotFoundException("Cash summary was not found.");
+                }
+
+                var existingGiftChecks = await mikroWriteDbContext.GiftCheckMovements
+                    .Where(item =>
+                        item.WarehouseNo == request.WarehouseNo &&
+                        item.DocumentSerie == request.DocumentSerie &&
+                        item.DocumentOrderNo == request.DocumentOrderNo)
+                    .ToListAsync(cancellationToken);
+
+                mikroWriteDbContext.GiftCheckMovements.RemoveRange(existingGiftChecks);
+
+                var now = DateTime.Now;
+                var updatedGiftChecks = request.GiftCheckMovements
+                    .Where(item => item.Quantity > 0)
+                    .Select(item => CreateGiftCheckMovementEntity(request, item, summaryHeader, now))
+                    .ToArray();
+
+                await mikroWriteDbContext.GiftCheckMovements.AddRangeAsync(updatedGiftChecks, cancellationToken);
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new UpdateCashSummaryGiftChecksResponse(
+                    request.DocumentSerie,
+                    request.DocumentOrderNo,
+                    updatedGiftChecks.Length,
+                    updatedGiftChecks.Sum(item => item.Total));
             }
             catch
             {
@@ -329,11 +396,10 @@ public sealed class CashSummaryCommandsUseCase(
                         item.DocumentSerie == request.DocumentSerie &&
                         item.DocumentOrderNo == request.DocumentOrderNo)
                     .ToListAsync(cancellationToken);
-                var customerMovements = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
-                    .Where(item =>
-                        item.cha_evrakno_seri == request.DocumentSerie &&
-                        item.cha_evrakno_sira == request.DocumentOrderNo)
-                    .ToListAsync(cancellationToken);
+                var customerMovements = await GetCustomerMovementsForCashSummaryAsync(
+                    request.DocumentSerie,
+                    request.DocumentOrderNo,
+                    cancellationToken);
 
                 mikroWriteDbContext.Summaries.RemoveRange(summaries);
                 mikroWriteDbContext.BanknoteMovements.RemoveRange(banknotes);
@@ -369,36 +435,146 @@ public sealed class CashSummaryCommandsUseCase(
         return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
-    private async Task UpdateCustomerMovementTotalsAsync(
-        string documentSerie,
-        int documentOrderNo,
+    private async Task<int> GetNextCustomerMovementDocumentOrderNoAsync(CancellationToken cancellationToken)
+    {
+        var currentMax = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .Where(item =>
+                item.cha_evrak_tip == CashSummaryCustomerMovementFactory.CustomerMovementDocumentType &&
+                item.cha_evrakno_seri == CashSummaryCustomerMovementFactory.CustomerMovementDocumentSerie)
+            .MaxAsync(item => item.cha_evrakno_sira, cancellationToken);
+
+        return (currentMax ?? 0) + 1;
+    }
+
+    private async Task RebuildCustomerMovementsAsync(
+        SummaryEntity header,
+        IReadOnlyCollection<SummaryEntity> summaries,
         double totalAmount,
         DateTime now,
         CancellationToken cancellationToken)
     {
-        var customerMovements = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
-            .Where(item =>
-                item.cha_evrakno_seri == documentSerie &&
-                item.cha_evrakno_sira == documentOrderNo)
-            .ToListAsync(cancellationToken);
+        var existingCustomerMovements = await GetCustomerMovementsForCashSummaryAsync(
+            header.DocumentSerie,
+            header.DocumentOrderNo,
+            cancellationToken);
+        var existingCustomerMovementDocumentOrderNo = existingCustomerMovements
+            .Where(item => item.cha_evrakno_seri == CashSummaryCustomerMovementFactory.CustomerMovementDocumentSerie)
+            .Select(item => item.cha_evrakno_sira)
+            .FirstOrDefault(item => item.HasValue);
+        var customerMovementDocumentOrderNo = existingCustomerMovementDocumentOrderNo ??
+                                              await GetNextCustomerMovementDocumentOrderNoAsync(cancellationToken);
+        var zTotalValue = CashSummaryCustomerMovementFactory.ResolveExistingZTotalValue(
+            existingCustomerMovements,
+            header.WarehouseNo);
 
-        foreach (var movement in customerMovements.Where(CashSummaryCustomerMovementFactory.IsMainMovement))
+        if (IsZero(zTotalValue))
         {
-            movement.cha_meblag = totalAmount;
-            movement.cha_aratoplam = totalAmount;
-            movement.cha_lastup_user = MikroUserNo;
-            movement.cha_lastup_date = now;
+            zTotalValue = await ResolveZReportTotalValueAsync(header, cancellationToken);
         }
 
-        var zReportTotalMovement = customerMovements.FirstOrDefault(CashSummaryCustomerMovementFactory.IsZReportTotalMovement);
-        var zDifferenceMovement = customerMovements.FirstOrDefault(CashSummaryCustomerMovementFactory.IsZDifferenceMovement);
-        if (zReportTotalMovement is not null && zDifferenceMovement is not null)
+        var customerMovementLines = await BuildCustomerMovementLinesAsync(summaries, cancellationToken);
+        var newCustomerMovements = CashSummaryCustomerMovementFactory.CreateMovements(
+                header,
+                customerMovementLines,
+                zTotalValue,
+                totalAmount,
+                customerMovementDocumentOrderNo,
+                now)
+            .ToArray();
+
+        mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.RemoveRange(existingCustomerMovements);
+        await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AddRangeAsync(newCustomerMovements, cancellationToken);
+    }
+
+    private async Task<List<CARI_HESAP_HAREKETLERI>> GetCustomerMovementsForCashSummaryAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var legacyDescription = CashSummaryCustomerMovementFactory.BuildLegacyDescription(
+            documentSerie,
+            documentOrderNo);
+
+        return await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .Where(item =>
+                item.cha_evrak_tip == CashSummaryCustomerMovementFactory.CustomerMovementDocumentType &&
+                ((item.cha_evrakno_seri == CashSummaryCustomerMovementFactory.CustomerMovementDocumentSerie &&
+                  item.cha_aciklama == legacyDescription) ||
+                 (item.cha_evrakno_seri == documentSerie &&
+                  item.cha_evrakno_sira == documentOrderNo)))
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<CashSummaryCustomerMovementLine>> BuildCustomerMovementLinesAsync(
+        IEnumerable<SummaryEntity> summaries,
+        CancellationToken cancellationToken)
+    {
+        var summaryLines = summaries.ToArray();
+        var paymentTypeNos = summaryLines
+            .Where(item => item.PaymentTypeId < 100)
+            .Select(item => item.PaymentTypeId)
+            .Distinct()
+            .ToArray();
+        var accountCodes = paymentTypeNos.Length == 0
+            ? new Dictionary<int, string>()
+            : await mikroWriteDbContext.PaymentTypes
+                .Where(item => paymentTypeNos.Contains(item.PaymentTypeNo))
+                .ToDictionaryAsync(
+                    item => item.PaymentTypeNo,
+                    item => item.AccountCode ?? string.Empty,
+                    cancellationToken);
+        var lines = new List<CashSummaryCustomerMovementLine>();
+
+        foreach (var summary in summaryLines.Where(item => item.PaymentTypeId < 100))
         {
-            var differenceAmount = Math.Round(totalAmount - (zReportTotalMovement.cha_meblag ?? 0d), 2);
-            zDifferenceMovement.cha_meblag = differenceAmount;
-            zDifferenceMovement.cha_aratoplam = differenceAmount;
-            zDifferenceMovement.cha_lastup_user = MikroUserNo;
-            zDifferenceMovement.cha_lastup_date = now;
+            var accountCode = !string.IsNullOrWhiteSpace(summary.AccountCode)
+                ? summary.AccountCode
+                : accountCodes.GetValueOrDefault(summary.PaymentTypeId, string.Empty);
+
+            lines.Add(new CashSummaryCustomerMovementLine(
+                summary.PaymentTypeId,
+                accountCode,
+                Math.Round(summary.Amount, 2)));
+        }
+
+        var cashAmount = summaryLines
+            .Where(IsCashSummary)
+            .Sum(item => item.Amount);
+
+        if (!IsZero(cashAmount))
+        {
+            lines.Add(new CashSummaryCustomerMovementLine(
+                CashSummaryCustomerMovementFactory.CashPaymentTypeNo,
+                CashSummaryCustomerMovementFactory.ZDifferenceAccountCode,
+                Math.Round(cashAmount, 2)));
+        }
+
+        return lines;
+    }
+
+    private async Task<double> ResolveZReportTotalValueAsync(
+        SummaryEntity header,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var zTotalValue = await getCashSummaryZReportTotalUseCase.ExecuteAsync(
+                new ZReportValueRequest(
+                    header.WarehouseNo,
+                    header.DocumentSerie,
+                    header.ZReportNo,
+                    header.CashNo),
+                cancellationToken);
+
+            return zTotalValue > 0d ? Math.Round(zTotalValue, 2) : 0d;
+        }
+        catch (IOException)
+        {
+            return 0d;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0d;
         }
     }
 
@@ -736,6 +912,26 @@ public sealed class CashSummaryCommandsUseCase(
             Total = line.Total
         };
 
+    private static GiftCheckMovementEntity CreateGiftCheckMovementEntity(
+        UpdateCashSummaryGiftChecksRequest request,
+        UpdateCashSummaryGiftCheckLineRequest line,
+        SummaryEntity header,
+        DateTime now) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CreateDate = now,
+            DocumentSerie = request.DocumentSerie,
+            DocumentOrderNo = request.DocumentOrderNo,
+            SummaryDate = header.SummaryDate,
+            WarehouseNo = request.WarehouseNo,
+            CashNo = header.CashNo,
+            Value = line.Value,
+            GiftCheckType = line.GiftCheckType,
+            Quantity = line.Quantity,
+            Total = line.Total
+        };
+
     private static void Validate(CreateCashSummaryRequest request)
     {
         if (request.WarehouseNo <= 0)
@@ -785,6 +981,24 @@ public sealed class CashSummaryCommandsUseCase(
     }
 
     private static void Validate(UpdateCashSummaryBanknotesRequest request)
+    {
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.DocumentSerie))
+        {
+            throw new ArgumentException("Document serie is required.", nameof(request.DocumentSerie));
+        }
+
+        if (request.DocumentOrderNo < 0)
+        {
+            throw new ArgumentException("Document order no can not be negative.", nameof(request.DocumentOrderNo));
+        }
+    }
+
+    private static void Validate(UpdateCashSummaryGiftChecksRequest request)
     {
         if (request.WarehouseNo <= 0)
         {

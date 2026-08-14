@@ -14,6 +14,10 @@ public interface ICashSummaryCommandsUseCase
         UpdateCashSummaryBanknotesRequest request,
         CancellationToken cancellationToken);
 
+    Task<UpdateCashSummaryGiftChecksResponse> UpdateGiftChecksAsync(
+        UpdateCashSummaryGiftChecksRequest request,
+        CancellationToken cancellationToken);
+
     Task<DeleteCashSummaryResponse> DeleteAsync(
         DeleteCashSummaryRequest request,
         CancellationToken cancellationToken);

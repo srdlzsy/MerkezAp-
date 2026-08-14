@@ -1,107 +1,115 @@
-using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari.Commands;
 
 internal static class CashSummaryCustomerMovementFactory
 {
-    internal const int MainLineNo = 0;
-    internal const int ZDifferenceLineNo = 1;
-    internal const int ZReportTotalLineNo = 2;
+    internal const string CustomerMovementDocumentSerie = "X";
+    internal const byte CustomerMovementDocumentType = 60;
     internal const string ZDifferenceAccountCode = "0002";
     internal const string ZReportDocumentName = "Z Raporu";
+    internal const int CashPaymentTypeNo = 200;
+    internal const int ZDifferencePaymentTypeNo = 300;
+    internal const int ZReportTotalPaymentTypeNo = 400;
+    internal const int MainLineNo = 0;
 
     private const short MikroUserNo = 39;
     private const short CustomerMovementFileId = 51;
-    private const byte CustomerMovementDocumentType = 60;
     private const byte CustomerMovementDebitType = 0;
     private const byte CustomerMovementCreditType = 1;
     private const byte CustomerMovementGenre = 5;
     private const byte CustomerMovementNormalReturn = 0;
     private const byte CustomerMovementTpoz = 0;
     private const byte CustomerMovementTradeType = 0;
-    private const byte CustomerMovementCashCustomerGenus = 4;
+    private const byte BankCustomerGenus = 2;
+    private const byte FoodCheckCustomerGenus = 0;
+    private const byte NegativeDifferenceCustomerGenus = 1;
+    private const byte CashCustomerGenus = 4;
     private const byte CustomerMovementInvoiceDocumentType = 3;
-    private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
+    private const double NegativeDifferenceThreshold = -3.50d;
+    private static readonly DateTime MikroEmptyDate = new(1900, 1, 1);
 
-    internal static IEnumerable<CARI_HESAP_HAREKETLERI> CreateMovements(
-        CreateCashSummaryRequest request,
-        DateTime summaryDate,
-        string documentSerie,
-        int documentOrderNo,
+    internal static string BuildLegacyDescription(string documentSerie, int documentOrderNo) =>
+        $"{documentSerie}.{documentOrderNo}";
+
+    internal static IReadOnlyCollection<CARI_HESAP_HAREKETLERI> CreateMovements(
+        SummaryEntity header,
+        IEnumerable<CashSummaryCustomerMovementLine> paymentLines,
+        double zTotalValue,
         double documentTotal,
+        int customerMovementDocumentOrderNo,
         DateTime now)
     {
-        yield return CreateMovement(
-            request,
-            summaryDate,
-            documentSerie,
-            documentOrderNo,
-            MainLineNo,
-            CustomerMovementDebitType,
-            documentTotal,
-            $"Kasa sayimi {documentSerie}/{documentOrderNo}",
-            $"KASA-{request.WarehouseNo}",
-            request.CashNo.ToString(),
-            now);
+        var movementLines = paymentLines
+            .Concat(CreateZReportLines(header.WarehouseNo, zTotalValue, documentTotal))
+            .Where(ShouldWriteLine)
+            .ToArray();
+        var movements = new List<CARI_HESAP_HAREKETLERI>(movementLines.Length);
+        var description = BuildLegacyDescription(header.DocumentSerie, header.DocumentOrderNo);
 
-        if (IsZero(request.ZTotalValue))
+        for (var rowNo = 0; rowNo < movementLines.Length; rowNo++)
         {
-            yield break;
+            movements.Add(CreateMovement(
+                header,
+                movementLines[rowNo],
+                customerMovementDocumentOrderNo,
+                rowNo,
+                description,
+                now));
         }
 
-        var zDifference = Math.Round(documentTotal - request.ZTotalValue, 2);
-
-        yield return CreateMovement(
-            request,
-            summaryDate,
-            documentSerie,
-            documentOrderNo,
-            ZDifferenceLineNo,
-            CustomerMovementCreditType,
-            zDifference,
-            $"Z Rapor Farki {documentSerie}/{documentOrderNo}",
-            ZDifferenceAccountCode,
-            string.Empty,
-            now);
-
-        yield return CreateMovement(
-            request,
-            summaryDate,
-            documentSerie,
-            documentOrderNo,
-            ZReportTotalLineNo,
-            CustomerMovementCreditType,
-            Math.Round(request.ZTotalValue, 2),
-            $"Z Rapor Toplami {documentSerie}/{documentOrderNo}",
-            request.WarehouseNo.ToString(),
-            string.Empty,
-            now);
+        return movements;
     }
 
-    internal static bool IsMainMovement(CARI_HESAP_HAREKETLERI movement) =>
-        movement.cha_satir_no is null or MainLineNo;
+    internal static double ResolveExistingZTotalValue(
+        IEnumerable<CARI_HESAP_HAREKETLERI> movements,
+        int warehouseNo)
+    {
+        var warehouseCode = warehouseNo.ToString();
+        var zTotalMovement = movements
+            .Where(item => item.cha_evrak_tip == CustomerMovementDocumentType)
+            .Where(item => item.cha_tip == CustomerMovementCreditType)
+            .Where(item => item.cha_cari_cins == CashCustomerGenus)
+            .FirstOrDefault(item => string.Equals(item.cha_kod, warehouseCode, StringComparison.OrdinalIgnoreCase));
 
-    internal static bool IsZDifferenceMovement(CARI_HESAP_HAREKETLERI movement) =>
-        movement.cha_satir_no == ZDifferenceLineNo;
+        return zTotalMovement?.cha_meblag is > 0d
+            ? Math.Round(zTotalMovement.cha_meblag.Value, 2)
+            : 0d;
+    }
 
-    internal static bool IsZReportTotalMovement(CARI_HESAP_HAREKETLERI movement) =>
-        movement.cha_satir_no == ZReportTotalLineNo;
+    private static IEnumerable<CashSummaryCustomerMovementLine> CreateZReportLines(
+        int warehouseNo,
+        double zTotalValue,
+        double documentTotal)
+    {
+        yield return new CashSummaryCustomerMovementLine(
+            ZDifferencePaymentTypeNo,
+            ZDifferenceAccountCode,
+            Math.Round(documentTotal - zTotalValue, 2));
+
+        yield return new CashSummaryCustomerMovementLine(
+            ZReportTotalPaymentTypeNo,
+            warehouseNo.ToString(),
+            Math.Round(zTotalValue, 2));
+    }
+
+    private static bool ShouldWriteLine(CashSummaryCustomerMovementLine line) =>
+        !string.IsNullOrWhiteSpace(line.AccountCode) &&
+        !IsZero(line.Amount);
 
     private static CARI_HESAP_HAREKETLERI CreateMovement(
-        CreateCashSummaryRequest request,
-        DateTime summaryDate,
-        string documentSerie,
-        int documentOrderNo,
+        SummaryEntity header,
+        CashSummaryCustomerMovementLine line,
+        int customerMovementDocumentOrderNo,
         int rowNo,
-        byte movementType,
-        double amount,
         string description,
-        string customerCode,
-        string cashServiceCode,
         DateTime now)
     {
-        var warehouseCode = request.WarehouseNo.ToString();
+        var warehouseCode = header.WarehouseNo.ToString();
+        var isNegativeSyntheticDifference = line.PaymentTypeNo >= 100 && line.Amount <= NegativeDifferenceThreshold;
+        var customerCode = isNegativeSyntheticDifference
+            ? header.CashierNo.ToString()
+            : NormalizeText(line.AccountCode, 25);
 
         return new()
         {
@@ -124,35 +132,39 @@ internal static class CashSummaryCustomerMovementFactory
             cha_firmano = 0,
             cha_subeno = 0,
             cha_evrak_tip = CustomerMovementDocumentType,
-            cha_evrakno_seri = documentSerie,
-            cha_evrakno_sira = documentOrderNo,
+            cha_evrakno_seri = CustomerMovementDocumentSerie,
+            cha_evrakno_sira = customerMovementDocumentOrderNo,
             cha_satir_no = rowNo,
-            cha_tarihi = summaryDate,
-            cha_tip = movementType,
+            cha_tarihi = header.SummaryDate.Date,
+            cha_tip = IsCreditLine(line.PaymentTypeNo) ? CustomerMovementCreditType : CustomerMovementDebitType,
             cha_cinsi = CustomerMovementGenre,
             cha_normal_Iade = CustomerMovementNormalReturn,
             cha_tpoz = CustomerMovementTpoz,
             cha_ticaret_turu = CustomerMovementTradeType,
-            cha_belge_no = $"{request.CashNo}-{request.ZReportNo}",
-            cha_belge_tarih = summaryDate,
+            cha_belge_no = string.Empty,
+            cha_belge_tarih = header.SummaryDate.Date,
             cha_aciklama = NormalizeText(description, 40),
-            cha_satici_kodu = request.CashierNo.ToString(),
-            cha_cari_cins = CustomerMovementCashCustomerGenus,
+            cha_satici_kodu = string.Empty,
+            cha_EXIMkodu = string.Empty,
+            cha_projekodu = string.Empty,
+            cha_yat_tes_kodu = string.Empty,
+            cha_cari_cins = ResolveCustomerGenus(line, isNegativeSyntheticDifference),
             cha_kod = customerCode,
+            cha_ciro_cari_kodu = string.Empty,
             cha_d_cins = 0,
             cha_d_kur = 1d,
             cha_altd_kur = 1d,
-            cha_grupno = 0,
+            cha_grupno = line.PaymentTypeNo < 50 ? (byte)7 : (byte)0,
             cha_srmrkkodu = warehouseCode,
             cha_kasa_hizmet = 0,
-            cha_kasa_hizkod = cashServiceCode,
+            cha_kasa_hizkod = string.Empty,
             cha_karsidcinsi = 0,
             cha_karsid_kur = 1d,
             cha_karsidgrupno = 0,
             cha_karsisrmrkkodu = warehouseCode,
-            cha_miktari = 1d,
-            cha_meblag = amount,
-            cha_aratoplam = amount,
+            cha_miktari = 0d,
+            cha_meblag = Math.Round(line.Amount, 2),
+            cha_aratoplam = 0d,
             cha_vade = 0,
             cha_Vade_Farki_Yuz = 0d,
             cha_ft_iskonto1 = 0d,
@@ -202,7 +214,7 @@ internal static class CashSummaryCustomerMovementFactory
             cha_fis_sirano = 0,
             cha_trefno = string.Empty,
             cha_sntck_poz = 0,
-            cha_reftarihi = summaryDate,
+            cha_reftarihi = MikroEmptyDate,
             cha_istisnakodu = 0,
             cha_pos_hareketi = 0,
             cha_meblag_ana_doviz_icin_gecersiz_fl = 0,
@@ -210,8 +222,8 @@ internal static class CashSummaryCustomerMovementFactory
             cha_meblag_orj_doviz_icin_gecersiz_fl = 0,
             cha_sip_uid = Guid.Empty,
             cha_kirahar_uid = Guid.Empty,
-            cha_vardiya_tarihi = summaryDate,
-            cha_vardiya_no = Convert.ToByte(Math.Clamp(request.CashNo, 0, byte.MaxValue)),
+            cha_vardiya_tarihi = MikroEmptyDate,
+            cha_vardiya_no = 0,
             cha_vardiya_evrak_ti = 0,
             cha_ebelge_turu = 0,
             cha_tevkifat_toplam = 0d,
@@ -221,8 +233,8 @@ internal static class CashSummaryCustomerMovementFactory
             cha_uuid = string.Empty,
             cha_adres_no = 0,
             cha_vergifon_toplam = 0d,
-            cha_ilk_belge_tarihi = summaryDate,
-            cha_ilk_belge_doviz_kuru = 1d,
+            cha_ilk_belge_tarihi = MikroEmptyDate,
+            cha_ilk_belge_doviz_kuru = 0d,
             cha_HareketGrupKodu1 = string.Empty,
             cha_HareketGrupKodu2 = string.Empty,
             cha_HareketGrupKodu3 = string.Empty,
@@ -234,7 +246,7 @@ internal static class CashSummaryCustomerMovementFactory
             cha_disyazilim_tip = 0,
             cha_bsba_e_belge_mi = 0,
             cha_eticaret_kanal_kodu = string.Empty,
-            cha_hizli_satis_kasa_no = Convert.ToInt16(Math.Clamp(request.CashNo, 0, short.MaxValue)),
+            cha_hizli_satis_kasa_no = 0,
             cha_ebelge_Islemturu = 0,
             cha_tevkifat_sifirlandi_fl = false,
             cha_vergi1 = 0d,
@@ -266,30 +278,43 @@ internal static class CashSummaryCustomerMovementFactory
             cha_ilave_edilecek_kdv7 = 0d,
             cha_ilave_edilecek_kdv8 = 0d,
             cha_ilave_edilecek_kdv9 = 0d,
-            cha_ilave_edilecek_kdv10 = 0d,
-            cha_ilave_edilecek_kdv11 = 0d,
-            cha_ilave_edilecek_kdv12 = 0d,
-            cha_ilave_edilecek_kdv13 = 0d,
-            cha_ilave_edilecek_kdv14 = 0d,
-            cha_ilave_edilecek_kdv15 = 0d,
-            cha_ilave_edilecek_kdv16 = 0d,
-            cha_ilave_edilecek_kdv17 = 0d,
-            cha_ilave_edilecek_kdv18 = 0d,
-            cha_ilave_edilecek_kdv19 = 0d,
-            cha_ilave_edilecek_kdv20 = 0d,
-            cha_efatura_belge_tipi = 0
+            cha_ilave_edilecek_kdv10 = 0d
         };
     }
 
-    private static bool IsZero(double value) =>
-        Math.Abs(value) < 0.005d;
+    private static bool IsCreditLine(int paymentTypeNo) =>
+        paymentTypeNo is ZDifferencePaymentTypeNo or ZReportTotalPaymentTypeNo;
+
+    private static byte ResolveCustomerGenus(
+        CashSummaryCustomerMovementLine line,
+        bool isNegativeDifference)
+    {
+        if (line.PaymentTypeNo < 50)
+        {
+            return BankCustomerGenus;
+        }
+
+        if (line.PaymentTypeNo < 100)
+        {
+            return FoodCheckCustomerGenus;
+        }
+
+        return isNegativeDifference
+            ? NegativeDifferenceCustomerGenus
+            : CashCustomerGenus;
+    }
 
     private static string NormalizeText(string? value, int maxLength)
     {
         var normalized = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
-
-        return normalized.Length <= maxLength
-            ? normalized
-            : normalized[..maxLength];
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength];
     }
+
+    private static bool IsZero(double value) =>
+        Math.Abs(value) < 0.000_001d;
 }
+
+internal sealed record CashSummaryCustomerMovementLine(
+    int PaymentTypeNo,
+    string AccountCode,
+    double Amount);

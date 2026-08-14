@@ -404,6 +404,35 @@ public sealed class KasaSayimlariController(
         return Ok(response);
     }
 
+    [HttpPut("{documentSerie}/{documentOrderNo:int}/hediye-ceki-hareketleri")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateCashSummaryGiftChecksResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UpdateCashSummaryGiftChecksResponse>> UpdateGiftChecks(
+        string documentSerie,
+        int documentOrderNo,
+        [FromBody] UpdateCashSummaryGiftChecksHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = ResolveDocumentWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
+        var response = await cashSummaryCommandsUseCase.UpdateGiftChecksAsync(
+            new UpdateCashSummaryGiftChecksRequest(
+                warehouseNo,
+                documentSerie,
+                documentOrderNo,
+                request.GiftCheckMovements
+                    .Select(line => new UpdateCashSummaryGiftCheckLineRequest(
+                        line.GiftCheckType!.Value,
+                        line.Quantity!.Value,
+                        line.Total,
+                        line.Value))
+                    .ToArray()),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
     [HttpPost("UpdateSummaryDetails")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(UpdateCashSummaryDetailsResponse), StatusCodes.Status200OK)]
@@ -459,6 +488,35 @@ public sealed class KasaSayimlariController(
                         ResolveLegacyBanknoteType(line.BanknoteType, line.BanknoteTypeID),
                         line.Quantity!.Value,
                         line.Total))
+                    .ToArray()),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpPost("UpdateGiftCheckMovements")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateCashSummaryGiftChecksResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UpdateCashSummaryGiftChecksResponse>> UpdateGiftCheckMovementsLegacy(
+        [FromBody] LegacyUpdateCashSummaryGiftChecksHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = NormalizeRequiredText(request.DocumentSerie, nameof(request.DocumentSerie));
+        var documentOrderNo = request.DocumentOrderNo!.Value;
+        var warehouseNo = ResolveLegacyWriteWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
+        var response = await cashSummaryCommandsUseCase.UpdateGiftChecksAsync(
+            new UpdateCashSummaryGiftChecksRequest(
+                warehouseNo,
+                documentSerie,
+                documentOrderNo,
+                request.GiftCheckMovements
+                    .Select(line => new UpdateCashSummaryGiftCheckLineRequest(
+                        ResolveLegacyGiftCheckType(line.GiftCheckType, line.GiftCheckTypeID),
+                        line.Quantity!.Value,
+                        line.Total,
+                        line.Value))
                     .ToArray()),
             cancellationToken);
 
@@ -608,6 +666,9 @@ public sealed class KasaSayimlariController(
 
     private static int ResolveLegacyBanknoteType(int? banknoteType, int? banknoteTypeID) =>
         banknoteType ?? banknoteTypeID ?? throw new ArgumentException("Banknote type is required.");
+
+    private static int ResolveLegacyGiftCheckType(int? giftCheckType, int? giftCheckTypeID) =>
+        giftCheckType ?? giftCheckTypeID ?? throw new ArgumentException("Gift check type is required.");
 }
 
 public sealed class CashSummaryDateHttpRequest
@@ -840,6 +901,30 @@ public sealed class UpdateCashSummaryBanknoteLineHttpRequest
     public double Total { get; init; }
 }
 
+public sealed class UpdateCashSummaryGiftChecksHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public IReadOnlyCollection<UpdateCashSummaryGiftCheckLineHttpRequest> GiftCheckMovements { get; init; } =
+        Array.Empty<UpdateCashSummaryGiftCheckLineHttpRequest>();
+}
+
+public sealed class UpdateCashSummaryGiftCheckLineHttpRequest
+{
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? GiftCheckType { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? Quantity { get; init; }
+
+    public double Total { get; init; }
+
+    public double Value { get; init; }
+}
+
 public sealed class LegacyUpdateCashSummaryDetailsHttpRequest
 {
     [Range(1, int.MaxValue)]
@@ -917,6 +1002,40 @@ public sealed class LegacyUpdateCashSummaryBanknoteLineHttpRequest
     public int? Quantity { get; init; }
 
     public double Total { get; init; }
+}
+
+public sealed class LegacyUpdateCashSummaryGiftChecksHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    [StringLength(20)]
+    public string? DocumentSerie { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? DocumentOrderNo { get; init; }
+
+    public IReadOnlyCollection<LegacyUpdateCashSummaryGiftCheckLineHttpRequest> GiftCheckMovements { get; init; } =
+        Array.Empty<LegacyUpdateCashSummaryGiftCheckLineHttpRequest>();
+}
+
+public sealed class LegacyUpdateCashSummaryGiftCheckLineHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? GiftCheckType { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? GiftCheckTypeID { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? Quantity { get; init; }
+
+    public double Total { get; init; }
+
+    public double Value { get; init; }
 }
 
 public sealed class LegacyDeleteCashSummaryHttpRequest

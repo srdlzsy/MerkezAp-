@@ -69,7 +69,7 @@ Controller'da acik olan pratik alias/canonical route'lar:
 - `GET /api/stok-islemleri/masraf-fisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/stok-islemleri/virmanlar/{documentSerie}/{documentOrderNo}`
 - `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri`
-- `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri` ve `DELETE /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`
+- `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri`, `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` ve `DELETE /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`
 
 ### Tum Depo Yetki Modeli
 
@@ -11865,7 +11865,8 @@ Onemli not:
 - `documentSerie` backend tarafinda legacy kasa icmal formatinda `F{islemDepoNo}.{cashNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
 - `zReportNo` Z rapor numarasidir; `zTotalValue` Z rapor tutaridir
-- `zTotalValue` eski sistemle uyumlu sekilde `Summaries` satiri olarak saklanmaz; `CARI_HESAP_HAREKETLERI` tarafinda `400 = Z Rapor Toplami`, `300 = total - zTotalValue fark` satirlari olarak yazilir
+- `zTotalValue` eski sistemle uyumlu sekilde `Summaries` satiri olarak saklanmaz; `CARI_HESAP_HAREKETLERI` tarafinda canli/eski uyumlu `X / sira` evraklari olarak tutulur, gercek kasa sayimi belgesi `cha_aciklama = "{documentSerie}.{documentOrderNo}"` icinden izlenir
+- CARI tarafinda odeme tipleri, nakit toplam, `300 = total - zTotalValue fark` ve `400 = Z Rapor Toplami` satirlari ayri hareketler olarak yazilir
 - nakit toplam `paymentTypes` icinde manuel gonderilmez; backend banknot hareketlerinden `PaymentTypeID = 500`, `description = "Nakit Toplam"` satirini garanti eder
 - UI yanlislikla `paymentTypes` icinde `Nakit` veya `paymentTypeNo = 500` gonderirse backend bunu ayri odeme satiri olarak yazmaz, 500 satirini banknot toplamindan uretir
 
@@ -11922,38 +11923,57 @@ Response:
 
 Bu akis Kasa Sayimlari liste ekranindan secilen kayit icindir. Icmal Kaydi Girisi sadece yeni kayit olusturma ekranidir.
 
-Belge uzerindeki satirlari ve fiziksel para detaylarini guncellemek icin ayri endpointler kullanilir.
+Belge uzerindeki odeme/masraf satirlari, fiziksel para detaylari ve hediye ceki detaylarini guncellemek icin ayri endpointler kullanilir.
 
 Route'lar:
 
 - `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/detaylar`
 - `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/banknot-hareketleri`
+- `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/hediye-ceki-hareketleri`
 - `DELETE /api/kasa-islemleri/kasa-sayimlari/F110.1/12`
 
 Legacy uyumluluk route'lari:
 
 - `POST /api/kasa-islemleri/kasa-sayimlari/UpdateSummaryDetails`
 - `POST /api/kasa-islemleri/kasa-sayimlari/UpdateBanknoteMovements`
+- `POST /api/kasa-islemleri/kasa-sayimlari/UpdateGiftCheckMovements`
 - `POST /api/kasa-islemleri/kasa-sayimlari/DeleteSummary`
 
 Yetki:
 
-- detay ve banknot update icin `kasa-islemleri.kasa-sayimlari.update`
+- detay, banknot ve hediye ceki update icin `kasa-islemleri.kasa-sayimlari.update`
 - silme icin `kasa-islemleri.kasa-sayimlari.delete`
 
 Not:
 
 - detay update request'inde `details` listesi zorunludur
 - detay update patch degildir; UI belgede kalmasini istedigi tum odeme/masraf detay satirlarini `details` icinde gondermelidir
+- banka POS, yemek ceki/karti, online odeme, masraf pusulasi ve magaza gideri satirlari ayni `details` listesinde yonetilir
+- yemek ceki/karti odemeleri `GiftCheckMovements` degildir; Multinet, Metropol, Sodexo, Ticket, Setcard gibi odemeler `PUT /detaylar` icindeki `details` listesine eklenir
 - detay listesinde eski satir yeni degerleriyle gelirse guncellenir; yeni satir gelirse olusur; eski satir gonderilmezse kaldirilir
 - UI sadece degisen tek satiri gondermemelidir; aksi halde diger detay satirlari kaldirilmis kabul edilir
 - nakit/500 satiri UI tarafindan normal detay gibi yonetilmez; backend mevcut banknot/nakit toplamindan 500 satirini yeniden uretir
 - banknot update de patch degildir; `banknoteMovements` son durumda kalacak tum banknotlari icermelidir
 - banknot update request'inde `banknoteMovements` bos gonderilirse mevcut banknot satirlari temizlenebilir
 - banknot update sonrasi backend `PaymentTypeID = 500` nakit toplam satirini ve ilgili cari hareket toplamlarini yeni belge toplamiyla gunceller
+- hediye ceki update de patch degildir; `giftCheckMovements` son durumda kalacak tum hediye ceki satirlarini icermelidir
+- hediye ceki update request'inde `giftCheckMovements` bos gonderilirse mevcut hediye ceki satirlari temizlenebilir
+- update sonrasi backend ilgili CARI hareketlerini canli/eski uyumlu `X + aciklama` formatinda yeniden olusturur; odeme tipleri, nakit, Z fark ve Z toplam CARI'de ayri satirlar olarak gorunur
 - update belge yoksa yeni belge olusturmaz; yeni kasa sayimi/icmal kaydi icin create endpointi kullanilir
 - modern `DELETE` cagrisinda sube icin query `warehouseNo` veya JWT deposu kullanilir
 - legacy `POST DeleteSummary` cagrisinda `warehouseNo` yoksa backend `documentSerie` icinden subeyi cozer, ornek `F110.1` -> `110`
+
+UI bloklarinin update karsiligi:
+
+| UI blogu | Endpoint | Request listesi | Davranis |
+| --- | --- | --- | --- |
+| Nakit Hareketleri | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | `banknoteMovements` | Son banknot listesi gonderilir; yeni deger eklenir, olmayan silinir |
+| Kredi Kartlari | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | POS/banka satirlari son liste olarak gonderilir |
+| Yemek Cekleri/Kartlari | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | Multinet, Metropol, Sodexo, Ticket, Setcard gibi satirlar eklenir/guncellenir |
+| Hediye Cekleri | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | `giftCheckMovements` | Fiziksel hediye ceki deger/adet listesi gonderilir |
+| Online Satislar | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | Kayit yokken yeni online odeme satiri eklenebilir |
+| Gider Pusulalari | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | Gider pusulasi fis/adet/tutar satiri eklenir/guncellenir |
+| Magaza Giderleri | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | Ayni tipten birden fazla aciklamali gider satiri eklenebilir |
 
 Detay update request:
 
@@ -11967,6 +11987,15 @@ Detay update request:
       "slipNumber": 12,
       "amount": 2500,
       "terminalId": "TERM-01",
+      "description": ""
+    },
+    {
+      "typeName": "Multinet",
+      "paymentTypeId": 54,
+      "accountCode": "K.0002",
+      "slipNumber": 8,
+      "amount": 1250,
+      "terminalId": "",
       "description": ""
     }
   ]
@@ -12006,6 +12035,28 @@ Banknot update response modeli:
 - `updatedLineCount`
 - `totalAmount`
 
+Hediye ceki update request:
+
+```json
+{
+  "giftCheckMovements": [
+    {
+      "giftCheckType": 1,
+      "quantity": 2,
+      "total": 200,
+      "value": 100
+    }
+  ]
+}
+```
+
+Hediye ceki update response modeli:
+
+- `documentSerie`
+- `documentOrderNo`
+- `updatedLineCount`
+- `totalAmount`
+
 Legacy detay update request:
 
 ```json
@@ -12038,6 +12089,23 @@ Legacy banknot update request:
       "banknoteTypeID": 1,
       "quantity": 25,
       "total": 5000
+    }
+  ]
+}
+```
+
+Legacy hediye ceki update request:
+
+```json
+{
+  "documentSerie": "F110.1",
+  "documentOrderNo": 12,
+  "giftCheckMovements": [
+    {
+      "giftCheckTypeID": 1,
+      "quantity": 2,
+      "total": 200,
+      "value": 100
     }
   ]
 }
@@ -12421,6 +12489,7 @@ Kasa Islemleri / Kasa Sayimlari
   -> kullanicida kasa-islemleri.kasa-sayimlari.update varsa 'Duzenle' aksiyonu gosterilir
   -> detay duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/detaylar
   -> banknot duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/banknot-hareketleri
+  -> hediye ceki duzenleme icin PUT /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}/hediye-ceki-hareketleri
   -> kullanicida kasa-islemleri.kasa-sayimlari.delete varsa 'Sil' aksiyonu gosterilir
   -> silme icin DELETE /api/kasa-islemleri/kasa-sayimlari/{seri}/{sira}
 
@@ -20383,6 +20452,8 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UpdateCashSummaryDetailLineHttpRequest`: `TypeName`, `PaymentTypeId`, `AccountCode`, `SlipNumber`, `Amount`, `TerminalId`, `Description`
 - `UpdateCashSummaryBanknotesHttpRequest`: `WarehouseNo`, `BanknoteMovements`
 - `UpdateCashSummaryBanknoteLineHttpRequest`: `Value`, `BanknoteType`, `Quantity`, `Total`
+- `UpdateCashSummaryGiftChecksHttpRequest`: `WarehouseNo`, `GiftCheckMovements`
+- `UpdateCashSummaryGiftCheckLineHttpRequest`: `GiftCheckType`, `Quantity`, `Total`, `Value`
 - `KasaCiroImportHttpRequest`: `StartDate`, `EndDate`, `Branches`, `MovementRootPath`, `DryRun`
 - `KasaHareketImportHttpRequest`: `StartDate`, `EndDate`, `Branches`, `CashRegisters`, `FileRootPath`, `SkipExisting`, `DryRun`
 - `KasaHareketScheduledImportHttpRequest`: `Date`, `AddDay`, `FileRootPath`, `SkipExisting`, `DryRun`

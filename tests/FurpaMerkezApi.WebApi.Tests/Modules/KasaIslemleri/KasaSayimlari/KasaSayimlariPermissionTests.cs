@@ -43,9 +43,11 @@ public sealed class KasaSayimlariPermissionTests
     [InlineData(nameof(KasaSayimlariController.Create), "kasa-islemleri.icmal-kaydi-girisi.create")]
     [InlineData(nameof(KasaSayimlariController.UpdateDetails), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.UpdateBanknotes), "kasa-islemleri.kasa-sayimlari.update")]
+    [InlineData(nameof(KasaSayimlariController.UpdateGiftChecks), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.Delete), "kasa-islemleri.kasa-sayimlari.delete")]
     [InlineData(nameof(KasaSayimlariController.UpdateSummaryDetailsLegacy), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.UpdateBanknoteMovementsLegacy), "kasa-islemleri.kasa-sayimlari.update")]
+    [InlineData(nameof(KasaSayimlariController.UpdateGiftCheckMovementsLegacy), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.DeleteSummaryLegacy), "kasa-islemleri.kasa-sayimlari.delete")]
     public void WriteActions_SplitCreateFromListEditDeletePolicies(string methodName, string expectedPolicy)
     {
@@ -229,11 +231,30 @@ public sealed class KasaSayimlariPermissionTests
             },
             CancellationToken.None);
 
+        await controller.UpdateGiftChecks(
+            "F116.54",
+            2490,
+            new UpdateCashSummaryGiftChecksHttpRequest
+            {
+                GiftCheckMovements =
+                [
+                    new UpdateCashSummaryGiftCheckLineHttpRequest
+                    {
+                        GiftCheckType = 1,
+                        Quantity = 1,
+                        Total = 100,
+                        Value = 100
+                    }
+                ]
+            },
+            CancellationToken.None);
+
         await controller.Delete("F116.54", 2490, warehouseNo: null, CancellationToken.None);
         await controller.Delete("F116.57", 1456, warehouseNo: 1, CancellationToken.None);
 
         Assert.Equal(116, commandsUseCase.LastUpdateDetailsRequest?.WarehouseNo);
         Assert.Equal(116, commandsUseCase.LastUpdateBanknotesRequest?.WarehouseNo);
+        Assert.Equal(116, commandsUseCase.LastUpdateGiftChecksRequest?.WarehouseNo);
         Assert.Equal(116, commandsUseCase.LastDeleteRequest?.WarehouseNo);
     }
 
@@ -374,6 +395,8 @@ public sealed class KasaSayimlariPermissionTests
 
         public UpdateCashSummaryBanknotesRequest? LastUpdateBanknotesRequest { get; private set; }
 
+        public UpdateCashSummaryGiftChecksRequest? LastUpdateGiftChecksRequest { get; private set; }
+
         public DeleteCashSummaryRequest? LastDeleteRequest { get; private set; }
 
         public Task<CreateCashSummaryResponse> CreateAsync(
@@ -416,6 +439,19 @@ public sealed class KasaSayimlariPermissionTests
                 request.DocumentOrderNo,
                 request.BanknoteMovements.Count,
                 request.BanknoteMovements.Sum(line => line.Total)));
+        }
+
+        public Task<UpdateCashSummaryGiftChecksResponse> UpdateGiftChecksAsync(
+            UpdateCashSummaryGiftChecksRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastUpdateGiftChecksRequest = request;
+
+            return Task.FromResult(new UpdateCashSummaryGiftChecksResponse(
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                request.GiftCheckMovements.Count,
+                request.GiftCheckMovements.Sum(line => line.Total)));
         }
 
         public Task<DeleteCashSummaryResponse> DeleteAsync(

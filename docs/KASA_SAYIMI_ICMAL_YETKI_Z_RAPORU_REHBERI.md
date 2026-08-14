@@ -206,6 +206,7 @@ Neden all yetkili kullanicida `warehouseNo` zorunlu?
 | --- | --- | --- | --- |
 | `PUT` | `/{documentSerie}/{documentOrderNo}/detaylar` | `kasa-sayimlari.update` | Odeme/masraf/detay satirlarini tam liste olarak yeniden yazar |
 | `PUT` | `/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | `kasa-sayimlari.update` | Banknot hareketlerini tam liste olarak yeniden yazar |
+| `PUT` | `/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | `kasa-sayimlari.update` | Hediye ceki hareketlerini tam liste olarak yeniden yazar |
 
 Legacy uyum endpointleri:
 
@@ -213,6 +214,7 @@ Legacy uyum endpointleri:
 | --- | --- | --- |
 | `POST` | `/UpdateSummaryDetails` | `kasa-sayimlari.update` |
 | `POST` | `/UpdateBanknoteMovements` | `kasa-sayimlari.update` |
+| `POST` | `/UpdateGiftCheckMovements` | `kasa-sayimlari.update` |
 
 Not:
 
@@ -224,7 +226,21 @@ Not:
 - Gonderilen listede yeni satir varsa yeni satir olarak olusur.
 - Eski satir gonderilmezse silinmis/kaldirilmis kabul edilir.
 - UI sadece degisen tek satiri gondermemelidir; aksi halde diger satirlar kalkar.
+- Bu kural odeme/masraf detaylari, banknot hareketleri ve hediye ceki hareketleri icin aynidir.
 - Belge bazinda update create'e donmez. `{documentSerie}/{documentOrderNo}` DB'de yoksa yeni belge acilmaz; yeni belge icin Icmal Kaydi Girisi `POST` akisi kullanilir.
+- Belge `Summaries` tarafinda varsa ama `CARI_HESAP_HAREKETLERI` satirlari eksikse update canli/eski uyumlu `X + aciklama` formatinda alt CARI hareketlerini yeniden olusturur.
+
+Ekrandaki bloklarin update karsiligi:
+
+| UI blogu | Endpoint | Request listesi | DB hedefi | Davranis |
+| --- | --- | --- | --- | --- |
+| Nakit Hareketleri | `PUT /{documentSerie}/{documentOrderNo}/banknot-hareketleri` | `banknoteMovements` | `BanknoteMovements` + `Summaries` nakit toplam | Tam liste; yeni banknot tipi eklenir, olmayan kaldirilir |
+| Kredi Kartlari | `PUT /{documentSerie}/{documentOrderNo}/detaylar` | `details` | `Summaries` + CARI | Tam liste; terminal/slip/tutar degisir, yeni POS satiri eklenir |
+| Yemek Cekleri/Kartlari | `PUT /{documentSerie}/{documentOrderNo}/detaylar` | `details` | `Summaries` + CARI | Tam liste; Multinet/Metropol/Sodexo/Ticket/Setcard satirlari eklenir/guncellenir |
+| Hediye Cekleri | `PUT /{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | `giftCheckMovements` | `GiftCheckMovements` | Tam liste; yeni hediye ceki degeri eklenir, olmayan kaldirilir |
+| Online Satislar | `PUT /{documentSerie}/{documentOrderNo}/detaylar` | `details` | `Summaries` + CARI | Tam liste; kayit yokken yeni online odeme satiri eklenebilir |
+| Gider Pusulalari | `PUT /{documentSerie}/{documentOrderNo}/detaylar` | `details` | `Summaries` | Tam liste; yeni gider pusulasi satiri eklenebilir |
+| Magaza Giderleri | `PUT /{documentSerie}/{documentOrderNo}/detaylar` | `details` | `Summaries` | Tam liste; ayni tipten birden fazla aciklamali gider satiri eklenebilir |
 
 ### Kasa Sayimi Silme
 
@@ -494,7 +510,7 @@ Z rapor tutari biliniyorsa:
   zTotalValue mutlaka gercek tutar olarak gonderilmelidir
 ```
 
-`zTotalValue = 0` ise backend Z toplam/fark CARI hareketlerini yazmaz. Bu durum genelde Z tutari bilinmiyor veya gercekten 0 kabul ediliyor anlamina gelir.
+`zTotalValue = 0` ise backend CARI tarafinda odeme/nakit satirlarini yazar; Z toplam satiri 0 tutarli oldugu icin olusmaz, fark satiri belge toplamina gore denge satiri olarak yazilir.
 
 ## Eski Sistemle Karsilastirma
 
@@ -515,30 +531,40 @@ Z toplam/fark Summaries tablosunda kalmiyordu.
 Z toplam/fark CARI_HESAP_HAREKETLERI tarafina yaziliyordu.
 ```
 
-Yeni sistemde de ana fikir budur:
+Yeni sistem de canli eski sistemle ayni muhasebe hedefini izler:
 
 ```text
 Summaries:
   Normal odeme/detay satirlari ve nakit toplam
 
 CARI_HESAP_HAREKETLERI:
-  Ana hareket
+  Banka / yemek karti / online odeme satirlari
+  Nakit toplam satiri
   Z fark hareketi
   Z toplam hareketi
 ```
 
-Farkli tutulan kisim:
+Canli uyumlu CARI anahtari:
 
 ```text
-Eski sistem CARI'de DocumentSerie = X, DocumentOrderNo = 0 yaziyordu.
-Yeni sistem CARI'de gercek documentSerie/documentOrderNo yazar.
+cha_evrakno_seri = X
+cha_evrakno_sira = X serisindeki siradaki CARI evrak sira no
+cha_aciklama     = {documentSerie}.{documentOrderNo}
 ```
 
-Bu fark bilincli olarak korunur. Nedeni:
+Ornek:
 
-- Update/delete islemleri belge anahtariyla daha guvenli calisir.
-- `F116.57 / 1456` kaydinin CARI satirlari direkt bulunur.
-- Aciklama string'ine bagli silme/guncelleme daha kirilgan oldugu icin tercih edilmez.
+```text
+Kasa sayimi belgesi: F116.58 / 1648
+CARI evraki:         X / 306873
+CARI aciklama:       F116.58.1648
+```
+
+Optimizasyon:
+
+- Create canli eski formatta yazar.
+- Update/delete hem canli `X + aciklama` formatini hem de gecici yeni formatta yazilmis `F... / sira` satirlarini bulup temizler.
+- Update CARI satirlarini patch'lemek yerine ilgili belgeye ait CARI satirlarini yeniden kurar; boylece odeme tipi eklendi/silindi durumlari temiz kalir.
 
 ## Mikro DB Yazim Mantigi
 
@@ -587,21 +613,22 @@ Hediye ceki hareketleri varsa belge seri/sira ile yazilir.
 
 ### CARI_HESAP_HAREKETLERI
 
-Z raporu ve toplam fark muhasebe hareketleri burada tutulur.
+Kasa sayiminin Mikro muhasebe/CARI karsiligi burada tutulur.
 
-Yeni factory:
+Factory:
 
 ```text
 CashSummaryCustomerMovementFactory
 ```
 
-Satirlar:
+Canli uyumlu satirlar:
 
-| cha_satir_no | Tip | Tutar | Kod | Aciklama |
-| --- | --- | --- | --- | --- |
-| `0` | Borc (`cha_tip = 0`) | `documentTotal` | `KASA-{warehouseNo}` | `Kasa sayimi {seri}/{sira}` |
-| `1` | Alacak (`cha_tip = 1`) | `documentTotal - zTotalValue` | `0002` | `Z Rapor Farki {seri}/{sira}` |
-| `2` | Alacak (`cha_tip = 1`) | `zTotalValue` | `{warehouseNo}` | `Z Rapor Toplami {seri}/{sira}` |
+| Satir | Tip | Kaynak | Kod |
+| --- | --- | --- | --- |
+| Odeme satirlari | Borc (`cha_tip = 0`) | PaymentType `< 100` | `PaymentTypes.AccountCode` |
+| Nakit | Borc (`cha_tip = 0`) | Banknot/nakit toplam | `0002` |
+| Z fark | Alacak (`cha_tip = 1`) | `documentTotal - zTotalValue` | `0002` veya negatif farkta kasiyer no |
+| Z toplam | Alacak (`cha_tip = 1`) | `zTotalValue` | `warehouseNo` |
 
 Ortak CARI alanlari:
 
@@ -609,8 +636,9 @@ Ortak CARI alanlari:
 | --- | --- |
 | `cha_fileid` | `51` |
 | `cha_evrak_tip` | `60` |
-| `cha_evrakno_seri` | Gercek `documentSerie` |
-| `cha_evrakno_sira` | Gercek `documentOrderNo` |
+| `cha_evrakno_seri` | `X` |
+| `cha_evrakno_sira` | `X` serisindeki siradaki CARI sira |
+| `cha_aciklama` | `{documentSerie}.{documentOrderNo}` |
 | `cha_cinsi` | `5` |
 | `cha_fatura_belge_turu` | `3` |
 | `cha_diger_belge_adi` | `Z Raporu` |
@@ -628,9 +656,10 @@ fark        = 86.20
 CARI satirlari:
 
 ```text
-satir 0 -> KASA-1 -> 94981.35
-satir 1 -> 0002   -> 86.20
-satir 2 -> 1      -> 94895.15
+odeme satirlari -> banka/yemek/online hesap kodlari
+nakit           -> 0002
+Z fark          -> 0002
+Z toplam        -> warehouseNo
 ```
 
 ## Guncelleme Mantigi
@@ -652,6 +681,9 @@ Var olan satir degistiyse:
 Yeni odeme/masraf satiri eklendiyse:
   request.details icine ekle -> yeni satir olarak yazilir
 
+Banka, yemek ceki/karti, online odeme, masraf pusulasi ve magaza gideri:
+  hepsi request.details icinde ayni tam liste mantigiyla yonetilir
+
 Var olan satir kaldirildiyse:
   request.details icine koyma -> backend o satiri siler
 
@@ -663,16 +695,24 @@ Guncellenenler:
 
 - `Summaries` detay satirlari
 - Belge toplam tutari
-- Ana CARI hareket tutari (`cha_satir_no = 0`)
-- Eger Z toplam ve Z fark satirlari varsa Z fark satiri yeniden hesaplanir
+- Belgeye ait CARI hareketleri canli formatta yeniden olusturulur
+- Odeme tipi eklendi/silindi ise CARI satirlari da yeni listeye gore yenilenir
+
+Yemek ceki/karti notu:
+
+```text
+Yemek ceki odemeleri fiziksel GiftCheckMovements degildir.
+PaymentTypeID 50..99 araligindaki yemek karti/ceki odemeleri Summaries detay satiri olarak yazilir.
+Bu nedenle Multinet, Metropol, Sodexo, Ticket, Setcard gibi satirlar PUT /detaylar icindeki details listesine eklenir.
+```
 
 Yeniden hesap:
 
 ```text
-zDifference = yeniDocumentTotal - mevcutZTotalMovement.cha_meblag
+zDifference = yeniDocumentTotal - zTotalValue
 ```
 
-Z toplam satiri update sirasinda degistirilmez; cunku update detay request'inde yeni `zTotalValue` alani yoktur.
+Update sirasinda mevcut CARI'de Z toplam satiri varsa bu tutar korunur. CARI yoksa backend Z rapor dosyasindan Z tutarini tekrar cozup kullanir. Z tutari cozulmezse `0` kabul edilir ve fark satiri belge toplamini dengeler.
 
 Nakit toplam satiri:
 
@@ -709,8 +749,39 @@ Guncellenenler:
 - `BanknoteMovements`
 - Nakit toplam satiri
 - Belge toplam tutari
-- Ana CARI hareket tutari
-- Varsa Z fark satiri
+- Belgeye ait CARI hareketleri canli formatta yeniden olusturulur
+
+Belge yoksa:
+
+```text
+Update yeni belge olusturmaz.
+Yeni kasa sayimi/icmal kaydi gerekiyorsa create akisi kullanilir.
+```
+
+### Hediye Ceki Guncelleme
+
+`PUT /{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri`
+
+Bu endpoint de tam liste replace mantiginda calisir.
+
+UI kurali:
+
+```text
+Son durumda hangi hediye ceki tipleri kalacaksa hepsi gonderilir.
+Yeni hediye ceki tipi eklendiyse listeye eklenir.
+Var olan hediye ceki kaldirildiyse quantity 0 gonderilebilir veya listeden cikarilabilir.
+Backend quantity > 0 olanlari yeniden yazar.
+```
+
+Guncellenenler:
+
+- `GiftCheckMovements`
+
+Not:
+
+- Hediye ceki hareketleri `Summaries` ve CARI toplamlarini yeniden hesaplatmaz.
+- Odeme/yemek karti satirlari `PUT /detaylar` icindeki `details` listesiyle yonetilir.
+- Fiziksel banknot/nakit toplam `PUT /banknot-hareketleri` ile yonetilir.
 
 Belge yoksa:
 
@@ -733,11 +804,15 @@ CARI_HESAP_HAREKETLERI
 CARI satirlari:
 
 ```sql
-WHERE cha_evrakno_seri = @documentSerie
-  AND cha_evrakno_sira = @documentOrderNo
+WHERE cha_evrak_tip = 60
+  AND (
+        (cha_evrakno_seri = 'X' AND cha_aciklama = @documentSerie + '.' + @documentOrderNo)
+        OR
+        (cha_evrakno_seri = @documentSerie AND cha_evrakno_sira = @documentOrderNo)
+      )
 ```
 
-Bu nedenle yeni sistemin CARI tarafinda gercek belge seri/sira yazmasi onemlidir.
+Ikinci kosul gecici yeni formatla yazilmis eski test/deploy kayitlarini temizlemek icindir. Yeni create canli uyumlu `X + aciklama` formatinda yazar.
 
 ## Canli DB Kontrol SQL Ornekleri
 
@@ -789,6 +864,7 @@ CARI hareketleri:
 ```sql
 DECLARE @seri nvarchar(20) = N'F116.57';
 DECLARE @sira int = 1456;
+DECLARE @cariAciklama nvarchar(40) = CONCAT(@seri, N'.', @sira);
 
 SELECT
     cha_fileid,
@@ -806,8 +882,9 @@ SELECT
     cha_fatura_belge_turu,
     cha_diger_belge_adi
 FROM CARI_HESAP_HAREKETLERI
-WHERE cha_evrakno_seri = @seri
-  AND cha_evrakno_sira = @sira
+WHERE cha_evrak_tip = 60
+  AND cha_evrakno_seri = N'X'
+  AND cha_aciklama = @cariAciklama
 ORDER BY cha_satir_no;
 ```
 
@@ -816,6 +893,7 @@ Silme sonrasi kontrol:
 ```sql
 DECLARE @seri nvarchar(20) = N'F116.57';
 DECLARE @sira int = 1456;
+DECLARE @cariAciklama nvarchar(40) = CONCAT(@seri, N'.', @sira);
 
 SELECT 'Summaries' AS TableName, COUNT(*) AS RowCount
 FROM Summaries
@@ -831,7 +909,12 @@ WHERE DocumentSerie = @seri AND DocumentOrderNo = @sira
 UNION ALL
 SELECT 'CARI_HESAP_HAREKETLERI', COUNT(*)
 FROM CARI_HESAP_HAREKETLERI
-WHERE cha_evrakno_seri = @seri AND cha_evrakno_sira = @sira;
+WHERE cha_evrak_tip = 60
+  AND (
+        (cha_evrakno_seri = N'X' AND cha_aciklama = @cariAciklama)
+        OR
+        (cha_evrakno_seri = @seri AND cha_evrakno_sira = @sira)
+      );
 ```
 
 ## Sik Karsilasilan Durumlar
@@ -905,12 +988,13 @@ Bu durumda Z rapor no bilinmese bile Z tutari CARI tarafina yazilir.
 
 ### Z rapor tutari 0 gonderildi
 
-`zTotalValue = 0` ise Z fark ve Z toplam CARI satirlari yazilmaz.
+`zTotalValue = 0` ise odeme/nakit CARI satirlari yazilir. Z toplam satiri 0 tutarli oldugu icin yazilmaz; Z fark satiri ise `total - 0` olarak belge toplami kadar denge satiri olur.
 
-Bu davranis bilincli:
+Bu davranis canli/eski sistemin muhasebe hedefiyle uyumludur:
 
-- Z tutari yoksa yanlis muhasebe hareketi acilmasin.
-- Gercek Z tutari sonra belli olacaksa yeni kayit/guncelleme stratejisi ayrica tasarlanmalidir.
+- Gercek Z tutari biliniyorsa body'deki `zTotalValue` mutlaka dolu gonderilmelidir.
+- Z tutari bilinmiyorsa belge yine kaydedilebilir, ama fark satiri belge toplami kadar gorunur.
+- Gercek Z tutari sonra belli olursa update akisi CARI satirlarini yeniden kurar.
 
 ## Migration Notlari
 
@@ -1035,9 +1119,9 @@ Bu is tamam kabul edilir, eger:
 - Tum depo yetkisi olan kullanici `F116.57` gibi seri icinden 116 subesini cozebilir.
 - Tum depo yetkisi olmayan kullanici kendi subesi disina cikamaz.
 - All yetkili create isteginde `warehouseNo` zorunludur.
-- Z rapor tutari varsa CARI'de 3 satir olusur: ana hareket, fark, Z toplam.
-- Z rapor tutari yoksa sadece ana CARI hareket olusur.
-- Update islemi ana CARI tutarini ve varsa Z farkini gunceller.
+- CARI hareketleri canli/eski sistemle uyumlu `X + aciklama` formatinda yazilir.
+- CARI'de odeme tipleri, nakit, Z fark ve Z toplam satirlari ayri gorunur.
+- Update islemi CARI satirlarini belge son haline gore yeniden olusturur.
 - Delete islemi `Summaries`, `BanknoteMovements`, `GiftCheckMovements`, `CARI_HESAP_HAREKETLERI` satirlarini temizler.
 - Testler ve solution build temiz gecer.
 
