@@ -1,14 +1,14 @@
 using System.Globalization;
 
-namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBasim;
+namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 
-public static class EtiketBasimCalculator
+public static class ManavMalKabulVeEtiketCalculator
 {
     private const string CanonicalRehinli = "REH\u0130NL\u0130";
     private const string CanonicalRehinsiz = "REH\u0130NS\u0130Z";
     private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");
 
-    public static EtiketBasimCalculationDto Calculate(EtiketBasimCalculationRequest request)
+    public static ManavMalKabulVeEtiketCalculationDto Calculate(ManavMalKabulVeEtiketCalculationRequest request)
     {
         if (request.GrossWeight <= 0)
         {
@@ -47,7 +47,7 @@ public static class EtiketBasimCalculator
 
         var labelBarcodeRaw = BuildLabelBarcode(request.StockBarcode, averageCaseWeight);
         var labelBarcode = BuildPrintableLabelBarcode(labelBarcodeRaw);
-        return new EtiketBasimCalculationDto(
+        return new ManavMalKabulVeEtiketCalculationDto(
             Round(caseTotalTare),
             Round(netReceivedWeight),
             Round(averageCaseWeight),

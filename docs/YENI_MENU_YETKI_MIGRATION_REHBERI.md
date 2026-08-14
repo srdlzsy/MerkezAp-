@@ -249,7 +249,7 @@ AnnouncementActions         -> page/list/detail/create/update/archive/all-wareho
 CashSummaryEntryActions     -> page/list/create/all-warehouses
 StockAnomalyActions         -> page/list/detail/update/scan/all-warehouses
 ProductCaseProfileActions   -> manage/list/detail/create/update/delete/all-warehouses
-EtiketBasimActions          -> page/list/detail/create/update/delete/transfer/all-warehouses
+ManavMalKabulVeEtiket       -> page/list/detail/create/update/delete/transfer/all-warehouses
 ProductDistributionActions  -> page/list/detail/create/update/delete/all-warehouses
 GreenGrocerOperationsActions -> page/list/create/all-warehouses
 ```

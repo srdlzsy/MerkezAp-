@@ -50,11 +50,15 @@ public sealed record CashSummaryListItemDto(
 
 public sealed record CashSummaryDetailItemDto(
     string TypeName,
+    string PaymentName,
     int PaymentTypeId,
+    int PaymentTypeNo,
     string AccountCode,
+    string TerminalId,
+    string Source,
+    string Category,
     int SlipNumber,
     double Amount,
-    string TerminalId,
     string Description);
 
 public sealed record BanknoteMovementItemDto(

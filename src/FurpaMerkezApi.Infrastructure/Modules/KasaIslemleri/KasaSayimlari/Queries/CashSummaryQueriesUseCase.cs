@@ -223,11 +223,15 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
             },
             reader => new CashSummaryDetailItemDto(
                 ReadString(reader, "TypeName"),
+                ReadString(reader, "TypeName"),
+                ReadInt(reader, "PaymentTypeId"),
                 ReadInt(reader, "PaymentTypeId"),
                 ReadString(reader, "AccountCode"),
+                ReadString(reader, "TerminalId"),
+                ResolveDetailSource(ReadInt(reader, "PaymentTypeId")),
+                ResolveDetailCategory(ReadInt(reader, "PaymentTypeId")),
                 ReadInt(reader, "SlipNumber"),
                 Round(ReadDouble(reader, "Amount")),
-                ReadString(reader, "TerminalId"),
                 ReadString(reader, "Description")),
             cancellationToken);
     }
@@ -402,6 +406,30 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;
+
+    private static string ResolveDetailSource(int paymentTypeId) =>
+        paymentTypeId switch
+        {
+            500 => "cash",
+            >= 0 and < 50 => "card",
+            >= 50 and < 100 => "foodCheck",
+            100 => "expenseVoucher",
+            >= 110 and < 200 => "storeExpense",
+            >= 200 and < 300 => "onlineSale",
+            _ => "other"
+        };
+
+    private static string ResolveDetailCategory(int paymentTypeId) =>
+        paymentTypeId switch
+        {
+            500 => "Nakit",
+            >= 0 and < 50 => "Kredi Kartlari",
+            >= 50 and < 100 => "Yemek Cekleri",
+            100 => "Gider Pusulalari",
+            >= 110 and < 200 => "Magaza Giderleri",
+            >= 200 and < 300 => "Online Satislar",
+            _ => "Diger"
+        };
 
     private static double Round(double value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);

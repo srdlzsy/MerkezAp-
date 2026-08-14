@@ -1,4 +1,4 @@
-﻿# FurpaMerkezApi Dokumantasyon
+# FurpaMerkezApi Dokumantasyon
 
 Bu klasor, `FurpaMerkezApi` projesindeki teknik ve operasyonel dokumanlarin
 toplandigi ana yerdir. Koddaki ana uygulama `.NET 9` Web API olarak calisir ve
@@ -66,7 +66,7 @@ Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 | [DEPO_MAL_KABUL_ISLEYIS.md](DEPO_MAL_KABUL_ISLEYIS.md) | Depo mal kabul isleyisi. |
 | [FIRMA_MAL_KABUL_SENARYO.md](FIRMA_MAL_KABUL_SENARYO.md) | Firma mal kabul senaryolari ve Mikro yazim kurallari. |
 | [BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md](BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md) | Barkod okutma, cozumleme, urun arama, fiyat/cari bulma ve barkod tanimlama rehberi. |
-| [ETIKET_BASIM_API.md](ETIKET_BASIM_API.md) | Etiket basim mal kabul kayitlari, hesaplama, etiket datasi ve rapor API rehberi. |
+| [MANAV_MAL_KABUL_VE_ETIKET_API.md](MANAV_MAL_KABUL_VE_ETIKET_API.md) | Manav mal kabul ve etiket mal kabul kayitlari, hesaplama, etiket datasi ve rapor API rehberi. |
 | [MANAV_OPERASYON_PANELI.md](MANAV_OPERASYON_PANELI.md) | 56 Manav Depo icin alis, MNV tartim farki, sube kasa talebi, sevk, sayim ve kontrollu duzeltme akisi. |
 | [DEPO_ONERILEN_SIPARIS.md](DEPO_ONERILEN_SIPARIS.md) | Depo onerilen siparis sorgu ve hesap mantigi. |
 | [FIRMA_ONERILEN_SIPARIS.md](FIRMA_ONERILEN_SIPARIS.md) | Firma/tedarikci onerilen siparis mantigi. |

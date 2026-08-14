@@ -1,15 +1,15 @@
-using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBasim;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 using Xunit;
 
-namespace FurpaMerkezApi.Infrastructure.Tests.Modules.KasaIslemleri.EtiketBasim;
+namespace FurpaMerkezApi.Infrastructure.Tests.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 
-public sealed class EtiketBasimCalculatorTests
+public sealed class ManavMalKabulVeEtiketCalculatorTests
 {
     [Fact]
     public void Calculate_ReturnsNetAverageAndLabelBarcode()
     {
-        var result = EtiketBasimCalculator.Calculate(
-            new EtiketBasimCalculationRequest(
+        var result = ManavMalKabulVeEtiketCalculator.Calculate(
+            new ManavMalKabulVeEtiketCalculationRequest(
                 100m,
                 1.2m,
                 10,
@@ -27,8 +27,8 @@ public sealed class EtiketBasimCalculatorTests
     [Fact]
     public void Calculate_UsesDefaultCaseCountAndPalletTare()
     {
-        var result = EtiketBasimCalculator.Calculate(
-            new EtiketBasimCalculationRequest(
+        var result = ManavMalKabulVeEtiketCalculator.Calculate(
+            new ManavMalKabulVeEtiketCalculationRequest(
                 20m,
                 1m,
                 null,
@@ -44,8 +44,8 @@ public sealed class EtiketBasimCalculatorTests
     public void Calculate_RejectsAverageCaseWeightGreaterThan99()
     {
         var exception = Assert.Throws<ArgumentException>(() =>
-            EtiketBasimCalculator.Calculate(
-                new EtiketBasimCalculationRequest(
+            ManavMalKabulVeEtiketCalculator.Calculate(
+                new ManavMalKabulVeEtiketCalculationRequest(
                     120m,
                     0m,
                     1,
@@ -58,7 +58,7 @@ public sealed class EtiketBasimCalculatorTests
     [Fact]
     public void BuildPrintableLabelBarcode_RecalculatesEan13CheckDigit()
     {
-        var result = EtiketBasimCalculator.BuildPrintableLabelBarcode("123456708300");
+        var result = ManavMalKabulVeEtiketCalculator.BuildPrintableLabelBarcode("123456708300");
 
         Assert.Equal("1234567083001", result);
     }
@@ -70,7 +70,7 @@ public sealed class EtiketBasimCalculatorTests
     [InlineData("REHINSIZ", "REH\u0130NS\u0130Z")]
     public void NormalizeCaseType_ReturnsCanonicalCaseType(string value, string expected)
     {
-        var result = EtiketBasimCalculator.NormalizeCaseType(value);
+        var result = ManavMalKabulVeEtiketCalculator.NormalizeCaseType(value);
 
         Assert.Equal(expected, result);
     }

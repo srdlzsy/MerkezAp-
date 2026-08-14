@@ -359,11 +359,15 @@ public sealed class KasaSayimlariPermissionTests
             [
                 new CashSummaryDetailItemDto(
                     "Akbank POS",
+                    "Akbank POS",
+                    1,
                     1,
                     "POS-AKBANK",
+                    "TERM-01",
+                    "card",
+                    "Kredi Kartlari",
                     1,
                     125,
-                    "TERM-01",
                     string.Empty)
             ]);
         }

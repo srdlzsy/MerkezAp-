@@ -822,7 +822,7 @@ InvoiceViewingAutomaticSynchronizationScheduler
 InvoiceViewingSynchronizationJobQueue
 ```
 
-Amaç:
+AmaÃ§:
 
 ```text
 HTTP request'i uzun is boyunca bloklamamak
@@ -987,8 +987,8 @@ Manav kasa:
 Barkod:
   BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md
 
-Etiket basim:
-  ETIKET_BASIM_API.md
+Manav mal kabul ve etiket:
+  MANAV_MAL_KABUL_VE_ETIKET_API.md
 
 E-fatura / e-irsaliye:
   E_FATURA_E_IRSALIYE_SERVIS_DOKUMANI.md
@@ -1105,4 +1105,4 @@ Mikro ve modul rehberleri:
 - [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md)
 - [BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md](BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md)
 - [MANAV_KASA_SIPARIS_SEVK_AKISI.md](MANAV_KASA_SIPARIS_SEVK_AKISI.md)
-- [ETIKET_BASIM_API.md](ETIKET_BASIM_API.md)
+- [MANAV_MAL_KABUL_VE_ETIKET_API.md](MANAV_MAL_KABUL_VE_ETIKET_API.md)

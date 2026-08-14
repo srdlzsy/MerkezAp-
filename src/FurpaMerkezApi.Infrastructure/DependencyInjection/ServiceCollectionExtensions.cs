@@ -1,4 +1,4 @@
-﻿using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Soforler;
@@ -77,7 +77,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.List;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Products;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
-using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBasim;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KunyeEtiketYazdirma;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Detail;
@@ -176,7 +176,7 @@ using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Detail
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Products;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Tags;
-using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBasim;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KunyeEtiketYazdirma;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.SayimSonuclari.Detail;
@@ -503,7 +503,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<LabelDocumentWriteService>();
         services.AddScoped<LabelProductQueryExecutor>();
         services.AddScoped<LabelTagQueryExecutor>();
-        services.AddScoped<IEtiketBasimService, EtiketBasimService>();
+        services.AddScoped<IManavMalKabulVeEtiketService, ManavMalKabulVeEtiketService>();
         services.AddScoped<BanknoteTrackQueryExecutor>();
         services.AddScoped<BanknoteTrackWriteService>();
         services.AddScoped<WarehouseShippingDetailQueryExecutor>();

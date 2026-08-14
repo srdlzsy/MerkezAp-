@@ -1,4 +1,4 @@
-﻿namespace FurpaMerkezApi.Application.Security;
+namespace FurpaMerkezApi.Application.Security;
 
 public static class PermissionCatalog
 {
@@ -182,7 +182,7 @@ public static class PermissionCatalog
         CreateAction,
         AllWarehousesAction
     ];
-    private static readonly PermissionActionDefinition[] EtiketBasimActions =
+    private static readonly PermissionActionDefinition[] ManavMalKabulVeEtiketActions =
     [
         PageAction,
         ListAction,
@@ -190,7 +190,7 @@ public static class PermissionCatalog
         CreateAction,
         UpdateAction,
         DeleteAction,
-        new("transfer", "Aktar"),
+        new("transfer", "Mal Kabul"),
         AllWarehousesAction
     ];
 
@@ -290,7 +290,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-ciro-aktarimi", "KasaCiroAktarimi", ReadCreateActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kasa-hareket-aktarimi", "KasaHareketAktarimi"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-belgeleri", "EtiketBelgeleri"),
-        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "etiket-basim", "EtiketBasim", EtiketBasimActions),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "manav-mal-kabul-etiket", "ManavMalKabulVeEtiket", ManavMalKabulVeEtiketActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kunye-etiket-yazdirma", "KunyeEtiketYazdirma"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "manav-kunye-etiket-yazdirma", "ManavKunyeEtiketYazdirma", ListActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "banknot-takipleri", "BanknotTakipleri", ReadCreateActions)
