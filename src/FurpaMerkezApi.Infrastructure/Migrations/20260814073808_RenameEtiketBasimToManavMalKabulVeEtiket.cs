@@ -99,19 +99,19 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
         private static void MoveRoleAssignments(MigrationBuilder migrationBuilder, string fromPermissionId, string toPermissionId)
         {
             migrationBuilder.Sql($"""
-                INSERT INTO app_role_permissions (role_id, permission_id, assigned_at_utc)
-                SELECT source.role_id, '{toPermissionId}'::uuid, MIN(source.assigned_at_utc)
-                FROM app_role_permissions AS source
-                WHERE source.permission_id = '{fromPermissionId}'::uuid
+                INSERT INTO [app_role_permissions] ([role_id], [permission_id], [assigned_at_utc])
+                SELECT source.[role_id], CAST('{toPermissionId}' AS uniqueidentifier), MIN(source.[assigned_at_utc])
+                FROM [app_role_permissions] AS source
+                WHERE source.[permission_id] = CAST('{fromPermissionId}' AS uniqueidentifier)
                   AND NOT EXISTS (
                       SELECT 1
-                      FROM app_role_permissions AS existing
-                      WHERE existing.role_id = source.role_id
-                        AND existing.permission_id = '{toPermissionId}'::uuid)
-                GROUP BY source.role_id;
+                      FROM [app_role_permissions] AS existing
+                      WHERE existing.[role_id] = source.[role_id]
+                        AND existing.[permission_id] = CAST('{toPermissionId}' AS uniqueidentifier))
+                GROUP BY source.[role_id];
 
-                DELETE FROM app_role_permissions
-                WHERE permission_id = '{fromPermissionId}'::uuid;
+                DELETE FROM [app_role_permissions]
+                WHERE [permission_id] = CAST('{fromPermissionId}' AS uniqueidentifier);
                 """);
         }
     }
