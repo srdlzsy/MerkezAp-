@@ -11687,6 +11687,8 @@ Not:
 - odeme satirlari ve store expense satirlari ayni listede gelir
 - `PaymentTypeID = 500` nakit toplam satiri bu endpointte donmez; backend bu satiri banknot hareketlerinden garanti eder
 - UI kullaniciya gosterecegi odeme adini `typeName` veya `paymentName` alanindan basmalidir; `paymentTypeId`, `accountCode` veya `terminalId` uzerinden banka/yemek karti adi tahmin edilmemelidir
+- `paymentTypeKey`, UI dropdown eslestirmesi icin guvenli anahtardir; format `paymentTypeNo|ACCOUNT_CODE|TERMINAL_ID` seklindedir
+- `paymentTypeNo`, `paymentTypeId`, `accountCode`, `terminalId` ve `paymentTypeKey` birlikte kullanilirsa eski terminal/hesap degisimlerinde satir yanlis secenege dusmez
 - `source` satirin makine dostu grubudur: `card`, `foodCheck`, `expenseVoucher`, `storeExpense`, `onlineSale`, `cash`, `other`
 - `category` UI grup basligi icin kullanilabilir
 
@@ -11705,7 +11707,8 @@ Response:
     "category": "Kredi Kartlari",
     "slipNumber": 45612,
     "amount": 2500,
-    "description": ""
+    "description": "",
+    "paymentTypeKey": "1|POS-AKBANK|TERM-01"
   }
 ]
 ```
@@ -11730,6 +11733,7 @@ Response ornekleri:
   {
     "value": 200,
     "banknoteType": 1,
+    "banknoteTypeName": "200 TL",
     "quantity": 20,
     "total": 4000
   }
@@ -11741,11 +11745,17 @@ Response ornekleri:
   {
     "value": 100,
     "giftCheckType": 1,
+    "giftCheckTypeName": "Hediye Çeki 100 TL",
     "quantity": 3,
     "total": 300
   }
 ]
 ```
+
+Not:
+
+- UI banknot satirinda gorunen adi `banknoteTypeName` alanindan basmalidir; `value` ve `banknoteType` ile kendisi metin uretmek zorunda degildir
+- UI hediye ceki satirinda gorunen adi `giftCheckTypeName` alanindan basmalidir
 
 ### Banknot Takipleri
 
@@ -11912,37 +11922,66 @@ Kisa response ornekleri:
 ```json
 [
   {
-    "value": 1,
+    "value": 100,
     "quantity": 0,
     "total": 0,
-    "giftCheckType": 11
+    "banknoteType": 2,
+    "banknoteTypeName": "100 TL"
   },
+  {
+    "value": 200,
+    "quantity": 0,
+    "total": 0,
+    "banknoteType": 1,
+    "banknoteTypeName": "200 TL"
+  }
+]
+```
+
+`hediye-ceki-tipleri` response ornegi:
+
+```json
+[
   {
     "value": 25,
     "quantity": 0,
     "total": 0,
-    "giftCheckType": 1
+    "giftCheckType": 1,
+    "giftCheckTypeName": "Hediye Çeki 25 TL"
+  },
+  {
+    "value": 100,
+    "quantity": 0,
+    "total": 0,
+    "giftCheckType": 2,
+    "giftCheckTypeName": "Hediye Çeki 100 TL"
   }
 ]
 ```
+
+`odeme-tipleri/banka` response ornegi:
 
 ```json
 [
   {
     "paymentName": "Akbank",
+    "paymentTypeId": 1,
     "paymentTypeNo": 1,
     "terminalId": "TERM-01",
     "accountCode": "108.01.001",
     "slipNumber": 0,
-    "amountValue": 0
+    "amountValue": 0,
+    "paymentTypeKey": "1|108.01.001|TERM-01"
   },
   {
     "paymentName": "Halkbank",
+    "paymentTypeId": 2,
     "paymentTypeNo": 2,
     "terminalId": "TERM-02",
     "accountCode": "108.01.002",
     "slipNumber": 0,
-    "amountValue": 0
+    "amountValue": 0,
+    "paymentTypeKey": "2|108.01.002|TERM-02"
   }
 ]
 ```
@@ -11953,22 +11992,49 @@ Kisa response ornekleri:
 [
   {
     "paymentName": "Sodexo POS",
+    "paymentTypeId": 50,
     "paymentTypeNo": 50,
     "terminalId": "",
     "accountCode": "108.02.001",
     "slipNumber": 0,
-    "amountValue": 0
+    "amountValue": 0,
+    "paymentTypeKey": "50|108.02.001|"
   },
   {
     "paymentName": "Ticket POS",
+    "paymentTypeId": 52,
     "paymentTypeNo": 52,
     "terminalId": "",
     "accountCode": "108.02.002",
     "slipNumber": 0,
-    "amountValue": 0
+    "amountValue": 0,
+    "paymentTypeKey": "52|108.02.002|"
   }
 ]
 ```
+
+`odeme-tipleri/masraf-pusulasi` response ornegi:
+
+```json
+[
+  {
+    "paymentName": "Gider Pusulası",
+    "paymentTypeId": 100,
+    "paymentTypeNo": 100,
+    "terminalId": "",
+    "accountCode": "",
+    "slipNumber": 0,
+    "amountValue": 0,
+    "paymentTypeKey": "100||"
+  }
+]
+```
+
+Not:
+
+- `paymentName`, kullaniciya basilacak gercek addir; UI `paymentTypeNo` araligindan isim tahmin etmemelidir
+- `paymentTypeKey`, dropdown secili satirini guvenli bulmak icindir; ayni odeme tipinin farkli terminal/hesap kodu varsa tek secenege dusurulmemelidir
+- `odeme-tipleri/masraf-pusulasi`, Mikro tarafinda tanim yoksa bile fallback olarak `Gider Pusulası / 100` dondurur
 
 ### Z Rapor Toplami
 
@@ -19171,13 +19237,19 @@ public sealed record CashSummaryDetailItemDto(
     string Category,
     int SlipNumber,
     double Amount,
-    string Description);
+    string Description)
+{
+    public string PaymentTypeKey => "{PaymentTypeNo}|{ACCOUNT_CODE}|{TERMINAL_ID}";
+}
 
 public sealed record BanknoteMovementItemDto(
     double Value,
     int BanknoteType,
     int Quantity,
-    double Total);
+    double Total)
+{
+    public string BanknoteTypeName => "200 TL";
+}
 
 public sealed record BanknoteTrackDto(
     Guid BanknoteTrackId,
@@ -19200,19 +19272,28 @@ public sealed record BanknoteTypeItemDto(
     double Value,
     double Quantity,
     double Total,
-    int BanknoteType);
+    int BanknoteType)
+{
+    public string BanknoteTypeName => "200 TL";
+}
 
 public sealed record GiftCheckMovementItemDto(
     double Value,
     int GiftCheckType,
     int Quantity,
-    double Total);
+    double Total)
+{
+    public string GiftCheckTypeName => "Hediye Çeki 100 TL";
+}
 
 public sealed record GiftCheckTypeItemDto(
     double Value,
     double Quantity,
     double Total,
-    int GiftCheckType);
+    int GiftCheckType)
+{
+    public string GiftCheckTypeName => "Hediye Çeki 100 TL";
+}
 
 public sealed record PaymentTypeItemDto(
     string PaymentName,
@@ -19220,7 +19301,11 @@ public sealed record PaymentTypeItemDto(
     string TerminalId,
     string AccountCode,
     int SlipNumber,
-    double AmountValue);
+    double AmountValue)
+{
+    public int PaymentTypeId => PaymentTypeNo;
+    public string PaymentTypeKey => "{PaymentTypeNo}|{ACCOUNT_CODE}|{TERMINAL_ID}";
+}
 
 public sealed record CashierItemDto(
     int CashierId,

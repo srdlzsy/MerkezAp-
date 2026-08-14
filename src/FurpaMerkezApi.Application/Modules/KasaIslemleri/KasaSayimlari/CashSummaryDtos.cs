@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 
 public sealed record CashSummaryReportItemDto(
@@ -59,31 +61,49 @@ public sealed record CashSummaryDetailItemDto(
     string Category,
     int SlipNumber,
     double Amount,
-    string Description);
+    string Description)
+{
+    public string PaymentTypeKey => CashSummaryDisplayNameFormatter.BuildPaymentTypeKey(
+        PaymentTypeNo,
+        AccountCode,
+        TerminalId);
+}
 
 public sealed record BanknoteMovementItemDto(
     double Value,
     int BanknoteType,
     int Quantity,
-    double Total);
+    double Total)
+{
+    public string BanknoteTypeName => CashSummaryDisplayNameFormatter.FormatMoney(Value);
+}
 
 public sealed record BanknoteTypeItemDto(
     double Value,
     double Quantity,
     double Total,
-    int BanknoteType);
+    int BanknoteType)
+{
+    public string BanknoteTypeName => CashSummaryDisplayNameFormatter.FormatMoney(Value);
+}
 
 public sealed record GiftCheckMovementItemDto(
     double Value,
     int GiftCheckType,
     int Quantity,
-    double Total);
+    double Total)
+{
+    public string GiftCheckTypeName => $"Hediye Çeki {CashSummaryDisplayNameFormatter.FormatMoney(Value)}";
+}
 
 public sealed record GiftCheckTypeItemDto(
     double Value,
     double Quantity,
     double Total,
-    int GiftCheckType);
+    int GiftCheckType)
+{
+    public string GiftCheckTypeName => $"Hediye Çeki {CashSummaryDisplayNameFormatter.FormatMoney(Value)}";
+}
 
 public sealed record PaymentTypeItemDto(
     string PaymentName,
@@ -91,7 +111,15 @@ public sealed record PaymentTypeItemDto(
     string TerminalId,
     string AccountCode,
     int SlipNumber,
-    double AmountValue);
+    double AmountValue)
+{
+    public int PaymentTypeId => PaymentTypeNo;
+
+    public string PaymentTypeKey => CashSummaryDisplayNameFormatter.BuildPaymentTypeKey(
+        PaymentTypeNo,
+        AccountCode,
+        TerminalId);
+}
 
 public sealed record CashierItemDto(
     int CashierId,
@@ -127,3 +155,22 @@ public sealed record CashRegisterDetailDto(
     string TerminalId,
     string MerchantNo,
     int? CashNo);
+
+internal static class CashSummaryDisplayNameFormatter
+{
+    public static string FormatMoney(double value)
+    {
+        var format = Math.Abs(value % 1) < 0.000001 ? "0" : "0.##";
+        return $"{value.ToString(format, CultureInfo.InvariantCulture)} TL";
+    }
+
+    public static string BuildPaymentTypeKey(int paymentTypeNo, string accountCode, string terminalId) =>
+        string.Join(
+            "|",
+            paymentTypeNo.ToString(CultureInfo.InvariantCulture),
+            NormalizeKeyPart(accountCode),
+            NormalizeKeyPart(terminalId));
+
+    private static string NormalizeKeyPart(string? value) =>
+        (value ?? string.Empty).Trim().ToUpperInvariant();
+}

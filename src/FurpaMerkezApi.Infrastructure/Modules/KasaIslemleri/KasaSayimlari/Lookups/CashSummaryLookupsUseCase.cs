@@ -206,10 +206,25 @@ public sealed class CashSummaryLookupsUseCase(
             cancellationToken);
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListExpenseCompassPaymentTypesAsync(
-        CancellationToken cancellationToken) =>
-        await ListPaymentTypesByPredicateAsync(
+        CancellationToken cancellationToken)
+    {
+        var paymentTypes = await ListPaymentTypesByPredicateAsync(
             CashSummaryCategoryMatcher.IsExpenseCompassPaymentType,
             cancellationToken);
+
+        return paymentTypes.Count > 0
+            ? paymentTypes
+            :
+            [
+                new PaymentTypeItemDto(
+                    "Gider Pusulası",
+                    100,
+                    string.Empty,
+                    string.Empty,
+                    0,
+                    0d)
+            ];
+    }
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListStoreExpensePaymentTypesAsync(
         CancellationToken cancellationToken) =>
