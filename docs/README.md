@@ -27,9 +27,10 @@ http://localhost:5228/swagger
 Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 
 1. [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md)
-2. [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md)
-3. [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
-4. [OPERASYON_HIZLI_MUDAHALE.md](OPERASYON_HIZLI_MUDAHALE.md)
+2. [GELISTIRICI_DEVAM_REHBERI.md](GELISTIRICI_DEVAM_REHBERI.md)
+3. [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md)
+4. [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
+5. [OPERASYON_HIZLI_MUDAHALE.md](OPERASYON_HIZLI_MUDAHALE.md)
 
 ## Dokuman Haritasi
 
@@ -38,6 +39,7 @@ Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 | Dokuman | Icerik |
 | --- | --- |
 | [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md) | Projenin genel mimarisi, katmanlari, modul mantigi ve gelistirme standartlari. |
+| [GELISTIRICI_DEVAM_REHBERI.md](GELISTIRICI_DEVAM_REHBERI.md) | Projeyi devralip gelistirmeye devam etmek icin gunluk komutlar, yeni modul akisi, migration, test ve commit rehberi. |
 | [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md) | Frontend/UI entegrasyonu icin API endpointleri ve response modelleri. |
 | [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md) | Yeni menu/API eklerken yetki katalogu, migration ve policy adimlari. |
 | [KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md](KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md) | Kasa Sayimlari, Icmal Kaydi Girisi, depo yetkisi, update/delete ve Z raporu Mikro yazim rehberi. |
