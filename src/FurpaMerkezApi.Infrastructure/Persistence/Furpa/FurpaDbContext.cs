@@ -19,6 +19,8 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
 
     public DbSet<CashRegistryDetailEntity> CashRegistryDetails => Set<CashRegistryDetailEntity>();
 
+    public DbSet<CashRegisterDetailEntity> CashRegisterDetails => Set<CashRegisterDetailEntity>();
+
     public DbSet<BranchDetailEntity> BranchDetails => Set<BranchDetailEntity>();
 
     public DbSet<AuthorizationFileEntity> AuthorizationFiles => Set<AuthorizationFileEntity>();
@@ -84,6 +86,17 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
         {
             entity.ToTable("CashRegistryDetails");
             entity.HasKey(item => item.DetailId);
+        });
+
+        modelBuilder.Entity<CashRegisterDetailEntity>(entity =>
+        {
+            entity.ToTable("CashRegisterDetails");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).ValueGeneratedOnAdd();
+            entity.Property(item => item.CashRegisterNo).HasMaxLength(40);
+            entity.Property(item => item.Bank).HasMaxLength(100);
+            entity.Property(item => item.TerminalId).HasMaxLength(40);
+            entity.Property(item => item.MerchantNo).HasMaxLength(40);
         });
 
         modelBuilder.Entity<BranchDetailEntity>(entity =>

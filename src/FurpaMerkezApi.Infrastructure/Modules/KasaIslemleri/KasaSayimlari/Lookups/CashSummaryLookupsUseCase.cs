@@ -82,7 +82,7 @@ public sealed class CashSummaryLookupsUseCase(
             throw new ArgumentException("Either cash no or cash register no must be provided.");
         }
 
-        var query = mikroDbContext.CashRegisterDetails
+        var query = furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .AsQueryable();
 
@@ -168,21 +168,50 @@ public sealed class CashSummaryLookupsUseCase(
         }
 
         var cashRegisterNo = request.CashRegisterNo.Trim();
-        var paymentTypes = await (
-                from paymentType in mikroDbContext.PaymentTypes.AsNoTracking()
-                join cashRegister in mikroDbContext.CashRegisterDetails.AsNoTracking()
-                    on paymentType.PaymentName equals cashRegister.Bank
-                where paymentType.PaymentGenus == 1 &&
-                      cashRegister.CashRegisterNo == cashRegisterNo
-                orderby paymentType.PaymentName, cashRegister.TerminalId
-                select new
-                {
-                    PaymentName = paymentType.PaymentName ?? string.Empty,
-                    paymentType.PaymentTypeNo,
-                    AccountCode = paymentType.AccountCode ?? string.Empty,
-                    TerminalId = cashRegister.TerminalId ?? string.Empty
-                })
+        var cashRegisterTerminals = await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashRegisterNo == cashRegisterNo)
+            .Select(item => new
+            {
+                Bank = item.Bank ?? string.Empty,
+                TerminalId = item.TerminalId ?? string.Empty
+            })
             .ToArrayAsync(cancellationToken);
+
+        var terminalBanks = cashRegisterTerminals
+            .Select(item => item.Bank)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (terminalBanks.Length == 0)
+        {
+            return [];
+        }
+
+        var paymentTypeRows = await mikroDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item => item.PaymentGenus == 1 && terminalBanks.Contains(item.PaymentName ?? string.Empty))
+            .Select(item => new
+            {
+                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentTypeNo,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var paymentTypes = (
+            from paymentType in paymentTypeRows
+            join cashRegister in cashRegisterTerminals
+                on paymentType.PaymentName equals cashRegister.Bank
+            orderby paymentType.PaymentName, cashRegister.TerminalId
+            select new
+            {
+                paymentType.PaymentName,
+                paymentType.PaymentTypeNo,
+                paymentType.AccountCode,
+                cashRegister.TerminalId
+            }).ToArray();
 
         return paymentTypes
             .Select(item => new PaymentTypeItemDto(
@@ -234,7 +263,7 @@ public sealed class CashSummaryLookupsUseCase(
 
     public async Task<IReadOnlyCollection<CashRegisterDetailDto>> ListOnlineCashRegistersAsync(
         CancellationToken cancellationToken) =>
-        await mikroDbContext.CashRegisterDetails
+        await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item => item.Bank.ToLower().Contains("online"))
             .OrderBy(item => item.CashRegisterNo)

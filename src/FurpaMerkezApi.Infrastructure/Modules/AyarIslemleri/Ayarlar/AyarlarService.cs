@@ -10,6 +10,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
+using MikroCashRegisterDetailEntity = FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models.CashRegisterDetailEntity;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
 
@@ -370,7 +371,7 @@ public sealed class AyarlarService(
         await furpaDbContext.CashRegistryDetails.AddAsync(cashRegistry, cancellationToken);
 
         var terminalEntities = terminalRequests
-            .Select(item => new CashRegisterDetailEntity
+            .Select(item => new MikroCashRegisterDetailEntity
             {
                 CashRegisterNo = item.TerminalNo,
                 Bank = item.Bank,
@@ -836,7 +837,7 @@ public sealed class AyarlarService(
             ResolveCashTypeName(item.CashRegisterType),
             ResolveCashTypeDescription(item.CashRegisterType));
 
-    private static CashRegisterTerminalDto ToTerminalDto(CashRegisterDetailEntity item) =>
+    private static CashRegisterTerminalDto ToTerminalDto(MikroCashRegisterDetailEntity item) =>
         new(
             item.Id,
             item.CashRegisterNo,
