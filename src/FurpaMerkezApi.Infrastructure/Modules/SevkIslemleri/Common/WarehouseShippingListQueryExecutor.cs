@@ -71,12 +71,6 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                           ? movement.sth_cikis_depo_no == request.WarehouseNo.Value
                           : movement.sth_nakliyedeposu == request.WarehouseNo.Value ||
                             movement.sth_giris_depo_no == request.WarehouseNo.Value))
-            join movementExtra in mikroDbContext.STOK_HAREKETLERI_EKs.AsNoTracking()
-                on movement.sth_Guid equals movementExtra.sthek_related_uid into movementExtraGroup
-            from movementExtra in movementExtraGroup.DefaultIfEmpty()
-            join warehouseOrder in mikroDbContext.DEPOLAR_ARASI_SIPARISLERs.AsNoTracking()
-                on movementExtra.sth_subesip_uid equals warehouseOrder.ssip_Guid into warehouseOrderGroup
-            from warehouseOrder in warehouseOrderGroup.DefaultIfEmpty()
             join sourceWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on movement.sth_cikis_depo_no equals sourceWarehouse.dep_no into sourceWarehouseGroup
             from sourceWarehouse in sourceWarehouseGroup.DefaultIfEmpty()
@@ -89,7 +83,7 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
             join targetWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on resolvedTargetWarehouseNo equals targetWarehouse.dep_no into targetWarehouseGroup
             from targetWarehouse in targetWarehouseGroup.DefaultIfEmpty()
-            group new { movement, warehouseOrder }
+            group movement
             by new
             {
                 movement.sth_belge_no,
@@ -109,9 +103,7 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_HareketGrupKodu1,
                 movement.sth_HareketGrupKodu3,
                 movement.sth_ismerkezi_kodu,
-                movement.sth_aciklama,
-                WarehouseOrderSerie = warehouseOrder.ssip_evrakno_seri,
-                WarehouseOrderNo = warehouseOrder.ssip_evrakno_sira
+                movement.sth_aciklama
             }
             into grouped
             orderby grouped.Key.sth_tarih, grouped.Key.sth_evrakno_seri, grouped.Key.sth_evrakno_sira
@@ -135,10 +127,8 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 grouped.Key.sth_HareketGrupKodu3,
                 grouped.Key.sth_ismerkezi_kodu,
                 grouped.Key.sth_aciklama,
-                grouped.Key.WarehouseOrderSerie,
-                grouped.Key.WarehouseOrderNo,
                 LineCount = grouped.Count(),
-                TotalQuantity = grouped.Sum(item => item.movement.sth_miktar ?? 0d)
+                TotalQuantity = grouped.Sum(movement => movement.sth_miktar ?? 0d)
             };
 
         var shipments = await query.ToListAsync(cancellationToken);
@@ -161,19 +151,9 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 shipment.sth_HareketGrupKodu3 ?? string.Empty,
                 shipment.sth_ismerkezi_kodu ?? string.Empty,
                 shipment.sth_aciklama ?? string.Empty,
-                BuildWarehouseOrderNo(shipment.WarehouseOrderSerie, shipment.WarehouseOrderNo),
+                string.Empty,
                 shipment.LineCount,
                 shipment.TotalQuantity))
             .ToArray();
-    }
-
-    private static string BuildWarehouseOrderNo(string? documentSerie, int? documentOrderNo)
-    {
-        if (string.IsNullOrWhiteSpace(documentSerie) || documentOrderNo is null or < 0)
-        {
-            return string.Empty;
-        }
-
-        return $"{documentSerie.Trim()}.{documentOrderNo.Value}";
     }
 }

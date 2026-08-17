@@ -4831,6 +4831,7 @@ Not:
 - sadece `sth_evraktip = 17` olan depolar arasi sevk hareketleri okunur
 - giden sevklerde filtre `sth_cikis_depo_no = WarehouseNo` olarak uygulanir
 - hedef depo nakliye durumuna gore `sth_giris_depo_no` veya `sth_nakliyedeposu` olarak cozulur
+- performans icin liste sorgusu sadece `STOK_HAREKETLERI` belge basliklarini gruplayarak doner; depo siparisi baglantisi gibi satir bazli ek bilgiler detay endpointinden okunur
 - bu endpoint Mikro veritabaninda sadece SELECT yapar; insert/update/delete yoktur
 
 Geriye uyum icin su route da giden sevk listesi gibi calisir:
@@ -4869,7 +4870,7 @@ Liste satiri modeli:
   "driverNameSurname": "Ad Soyad",
   "driverTckn": "11111111111",
   "descriptionEttn": "",
-  "warehouseOrderNo": "D110.1915",
+  "warehouseOrderNo": "",
   "lineCount": 8,
   "totalQuantity": 250
 }
@@ -4879,7 +4880,7 @@ UI kullanim notlari:
 
 - Liste ekraninda `documentSerie`, `documentOrderNo`, `sourceWarehouse`, `targetWarehouse`, `shippingState`, `plaque`, `driverNameSurname`, `lineCount`, `totalQuantity` yeterlidir
 - `shippingState = 1` ise sevk hedef depoya ulasmis kabul edilebilir; diger durumlar icin operasyonel isimlendirme UI tarafinda netlestirilebilir
-- `warehouseOrderNo` varsa sevkin hangi depo siparisine bagli oldugunu gostermek icin kullanilabilir
+- `warehouseOrderNo` liste response'unda performans nedeniyle bos gelebilir. Sevkin bagli oldugu depo siparisi gerekiyorsa detay endpointindeki `header.warehouseOrderNo`, `header.warehouseOrderNos` veya `items[].warehouseOrderNo` alanlari kullanilmalidir.
 - Mal kabul satir eslestirmesi icin detay response icindeki `items[].movementGuid` kullanilmalidir; sadece stok kodu ile eslestirme ayni stoktan birden fazla satir oldugunda hatali olabilir
 - Plaka, sofor adi ve sofor TCKN create ekraninda sorulmaz; kullanici bu bilgileri e-irsaliye gonderirken elle girer veya kayitli sofor listesinden secer.
 
