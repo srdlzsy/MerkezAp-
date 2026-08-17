@@ -15,7 +15,10 @@ using ApiDataProtectionOptions = FurpaMerkezApi.WebApi.Configuration.DataProtect
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+}
 
 var hostingOptions = builder.Configuration.GetSection("Hosting").Get<ApiHostingOptions>() ?? new ApiHostingOptions();
 var reverseProxyOptions = builder.Configuration.GetSection("ReverseProxy").Get<ReverseProxyOptions>() ?? new ReverseProxyOptions();
