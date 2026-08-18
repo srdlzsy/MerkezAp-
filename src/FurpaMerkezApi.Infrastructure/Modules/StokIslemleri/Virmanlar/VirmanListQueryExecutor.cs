@@ -87,6 +87,10 @@ public sealed class VirmanListQueryExecutor(MikroDbContext mikroDbContext)
                 group.Select(row => row.sth_tip ?? 0).Distinct().OrderBy(movementType => movementType).ToArray(),
                 group.Select(row => row.sth_aciklama ?? string.Empty).FirstOrDefault() ?? string.Empty,
                 group.Count(),
+                group.Count(row => (row.sth_tip ?? 0) == 0),
+                group.Count(row => (row.sth_tip ?? 0) == 1),
+                group.Where(row => (row.sth_tip ?? 0) == 0).Sum(row => row.sth_miktar ?? 0d),
+                group.Where(row => (row.sth_tip ?? 0) == 1).Sum(row => row.sth_miktar ?? 0d),
                 group.Sum(row => row.sth_miktar ?? 0d),
                 group.Sum(row => row.sth_tutar ?? 0d)))
             .ToArray();

@@ -25,13 +25,14 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                     item.fid_stok_kod == stock.sto_kod &&
                     item.fid_depo_no == warehouseNo &&
                     item.fid_yapildi_fl == 1 &&
-                    (item.fid_tarih ?? item.fid_belge_tarih ?? item.fid_create_date) > dateTimeFilter)
-                .OrderByDescending(item => item.fid_tarih ?? item.fid_belge_tarih ?? item.fid_create_date)
+                    item.fid_lastup_date > dateTimeFilter)
+                .OrderByDescending(item => item.fid_lastup_date)
                 .ThenByDescending(item => item.fid_lastup_date ?? item.fid_create_date)
                 .Select(item => new
                 {
                     item.fid_eskifiy_tutar,
                     item.fid_yenifiy_tutar,
+                    item.fid_lastup_date,
                     item.fid_tarih,
                     item.fid_belge_tarih,
                     item.fid_create_date
@@ -76,7 +77,8 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
             {
                 var price = row.CurrentPrice ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d;
                 var oldPrice = row.LatestPriceChange?.fid_eskifiy_tutar ?? price;
-                var priceChangeDate = row.LatestPriceChange?.fid_tarih
+                var priceChangeDate = row.LatestPriceChange?.fid_lastup_date
+                    ?? row.LatestPriceChange?.fid_tarih
                     ?? row.LatestPriceChange?.fid_belge_tarih
                     ?? row.LatestPriceChange?.fid_create_date;
 
@@ -161,12 +163,13 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 .Where(item =>
                     item.fid_stok_kod == stock.sto_kod &&
                     item.fid_depo_no == warehouseNo)
-                .OrderByDescending(item => item.fid_tarih ?? item.fid_belge_tarih ?? item.fid_create_date)
+                .OrderByDescending(item => item.fid_lastup_date)
                 .ThenByDescending(item => item.fid_lastup_date ?? item.fid_create_date)
                 .Select(item => new
                 {
                     item.fid_eskifiy_tutar,
                     item.fid_yenifiy_tutar,
+                    item.fid_lastup_date,
                     item.fid_tarih,
                     item.fid_belge_tarih,
                     item.fid_create_date
@@ -214,7 +217,9 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
             var oldPrice = row.LatestPriceChange?.fid_eskifiy_tutar ?? row.CurrentPrice?.sfiyat_fiyati ?? 0d;
             var price = row.CurrentPrice?.sfiyat_fiyati ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d;
             var lastUpdateDate = row.sto_lastup_date ?? row.CurrentPrice?.sfiyat_lastup_date ?? row.sto_create_date;
-            var priceChangeDate = row.LatestPriceChange?.fid_tarih ?? row.LatestPriceChange?.fid_belge_tarih;
+            var priceChangeDate = row.LatestPriceChange?.fid_lastup_date
+                ?? row.LatestPriceChange?.fid_tarih
+                ?? row.LatestPriceChange?.fid_belge_tarih;
             var isPassive = row.sdp_Pasif_fl ?? row.sto_pasif_fl ?? false;
 
             products[row.sto_kod] = new LabelDocumentProductDto

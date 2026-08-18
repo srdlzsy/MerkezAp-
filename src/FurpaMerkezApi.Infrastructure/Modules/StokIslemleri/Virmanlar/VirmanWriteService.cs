@@ -163,6 +163,10 @@ public sealed class VirmanWriteService(
                         .OrderBy(movementType => movementType)
                         .ToArray(),
                     movementRows.Length,
+                    movementRows.Count(movement => (movement.sth_tip ?? 0) == IncomingMovementType),
+                    movementRows.Count(movement => (movement.sth_tip ?? 0) == OutgoingMovementType),
+                    movementRows.Where(movement => (movement.sth_tip ?? 0) == IncomingMovementType).Sum(movement => movement.sth_miktar ?? 0d),
+                    movementRows.Where(movement => (movement.sth_tip ?? 0) == OutgoingMovementType).Sum(movement => movement.sth_miktar ?? 0d),
                     movementRows.Sum(movement => movement.sth_miktar ?? 0d),
                     movementRows.Sum(movement => movement.sth_tutar ?? 0d),
                     options.ConnectionStringName);
@@ -322,6 +326,14 @@ public sealed class VirmanWriteService(
             return false;
         }
 
+        var expandedLines = lines
+            .SelectMany(line => ExpandMovementTypes(line.MovementType)
+                .Select(movementType => new
+                {
+                    MovementType = movementType,
+                    line.Quantity
+                }))
+            .ToArray();
         var firstRow = responseRows[0];
         response = new CreateVirmanResponse(
             firstRow.DocumentSerie ?? documentSerie,
@@ -336,7 +348,11 @@ public sealed class VirmanWriteService(
                 .OrderBy(movementType => movementType)
                 .ToArray(),
             responseRows.Count,
-            lines.Sum(line => line.Quantity),
+            expandedLines.Count(line => line.MovementType == IncomingMovementType),
+            expandedLines.Count(line => line.MovementType == OutgoingMovementType),
+            expandedLines.Where(line => line.MovementType == IncomingMovementType).Sum(line => line.Quantity),
+            expandedLines.Where(line => line.MovementType == OutgoingMovementType).Sum(line => line.Quantity),
+            expandedLines.Sum(line => line.Quantity),
             0d,
             writeConnectionName);
 
@@ -412,6 +428,10 @@ public sealed class VirmanWriteService(
                 .OrderBy(movementType => movementType)
                 .ToArray(),
             rows.Count,
+            rows.Count(row => (row.sth_tip ?? 0) == IncomingMovementType),
+            rows.Count(row => (row.sth_tip ?? 0) == OutgoingMovementType),
+            rows.Where(row => (row.sth_tip ?? 0) == IncomingMovementType).Sum(row => row.sth_miktar ?? 0d),
+            rows.Where(row => (row.sth_tip ?? 0) == OutgoingMovementType).Sum(row => row.sth_miktar ?? 0d),
             rows.Sum(row => row.sth_miktar ?? 0d),
             rows.Sum(row => row.sth_tutar ?? 0d),
             writeConnectionName);
@@ -487,6 +507,10 @@ public sealed class VirmanWriteService(
                 .OrderBy(movementType => movementType)
                 .ToArray(),
             rows.Count,
+            rows.Count(row => (row.sth_tip ?? 0) == IncomingMovementType),
+            rows.Count(row => (row.sth_tip ?? 0) == OutgoingMovementType),
+            rows.Where(row => (row.sth_tip ?? 0) == IncomingMovementType).Sum(row => row.sth_miktar ?? 0d),
+            rows.Where(row => (row.sth_tip ?? 0) == OutgoingMovementType).Sum(row => row.sth_miktar ?? 0d),
             rows.Sum(row => row.sth_miktar ?? 0d),
             rows.Sum(row => row.sth_tutar ?? 0d),
             mikroWriteOptions.Value.ConnectionStringName);

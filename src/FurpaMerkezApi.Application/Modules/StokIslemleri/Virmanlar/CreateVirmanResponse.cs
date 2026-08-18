@@ -9,6 +9,10 @@ public sealed record CreateVirmanResponse(
     int WarehouseNo,
     IReadOnlyCollection<byte> MovementTypes,
     int LineCount,
+    int IncomingLineCount,
+    int OutgoingLineCount,
+    double IncomingQuantity,
+    double OutgoingQuantity,
     double TotalQuantity,
     double TotalAmount,
     string WriteConnectionName);

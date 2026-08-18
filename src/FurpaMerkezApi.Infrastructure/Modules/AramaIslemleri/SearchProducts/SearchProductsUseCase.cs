@@ -41,7 +41,6 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         }
 
         var take = NormalizeTake(request.Take);
-        var products = new List<ProductLookupItemDto>(take);
         var connection = mikroDbContext.Database.GetDbConnection();
         var closeConnection = connection.State == ConnectionState.Closed;
 
@@ -52,50 +51,50 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = "dbo.__StokveFiyatArama_Gokhan";
-            command.CommandType = CommandType.StoredProcedure;
-            command.CommandTimeout = 300;
+            var products = await ReadProductsAsync(
+                connection,
+                request.WarehouseNo,
+                barcode,
+                stockCode,
+                stockName,
+                supplierCode,
+                take,
+                barcodeLookup,
+                cancellationToken);
 
-            AddParameter(command, "@sfiyat_deposirano", request.WarehouseNo);
-            AddParameter(command, "@bar_kodu", barcode);
-            AddParameter(command, "@sfiyat_stokkod", stockCode);
-            AddParameter(command, "@sto_isim", stockName);
-            AddParameter(command, "@tedarikci", supplierCode);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            while (products.Count < take && await reader.ReadAsync(cancellationToken))
+            if (products.Count == 0 &&
+                barcode is null &&
+                stockCode is null &&
+                IsDigitsOnly(stockName))
             {
-                var salesBlockCode = ReadNullableInt(reader, "SatisDursun");
-                var orderBlockCode = ReadNullableInt(reader, "SipDursun");
-                var goodsAcceptanceBlockCode = ReadNullableInt(reader, "MalKabulDursun");
+                var fallbackBarcodeLookup = BarcodeLookupNormalizer.Normalize(stockName!);
+                products = await ReadProductsAsync(
+                    connection,
+                    request.WarehouseNo,
+                    fallbackBarcodeLookup.LookupBarcode,
+                    null,
+                    null,
+                    supplierCode,
+                    take,
+                    fallbackBarcodeLookup,
+                    cancellationToken);
 
-                products.Add(new ProductLookupItemDto(
-                    ReadInt(reader, "DepoNo"),
-                    ReadString(reader, "BarKodu"),
-                    ReadString(reader, "StokKod"),
-                    ReadString(reader, "StokIsim"),
-                    ReadDouble(reader, "Fiyati"),
-                    ReadInt(reader, "FiyatTipKodu"),
-                    ReadString(reader, "BirimAd"),
-                    ReadDouble(reader, "BirimKatsayisi"),
-                    ReadString(reader, "BirimAd2"),
-                    ReadDouble(reader, "BirimKatsayisi2"),
-                    salesBlockCode,
-                    orderBlockCode,
-                    goodsAcceptanceBlockCode,
-                    IsBlocked(salesBlockCode),
-                    IsBlocked(orderBlockCode),
-                    IsBlocked(goodsAcceptanceBlockCode),
-                    ReadString(reader, "UrunSorumlusu"),
-                    barcodeLookup?.OriginalBarcode,
-                    barcodeLookup?.LookupBarcode,
-                    barcodeLookup?.IsVariableWeightBarcode ?? false,
-                    barcodeLookup?.EmbeddedQuantity,
-                    barcodeLookup?.EmbeddedQuantityUnit,
-                    barcodeLookup?.IsCheckDigitValid));
+                if (products.Count == 0)
+                {
+                    products = await ReadProductsAsync(
+                        connection,
+                        request.WarehouseNo,
+                        null,
+                        stockName,
+                        null,
+                        supplierCode,
+                        take,
+                        null,
+                        cancellationToken);
+                }
             }
+
+            return products;
         }
         finally
         {
@@ -103,6 +102,65 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             {
                 await connection.CloseAsync();
             }
+        }
+    }
+
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsAsync(
+        DbConnection connection,
+        int warehouseNo,
+        string? barcode,
+        string? stockCode,
+        string? stockName,
+        string? supplierCode,
+        int take,
+        BarcodeLookupInfo? barcodeLookup,
+        CancellationToken cancellationToken)
+    {
+        var products = new List<ProductLookupItemDto>(take);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "dbo.__StokveFiyatArama_Gokhan";
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandTimeout = 300;
+
+        AddParameter(command, "@sfiyat_deposirano", warehouseNo);
+        AddParameter(command, "@bar_kodu", barcode);
+        AddParameter(command, "@sfiyat_stokkod", stockCode);
+        AddParameter(command, "@sto_isim", stockName);
+        AddParameter(command, "@tedarikci", supplierCode);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (products.Count < take && await reader.ReadAsync(cancellationToken))
+        {
+            var salesBlockCode = ReadNullableInt(reader, "SatisDursun");
+            var orderBlockCode = ReadNullableInt(reader, "SipDursun");
+            var goodsAcceptanceBlockCode = ReadNullableInt(reader, "MalKabulDursun");
+
+            products.Add(new ProductLookupItemDto(
+                ReadInt(reader, "DepoNo"),
+                ReadString(reader, "BarKodu"),
+                ReadString(reader, "StokKod"),
+                ReadString(reader, "StokIsim"),
+                ReadDouble(reader, "Fiyati"),
+                ReadInt(reader, "FiyatTipKodu"),
+                ReadString(reader, "BirimAd"),
+                ReadDouble(reader, "BirimKatsayisi"),
+                ReadString(reader, "BirimAd2"),
+                ReadDouble(reader, "BirimKatsayisi2"),
+                salesBlockCode,
+                orderBlockCode,
+                goodsAcceptanceBlockCode,
+                IsBlocked(salesBlockCode),
+                IsBlocked(orderBlockCode),
+                IsBlocked(goodsAcceptanceBlockCode),
+                ReadString(reader, "UrunSorumlusu"),
+                barcodeLookup?.OriginalBarcode,
+                barcodeLookup?.LookupBarcode,
+                barcodeLookup?.IsVariableWeightBarcode ?? false,
+                barcodeLookup?.EmbeddedQuantity,
+                barcodeLookup?.EmbeddedQuantityUnit,
+                barcodeLookup?.IsCheckDigitValid));
         }
 
         return products;
@@ -116,6 +174,9 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
+
+    private static bool IsDigitsOnly(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.All(char.IsDigit);
 
     private static bool IsBlocked(int? code) =>
         code.GetValueOrDefault() != 0;

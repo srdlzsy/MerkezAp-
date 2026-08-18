@@ -121,6 +121,10 @@ public sealed class VirmanDetailQueryExecutor(MikroDbContext mikroDbContext)
             rows.Select(row => row.sth_tip ?? 0).Distinct().OrderBy(movementType => movementType).ToArray(),
             firstRow.sth_aciklama ?? string.Empty,
             items.Length,
+            items.Count(item => item.MovementType == 0),
+            items.Count(item => item.MovementType == 1),
+            items.Where(item => item.MovementType == 0).Sum(item => item.Quantity),
+            items.Where(item => item.MovementType == 1).Sum(item => item.Quantity),
             items.Sum(item => item.Quantity),
             items.Sum(item => item.LineAmount));
 
