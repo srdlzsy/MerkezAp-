@@ -214,8 +214,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.Manav;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.Manav;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
 
 namespace FurpaMerkezApi.Infrastructure.DependencyInjection;
@@ -632,6 +634,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProductDistributionNotificationMailer, ProductDistributionNotificationMailer>();
         services.AddScoped<IProductDistributionService, ProductDistributionService>();
         services.AddScoped<OperationsFileGenerationService>();
+        services.AddScoped<IListGreenGrocerSuggestedProductsUseCase, ListGreenGrocerSuggestedProductsUseCase>();
 
         return services;
     }
@@ -680,5 +683,4 @@ public static class ServiceCollectionExtensions
         return Math.Clamp(seconds, 30, 1_800);
     }
 }
-
 

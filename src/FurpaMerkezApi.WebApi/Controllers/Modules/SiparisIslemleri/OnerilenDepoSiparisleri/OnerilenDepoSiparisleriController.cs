@@ -3,6 +3,7 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.Manav;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
@@ -17,6 +18,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.OnerilenDep
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class OnerilenDepoSiparisleriController(
     IListSuggestedWarehouseOrdersUseCase listSuggestedWarehouseOrdersUseCase,
+    IListGreenGrocerSuggestedProductsUseCase listGreenGrocerSuggestedProductsUseCase,
     IDocumentFlowService documentFlowService,
     ICreateIssuedWarehouseOrderUseCase createIssuedWarehouseOrderUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
@@ -45,6 +47,16 @@ public sealed class OnerilenDepoSiparisleriController(
                 request.LookbackDays,
                 request.FallbackRecommendedDay),
             cancellationToken));
+    }
+ 
+    [HttpGet("manav")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<GreenGrocerSuggestedProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<GreenGrocerSuggestedProductDto>>> ListGreenGrocerProducts(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await listGreenGrocerSuggestedProductsUseCase.ExecuteAsync(cancellationToken));
     }
 
     [HttpPost("convert-to-order")]
