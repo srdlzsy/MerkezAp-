@@ -12,6 +12,8 @@ public sealed record LabelPriceChangedProductDto
 
     public string Barcode { get; init; } = string.Empty;
 
+    public IReadOnlyCollection<string> Barcodes { get; init; } = Array.Empty<string>();
+
     public byte IsDomestic { get; init; }
 
     public double OldPrice { get; init; }

@@ -50,11 +50,16 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 .ThenByDescending(item => item.sfiyat_lastup_date ?? item.sfiyat_create_date)
                 .Select(item => item.sfiyat_fiyati)
                 .FirstOrDefault()
-            from barcode in mikroDbContext.BARKOD_TANIMLARIs
+            let barcode = mikroDbContext.BARKOD_TANIMLARIs
                 .AsNoTracking()
                 .Where(item =>
                     item.bar_stokkodu == stock.sto_kod &&
                     item.bar_iptal != true)
+                .OrderByDescending(item => item.bar_master ?? false)
+                .ThenByDescending(item => item.bar_create_date)
+                .ThenBy(item => item.bar_birimpntr ?? 0)
+                .Select(item => item.bar_kodu)
+                .FirstOrDefault()
             select new
             {
                 stock.sto_kod,
@@ -64,10 +69,17 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 stock.sto_mensei,
                 stock.sto_birim4_katsayi,
                 stock.sto_birim1_ad,
-                Barcode = barcode.bar_kodu,
+                Barcode = barcode,
                 CurrentPrice = currentPrice,
                 LatestPriceChange = latestPriceChange
             }).ToListAsync(cancellationToken);
+
+        var stockCodes = rows
+            .Select(row => row.sto_kod)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var barcodesByStockCode = await GetActiveBarcodesByStockCodeAsync(stockCodes, cancellationToken);
 
         return rows
             .Select(row =>
@@ -89,6 +101,7 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                         PluNo = row.sto_plu_no,
                         AlternativeUnitName = row.sto_birim4_ad ?? string.Empty,
                         Barcode = row.Barcode ?? string.Empty,
+                        Barcodes = barcodesByStockCode.GetValueOrDefault(row.sto_kod) ?? Array.Empty<string>(),
                         IsDomestic = Convert.ToByte(string.Equals(row.sto_mensei, "TR", StringComparison.OrdinalIgnoreCase)),
                         OldPrice = oldPrice,
                         Origin = row.sto_mensei ?? string.Empty,
@@ -102,6 +115,56 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
             .OrderBy(item => item.SortDate)
             .Select(item => item.Product)
             .ToArray();
+    }
+
+    private async Task<IReadOnlyDictionary<string, IReadOnlyCollection<string>>> GetActiveBarcodesByStockCodeAsync(
+        IReadOnlyCollection<string> stockCodes,
+        CancellationToken cancellationToken)
+    {
+        if (stockCodes.Count == 0)
+        {
+            return new Dictionary<string, IReadOnlyCollection<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var barcodeRows = await mikroDbContext.BARKOD_TANIMLARIs
+            .AsNoTracking()
+            .Where(item =>
+                stockCodes.Contains(item.bar_stokkodu) &&
+                item.bar_iptal != true)
+            .Select(item => new
+            {
+                item.bar_stokkodu,
+                item.bar_kodu,
+                item.bar_master,
+                item.bar_create_date,
+                item.bar_birimpntr
+            })
+            .ToListAsync(cancellationToken);
+
+        var normalizedBarcodeRows = barcodeRows
+            .Where(row => !string.IsNullOrWhiteSpace(row.bar_stokkodu) &&
+                          !string.IsNullOrWhiteSpace(row.bar_kodu))
+            .Select(row => new
+            {
+                StockCode = row.bar_stokkodu!.Trim(),
+                Barcode = row.bar_kodu!.Trim(),
+                row.bar_master,
+                row.bar_create_date,
+                row.bar_birimpntr
+            });
+
+        return normalizedBarcodeRows
+            .GroupBy(row => row.StockCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyCollection<string>)group
+                    .OrderByDescending(row => row.bar_master ?? false)
+                    .ThenByDescending(row => row.bar_create_date)
+                    .ThenBy(row => row.bar_birimpntr ?? 0)
+                    .Select(row => row.Barcode)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                StringComparer.OrdinalIgnoreCase);
     }
 
     internal async Task<IReadOnlyDictionary<string, LabelDocumentProductDto>> ExecuteAsync(
@@ -134,10 +197,12 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
             from warehouseDetail in warehouseDetailGroup.DefaultIfEmpty()
             let barcode = mikroDbContext.BARKOD_TANIMLARIs
                 .AsNoTracking()
-                .Where(item => item.bar_stokkodu == stock.sto_kod)
+                .Where(item =>
+                    item.bar_stokkodu == stock.sto_kod &&
+                    item.bar_iptal != true)
                 .OrderByDescending(item => item.bar_master ?? false)
-                .ThenBy(item => item.bar_birimpntr ?? 0)
                 .ThenByDescending(item => item.bar_create_date)
+                .ThenBy(item => item.bar_birimpntr ?? 0)
                 .Select(item => item.bar_kodu)
                 .FirstOrDefault()
             let currentPrice = mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs

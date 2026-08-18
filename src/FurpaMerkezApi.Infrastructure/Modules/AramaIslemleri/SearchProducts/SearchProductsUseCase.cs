@@ -64,6 +64,23 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
             if (products.Count == 0 &&
                 barcode is null &&
+                IsDigitsOnly(stockCode))
+            {
+                var fallbackBarcodeLookup = BarcodeLookupNormalizer.Normalize(stockCode!);
+                products = await ReadProductsAsync(
+                    connection,
+                    request.WarehouseNo,
+                    fallbackBarcodeLookup.LookupBarcode,
+                    null,
+                    null,
+                    supplierCode,
+                    take,
+                    fallbackBarcodeLookup,
+                    cancellationToken);
+            }
+
+            if (products.Count == 0 &&
+                barcode is null &&
                 stockCode is null &&
                 IsDigitsOnly(stockName))
             {

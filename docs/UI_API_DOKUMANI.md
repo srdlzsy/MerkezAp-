@@ -3654,6 +3654,7 @@ Kural:
 - Bos arama engellenir; cunku Mikro procedure genis fiyat/stok seti dondurebilir.
 - Barkod okutulduysa UI mumkunse degeri `barcode` alaninda gondermelidir. Genel arama kutusunda kullanici sadece numerik metin yazarsa ve ilk arama sonuc donmezse backend bu metni once barkod, sonra stok kodu gibi tekrar dener.
 - Ornek: `stockName=2900729` gibi yanlis/genel arama seklinde gelirse backend sonuc bulamazsa `barcode=2900729` gibi tekrar deneyip `015806` stokunu dondurebilir. En temiz UI yolu yine `barcode=2900729` veya `GET /api/arama-islemleri/barkodlar/2900729/cozumle` kullanmaktir.
+- UI barkodu yanlislikla `stockCode` alaninda gonderirse de backend ilk stok kodu aramasindan sonuc alamazsa ayni numerik degeri barkod gibi tekrar dener. Ornek: `stockCode=2900728&companyCode=8880325699` sonuc bulamazsa backend `barcode=2900728&companyCode=8880325699` gibi tekrar arar ve stok `015805` donebilir.
 - Firma icin urun ararken UI `companyCode` gondermelidir; backend bunu Mikro procedure tarafinda `@tedarikci` filtresine baglar.
 - Bu filtre Mikro'da `SATINALMA_SARTLARI.sas_cari_kod` iliskisi uzerinden calisir; yani firma ile iliskili urunler listelenir.
 
@@ -9078,8 +9079,9 @@ Not:
 - veri Mikro tarafindaki urun, fiyat degisikligi, fiyat listesi ve barkod tablolarindan okunur
 - Fiyat degisikligi filtresi eski API ile ayni mantiktadir: `STOK_FIYAT_DEGISIKLIKLERI.fid_lastup_date > dateTimeFilter`, `fid_yapildi_fl = 1`, `fid_depo_no = warehouseNo`.
 - Satisi durdurulmus urunler gelmez: `STOKLAR.sto_satis_dursun = 0`.
-- Response eski API davranisiyla uyumlu olarak barkod basina satir dondurebilir. Ayni `productCode` icin birden fazla barkod varsa UI bunlari ayri etiket satiri gibi ele almalidir.
-- Bir urunun birim/koli/alternatif barkodlari farkli olabilir. Ornek: `046460` stok kodunda birim barkodlari ile 14 haneli koli/ikinci birim barkodu birlikte tanimlidir; fiyat degisen listede ilgili barkod satirlari ayri donebilir.
+- Response urun/stok basina tek satir dondurur. Bir urunun birden fazla barkodu varsa backend aktif barkodlar icinden once `bar_master`, sonra en yeni `bar_create_date`, sonra `bar_birimpntr` onceligiyle tek barkod secer.
+- Bir urunun birim/koli/alternatif barkodlari farkli olabilir. Ornek: `046460` stok kodunda birim barkodlari ile 14 haneli koli/ikinci birim barkodu birlikte tanimlidir; bu urunde en guncel aktif barkod `08690637712128` oldugu icin etiket barkodu olarak bu donebilir.
+- `barcode` UI'in varsayilan basacagi barkoddur. `barcodes` ayni urunun tum aktif barkod seceneklerini oncelik sirasiyla dondurur; UI isterse detay/dropdown olarak gosterebilir ama liste satir sayisini bu diziye gore cogaltmamalidir.
 - `priceChangeDate` kullaniciya gosterilecek son fiyat degisikligi zamanidir ve `dd.MM.yyyy HH:mm` formatindadir.
 - `alternativeUnitName` ve `unitPriceFactor` eski etiket mantigiyla Mikro `sto_birim4_ad` / `sto_birim4_katsayi` uzerinden hesaplanir. Ornek 1440 ml urunde fiyat `199.50`, katsayi `1.44` ise birim fiyat `138.54 TL/LITRE` olur.
 - UI bu endpointi "son kontrol zamanindan sonra degisen urunler" icin kullanmali; kullanici belgeye eklemeden once gerekirse etiket belgesi detayinda urunu tekrar okutabilir.
@@ -9089,17 +9091,22 @@ Response:
 ```json
 [
   {
-    "productCode": "015550",
-    "productName": "URUN ADI",
-    "pluNo": 15550,
-    "alternativeUnitName": "KOLI",
-    "barcode": "8690000000012",
+    "productCode": "046460",
+    "productName": "YUMOS EXTRA 1440ML LILYUM",
+    "pluNo": 0,
+    "alternativeUnitName": "LITRE",
+    "barcode": "08690637712128",
+    "barcodes": [
+      "08690637712128",
+      "8690637563348",
+      "8690637712111"
+    ],
     "isDomestic": 1,
-    "oldPrice": 119.9,
-    "origin": "TR",
-    "price": 125.5,
-    "priceChangeDate": "24.04.2026 08:15",
-    "unitPriceFactor": 12.55,
+    "oldPrice": 229,
+    "origin": "TURKIYE",
+    "price": 199.5,
+    "priceChangeDate": "11.08.2026 16:27",
+    "unitPriceFactor": 138.54,
     "unitName": "ADET"
   }
 ]
@@ -9217,6 +9224,24 @@ Onemli not:
 - `movementType = 2` kisa yolu sadece ayni stok/miktar icin hem cikis hem giris hareketi acmak icindir. Koli bozma gibi "6'li urun cik, 6 adet tekil urun gir" senaryolarinda UI iki ayri satir gondermelidir: cikis satiri `movementType=1`, giris satiri `movementType=0`.
 - `totalAmount` su an satir tutarlari `0` yazildigi icin `0` doner
 
+Eski Angular virman karsiligi:
+
+Eski ekranda `POST ProductMovements/AddVirman` endpointine header olmadan dogrudan `CartLine[]` gonderiliyordu. Satirin giris mi cikis mi oldugu `product.barcodeContent` alanindan anlasiliyordu. Yeni API ayni isi daha acik sekilde `lines[].movementType` ile yapar.
+
+| Eski alan | Eski anlam | Yeni alan | Yeni anlam |
+|---|---|---|---|
+| `product.barcodeContent = "1"` | Stoktan cikan/parcalanan urun | `movementType = 1` | Cikis satiri, `sth_tip = 1` |
+| `product.barcodeContent = "0"` | Stoga giren/olusan urun | `movementType = 0` | Giris satiri, `sth_tip = 0` |
+
+UI akisi:
+
+- Kullanicinin sectigi/parcaladigi kaynak urun `movementType=1` olarak gonderilir.
+- Kullanicinin olusturdugu/hedef urun `movementType=0` olarak gonderilir.
+- Miktarlar birbirinden bagimsiz olabilir; ornek `1 adet 6'li soda cikis`, `6 adet tekil soda giris`.
+- UI liste ve detayda satirlari "Cikislar" ve "Girisler" olarak iki bolumde gosterebilir. Tek `totalQuantity` net stok etkisi gibi yorumlanmamalidir.
+- Koli bozma, urun donusturme veya reyon duzeltme ekraninda en guvenli model iki acik satirdir: bir cikis, bir giris.
+- `movementType=2` UI'in ana akisi olmamalidir; sadece ayni stok ve ayni miktar icin teknik kisa yol gerekiyorsa kullanilmalidir.
+
 Request:
 
 ```json
@@ -9228,11 +9253,21 @@ Request:
   "description": "Reyon duzenleme virmani",
   "lines": [
     {
-      "stockCode": "015792",
-      "movementType": 2,
-      "quantity": 3,
+      "stockCode": "015550",
+      "movementType": 1,
+      "quantity": 1,
       "unitPointer": 1,
-      "description": "",
+      "description": "6'li soda cikis",
+      "partyCode": "",
+      "lotNo": 0,
+      "projectCode": ""
+    },
+    {
+      "stockCode": "015733",
+      "movementType": 0,
+      "quantity": 6,
+      "unitPointer": 1,
+      "description": "Tekil soda giris",
       "partyCode": "",
       "lotNo": 0,
       "projectCode": ""
@@ -9255,9 +9290,9 @@ Response:
   "lineCount": 2,
   "incomingLineCount": 1,
   "outgoingLineCount": 1,
-  "incomingQuantity": 3,
-  "outgoingQuantity": 3,
-  "totalQuantity": 6,
+  "incomingQuantity": 6,
+  "outgoingQuantity": 1,
+  "totalQuantity": 7,
   "totalAmount": 0,
   "writeConnectionName": "testMikroConnection"
 }
@@ -18922,6 +18957,7 @@ public sealed record LabelPriceChangedProductDto
     public int PluNo { get; init; }
     public string AlternativeUnitName { get; init; } = string.Empty;
     public string Barcode { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> Barcodes { get; init; } = Array.Empty<string>();
     public byte IsDomestic { get; init; }
     public double OldPrice { get; init; }
     public string Origin { get; init; } = string.Empty;
