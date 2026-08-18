@@ -15,8 +15,9 @@ public sealed class ListGreenGrocerSuggestedProductsUseCase(MikroDbContext mikro
         return await mikroDbContext.STOKLARs
             .AsNoTracking()
             .Where(stock =>
+                 stock.sto_isim != null &&
+                stock.sto_isim.StartsWith("MNV") &&
                 stock.sto_kod != null &&
-                stock.sto_isim != null &&
                 stock.sto_iptal == false &&
                 stock.sto_model_kodu != null &&
                 GreenGrocerModelCodes.Contains(stock.sto_model_kodu.Trim()))
