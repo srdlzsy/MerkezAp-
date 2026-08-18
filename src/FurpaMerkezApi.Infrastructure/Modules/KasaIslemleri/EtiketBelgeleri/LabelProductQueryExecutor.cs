@@ -50,24 +50,21 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 .ThenByDescending(item => item.sfiyat_lastup_date ?? item.sfiyat_create_date)
                 .Select(item => item.sfiyat_fiyati)
                 .FirstOrDefault()
-            let barcode = mikroDbContext.BARKOD_TANIMLARIs
+            from barcode in mikroDbContext.BARKOD_TANIMLARIs
                 .AsNoTracking()
-                .Where(item => item.bar_stokkodu == stock.sto_kod)
-                .OrderByDescending(item => item.bar_master ?? false)
-                .ThenBy(item => item.bar_birimpntr ?? 0)
-                .ThenByDescending(item => item.bar_create_date)
-                .Select(item => item.bar_kodu)
-                .FirstOrDefault()
+                .Where(item =>
+                    item.bar_stokkodu == stock.sto_kod &&
+                    item.bar_iptal != true)
             select new
             {
                 stock.sto_kod,
                 stock.sto_isim,
                 stock.sto_plu_no,
-                stock.sto_birim2_ad,
+                stock.sto_birim4_ad,
                 stock.sto_mensei,
-                stock.sto_birim2_katsayi,
+                stock.sto_birim4_katsayi,
                 stock.sto_birim1_ad,
-                Barcode = barcode,
+                Barcode = barcode.bar_kodu,
                 CurrentPrice = currentPrice,
                 LatestPriceChange = latestPriceChange
             }).ToListAsync(cancellationToken);
@@ -90,14 +87,14 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                         ProductCode = row.sto_kod,
                         ProductName = row.sto_isim ?? string.Empty,
                         PluNo = row.sto_plu_no,
-                        AlternativeUnitName = row.sto_birim2_ad ?? string.Empty,
+                        AlternativeUnitName = row.sto_birim4_ad ?? string.Empty,
                         Barcode = row.Barcode ?? string.Empty,
                         IsDomestic = Convert.ToByte(string.Equals(row.sto_mensei, "TR", StringComparison.OrdinalIgnoreCase)),
                         OldPrice = oldPrice,
                         Origin = row.sto_mensei ?? string.Empty,
                         Price = price,
                         PriceChangeDate = priceChangeDate?.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("tr-TR")) ?? string.Empty,
-                        UnitPriceFactor = CalculateUnitPriceFactor(price, row.sto_birim2_katsayi),
+                        UnitPriceFactor = CalculateUnitPriceFactor(price, row.sto_birim4_katsayi),
                         UnitName = row.sto_birim1_ad ?? string.Empty
                     }
                 };
@@ -184,6 +181,8 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 stock.sto_birim1_ad,
                 stock.sto_birim2_katsayi,
                 stock.sto_birim2_ad,
+                stock.sto_birim4_katsayi,
+                stock.sto_birim4_ad,
                 stock.sto_perakende_vergi,
                 stock.sto_toptan_vergi,
                 stock.sto_satis_dursun,
@@ -246,8 +245,8 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 TypeCode = row.sto_cins?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
                 IsDomestic = Convert.ToByte(string.Equals(row.sto_mensei, "TR", StringComparison.OrdinalIgnoreCase)),
                 Origin = row.sto_mensei ?? string.Empty,
-                UnitPriceFactor = row.sto_birim2_katsayi ?? 1d,
-                AlternativeUnitName = row.sto_birim2_ad ?? string.Empty,
+                UnitPriceFactor = CalculateUnitPriceFactor(price, row.sto_birim4_katsayi),
+                AlternativeUnitName = row.sto_birim4_ad ?? string.Empty,
                 PluNo = row.sto_plu_no,
                 SectorCode = row.sto_sektor_kodu ?? string.Empty,
                 ShelfLife = row.sto_toplam_rafomru ?? 0,

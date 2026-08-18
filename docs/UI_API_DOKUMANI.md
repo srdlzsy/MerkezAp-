@@ -9078,8 +9078,10 @@ Not:
 - veri Mikro tarafindaki urun, fiyat degisikligi, fiyat listesi ve barkod tablolarindan okunur
 - Fiyat degisikligi filtresi eski API ile ayni mantiktadir: `STOK_FIYAT_DEGISIKLIKLERI.fid_lastup_date > dateTimeFilter`, `fid_yapildi_fl = 1`, `fid_depo_no = warehouseNo`.
 - Satisi durdurulmus urunler gelmez: `STOKLAR.sto_satis_dursun = 0`.
-- Response stok basina tek satir dondurur. Bir urunun birden fazla barkodu varsa backend master/oncelikli barkodu secer; UI barkoddan urun tahmini yapmamalidir.
+- Response eski API davranisiyla uyumlu olarak barkod basina satir dondurebilir. Ayni `productCode` icin birden fazla barkod varsa UI bunlari ayri etiket satiri gibi ele almalidir.
+- Bir urunun birim/koli/alternatif barkodlari farkli olabilir. Ornek: `046460` stok kodunda birim barkodlari ile 14 haneli koli/ikinci birim barkodu birlikte tanimlidir; fiyat degisen listede ilgili barkod satirlari ayri donebilir.
 - `priceChangeDate` kullaniciya gosterilecek son fiyat degisikligi zamanidir ve `dd.MM.yyyy HH:mm` formatindadir.
+- `alternativeUnitName` ve `unitPriceFactor` eski etiket mantigiyla Mikro `sto_birim4_ad` / `sto_birim4_katsayi` uzerinden hesaplanir. Ornek 1440 ml urunde fiyat `199.50`, katsayi `1.44` ise birim fiyat `138.54 TL/LITRE` olur.
 - UI bu endpointi "son kontrol zamanindan sonra degisen urunler" icin kullanmali; kullanici belgeye eklemeden once gerekirse etiket belgesi detayinda urunu tekrar okutabilir.
 
 Response:
