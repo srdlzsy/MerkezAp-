@@ -4360,6 +4360,18 @@ Amac:
 - Bu akista otomatik oneri miktari uretilmez; kullanici kasa/koli/adet/kg kararini ekranda verir.
 - `/manav` alias'i sadece `sourceWarehouseNo=56` icin kisa yoldur. Yeni UI genel kullanimda `kaynak-depo-urunleri?sourceWarehouseNo={secilenKaynakDepo}` endpointini tercih etmelidir.
 
+Mevcut ozel kaynak depolar:
+
+```text
+53, 55, 56, 58, 59, 62
+```
+
+UI karar kurali:
+
+- Kaynak depo bu listede ise klasik otomatik oneri endpointi yerine `kaynak-depo-urunleri` endpointi cagrilir.
+- Kaynak depo bu listede degilse klasik otomatik oneri endpointi kullanilir.
+- Backend tarafinda endpoint sadece bu listeye kilitli degildir; ilgili kaynak deponun `DEPOLAR.dep_barkod_yazici_yolu` model kodlari tanimliysa calisir. Bu liste UI'nin bugunku is kuralina gore hangi depolarda manuel miktarli urun secimi acacagini belirtir.
+
 Response:
 
 ```json
@@ -4384,7 +4396,7 @@ Response:
 UI akisi:
 
 - Kaynak depo normal merkez/depo siparisi ise klasik `GET /api/siparis-islemleri/onerilen-depo-siparisleri?sourceWarehouseNo=...` kullanilir.
-- Kaynak depo Manav, Sarkuteri, Unlu Mamul gibi kullanicinin elle miktar girecegi ozel depo ise `GET /api/siparis-islemleri/onerilen-depo-siparisleri/kaynak-depo-urunleri?sourceWarehouseNo={sourceWarehouseNo}` cagrilir.
+- Kaynak depo `53`, `55`, `56`, `58`, `59` veya `62` ise `GET /api/siparis-islemleri/onerilen-depo-siparisleri/kaynak-depo-urunleri?sourceWarehouseNo={sourceWarehouseNo}` cagrilir.
 - Donen satirlar grid/form satirina `quantity=0` ile basilir.
 - Kullanici miktari kendisi girer; `quantity > 0` olmayan satirlar siparise cevrilmemelidir.
 - Siparise cevirirken yine `POST /api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order` kullanilir.
