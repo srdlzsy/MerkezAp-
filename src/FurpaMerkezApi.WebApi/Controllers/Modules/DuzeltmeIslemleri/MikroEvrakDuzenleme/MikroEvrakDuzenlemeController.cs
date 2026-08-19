@@ -430,6 +430,30 @@ public sealed class MikroEvrakDuzenlemeController(
         return Ok(response);
     }
 
+    [HttpGet("sayim-sonuclari")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(InventoryCountDocumentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<InventoryCountDocumentDto>> GetInventoryCountDocument(
+        [FromQuery] InventoryCountDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetInventoryCountDocumentAsync(request.ToApplicationRequest(), cancellationToken));
+
+    [HttpPut("sayim-sonuclari")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(InventoryCountDocumentUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<InventoryCountDocumentUpdateResponse>> UpdateInventoryCountDocument(
+        [FromBody] UpdateInventoryCountDocumentHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.UpdateInventoryCountDocumentAsync(
+            request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
     [HttpGet("cari-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(CustomerMovementDocumentDto), StatusCodes.Status200OK)]
@@ -1649,6 +1673,140 @@ public sealed class StockMovementLinePatchHttpRequest
             StockResponsibilityCenter,
             InputWarehouseNo,
             OutputWarehouseNo);
+}
+
+public sealed class InventoryCountDocumentLookupHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int WarehouseNo { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int DocumentNo { get; init; }
+
+    [Required]
+    public DateTime? DocumentDate { get; init; }
+
+    public InventoryCountDocumentLookupRequest ToApplicationRequest() =>
+        new(
+            WarehouseNo,
+            DocumentNo,
+            DocumentDate.GetValueOrDefault());
+}
+
+public sealed class UpdateInventoryCountDocumentHttpRequest
+{
+    [Required]
+    public InventoryCountDocumentLookupHttpRequest Lookup { get; init; } = new();
+
+    public InventoryCountHeaderPatchHttpRequest? Header { get; init; }
+
+    public IReadOnlyCollection<InventoryCountLinePatchHttpRequest> Lines { get; init; } =
+        Array.Empty<InventoryCountLinePatchHttpRequest>();
+
+    public UpdateInventoryCountDocumentRequest ToApplicationRequest(int currentUserWarehouseNo) =>
+        new(
+            Lookup.ToApplicationRequest(),
+            Header?.ToApplicationRequest(),
+            Lines.Select(line => line.ToApplicationRequest()).ToArray(),
+            currentUserWarehouseNo);
+}
+
+public sealed class InventoryCountHeaderPatchHttpRequest
+{
+    public DateTime? DocumentDate { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [StringLength(25)]
+    public string? Name { get; init; }
+
+    public InventoryCountHeaderPatchDto ToApplicationRequest() =>
+        new(
+            DocumentDate,
+            WarehouseNo,
+            Name);
+}
+
+public sealed class InventoryCountLinePatchHttpRequest
+{
+    public Guid CountGuid { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? RowNo { get; init; }
+
+    [StringLength(25)]
+    public string? StockCode { get; init; }
+
+    [StringLength(50)]
+    public string? Barcode { get; init; }
+
+    [Range(1, 4)]
+    public byte? UnitPointer { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity1 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity2 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity3 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity4 { get; init; }
+
+    [Range(0, double.MaxValue)]
+    public double? Quantity5 { get; init; }
+
+    [StringLength(4)]
+    public string? RayonCode { get; init; }
+
+    [StringLength(4)]
+    public string? CorridorCode { get; init; }
+
+    [StringLength(4)]
+    public string? ShelfCode { get; init; }
+
+    [StringLength(25)]
+    public string? PartyCode { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int? LotNo { get; init; }
+
+    [StringLength(50)]
+    public string? SerialNo { get; init; }
+
+    [StringLength(4)]
+    public string? Special1 { get; init; }
+
+    [StringLength(4)]
+    public string? Special2 { get; init; }
+
+    [StringLength(4)]
+    public string? Special3 { get; init; }
+
+    public InventoryCountLinePatchDto ToApplicationRequest() =>
+        new(
+            CountGuid,
+            RowNo,
+            StockCode,
+            Barcode,
+            UnitPointer,
+            Quantity1,
+            Quantity2,
+            Quantity3,
+            Quantity4,
+            Quantity5,
+            RayonCode,
+            CorridorCode,
+            ShelfCode,
+            PartyCode,
+            LotNo,
+            SerialNo,
+            Special1,
+            Special2,
+            Special3);
 }
 
 public sealed class CustomerMovementDocumentLookupHttpRequest

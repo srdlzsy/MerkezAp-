@@ -236,6 +236,44 @@ public static class MikroDocumentFieldCatalog
                     Field("lines[].outputWarehouseNo", "Cikis depo", "sth_cikis_depo_no", "int")
                 ]),
             Section(
+                "inventory-count-header",
+                "Sayim Sonucu Header",
+                "PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari",
+                "InventoryCountHeaderPatchHttpRequest",
+                "SAYIM_SONUCLARI",
+                [
+                    Field("header.documentDate", "Sayim tarihi", "sym_tarihi", "date"),
+                    Field("header.warehouseNo", "Depo", "sym_depono", "int"),
+                    Field("header.name", "Sayim adi/notu", "sym_parti_kodu", "string")
+                ]),
+            Section(
+                "inventory-count-line",
+                "Sayim Sonucu Satir",
+                "PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari",
+                "InventoryCountLinePatchHttpRequest",
+                "SAYIM_SONUCLARI",
+                [
+                    Field("lines[].countGuid", "Sayim satir GUID", "sym_Guid", "guid", "Satir eslestirme anahtaridir; patch edilmez.", editable: false),
+                    Field("lines[].rowNo", "Satir no", "sym_satirno", "int"),
+                    Field("lines[].stockCode", "Stok kodu", "sym_Stokkodu", "string"),
+                    Field("lines[].barcode", "Barkod", "sym_barkod", "string"),
+                    Field("lines[].unitPointer", "Birim pointer", "sym_birim_pntr", "byte"),
+                    Field("lines[].quantity1", "Sayim miktari 1", "sym_miktar1", "double"),
+                    Field("lines[].quantity2", "Sayim miktari 2", "sym_miktar2", "double"),
+                    Field("lines[].quantity3", "Sayim miktari 3", "sym_miktar3", "double"),
+                    Field("lines[].quantity4", "Sayim miktari 4", "sym_miktar4", "double"),
+                    Field("lines[].quantity5", "Sayim miktari 5", "sym_miktar5", "double"),
+                    Field("lines[].rayonCode", "Reyon kodu", "sym_reyonkodu", "string", "En fazla 4 karakter."),
+                    Field("lines[].corridorCode", "Koridor kodu", "sym_koridorkodu", "string", "En fazla 4 karakter."),
+                    Field("lines[].shelfCode", "Raf kodu", "sym_rafkodu", "string", "En fazla 4 karakter."),
+                    Field("lines[].partyCode", "Parti kodu", "sym_parti_kodu", "string"),
+                    Field("lines[].lotNo", "Lot no", "sym_lot_no", "int"),
+                    Field("lines[].serialNo", "Seri/iz no", "sym_serino", "string"),
+                    Field("lines[].special1", "Ozel kod 1", "sym_special1", "string", "En fazla 4 karakter."),
+                    Field("lines[].special2", "Ozel kod 2", "sym_special2", "string", "En fazla 4 karakter."),
+                    Field("lines[].special3", "Ozel kod 3", "sym_special3", "string", "En fazla 4 karakter.")
+                ]),
+            Section(
                 "customer-movement-line",
                 "Cari Hareket Evraki Satir",
                 "PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri",

@@ -4357,6 +4357,7 @@ Amac:
 - Sadece bu model kodlarina uyan, aktif, siparise kapali olmayan ve secili kaynak depoda `STOK_DEPO_DETAYLARI` kaydi bulunan stoklar doner.
 - Kaynak depo model kodlari bos ise backend `400 ProblemDetails` doner.
 - Response satirlari siparis satirina donusturulmeye hazirdir; `quantity` ve `recommendedQuantity` bilerek `0` gelir. UI satiri ekrana miktar `0` ile koymali, kullanici miktari elle girmelidir.
+- Koli/ikinci birim bilgisi icin `secondaryUnitName`, `packageFactor` ve varsa `caseBarcode` alanlari doner. Ornek `secondaryUnitName=KOLI`, `packageFactor=12` ise 1 koli 12 ana birim olarak okunur.
 - Bu akista otomatik oneri miktari uretilmez; kullanici kasa/koli/adet/kg kararini ekranda verir.
 - `/manav` alias'i sadece `sourceWarehouseNo=56` icin kisa yoldur. Yeni UI genel kullanimda `kaynak-depo-urunleri?sourceWarehouseNo={secilenKaynakDepo}` endpointini tercih etmelidir.
 
@@ -4390,7 +4391,10 @@ Response:
     "modelCode": "12",
     "modelName": "Yesillik",
     "unitName": "ADET",
+    "secondaryUnitName": "KOLI",
+    "packageFactor": 25,
     "barcode": "2900729",
+    "caseBarcode": "1290072900000",
     "quantity": 0,
     "recommendedQuantity": 0,
     "unitPrice": 0,
@@ -4405,6 +4409,7 @@ UI akisi:
 - Kaynak depo `53`, `55`, `56` veya `58` ise `GET /api/siparis-islemleri/onerilen-depo-siparisleri/kaynak-depo-urunleri?sourceWarehouseNo={sourceWarehouseNo}` cagrilir.
 - Kaynak depo `59` veya `62` secilecekse once DB'de ilgili model kodlari tanimlanmalidir; aksi halde backend `400 ProblemDetails` ile "Secilen kaynak depo icin model kodlari tanimli degil." doner.
 - Donen satirlar grid/form satirina `quantity=0` ile basilir.
+- `packageFactor > 1` ise UI koli miktari girisine izin verebilir; ana miktar `koliAdedi * packageFactor` olarak hesaplanabilir. `caseBarcode` doluysa koli barkodu olarak gosterilebilir veya okutma eslestirmesinde kullanilabilir.
 - Kullanici miktari kendisi girer; `quantity > 0` olmayan satirlar siparise cevrilmemelidir.
 - Siparise cevirirken yine `POST /api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order` kullanilir.
 - Request icinde secilen kaynak depo `sourceWarehouseNo` olarak gonderilir ve secilen satirlar `lines[]` altina yazilir.
@@ -6355,6 +6360,7 @@ Firma mal kabul UI akisi:
 Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin eklendi. Ilk kapsam:
 
 - `STOK_HAREKETLERI` belgeleri
+- `SAYIM_SONUCLARI` sayim sonucu fisleri
 - `CARI_HESAP_HAREKETLERI` belgeleri
 - `STOKLAR` stok kartlari
 - `STOK_DEPO_DETAYLARI` depo bazli stok karti ayarlari
@@ -6383,6 +6389,8 @@ Genel kurallar:
 - Stok ve cari hareket belgelerinde `documentSerie` ve `documentOrderNo` zorunludur.
 - `documentType`, `movementType`, `movementKind`, `normalReturn` filtreleri opsiyoneldir. Seri-sira birden fazla evrak tipi/cins/iade kombinasyonuna denk gelirse backend `409 Conflict` doner; UI kullaniciya "evrak tipi/cins/iade filtresi ile daraltin" mesaji gostermelidir.
 - Satir guncellemeleri `movementGuid` ile yapilir. UI detay response'undaki `lines[].movementGuid` degerini satir modelinde saklamalidir.
+- Sayim sonucu fisleri `warehouseNo + documentNo + documentDate` ile bulunur. Sayim satiri guncellemeleri `countGuid` ile yapilir; UI detay response'undaki `lines[].countGuid` degerini gizli anahtar olarak saklamalidir.
+- Sayim sonucunda `sym_kilitli = true` olan satir varsa update reddedilir. Sayim duzeltmede yeni fis/satir olusturma ve silme yoktur; mevcut satirlarin miktar, stok, barkod, birim ve yardimci kodlari duzeltilir.
 - Firma siparislerinde `documentSerie` ve `documentOrderNo` zorunludur; `orderType` (`SIPARISLER.sip_tip`), `orderKind` (`sip_cins`), `warehouseNo` ve `customerCode` opsiyonel daraltma filtreleridir.
 - Depo siparislerinde `documentSerie` ve `documentOrderNo` zorunludur; `warehouseNo`, `inWarehouseNo` ve `outWarehouseNo` opsiyonel daraltma filtreleridir.
 - Siparis satir guncellemeleri `orderGuid` ile yapilir. UI detay response'undaki `lines[].orderGuid` degerini satir modelinde gizli anahtar olarak saklamalidir.
@@ -6429,6 +6437,8 @@ Endpoint ozeti:
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
 | `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari` | query | `InventoryCountDocumentLookupHttpRequest` | `InventoryCountDocumentDto` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari` | body | `UpdateInventoryCountDocumentHttpRequest` | `InventoryCountDocumentUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `CustomerMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | body | `UpdateCustomerMovementDocumentHttpRequest` | `CustomerMovementDocumentUpdateResponse` | `update` |
 | `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | query | `CustomerMovementDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
@@ -6501,6 +6511,12 @@ Kritik alan karsiliklari:
 | Stok hareket satiri | `expenseTaxAmount` | Masraf vergi tutari | `STOK_HAREKETLERI.sth_masraf_vergi` | Yeni guncellenebilir alan |
 | Stok hareket satiri | `special1/2/3` | Ozel kod 1/2/3 | `STOK_HAREKETLERI.sth_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
 | Stok hareket satiri | `unitPrice` | Birim fiyat | - | Read-only; `amount / quantity` hesaplanir |
+| Sayim header | `documentDate` | Sayim tarihi | `SAYIM_SONUCLARI.sym_tarihi` | Tum sayim satirlarina uygulanir |
+| Sayim header | `warehouseNo` | Depo | `SAYIM_SONUCLARI.sym_depono` | Tum sayim satirlarina uygulanir |
+| Sayim header | `name` | Sayim adi/notu | `SAYIM_SONUCLARI.sym_parti_kodu` | Tum sayim satirlarina uygulanir |
+| Sayim satiri | `countGuid` | Sayim satir GUID | `SAYIM_SONUCLARI.sym_Guid` | Read-only; satir eslestirme anahtari |
+| Sayim satiri | `quantity1..5` | Sayim miktarlari | `SAYIM_SONUCLARI.sym_miktar1..5` | En kritik duzeltme alani genelde `quantity1` |
+| Sayim satiri | `stockCode`, `barcode`, `unitPointer` | Stok/barkod/birim | `sym_Stokkodu`, `sym_barkod`, `sym_birim_pntr` | Stok degisirse stok karti varligi kontrol edilir |
 | Cari hareket satiri | `special1/2/3` | Ozel kod 1/2/3 | `CARI_HESAP_HAREKETLERI.cha_special1/2/3` | Yeni guncellenebilir alanlar, 4 karakter |
 | Firma siparis satiri | `priceListNo` | Fiyat liste no | `SIPARISLER.sip_fiyat_liste_no` | Yeni guncellenebilir alan |
 | Firma siparis satiri | `validUntil` | Gecerlilik tarihi | `SIPARISLER.sip_gecerlilik_tarihi` | Yeni guncellenebilir alan |
@@ -7318,6 +7334,133 @@ Response:
 ```
 
 Hard delete response'unda `deletionMode` alani `hard-delete` gelir.
+
+### Sayim Sonucu Fisi Getir
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari?warehouseNo=110&documentNo=25&documentDate=2026-04-21`
+
+Query:
+
+- `warehouseNo`: zorunlu, Mikro `SAYIM_SONUCLARI.sym_depono`
+- `documentNo`: zorunlu, Mikro `SAYIM_SONUCLARI.sym_evrakno`
+- `documentDate`: zorunlu, Mikro `SAYIM_SONUCLARI.sym_tarihi`
+
+Response modeli `InventoryCountDocumentDto`:
+
+```json
+{
+  "header": {
+    "documentDate": "2026-04-21T00:00:00",
+    "createdAt": "2026-04-21T10:30:00",
+    "documentNo": 25,
+    "warehouseNo": 110,
+    "warehouseName": "KESTEL 1",
+    "name": "REYON SAYIM",
+    "lineCount": 2,
+    "totalQuantity": 18,
+    "lastUpdatedAt": null
+  },
+  "lines": [
+    {
+      "countGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
+      "rowNo": 0,
+      "stockCode": "015792",
+      "stockName": "URUN ADI",
+      "barcode": "8690000000000",
+      "unitPointer": 1,
+      "unitName": "AD",
+      "quantity1": 10,
+      "quantity2": 0,
+      "quantity3": 0,
+      "quantity4": 0,
+      "quantity5": 0,
+      "rayonCode": "",
+      "corridorCode": "",
+      "shelfCode": "",
+      "partyCode": "REYON SAYIM",
+      "lotNo": 0,
+      "serialNo": "",
+      "special1": "",
+      "special2": "",
+      "special3": "",
+      "lastUpdatedAt": null
+    }
+  ]
+}
+```
+
+UI notlari:
+
+- Satir secimi/guncellemesi kesin olarak `lines[].countGuid` ile yapilir.
+- Ekranda ana sayim miktari genelde `quantity1` olarak gosterilmelidir; `quantity2..5` Mikro'nun ek miktar kolonlaridir.
+- `stockCode`, `barcode`, `unitPointer`, `quantity1..5`, reyon/raf/parti/seri ve `special1..3` alanlari satir duzeltme icindir.
+
+### Sayim Sonucu Fisi Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari`
+
+Body:
+
+```json
+{
+  "lookup": {
+    "warehouseNo": 110,
+    "documentNo": 25,
+    "documentDate": "2026-04-21"
+  },
+  "header": {
+    "name": "REYON SAYIM DUZELTILDI"
+  },
+  "lines": [
+    {
+      "countGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
+      "quantity1": 12,
+      "barcode": "8690000000000",
+      "unitPointer": 1
+    }
+  ]
+}
+```
+
+Kurallar:
+
+- Endpoint yeni sayim fisi veya yeni satir olusturmaz; sadece mevcut satirlari gunceller.
+- Silme endpoint'i yoktur. Yanlis satiri sifirlamak istenirse `quantity1=0` gibi miktar duzeltmesi UI kararina gore kullanilabilir.
+- `header.documentDate`, `header.warehouseNo`, `header.name` gonderilirse tum sayim satirlarina uygulanir.
+- Satir alanlari sadece ilgili `countGuid` satirina uygulanir.
+- `stockCode` degisirse backend stok kartinin varligini kontrol eder.
+- `sym_kilitli=true` olan sayim fislerinde update reddedilir.
+- Request body'de `null` alanlar degismez; bos string metin alanini bosaltir.
+
+Response `InventoryCountDocumentUpdateResponse` doner:
+
+```json
+{
+  "summary": {
+    "target": "sayim-sonuclari",
+    "updatedRowCount": 2,
+    "updatedAt": "2026-08-19T14:30:00",
+    "updateUser": 110
+  },
+  "document": {
+    "header": {
+      "documentNo": 25,
+      "warehouseNo": 110,
+      "name": "REYON SAYIM DUZELTILDI",
+      "lineCount": 2,
+      "totalQuantity": 20
+    },
+    "lines": [
+      {
+        "countGuid": "d7f6a8ec-9c2b-4e1e-bb1c-6da6cb4a5f67",
+        "stockCode": "015792",
+        "quantity1": 12,
+        "unitPointer": 1
+      }
+    ]
+  }
+}
+```
 
 ### Cari Hareket Evraki Getir
 
@@ -20872,6 +21015,10 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `UpdateStockMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `StockMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `GoodsAcceptanceDate`, `DocumentNo`, `CustomerCode`, `InputWarehouseNo`, `OutputWarehouseNo`, `Description`, `MovementGroupCode1`, `MovementGroupCode2`, `MovementGroupCode3`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `ProjectCode`
 - `StockMovementLinePatchHttpRequest`: `MovementGuid`, `RowNo`, `GoodsAcceptanceDate`, `StockCode`, `UnitPointer`, `Quantity`, `SecondaryQuantity`, `Amount`, `Discount1..Discount6`, `Expense1..Expense4`, `ExpenseTaxPointer`, `ExpenseTaxAmount`, `TaxPointer`, `TaxAmount`, `NetWeight`, `GrossWeight`, `Description`, `Special1`, `Special2`, `Special3`, `PartyCode`, `LotNo`, `ProjectCode`, `CustomerResponsibilityCenter`, `StockResponsibilityCenter`, `InputWarehouseNo`, `OutputWarehouseNo`
+- `InventoryCountDocumentLookupHttpRequest`: `WarehouseNo`, `DocumentNo`, `DocumentDate`
+- `UpdateInventoryCountDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
+- `InventoryCountHeaderPatchHttpRequest`: `DocumentDate`, `WarehouseNo`, `Name`
+- `InventoryCountLinePatchHttpRequest`: `CountGuid`, `RowNo`, `StockCode`, `Barcode`, `UnitPointer`, `Quantity1`, `Quantity2`, `Quantity3`, `Quantity4`, `Quantity5`, `RayonCode`, `CorridorCode`, `ShelfCode`, `PartyCode`, `LotNo`, `SerialNo`, `Special1`, `Special2`, `Special3`
 - `CustomerMovementDocumentLookupHttpRequest`: `DocumentSerie`, `DocumentOrderNo`, `DocumentType`, `MovementType`, `MovementKind`, `NormalReturn`, `CustomerCode`
 - `UpdateCustomerMovementDocumentHttpRequest`: `Lookup`, `Header`, `Lines`
 - `CustomerMovementHeaderPatchHttpRequest`: `MovementDate`, `DocumentDate`, `DocumentNo`, `CustomerCode`, `TurnoverCustomerCode`, `Description`, `SellerCode`, `ProjectCode`, `ResponsibilityCenter`

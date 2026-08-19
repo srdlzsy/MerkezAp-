@@ -53,7 +53,10 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
                 stock.sto_isim AS StockName,
                 stock.sto_model_kodu AS ModelCode,
                 stock.sto_birim1_ad AS UnitName,
-                ISNULL(barcode.bar_kodu, N'') AS Barcode
+                ISNULL(stock.sto_birim2_ad, N'') AS SecondaryUnitName,
+                ISNULL(stock.sto_birim2_katsayi, 0) AS PackageFactor,
+                ISNULL(barcode.bar_kodu, N'') AS Barcode,
+                ISNULL(caseBarcode.bar_kodu, N'') AS CaseBarcode
             FROM dbo.STOKLAR AS stock WITH (NOLOCK)
             INNER JOIN SourceModels AS model
                 ON model.ModelCode = LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, N'')))
@@ -64,6 +67,13 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
                   AND barcode.bar_birimpntr = 1
                 ORDER BY ISNULL(barcode.bar_master, 0) DESC, barcode.bar_create_date DESC
             ) AS barcode
+            OUTER APPLY (
+                SELECT TOP 1 barcode.bar_kodu
+                FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                WHERE barcode.bar_stokkodu = stock.sto_kod
+                  AND ISNULL(barcode.bar_birimpntr, 1) <> 1
+                ORDER BY ISNULL(barcode.bar_master, 0) DESC, barcode.bar_birimpntr DESC, barcode.bar_create_date DESC
+            ) AS caseBarcode
             WHERE ISNULL(stock.sto_iptal, 0) = 0
               AND ISNULL(stock.sto_siparis_dursun, 0) = 0
               AND stock.sto_kod IS NOT NULL
@@ -143,7 +153,10 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
             modelCode,
             GetModelName(modelCode),
             ReadString(reader, "UnitName"),
+            ReadString(reader, "SecondaryUnitName"),
+            ReadDouble(reader, "PackageFactor"),
             ReadString(reader, "Barcode"),
+            ReadString(reader, "CaseBarcode"),
             0,
             0,
             0,
@@ -161,6 +174,9 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;
+
+    private static double ReadDouble(DbDataReader reader, string name) =>
+        reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
 
     private static bool IsBusinessRuleSqlException(SqlException exception) =>
         exception.Number is 50001 or 50002;

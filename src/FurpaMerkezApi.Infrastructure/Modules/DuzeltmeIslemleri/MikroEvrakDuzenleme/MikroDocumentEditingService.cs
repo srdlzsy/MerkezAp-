@@ -1558,6 +1558,118 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<InventoryCountDocumentDto> GetInventoryCountDocumentAsync(
+        InventoryCountDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateInventoryCountLookup(request);
+
+        var rows = await CreateInventoryCountQuery(
+                mikroDbContext.SAYIM_SONUCLARIs.AsNoTracking(),
+                request)
+            .OrderBy(result => result.sym_satirno)
+            .ThenBy(result => result.sym_Stokkodu)
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length == 0)
+        {
+            throw new KeyNotFoundException("Inventory count document was not found.");
+        }
+
+        EnsureSingleInventoryCountDocument(rows);
+
+        return await MapInventoryCountDocumentAsync(mikroDbContext, rows, cancellationToken);
+    }
+
+    public async Task<InventoryCountDocumentUpdateResponse> UpdateInventoryCountDocumentAsync(
+        UpdateInventoryCountDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateInventoryCountLookup(request.Lookup);
+        ValidateInventoryCountUpdate(request);
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var rows = await CreateInventoryCountQuery(mikroWriteDbContext.SAYIM_SONUCLARIs, request.Lookup)
+                    .OrderBy(result => result.sym_satirno)
+                    .ThenBy(result => result.sym_Stokkodu)
+                    .ToArrayAsync(cancellationToken);
+
+                if (rows.Length == 0)
+                {
+                    throw new KeyNotFoundException("Inventory count document was not found in Mikro write database.");
+                }
+
+                EnsureSingleInventoryCountDocument(rows);
+                EnsureInventoryCountRowsAreEditable(rows);
+                await EnsureInventoryCountReferencesExistAsync(request, cancellationToken);
+
+                var touchedRows = new HashSet<Guid>();
+                if (request.Header is not null && HasInventoryCountHeaderPatch(request.Header))
+                {
+                    foreach (var row in rows)
+                    {
+                        ApplyInventoryCountHeaderPatch(row, request.Header);
+                        touchedRows.Add(row.sym_Guid);
+                    }
+                }
+
+                if (request.Lines.Count > 0)
+                {
+                    var rowsByGuid = rows.ToDictionary(row => row.sym_Guid);
+                    foreach (var line in request.Lines)
+                    {
+                        if (!rowsByGuid.TryGetValue(line.CountGuid, out var row))
+                        {
+                            throw new KeyNotFoundException($"Inventory count line was not found: {line.CountGuid}");
+                        }
+
+                        if (ApplyInventoryCountLinePatch(row, line))
+                        {
+                            touchedRows.Add(row.sym_Guid);
+                        }
+                    }
+                }
+
+                if (touchedRows.Count == 0)
+                {
+                    throw new ArgumentException("At least one inventory count field must be provided.", nameof(request));
+                }
+
+                foreach (var row in rows.Where(row => touchedRows.Contains(row.sym_Guid)))
+                {
+                    row.sym_lastup_user = updateUser;
+                    row.sym_lastup_date = updatedAt;
+                    row.sym_degisti = true;
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new InventoryCountDocumentUpdateResponse(
+                    new MikroDocumentUpdateSummary("sayim-sonuclari", touchedRows.Count, updatedAt, updateUser),
+                    await MapInventoryCountDocumentAsync(mikroWriteDbContext, rows, cancellationToken));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     private IQueryable<STOK_HAREKETLERI> CreateStockMovementQuery(
         IQueryable<STOK_HAREKETLERI> source,
         StockMovementDocumentLookupRequest request)
@@ -1638,6 +1750,22 @@ public sealed class MikroDocumentEditingService(
         }
 
         return query;
+    }
+
+    private static IQueryable<SAYIM_SONUCLARI> CreateInventoryCountQuery(
+        IQueryable<SAYIM_SONUCLARI> source,
+        InventoryCountDocumentLookupRequest request)
+    {
+        var documentDate = request.DocumentDate.Date;
+        var documentDateExclusive = documentDate.AddDays(1);
+
+        return source.Where(result =>
+            result.sym_iptal != true &&
+            result.sym_depono == request.WarehouseNo &&
+            result.sym_evrakno == request.DocumentNo &&
+            result.sym_tarihi.HasValue &&
+            result.sym_tarihi.Value >= documentDate &&
+            result.sym_tarihi.Value < documentDateExclusive);
     }
 
     private IQueryable<SIPARISLER> CreateCompanyOrderQuery(
@@ -1830,6 +1958,76 @@ public sealed class MikroDocumentEditingService(
             rows.Max(row => row.sth_lastup_date));
 
         return new StockMovementDocumentDto(header, lines);
+    }
+
+    private async Task<InventoryCountDocumentDto> MapInventoryCountDocumentAsync(
+        MikroDbContext lookupContext,
+        IReadOnlyCollection<SAYIM_SONUCLARI> rows,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = rows
+            .Select(row => row.sym_Stokkodu)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = rows
+            .Select(row => row.sym_depono)
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        var stocks = await LoadStocksAsync(lookupContext, stockCodes, cancellationToken);
+        var warehouses = await LoadWarehousesAsync(lookupContext, warehouseNos, cancellationToken);
+        var first = rows.First();
+
+        var lines = rows
+            .OrderBy(row => row.sym_satirno)
+            .ThenBy(row => row.sym_Stokkodu)
+            .Select(row =>
+            {
+                var stock = ResolveStock(stocks, row.sym_Stokkodu);
+                var unitPointer = NormalizeUnitPointer(row.sym_birim_pntr);
+
+                return new InventoryCountDocumentLineDto(
+                    row.sym_Guid,
+                    row.sym_satirno ?? 0,
+                    row.sym_Stokkodu ?? string.Empty,
+                    stock?.sto_isim ?? string.Empty,
+                    row.sym_barkod ?? string.Empty,
+                    unitPointer,
+                    ResolveUnitName(unitPointer, stock),
+                    row.sym_miktar1 ?? 0d,
+                    row.sym_miktar2 ?? 0d,
+                    row.sym_miktar3 ?? 0d,
+                    row.sym_miktar4 ?? 0d,
+                    row.sym_miktar5 ?? 0d,
+                    row.sym_reyonkodu ?? string.Empty,
+                    row.sym_koridorkodu ?? string.Empty,
+                    row.sym_rafkodu ?? string.Empty,
+                    row.sym_parti_kodu ?? string.Empty,
+                    row.sym_lot_no ?? 0,
+                    row.sym_serino ?? string.Empty,
+                    row.sym_special1 ?? string.Empty,
+                    row.sym_special2 ?? string.Empty,
+                    row.sym_special3 ?? string.Empty,
+                    row.sym_lastup_date);
+            })
+            .ToArray();
+
+        var header = new InventoryCountDocumentHeaderDto(
+            first.sym_tarihi,
+            rows.Min(row => row.sym_create_date),
+            first.sym_evrakno ?? 0,
+            first.sym_depono ?? 0,
+            ResolveWarehouseName(warehouses, first.sym_depono),
+            first.sym_parti_kodu ?? string.Empty,
+            lines.Length,
+            lines.Sum(line => line.Quantity1),
+            rows.Max(row => row.sym_lastup_date));
+
+        return new InventoryCountDocumentDto(header, lines);
     }
 
     private async Task<CustomerMovementDocumentDto> MapCustomerMovementDocumentAsync(
@@ -2247,6 +2445,26 @@ public sealed class MikroDocumentEditingService(
 
         await EnsureStockCodesExistAsync(stockCodes, cancellationToken);
         await EnsureCustomerCodesExistAsync(customerCodes, cancellationToken);
+        await EnsureWarehouseNosExistAsync(warehouseNos, cancellationToken);
+    }
+
+    private async Task EnsureInventoryCountReferencesExistAsync(
+        UpdateInventoryCountDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = request.Lines
+            .Select(line => line.StockCode)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => NormalizeRequiredText(value!, 25, nameof(InventoryCountLinePatchDto.StockCode)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var warehouseNos = new[] { request.Header?.WarehouseNo }
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+
+        await EnsureStockCodesExistAsync(stockCodes, cancellationToken);
         await EnsureWarehouseNosExistAsync(warehouseNos, cancellationToken);
     }
 
@@ -2906,6 +3124,42 @@ public sealed class MikroDocumentEditingService(
         return changed;
     }
 
+    private static void ApplyInventoryCountHeaderPatch(
+        SAYIM_SONUCLARI row,
+        InventoryCountHeaderPatchDto patch)
+    {
+        if (patch.DocumentDate.HasValue) row.sym_tarihi = patch.DocumentDate.Value.Date;
+        if (patch.WarehouseNo.HasValue) row.sym_depono = ValidateNonNegative(patch.WarehouseNo.Value, nameof(patch.WarehouseNo));
+        if (patch.Name is not null) row.sym_parti_kodu = NormalizeText(patch.Name, 25, nameof(patch.Name));
+    }
+
+    private static bool ApplyInventoryCountLinePatch(
+        SAYIM_SONUCLARI row,
+        InventoryCountLinePatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.RowNo, value => row.sym_satirno = ValidateNonNegative(value, nameof(patch.RowNo)), ref changed);
+        SetIfPresent(patch.StockCode, value => row.sym_Stokkodu = NormalizeText(value, 25, nameof(patch.StockCode)), ref changed);
+        SetIfPresent(patch.Barcode, value => row.sym_barkod = NormalizeText(value, 50, nameof(patch.Barcode)), ref changed);
+        SetIfPresent(patch.UnitPointer, value => row.sym_birim_pntr = ValidateUnitPointer(value, nameof(patch.UnitPointer)), ref changed);
+        SetIfPresent(patch.Quantity1, value => row.sym_miktar1 = ValidateNonNegative(value, nameof(patch.Quantity1)), ref changed);
+        SetIfPresent(patch.Quantity2, value => row.sym_miktar2 = ValidateNonNegative(value, nameof(patch.Quantity2)), ref changed);
+        SetIfPresent(patch.Quantity3, value => row.sym_miktar3 = ValidateNonNegative(value, nameof(patch.Quantity3)), ref changed);
+        SetIfPresent(patch.Quantity4, value => row.sym_miktar4 = ValidateNonNegative(value, nameof(patch.Quantity4)), ref changed);
+        SetIfPresent(patch.Quantity5, value => row.sym_miktar5 = ValidateNonNegative(value, nameof(patch.Quantity5)), ref changed);
+        SetIfPresent(patch.RayonCode, value => row.sym_reyonkodu = NormalizeText(value, 4, nameof(patch.RayonCode)), ref changed);
+        SetIfPresent(patch.CorridorCode, value => row.sym_koridorkodu = NormalizeText(value, 4, nameof(patch.CorridorCode)), ref changed);
+        SetIfPresent(patch.ShelfCode, value => row.sym_rafkodu = NormalizeText(value, 4, nameof(patch.ShelfCode)), ref changed);
+        SetIfPresent(patch.PartyCode, value => row.sym_parti_kodu = NormalizeText(value, 25, nameof(patch.PartyCode)), ref changed);
+        SetIfPresent(patch.LotNo, value => row.sym_lot_no = ValidateNonNegative(value, nameof(patch.LotNo)), ref changed);
+        SetIfPresent(patch.SerialNo, value => row.sym_serino = NormalizeText(value, 50, nameof(patch.SerialNo)), ref changed);
+        SetIfPresent(patch.Special1, value => row.sym_special1 = NormalizeText(value, 4, nameof(patch.Special1)), ref changed);
+        SetIfPresent(patch.Special2, value => row.sym_special2 = NormalizeText(value, 4, nameof(patch.Special2)), ref changed);
+        SetIfPresent(patch.Special3, value => row.sym_special3 = NormalizeText(value, 4, nameof(patch.Special3)), ref changed);
+
+        return changed;
+    }
+
     private static void ApplyCustomerMovementHeaderPatch(
         CARI_HESAP_HAREKETLERI row,
         CustomerMovementHeaderPatchDto patch)
@@ -3161,6 +3415,34 @@ public sealed class MikroDocumentEditingService(
         }
     }
 
+    private static void EnsureSingleInventoryCountDocument(IReadOnlyCollection<SAYIM_SONUCLARI> rows)
+    {
+        var documentCount = rows
+            .Select(row => new
+            {
+                row.sym_tarihi,
+                row.sym_depono,
+                row.sym_evrakno,
+                row.sym_parti_kodu
+            })
+            .Distinct()
+            .Count();
+
+        if (documentCount > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one inventory count document matched. Add warehouse no, document no and document date filters.");
+        }
+    }
+
+    private static void EnsureInventoryCountRowsAreEditable(IReadOnlyCollection<SAYIM_SONUCLARI> rows)
+    {
+        if (rows.Any(row => row.sym_kilitli == true))
+        {
+            throw new InvalidOperationException("Inventory count document is locked and can not be updated.");
+        }
+    }
+
     private static void ValidateStockMovementLookup(StockMovementDocumentLookupRequest request)
     {
         _ = NormalizeRequiredText(request.DocumentSerie, 20, nameof(request.DocumentSerie));
@@ -3172,6 +3454,24 @@ public sealed class MikroDocumentEditingService(
         if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+    }
+
+    private static void ValidateInventoryCountLookup(InventoryCountDocumentLookupRequest request)
+    {
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (request.DocumentNo < 0)
+        {
+            throw new ArgumentException("Document no can not be negative.", nameof(request.DocumentNo));
+        }
+
+        if (request.DocumentDate == default)
+        {
+            throw new ArgumentException("Document date is required.", nameof(request.DocumentDate));
         }
     }
 
@@ -3288,6 +3588,24 @@ public sealed class MikroDocumentEditingService(
         }
     }
 
+    private static void ValidateInventoryCountUpdate(UpdateInventoryCountDocumentRequest request)
+    {
+        if (request.Lines is null)
+        {
+            throw new ArgumentException("Lines collection is required.", nameof(request.Lines));
+        }
+
+        var duplicateLine = request.Lines
+            .GroupBy(line => line.CountGuid)
+            .FirstOrDefault(group => group.Key == Guid.Empty || group.Count() > 1)
+            ?.Key;
+
+        if (duplicateLine is not null)
+        {
+            throw new ArgumentException("Line count guid values must be unique and non-empty.", nameof(request.Lines));
+        }
+    }
+
     private static void ValidateCustomerMovementUpdate(UpdateCustomerMovementDocumentRequest request)
     {
         if (request.Lines is null)
@@ -3358,6 +3676,11 @@ public sealed class MikroDocumentEditingService(
         patch.CustomerResponsibilityCenter is not null ||
         patch.StockResponsibilityCenter is not null ||
         patch.ProjectCode is not null;
+
+    private static bool HasInventoryCountHeaderPatch(InventoryCountHeaderPatchDto patch) =>
+        patch.DocumentDate.HasValue ||
+        patch.WarehouseNo.HasValue ||
+        patch.Name is not null;
 
     private static bool HasCustomerMovementHeaderPatch(CustomerMovementHeaderPatchDto patch) =>
         patch.MovementDate.HasValue ||

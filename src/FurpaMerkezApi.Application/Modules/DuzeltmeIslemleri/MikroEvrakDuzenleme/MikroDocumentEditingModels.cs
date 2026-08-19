@@ -572,6 +572,82 @@ public sealed record DeleteStockMovementDocumentRequest(
     int CurrentUserWarehouseNo,
     bool HardDelete = false);
 
+public sealed record InventoryCountDocumentLookupRequest(
+    int WarehouseNo,
+    int DocumentNo,
+    DateTime DocumentDate);
+
+public sealed record InventoryCountDocumentDto(
+    InventoryCountDocumentHeaderDto Header,
+    IReadOnlyCollection<InventoryCountDocumentLineDto> Lines);
+
+public sealed record InventoryCountDocumentHeaderDto(
+    DateTime? DocumentDate,
+    DateTime CreatedAt,
+    int DocumentNo,
+    int WarehouseNo,
+    string WarehouseName,
+    string Name,
+    int LineCount,
+    double TotalQuantity,
+    DateTime? LastUpdatedAt);
+
+public sealed record InventoryCountDocumentLineDto(
+    Guid CountGuid,
+    int RowNo,
+    string StockCode,
+    string StockName,
+    string Barcode,
+    byte UnitPointer,
+    string UnitName,
+    double Quantity1,
+    double Quantity2,
+    double Quantity3,
+    double Quantity4,
+    double Quantity5,
+    string RayonCode,
+    string CorridorCode,
+    string ShelfCode,
+    string PartyCode,
+    int LotNo,
+    string SerialNo,
+    string Special1,
+    string Special2,
+    string Special3,
+    DateTime? LastUpdatedAt);
+
+public sealed record InventoryCountHeaderPatchDto(
+    DateTime? DocumentDate,
+    int? WarehouseNo,
+    string? Name);
+
+public sealed record InventoryCountLinePatchDto(
+    Guid CountGuid,
+    int? RowNo,
+    string? StockCode,
+    string? Barcode,
+    byte? UnitPointer,
+    double? Quantity1,
+    double? Quantity2,
+    double? Quantity3,
+    double? Quantity4,
+    double? Quantity5,
+    string? RayonCode,
+    string? CorridorCode,
+    string? ShelfCode,
+    string? PartyCode,
+    int? LotNo,
+    string? SerialNo,
+    string? Special1,
+    string? Special2,
+    string? Special3);
+
+public sealed record UpdateInventoryCountDocumentRequest(
+    InventoryCountDocumentLookupRequest Lookup,
+    InventoryCountHeaderPatchDto? Header,
+    IReadOnlyCollection<InventoryCountLinePatchDto> Lines,
+    int CurrentUserWarehouseNo);
+
 public sealed record CustomerMovementDocumentLookupRequest(
     string DocumentSerie,
     int DocumentOrderNo,
@@ -1015,6 +1091,10 @@ public sealed record CustomerCardUpdateResponse(
 public sealed record StockMovementDocumentUpdateResponse(
     MikroDocumentUpdateSummary Summary,
     StockMovementDocumentDto Document);
+
+public sealed record InventoryCountDocumentUpdateResponse(
+    MikroDocumentUpdateSummary Summary,
+    InventoryCountDocumentDto Document);
 
 public sealed record CustomerMovementDocumentUpdateResponse(
     MikroDocumentUpdateSummary Summary,

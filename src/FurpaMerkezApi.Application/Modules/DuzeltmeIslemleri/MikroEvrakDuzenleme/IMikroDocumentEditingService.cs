@@ -78,6 +78,14 @@ public interface IMikroDocumentEditingService
         DeleteStockMovementDocumentRequest request,
         CancellationToken cancellationToken);
 
+    Task<InventoryCountDocumentDto> GetInventoryCountDocumentAsync(
+        InventoryCountDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
+    Task<InventoryCountDocumentUpdateResponse> UpdateInventoryCountDocumentAsync(
+        UpdateInventoryCountDocumentRequest request,
+        CancellationToken cancellationToken);
+
     Task<CustomerMovementDocumentDto> GetCustomerMovementDocumentAsync(
         CustomerMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);
