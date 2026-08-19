@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.SourceProducts;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.SourceProducts;
@@ -56,6 +57,13 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
             FROM dbo.STOKLAR AS stock WITH (NOLOCK)
             INNER JOIN SourceModels AS model
                 ON model.ModelCode = LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, N'')))
+            OUTER APPLY (
+                SELECT TOP 1 barcode.bar_kodu
+                FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                WHERE barcode.bar_stokkodu = stock.sto_kod
+                  AND barcode.bar_birimpntr = 1
+                ORDER BY ISNULL(barcode.bar_master, 0) DESC, barcode.bar_create_date DESC
+            ) AS barcode
             WHERE ISNULL(stock.sto_iptal, 0) = 0
               AND ISNULL(stock.sto_siparis_dursun, 0) = 0
               AND stock.sto_kod IS NOT NULL
@@ -68,13 +76,6 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
                     AND sourceDetail.sdp_depo_kod = stock.sto_kod
                     AND ISNULL(sourceDetail.sdp_sipdursun, 0) = 0
               )
-            OUTER APPLY (
-                SELECT TOP 1 barcode.bar_kodu
-                FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
-                WHERE barcode.bar_stokkodu = stock.sto_kod
-                  AND barcode.bar_birimpntr = 1
-                ORDER BY ISNULL(barcode.bar_master, 0) DESC, barcode.bar_create_date DESC
-            ) AS barcode
             ORDER BY stock.sto_model_kodu, stock.sto_isim, stock.sto_kod;
             """;
 
@@ -114,6 +115,10 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
             {
                 items.Add(map(reader));
             }
+        }
+        catch (SqlException exception) when (IsBusinessRuleSqlException(exception))
+        {
+            throw new ArgumentException(exception.Message, exception);
         }
         finally
         {
@@ -156,6 +161,9 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;
+
+    private static bool IsBusinessRuleSqlException(SqlException exception) =>
+        exception.Number is 50001 or 50002;
 
     private static string GetModelName(string modelCode) =>
         modelCode.Trim() switch

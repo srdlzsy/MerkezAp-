@@ -3,6 +3,7 @@ using System.Data.Common;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -312,6 +313,10 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
                 items.Add(map(reader));
             }
         }
+        catch (SqlException exception) when (IsBusinessRuleSqlException(exception))
+        {
+            throw new ArgumentException(exception.Message, exception);
+        }
         finally
         {
             if (closeConnection)
@@ -378,4 +383,7 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;
+
+    private static bool IsBusinessRuleSqlException(SqlException exception) =>
+        exception.Number is 50001 or 50002;
 }
