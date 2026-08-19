@@ -195,13 +195,18 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
             return await query.ToListAsync(cancellationToken);
         }
 
-        await using var readTransaction = await mikroDbContext.Database.BeginTransactionAsync(
-            IsolationLevel.ReadUncommitted,
-            cancellationToken);
-        var result = await query.ToListAsync(cancellationToken);
-        await readTransaction.CommitAsync(cancellationToken);
+        var executionStrategy = mikroDbContext.Database.CreateExecutionStrategy();
 
-        return result;
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using var readTransaction = await mikroDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadUncommitted,
+                cancellationToken);
+            var result = await query.ToListAsync(cancellationToken);
+            await readTransaction.CommitAsync(cancellationToken);
+
+            return result;
+        });
     }
 
     private bool IsSqlServerProvider() =>
