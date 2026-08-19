@@ -101,15 +101,20 @@ public sealed class EInvoiceDocumentRenderer(
             preferEmbeddedXslt,
             fallbackToDefaultXslt,
             cancellationToken);
-        var htmlContent = TransformToHtml(invoiceDocument, resolvedXslt);
+        var (htmlContent, usedXslt) = await TransformToHtmlWithFallbackAsync(
+            invoiceDocument,
+            resolvedProfile,
+            resolvedXslt,
+            fallbackToDefaultXslt,
+            cancellationToken);
 
         return new InvoiceRenderedDocumentDto(
             source,
             string.IsNullOrWhiteSpace(invoiceId) ? "manual-preview" : invoiceId.Trim(),
             resolvedProfile,
-            resolvedXslt.Name,
-            resolvedXslt.Source,
-            resolvedXslt.UsedEmbeddedXslt,
+            usedXslt.Name,
+            usedXslt.Source,
+            usedXslt.UsedEmbeddedXslt,
             invoiceDocument.ToString(SaveOptions.DisableFormatting),
             htmlContent);
     }
@@ -458,6 +463,30 @@ public sealed class EInvoiceDocumentRenderer(
         transform.Transform(invoiceReader, null, stringWriter);
 
         return stringWriter.ToString();
+    }
+
+    private async Task<(string HtmlContent, ResolvedXslt UsedXslt)> TransformToHtmlWithFallbackAsync(
+        XDocument invoiceDocument,
+        InvoiceDocumentProfile profile,
+        ResolvedXslt resolvedXslt,
+        bool fallbackToDefaultXslt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (TransformToHtml(invoiceDocument, resolvedXslt), resolvedXslt);
+        }
+        catch (Exception) when (resolvedXslt.UsedEmbeddedXslt && fallbackToDefaultXslt)
+        {
+            var defaultXslt = await ResolveXsltAsync(
+                invoiceDocument,
+                profile,
+                preferEmbeddedXslt: false,
+                fallbackToDefaultXslt: true,
+                cancellationToken);
+
+            return (TransformToHtml(invoiceDocument, defaultXslt), defaultXslt);
+        }
     }
 
     private sealed record ResolvedXslt(

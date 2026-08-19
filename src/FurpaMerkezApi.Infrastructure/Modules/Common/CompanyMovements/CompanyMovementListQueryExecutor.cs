@@ -1,3 +1,4 @@
+using System.Data;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -97,7 +98,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 TotalAmount = grouped.Sum(item => item.sth_tutar ?? 0d)
             };
 
-        var documents = await query.ToListAsync(cancellationToken);
+        var documents = await ExecuteReadOnlyListAsync(query, cancellationToken);
 
         return documents
             .Select(document =>
@@ -184,4 +185,25 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
             values
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value!.Trim()));
+
+    private async Task<List<T>> ExecuteReadOnlyListAsync<T>(
+        IQueryable<T> query,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSqlServerProvider())
+        {
+            return await query.ToListAsync(cancellationToken);
+        }
+
+        await using var readTransaction = await mikroDbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadUncommitted,
+            cancellationToken);
+        var result = await query.ToListAsync(cancellationToken);
+        await readTransaction.CommitAsync(cancellationToken);
+
+        return result;
+    }
+
+    private bool IsSqlServerProvider() =>
+        mikroDbContext.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 }

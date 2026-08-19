@@ -1,3 +1,4 @@
+using System.Data;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -131,7 +132,7 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 TotalQuantity = grouped.Sum(movement => movement.sth_miktar ?? 0d)
             };
 
-        var shipments = await query.ToListAsync(cancellationToken);
+        var shipments = await ExecuteReadOnlyListAsync(query, cancellationToken);
 
         return shipments
             .Select(shipment => new WarehouseShippingListItemDto(
@@ -156,4 +157,25 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 shipment.TotalQuantity))
             .ToArray();
     }
+
+    private async Task<List<T>> ExecuteReadOnlyListAsync<T>(
+        IQueryable<T> query,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSqlServerProvider())
+        {
+            return await query.ToListAsync(cancellationToken);
+        }
+
+        await using var readTransaction = await mikroDbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadUncommitted,
+            cancellationToken);
+        var result = await query.ToListAsync(cancellationToken);
+        await readTransaction.CommitAsync(cancellationToken);
+
+        return result;
+    }
+
+    private bool IsSqlServerProvider() =>
+        mikroDbContext.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 }

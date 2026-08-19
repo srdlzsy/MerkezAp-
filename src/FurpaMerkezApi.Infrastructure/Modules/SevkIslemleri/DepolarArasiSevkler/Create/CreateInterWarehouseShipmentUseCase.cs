@@ -12,6 +12,7 @@ using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -118,11 +119,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.ReadCommitted,
                 cancellationToken);
+            int? documentOrderNo = null;
 
             try
             {
                 var linkedOrderLines = await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
-                var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
                 var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
                     request,
                     lines,
@@ -144,7 +146,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                         documentDate,
                         documentNo,
                         documentSerie,
-                        documentOrderNo,
+                        documentOrderNo.Value,
                         offlineTraceKey);
 
                     movements.Add(movement);
@@ -189,7 +191,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
                 return new CreateInterWarehouseShipmentResponse(
                     documentSerie,
-                    documentOrderNo,
+                    documentOrderNo.Value,
                     movementDate,
                     documentDate,
                     documentNo,
@@ -201,6 +203,55 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     movements.Sum(movement => movement.sth_miktar ?? 0d),
                     movements.Sum(movement => movement.sth_tutar ?? 0d),
                     options.ConnectionStringName);
+            }
+            catch (DbUpdateException exception) when (
+                documentOrderNo.HasValue &&
+                IsStockMovementDuplicateDocumentLineException(exception))
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                mikroWriteDbContext.ChangeTracker.Clear();
+
+                var recovered = await TryRecoverInterWarehouseShipmentResponseAsync(
+                    documentSerie,
+                    documentOrderNo.Value,
+                    request,
+                    lines.Length,
+                    movementDate,
+                    documentDate,
+                    documentNo,
+                    CancellationToken.None);
+
+                if (recovered is not null)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Inter warehouse shipment create hit duplicate STOK_HAREKETLERI document line and recovered existing document. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
+                        documentSerie,
+                        documentOrderNo.Value,
+                        request.SourceWarehouseNo,
+                        request.TargetWarehouseNo);
+
+                    var totalLinkedWarehouseOrderLineCount =
+                        lines.Count(line => line.WarehouseOrderLineGuid.HasValue) +
+                        GetAutomaticWarehouseOrderRows(request, lines).Length;
+
+                    return new CreateInterWarehouseShipmentResponse(
+                        recovered.DocumentSerie,
+                        recovered.DocumentOrderNo,
+                        recovered.MovementDate,
+                        recovered.DocumentDate,
+                        recovered.DocumentNo,
+                        recovered.SourceWarehouseNo,
+                        recovered.TargetWarehouseNo,
+                        recovered.TransitWarehouseNo,
+                        recovered.LineCount,
+                        totalLinkedWarehouseOrderLineCount,
+                        recovered.TotalQuantity,
+                        recovered.TotalAmount,
+                        options.ConnectionStringName);
+                }
+
+                throw;
             }
             catch
             {
@@ -1511,6 +1562,23 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
     private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
         clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
+
+    private static bool IsStockMovementDuplicateDocumentLineException(DbUpdateException exception)
+    {
+        var sqlException = exception.GetBaseException() as SqlException;
+
+        if (sqlException is null)
+        {
+            return false;
+        }
+
+        return sqlException.Errors
+            .Cast<SqlError>()
+            .Any(error =>
+                error.Number is 2601 or 2627 &&
+                error.Message.Contains("STOK_HAREKETLERI", StringComparison.OrdinalIgnoreCase) &&
+                error.Message.Contains("NDX_STOK_HAREKETLERI_05", StringComparison.OrdinalIgnoreCase));
+    }
 
     private sealed record AutomaticWarehouseOrderRow(
         int OriginalRowNo,

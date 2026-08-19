@@ -3,7 +3,7 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List;
-using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.Manav;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.SourceProducts;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
@@ -18,7 +18,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.OnerilenDep
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class OnerilenDepoSiparisleriController(
     IListSuggestedWarehouseOrdersUseCase listSuggestedWarehouseOrdersUseCase,
-    IListGreenGrocerSuggestedProductsUseCase listGreenGrocerSuggestedProductsUseCase,
+    ISuggestedWarehouseSourceProductsUseCase suggestedWarehouseSourceProductsUseCase,
     IDocumentFlowService documentFlowService,
     ICreateIssuedWarehouseOrderUseCase createIssuedWarehouseOrderUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
@@ -49,14 +49,25 @@ public sealed class OnerilenDepoSiparisleriController(
             cancellationToken));
     }
  
-    [HttpGet("manav")]
+    [HttpGet("kaynak-depo-urunleri")]
     [Authorize(Policy = ListPolicy)]
-    [ProducesResponseType(typeof(IReadOnlyCollection<GreenGrocerSuggestedProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<SuggestedWarehouseSourceProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<IReadOnlyCollection<GreenGrocerSuggestedProductDto>>> ListGreenGrocerProducts(
+    public async Task<ActionResult<IReadOnlyCollection<SuggestedWarehouseSourceProductDto>>> ListSourceWarehouseProducts(
+        [FromQuery, Range(1, int.MaxValue)] int sourceWarehouseNo,
         CancellationToken cancellationToken)
     {
-        return Ok(await listGreenGrocerSuggestedProductsUseCase.ExecuteAsync(cancellationToken));
+        return Ok(await suggestedWarehouseSourceProductsUseCase.ExecuteAsync(sourceWarehouseNo, cancellationToken));
+    }
+
+    [HttpGet("manav")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<SuggestedWarehouseSourceProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<SuggestedWarehouseSourceProductDto>>> ListGreenGrocerProductsAlias(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await suggestedWarehouseSourceProductsUseCase.ExecuteAsync(56, cancellationToken));
     }
 
     [HttpPost("convert-to-order")]
