@@ -8635,6 +8635,60 @@ Eski WinForms `Manav Mal Kabul ve Etiket` uygulamasindaki manav/depo mal kabul e
 
 Bu bolum UI tarafinin baska bir dokumana gitmeden kullanabilmesi icin tum endpoint, request, response, status ve yazdirma notlarini icerir.
 
+Canli akis ayrimi:
+
+- Etiket/tartim kaydi `Furpa.dbo.Manav_Depo_Mal_Kabul_Etiket` tablosuna yazilir; bu kayit tek basina Mikro fatura/mal kabul belgesi degildir.
+- Mikro mal kabul olusturma ayrica `POST /micro/goods-receipts` ile yapilir.
+- Mikro aktariminda canli formata uygun olarak `CARI_HESAP_HAREKETLERI` tarafinda fatura/cari hareket basligi acilir ve `STOK_HAREKETLERI` satirlari bu basliga `sth_fat_uid = cha_Guid` ile baglanir.
+- UI fiyat ve KDV bilgisi netlesmeden Mikro aktarimi yaptirmamalidir; sadece etiket basmak istiyorsa `acceptance-records` ve `label` endpointleri yeterlidir.
+
+UI hedef tasarimi:
+
+- Bu ekran tek basina `Etiket Basim` gibi dusunulmemelidir; `Gelen Fatura -> Manav Mal Kabul -> Tartim/Etiket -> Mikro Kontrol -> Rapor` akislarini ayni modulde toparlayan operasyon ekranidir.
+- Ilk ekranda tarih, tedarikci, belge/fatura bilgisi ve gunluk durum ozetleri birlikte gorunmelidir.
+- Kullanici gelen fatura satirlarini gorup miktar/fiyat/KDV kontrolu yapabilmeli; tartilan urunleri ayni satirlarla eslestirebilmeli; gerekirse tartimdan yeni etiket satiri ekleyebilmelidir.
+- Mikro'ya aktarim butonu sadece fiyatli/onayli satirlarda acilmalidir. Fiyat veya cari belirsizse UI Mikro aktarimi yaptirmadan once kullanicidan duzeltme istemelidir.
+- Etiket basma, Mikro aktarimindan bagimsiz kalmalidir. Kullanici once etiket basabilir, sonra fiyat/kabul onayi tamamlaninca Mikro aktarimi yapabilir.
+- Karsilastirma sekmesi `SADECE_ETIKET`, `SADECE_MIKRO`, `FARKLI`, `YAKIN`, `ESLESTI` durumlarini operasyonel is listesi gibi gostermelidir.
+- Rapor sekmesi alinan urunler/fatura farki ve 56 Manav Depo stok durumunu gostermelidir.
+
+Onerilen ekran bolumleri:
+
+| Bolum | Amac | Kullanilacak endpointler |
+|---|---|---|
+| `Fatura/Mal Kabul` | Tedarikci, tarih, belge no, fiyatli satirlar ve Mikro aktarim onayi | `/suppliers`, `/stocks`, `POST /micro/goods-receipts`, `GET /micro/goods-receipts` |
+| `Tartim ve Etiket` | Brut, kasa darasi, kasa sayisi, net kg, ortalama kg hesaplama ve etiket basma | `POST /acceptance-records/calculate`, `/acceptance-records`, `/labels/preview`, `/acceptance-records/{id}/label` |
+| `Kontrol` | Furpa etiket kaydi ile Mikro mal kabul miktarlarini karsilastirma | `GET /micro/goods-receipts/comparison` |
+| `Raporlar` | Alinan urun/fatura farki ve Manav Depo stok/fiyat gorunumu | `/reports/received-products`, `/reports/depot-stock` |
+
+Onerilen gunluk akis:
+
+1. UI tarih ve tedarikci secimiyle acilir.
+2. Kullanici gelen fatura veya manuel belge bilgisini girer; satirlar stok, miktar, fiyat, KDV ile hazirlanir.
+3. Kullanici tartim yaptikca `calculate` ile net kg/ortalama kg hesaplanir.
+4. Onaylanan tartim satiri `POST /acceptance-records` ile Furpa etiket kaydi olur.
+5. Etiket icin `GET /acceptance-records/{id}/label` veya kaydetmeden once `POST /labels/preview` kullanilir.
+6. Fiyatli ve kesinlesmis satirlar `POST /micro/goods-receipts` ile Mikro'ya aktarilir.
+7. Basarili aktarimdan sonra UI `GET /micro/goods-receipts` ve `GET /micro/goods-receipts/comparison` ile ekrani yeniler.
+8. Gun sonunda `reports/received-products` ile fatura/etiket farklari, `reports/depot-stock` ile 56 depo stok durumu kontrol edilir.
+
+UI durum modeli onerisi:
+
+- `Taslak`: satir UI'da hazirlaniyor, henuz Furpa etiket kaydi yok.
+- `Etiket Kaydi`: `acceptance-records` satiri var, `microTransferred=false`.
+- `Etiket Basildi`: UI lokal baski islemini tamamlamis; API'de ayri baski log'u yoksa bu durum UI tarafinda tutulabilir.
+- `Mikro Aktarildi`: `microTransferred=true` veya Mikro belge listesinde ilgili satir gorunuyor.
+- `Fark Var`: comparison status `FARKLI`, `SADECE_ETIKET` veya `SADECE_MIKRO`.
+- `Tamam`: comparison status `ESLESTI` veya kabul edilebilir toleransta `YAKIN`.
+
+Kullanici deneyimi notlari:
+
+- Ekran pazaryeri/hal operasyonu gibi hizli veri girisine uygun olmalidir; form alanlari kisa, tablo satirlari yogun ve klavye/barkod okutmaya uygun tasarlanmalidir.
+- Aynı stoktan birden fazla tartim olabilir; UI satirlari sadece stok koduyla birlestirmemeli, satir/kayit bazinda gostermelidir.
+- `acceptanceRecordId` Mikro aktarim satirina tasinirse aktarimdan sonra ilgili Furpa kaydi otomatik `Mikro_Aktarildi=1` olur.
+- Mikro aktarim request'i pending iken buton kilitlenmelidir. Timeout veya belirsiz durumda UI yeni seri/sira uretip tekrar basmamalidir; once Mikro belge listesi ve karsilastirma yenilenmelidir.
+- UI, `documentSeries/documentOrderNo` degerlerini kullaniciya gosterebilir ama bos birakilirsa backend seri/sira uretir. Manuel seri/sira girilirse duplicate kontrolu devrededir.
+
 Root route:
 
 `/api/kasa-islemleri/manav-mal-kabul-etiket`
@@ -8669,6 +8723,7 @@ Endpoint ozeti:
 | `GET` | `/stocks` | query: `query`, `prefix`, `take` | `ManavMalKabulVeEtiketStockSuggestionDto[]` | `list` |
 | `GET` | `/stocks/by-name` | query: `name` | `ManavMalKabulVeEtiketStockSuggestionDto` | `list` |
 | `GET` | `/stocks/{stockCode}` | path: `stockCode` | `ManavMalKabulVeEtiketStockSuggestionDto` | `list` |
+| `GET` | `/incoming-invoices` | query: `startDate`, `endDate`, `supplierCode`, `searchText`, `includeArchived`, `take` | `ManavMalKabulVeEtiketIncomingInvoiceDto[]` | `list` |
 | `POST` | `/acceptance-records/calculate` | body: `ManavMalKabulVeEtiketCalculationHttpRequest` | `ManavMalKabulVeEtiketCalculationDto` | `create` |
 | `GET` | `/acceptance-records` | query: `date` | `ManavMalKabulVeEtiketAcceptanceRecordDto[]` | `list` |
 | `GET` | `/acceptance-records/{id}` | path: `id` | `ManavMalKabulVeEtiketAcceptanceRecordDto` | `detail` |
@@ -8698,11 +8753,15 @@ Response:
 [
   {
     "supplierCode": "120.001",
-    "supplierName": "TEDARIKCI A"
+    "supplierName": "TEDARIKCI A",
+    "supplierTitle2": "LTD STI",
+    "supplierTaxNo": "1234567890"
   },
   {
     "supplierCode": "120.002",
-    "supplierName": "TEDARIKCI B"
+    "supplierName": "TEDARIKCI B",
+    "supplierTitle2": "",
+    "supplierTaxNo": "1111111111"
   }
 ]
 ```
@@ -8718,7 +8777,9 @@ Response:
 ```json
 {
   "supplierCode": "120.001",
-  "supplierName": "TEDARIKCI A"
+  "supplierName": "TEDARIKCI A",
+  "supplierTitle2": "LTD STI",
+  "supplierTaxNo": "1234567890"
 }
 ```
 
@@ -8737,12 +8798,18 @@ Response:
   {
     "stockCode": "MNV001",
     "stockName": "MNV DOMATES",
-    "barcode": "1234567"
+    "barcode": "1234567",
+    "unitName": "KG",
+    "modelCode": "10",
+    "wholesaleTaxPointer": 3
   },
   {
     "stockCode": "MNV002",
     "stockName": "MNV BIBER",
-    "barcode": "7654321"
+    "barcode": "7654321",
+    "unitName": "KG",
+    "modelCode": "11",
+    "wholesaleTaxPointer": 3
   }
 ]
 ```
@@ -8759,7 +8826,10 @@ Response:
 {
   "stockCode": "MNV001",
   "stockName": "MNV DOMATES",
-  "barcode": "1234567"
+  "barcode": "1234567",
+  "unitName": "KG",
+  "modelCode": "10",
+  "wholesaleTaxPointer": 3
 }
 ```
 
@@ -8775,7 +8845,10 @@ Response:
 {
   "stockCode": "MNV001",
   "stockName": "MNV DOMATES",
-  "barcode": "1234567"
+  "barcode": "1234567",
+  "unitName": "KG",
+  "modelCode": "10",
+  "wholesaleTaxPointer": 3
 }
 ```
 
@@ -8786,6 +8859,66 @@ Referans arama notlari:
 - `query` stok adi, stok kodu veya barkod icinde aranir
 - `*` karakteri SQL wildcard gibi `%` davranisina cevrilir
 - `suppliers/by-name`, `stocks/by-name` ve `stocks/{stockCode}` sonuc bulamazsa `404` doner
+
+### Gelen Fatura Cache
+
+Manav mal kabul ekrani gelen fatura listesini Auth DB'deki Uyumsoft inbox cache'inden okuyabilir.
+
+`GET /api/kasa-islemleri/manav-mal-kabul-etiket/incoming-invoices?startDate=2026-08-13&endDate=2026-08-13&supplierCode=32000297&take=100`
+
+Query:
+
+```text
+startDate        opsiyonel; bos ise endDate - 7 gun
+endDate          opsiyonel; bos ise bugun
+supplierCode     opsiyonel; verilirse Mikro cari kartinin VKN/TCKN veya unvaniyla gelen faturalar daraltilir
+searchText       opsiyonel; fatura no, documentId, tedarikci unvani, VKN/TCKN, irsaliye no veya siparis belge no icinde arar
+includeArchived  opsiyonel; default false
+take             opsiyonel; default 100, max 500
+```
+
+Response:
+
+```json
+[
+  {
+    "documentId": "9f4c0c1a-...",
+    "invoiceId": "GIB2026000012345",
+    "supplierTitle": "HAL TEDARIKCI A",
+    "supplierTaxNo": "1234567890",
+    "createDate": "2026-08-13T08:10:00",
+    "invoiceDate": "2026-08-13T00:00:00",
+    "invoiceType": "SATIS",
+    "invoiceTotal": 25004.0,
+    "taxExclusiveAmount": 24753.96,
+    "taxTotal": 250.04,
+    "despatchId": "IRS2026000099",
+    "isProcessed": false,
+    "isPrinted": false,
+    "isStandard": true,
+    "statusCode": "ACCEPTED",
+    "status": "Kabul edildi",
+    "message": "",
+    "documentCurrencyCode": "TRY",
+    "exchangeRate": 1.0,
+    "orderDocumentId": "",
+    "isArchived": false,
+    "invoiceTipType": "Temel Fatura",
+    "invoiceTipTypeCode": 0,
+    "isSeen": true,
+    "lastSynchronizedAtUtc": "2026-08-13T05:15:00Z",
+    "matchedSupplierCode": "32000297",
+    "matchedSupplierName": "HAL TEDARIKCI A",
+    "canStartAcceptance": true
+  }
+]
+```
+
+Not:
+
+- Bu endpoint fatura baslik/ozet bilgisini dondurur; Uyumsoft cache su an manav urun/tartim satirlarini tasimaz.
+- `matchedSupplierCode` VKN/TCKN eslesmesiyle dolarsa UI tedarikci alanini otomatik onerebilir.
+- `canStartAcceptance=false` ise UI yine manuel tedarikci secimine izin verebilir; fatura cache'i operasyonu bloke etmez.
 
 Hesaplama:
 
@@ -9072,17 +9205,27 @@ Alinan urunler raporu response:
 ```json
 [
   {
+    "supplierCode": "32000297",
     "supplierName": "TEDARIKCI A",
     "stockCode": "MNV001",
     "barcode": "1234567",
     "stockName": "MNV DOMATES",
+    "labelRowCount": 2,
+    "documentSeries": "MNV26",
+    "documentNo": "10, 11",
+    "seriesAndNumber": "MNV26 - 10, 11",
     "grossWeight": 100.0,
     "caseTotalTare": 12.0,
     "palletTare": 5.0,
     "caseCount": 10,
     "netReceivedWeight": 83.0,
     "invoiceQuantity": 80.0,
-    "invoiceDifference": 3.0
+    "invoiceDifference": -3.0,
+    "microRowCount": 1,
+    "microAmount": 2800.0,
+    "microDocument": "EFT261/2014",
+    "status": "FARKLI",
+    "unitName": "KG"
   }
 ]
 ```
@@ -9104,7 +9247,10 @@ Depo stok raporu response:
     "responsible": "SATINALMA SORUMLUSU",
     "currentStock": 125.5,
     "purchasePriceWithVat": 18.75,
-    "salesPrice": 24.9
+    "salesPrice": 24.9,
+    "barcode": "1234567",
+    "unitName": "KG",
+    "modelCode": "10"
   }
 ]
 ```
@@ -9115,6 +9261,9 @@ Rapor notlari:
 - kullanici kendi deposu disinda depo isterse ilgili tum depo yetkisi gerekir
 - alinan urunler raporu Furpa kabul kayitlarini canli Mikro manav mal kabul miktarlariyla karsilastirmak icindir
 - `invoiceQuantity` genel stok hareketlerinden degil, canli 2026 manav formatindan okunur: `sth_tip=0`, `sth_cins=16`, `sth_evraktip=3`, `sth_normal_iade=0`, `sth_giris_depo_no=56`, `sth_cikis_depo_no=1`, `sto_isim LIKE 'MNV%'`
+- `status` degeri `ESLESTI`, `YAKIN`, `FARKLI`, `SADECE_ETIKET` veya `SADECE_MIKRO` olabilir.
+- Rapor liste sirasi farki buyuk satirlari once gosterecek sekildedir; UI ilk bakilacak sorunlari en ustte gosterebilir.
+- Depo stok raporu barkod, birim ve model kodunu da dondurur; UI stok secimi veya etiket/kabul ekranina geciste bu alanlari kullanabilir.
 
 Canli Mikro manav mal kabul belgeleri:
 
@@ -9142,6 +9291,9 @@ Response belge bazlidir:
     "totalTax": 0.0,
     "firstCreatedAt": "2026-08-13T11:52:56.557",
     "lastCreatedAt": "2026-08-13T11:52:56.557",
+    "documentNo": "2014",
+    "invoiceGuid": "0c9f474b-c9dd-4f56-91e8-1e944bb77f53",
+    "offlineTraceKey": "FRMNV260813A1B2C3D4",
     "lines": [
       {
         "lineNo": 0,
@@ -9153,7 +9305,11 @@ Response belge bazlidir:
         "taxAmount": 0.0,
         "taxPointer": 0,
         "inWarehouseNo": 56,
-        "outWarehouseNo": 1
+        "outWarehouseNo": 1,
+        "movementGuid": "49f26b26-9f37-4d64-98e7-1e2f7a5e2d41",
+        "barcode": "2700108",
+        "unitName": "KG",
+        "description": "Domates"
       }
     ]
   }
@@ -9241,7 +9397,7 @@ Response:
   "totalAmount": 25004.0,
   "totalTax": 250.04,
   "updatedAcceptanceRecordCount": 1,
-  "offlineTraceKey": "FURPA-MNV-20260813-32000297-MNV26",
+  "offlineTraceKey": "FRMNV260813A1B2C3D4",
   "lines": [
     {
       "lineNo": 0,
@@ -9268,7 +9424,11 @@ Yazma kurallari:
 - `acceptanceRecordId` verilirse basarili yazmadan sonra ilgili Furpa etiket kaydi `Mikro_Aktarildi=1` olur.
 - `taxAmount` verilirse aynen yazilir; yoksa `taxRatePercent` varsa hesaplanir; ikisi de yoksa `0` yazilir.
 - `taxPointer` verilmezse stok kartinin `sto_toptan_vergi` degeri kullanilir.
-- Mikro format canli 2026 manav formatidir: `sth_tip=0`, `sth_cins=16`, `sth_evraktip=3`, `sth_giris_depo_no=56`, `sth_cikis_depo_no=1`, `sth_fiyat_liste_no=-1`.
+- Mikro format canli 2026 manav formatidir: once `CARI_HESAP_HAREKETLERI` basligi acilir, sonra `STOK_HAREKETLERI` satirlari bu basliga `sth_fat_uid = cha_Guid` ile baglanir.
+- Cari/fatura basligi canli alis faturasi formatina yakindir: `cha_fileid=51`, `cha_tip=1`, `cha_cinsi=35`, `cha_evrak_tip=0`, `cha_cari_cins=0`, `cha_kod=supplierCode`, `cha_ciro_cari_kodu=supplierCode`, `cha_srmrkkodu=56`, `cha_ebelge_turu=7`, `cha_fatura_belge_turu=0`.
+- Stok satiri formatinda `sth_tip=0`, `sth_cins=16`, `sth_evraktip=3`, `sth_giris_depo_no=56`, `sth_cikis_depo_no=1`, `sth_fiyat_liste_no=-1` kullanilir.
+- Alternatif doviz kuru Mikro `fn_KurBul(date, fn_FirmaAlternatifDovizCinsi(), 1)` fonksiyonundan okunur ve hem cari basliga hem stok satirlarina yazilir.
+- `offlineTraceKey` Mikro kolon uzunluguna uygun kisa izdir; `FRMNV{yyMMdd}{hash}` formatinda uretilir ve hem cari baslikta hem stok satirlarinda saklanir.
 - Ayni `date + documentSeries + documentOrderNo` icin manav mal kabul belgesi varsa API `409 Conflict` doner.
 
 ### Fiyati Degisen Etiket Urunleri
@@ -20971,6 +21131,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `CreateLabelDocumentLineHttpRequest`: `ProductCode`
 - `ManavMalKabulVeEtiketReferenceSearchHttpRequest`: `Query`, `Take`
 - `ManavMalKabulVeEtiketStockSearchHttpRequest`: `Query`, `Prefix`, `Take`
+- `ManavMalKabulVeEtiketIncomingInvoiceHttpRequest`: `StartDate`, `EndDate`, `SupplierCode`, `SearchText`, `IncludeArchived`, `Take`
 - `ManavMalKabulVeEtiketDateHttpRequest`: `Date`
 - `ManavMalKabulVeEtiketCalculationHttpRequest`: `GrossWeight`, `CaseTare`, `CaseCount`, `PalletTare`, `StockBarcode`
 - `SaveManavMalKabulVeEtiketAcceptanceRecordHttpRequest`: `SupplierCode`, `SupplierName`, `DocumentSeries`, `DocumentNo`, `StockCode`, `StockName`, `StockBarcode`, `GrossWeight`, `CaseTare`, `CaseCount`, `PalletTare`, `ReceivedBy`, `CaseType`

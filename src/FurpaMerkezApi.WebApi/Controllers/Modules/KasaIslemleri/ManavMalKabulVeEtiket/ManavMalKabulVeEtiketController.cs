@@ -75,6 +75,15 @@ public sealed class ManavMalKabulVeEtiketController(IManavMalKabulVeEtiketServic
         CancellationToken cancellationToken) =>
         Ok(await service.GetStockByCodeAsync(stockCode, cancellationToken));
 
+    [HttpGet("incoming-invoices")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ManavMalKabulVeEtiketIncomingInvoiceDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<ManavMalKabulVeEtiketIncomingInvoiceDto>>> ListIncomingInvoices(
+        [FromQuery] ManavMalKabulVeEtiketIncomingInvoiceHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.ListIncomingInvoicesAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpGet("acceptance-records")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<ManavMalKabulVeEtiketAcceptanceRecordDto>), StatusCodes.Status200OK)]
@@ -239,6 +248,37 @@ public sealed class ManavMalKabulVeEtiketDateHttpRequest
 
     public DateTime GetRequiredDate() =>
         Date?.Date ?? throw new ArgumentException("Date is required.", nameof(Date));
+}
+
+public sealed class ManavMalKabulVeEtiketIncomingInvoiceHttpRequest
+{
+    public DateTime? StartDate { get; init; }
+
+    public DateTime? EndDate { get; init; }
+
+    [StringLength(25)]
+    public string? SupplierCode { get; init; }
+
+    [StringLength(120)]
+    public string? SearchText { get; init; }
+
+    public bool IncludeArchived { get; init; }
+
+    [Range(1, 500)]
+    public int Take { get; init; } = 100;
+
+    public ManavMalKabulVeEtiketIncomingInvoiceQuery ToApplicationRequest()
+    {
+        var endDate = (EndDate ?? DateTime.Today).Date;
+        var startDate = (StartDate ?? endDate.AddDays(-7)).Date;
+        return new ManavMalKabulVeEtiketIncomingInvoiceQuery(
+            startDate,
+            endDate,
+            SupplierCode,
+            SearchText,
+            IncludeArchived,
+            Take);
+    }
 }
 
 public sealed class ManavMalKabulVeEtiketDepotStockReportHttpRequest

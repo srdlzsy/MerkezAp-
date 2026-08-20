@@ -1,6 +1,10 @@
 using System.Data;
 using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
+using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -9,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 
 public sealed class ManavMalKabulVeEtiketService(
+    AuthDbContext authDbContext,
     FurpaDbContext furpaDbContext,
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext) : IManavMalKabulVeEtiketService
@@ -17,11 +22,17 @@ public sealed class ManavMalKabulVeEtiketService(
     private const int MaxTake = 100;
     private const string DefaultStockPrefix = "MNV";
     private const short MovementFileId = 16;
+    private const short CustomerMovementFileId = 51;
     private const short DefaultMikroUserNo = 39;
     private const byte IncomingMovementType = 0;
+    private const byte CustomerInvoiceMovementType = 1;
     private const byte GreenGrocerGoodsReceiptGenre = 16;
+    private const byte GreenGrocerCustomerInvoiceGenre = 35;
     private const byte NormalMovement = 0;
     private const byte GreenGrocerGoodsReceiptDocumentType = 3;
+    private const byte GreenGrocerCustomerInvoiceDocumentType = 0;
+    private const byte GreenGrocerCustomerInvoiceElectronicDocumentType = 7;
+    private const byte GreenGrocerCustomerInvoiceDocumentKind = 0;
     private const int GreenGrocerWarehouseNo = 56;
     private const int MainWarehouseNo = 1;
     private const int FirstDocumentOrderNo = 0;
@@ -45,7 +56,9 @@ public sealed class ManavMalKabulVeEtiketService(
         command.CommandText = """
             SELECT TOP (@take)
                 LTRIM(RTRIM(cari_kod)) AS SupplierCode,
-                LTRIM(RTRIM(cari_unvan1)) AS SupplierName
+                LTRIM(RTRIM(cari_unvan1)) AS SupplierName,
+                LTRIM(RTRIM(ISNULL(cari_unvan2, ''))) AS SupplierTitle2,
+                LTRIM(RTRIM(ISNULL(NULLIF(cari_VergiKimlikNo, ''), cari_vdaire_no))) AS SupplierTaxNo
             FROM dbo.CARI_HESAPLAR WITH (NOLOCK)
             WHERE cari_unvan1 IS NOT NULL
               AND LTRIM(RTRIM(cari_unvan1)) <> ''
@@ -69,7 +82,9 @@ public sealed class ManavMalKabulVeEtiketService(
         {
             suppliers.Add(new ManavMalKabulVeEtiketSupplierSuggestionDto(
                 ReadString(reader, "SupplierCode"),
-                ReadString(reader, "SupplierName")));
+                ReadString(reader, "SupplierName"),
+                ReadString(reader, "SupplierTitle2"),
+                ReadString(reader, "SupplierTaxNo")));
         }
 
         return suppliers;
@@ -106,7 +121,10 @@ public sealed class ManavMalKabulVeEtiketService(
             SELECT TOP (@take)
                 LTRIM(RTRIM(stock.sto_kod)) AS StockCode,
                 LTRIM(RTRIM(stock.sto_isim)) AS StockName,
-                ISNULL(barcode.bar_kodu, '') AS Barcode
+                ISNULL(barcode.bar_kodu, '') AS Barcode,
+                LTRIM(RTRIM(ISNULL(stock.sto_birim1_ad, ''))) AS UnitName,
+                LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, ''))) AS ModelCode,
+                ISNULL(stock.sto_toptan_vergi, 0) AS WholesaleTaxPointer
             FROM dbo.STOKLAR AS stock WITH (NOLOCK)
             OUTER APPLY
             (
@@ -144,7 +162,10 @@ public sealed class ManavMalKabulVeEtiketService(
             stocks.Add(new ManavMalKabulVeEtiketStockSuggestionDto(
                 ReadString(reader, "StockCode"),
                 ReadString(reader, "StockName"),
-                ReadString(reader, "Barcode")));
+                ReadString(reader, "Barcode"),
+                ReadString(reader, "UnitName"),
+                ReadString(reader, "ModelCode"),
+                ReadInt(reader, "WholesaleTaxPointer")));
         }
 
         return stocks;
@@ -170,6 +191,74 @@ public sealed class ManavMalKabulVeEtiketService(
 
         var stock = await FindStockAsync("stock.sto_isim = @value", normalizedName, cancellationToken);
         return stock ?? throw new KeyNotFoundException("Stock was not found.");
+    }
+
+    public async Task<IReadOnlyCollection<ManavMalKabulVeEtiketIncomingInvoiceDto>> ListIncomingInvoicesAsync(
+        ManavMalKabulVeEtiketIncomingInvoiceQuery request,
+        CancellationToken cancellationToken)
+    {
+        var startDate = request.StartDate.Date;
+        var endDate = request.EndDate.Date;
+        if (endDate < startDate)
+        {
+            throw new ArgumentException("End date can not be earlier than start date.", nameof(request.EndDate));
+        }
+
+        var supplierCode = NormalizeOrNull(request.SupplierCode);
+        var supplierFilter = supplierCode is null
+            ? null
+            : await LoadSupplierFilterAsync(supplierCode, cancellationToken);
+        var searchText = NormalizeOrNull(request.SearchText);
+        var take = Math.Clamp(request.Take <= 0 ? 100 : request.Take, 1, 500);
+        var endExclusive = endDate.AddDays(1);
+
+        var query = authDbContext.UyumsoftInboxInvoices
+            .AsNoTracking()
+            .Where(invoice =>
+                (invoice.InvoiceDate ?? invoice.CreateDate) >= startDate &&
+                (invoice.InvoiceDate ?? invoice.CreateDate) < endExclusive);
+
+        if (!request.IncludeArchived)
+        {
+            query = query.Where(invoice => !invoice.IsArchived);
+        }
+
+        if (supplierFilter is not null)
+        {
+            query = query.Where(invoice =>
+                (!string.IsNullOrEmpty(supplierFilter.TaxNo) && invoice.CustomerTcknVkn == supplierFilter.TaxNo) ||
+                (!string.IsNullOrEmpty(supplierFilter.SupplierName) && invoice.CustomerTitle.Contains(supplierFilter.SupplierName)));
+        }
+
+        if (searchText is not null)
+        {
+            query = query.Where(invoice =>
+                invoice.InvoiceId.Contains(searchText) ||
+                invoice.DocumentId.Contains(searchText) ||
+                invoice.CustomerTitle.Contains(searchText) ||
+                invoice.CustomerTcknVkn.Contains(searchText) ||
+                invoice.DespatchId.Contains(searchText) ||
+                invoice.OrderDocumentId.Contains(searchText));
+        }
+
+        var invoices = await query
+            .OrderByDescending(invoice => invoice.InvoiceDate ?? invoice.CreateDate)
+            .ThenByDescending(invoice => invoice.LastSynchronizedAtUtc)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+
+        var supplierMatches = await LoadSupplierMatchesByTaxNoAsync(
+            invoices
+                .Select(invoice => NormalizeOrNull(invoice.CustomerTcknVkn))
+                .Where(taxNo => taxNo is not null)
+                .Select(taxNo => taxNo!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            cancellationToken);
+
+        return invoices
+            .Select(invoice => MapIncomingInvoice(invoice, supplierMatches, supplierFilter))
+            .ToArray();
     }
 
     public ManavMalKabulVeEtiketCalculationDto Calculate(ManavMalKabulVeEtiketCalculationRequest request) =>
@@ -409,14 +498,17 @@ public sealed class ManavMalKabulVeEtiketService(
         DateTime date,
         CancellationToken cancellationToken)
     {
-        var receivedGroups = await ReadReceivedProductGroupsAsync(date.Date, cancellationToken);
-        var invoiceQuantities = await ReadInvoiceQuantitiesAsync(date.Date, cancellationToken);
+        var receivedGroups = await ReadReceivedProductReportGroupsAsync(date.Date, cancellationToken);
+        var microGroups = await ReadMicroReceiptReportGroupsAsync(date.Date, cancellationToken);
 
         return receivedGroups
             .Select(group =>
             {
-                var invoiceQuantity = invoiceQuantities.GetValueOrDefault(
-                    BuildInvoiceKey(group.SupplierName, group.StockCode));
+                var microGroup = microGroups.GetValueOrDefault(BuildInvoiceKey(group.SupplierCode, group.StockCode)) ??
+                                 microGroups.GetValueOrDefault(BuildInvoiceKey(group.SupplierName, group.StockCode));
+                var invoiceQuantity = microGroup?.MicroQuantity ?? 0m;
+                var difference = Round(invoiceQuantity - group.NetReceivedWeight);
+                var status = ResolveComparisonStatus(group.LabelRowCount, microGroup?.MicroRowCount ?? 0, difference);
                 return new ManavMalKabulVeEtiketReceivedProductReportItemDto(
                     group.SupplierName,
                     group.StockCode,
@@ -428,9 +520,21 @@ public sealed class ManavMalKabulVeEtiketService(
                     group.CaseCount,
                     group.NetReceivedWeight,
                     invoiceQuantity,
-                    Round(invoiceQuantity - group.NetReceivedWeight));
+                    difference,
+                    group.SupplierCode,
+                    group.LabelRowCount,
+                    group.DocumentSeries,
+                    group.DocumentNo,
+                    group.SeriesAndNumber,
+                    microGroup?.MicroRowCount ?? 0,
+                    microGroup?.MicroAmount ?? 0m,
+                    microGroup?.MicroDocument,
+                    status,
+                    microGroup?.UnitName);
             })
-            .OrderBy(item => item.InvoiceDifference)
+            .OrderByDescending(item => Math.Abs(item.InvoiceDifference))
+            .ThenBy(item => item.SupplierName)
+            .ThenBy(item => item.StockName)
             .ToArray();
     }
 
@@ -453,6 +557,9 @@ public sealed class ManavMalKabulVeEtiketService(
                 SELECT
                     movement.sth_stok_kod AS StockCode,
                     stock.sto_isim AS StockName,
+                    MAX(ISNULL(barcode.bar_kodu, '')) AS Barcode,
+                    LTRIM(RTRIM(ISNULL(stock.sto_birim1_ad, ''))) AS UnitName,
+                    LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, ''))) AS ModelCode,
                     ROUND(SUM(
                         CASE
                             WHEN (movement.sth_tip = 0) OR ((movement.sth_tip = 2) AND (movement.sth_giris_depo_no = @warehouseNo))
@@ -490,6 +597,18 @@ public sealed class ManavMalKabulVeEtiketService(
                     ON stock.sto_kod = movement.sth_stok_kod
                 INNER JOIN dbo.CARI_PERSONEL_TANIMLARI AS person WITH (NOLOCK)
                     ON stock.sto_urun_sorkod = person.cari_per_kod
+                OUTER APPLY
+                (
+                    SELECT TOP (1) LTRIM(RTRIM(item.bar_kodu)) AS bar_kodu
+                    FROM dbo.BARKOD_TANIMLARI AS item WITH (NOLOCK)
+                    WHERE item.bar_stokkodu = movement.sth_stok_kod
+                      AND ISNULL(item.bar_iptal, 0) <> 1
+                      AND item.bar_kodu IS NOT NULL
+                      AND LTRIM(RTRIM(item.bar_kodu)) <> ''
+                    ORDER BY ISNULL(item.bar_master, 0) DESC,
+                             ISNULL(item.bar_birimpntr, 0),
+                             item.bar_create_date DESC
+                ) AS barcode
                 WHERE movement.sth_tarih <= @date
                   AND
                   (
@@ -506,6 +625,8 @@ public sealed class ManavMalKabulVeEtiketService(
                 GROUP BY
                     movement.sth_stok_kod,
                     stock.sto_isim,
+                    stock.sto_birim1_ad,
+                    stock.sto_model_kodu,
                     person.cari_per_adi,
                     person.cari_per_soyadi
                 HAVING ROUND(SUM(
@@ -521,6 +642,9 @@ public sealed class ManavMalKabulVeEtiketService(
             SELECT
                 StockCode,
                 StockName,
+                Barcode,
+                UnitName,
+                ModelCode,
                 Responsible,
                 CurrentStock,
                 PurchasePriceWithVat,
@@ -543,7 +667,10 @@ public sealed class ManavMalKabulVeEtiketService(
                 ReadString(reader, "Responsible"),
                 ReadDecimal(reader, "CurrentStock"),
                 ReadDecimal(reader, "PurchasePriceWithVat"),
-                ReadDecimal(reader, "SalesPrice")));
+                ReadDecimal(reader, "SalesPrice"),
+                ReadString(reader, "Barcode"),
+                ReadString(reader, "UnitName"),
+                ReadString(reader, "ModelCode")));
         }
 
         return rows;
@@ -569,10 +696,16 @@ public sealed class ManavMalKabulVeEtiketService(
                 LTRIM(RTRIM(movement.sth_evrakno_seri)) AS DocumentSeries,
                 movement.sth_evrakno_sira AS DocumentOrderNo,
                 movement.sth_satirno AS LineNo,
+                CONVERT(varchar(36), movement.sth_Guid) AS MovementGuid,
+                ISNULL(movement.sth_belge_no, '') AS DocumentNo,
+                ISNULL(CONVERT(varchar(36), movement.sth_fat_uid), '') AS InvoiceGuid,
+                ISNULL(movement.sth_eticaret_kanal_kodu, '') AS OfflineTraceKey,
                 LTRIM(RTRIM(movement.sth_cari_kodu)) AS SupplierCode,
                 LTRIM(RTRIM(ISNULL(customer.cari_unvan1, ''))) AS SupplierName,
                 LTRIM(RTRIM(movement.sth_stok_kod)) AS StockCode,
                 LTRIM(RTRIM(stock.sto_isim)) AS StockName,
+                ISNULL(barcode.bar_kodu, '') AS Barcode,
+                LTRIM(RTRIM(ISNULL(stock.sto_birim1_ad, ''))) AS UnitName,
                 ROUND(ISNULL(movement.sth_miktar, 0), 4) AS Quantity,
                 ROUND(ISNULL(movement.sth_tutar, 0), 4) AS Amount,
                 ROUND(ISNULL(movement.sth_vergi, 0), 4) AS TaxAmount,
@@ -580,12 +713,25 @@ public sealed class ManavMalKabulVeEtiketService(
                 movement.sth_giris_depo_no AS InWarehouseNo,
                 movement.sth_cikis_depo_no AS OutWarehouseNo,
                 movement.sth_create_user AS CreateUserNo,
-                movement.sth_create_date AS CreatedAt
+                movement.sth_create_date AS CreatedAt,
+                ISNULL(movement.sth_aciklama, '') AS Description
             FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
             INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
                 ON stock.sto_kod = movement.sth_stok_kod
             LEFT JOIN dbo.CARI_HESAPLAR AS customer WITH (NOLOCK)
                 ON customer.cari_kod = movement.sth_cari_kodu
+            OUTER APPLY
+            (
+                SELECT TOP (1) LTRIM(RTRIM(item.bar_kodu)) AS bar_kodu
+                FROM dbo.BARKOD_TANIMLARI AS item WITH (NOLOCK)
+                WHERE item.bar_stokkodu = movement.sth_stok_kod
+                  AND ISNULL(item.bar_iptal, 0) <> 1
+                  AND item.bar_kodu IS NOT NULL
+                  AND LTRIM(RTRIM(item.bar_kodu)) <> ''
+                ORDER BY ISNULL(item.bar_master, 0) DESC,
+                         ISNULL(item.bar_birimpntr, 0),
+                         item.bar_create_date DESC
+            ) AS barcode
             WHERE CAST(movement.sth_tarih AS date) = @date
               AND (@supplierCode IS NULL OR LTRIM(RTRIM(movement.sth_cari_kodu)) = @supplierCode)
               AND movement.sth_tip = 0
@@ -614,10 +760,16 @@ public sealed class ManavMalKabulVeEtiketService(
                 ReadString(reader, "DocumentSeries"),
                 ReadInt(reader, "DocumentOrderNo"),
                 ReadInt(reader, "LineNo"),
+                ReadString(reader, "MovementGuid"),
+                ReadString(reader, "DocumentNo"),
+                ReadString(reader, "InvoiceGuid"),
+                ReadString(reader, "OfflineTraceKey"),
                 ReadString(reader, "SupplierCode"),
                 ReadString(reader, "SupplierName"),
                 ReadString(reader, "StockCode"),
                 ReadString(reader, "StockName"),
+                ReadString(reader, "Barcode"),
+                ReadString(reader, "UnitName"),
                 ReadDecimal(reader, "Quantity"),
                 ReadDecimal(reader, "Amount"),
                 ReadDecimal(reader, "TaxAmount"),
@@ -625,7 +777,8 @@ public sealed class ManavMalKabulVeEtiketService(
                 ReadInt(reader, "InWarehouseNo"),
                 ReadInt(reader, "OutWarehouseNo"),
                 ReadInt(reader, "CreateUserNo"),
-                ReadDateTime(reader, "CreatedAt")));
+                ReadDateTime(reader, "CreatedAt"),
+                ReadString(reader, "Description")));
         }
 
         return rows
@@ -636,7 +789,10 @@ public sealed class ManavMalKabulVeEtiketService(
                 row.DocumentOrderNo,
                 row.SupplierCode,
                 row.SupplierName,
-                row.CreateUserNo
+                row.CreateUserNo,
+                row.DocumentNo,
+                row.InvoiceGuid,
+                row.OfflineTraceKey
             })
             .Select(group =>
             {
@@ -651,7 +807,11 @@ public sealed class ManavMalKabulVeEtiketService(
                         row.TaxAmount,
                         row.TaxPointer,
                         row.InWarehouseNo,
-                        row.OutWarehouseNo))
+                        row.OutWarehouseNo,
+                        row.MovementGuid,
+                        row.Barcode,
+                        row.UnitName,
+                        row.Description))
                     .ToArray();
 
                 return new ManavMalKabulVeEtiketMicroGoodsReceiptDocumentDto(
@@ -668,7 +828,10 @@ public sealed class ManavMalKabulVeEtiketService(
                     Round(lines.Sum(line => line.TaxAmount)),
                     group.Min(row => row.CreatedAt),
                     group.Max(row => row.CreatedAt),
-                    lines);
+                    lines,
+                    group.Key.DocumentNo,
+                    group.Key.InvoiceGuid,
+                    group.Key.OfflineTraceKey);
             })
             .OrderBy(item => item.FirstCreatedAt)
             .ThenBy(item => item.DocumentSeries)
@@ -809,10 +972,10 @@ public sealed class ManavMalKabulVeEtiketService(
             throw new ArgumentException("MNV stock was not found: " + string.Join(", ", missingStocks), nameof(request.Lines));
         }
 
-        var supplierExists = await mikroWriteDbContext.CARI_HESAPLARs
+        var supplier = await mikroWriteDbContext.CARI_HESAPLARs
             .AsNoTracking()
-            .AnyAsync(customer => customer.cari_kod == normalized.SupplierCode, cancellationToken);
-        if (!supplierExists)
+            .FirstOrDefaultAsync(customer => customer.cari_kod == normalized.SupplierCode, cancellationToken);
+        if (supplier is null)
         {
             throw new ArgumentException("Supplier was not found.", nameof(request.SupplierCode));
         }
@@ -821,86 +984,228 @@ public sealed class ManavMalKabulVeEtiketService(
         var documentSeries = normalized.DocumentSeries ?? "MNV";
         var createUserNo = Convert.ToInt16(normalized.MikroUserNo ?? DefaultMikroUserNo);
         var offlineTraceKey = BuildOfflineTraceKey(normalized.Date, normalized.SupplierCode, documentSeries);
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-
-        var documentOrderNo = normalized.DocumentOrderNo
-                              ?? await GetNextMicroGoodsReceiptOrderNoAsync(documentSeries, cancellationToken);
-        var documentNo = NormalizeOrNull(normalized.DocumentNo) ?? documentOrderNo.ToString();
-
-        var duplicateExists = await mikroWriteDbContext.STOK_HAREKETLERIs
-            .AnyAsync(movement =>
-                    movement.sth_tarih == normalized.Date &&
-                    movement.sth_tip == IncomingMovementType &&
-                    movement.sth_cins == GreenGrocerGoodsReceiptGenre &&
-                    movement.sth_normal_iade == NormalMovement &&
-                    movement.sth_evraktip == GreenGrocerGoodsReceiptDocumentType &&
-                    movement.sth_evrakno_seri == documentSeries &&
-                    movement.sth_evrakno_sira == documentOrderNo &&
-                    movement.sth_giris_depo_no == GreenGrocerWarehouseNo &&
-                    movement.sth_cikis_depo_no == MainWarehouseNo,
-                cancellationToken);
-        if (duplicateExists)
+        return await executionStrategy.ExecuteAsync(async () =>
         {
-            throw new InvalidOperationException(
-                $"Mikro manav mal kabul belgesi zaten var: {documentSeries}/{documentOrderNo}.");
+            mikroWriteDbContext.ChangeTracker.Clear();
+            var alternativeCurrencyRate = await GetAlternativeCurrencyRateAsync(normalized.Date, cancellationToken);
+
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            try
+            {
+                var documentOrderNo = normalized.DocumentOrderNo
+                                      ?? await GetNextMicroGoodsReceiptOrderNoAsync(documentSeries, cancellationToken);
+                var documentNo = NormalizeOrNull(normalized.DocumentNo) ?? documentOrderNo.ToString();
+
+                var duplicateExists = await mikroWriteDbContext.STOK_HAREKETLERIs
+                    .AnyAsync(movement =>
+                            movement.sth_tarih == normalized.Date &&
+                            movement.sth_tip == IncomingMovementType &&
+                            movement.sth_cins == GreenGrocerGoodsReceiptGenre &&
+                            movement.sth_normal_iade == NormalMovement &&
+                            movement.sth_evraktip == GreenGrocerGoodsReceiptDocumentType &&
+                            movement.sth_evrakno_seri == documentSeries &&
+                            movement.sth_evrakno_sira == documentOrderNo &&
+                            movement.sth_giris_depo_no == GreenGrocerWarehouseNo &&
+                            movement.sth_cikis_depo_no == MainWarehouseNo,
+                        cancellationToken);
+                if (duplicateExists)
+                {
+                    throw new InvalidOperationException(
+                        $"Mikro manav mal kabul belgesi zaten var: {documentSeries}/{documentOrderNo}.");
+                }
+
+                var invoiceGuid = Guid.NewGuid();
+                var movementRows = normalized.Lines
+                    .Select((line, index) => CreateMicroGoodsReceiptMovement(
+                        normalized,
+                        line,
+                        stockInfos[line.StockCode],
+                        invoiceGuid,
+                        documentSeries,
+                        documentOrderNo,
+                        documentNo,
+                        createUserNo,
+                        index,
+                        now,
+                        alternativeCurrencyRate,
+                        offlineTraceKey))
+                    .ToArray();
+                var customerMovement = CreateMicroGoodsReceiptCustomerMovement(
+                    normalized,
+                    supplier,
+                    invoiceGuid,
+                    documentSeries,
+                    documentOrderNo,
+                    documentNo,
+                    createUserNo,
+                    now,
+                    alternativeCurrencyRate,
+                    movementRows,
+                    offlineTraceKey);
+
+                await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AddAsync(customerMovement, cancellationToken);
+                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+
+                var updatedAcceptanceRecordCount = normalized.MarkAcceptanceRecordsTransferred
+                    ? await MarkAcceptanceRecordsTransferredAsync(normalized.Lines, cancellationToken)
+                    : 0;
+
+                await transaction.CommitAsync(cancellationToken);
+
+                var resultLines = movementRows
+                    .Select(row => new ManavMalKabulVeEtiketMicroGoodsReceiptLineDto(
+                        row.sth_satirno ?? 0,
+                        row.sth_stok_kod ?? string.Empty,
+                        stockInfos[row.sth_stok_kod ?? string.Empty].StockName,
+                        Convert.ToDecimal(row.sth_miktar ?? 0d),
+                        row.sth_miktar.GetValueOrDefault() == 0d
+                            ? 0m
+                            : Round(Convert.ToDecimal(row.sth_tutar.GetValueOrDefault() / row.sth_miktar.GetValueOrDefault())),
+                        Convert.ToDecimal(row.sth_tutar ?? 0d),
+                        Convert.ToDecimal(row.sth_vergi ?? 0d),
+                        row.sth_vergi_pntr ?? 0,
+                        row.sth_giris_depo_no ?? 0,
+                        row.sth_cikis_depo_no ?? 0,
+                        row.sth_Guid.ToString(),
+                        null,
+                        null,
+                        row.sth_aciklama))
+                    .ToArray();
+
+                return new ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto(
+                    normalized.Date,
+                    documentSeries,
+                    documentOrderNo,
+                    documentSeries + "/" + documentOrderNo,
+                    normalized.SupplierCode,
+                    createUserNo,
+                    resultLines.Length,
+                    Round(resultLines.Sum(line => line.Quantity)),
+                    Round(resultLines.Sum(line => line.Amount)),
+                    Round(resultLines.Sum(line => line.TaxAmount)),
+                    updatedAcceptanceRecordCount,
+                    offlineTraceKey,
+                    resultLines);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    private async Task<SupplierInvoiceMatch?> LoadSupplierFilterAsync(
+        string supplierCode,
+        CancellationToken cancellationToken)
+    {
+        var supplier = await mikroDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .Where(customer => customer.cari_kod == supplierCode)
+            .Select(customer => new
+            {
+                SupplierCode = customer.cari_kod ?? string.Empty,
+                SupplierName = customer.cari_unvan1 ?? string.Empty,
+                TaxNo = customer.cari_VergiKimlikNo ?? customer.cari_vdaire_no ?? string.Empty
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return supplier is null
+            ? throw new KeyNotFoundException("Supplier was not found.")
+            : new SupplierInvoiceMatch(
+                supplier.SupplierCode.Trim(),
+                supplier.SupplierName.Trim(),
+                NormalizeOrNull(supplier.TaxNo));
+    }
+
+    private async Task<IReadOnlyDictionary<string, SupplierInvoiceMatch>> LoadSupplierMatchesByTaxNoAsync(
+        IReadOnlyCollection<string> taxNos,
+        CancellationToken cancellationToken)
+    {
+        if (taxNos.Count == 0)
+        {
+            return new Dictionary<string, SupplierInvoiceMatch>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var movementRows = normalized.Lines
-            .Select((line, index) => CreateMicroGoodsReceiptMovement(
-                normalized,
-                line,
-                stockInfos[line.StockCode],
-                documentSeries,
-                documentOrderNo,
-                documentNo,
-                createUserNo,
-                index,
-                now,
-                offlineTraceKey))
+        var normalizedTaxNos = taxNos
+            .Select(NormalizeOrNull)
+            .Where(taxNo => taxNo is not null)
+            .Select(taxNo => taxNo!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        if (normalizedTaxNos.Length == 0)
+        {
+            return new Dictionary<string, SupplierInvoiceMatch>(StringComparer.OrdinalIgnoreCase);
+        }
 
-        await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
-        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+        var matches = await mikroDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .Where(customer =>
+                normalizedTaxNos.Contains(customer.cari_VergiKimlikNo ?? string.Empty) ||
+                normalizedTaxNos.Contains(customer.cari_vdaire_no ?? string.Empty))
+            .Select(customer => new
+            {
+                SupplierCode = customer.cari_kod ?? string.Empty,
+                SupplierName = customer.cari_unvan1 ?? string.Empty,
+                TaxNo = customer.cari_VergiKimlikNo ?? customer.cari_vdaire_no ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
 
-        var updatedAcceptanceRecordCount = normalized.MarkAcceptanceRecordsTransferred
-            ? await MarkAcceptanceRecordsTransferredAsync(normalized.Lines, cancellationToken)
-            : 0;
+        return matches
+            .Select(match => new SupplierInvoiceMatch(
+                match.SupplierCode.Trim(),
+                match.SupplierName.Trim(),
+                NormalizeOrNull(match.TaxNo)))
+            .Where(match => match.TaxNo is not null)
+            .GroupBy(match => match.TaxNo!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+    }
 
-        await transaction.CommitAsync(cancellationToken);
+    private static ManavMalKabulVeEtiketIncomingInvoiceDto MapIncomingInvoice(
+        UyumsoftInboxInvoice invoice,
+        IReadOnlyDictionary<string, SupplierInvoiceMatch> supplierMatches,
+        SupplierInvoiceMatch? supplierFilter)
+    {
+        var taxNo = NormalizeOrNull(invoice.CustomerTcknVkn);
+        var matchedSupplier = taxNo is not null && supplierMatches.TryGetValue(taxNo, out var match)
+            ? match
+            : supplierFilter;
 
-        var resultLines = movementRows
-            .Select(row => new ManavMalKabulVeEtiketMicroGoodsReceiptLineDto(
-                row.sth_satirno ?? 0,
-                row.sth_stok_kod ?? string.Empty,
-                stockInfos[row.sth_stok_kod ?? string.Empty].StockName,
-                Convert.ToDecimal(row.sth_miktar ?? 0d),
-                row.sth_miktar.GetValueOrDefault() == 0d
-                    ? 0m
-                    : Round(Convert.ToDecimal(row.sth_tutar.GetValueOrDefault() / row.sth_miktar.GetValueOrDefault())),
-                Convert.ToDecimal(row.sth_tutar ?? 0d),
-                Convert.ToDecimal(row.sth_vergi ?? 0d),
-                row.sth_vergi_pntr ?? 0,
-                row.sth_giris_depo_no ?? 0,
-                row.sth_cikis_depo_no ?? 0))
-            .ToArray();
-
-        return new ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto(
-            normalized.Date,
-            documentSeries,
-            documentOrderNo,
-            documentSeries + "/" + documentOrderNo,
-            normalized.SupplierCode,
-            createUserNo,
-            resultLines.Length,
-            Round(resultLines.Sum(line => line.Quantity)),
-            Round(resultLines.Sum(line => line.Amount)),
-            Round(resultLines.Sum(line => line.TaxAmount)),
-            updatedAcceptanceRecordCount,
-            offlineTraceKey,
-            resultLines);
+        return new ManavMalKabulVeEtiketIncomingInvoiceDto(
+            invoice.DocumentId,
+            invoice.InvoiceId,
+            invoice.CustomerTitle,
+            invoice.CustomerTcknVkn,
+            invoice.CreateDate,
+            invoice.InvoiceDate,
+            invoice.InvoiceType,
+            invoice.InvoiceTotal,
+            invoice.TaxExclusiveAmount,
+            invoice.TaxTotal,
+            invoice.DespatchId,
+            invoice.IsProcessed,
+            invoice.IsPrinted,
+            invoice.IsStandard,
+            invoice.StatusCode,
+            invoice.Status,
+            invoice.Message,
+            invoice.DocumentCurrencyCode,
+            invoice.ExchangeRate,
+            invoice.OrderDocumentId,
+            invoice.IsArchived,
+            invoice.InvoiceTipType,
+            invoice.InvoiceTipTypeCode,
+            invoice.IsSeen,
+            invoice.LastSynchronizedAtUtc,
+            matchedSupplier?.SupplierCode,
+            matchedSupplier?.SupplierName,
+            matchedSupplier is not null);
     }
 
     public ManavMalKabulVeEtiketMicroTransferUnavailableDto ExplainMicroTransferAvailability(
@@ -917,9 +1222,9 @@ public sealed class ManavMalKabulVeEtiketService(
         }
 
         return new ManavMalKabulVeEtiketMicroTransferUnavailableDto(
-            false,
-            "Mikro mal kabul yazma bu API surumunde bilerek kapali. 2026 canli akisinda etiket tablosu tartim/etiket kaydi, Mikro mal kabul ise ayrica fiyatli STOK_HAREKETLERI belgesi olarak olusuyor.",
-            "Yazma acilacaksa tarih + cari + fiyatli satir onayi alinmali, canli format sth_tip=0/sth_cins=16/sth_evraktip=3/giris_depo=56/cikis_depo=1 korunmali ve duplicate/idempotency kontrolu ayni transaction icinde yapilmalidir.");
+            true,
+            "Mikro mal kabul yazma aktif. UI tarih + cari + fiyatli satir onayi aldiktan sonra aktarim yapabilir.",
+            "Canli format korunur: CARI_HESAP_HAREKETLERI fatura basligi acilir, STOK_HAREKETLERI satirlari sth_fat_uid ile bu basliga baglanir; duplicate kontrolu ayni transaction icinde yapilir.");
     }
 
     private async Task<ManavMalKabulVeEtiketStockSuggestionDto?> FindStockAsync(
@@ -933,7 +1238,10 @@ public sealed class ManavMalKabulVeEtiketService(
             SELECT TOP (1)
                 LTRIM(RTRIM(stock.sto_kod)) AS StockCode,
                 LTRIM(RTRIM(stock.sto_isim)) AS StockName,
-                ISNULL(barcode.bar_kodu, '') AS Barcode
+                ISNULL(barcode.bar_kodu, '') AS Barcode,
+                LTRIM(RTRIM(ISNULL(stock.sto_birim1_ad, ''))) AS UnitName,
+                LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, ''))) AS ModelCode,
+                ISNULL(stock.sto_toptan_vergi, 0) AS WholesaleTaxPointer
             FROM dbo.STOKLAR AS stock WITH (NOLOCK)
             OUTER APPLY
             (
@@ -959,7 +1267,10 @@ public sealed class ManavMalKabulVeEtiketService(
             ? new ManavMalKabulVeEtiketStockSuggestionDto(
                 ReadString(reader, "StockCode"),
                 ReadString(reader, "StockName"),
-                ReadString(reader, "Barcode"))
+                ReadString(reader, "Barcode"),
+                ReadString(reader, "UnitName"),
+                ReadString(reader, "ModelCode"),
+                ReadInt(reader, "WholesaleTaxPointer"))
             : null;
     }
 
@@ -1018,10 +1329,15 @@ public sealed class ManavMalKabulVeEtiketService(
         while (await reader.ReadAsync(cancellationToken))
         {
             groups.Add(new ReceivedProductGroup(
+                string.Empty,
                 ReadString(reader, "SupplierName"),
                 ReadString(reader, "StockCode"),
                 ReadString(reader, "Barcode"),
                 ReadString(reader, "StockName"),
+                0,
+                string.Empty,
+                string.Empty,
+                string.Empty,
                 ReadDecimal(reader, "GrossWeight"),
                 ReadDecimal(reader, "CaseTotalTare"),
                 ReadDecimal(reader, "PalletTare"),
@@ -1030,6 +1346,125 @@ public sealed class ManavMalKabulVeEtiketService(
         }
 
         return groups;
+    }
+
+    private async Task<IReadOnlyCollection<ReceivedProductGroup>> ReadReceivedProductReportGroupsAsync(
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        var groups = new List<ReceivedProductGroup>();
+        await using var lease = await OpenConnectionAsync(furpaDbContext.Database.GetDbConnection(), cancellationToken);
+        using var command = lease.Connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                LTRIM(RTRIM(ISNULL(Cari_Kod, ''))) AS SupplierCode,
+                MAX(LTRIM(RTRIM(ISNULL(Cari_Unvan, '')))) AS SupplierName,
+                LTRIM(RTRIM(Stok_Kod)) AS StockCode,
+                MAX(LTRIM(RTRIM(ISNULL(Stok_Barkod, '')))) AS Barcode,
+                MAX(LTRIM(RTRIM(Stok_Ismi))) AS StockName,
+                COUNT(*) AS LabelRowCount,
+                MAX(LTRIM(RTRIM(ISNULL(Evrak_Seri, '')))) AS DocumentSeries,
+                STRING_AGG(NULLIF(LTRIM(RTRIM(ISNULL(Evrak_Sira, ''))), ''), ', ') AS DocumentNo,
+                ROUND(ISNULL(SUM(Toplam_Miktar), 0), 4) AS GrossWeight,
+                ROUND(ISNULL(SUM(Kasa_Toplam_Dara), 0), 4) AS CaseTotalTare,
+                ROUND(ISNULL(SUM(Palet_Darasi), 0), 4) AS PalletTare,
+                ROUND(ISNULL(SUM(Kasa_Sayisi), 0), 0) AS CaseCount,
+                ROUND(ISNULL(SUM(ISNULL(Toplam_Miktar, 0) - ISNULL(Kasa_Toplam_Dara, 0) - ISNULL(Palet_Darasi, 0)), 0), 4) AS NetReceivedWeight
+            FROM dbo.Manav_Depo_Mal_Kabul_Etiket WITH (NOLOCK)
+            WHERE Stok_Ismi NOT LIKE '%PALET%'
+              AND CAST(Olusturma_Tarihi AS date) = @date
+            GROUP BY
+                LTRIM(RTRIM(ISNULL(Cari_Kod, ''))),
+                LTRIM(RTRIM(Stok_Kod))
+            ORDER BY SupplierName, StockName;
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+        AddParameter(command, "@date", date, DbType.Date);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var documentSeries = ReadString(reader, "DocumentSeries");
+            var documentNo = ReadString(reader, "DocumentNo");
+            groups.Add(new ReceivedProductGroup(
+                ReadString(reader, "SupplierCode"),
+                ReadString(reader, "SupplierName"),
+                ReadString(reader, "StockCode"),
+                ReadString(reader, "Barcode"),
+                ReadString(reader, "StockName"),
+                ReadInt(reader, "LabelRowCount"),
+                documentSeries,
+                documentNo,
+                BuildSeriesAndNumber(documentSeries, documentNo),
+                ReadDecimal(reader, "GrossWeight"),
+                ReadDecimal(reader, "CaseTotalTare"),
+                ReadDecimal(reader, "PalletTare"),
+                Convert.ToInt32(ReadDecimal(reader, "CaseCount")),
+                ReadDecimal(reader, "NetReceivedWeight")));
+        }
+
+        return groups;
+    }
+
+    private async Task<IReadOnlyDictionary<string, MicroReceiptReportGroup>> ReadMicroReceiptReportGroupsAsync(
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, MicroReceiptReportGroup>(StringComparer.OrdinalIgnoreCase);
+        await using var lease = await OpenConnectionAsync(mikroDbContext.Database.GetDbConnection(), cancellationToken);
+        using var command = lease.Connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                LTRIM(RTRIM(movement.sth_cari_kodu)) AS SupplierCode,
+                MAX(LTRIM(RTRIM(ISNULL(customer.cari_unvan1, '')))) AS SupplierName,
+                LTRIM(RTRIM(movement.sth_stok_kod)) AS StockCode,
+                MAX(LTRIM(RTRIM(stock.sto_isim))) AS StockName,
+                MAX(LTRIM(RTRIM(ISNULL(stock.sto_birim1_ad, '')))) AS UnitName,
+                COUNT(*) AS MicroRowCount,
+                ROUND(ISNULL(SUM(movement.sth_miktar), 0), 4) AS MicroQuantity,
+                ROUND(ISNULL(SUM(movement.sth_tutar), 0), 4) AS MicroAmount,
+                STRING_AGG(CONCAT(LTRIM(RTRIM(movement.sth_evrakno_seri)), '/', CONVERT(varchar(20), movement.sth_evrakno_sira)), ', ') AS MicroDocument
+            FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+            INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
+                ON stock.sto_kod = movement.sth_stok_kod
+            LEFT JOIN dbo.CARI_HESAPLAR AS customer WITH (NOLOCK)
+                ON customer.cari_kod = movement.sth_cari_kodu
+            WHERE CAST(movement.sth_tarih AS date) = @date
+              AND movement.sth_tip = 0
+              AND movement.sth_cins = 16
+              AND movement.sth_evraktip = 3
+              AND movement.sth_normal_iade = 0
+              AND movement.sth_giris_depo_no = 56
+              AND movement.sth_cikis_depo_no = 1
+              AND stock.sto_isim LIKE 'MNV%'
+            GROUP BY
+                LTRIM(RTRIM(movement.sth_cari_kodu)),
+                LTRIM(RTRIM(movement.sth_stok_kod));
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+        AddParameter(command, "@date", date, DbType.Date);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var group = new MicroReceiptReportGroup(
+                ReadString(reader, "SupplierCode"),
+                ReadString(reader, "SupplierName"),
+                ReadString(reader, "StockCode"),
+                ReadString(reader, "StockName"),
+                ReadString(reader, "UnitName"),
+                ReadInt(reader, "MicroRowCount"),
+                ReadDecimal(reader, "MicroQuantity"),
+                ReadDecimal(reader, "MicroAmount"),
+                ReadString(reader, "MicroDocument"));
+
+            result[BuildInvoiceKey(group.SupplierCode, group.StockCode)] = group;
+            result[BuildInvoiceKey(group.SupplierName, group.StockCode)] = group;
+        }
+
+        return result;
     }
 
     private async Task<IReadOnlyDictionary<string, decimal>> ReadInvoiceQuantitiesAsync(
@@ -1109,6 +1544,23 @@ public sealed class ManavMalKabulVeEtiketService(
         return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
+    private async Task<double> GetAlternativeCurrencyRateAsync(
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        await using var lease = await OpenConnectionAsync(mikroWriteDbContext.Database.GetDbConnection(), cancellationToken);
+        using var command = lease.Connection.CreateCommand();
+        command.CommandText = """
+            SELECT ISNULL(NULLIF(dbo.fn_KurBul(@date, dbo.fn_FirmaAlternatifDovizCinsi(), 1), 0), 1);
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+        AddParameter(command, "@date", date.Date, DbType.Date);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull ? 1d : Convert.ToDouble(result);
+    }
+
     private async Task<int> MarkAcceptanceRecordsTransferredAsync(
         IReadOnlyCollection<ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest> lines,
         CancellationToken cancellationToken)
@@ -1143,12 +1595,14 @@ public sealed class ManavMalKabulVeEtiketService(
         ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
         ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest line,
         MicroStockInfo stockInfo,
+        Guid invoiceGuid,
         string documentSeries,
         int documentOrderNo,
         string documentNo,
         short createUserNo,
         int rowNo,
         DateTime now,
+        double alternativeCurrencyRate,
         string offlineTraceKey)
     {
         var quantity = Convert.ToDouble(line.Quantity);
@@ -1216,7 +1670,7 @@ public sealed class ManavMalKabulVeEtiketService(
             sth_plasiyer_kodu = string.Empty,
             sth_har_doviz_cinsi = 0,
             sth_har_doviz_kuru = 1d,
-            sth_alt_doviz_kuru = 0d,
+            sth_alt_doviz_kuru = alternativeCurrencyRate,
             sth_stok_doviz_cinsi = 0,
             sth_stok_doviz_kuru = 1d,
             sth_miktar = quantity,
@@ -1241,7 +1695,7 @@ public sealed class ManavMalKabulVeEtiketService(
             sth_odeme_op = 0,
             sth_aciklama = NormalizeText(line.Description ?? request.Description, 50),
             sth_sip_uid = Guid.Empty,
-            sth_fat_uid = Guid.Empty,
+            sth_fat_uid = invoiceGuid,
             sth_giris_depo_no = GreenGrocerWarehouseNo,
             sth_cikis_depo_no = MainWarehouseNo,
             sth_malkbl_sevk_tarihi = request.Date,
@@ -1297,6 +1751,232 @@ public sealed class ManavMalKabulVeEtiketService(
             sth_bagli_ithalat_kodu = string.Empty,
             sth_tevkifat_sifirlandi_fl = false
         };
+    }
+
+    private static CARI_HESAP_HAREKETLERI CreateMicroGoodsReceiptCustomerMovement(
+        ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
+        CARI_HESAPLAR supplier,
+        Guid invoiceGuid,
+        string documentSeries,
+        int documentOrderNo,
+        string documentNo,
+        short createUserNo,
+        DateTime now,
+        double alternativeCurrencyRate,
+        IReadOnlyCollection<STOK_HAREKETLERI> movementRows,
+        string offlineTraceKey)
+    {
+        var subTotal = Math.Round(movementRows.Sum(row => row.sth_tutar ?? 0d), 2);
+        var taxTotal = Math.Round(movementRows.Sum(row => row.sth_vergi ?? 0d), 2);
+        var totalAmount = Math.Round(subTotal + taxTotal, 2);
+        var taxTotals = ResolveTaxTotals(movementRows);
+
+        return new CARI_HESAP_HAREKETLERI
+        {
+            cha_Guid = invoiceGuid,
+            cha_DBCno = 0,
+            cha_SpecRecNo = 0,
+            cha_iptal = false,
+            cha_fileid = CustomerMovementFileId,
+            cha_hidden = false,
+            cha_kilitli = false,
+            cha_degisti = false,
+            cha_CheckSum = 0,
+            cha_create_user = createUserNo,
+            cha_create_date = now,
+            cha_lastup_user = createUserNo,
+            cha_lastup_date = now,
+            cha_special1 = string.Empty,
+            cha_special2 = string.Empty,
+            cha_special3 = string.Empty,
+            cha_firmano = 0,
+            cha_subeno = 0,
+            cha_evrak_tip = GreenGrocerCustomerInvoiceDocumentType,
+            cha_evrakno_seri = documentSeries,
+            cha_evrakno_sira = documentOrderNo,
+            cha_satir_no = 0,
+            cha_tarihi = request.Date,
+            cha_tip = CustomerInvoiceMovementType,
+            cha_cinsi = GreenGrocerCustomerInvoiceGenre,
+            cha_normal_Iade = NormalMovement,
+            cha_tpoz = 0,
+            cha_ticaret_turu = 0,
+            cha_belge_no = NormalizeText(documentNo, 50),
+            cha_belge_tarih = request.Date,
+            cha_aciklama = NormalizeText(request.Description, 40),
+            cha_satici_kodu = string.Empty,
+            cha_EXIMkodu = string.Empty,
+            cha_projekodu = string.Empty,
+            cha_yat_tes_kodu = string.Empty,
+            cha_cari_cins = 0,
+            cha_kod = request.SupplierCode,
+            cha_ciro_cari_kodu = request.SupplierCode,
+            cha_d_cins = 0,
+            cha_d_kur = 1d,
+            cha_altd_kur = alternativeCurrencyRate,
+            cha_grupno = 0,
+            cha_srmrkkodu = GreenGrocerWarehouseNo.ToString(),
+            cha_kasa_hizmet = 0,
+            cha_kasa_hizkod = string.Empty,
+            cha_karsidcinsi = 0,
+            cha_karsid_kur = 1d,
+            cha_karsidgrupno = 0,
+            cha_karsisrmrkkodu = string.Empty,
+            cha_miktari = 0d,
+            cha_meblag = totalAmount,
+            cha_aratoplam = subTotal,
+            cha_vade = supplier.cari_odemeplan_no ?? 0,
+            cha_Vade_Farki_Yuz = 0d,
+            cha_ft_iskonto1 = 0d,
+            cha_ft_iskonto2 = 0d,
+            cha_ft_iskonto3 = 0d,
+            cha_ft_iskonto4 = 0d,
+            cha_ft_iskonto5 = 0d,
+            cha_ft_iskonto6 = 0d,
+            cha_ft_masraf1 = 0d,
+            cha_ft_masraf2 = 0d,
+            cha_ft_masraf3 = 0d,
+            cha_ft_masraf4 = 0d,
+            cha_isk_mas1 = 0,
+            cha_isk_mas2 = 0,
+            cha_isk_mas3 = 0,
+            cha_isk_mas4 = 0,
+            cha_isk_mas5 = 0,
+            cha_isk_mas6 = 0,
+            cha_isk_mas7 = 0,
+            cha_isk_mas8 = 0,
+            cha_isk_mas9 = 0,
+            cha_isk_mas10 = 0,
+            cha_sat_iskmas1 = false,
+            cha_sat_iskmas2 = false,
+            cha_sat_iskmas3 = false,
+            cha_sat_iskmas4 = false,
+            cha_sat_iskmas5 = false,
+            cha_sat_iskmas6 = false,
+            cha_sat_iskmas7 = false,
+            cha_sat_iskmas8 = false,
+            cha_sat_iskmas9 = false,
+            cha_sat_iskmas10 = false,
+            cha_yuvarlama = 0d,
+            cha_StFonPntr = 0,
+            cha_stopaj = 0d,
+            cha_savsandesfonu = 0d,
+            cha_avansmak_damgapul = 0d,
+            cha_vergipntr = 0,
+            cha_vergisiz_fl = false,
+            cha_otvtutari = 0d,
+            cha_otvvergisiz_fl = false,
+            cha_oiv_pntr = 0,
+            cha_oivtutari = 0d,
+            cha_oiv_vergi = 0d,
+            cha_oivergisiz_fl = false,
+            cha_fis_tarih = request.Date,
+            cha_fis_sirano = 0,
+            cha_trefno = string.Empty,
+            cha_sntck_poz = 0,
+            cha_reftarihi = MikroEmptyDate,
+            cha_istisnakodu = 0,
+            cha_pos_hareketi = 0,
+            cha_meblag_ana_doviz_icin_gecersiz_fl = 0,
+            cha_meblag_alt_doviz_icin_gecersiz_fl = 0,
+            cha_meblag_orj_doviz_icin_gecersiz_fl = 0,
+            cha_sip_uid = Guid.Empty,
+            cha_kirahar_uid = Guid.Empty,
+            cha_vardiya_tarihi = MikroEmptyDate,
+            cha_vardiya_no = 0,
+            cha_vardiya_evrak_ti = 0,
+            cha_ebelge_turu = GreenGrocerCustomerInvoiceElectronicDocumentType,
+            cha_tevkifat_toplam = 0d,
+            cha_e_islem_turu = 0,
+            cha_fatura_belge_turu = GreenGrocerCustomerInvoiceDocumentKind,
+            cha_diger_belge_adi = string.Empty,
+            cha_uuid = Guid.NewGuid().ToString().ToUpperInvariant(),
+            cha_adres_no = ResolveSupplierInvoiceAddressNo(supplier),
+            cha_vergifon_toplam = 0d,
+            cha_ilk_belge_tarihi = request.Date,
+            cha_ilk_belge_doviz_kuru = 0d,
+            cha_HareketGrupKodu1 = string.Empty,
+            cha_HareketGrupKodu2 = string.Empty,
+            cha_HareketGrupKodu3 = string.Empty,
+            cha_ebelgeno_seri = string.Empty,
+            cha_ebelgeno_sira = 0,
+            cha_hubid = string.Empty,
+            cha_hubglbid = string.Empty,
+            cha_disyazilimid = string.Empty,
+            cha_disyazilim_tip = 0,
+            cha_bsba_e_belge_mi = 0,
+            cha_eticaret_kanal_kodu = NormalizeText(offlineTraceKey, 25),
+            cha_hizli_satis_kasa_no = 0,
+            cha_ebelge_Islemturu = 0,
+            cha_tevkifat_sifirlandi_fl = false,
+            cha_vergi1 = taxTotals[0],
+            cha_vergi2 = taxTotals[1],
+            cha_vergi3 = taxTotals[2],
+            cha_vergi4 = taxTotals[3],
+            cha_vergi5 = taxTotals[4],
+            cha_vergi6 = taxTotals[5],
+            cha_vergi7 = taxTotals[6],
+            cha_vergi8 = taxTotals[7],
+            cha_vergi9 = taxTotals[8],
+            cha_vergi10 = taxTotals[9],
+            cha_vergi11 = taxTotals[10],
+            cha_vergi12 = taxTotals[11],
+            cha_vergi13 = taxTotals[12],
+            cha_vergi14 = taxTotals[13],
+            cha_vergi15 = taxTotals[14],
+            cha_vergi16 = taxTotals[15],
+            cha_vergi17 = taxTotals[16],
+            cha_vergi18 = taxTotals[17],
+            cha_vergi19 = taxTotals[18],
+            cha_vergi20 = taxTotals[19],
+            cha_ilave_edilecek_kdv1 = 0d,
+            cha_ilave_edilecek_kdv2 = 0d,
+            cha_ilave_edilecek_kdv3 = 0d,
+            cha_ilave_edilecek_kdv4 = 0d,
+            cha_ilave_edilecek_kdv5 = 0d,
+            cha_ilave_edilecek_kdv6 = 0d,
+            cha_ilave_edilecek_kdv7 = 0d,
+            cha_ilave_edilecek_kdv8 = 0d,
+            cha_ilave_edilecek_kdv9 = 0d,
+            cha_ilave_edilecek_kdv10 = 0d,
+            cha_ilave_edilecek_kdv11 = 0d,
+            cha_ilave_edilecek_kdv12 = 0d,
+            cha_ilave_edilecek_kdv13 = 0d,
+            cha_ilave_edilecek_kdv14 = 0d,
+            cha_ilave_edilecek_kdv15 = 0d,
+            cha_ilave_edilecek_kdv16 = 0d,
+            cha_ilave_edilecek_kdv17 = 0d,
+            cha_ilave_edilecek_kdv18 = 0d,
+            cha_ilave_edilecek_kdv19 = 0d,
+            cha_ilave_edilecek_kdv20 = 0d,
+            cha_efatura_belge_tipi = 0
+        };
+    }
+
+    private static double[] ResolveTaxTotals(IReadOnlyCollection<STOK_HAREKETLERI> movementRows)
+    {
+        var taxTotals = new double[20];
+
+        foreach (var movement in movementRows)
+        {
+            var taxPointer = movement.sth_vergi_pntr ?? 0;
+            if (taxPointer is < 1 or > 20)
+            {
+                continue;
+            }
+
+            taxTotals[taxPointer - 1] = Math.Round(
+                taxTotals[taxPointer - 1] + (movement.sth_vergi ?? 0d),
+                2);
+        }
+
+        return taxTotals;
+    }
+
+    private static int ResolveSupplierInvoiceAddressNo(CARI_HESAPLAR supplier)
+    {
+        var addressNo = supplier.cari_fatura_adres_no ?? supplier.cari_sevk_adres_no ?? 1;
+        return addressNo > 0 ? addressNo : 1;
     }
 
     private static ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest NormalizeCreateMicroGoodsReceiptRequest(
@@ -1393,7 +2073,8 @@ public sealed class ManavMalKabulVeEtiketService(
     private static string BuildOfflineTraceKey(DateTime date, string supplierCode, string documentSeries)
     {
         var value = $"FURPA-MNV-{date:yyyyMMdd}-{supplierCode}-{documentSeries}";
-        return NormalizeText(value, 50);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..8];
+        return $"FRMNV{date:yyMMdd}{hash}";
     }
 
     private static SaveManavMalKabulVeEtiketAcceptanceRecordRequest NormalizeSaveRequest(
@@ -1535,6 +2216,11 @@ public sealed class ManavMalKabulVeEtiketService(
     private static string BuildInvoiceKey(string supplierName, string stockCode) =>
         NormalizeOrNull(supplierName)?.ToUpperInvariant() + "|" + NormalizeOrNull(stockCode)?.ToUpperInvariant();
 
+    private static string BuildSeriesAndNumber(string documentSeries, string documentNo) =>
+        string.IsNullOrWhiteSpace(documentSeries) && string.IsNullOrWhiteSpace(documentNo)
+            ? string.Empty
+            : documentSeries + " - " + documentNo;
+
     private static int NormalizeTake(int take) =>
         take <= 0 ? DefaultTake : Math.Min(take, MaxTake);
 
@@ -1657,25 +2343,47 @@ public sealed class ManavMalKabulVeEtiketService(
         """;
 
     private sealed record ReceivedProductGroup(
+        string SupplierCode,
         string SupplierName,
         string StockCode,
         string Barcode,
         string StockName,
+        int LabelRowCount,
+        string DocumentSeries,
+        string DocumentNo,
+        string SeriesAndNumber,
         decimal GrossWeight,
         decimal CaseTotalTare,
         decimal PalletTare,
         int CaseCount,
         decimal NetReceivedWeight);
 
+    private sealed record MicroReceiptReportGroup(
+        string SupplierCode,
+        string SupplierName,
+        string StockCode,
+        string StockName,
+        string UnitName,
+        int MicroRowCount,
+        decimal MicroQuantity,
+        decimal MicroAmount,
+        string MicroDocument);
+
     private sealed record MicroGoodsReceiptFlatRow(
         DateTime Date,
         string DocumentSeries,
         int DocumentOrderNo,
         int LineNo,
+        string MovementGuid,
+        string DocumentNo,
+        string InvoiceGuid,
+        string OfflineTraceKey,
         string SupplierCode,
         string SupplierName,
         string StockCode,
         string StockName,
+        string Barcode,
+        string UnitName,
         decimal Quantity,
         decimal Amount,
         decimal TaxAmount,
@@ -1683,12 +2391,18 @@ public sealed class ManavMalKabulVeEtiketService(
         int InWarehouseNo,
         int OutWarehouseNo,
         int CreateUserNo,
-        DateTime CreatedAt);
+        DateTime CreatedAt,
+        string Description);
 
     private sealed record MicroStockInfo(
         string StockCode,
         string StockName,
         int WholesaleTaxPointer);
+
+    private sealed record SupplierInvoiceMatch(
+        string SupplierCode,
+        string SupplierName,
+        string? TaxNo);
 
     private sealed class ConnectionLease(DbConnection connection, bool closeConnection) : IAsyncDisposable
     {

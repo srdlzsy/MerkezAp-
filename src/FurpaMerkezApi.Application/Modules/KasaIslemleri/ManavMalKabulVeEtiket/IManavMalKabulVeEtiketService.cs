@@ -22,6 +22,10 @@ public interface IManavMalKabulVeEtiketService
         string stockName,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<ManavMalKabulVeEtiketIncomingInvoiceDto>> ListIncomingInvoicesAsync(
+        ManavMalKabulVeEtiketIncomingInvoiceQuery request,
+        CancellationToken cancellationToken);
+
     ManavMalKabulVeEtiketCalculationDto Calculate(ManavMalKabulVeEtiketCalculationRequest request);
 
     Task<IReadOnlyCollection<ManavMalKabulVeEtiketAcceptanceRecordDto>> ListAcceptanceRecordsAsync(

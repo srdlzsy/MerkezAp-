@@ -11,12 +11,55 @@ public sealed record ManavMalKabulVeEtiketStockSearchRequest(
 
 public sealed record ManavMalKabulVeEtiketSupplierSuggestionDto(
     string SupplierCode,
-    string SupplierName);
+    string SupplierName,
+    string? SupplierTitle2 = null,
+    string? SupplierTaxNo = null);
 
 public sealed record ManavMalKabulVeEtiketStockSuggestionDto(
     string StockCode,
     string StockName,
-    string Barcode);
+    string Barcode,
+    string? UnitName = null,
+    string? ModelCode = null,
+    int? WholesaleTaxPointer = null);
+
+public sealed record ManavMalKabulVeEtiketIncomingInvoiceQuery(
+    DateTime StartDate,
+    DateTime EndDate,
+    string? SupplierCode,
+    string? SearchText,
+    bool IncludeArchived,
+    int Take);
+
+public sealed record ManavMalKabulVeEtiketIncomingInvoiceDto(
+    string DocumentId,
+    string InvoiceId,
+    string SupplierTitle,
+    string SupplierTaxNo,
+    DateTime? CreateDate,
+    DateTime? InvoiceDate,
+    string InvoiceType,
+    decimal InvoiceTotal,
+    decimal TaxExclusiveAmount,
+    decimal TaxTotal,
+    string DespatchId,
+    bool IsProcessed,
+    bool IsPrinted,
+    bool IsStandard,
+    string StatusCode,
+    string Status,
+    string Message,
+    string DocumentCurrencyCode,
+    decimal ExchangeRate,
+    string OrderDocumentId,
+    bool IsArchived,
+    string InvoiceTipType,
+    int InvoiceTipTypeCode,
+    bool? IsSeen,
+    DateTime LastSynchronizedAtUtc,
+    string? MatchedSupplierCode,
+    string? MatchedSupplierName,
+    bool CanStartAcceptance);
 
 public sealed record ManavMalKabulVeEtiketCalculationRequest(
     decimal GrossWeight,
@@ -101,7 +144,17 @@ public sealed record ManavMalKabulVeEtiketReceivedProductReportItemDto(
     int CaseCount,
     decimal NetReceivedWeight,
     decimal InvoiceQuantity,
-    decimal InvoiceDifference);
+    decimal InvoiceDifference,
+    string? SupplierCode = null,
+    int LabelRowCount = 0,
+    string? DocumentSeries = null,
+    string? DocumentNo = null,
+    string? SeriesAndNumber = null,
+    int MicroRowCount = 0,
+    decimal MicroAmount = 0,
+    string? MicroDocument = null,
+    string? Status = null,
+    string? UnitName = null);
 
 public sealed record ManavMalKabulVeEtiketDepotStockReportItemDto(
     string StockCode,
@@ -109,7 +162,10 @@ public sealed record ManavMalKabulVeEtiketDepotStockReportItemDto(
     string Responsible,
     decimal CurrentStock,
     decimal PurchasePriceWithVat,
-    decimal SalesPrice);
+    decimal SalesPrice,
+    string? Barcode = null,
+    string? UnitName = null,
+    string? ModelCode = null);
 
 public sealed record ManavMalKabulVeEtiketMicroGoodsReceiptQuery(
     DateTime Date,
@@ -129,7 +185,10 @@ public sealed record ManavMalKabulVeEtiketMicroGoodsReceiptDocumentDto(
     decimal TotalTax,
     DateTime FirstCreatedAt,
     DateTime LastCreatedAt,
-    IReadOnlyCollection<ManavMalKabulVeEtiketMicroGoodsReceiptLineDto> Lines);
+    IReadOnlyCollection<ManavMalKabulVeEtiketMicroGoodsReceiptLineDto> Lines,
+    string? DocumentNo = null,
+    string? InvoiceGuid = null,
+    string? OfflineTraceKey = null);
 
 public sealed record ManavMalKabulVeEtiketMicroGoodsReceiptLineDto(
     int LineNo,
@@ -141,7 +200,11 @@ public sealed record ManavMalKabulVeEtiketMicroGoodsReceiptLineDto(
     decimal TaxAmount,
     int TaxPointer,
     int InWarehouseNo,
-    int OutWarehouseNo);
+    int OutWarehouseNo,
+    string? MovementGuid = null,
+    string? Barcode = null,
+    string? UnitName = null,
+    string? Description = null);
 
 public sealed record ManavMalKabulVeEtiketGoodsReceiptComparisonItemDto(
     DateTime Date,
