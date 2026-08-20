@@ -7,6 +7,8 @@ using System.Security.Cryptography;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models;
+using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B;
+using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B.Models;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +18,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
 
 public sealed class AyarlarService(
     FurpaDbContext furpaDbContext,
+    FurpaB2BDbContext furpaB2BDbContext,
     MikroWriteDbContext mikroWriteDbContext)
     : IAyarlarService
 {
@@ -299,8 +302,14 @@ public sealed class AyarlarService(
             .OrderBy(item => item.CashRegisterNo)
             .ToArrayAsync(cancellationToken);
 
+        var cashFinanceNumbers = await ResolveCashFinanceNumbersAsync(
+            cashRegisters.Select(item => item.CashRegisterNo).ToArray(),
+            cancellationToken);
+
         return cashRegisters
-            .Select(ToCashRegistryDto)
+            .Select(item => ToCashRegistryDto(
+                item,
+                cashFinanceNumbers.GetValueOrDefault(item.CashRegisterNo) ?? string.Empty))
             .ToArray();
     }
 
@@ -414,11 +423,11 @@ public sealed class AyarlarService(
     {
         ValidatePositive(cashNo, nameof(cashNo));
 
-        return await mikroWriteDbContext.CashRegisterDetails
+        var furpaRows = await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item => item.CashNo == cashNo)
-            .OrderBy(item => item.CashRegisterNo)
-            .Select(item => new CashRegisterTerminalDto(
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
                 item.Id,
                 item.CashRegisterNo ?? string.Empty,
                 item.Bank ?? string.Empty,
@@ -426,6 +435,28 @@ public sealed class AyarlarService(
                 item.MerchantNo ?? string.Empty,
                 item.CashNo))
             .ToArrayAsync(cancellationToken);
+
+        var selectedRows = furpaRows.Length > 0
+            ? furpaRows
+            : await mikroWriteDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo == cashNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .ToArrayAsync(cancellationToken);
+
+        return selectedRows
+            .OrderBy(item => item.CashRegisterNo)
+            .ThenBy(item => item.Bank)
+            .ThenBy(item => item.TerminalId)
+            .Select(ToTerminalDto)
+            .ToArray();
     }
 
     public async Task DeleteCashRegisterAsync(
@@ -649,6 +680,172 @@ public sealed class AyarlarService(
             cashier);
     }
 
+    public async Task<IReadOnlyCollection<B2BBulletinDto>> ListB2BBulletinsAsync(
+        string? search,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var normalizedTake = NormalizeTake(take, 100, 500);
+        var filter = search?.Trim();
+
+        var query = furpaB2BDbContext.Bulletins.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            query = query.Where(item =>
+                (item.BultenDefination != null && EF.Functions.Like(item.BultenDefination, $"%{filter}%")) ||
+                (item.BultenLink != null && EF.Functions.Like(item.BultenLink, $"%{filter}%")));
+        }
+
+        return await query
+            .OrderByDescending(item => item.BultenCreateDate)
+            .ThenByDescending(item => item.Id)
+            .Take(normalizedTake)
+            .Select(item => ToB2BBulletinDto(item))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<B2BBulletinDto> CreateB2BBulletinAsync(
+        SaveB2BBulletinRequest request,
+        CancellationToken cancellationToken)
+    {
+        var entity = new B2BBulletinEntity
+        {
+            BultenDefination = NormalizeOptionalText(request.Definition, nameof(request.Definition)),
+            BultenLink = NormalizeOptionalText(request.Link, nameof(request.Link)),
+            BultenCreateDate = request.CreateDate ?? DateTime.Now
+        };
+
+        await furpaB2BDbContext.Bulletins.AddAsync(entity, cancellationToken);
+        await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
+
+        return ToB2BBulletinDto(entity);
+    }
+
+    public async Task<B2BBulletinDto> UpdateB2BBulletinAsync(
+        int id,
+        SaveB2BBulletinRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidatePositive(id, nameof(id));
+
+        var entity = await furpaB2BDbContext.Bulletins
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+            ?? throw new KeyNotFoundException("B2B bulletin was not found.");
+
+        entity.BultenDefination = NormalizeOptionalText(request.Definition, nameof(request.Definition));
+        entity.BultenLink = NormalizeOptionalText(request.Link, nameof(request.Link));
+        entity.BultenCreateDate = request.CreateDate ?? entity.BultenCreateDate;
+
+        await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
+
+        return ToB2BBulletinDto(entity);
+    }
+
+    public async Task DeleteB2BBulletinAsync(int id, CancellationToken cancellationToken)
+    {
+        ValidatePositive(id, nameof(id));
+
+        var entity = await furpaB2BDbContext.Bulletins
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+            ?? throw new KeyNotFoundException("B2B bulletin was not found.");
+
+        furpaB2BDbContext.Bulletins.Remove(entity);
+        await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<B2BUserDto>> ListB2BUsersAsync(
+        string? search,
+        bool includeInactive,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var normalizedTake = NormalizeTake(take, 100, 500);
+        var filter = search?.Trim();
+
+        var query = furpaB2BDbContext.Users.AsNoTracking();
+
+        if (!includeInactive)
+        {
+            query = query.Where(item => item.Status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            query = query.Where(item =>
+                EF.Functions.Like(item.UserFullName, $"%{filter}%") ||
+                EF.Functions.Like(item.UserMail, $"%{filter}%") ||
+                (item.Menus != null && EF.Functions.Like(item.Menus, $"%{filter}%")));
+        }
+
+        var users = await query
+            .OrderBy(item => item.UserFullName)
+            .Take(normalizedTake)
+            .ToArrayAsync(cancellationToken);
+
+        var userIds = users.Select(item => item.UserId).ToArray();
+        var accounts = await furpaB2BDbContext.UserAccounts
+            .AsNoTracking()
+            .Where(item => userIds.Contains(item.UserId))
+            .ToArrayAsync(cancellationToken);
+
+        var accountsByUserId = accounts
+            .GroupBy(item => item.UserId)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+
+        return users
+            .Select(item =>
+            {
+                var userAccounts = accountsByUserId.GetValueOrDefault(item.UserId) ?? [];
+                return ToB2BUserDto(item, userAccounts);
+            })
+            .ToArray();
+    }
+
+    public async Task<B2BUserDetailDto> GetB2BUserAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await furpaB2BDbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken)
+            ?? throw new KeyNotFoundException("B2B user was not found.");
+
+        var accounts = await furpaB2BDbContext.UserAccounts
+            .AsNoTracking()
+            .Where(item => item.UserId == userId)
+            .OrderBy(item => item.Category)
+            .ThenBy(item => item.Id)
+            .ToArrayAsync(cancellationToken);
+
+        return ToB2BUserDetailDto(user, accounts);
+    }
+
+    public async Task<B2BUserDetailDto> UpdateB2BUserAsync(
+        Guid userId,
+        UpdateB2BUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        var user = await furpaB2BDbContext.Users
+            .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken)
+            ?? throw new KeyNotFoundException("B2B user was not found.");
+
+        user.UserFullName = NormalizeText(request.UserFullName, 70, nameof(request.UserFullName));
+        user.UserMail = NormalizeText(request.UserMail, 150, nameof(request.UserMail));
+        user.Status = request.Status;
+        user.Menus = NormalizeNullableText(request.Menus);
+        user.UserEndDate = request.UserEndDate;
+
+        await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
+
+        var accounts = await furpaB2BDbContext.UserAccounts
+            .AsNoTracking()
+            .Where(item => item.UserId == userId)
+            .OrderBy(item => item.Category)
+            .ThenBy(item => item.Id)
+            .ToArrayAsync(cancellationToken);
+
+        return ToB2BUserDetailDto(user, accounts);
+    }
+
     private static async Task<DeviceStatusDto> CheckSingleDeviceStatusAsync(DeviceStatusSource device)
     {
         if (string.IsNullOrWhiteSpace(device.IpAddress))
@@ -831,14 +1028,73 @@ public sealed class AyarlarService(
             item.PoskonFolderPath,
             item.PosGenelFolderPath);
 
-    private static CashRegistryDto ToCashRegistryDto(CashRegistryDetailEntity item) =>
+    private async Task<IReadOnlyDictionary<int, string>> ResolveCashFinanceNumbersAsync(
+        IReadOnlyCollection<int> cashNos,
+        CancellationToken cancellationToken)
+    {
+        if (cashNos.Count == 0)
+        {
+            return new Dictionary<int, string>();
+        }
+
+        var furpaRows = await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo.HasValue && cashNos.Contains(item.CashNo.Value))
+            .OrderBy(item => item.Id)
+            .Select(item => new
+            {
+                CashNo = item.CashNo!.Value,
+                CashRegisterNo = item.CashRegisterNo ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var result = furpaRows
+            .Where(item => !string.IsNullOrWhiteSpace(item.CashRegisterNo))
+            .GroupBy(item => item.CashNo)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(item => item.CashRegisterNo).First(),
+                EqualityComparer<int>.Default);
+
+        var missingCashNos = cashNos
+            .Where(item => !result.ContainsKey(item))
+            .ToArray();
+
+        if (missingCashNos.Length == 0)
+        {
+            return result;
+        }
+
+        var mikroRows = await mikroWriteDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo.HasValue && missingCashNos.Contains(item.CashNo.Value))
+            .OrderBy(item => item.Id)
+            .Select(item => new
+            {
+                CashNo = item.CashNo!.Value,
+                CashRegisterNo = item.CashRegisterNo ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var group in mikroRows
+                     .Where(item => !string.IsNullOrWhiteSpace(item.CashRegisterNo))
+                     .GroupBy(item => item.CashNo))
+        {
+            result[group.Key] = group.Select(item => item.CashRegisterNo).First();
+        }
+
+        return result;
+    }
+
+    private static CashRegistryDto ToCashRegistryDto(CashRegistryDetailEntity item, string cashFinanceNumber) =>
         new(
             item.DetailId,
             item.BranchNo,
             item.CashRegisterNo,
             item.CashRegisterType,
             ResolveCashTypeName(item.CashRegisterType),
-            ResolveCashTypeDescription(item.CashRegisterType));
+            ResolveCashTypeDescription(item.CashRegisterType),
+            cashFinanceNumber);
 
     private static CashRegisterTerminalDto ToTerminalDto(MikroCashRegisterDetailEntity item) =>
         new(
@@ -849,12 +1105,73 @@ public sealed class AyarlarService(
             item.MerchantNo ?? string.Empty,
             item.CashNo);
 
+    private static CashRegisterTerminalDto ToTerminalDto(CashRegisterTerminalSource item) =>
+        new(
+            item.Id,
+            item.CashRegisterNo,
+            item.Bank,
+            item.TerminalId,
+            item.MerchantNo,
+            item.CashNo);
+
+    private sealed record CashRegisterTerminalSource(
+        int Id,
+        string CashRegisterNo,
+        string Bank,
+        string TerminalId,
+        string MerchantNo,
+        int? CashNo);
+
     private static CashierDto ToCashierDto(CashierEntity item) =>
         new(
             item.CashierCode,
             item.CashierName,
             item.CashierAuthorization,
             item.CashierState);
+
+    private static B2BBulletinDto ToB2BBulletinDto(B2BBulletinEntity item) =>
+        new(
+            item.Id,
+            item.BultenDefination ?? string.Empty,
+            item.BultenLink ?? string.Empty,
+            item.BultenCreateDate);
+
+    private static B2BUserDto ToB2BUserDto(
+        B2BUserEntity item,
+        IReadOnlyCollection<B2BUserAccountEntity> accounts) =>
+        new(
+            item.UserId,
+            item.UserFullName,
+            item.UserMail,
+            item.Status,
+            item.CreateDate,
+            item.Menus ?? string.Empty,
+            item.UserEndDate,
+            accounts.Count,
+            accounts
+                .Select(account => account.Category)
+                .Where(category => !string.IsNullOrWhiteSpace(category))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(category => category)
+                .ToArray());
+
+    private static B2BUserDetailDto ToB2BUserDetailDto(
+        B2BUserEntity item,
+        IReadOnlyCollection<B2BUserAccountEntity> accounts) =>
+        new(
+            item.UserId,
+            item.UserFullName,
+            item.UserMail,
+            item.Status,
+            item.CreateDate,
+            item.Menus ?? string.Empty,
+            item.UserEndDate,
+            accounts
+                .Select(account => new B2BUserAccountDto(
+                    account.Id,
+                    account.AccountId,
+                    account.Category))
+                .ToArray());
 
     private static void ValidateBranchRequest(CreateBranchSettingsRequest request)
     {
@@ -936,6 +1253,32 @@ public sealed class AyarlarService(
 
     private static string NormalizeCashierName(string value) =>
         NormalizeText(value, 100, nameof(value)).ToUpper(TurkishCulture);
+
+    private static int NormalizeTake(int value, int defaultValue, int maxValue)
+    {
+        if (value <= 0)
+        {
+            return defaultValue;
+        }
+
+        return Math.Min(value, maxValue);
+    }
+
+    private static string? NormalizeNullableText(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static string? NormalizeOptionalText(string value, string parameterName)
+    {
+        if (value is null)
+        {
+            throw new ArgumentException("Value is required.", parameterName);
+        }
+
+        return NormalizeNullableText(value);
+    }
 
     private static string NormalizeText(string value, int maxLength, string parameterName)
     {

@@ -102,6 +102,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `ayar-islemleri` | `kasa-pos-terminalleri` | `ayar-islemleri.kasa-pos-terminalleri.manage` | `ayar-islemleri.kasa-pos-terminalleri.list`<br>`ayar-islemleri.kasa-pos-terminalleri.detail`<br>`ayar-islemleri.kasa-pos-terminalleri.create`<br>`ayar-islemleri.kasa-pos-terminalleri.update` | `ayar-islemleri.kasa-pos-terminalleri.all-warehouses` |
 | `ayar-islemleri` | `kasiyerler` | `ayar-islemleri.kasiyerler.manage` | `ayar-islemleri.kasiyerler.list`<br>`ayar-islemleri.kasiyerler.detail`<br>`ayar-islemleri.kasiyerler.create`<br>`ayar-islemleri.kasiyerler.update` | `ayar-islemleri.kasiyerler.all-warehouses` |
 | `ayar-islemleri` | `soforler` | `ayar-islemleri.soforler.manage` | `ayar-islemleri.soforler.list`<br>`ayar-islemleri.soforler.detail`<br>`ayar-islemleri.soforler.create`<br>`ayar-islemleri.soforler.update`<br>`ayar-islemleri.soforler.delete` | `ayar-islemleri.soforler.all-warehouses` |
+| `ayar-islemleri` | `b2b-ayarlari` | `ayar-islemleri.b2b-ayarlari.manage` | `ayar-islemleri.b2b-ayarlari.list`<br>`ayar-islemleri.b2b-ayarlari.detail`<br>`ayar-islemleri.b2b-ayarlari.create`<br>`ayar-islemleri.b2b-ayarlari.update`<br>`ayar-islemleri.b2b-ayarlari.delete` | `ayar-islemleri.b2b-ayarlari.all-warehouses` |
 | `siparis-islemleri` | `alinan-depo-siparisleri` | `siparis-islemleri.alinan-depo-siparisleri.page` | `siparis-islemleri.alinan-depo-siparisleri.list`<br>`siparis-islemleri.alinan-depo-siparisleri.detail`<br>`siparis-islemleri.alinan-depo-siparisleri.create`<br>`siparis-islemleri.alinan-depo-siparisleri.update` | `siparis-islemleri.alinan-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `verilen-depo-siparisleri` | `siparis-islemleri.verilen-depo-siparisleri.page` | `siparis-islemleri.verilen-depo-siparisleri.list`<br>`siparis-islemleri.verilen-depo-siparisleri.detail`<br>`siparis-islemleri.verilen-depo-siparisleri.create`<br>`siparis-islemleri.verilen-depo-siparisleri.update` | `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `alinan-firma-siparisleri` | `siparis-islemleri.alinan-firma-siparisleri.page` | `siparis-islemleri.alinan-firma-siparisleri.list`<br>`siparis-islemleri.alinan-firma-siparisleri.detail`<br>`siparis-islemleri.alinan-firma-siparisleri.create`<br>`siparis-islemleri.alinan-firma-siparisleri.update` | `siparis-islemleri.alinan-firma-siparisleri.all-warehouses` |
@@ -1902,25 +1903,37 @@ Response modeli:
 
 ## Ayar Islemleri
 
-Bu modul eski `SettingsController` islevlerini yeni API mimarisine uygun olarak 4 ayri menu altinda toplar:
+Bu modul eski `SettingsController` islevlerini yeni API mimarisine uygun olarak ayri menu altinda toplar:
 
 - `AyarIslemleri > Cihazlar`
 - `AyarIslemleri > SubeAyarlari`
 - `AyarIslemleri > KasaPosTerminalleri`
 - `AyarIslemleri > Kasiyerler`
 - `AyarIslemleri > Soforler`
+- `AyarIslemleri > B2BAyarlari`
 
 Veri kaynaklari:
 
 - Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `Cashiers`
+- FurpaB2B DB: `Bultens`, `Users`, `UserAccounts`
 - Mikro write DB: `CashRegisterDetails`, `CashRegisterBranches`
 - Auth DB: `despatch_drivers`
 
 Onemli alan ayrimi:
 
-- `cashNo`: integer kasa no, eski `CashRegistryDetail.CashRegisterNo` karsiligi
-- `terminalNo`: string POS terminal no, eski `CashRegisterDetail.CashRegisterNo` karsiligi
+- `cashNo`: integer sube icindeki fiziksel/operasyonel kasa no. Ornek: `130`.
+- `cashRegisterNo`: geriye uyumluluk icin bazi kasa response'larinda `cashNo` ile ayni integer kasa no olarak donebilir.
+- `cashFinanceNumber`: kasanin banka/POS/Z raporu tarafindaki finans/terminal grup numarasi. Ornek: `PAV210010584`.
+- `terminalNo`: POS terminal grup numarasi; ayar terminal response'unda `CashRegisterDetails.CashRegisterNo` karsiligi olarak gelir. Yeni UI'da gorunen/anahtar isim icin `cashRegisterNo` alias'i da vardir.
 - `branchNo`: sube/depo no
+
+Kasa ve terminal kaynagi:
+
+- Sube kasa listesi `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` tarafinda Furpa `CashRegistryDetails` kaydindan kasa no'yu okur.
+- Ayni response'taki `cashFinanceNumber`, once Furpa `CashRegisterDetails` icindeki `CashNo -> CashRegisterNo` eslesmesinden cozulur; Furpa'da yoksa Mikro `CashRegisterDetails` fallback olarak kullanilir.
+- Kasa/POS terminal listesi `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` tarafinda once Furpa `CashRegisterDetails` kayitlarini dondurur. Furpa'da ilgili `cashNo` icin terminal yoksa Mikro `CashRegisterDetails` fallback olarak kullanilir.
+- Icmal/kasa sayim banka odeme tipi seciminde UI `cashNo` yerine mumkunse `cashFinanceNumber` gondermelidir. Ornek: kasa `130`, finans no `PAV210010584` ise banka odeme tipi endpointi `cashRegisterNo=PAV210010584` ile cagrilir.
+- `cashNo` sadece subedeki kasa numarasidir; banka/POS eslesmesinin guvenilir anahtari `cashFinanceNumber`/terminal `cashRegisterNo` degeridir.
 
 Kasiyer listelerinde sifre donmez. Yeni kasiyer olusturma ve sifre sifirlama response'lari uretilen sifreyi tek seferlik `generatedPassword` alaninda dondurur.
 
@@ -1965,9 +1978,19 @@ ayar-islemleri.soforler.create
 ayar-islemleri.soforler.update
 ayar-islemleri.soforler.delete
 ayar-islemleri.soforler.all-warehouses
+
+ayar-islemleri.b2b-ayarlari.manage
+ayar-islemleri.b2b-ayarlari.list
+ayar-islemleri.b2b-ayarlari.detail
+ayar-islemleri.b2b-ayarlari.create
+ayar-islemleri.b2b-ayarlari.update
+ayar-islemleri.b2b-ayarlari.delete
+ayar-islemleri.b2b-ayarlari.all-warehouses
 ```
 
 Not: `Soforler` ekrani tanim/yonetim ekranidir. UI menu/route acilisinda `ayar-islemleri.soforler.manage` yetkisine bakmali; liste ve butonlarda ilgili `list/detail/create/update/delete` yetkilerini kullanmalidir.
+
+Not: `B2BAyarlari` ekrani tanim/yonetim ekranidir. UI menu/route acilisinda `ayar-islemleri.b2b-ayarlari.manage` yetkisine bakmali; bulten ve kullanici aksiyonlarinda ilgili `list/detail/create/update/delete` yetkilerini kullanmalidir. B2B kullanici sifre hash/salt alanlari API response'unda donmez ve bu ekrandan sifre degistirilmez.
 
 Endpoint ozeti:
 
@@ -2001,6 +2024,13 @@ Endpoint ozeti:
 | `POST /api/ayar-islemleri/soforler` | body | `SaveDespatchDriverHttpRequest` | `DespatchDriverDto` | `soforler.create` |
 | `PUT /api/ayar-islemleri/soforler/{id}` | body + path | `SaveDespatchDriverHttpRequest` | `DespatchDriverDto` | `soforler.update` |
 | `DELETE /api/ayar-islemleri/soforler/{id}` | path | `id: guid` | - | `soforler.delete` |
+| `GET /api/ayar-islemleri/b2b-ayarlari/bultenler?search=&take=100` | query | `B2BBulletinListHttpRequest` | `B2BBulletinDto[]` | `b2b-ayarlari.list` |
+| `POST /api/ayar-islemleri/b2b-ayarlari/bultenler` | body | `SaveB2BBulletinHttpRequest` | `B2BBulletinDto` | `b2b-ayarlari.create` |
+| `PUT /api/ayar-islemleri/b2b-ayarlari/bultenler/{id}` | body + path | `SaveB2BBulletinHttpRequest` | `B2BBulletinDto` | `b2b-ayarlari.update` |
+| `DELETE /api/ayar-islemleri/b2b-ayarlari/bultenler/{id}` | path | `id: int` | - | `b2b-ayarlari.delete` |
+| `GET /api/ayar-islemleri/b2b-ayarlari/kullanicilar?search=&includeInactive=false&take=100` | query | `B2BUserListHttpRequest` | `B2BUserDto[]` | `b2b-ayarlari.list` |
+| `GET /api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}` | path | `userId: guid` | `B2BUserDetailDto` | `b2b-ayarlari.detail` |
+| `PUT /api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}` | body + path | `UpdateB2BUserHttpRequest` | `B2BUserDetailDto` | `b2b-ayarlari.update` |
 
 ### Cihazlar
 
@@ -2163,12 +2193,23 @@ Response:
     "detailId": 1,
     "branchNo": 110,
     "cashNo": 1,
+    "cashRegisterNo": 1,
     "cashType": 1,
+    "cashRegisterType": 1,
     "cashTypeName": "Ek POS Kasasi",
-    "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir."
+    "cashRegisterTypeName": "Ek POS Kasasi",
+    "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+    "cashRegisterTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+    "cashFinanceNumber": "PAV210010584"
   }
 ]
 ```
+
+Not:
+
+- `cashNo` / `cashRegisterNo` bu endpointte sube icindeki kasa numarasidir.
+- `cashFinanceNumber` bankalar, Z raporu ve kasa sayim banka odeme tipi lookup'inda kullanilacak asil anahtardir.
+- UI kasa seciminde kullaniciya `Kasa 130 - PAV210010584` gibi gosterebilir; banka odeme tiplerini getirirken `cashFinanceNumber` degerini `cashRegisterNo` query alanina yazmalidir.
 
 `POST /api/ayar-islemleri/sube-ayarlari`
 
@@ -2284,6 +2325,7 @@ Response `201 Created`:
     {
       "id": 15,
       "terminalNo": "POS001",
+      "cashRegisterNo": "POS001",
       "bank": "Akbank",
       "terminalId": "T123456",
       "merchantNo": "M123456",
@@ -2301,7 +2343,36 @@ Notlar:
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller`
 
-Kasa no'ya bagli terminal detaylarini listeler.
+Kasa no'ya bagli terminal detaylarini listeler. Backend once Furpa `CashRegisterDetails` kayitlarini okur; Furpa'da ilgili kasa icin kayit yoksa Mikro `CashRegisterDetails` fallback olarak kullanilir.
+
+Ornek:
+
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/130/terminaller`
+
+```json
+[
+  {
+    "id": 3503,
+    "terminalNo": "PAV210010584",
+    "cashRegisterNo": "PAV210010584",
+    "bank": "İş Bankası",
+    "terminalId": "PAV210010584-3",
+    "merchantNo": "PAV210010584-3",
+    "cashNo": 130
+  },
+  {
+    "id": 3566,
+    "terminalNo": "PAV210010584",
+    "cashRegisterNo": "PAV210010584",
+    "bank": "TEB",
+    "terminalId": "PSB25681",
+    "merchantNo": "670522",
+    "cashNo": 130
+  }
+]
+```
+
+Bu response'ta `terminalNo` ve `cashRegisterNo` ayni terminal/finans grup numarasidir. UI eski ad icin `terminalNo`, yeni net ad icin `cashRegisterNo` kullanabilir.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}`
 
@@ -2533,6 +2604,190 @@ E-irsaliye modal entegrasyonu:
 3. Gonderimde body'ye sadece `driverId` gonderilebilir; backend aktif sofor kaydindan plaka/ad soyad/TCKN alanlarini doldurur.
 4. Kullanici secilen sofor bilgisini formda degistirdiyse `driverId` ile birlikte manuel alanlar da gonderilebilir. Manuel dolu alanlar, secili sofor kaydinin ustune yazilir.
 5. Kullanici listeden secmeden eski akisi kullanacaksa `driverId` gondermez; bu durumda `plaque`, `driverNameSurname`, `driverTckn` zorunludur.
+
+### B2B Ayarlari
+
+Bu ekran eski B2B sistemindeki bulten ve B2B kullanici kayitlarini yeni ayar modulu altinda yonetmek icindir.
+
+Veri kaynagi:
+
+- FurpaB2B DB: `Bultens`, `Users`, `UserAccounts`
+
+Guvenlik notu:
+
+- `Users.UserPasswordSalt` ve `Users.UserPasswordHash` API response'unda hic donmez.
+- Bu ekrandan B2B kullanici sifresi olusturma veya sifre degistirme yapilmaz.
+- Kullanici guncelleme sadece ad-soyad, e-posta, aktiflik, menu metni ve bitis tarihi alanlarini degistirir.
+
+UI onerisi:
+
+- Ekrani iki tab olarak tasarla: `Bultenler` ve `Kullanicilar`.
+- Bultenler tabinda baslik/aciklama, link ve olusturma tarihi kolonlari yeterlidir.
+- Kullanicilar tabinda ad-soyad, e-posta, aktif/pasif, bitis tarihi, hesap sayisi ve kategori kolonlari yeterlidir.
+- Kullanici detayinda `accounts` listesi gosterilebilir; `accountId` ve `category` alanlari B2B cari/hesap baglantisini anlatir.
+- Sifre alanlari UI'da hic gosterilmemeli ve body'ye yazilmamalidir.
+
+#### B2B Bulten Liste
+
+`GET /api/ayar-islemleri/b2b-ayarlari/bultenler?search=kampanya&take=100`
+
+Yetki:
+
+- `ayar-islemleri.b2b-ayarlari.list`
+
+Query:
+
+```text
+search  opsiyonel; bulten aciklamasi veya link icinde arar
+take    opsiyonel; default 100, max 500
+```
+
+Response:
+
+```json
+[
+  {
+    "id": 1,
+    "definition": "Haftalik B2B bulteni",
+    "link": "https://ornek.local/bulten.pdf",
+    "createDate": "2026-08-20T09:00:00"
+  }
+]
+```
+
+#### B2B Bulten Olustur / Guncelle
+
+Olustur:
+
+`POST /api/ayar-islemleri/b2b-ayarlari/bultenler`
+
+Guncelle:
+
+`PUT /api/ayar-islemleri/b2b-ayarlari/bultenler/{id}`
+
+Yetki:
+
+- Olusturma: `ayar-islemleri.b2b-ayarlari.create`
+- Guncelleme: `ayar-islemleri.b2b-ayarlari.update`
+
+Body:
+
+```json
+{
+  "definition": "Haftalik B2B bulteni",
+  "link": "https://ornek.local/bulten.pdf",
+  "createDate": "2026-08-20T09:00:00"
+}
+```
+
+Not:
+
+- `createDate` bos gonderilirse yeni kayitta backend su anki tarihi yazar.
+- Guncellemede `createDate` bos gonderilirse mevcut tarih korunur.
+
+#### B2B Bulten Sil
+
+`DELETE /api/ayar-islemleri/b2b-ayarlari/bultenler/{id}`
+
+Yetki:
+
+- `ayar-islemleri.b2b-ayarlari.delete`
+
+Basarili response:
+
+```text
+204 No Content
+```
+
+#### B2B Kullanici Liste
+
+`GET /api/ayar-islemleri/b2b-ayarlari/kullanicilar?search=ali&includeInactive=false&take=100`
+
+Yetki:
+
+- `ayar-islemleri.b2b-ayarlari.list`
+
+Query:
+
+```text
+search           opsiyonel; ad-soyad, e-posta veya menus alaninda arar
+includeInactive  opsiyonel; default false. false ise sadece aktif kullanicilar gelir.
+take             opsiyonel; default 100, max 500
+```
+
+Response:
+
+```json
+[
+  {
+    "userId": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
+    "userFullName": "Ali Veli",
+    "userMail": "ali.veli@example.local",
+    "status": true,
+    "createDate": "2026-08-20T09:00:00",
+    "menus": "Orders,Reports",
+    "userEndDate": "2026-12-31T23:59:00",
+    "accountCount": 2,
+    "categories": ["Bayi", "Market"]
+  }
+]
+```
+
+#### B2B Kullanici Detay
+
+`GET /api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}`
+
+Yetki:
+
+- `ayar-islemleri.b2b-ayarlari.detail`
+
+Response:
+
+```json
+{
+  "userId": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
+  "userFullName": "Ali Veli",
+  "userMail": "ali.veli@example.local",
+  "status": true,
+  "createDate": "2026-08-20T09:00:00",
+  "menus": "Orders,Reports",
+  "userEndDate": "2026-12-31T23:59:00",
+  "accounts": [
+    {
+      "id": 1,
+      "accountId": "aa59c64c-8798-49f9-b4f0-0b640d2eab7d",
+      "category": "Bayi"
+    }
+  ]
+}
+```
+
+#### B2B Kullanici Guncelle
+
+`PUT /api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}`
+
+Yetki:
+
+- `ayar-islemleri.b2b-ayarlari.update`
+
+Body:
+
+```json
+{
+  "userFullName": "Ali Veli",
+  "userMail": "ali.veli@example.local",
+  "status": true,
+  "menus": "Orders,Reports",
+  "userEndDate": "2026-12-31T23:59:00"
+}
+```
+
+Not:
+
+- `userFullName` max 70 karakterdir.
+- `userMail` max 150 karakterdir ve e-posta formatinda olmalidir.
+- `menus` bos gonderilebilir; bos gonderilirse DB'de null saklanir.
+- Sifre hash/salt, hesap eslestirme ve cari baglantilari bu endpointle degismez.
 
 ## Manav / Manav Raporlari
 
@@ -12386,6 +12641,8 @@ Route'lar:
 
 `odeme-tipleri/banka` eski `Summaries/GetPaymentTypesByBanks` davranisi ile uyumludur. Backend `cashRegisterNo` ile `CashRegisterDetails` satirlarini bulur, bu satirlardaki `Bank` degeri ile `PaymentTypes.PaymentName` alanini eslestirir ve sadece `PaymentGenus = 1` banka odeme tiplerini dondurur. Ayni kasa numarasina bagli birden fazla banka/terminal varsa response birden fazla satir dondurur; UI bunlari tek bankaya dusurmemelidir. `terminalId` ilgili `CashRegisterDetails.TerminalId`, `accountCode` ilgili `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi icin de `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` kullanilmalidir; boylece buradaki eslestirme kayit sonrasinda dogru calisir.
 
+UI kasa seciminde `GET /api/kasa-islemleri/kasa-sayimlari/kasalar?branchNo=...` veya ayar ekranindaki `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` response'undan gelen `cashFinanceNumber` degeri varsa, banka odeme tipi endpointine `cashRegisterNo` olarak bu deger gonderilmelidir. Ornek: kullanici `Kasa 130` secer, satirda `cashFinanceNumber=PAV210010584` varsa cagri `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashRegisterNo=PAV210010584` olmalidir. `cashNo=130` sadece sube icindeki kasa numarasidir.
+
 `odeme-tipleri/yemek-ceki` response'unda yemek ceki tipi adi `paymentName` alanindadir. Backend eski API ile uyumlu olarak `PaymentTypes.PaymentGenus = 2` olan yemek ceki odeme tiplerini listeler ve `accountCode` alanini `PaymentTypes.AccountCode` degeriyle doldurur. UI yemek ceki seciminde gorunen ad olarak `paymentName`, kayit payload'inda odeme tipi olarak `paymentTypeNo` kullanmalidir.
 
 Kisa response ornekleri:
@@ -19659,7 +19916,8 @@ public sealed record CashRegistryDto(
     int CashNo,
     byte CashType,
     string CashTypeName,
-    string CashTypeDescription);
+    string CashTypeDescription,
+    string CashFinanceNumber);
 
 public sealed record CashRegisterResponse(
     int BranchNo,
@@ -19676,6 +19934,14 @@ public sealed record CashRegisterTerminalDto(
     string TerminalId,
     string MerchantNo,
     int? CashNo);
+
+// CashRegistryDto ek uyumluluk alanlari:
+// CashRegisterNo = CashNo
+// CashRegisterType = CashType
+// CashRegisterTypeName = CashTypeName
+// CashRegisterTypeDescription = CashTypeDescription
+// CashRegisterTerminalDto ek uyumluluk alani:
+// CashRegisterNo = TerminalNo
 
 public sealed record CashRegisterMessageStatusDto(
     int BranchNo,

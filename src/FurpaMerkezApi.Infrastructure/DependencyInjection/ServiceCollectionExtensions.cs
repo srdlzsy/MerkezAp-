@@ -204,11 +204,13 @@ using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.ZayiatFisleri.List;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
+using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Shopigo;
 using FurpaMerkezApi.Infrastructure.Services;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -231,6 +233,7 @@ public static class ServiceCollectionExtensions
         var mikroConnection = configuration.GetConnectionString(mikroConnectionName);
         var mikroWriteConnection = configuration.GetConnectionString(mikroWriteConnectionName);
         var furpaConnection = configuration.GetConnectionString("FurpaConnection");
+        var furpaB2BConnection = configuration.GetConnectionString("FurpaB2BConnection");
         var axataConnection = configuration.GetConnectionString("AxataConnection");
         var shopigoCiroConnection = configuration.GetConnectionString("ShopigoCiroConnection");
         var defaultCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
@@ -280,6 +283,11 @@ public static class ServiceCollectionExtensions
         if (string.IsNullOrWhiteSpace(furpaConnection))
         {
             throw new InvalidOperationException("Connection string 'FurpaConnection' was not found.");
+        }
+
+        if (string.IsNullOrWhiteSpace(furpaB2BConnection))
+        {
+            furpaB2BConnection = BuildSqlServerConnectionStringForDatabase(furpaConnection, "FurpaB2B");
         }
 
         var jwtSection = configuration.GetSection("Jwt");
@@ -412,6 +420,15 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<FurpaDbContext>(options =>
             options.UseSqlServer(
                 furpaConnection,
+                sqlServer =>
+                {
+                    sqlServer.EnableRetryOnFailure();
+                    sqlServer.CommandTimeout(furpaCommandTimeoutSeconds);
+                }));
+
+        services.AddDbContext<FurpaB2BDbContext>(options =>
+            options.UseSqlServer(
+                furpaB2BConnection,
                 sqlServer =>
                 {
                     sqlServer.EnableRetryOnFailure();
@@ -670,6 +687,18 @@ public static class ServiceCollectionExtensions
     private static bool IsSqlServerConnectionString(string connectionString) =>
         connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) ||
         connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildSqlServerConnectionStringForDatabase(
+        string sourceConnectionString,
+        string databaseName)
+    {
+        var builder = new SqlConnectionStringBuilder(sourceConnectionString)
+        {
+            InitialCatalog = databaseName
+        };
+
+        return builder.ConnectionString;
+    }
 
     private static int GetDatabaseCommandTimeoutSeconds(
         IConfiguration configuration,

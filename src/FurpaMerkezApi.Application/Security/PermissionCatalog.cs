@@ -243,6 +243,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasa-pos-terminalleri", "KasaPosTerminalleri", ManageCrudActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "kasiyerler", "Kasiyerler", ManageCrudActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "soforler", "Soforler", ManageCrudDeleteActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "b2b-ayarlari", "B2BAyarlari", ManageCrudDeleteActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),

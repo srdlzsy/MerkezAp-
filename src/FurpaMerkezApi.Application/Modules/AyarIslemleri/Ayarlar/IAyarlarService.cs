@@ -68,4 +68,33 @@ public interface IAyarlarService
         int cashierCode,
         int currentUserWarehouseNo,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<B2BBulletinDto>> ListB2BBulletinsAsync(
+        string? search,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<B2BBulletinDto> CreateB2BBulletinAsync(
+        SaveB2BBulletinRequest request,
+        CancellationToken cancellationToken);
+
+    Task<B2BBulletinDto> UpdateB2BBulletinAsync(
+        int id,
+        SaveB2BBulletinRequest request,
+        CancellationToken cancellationToken);
+
+    Task DeleteB2BBulletinAsync(int id, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<B2BUserDto>> ListB2BUsersAsync(
+        string? search,
+        bool includeInactive,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<B2BUserDetailDto> GetB2BUserAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<B2BUserDetailDto> UpdateB2BUserAsync(
+        Guid userId,
+        UpdateB2BUserRequest request,
+        CancellationToken cancellationToken);
 }
