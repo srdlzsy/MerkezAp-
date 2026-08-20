@@ -9259,6 +9259,8 @@ Kural:
 - `matchedStockCode` doluysa UI bu stokla satiri otomatik hazirlayabilir.
 - `matchedStockCode` bos ise satir yine gosterilir; UI kullanicidan `/stocks` ile MNV stok secimi istemelidir.
 - `canCreateAcceptance=false` satirda otomatik stok eslesmesi yoktur; Mikro aktarim veya etiket satiri olusturmadan once kullanici eslestirme yapmalidir.
+- Uyumsoft UBL icinde kap/dara bilgisi standart kolon olarak degil `cbc:Note` alaninda gelebilir. Backend header notlarindan `totalCaseCount`, `totalGrossWithTareQuantity`, `totalTareQuantity`, `totalNetQuantity`; satir notundan `caseCount`, `grossWithTareQuantity`, `tareQuantity`, `netQuantity` alanlarini cozmeye calisir.
+- Satir notu ornegi `84 1.432,00 126,00` ise UI bunu `84 kap`, `1432 kg darali`, `126 kg dara` olarak gosterebilir. `netQuantity` normalde fatura `quantity` degeriyle ayni net kg bilgisidir.
 - Bu endpoint Mikro'ya veya Furpa etiket tablosuna yazmaz; sadece fatura kalemlerini okur ve UI'a hazirlar.
 
 Response:
@@ -9276,6 +9278,10 @@ Response:
   "taxExclusiveAmount": 24753.96,
   "taxTotal": 250.04,
   "payableAmount": 25004.0,
+  "totalCaseCount": 216,
+  "totalGrossWithTareQuantity": 3686.0,
+  "totalTareQuantity": 324.0,
+  "totalNetQuantity": 3362.0,
   "despatchId": "IRS2026000099",
   "matchedSupplierCode": "32000297",
   "matchedSupplierName": "HAL TEDARIKCI A",
@@ -9288,7 +9294,12 @@ Response:
       "stockName": "MNV DOMATES KG",
       "barcode": "2801555000000",
       "unitCode": "KGM",
+      "note": "84 1.432,00 126,00",
       "quantity": 120.5,
+      "caseCount": 84,
+      "grossWithTareQuantity": 1432.0,
+      "tareQuantity": 126.0,
+      "netQuantity": 1306.0,
       "unitPrice": 25.0,
       "lineAmount": 3012.5,
       "taxRatePercent": 1.0,

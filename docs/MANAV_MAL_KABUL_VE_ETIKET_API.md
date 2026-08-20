@@ -218,6 +218,10 @@ Response ozeti:
   "taxExclusiveAmount": 24753.96,
   "taxTotal": 250.04,
   "payableAmount": 25004.0,
+  "totalCaseCount": 216,
+  "totalGrossWithTareQuantity": 3686.0,
+  "totalTareQuantity": 324.0,
+  "totalNetQuantity": 3362.0,
   "lines": [
     {
       "lineId": "1",
@@ -229,6 +233,11 @@ Response ozeti:
       "matchedBarcode": "2700480",
       "quantity": 714.4,
       "unitCode": "KGM",
+      "note": "84 1.432,00 126,00",
+      "caseCount": 84,
+      "grossWithTareQuantity": 1432.0,
+      "tareQuantity": 126.0,
+      "netQuantity": 1306.0,
       "unitPrice": 35.0,
       "lineExtensionAmount": 25004.0,
       "taxRatePercent": 1,
@@ -247,6 +256,8 @@ UI karar kurallari:
 - `matchedSupplierCode` bos ise UI tedarikci secimini zorunlu yapmalidir.
 - `lines[].canCreateAcceptance=true` olan satir grid'e hazir satir olarak alinabilir.
 - `lines[].matchedStockCode` bos veya `canCreateAcceptance=false` ise satir pasif/uyarili gosterilmeli, kullaniciya stok aratip eslestirme yaptirilmalidir.
+- Uyumsoft UBL icinde kap/dara bilgisi `cbc:Note` icinde gelebilir. Backend header notlarindan `totalCaseCount`, `totalGrossWithTareQuantity`, `totalTareQuantity`, `totalNetQuantity`; satir notundan `caseCount`, `grossWithTareQuantity`, `tareQuantity`, `netQuantity` alanlarini cozer.
+- Satir notu `84 1.432,00 126,00` formatindaysa anlam sirasi `kap adedi`, `darali kg`, `dara kg` seklindedir.
 - UI miktar icin fatura `quantity` bilgisini gosterebilir; manav operasyonunda kesin Mikro miktari genelde tartim/etiket kaydindaki net kg ile onaylanmalidir.
 - Fiyat icin varsayilan `unitPrice`, KDV icin once `taxPointer`, yoksa `taxRatePercent` kullanilir.
 - Mikro'ya yazma yine sadece `POST /micro/goods-receipts` ile yapilir.

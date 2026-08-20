@@ -322,6 +322,7 @@ public sealed class ManavMalKabulVeEtiketService(
             ? match
             : supplierFilter;
 
+        var packagingSummary = ReadInvoicePackagingSummary(invoice);
         var lines = await ReadInvoiceLinesAsync(invoice, cancellationToken);
         var warnings = new List<string>();
         if (cachedInvoice is null)
@@ -351,6 +352,10 @@ public sealed class ManavMalKabulVeEtiketService(
             Round(taxExclusiveAmount),
             Round(taxTotal),
             Round(payableAmount),
+            packagingSummary.CaseCount,
+            RoundOrNull(packagingSummary.GrossWithTareQuantity),
+            RoundOrNull(packagingSummary.TareQuantity),
+            RoundOrNull(packagingSummary.NetQuantity),
             despatchId,
             matchedSupplier?.SupplierCode,
             matchedSupplier?.SupplierName,
@@ -1289,6 +1294,8 @@ public sealed class ManavMalKabulVeEtiketService(
             var item = FindPath(line, "Item");
             var lineId = ReadPath(line, "ID") ?? (index + 1).ToString(CultureInfo.InvariantCulture);
             var itemName = ReadPath(item, "Name") ?? string.Empty;
+            var note = ReadPath(line, "Note");
+            var packagingSummary = ReadInvoiceLinePackagingSummary(note, ReadDecimal(FindPath(line, "InvoicedQuantity")));
             var candidates = CollectInvoiceLineStockCandidates(item).ToArray();
             var matchedStock = await FindStockByInvoiceLineAsync(candidates, itemName, cancellationToken);
             var lineWarnings = new List<string>();
@@ -1312,7 +1319,12 @@ public sealed class ManavMalKabulVeEtiketService(
                 itemName,
                 ResolveInvoiceLineBarcode(candidates, matchedStock),
                 ReadAttribute(invoicedQuantity, "unitCode") ?? string.Empty,
+                note,
                 Round(ReadDecimal(invoicedQuantity) ?? 0m),
+                packagingSummary.CaseCount,
+                RoundOrNull(packagingSummary.GrossWithTareQuantity),
+                RoundOrNull(packagingSummary.TareQuantity),
+                RoundOrNull(packagingSummary.NetQuantity),
                 Round(ReadDecimal(FindPath(line, "Price", "PriceAmount")) ?? 0m),
                 Round(ReadDecimal(FindPath(line, "LineExtensionAmount")) ?? 0m),
                 Round(taxRate),
@@ -2594,6 +2606,117 @@ public sealed class ManavMalKabulVeEtiketService(
                normalized.All(char.IsDigit);
     }
 
+    private static InvoicePackagingSummary ReadInvoicePackagingSummary(XElement invoice)
+    {
+        int? caseCount = null;
+        decimal? grossWithTareQuantity = null;
+        decimal? tareQuantity = null;
+        decimal? netQuantity = null;
+
+        foreach (var note in invoice.Elements().Where(element => IsElement(element, "Note")).Select(element => NormalizeOrNull(element.Value)))
+        {
+            if (note is null)
+            {
+                continue;
+            }
+
+            if (TryReadLabeledDecimal(note, ["Toplam Kap"], out var parsedCaseCount))
+            {
+                caseCount = ToNullableInt(parsedCaseCount);
+                continue;
+            }
+
+            if (TryReadLabeledDecimal(note, ["Toplam Darali", "Toplam Daralı"], out var parsedGrossWithTareQuantity))
+            {
+                grossWithTareQuantity = parsedGrossWithTareQuantity;
+                continue;
+            }
+
+            if (TryReadLabeledDecimal(note, ["Toplam Dara"], out var parsedTareQuantity))
+            {
+                tareQuantity = parsedTareQuantity;
+                continue;
+            }
+
+            if (TryReadLabeledDecimal(note, ["Toplam Miktar"], out var parsedNetQuantity))
+            {
+                netQuantity = parsedNetQuantity;
+            }
+        }
+
+        return new InvoicePackagingSummary(caseCount, grossWithTareQuantity, tareQuantity, netQuantity);
+    }
+
+    private static InvoicePackagingSummary ReadInvoiceLinePackagingSummary(string? note, decimal? invoicedQuantity)
+    {
+        var normalized = NormalizeOrNull(note);
+        if (normalized is null)
+        {
+            return new InvoicePackagingSummary(null, null, null, null);
+        }
+
+        var parts = normalized
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 3 ||
+            !TryReadFlexibleDecimal(parts[0], out var parsedCaseCount) ||
+            !TryReadFlexibleDecimal(parts[1], out var grossWithTareQuantity) ||
+            !TryReadFlexibleDecimal(parts[2], out var tareQuantity))
+        {
+            return new InvoicePackagingSummary(null, null, null, null);
+        }
+
+        var netQuantity = invoicedQuantity ?? grossWithTareQuantity - tareQuantity;
+        return new InvoicePackagingSummary(
+            ToNullableInt(parsedCaseCount),
+            grossWithTareQuantity,
+            tareQuantity,
+            netQuantity);
+    }
+
+    private static bool TryReadLabeledDecimal(string note, IReadOnlyCollection<string> labels, out decimal value)
+    {
+        foreach (var label in labels)
+        {
+            if (!note.StartsWith(label, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var separatorIndex = note.IndexOf(':');
+            if (separatorIndex < 0)
+            {
+                break;
+            }
+
+            return TryReadFlexibleDecimal(note[(separatorIndex + 1)..], out value);
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool TryReadFlexibleDecimal(string value, out decimal parsed)
+    {
+        var normalized = NormalizeOrNull(value)?.Replace(" ", string.Empty);
+        if (normalized is null)
+        {
+            parsed = default;
+            return false;
+        }
+
+        if (normalized.Contains(','))
+        {
+            normalized = normalized.Replace(".", string.Empty).Replace(',', '.');
+        }
+
+        return decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out parsed);
+    }
+
+    private static int? ToNullableInt(decimal value) =>
+        value == decimal.Truncate(value)
+            ? decimal.ToInt32(value)
+            : null;
+
     private static decimal ResolveTaxAmount(
         ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest line,
         decimal amount)
@@ -2764,6 +2887,9 @@ public sealed class ManavMalKabulVeEtiketService(
 
     private static decimal Round(decimal value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static decimal? RoundOrNull(decimal? value) =>
+        value.HasValue ? Round(value.Value) : null;
 
     private static string ResolveComparisonStatus(int labelRowCount, int microRowCount, decimal difference)
     {
@@ -2941,6 +3067,12 @@ public sealed class ManavMalKabulVeEtiketService(
         string SupplierCode,
         string SupplierName,
         string? TaxNo);
+
+    private sealed record InvoicePackagingSummary(
+        int? CaseCount,
+        decimal? GrossWithTareQuantity,
+        decimal? TareQuantity,
+        decimal? NetQuantity);
 
     private sealed class ConnectionLease(DbConnection connection, bool closeConnection) : IAsyncDisposable
     {
