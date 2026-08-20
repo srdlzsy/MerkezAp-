@@ -61,6 +61,48 @@ public sealed record ManavMalKabulVeEtiketIncomingInvoiceDto(
     string? MatchedSupplierName,
     bool CanStartAcceptance);
 
+public sealed record ManavMalKabulVeEtiketInvoiceDetailQuery(
+    string InvoiceLookupId,
+    string? SupplierCode);
+
+public sealed record ManavMalKabulVeEtiketInvoiceDetailDto(
+    string InvoiceLookupId,
+    string InvoiceId,
+    string DocumentId,
+    string SupplierTitle,
+    string SupplierTaxNo,
+    DateTime? IssueDate,
+    string InvoiceTypeCode,
+    string DocumentCurrencyCode,
+    decimal TaxExclusiveAmount,
+    decimal TaxTotal,
+    decimal PayableAmount,
+    string? DespatchId,
+    string? MatchedSupplierCode,
+    string? MatchedSupplierName,
+    bool CanStartAcceptance,
+    IReadOnlyCollection<ManavMalKabulVeEtiketInvoiceLineDto> Lines,
+    IReadOnlyCollection<string> Warnings);
+
+public sealed record ManavMalKabulVeEtiketInvoiceLineDto(
+    int LineNo,
+    string LineId,
+    string StockCode,
+    string StockName,
+    string Barcode,
+    string UnitCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal LineAmount,
+    decimal TaxRatePercent,
+    decimal TaxAmount,
+    int? TaxPointer,
+    string? MatchedStockCode,
+    string? MatchedStockName,
+    string? MatchedBarcode,
+    bool CanCreateAcceptance,
+    IReadOnlyCollection<string> Warnings);
+
 public sealed record ManavMalKabulVeEtiketCalculationRequest(
     decimal GrossWeight,
     decimal CaseTare,

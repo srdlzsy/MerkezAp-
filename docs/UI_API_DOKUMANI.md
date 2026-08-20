@@ -8893,7 +8893,7 @@ Bu bolum UI tarafinin baska bir dokumana gitmeden kullanabilmesi icin tum endpoi
 Canli akis ayrimi:
 
 - Bu ekranda operasyonun ana kaynagi halden gelen resmi faturadir. UI mumkun oldugunca manuel bos evrakla baslamamali; once gelen fatura listesinden ilgili hal faturasini buldurmali, sonra tartim/etiket ve Mikro mal kabul adimlarini bu faturanin ustune kurmalidir.
-- Gelen hal faturasi `GET /incoming-invoices` ile Auth DB'deki Uyumsoft gelen fatura cache'inden okunur. UI ayrica Uyumsoft/Fatura Goruntuleme ekranina gidip fatura detayi toplamak zorunda degildir.
+- Gelen hal faturasi `GET /incoming-invoices` ile Auth DB'deki Uyumsoft gelen fatura cache'inden listelenir. Kullanici faturayi secince UI `GET /incoming-invoices/{invoiceLookupId}/detail` veya dogrudan ETTN ile `GET /incoming-invoices/ettn/{ettn}` cagirip fatura kalemlerini alir.
 - Etiket/tartim kaydi `Furpa.dbo.Manav_Depo_Mal_Kabul_Etiket` tablosuna yazilir; bu kayit tek basina Mikro fatura/mal kabul belgesi degildir.
 - Mikro mal kabul olusturma ayrica `POST /micro/goods-receipts` ile yapilir.
 - Mikro aktariminda canli formata uygun olarak `CARI_HESAP_HAREKETLERI` tarafinda fatura/cari hareket basligi acilir ve `STOK_HAREKETLERI` satirlari bu basliga `sth_fat_uid = cha_Guid` ile baglanir.
@@ -8905,16 +8905,17 @@ Hal faturasi odakli en saglikli senaryo:
 1. Ekran acilisinda UI tarih araligini bugun veya son 7 gun olarak ayarlar.
 2. Kullanici hal tedarikcisini secer veya arar; UI `GET /suppliers?query=...` ile Mikro carisini bulur.
 3. UI secili tarih/tedarikci icin `GET /incoming-invoices?startDate=...&endDate=...&supplierCode=...` cagirir.
-4. Kullanici listeden hal faturasini secer. UI ust baslikta `invoiceId`, `documentId`, `supplierTitle`, `supplierTaxNo`, `invoiceDate`, `invoiceTotal`, `taxExclusiveAmount`, `taxTotal`, `documentCurrencyCode`, `status` alanlarini gosterir.
-5. UI fatura secilmeden Mikro aktarim butonunu acmaz. Fatura secili degilse sadece tartim/etiket taslagi yapilabilir.
-6. Faturadaki urun satirlari mevcut endpointte satir satir donmuyorsa UI ilk fazda satirlari kullaniciya stok arama ile ekletir; fakat belge no/fatura no ve tedarikci secimi faturadan gelir.
-7. Kullanici her urun icin `GET /stocks?query=...&prefix=MNV` ile MNV stokunu secer, fatura miktari/fiyati/KDV bilgisini girer veya kontrol eder.
-8. Tartim geldikce `POST /acceptance-records/calculate` ile net kg ve kasa ortalamasi hesaplanir.
-9. Onaylanan her tartim satiri `POST /acceptance-records` ile Furpa etiket kaydina yazilir. Bu satirda `documentSeries/documentNo` alanlari secili hal faturasinin gorunen belge bilgisiyle doldurulmalidir.
-10. Etiket basimi `GET /acceptance-records/{id}/label` ile yapilir. Etiket basmak Mikro'ya aktarim anlamina gelmez.
-11. Fatura satirlari ve tartim satirlari kontrol edildikten sonra UI `POST /micro/goods-receipts` ile Mikro alis/mal kabul belgesini olusturur.
-12. Aktarimdan sonra UI `GET /micro/goods-receipts?date=...&supplierCode=...` ve `GET /micro/goods-receipts/comparison?date=...&supplierCode=...` cagirip ekrani yeniler.
-13. Gun sonu kontrolunde `GET /reports/received-products?date=...` ana mutabakat raporu, `GET /reports/depot-stock?warehouseNo=56&date=...` Manav Depo stok raporu olarak kullanilir.
+4. Kullanici listeden hal faturasini secer veya ETTN girer. UI `GET /incoming-invoices/{invoiceLookupId}/detail` ya da `GET /incoming-invoices/ettn/{ettn}` cagirir.
+5. UI ust baslikta `invoiceId`, `documentId`, `supplierTitle`, `supplierTaxNo`, `issueDate`, `payableAmount`, `taxExclusiveAmount`, `taxTotal`, `documentCurrencyCode` alanlarini gosterir.
+6. UI orta gridde `lines[]` kalemlerini acar. `matchedStockCode` doluysa satir otomatik Mikro stokuyla eslesmistir; bos ise kullanicidan `/stocks` ile stok secimi istenir.
+7. UI fatura secilmeden Mikro aktarim butonunu acmaz. Fatura secili degilse sadece tartim/etiket taslagi yapilabilir.
+8. Kullanici her urun icin fatura miktari/fiyati/KDV bilgisini kontrol eder; eslesmeyen urunlerde `GET /stocks?query=...&prefix=MNV` ile MNV stokunu secer.
+9. Tartim geldikce `POST /acceptance-records/calculate` ile net kg ve kasa ortalamasi hesaplanir.
+10. Onaylanan her tartim satiri `POST /acceptance-records` ile Furpa etiket kaydina yazilir. Bu satirda `documentSeries/documentNo` alanlari secili hal faturasinin gorunen belge bilgisiyle doldurulmalidir.
+11. Etiket basimi `GET /acceptance-records/{id}/label` ile yapilir. Etiket basmak Mikro'ya aktarim anlamina gelmez.
+12. Fatura satirlari ve tartim satirlari kontrol edildikten sonra UI `POST /micro/goods-receipts` ile Mikro alis/mal kabul belgesini olusturur.
+13. Aktarimdan sonra UI `GET /micro/goods-receipts?date=...&supplierCode=...` ve `GET /micro/goods-receipts/comparison?date=...&supplierCode=...` cagirip ekrani yeniler.
+14. Gun sonu kontrolunde `GET /reports/received-products?date=...` ana mutabakat raporu, `GET /reports/depot-stock?warehouseNo=56&date=...` Manav Depo stok raporu olarak kullanilir.
 
 UI icin sade ekran kurgusu:
 
@@ -8950,7 +8951,7 @@ Onerilen ekran bolumleri:
 
 | Bolum | Amac | Kullanilacak endpointler |
 |---|---|---|
-| `Fatura/Mal Kabul` | Tedarikci, tarih, belge no, fiyatli satirlar ve Mikro aktarim onayi | `/suppliers`, `/stocks`, `POST /micro/goods-receipts`, `GET /micro/goods-receipts` |
+| `Fatura/Mal Kabul` | Tedarikci, tarih, belge no, fatura kalemleri, fiyatli satirlar ve Mikro aktarim onayi | `/suppliers`, `/incoming-invoices`, `/incoming-invoices/{invoiceLookupId}/detail`, `/incoming-invoices/ettn/{ettn}`, `/stocks`, `POST /micro/goods-receipts`, `GET /micro/goods-receipts` |
 | `Tartim ve Etiket` | Brut, kasa darasi, kasa sayisi, net kg, ortalama kg hesaplama ve etiket basma | `POST /acceptance-records/calculate`, `/acceptance-records`, `/labels/preview`, `/acceptance-records/{id}/label` |
 | `Kontrol` | Furpa etiket kaydi ile Mikro mal kabul miktarlarini karsilastirma | `GET /micro/goods-receipts/comparison` |
 | `Raporlar` | Alinan urun/fatura farki ve Manav Depo stok/fiyat gorunumu | `/reports/received-products`, `/reports/depot-stock` |
@@ -9018,6 +9019,8 @@ Endpoint ozeti:
 | `GET` | `/stocks/by-name` | query: `name` | `ManavMalKabulVeEtiketStockSuggestionDto` | `list` |
 | `GET` | `/stocks/{stockCode}` | path: `stockCode` | `ManavMalKabulVeEtiketStockSuggestionDto` | `list` |
 | `GET` | `/incoming-invoices` | query: `startDate`, `endDate`, `supplierCode`, `searchText`, `includeArchived`, `take` | `ManavMalKabulVeEtiketIncomingInvoiceDto[]` | `list` |
+| `GET` | `/incoming-invoices/{invoiceLookupId}/detail` | path: `invoiceLookupId`, query: `supplierCode` opsiyonel | `ManavMalKabulVeEtiketInvoiceDetailDto` | `detail` |
+| `GET` | `/incoming-invoices/ettn/{ettn}` | path: `ettn`, query: `supplierCode` opsiyonel | `ManavMalKabulVeEtiketInvoiceDetailDto` | `detail` |
 | `POST` | `/acceptance-records/calculate` | body: `ManavMalKabulVeEtiketCalculationHttpRequest` | `ManavMalKabulVeEtiketCalculationDto` | `create` |
 | `GET` | `/acceptance-records` | query: `date` | `ManavMalKabulVeEtiketAcceptanceRecordDto[]` | `list` |
 | `GET` | `/acceptance-records/{id}` | path: `id` | `ManavMalKabulVeEtiketAcceptanceRecordDto` | `detail` |
@@ -9210,9 +9213,86 @@ Response:
 
 Not:
 
-- Bu endpoint fatura baslik/ozet bilgisini dondurur; Uyumsoft cache su an manav urun/tartim satirlarini tasimaz.
+- Bu endpoint fatura baslik/ozet bilgisini dondurur; fatura kalemleri icin detay endpointi kullanilmalidir.
 - `matchedSupplierCode` VKN/TCKN eslesmesiyle dolarsa UI tedarikci alanini otomatik onerebilir.
 - `canStartAcceptance=false` ise UI yine manuel tedarikci secimine izin verebilir; fatura cache'i operasyonu bloke etmez.
+
+### Gelen Fatura Detayi ve Kalemleri
+
+Fatura secildikten sonra UI kalemleri almak icin bu endpointlerden birini cagirir:
+
+```text
+GET /api/kasa-islemleri/manav-mal-kabul-etiket/incoming-invoices/{invoiceLookupId}/detail?supplierCode=32000297
+GET /api/kasa-islemleri/manav-mal-kabul-etiket/incoming-invoices/ettn/{ettn}?supplierCode=32000297
+```
+
+Kural:
+
+- `invoiceLookupId` veya `ettn` Uyumsoft `invoiceId`, `documentId`, cache `serviceDocumentId` veya `localDocumentId` olabilir.
+- Backend once Auth DB Uyumsoft inbox cache'inde eslesen basligi arar, sonra Uyumsoft `GetInboxInvoice` ve gerekirse `GetInboxInvoiceData` ile fatura XML'ini ceker.
+- Response fatura basligi ile birlikte `lines[]` kalemlerini dondurur.
+- Her kalemde backend fatura XML'indeki stok/barkod adaylarini Mikro `STOKLAR` ve `BARKOD_TANIMLARI` ile eslestirmeye calisir.
+- `matchedStockCode` doluysa UI bu stokla satiri otomatik hazirlayabilir.
+- `matchedStockCode` bos ise satir yine gosterilir; UI kullanicidan `/stocks` ile MNV stok secimi istemelidir.
+- `canCreateAcceptance=false` satirda otomatik stok eslesmesi yoktur; Mikro aktarim veya etiket satiri olusturmadan once kullanici eslestirme yapmalidir.
+- Bu endpoint Mikro'ya veya Furpa etiket tablosuna yazmaz; sadece fatura kalemlerini okur ve UI'a hazirlar.
+
+Response:
+
+```json
+{
+  "invoiceLookupId": "9f4c0c1a-...",
+  "invoiceId": "9f4c0c1a-...",
+  "documentId": "GIB2026000012345",
+  "supplierTitle": "HAL TEDARIKCI A",
+  "supplierTaxNo": "1234567890",
+  "issueDate": "2026-08-13T00:00:00",
+  "invoiceTypeCode": "SATIS",
+  "documentCurrencyCode": "TRY",
+  "taxExclusiveAmount": 24753.96,
+  "taxTotal": 250.04,
+  "payableAmount": 25004.0,
+  "despatchId": "IRS2026000099",
+  "matchedSupplierCode": "32000297",
+  "matchedSupplierName": "HAL TEDARIKCI A",
+  "canStartAcceptance": true,
+  "lines": [
+    {
+      "lineNo": 1,
+      "lineId": "1",
+      "stockCode": "015550",
+      "stockName": "MNV DOMATES KG",
+      "barcode": "2801555000000",
+      "unitCode": "KGM",
+      "quantity": 120.5,
+      "unitPrice": 25.0,
+      "lineAmount": 3012.5,
+      "taxRatePercent": 1.0,
+      "taxAmount": 30.13,
+      "taxPointer": 3,
+      "matchedStockCode": "015550",
+      "matchedStockName": "MNV DOMATES KG",
+      "matchedBarcode": "2801555000000",
+      "canCreateAcceptance": true,
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}
+```
+
+UI'da Mikro mal kabul satiri hazirlama:
+
+- `stockCode`: `matchedStockCode` doluysa bu deger; bos ise kullanicinin sectigi MNV stok kodu
+- `quantity`: fatura kalemindeki `quantity` veya tartim sonrasi onaylanan net miktar
+- `unitPrice`: fatura kalemindeki `unitPrice`
+- `taxPointer`: `taxPointer` doluysa bu deger
+- `taxRatePercent`: `taxPointer` bos ise fatura kalemindeki `taxRatePercent`
+- `taxAmount`: fatura kalemindeki `taxAmount` opsiyonel olarak tasinabilir
+- `acceptanceRecordId`: satir bir Furpa tartim/etiket kaydiyla eslestirildiyse ilgili kaydin `id` degeri
+- `description`: fatura kalem adi, satir no veya kullanici notu
+
+Mikro'ya yazma yine sadece `POST /micro/goods-receipts` ile yapilir. Fatura detayi endpointini cagirmak Mikro kaydi olusturmaz.
 
 Hesaplama:
 
@@ -21437,6 +21517,9 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 - `ManavMalKabulVeEtiketReferenceSearchHttpRequest`: `Query`, `Take`
 - `ManavMalKabulVeEtiketStockSearchHttpRequest`: `Query`, `Prefix`, `Take`
 - `ManavMalKabulVeEtiketIncomingInvoiceHttpRequest`: `StartDate`, `EndDate`, `SupplierCode`, `SearchText`, `IncludeArchived`, `Take`
+- `ManavMalKabulVeEtiketInvoiceDetailQuery`: `InvoiceLookupId`, `SupplierCode`
+- `ManavMalKabulVeEtiketInvoiceDetailDto`: `InvoiceLookupId`, `InvoiceId`, `DocumentId`, `SupplierTitle`, `SupplierTaxNo`, `IssueDate`, `InvoiceTypeCode`, `DocumentCurrencyCode`, `TaxExclusiveAmount`, `TaxTotal`, `PayableAmount`, `DespatchId`, `MatchedSupplierCode`, `MatchedSupplierName`, `CanStartAcceptance`, `Lines`, `Warnings`
+- `ManavMalKabulVeEtiketInvoiceLineDto`: `LineNo`, `LineId`, `StockCode`, `StockName`, `Barcode`, `UnitCode`, `Quantity`, `UnitPrice`, `LineAmount`, `TaxRatePercent`, `TaxAmount`, `TaxPointer`, `MatchedStockCode`, `MatchedStockName`, `MatchedBarcode`, `CanCreateAcceptance`, `Warnings`
 - `ManavMalKabulVeEtiketDateHttpRequest`: `Date`
 - `ManavMalKabulVeEtiketCalculationHttpRequest`: `GrossWeight`, `CaseTare`, `CaseCount`, `PalletTare`, `StockBarcode`
 - `SaveManavMalKabulVeEtiketAcceptanceRecordHttpRequest`: `SupplierCode`, `SupplierName`, `DocumentSeries`, `DocumentNo`, `StockCode`, `StockName`, `StockBarcode`, `GrossWeight`, `CaseTare`, `CaseCount`, `PalletTare`, `ReceivedBy`, `CaseType`

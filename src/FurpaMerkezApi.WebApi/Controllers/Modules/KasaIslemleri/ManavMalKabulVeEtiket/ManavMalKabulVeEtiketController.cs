@@ -84,6 +84,32 @@ public sealed class ManavMalKabulVeEtiketController(IManavMalKabulVeEtiketServic
         CancellationToken cancellationToken) =>
         Ok(await service.ListIncomingInvoicesAsync(request.ToApplicationRequest(), cancellationToken));
 
+    [HttpGet("incoming-invoices/ettn/{ettn}")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(ManavMalKabulVeEtiketInvoiceDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ManavMalKabulVeEtiketInvoiceDetailDto>> GetIncomingInvoiceDetailByEttn(
+        string ettn,
+        [FromQuery, StringLength(25)] string? supplierCode,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetIncomingInvoiceDetailAsync(
+            new ManavMalKabulVeEtiketInvoiceDetailQuery(ettn, supplierCode),
+            cancellationToken));
+
+    [HttpGet("incoming-invoices/{invoiceLookupId}/detail")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(ManavMalKabulVeEtiketInvoiceDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ManavMalKabulVeEtiketInvoiceDetailDto>> GetIncomingInvoiceDetail(
+        string invoiceLookupId,
+        [FromQuery, StringLength(25)] string? supplierCode,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetIncomingInvoiceDetailAsync(
+            new ManavMalKabulVeEtiketInvoiceDetailQuery(invoiceLookupId, supplierCode),
+            cancellationToken));
+
     [HttpGet("acceptance-records")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<ManavMalKabulVeEtiketAcceptanceRecordDto>), StatusCodes.Status200OK)]

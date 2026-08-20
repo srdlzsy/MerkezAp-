@@ -1,7 +1,11 @@
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Linq;
+using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
@@ -16,7 +20,8 @@ public sealed class ManavMalKabulVeEtiketService(
     AuthDbContext authDbContext,
     FurpaDbContext furpaDbContext,
     MikroDbContext mikroDbContext,
-    MikroWriteDbContext mikroWriteDbContext) : IManavMalKabulVeEtiketService
+    MikroWriteDbContext mikroWriteDbContext,
+    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService) : IManavMalKabulVeEtiketService
 {
     private const int DefaultTake = 20;
     private const int MaxTake = 100;
@@ -259,6 +264,99 @@ public sealed class ManavMalKabulVeEtiketService(
         return invoices
             .Select(invoice => MapIncomingInvoice(invoice, supplierMatches, supplierFilter))
             .ToArray();
+    }
+
+    public async Task<ManavMalKabulVeEtiketInvoiceDetailDto> GetIncomingInvoiceDetailAsync(
+        ManavMalKabulVeEtiketInvoiceDetailQuery request,
+        CancellationToken cancellationToken)
+    {
+        var invoiceLookupId = NormalizeOrNull(request.InvoiceLookupId)
+            ?? throw new ArgumentException("Invoice lookup id is required.", nameof(request.InvoiceLookupId));
+        var supplierCode = NormalizeOrNull(request.SupplierCode);
+        var supplierFilter = supplierCode is null
+            ? null
+            : await LoadSupplierFilterAsync(supplierCode, cancellationToken);
+        var cachedInvoice = await FindCachedIncomingInvoiceAsync(invoiceLookupId, cancellationToken);
+        var lookupIds = BuildIncomingInvoiceLookupIds(invoiceLookupId, cachedInvoice);
+        var (resolvedLookupId, invoiceXml) = await FetchIncomingInvoiceXmlAsync(lookupIds, cancellationToken);
+        var invoiceDocument = XDocument.Parse(invoiceXml, LoadOptions.PreserveWhitespace);
+        var invoice = FindXmlRoot(invoiceDocument, "Invoice")
+            ?? throw new InvalidOperationException("Uyumsoft invoice XML does not contain an Invoice root.");
+
+        var invoiceId = ReadPath(invoice, "UUID")
+            ?? cachedInvoice?.InvoiceId
+            ?? resolvedLookupId;
+        var documentId = ReadPath(invoice, "ID")
+            ?? cachedInvoice?.DocumentId
+            ?? string.Empty;
+        var supplierParty = FindPath(invoice, "AccountingSupplierParty", "Party");
+        var supplierTitle = ReadPath(supplierParty, "PartyName", "Name")
+            ?? ReadPath(supplierParty, "PartyLegalEntity", "RegistrationName")
+            ?? cachedInvoice?.CustomerTitle
+            ?? string.Empty;
+        var supplierTaxNo = ReadFirstPath(supplierParty,
+                ["PartyIdentification", "ID"],
+                ["PartyTaxScheme", "CompanyID"])
+            ?? cachedInvoice?.CustomerTcknVkn
+            ?? string.Empty;
+        var issueDate = ReadDate(ReadPath(invoice, "IssueDate")) ?? cachedInvoice?.InvoiceDate;
+        var invoiceTypeCode = ReadPath(invoice, "InvoiceTypeCode") ?? cachedInvoice?.InvoiceType ?? string.Empty;
+        var currencyCode = ReadPath(invoice, "DocumentCurrencyCode") ?? cachedInvoice?.DocumentCurrencyCode ?? string.Empty;
+        var taxExclusiveAmount = ReadDecimal(FindPath(invoice, "LegalMonetaryTotal", "TaxExclusiveAmount"))
+            ?? cachedInvoice?.TaxExclusiveAmount
+            ?? 0m;
+        var taxTotal = ReadDecimal(FindPath(invoice, "TaxTotal", "TaxAmount"))
+            ?? cachedInvoice?.TaxTotal
+            ?? 0m;
+        var payableAmount = ReadDecimal(FindPath(invoice, "LegalMonetaryTotal", "PayableAmount"))
+            ?? cachedInvoice?.InvoiceTotal
+            ?? 0m;
+        var despatchId = ReadPath(invoice, "DespatchDocumentReference", "ID")
+            ?? NormalizeOrNull(cachedInvoice?.DespatchId);
+
+        var supplierMatches = await LoadSupplierMatchesByTaxNoAsync(
+            NormalizeOrNull(supplierTaxNo) is { } taxNo ? [taxNo] : [],
+            cancellationToken);
+        var matchedSupplier = NormalizeOrNull(supplierTaxNo) is { } normalizedTaxNo &&
+                              supplierMatches.TryGetValue(normalizedTaxNo, out var match)
+            ? match
+            : supplierFilter;
+
+        var lines = await ReadInvoiceLinesAsync(invoice, cancellationToken);
+        var warnings = new List<string>();
+        if (cachedInvoice is null)
+        {
+            warnings.Add("Fatura cache kaydinda bulunamadi; detay Uyumsoft canli cevabindan cozuldu.");
+        }
+
+        if (matchedSupplier is null)
+        {
+            warnings.Add("Fatura tedarikcisi Mikro cari kartiyla otomatik eslesmedi; UI tedarikciyi secmelidir.");
+        }
+
+        if (lines.Count == 0)
+        {
+            warnings.Add("Fatura XML icinde okunabilir kalem bulunamadi.");
+        }
+
+        return new ManavMalKabulVeEtiketInvoiceDetailDto(
+            resolvedLookupId,
+            invoiceId,
+            documentId,
+            supplierTitle,
+            supplierTaxNo,
+            issueDate,
+            invoiceTypeCode,
+            currencyCode,
+            Round(taxExclusiveAmount),
+            Round(taxTotal),
+            Round(payableAmount),
+            despatchId,
+            matchedSupplier?.SupplierCode,
+            matchedSupplier?.SupplierName,
+            matchedSupplier is not null && lines.Any(line => line.CanCreateAcceptance),
+            lines,
+            warnings);
     }
 
     public ManavMalKabulVeEtiketCalculationDto Calculate(ManavMalKabulVeEtiketCalculationRequest request) =>
@@ -1099,6 +1197,213 @@ public sealed class ManavMalKabulVeEtiketService(
                 throw;
             }
         });
+    }
+
+    private async Task<UyumsoftInboxInvoice?> FindCachedIncomingInvoiceAsync(
+        string invoiceLookupId,
+        CancellationToken cancellationToken) =>
+        await authDbContext.UyumsoftInboxInvoices
+            .AsNoTracking()
+            .Where(invoice =>
+                invoice.InvoiceId == invoiceLookupId ||
+                invoice.DocumentId == invoiceLookupId ||
+                invoice.ServiceDocumentId == invoiceLookupId ||
+                invoice.LocalDocumentId == invoiceLookupId ||
+                invoice.DespatchId == invoiceLookupId ||
+                invoice.OrderDocumentId == invoiceLookupId)
+            .OrderByDescending(invoice => invoice.LastSynchronizedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static IReadOnlyCollection<string> BuildIncomingInvoiceLookupIds(
+        string invoiceLookupId,
+        UyumsoftInboxInvoice? cachedInvoice)
+    {
+        var candidates = new[]
+        {
+            invoiceLookupId,
+            cachedInvoice?.InvoiceId,
+            cachedInvoice?.DocumentId,
+            cachedInvoice?.ServiceDocumentId,
+            cachedInvoice?.LocalDocumentId
+        };
+
+        return candidates
+            .Select(NormalizeOrNull)
+            .Where(value => value is not null)
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private async Task<(string LookupId, string InvoiceXml)> FetchIncomingInvoiceXmlAsync(
+        IReadOnlyCollection<string> lookupIds,
+        CancellationToken cancellationToken)
+    {
+        var failures = new List<string>();
+        var operationNames = new[] { "GetInboxInvoice", "GetInboxInvoiceData" };
+
+        foreach (var lookupId in lookupIds)
+        {
+            foreach (var operationName in operationNames)
+            {
+                try
+                {
+                    var response = await uyumsoftConnectedQueryService.InvokeGetOperationAsync(
+                        UyumsoftConnectedServiceKind.EInvoice,
+                        new UyumsoftOperationInvocationRequest(
+                            operationName,
+                            [new UyumsoftOperationParameterRequest("invoiceId", lookupId)]),
+                        cancellationToken);
+
+                    if (TryFindInvoiceXml(response, out var invoiceXml))
+                    {
+                        return (lookupId, invoiceXml);
+                    }
+
+                    failures.Add($"{operationName}/{lookupId}: response did not contain invoice XML.");
+                }
+                catch (InvalidOperationException exception)
+                {
+                    failures.Add($"{operationName}/{lookupId}: {exception.Message}");
+                }
+            }
+        }
+
+        throw new KeyNotFoundException(
+            "Incoming invoice detail was not found in Uyumsoft. Attempts: " + string.Join(" | ", failures));
+    }
+
+    private async Task<IReadOnlyCollection<ManavMalKabulVeEtiketInvoiceLineDto>> ReadInvoiceLinesAsync(
+        XElement invoice,
+        CancellationToken cancellationToken)
+    {
+        var invoiceLines = invoice
+            .Elements()
+            .Where(element => IsElement(element, "InvoiceLine"))
+            .ToArray();
+        var result = new List<ManavMalKabulVeEtiketInvoiceLineDto>(invoiceLines.Length);
+
+        for (var index = 0; index < invoiceLines.Length; index++)
+        {
+            var line = invoiceLines[index];
+            var item = FindPath(line, "Item");
+            var lineId = ReadPath(line, "ID") ?? (index + 1).ToString(CultureInfo.InvariantCulture);
+            var itemName = ReadPath(item, "Name") ?? string.Empty;
+            var candidates = CollectInvoiceLineStockCandidates(item).ToArray();
+            var matchedStock = await FindStockByInvoiceLineAsync(candidates, itemName, cancellationToken);
+            var lineWarnings = new List<string>();
+            if (matchedStock is null)
+            {
+                lineWarnings.Add("Fatura kalemi Mikro stok/barkod kaydiyla otomatik eslesmedi; UI stok secimi istemelidir.");
+            }
+
+            var invoicedQuantity = FindPath(line, "InvoicedQuantity");
+            var taxAmount = ReadDecimal(FindPath(line, "TaxTotal", "TaxSubtotal", "TaxAmount"))
+                ?? ReadDecimal(FindPath(line, "TaxTotal", "TaxAmount"))
+                ?? 0m;
+            var taxRate = ReadDecimal(FindPath(line, "TaxTotal", "TaxSubtotal", "Percent"))
+                ?? ReadDecimal(FindPath(line, "TaxTotal", "TaxSubtotal", "TaxCategory", "Percent"))
+                ?? 0m;
+
+            result.Add(new ManavMalKabulVeEtiketInvoiceLineDto(
+                index + 1,
+                lineId,
+                candidates.FirstOrDefault() ?? string.Empty,
+                itemName,
+                ResolveInvoiceLineBarcode(candidates, matchedStock),
+                ReadAttribute(invoicedQuantity, "unitCode") ?? string.Empty,
+                Round(ReadDecimal(invoicedQuantity) ?? 0m),
+                Round(ReadDecimal(FindPath(line, "Price", "PriceAmount")) ?? 0m),
+                Round(ReadDecimal(FindPath(line, "LineExtensionAmount")) ?? 0m),
+                Round(taxRate),
+                Round(taxAmount),
+                matchedStock?.WholesaleTaxPointer,
+                matchedStock?.StockCode,
+                matchedStock?.StockName,
+                NormalizeOrNull(matchedStock?.Barcode),
+                matchedStock is not null,
+                lineWarnings));
+        }
+
+        return result;
+    }
+
+    private async Task<ManavMalKabulVeEtiketStockSuggestionDto?> FindStockByInvoiceLineAsync(
+        IReadOnlyCollection<string> candidates,
+        string stockName,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (await FindStockAsync("stock.sto_kod = @value", candidate, cancellationToken) is { } stock)
+            {
+                return stock;
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (await FindStockByBarcodeAsync(candidate, cancellationToken) is { } stock)
+            {
+                return stock;
+            }
+        }
+
+        var normalizedStockName = NormalizeOrNull(stockName);
+        return normalizedStockName is null
+            ? null
+            : await FindStockAsync("stock.sto_isim = @value", normalizedStockName, cancellationToken);
+    }
+
+    private async Task<ManavMalKabulVeEtiketStockSuggestionDto?> FindStockByBarcodeAsync(
+        string barcode,
+        CancellationToken cancellationToken)
+    {
+        await using var lease = await OpenConnectionAsync(mikroDbContext.Database.GetDbConnection(), cancellationToken);
+        using var command = lease.Connection.CreateCommand();
+        command.CommandText = """
+            SELECT TOP (1)
+                LTRIM(RTRIM(stock.sto_kod)) AS StockCode,
+                LTRIM(RTRIM(stock.sto_isim)) AS StockName,
+                ISNULL(preferredBarcode.bar_kodu, '') AS Barcode,
+                LTRIM(RTRIM(ISNULL(stock.sto_birim1_ad, ''))) AS UnitName,
+                LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, ''))) AS ModelCode,
+                ISNULL(stock.sto_toptan_vergi, 0) AS WholesaleTaxPointer
+            FROM dbo.BARKOD_TANIMLARI AS matchedBarcode WITH (NOLOCK)
+            INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
+                ON stock.sto_kod = matchedBarcode.bar_stokkodu
+            OUTER APPLY
+            (
+                SELECT TOP (1) LTRIM(RTRIM(item.bar_kodu)) AS bar_kodu
+                FROM dbo.BARKOD_TANIMLARI AS item WITH (NOLOCK)
+                WHERE item.bar_stokkodu = stock.sto_kod
+                  AND ISNULL(item.bar_iptal, 0) <> 1
+                  AND item.bar_kodu IS NOT NULL
+                  AND LTRIM(RTRIM(item.bar_kodu)) <> ''
+                ORDER BY ISNULL(item.bar_master, 0) DESC,
+                         ISNULL(item.bar_birimpntr, 0),
+                         item.bar_create_date DESC
+            ) AS preferredBarcode
+            WHERE ISNULL(matchedBarcode.bar_iptal, 0) <> 1
+              AND LTRIM(RTRIM(matchedBarcode.bar_kodu)) = @value
+            ORDER BY ISNULL(matchedBarcode.bar_master, 0) DESC,
+                     ISNULL(matchedBarcode.bar_birimpntr, 0),
+                     matchedBarcode.bar_create_date DESC;
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+        AddParameter(command, "@value", barcode, DbType.String);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new ManavMalKabulVeEtiketStockSuggestionDto(
+                ReadString(reader, "StockCode"),
+                ReadString(reader, "StockName"),
+                ReadString(reader, "Barcode"),
+                ReadString(reader, "UnitName"),
+                ReadString(reader, "ModelCode"),
+                ReadInt(reader, "WholesaleTaxPointer"))
+            : null;
     }
 
     private async Task<SupplierInvoiceMatch?> LoadSupplierFilterAsync(
@@ -2054,6 +2359,239 @@ public sealed class ManavMalKabulVeEtiketService(
             StockCode = NormalizeText(stockCode, 25),
             Description = NormalizeText(line.Description, 50)
         };
+    }
+
+    private static bool TryFindInvoiceXml(UyumsoftOperationResponseDto response, out string invoiceXml)
+    {
+        var candidates = new List<string?>(response.Nodes.Count + 2)
+        {
+            response.ResponsePayloadJson,
+            response.ScalarValue
+        };
+        candidates.AddRange(response.Nodes.SelectMany(FlattenNodeValues));
+
+        foreach (var candidate in candidates)
+        {
+            if (TryFindXmlDocument(candidate, "Invoice", out invoiceXml))
+            {
+                return true;
+            }
+        }
+
+        invoiceXml = string.Empty;
+        return false;
+    }
+
+    private static bool TryFindXmlDocument(
+        string? value,
+        string rootLocalName,
+        out string documentXml)
+    {
+        foreach (var candidate in EnumerateXmlCandidates(value))
+        {
+            if (!candidate.Contains($"<{rootLocalName}", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                var document = XDocument.Parse(candidate, LoadOptions.PreserveWhitespace);
+                var root = FindXmlRoot(document, rootLocalName);
+                if (root is not null)
+                {
+                    documentXml = root.ToString(SaveOptions.DisableFormatting);
+                    return true;
+                }
+            }
+            catch
+            {
+                if (TrySliceXmlDocument(candidate, rootLocalName, out documentXml))
+                {
+                    return true;
+                }
+            }
+        }
+
+        documentXml = string.Empty;
+        return false;
+    }
+
+    private static bool TrySliceXmlDocument(
+        string xmlCandidate,
+        string rootLocalName,
+        out string documentXml)
+    {
+        var startIndex = xmlCandidate.IndexOf($"<{rootLocalName}", StringComparison.OrdinalIgnoreCase);
+        if (startIndex < 0)
+        {
+            documentXml = string.Empty;
+            return false;
+        }
+
+        var closeTag = $"</{rootLocalName}>";
+        var endIndex = xmlCandidate.LastIndexOf(closeTag, StringComparison.OrdinalIgnoreCase);
+        if (endIndex < startIndex)
+        {
+            documentXml = string.Empty;
+            return false;
+        }
+
+        documentXml = xmlCandidate[startIndex..(endIndex + closeTag.Length)].Trim();
+        return true;
+    }
+
+    private static IEnumerable<string> EnumerateXmlCandidates(string? value)
+    {
+        var normalized = NormalizeOrNull(value);
+        if (normalized is null)
+        {
+            yield break;
+        }
+
+        yield return normalized;
+
+        var decoded = WebUtility.HtmlDecode(normalized);
+        if (!string.Equals(decoded, normalized, StringComparison.Ordinal))
+        {
+            yield return decoded;
+        }
+    }
+
+    private static IEnumerable<string?> FlattenNodeValues(UyumsoftResponseNodeDto node)
+    {
+        yield return node.Value;
+
+        foreach (var child in node.Children)
+        {
+            foreach (var value in FlattenNodeValues(child))
+            {
+                yield return value;
+            }
+        }
+    }
+
+    private static XElement? FindXmlRoot(XDocument document, string rootLocalName) =>
+        document.Root?.Name.LocalName == rootLocalName
+            ? document.Root
+            : document.Root?
+                .Descendants()
+                .FirstOrDefault(element => IsElement(element, rootLocalName));
+
+    private static XElement? FindPath(XElement? root, params string[] localPath)
+    {
+        var current = root;
+        foreach (var localName in localPath)
+        {
+            current = current?
+                .Elements()
+                .FirstOrDefault(element => IsElement(element, localName));
+            if (current is null)
+            {
+                return null;
+            }
+        }
+
+        return current;
+    }
+
+    private static string? ReadPath(XElement? root, params string[] localPath) =>
+        NormalizeOrNull(FindPath(root, localPath)?.Value);
+
+    private static string? ReadFirstPath(XElement? root, params string[][] paths)
+    {
+        foreach (var path in paths)
+        {
+            if (ReadPath(root, path) is { } value)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ReadAttribute(XElement? element, string localName) =>
+        NormalizeOrNull(element?
+            .Attributes()
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, localName, StringComparison.OrdinalIgnoreCase))
+            ?.Value);
+
+    private static decimal? ReadDecimal(XElement? element)
+    {
+        var value = NormalizeOrNull(element?.Value);
+        if (value is null)
+        {
+            return null;
+        }
+
+        return decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out parsed)
+                ? parsed
+                : null;
+    }
+
+    private static DateTime? ReadDate(string? value) =>
+        DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsed)
+            ? parsed
+            : null;
+
+    private static bool IsElement(XElement element, string localName) =>
+        string.Equals(element.Name.LocalName, localName, StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> CollectInvoiceLineStockCandidates(XElement? item)
+    {
+        if (item is null)
+        {
+            yield break;
+        }
+
+        var candidatePaths = new[]
+        {
+            new[] { "SellersItemIdentification", "ID" },
+            new[] { "BuyersItemIdentification", "ID" },
+            new[] { "ManufacturersItemIdentification", "ID" },
+            new[] { "StandardItemIdentification", "ID" }
+        };
+
+        foreach (var path in candidatePaths)
+        {
+            if (ReadPath(item, path) is { } value)
+            {
+                yield return value;
+            }
+        }
+
+        foreach (var additionalId in item
+                     .Elements()
+                     .Where(element => IsElement(element, "AdditionalItemIdentification"))
+                     .Select(element => ReadPath(element, "ID"))
+                     .Where(value => value is not null)
+                     .Select(value => value!))
+        {
+            yield return additionalId;
+        }
+    }
+
+    private static string ResolveInvoiceLineBarcode(
+        IReadOnlyCollection<string> candidates,
+        ManavMalKabulVeEtiketStockSuggestionDto? matchedStock)
+    {
+        if (NormalizeOrNull(matchedStock?.Barcode) is { } matchedBarcode)
+        {
+            return matchedBarcode;
+        }
+
+        return candidates.FirstOrDefault(IsBarcodeLike) ?? string.Empty;
+    }
+
+    private static bool IsBarcodeLike(string value)
+    {
+        var normalized = NormalizeOrNull(value);
+        return normalized is not null &&
+               normalized.Length >= 7 &&
+               normalized.All(char.IsDigit);
     }
 
     private static decimal ResolveTaxAmount(
