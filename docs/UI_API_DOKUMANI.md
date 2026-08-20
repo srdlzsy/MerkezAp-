@@ -8937,6 +8937,29 @@ UI karar kurallari:
 - `comparison.status = FARKLI` ise etiket net kg ile Mikro miktari farklidir; satir kirmizi/uyari olarak gosterilir.
 - `comparison.status = ESLESTI` veya `YAKIN` ise satir operasyonel olarak tamamlanmis kabul edilebilir.
 
+Mikro aktarim ne zaman kullanilir:
+
+- `POST /micro/goods-receipts`, hal faturasinin Manav Depo'ya Mikro alis/mal kabul belgesi olarak yazilacagi son onay adimidir.
+- Bu endpoint etiket basma endpointi degildir. Sadece etiket veya tartim kaydi gerekiyorsa `acceptance-records` ve `label` endpointleri kullanilir.
+- Fatura kalemleri grid'e alindi, stok eslesmeleri tamamlandi, tartim/net kg kontrol edildi, fiyat ve KDV netlesti ise kullanilir.
+- Fatura secilmeden normal akista Mikro aktarim acilmamalidir. Manuel belge akisi sadece fatura bulunamadigi istisna durumda kullanilmalidir.
+- Bir satir sadece tartildi ama fiyat/KDV bilinmiyorsa Mikro aktarim yerine `Etiket Kaydi` durumunda bekletilmelidir.
+- Bir satir Mikro'ya aktarildiktan sonra ayni satir tekrar aktarilabilir gibi gosterilmemelidir. UI `microTransferred=true`, `comparison` veya Mikro belge listesiyle bunu kontrol etmelidir.
+- `comparison.status = SADECE_ETIKET` olan satirlar Mikro aktarim adayidir.
+- `comparison.status = SADECE_MIKRO` olan satirlar tekrar aktarim adayi degildir; bu durumda Furpa etiket/tartim kaydi eksigi arastirilir.
+- `comparison.status = FARKLI` olan satirda once miktar/fiyat/eslestirme farki cozulmeli, sonra gerekiyorsa duzeltme veya yeni aktarim karari verilmelidir.
+
+Mikro aktarim butonu acilma kosullari:
+
+- Tedarikci secili olmali veya fatura detayinda `matchedSupplierCode` dolu olmalidir.
+- Aktarilacak en az bir satir secili olmalidir.
+- Her secili satirda `stockCode` dolu olmalidir. `matchedStockCode` bos gelen fatura kalemlerinde kullanici stok secimi yapmadan aktarim acilmaz.
+- Her secili satirda `quantity > 0` olmalidir. Manavda kesin miktar genelde tartim/etiket net kg toplamidir.
+- Her secili satirda `unitPrice` bilinmelidir. Fiyat fatura kaleminden gelmiyorsa kullanici elle girip onaylamalidir.
+- Her secili satirda `taxPointer` veya `taxRatePercent` bilinmelidir.
+- Etiket kaydiyla bagli aktarim yapiliyorsa `acceptanceRecordId` dolu olmalidir.
+- Request gonderilirken buton loading/disabled olmali; timeout olursa ayni belgeyi tekrar yazmadan once `GET /micro/goods-receipts` ve `comparison` yenilenmelidir.
+
 UI hedef tasarimi:
 
 - Bu ekran tek basina `Etiket Basim` gibi dusunulmemelidir; `Gelen Fatura -> Manav Mal Kabul -> Tartim/Etiket -> Mikro Kontrol -> Rapor` akislarini ayni modulde toparlayan operasyon ekranidir.
@@ -8959,13 +8982,14 @@ Onerilen ekran bolumleri:
 Onerilen gunluk akis:
 
 1. UI tarih ve tedarikci secimiyle acilir.
-2. Kullanici gelen fatura veya manuel belge bilgisini girer; satirlar stok, miktar, fiyat, KDV ile hazirlanir.
-3. Kullanici tartim yaptikca `calculate` ile net kg/ortalama kg hesaplanir.
-4. Onaylanan tartim satiri `POST /acceptance-records` ile Furpa etiket kaydi olur.
-5. Etiket icin `GET /acceptance-records/{id}/label` veya kaydetmeden once `POST /labels/preview` kullanilir.
-6. Fiyatli ve kesinlesmis satirlar `POST /micro/goods-receipts` ile Mikro'ya aktarilir.
-7. Basarili aktarimdan sonra UI `GET /micro/goods-receipts` ve `GET /micro/goods-receipts/comparison` ile ekrani yeniler.
-8. Gun sonunda `reports/received-products` ile fatura/etiket farklari, `reports/depot-stock` ile 56 depo stok durumu kontrol edilir.
+2. UI once gelen fatura listesini getirir; kullanici faturayi secer veya ETTN ile faturayi bulur.
+3. UI fatura detayindan gelen kalemleri grid'e basar; stok eslesmeyen satirlarda kullaniciya MNV stok secimi yaptirir.
+4. Kullanici tartim yaptikca `calculate` ile net kg/ortalama kg hesaplanir.
+5. Onaylanan tartim satiri `POST /acceptance-records` ile Furpa etiket kaydi olur.
+6. Etiket icin `GET /acceptance-records/{id}/label` veya kaydetmeden once `POST /labels/preview` kullanilir.
+7. Fatura kalemi, tartim net kg, fiyat ve KDV kontrolu tamamlaninca secili satirlar `POST /micro/goods-receipts` ile Mikro'ya aktarilir.
+8. Basarili aktarimdan sonra UI `GET /micro/goods-receipts` ve `GET /micro/goods-receipts/comparison` ile ekrani yeniler.
+9. Gun sonunda `reports/received-products` ile fatura/etiket farklari, `reports/depot-stock` ile 56 depo stok durumu kontrol edilir.
 
 UI durum modeli onerisi:
 
@@ -9755,6 +9779,36 @@ Request:
   ]
 }
 ```
+
+Bu endpoint ne yapar:
+
+- Canli Mikro'da cari/fatura basligi acmak icin `CARI_HESAP_HAREKETLERI` kaydi olusturur.
+- Her satir icin `STOK_HAREKETLERI` alis/mal kabul hareketi yazar.
+- Satirlari cari basliga `sth_fat_uid = cha_Guid` ile baglar.
+- `acceptanceRecordId` gonderilen Furpa etiket kayitlarini basarili yazimdan sonra `Mikro_Aktarildi=1` yapar.
+- Fatura detayini okumak, etiket kaydi olusturmak veya etiket basmak bu islemi otomatik tetiklemez.
+
+UI alan kaynagi:
+
+| Request alani | UI'da kaynagi | Not |
+|---|---|---|
+| `date` | Fatura `issueDate` veya kullanicinin mal kabul tarihi | Gunluk rapor/karsilastirma bu tarihle okunur. |
+| `supplierCode` | `matchedSupplierCode` veya kullanicinin sectigi Mikro cari | Bos gonderilmemeli. |
+| `documentSeries` | Varsayilan `MNV`/`MNV26` veya UI belge serisi | Bos gonderilirse backend `MNV` kullanir. |
+| `documentOrderNo` | Genelde `null` | Bos gonderilirse backend sonraki sirayi uretir. Manuel girilirse duplicate kontrolu calisir. |
+| `documentNo` | Fatura `invoiceId`/resmi belge no veya manuel belge no | Bos ise backend sira no metnini kullanir. |
+| `mikroUserNo` | UI/oturum eski Mikro kullanici no biliyorsa | Bos ise backend default `39` kullanir. |
+| `description` | Ekran aciklamasi | Belge aciklamasi olarak saklanir. |
+| `markAcceptanceRecordsTransferred` | Normal akista `true` | `acceptanceRecordId` gonderilen kayitlari aktarildi isaretler. |
+| `lines[].acceptanceRecordId` | Furpa etiket/kabul kaydi `id` | Etiket kaydiyla bagli aktarimda doldurulur. |
+| `lines[].stockCode` | `matchedStockCode` veya kullanicinin sectigi MNV stok | Zorunlu. |
+| `lines[].quantity` | Tartim/etiket net kg toplamı veya onayli fatura miktari | Manavda pratikte kesin kabul miktari tartim net kg olmalidir. |
+| `lines[].unitPrice` | Fatura kalemi `unitPrice` veya manuel fiyat | Fiyat bilinmeden aktarim acilmamali. |
+| `lines[].unitPointer` | Stok ana birimi icin genelde `1` | Farkli birim senaryosu yoksa UI `1` gonderir. |
+| `lines[].taxPointer` | Fatura/stok KDV pointer'i | Doluyken tercih edilir. |
+| `lines[].taxRatePercent` | Fatura kalemi KDV yuzdesi | `taxPointer` yoksa kullanilir. |
+| `lines[].taxAmount` | Fatura kalemi KDV tutari | Opsiyonel; bos ise backend oranla hesaplar. |
+| `lines[].description` | Fatura kalem adi, etiket notu veya kullanici notu | Satir aciklamasi olarak gider. |
 
 Response:
 

@@ -32,21 +32,26 @@ Bu modul tek ekranda tabli veya bolmeli tasarlanabilir:
 
 | Bolum | Amac | Endpointler |
 |---|---|---|
-| `Fatura/Mal Kabul` | Gelen fatura secimi, tedarikci, tarih, belge no, fiyat, KDV ve Mikro aktarim onayi | `/incoming-invoices`, `/suppliers`, `/stocks`, `POST /micro/goods-receipts`, `GET /micro/goods-receipts` |
+| `Fatura/Mal Kabul` | Gelen fatura secimi, ETTN ile fatura bulma, fatura kalemleri, tedarikci, fiyat, KDV ve Mikro aktarim onayi | `/incoming-invoices`, `/incoming-invoices/{invoiceLookupId}/detail`, `/incoming-invoices/ettn/{ettn}`, `/suppliers`, `/stocks`, `POST /micro/goods-receipts`, `GET /micro/goods-receipts` |
 | `Tartim ve Etiket` | Brut kg, kasa darasi, kasa sayisi, net kg, ortalama kg ve etiket basimi | `POST /acceptance-records/calculate`, `/acceptance-records`, `/labels/preview`, `/acceptance-records/{id}/label` |
 | `Kontrol` | Furpa etiket kaydi ile Mikro mal kabul miktarlarini karsilastirma | `GET /micro/goods-receipts/comparison` |
 | `Raporlar` | Alinan urun/fatura farki ve 56 Manav Depo stok durumu | `/reports/received-products`, `/reports/depot-stock` |
 
 Gunluk onerilen akis:
 
-1. Tarih ve tedarikci secilir.
-2. Gelen fatura cache'inden fatura secilir veya manuel belge bilgisi girilir; satirlar stok, miktar, fiyat ve KDV ile hazirlanir.
-3. Tartim yapildikca `calculate` ile net kg ve ortalama kg hesaplanir.
-4. Onaylanan tartim satiri `POST /acceptance-records` ile Furpa etiket kaydina donusur.
-5. Etiket icin `GET /acceptance-records/{id}/label` veya kaydetmeden once `POST /labels/preview` kullanilir.
-6. Fiyatli ve kesinlesmis satirlar `POST /micro/goods-receipts` ile Mikro'ya aktarilir.
-7. Aktarimdan sonra `GET /micro/goods-receipts` ve `GET /micro/goods-receipts/comparison` yenilenir.
-8. Gun sonunda `reports/received-products` ve `reports/depot-stock` ile fark/stok kontrolu yapilir.
+1. UI once tarih araligina gore `GET /incoming-invoices` ile gelen hal faturalarini listeler.
+2. Kullanici fatura secerse `GET /incoming-invoices/{invoiceLookupId}/detail`, ETTN okutursa `GET /incoming-invoices/ettn/{ettn}` cagrilir.
+3. Detay response'undaki `matchedSupplierCode` doluysa tedarikci otomatik secilir; bos ise UI manuel tedarikci secimi ister.
+4. Detay response'undaki `lines[]` grid'e basilir. `matchedStockCode` dolu satirlar direkt hazir kabul edilir; bos satirda UI `stocks` aramasi ile stok secimi yaptirir.
+5. Tartim yapildikca `calculate` ile net kg, ortalama kg, ham barkod ve yazdirilacak barkod hesaplanir.
+6. Onaylanan tartim satiri `POST /acceptance-records` ile Furpa etiket kaydina donusur.
+7. Etiket icin kayit varsa `GET /acceptance-records/{id}/label`, kaydetmeden onizleme gerekiyorsa `POST /labels/preview` kullanilir.
+8. UI yazdirma tarafinda `labelBarcode` alanini basar; `labelBarcodeRaw` sadece renderer check digit'i kendi hesaplayacaksa kullanilir.
+9. Fatura kalemi ile etiket kaydi UI'da ayni satirda eslestirilir. Ayni stoktan birden fazla tartim olabilecegi icin eslestirme sadece stok koduna gore ezilmemelidir.
+10. Mikro aktarim icin satirlar `invoice detail + acceptance record` bilgisinden hazirlanir.
+11. Her aktarilacak satirda stok, miktar, fiyat ve KDV bilgisi kesinlesince `POST /micro/goods-receipts` butonu acilir.
+12. Basarili aktarimdan sonra `GET /micro/goods-receipts` ve `GET /micro/goods-receipts/comparison` yenilenir.
+13. Gun sonunda `reports/received-products` ve `reports/depot-stock` ile fark/stok kontrolu yapilir.
 
 Durum modeli onerisi:
 
@@ -60,6 +65,7 @@ Durum modeli onerisi:
 Kritik tasarim notlari:
 
 - Etiket kaydi ile Mikro fatura/mal kabul kaydi ayridir; biri digerinin otomatik sonucu gibi varsayilmamalidir.
+- Gelen fatura listesi sadece baslik/ozet ekranidir. Kalemler icin mutlaka detay veya ETTN endpointi cagrilmalidir.
 - Mikro aktarimi fiyat ve KDV netlesmeden acilmamalidir.
 - Ayni stoktan birden fazla tartim olabilir; UI satirlari sadece stok koduna gore ezmemelidir.
 - `acceptanceRecordId` Mikro aktarim satirina tasinirse basarili aktarimdan sonra ilgili Furpa kaydi `Mikro_Aktarildi=1` olur.
@@ -167,9 +173,83 @@ Response item:
 
 Not:
 
-- Bu endpoint fatura baslik/ozet bilgisini dondurur; Uyumsoft cache manav tartim/urun satirlarini tasimaz.
+- Bu endpoint fatura baslik/ozet bilgisini dondurur. Fatura kalemleri icin detay endpointi kullanilmalidir.
 - `matchedSupplierCode` VKN/TCKN eslesmesiyle dolarsa UI tedarikci alanini otomatik onerebilir.
-- `canStartAcceptance=false` ise UI manuel tedarikci secimine izin verebilir.
+- Liste response'unda `canStartAcceptance=true`, tedarikci Mikro cari kartiyla eslesti demektir.
+- `canStartAcceptance=false` ise UI manuel tedarikci secimine izin verebilir; bu durum fatura secimini bloke etmez.
+
+## Gelen Fatura Detayi ve Kalemleri
+
+Liste satirindan detay acmak icin:
+
+```http
+GET /api/kasa-islemleri/manav-mal-kabul-etiket/incoming-invoices/{invoiceLookupId}/detail?supplierCode=32000297
+```
+
+ETTN ile fatura bulup detay almak icin:
+
+```http
+GET /api/kasa-islemleri/manav-mal-kabul-etiket/incoming-invoices/ettn/{ettn}?supplierCode=32000297
+```
+
+Kullanim:
+
+- `invoiceLookupId`, liste response'undaki `documentId`, `invoiceId`, `despatchId` veya servis dokuman id degerlerinden biri olabilir.
+- `supplierCode` opsiyoneldir. UI zaten tedarikci sectiyse gonderir; backend hem fatura VKN/TCKN eslesmesini hem secili cariyi response'a yazar.
+- Bu endpoint Mikro'ya yazmaz; sadece Uyumsoft fatura XML'inden baslik ve kalemleri cozer.
+- Backend kalemlerdeki barkod/stok kodu bilgilerini Mikro `BARKOD_TANIMLARI` ve `STOKLAR` ile eslestirmeye calisir.
+
+Response ozeti:
+
+```json
+{
+  "invoiceLookupId": "GIB2026000012345",
+  "invoiceId": "GIB2026000012345",
+  "documentId": "9f4c0c1a-...",
+  "ettn": "7f2a...",
+  "issueDate": "2026-08-13T00:00:00",
+  "supplierTitle": "HAL TEDARIKCI A",
+  "supplierTaxNo": "1234567890",
+  "matchedSupplierCode": "32000297",
+  "matchedSupplierName": "HAL TEDARIKCI A",
+  "canStartAcceptance": true,
+  "lineCount": 1,
+  "totalQuantity": 714.4,
+  "taxExclusiveAmount": 24753.96,
+  "taxTotal": 250.04,
+  "payableAmount": 25004.0,
+  "lines": [
+    {
+      "lineId": "1",
+      "stockCode": "054150",
+      "stockName": "MNV DOMATES PEMBE KG",
+      "barcode": "2700480",
+      "matchedStockCode": "054150",
+      "matchedStockName": "MNV DOMATES PEMBE KG",
+      "matchedBarcode": "2700480",
+      "quantity": 714.4,
+      "unitCode": "KGM",
+      "unitPrice": 35.0,
+      "lineExtensionAmount": 25004.0,
+      "taxRatePercent": 1,
+      "taxAmount": 250.04,
+      "taxPointer": 3,
+      "canCreateAcceptance": true,
+      "warnings": []
+    }
+  ]
+}
+```
+
+UI karar kurallari:
+
+- Detay response'unda `canStartAcceptance=true` ise tedarikci eslesmistir ve en az bir kalem kabul satirina cevrilebilir durumdadir.
+- `matchedSupplierCode` bos ise UI tedarikci secimini zorunlu yapmalidir.
+- `lines[].canCreateAcceptance=true` olan satir grid'e hazir satir olarak alinabilir.
+- `lines[].matchedStockCode` bos veya `canCreateAcceptance=false` ise satir pasif/uyarili gosterilmeli, kullaniciya stok aratip eslestirme yaptirilmalidir.
+- UI miktar icin fatura `quantity` bilgisini gosterebilir; manav operasyonunda kesin Mikro miktari genelde tartim/etiket kaydindaki net kg ile onaylanmalidir.
+- Fiyat icin varsayilan `unitPrice`, KDV icin once `taxPointer`, yoksa `taxRatePercent` kullanilir.
+- Mikro'ya yazma yine sadece `POST /micro/goods-receipts` ile yapilir.
 
 ## Hesaplama
 
@@ -203,6 +283,11 @@ Ek kurallar:
 - `palletTare` bos gelirse `0` kabul edilir.
 - `averageCaseWeight > 99` ise API hata doner.
 - `labelBarcodeRaw` eski uygulamadaki ortalama kilo metni kuralina gore uretilir. `labelBarcode` ise EAN13 icin check-digit eklenmis yazdirilacak nihai degerdir.
+- Manav etiket barkodu pratikte `[27][5 hane urun kodu][5 hane kilo][1 check digit]` formatinda okunur.
+- Ilk 7 hane `stockBarcode` alanindan gelir. Ornek `2700155`: `27` terazi/model prefix'i, `00155` urun kodu gibi davranir.
+- Kilo bolumu 5 hanelidir ve iki ondalikli kg tasir. Ornek `11850` UI'da `11.85 kg` olarak okunur.
+- Sondaki tek hane EAN-13 check digit'tir. UI bunu hesaplamaya calismadan normal yazdirma icin `labelBarcode` alanini kullanmalidir.
+- `labelBarcodeRaw` 12 haneli ham degerdir; barkod renderer check digit'i otomatik uretiyorsa bu alan tercih edilebilir.
 
 Ornek response:
 
@@ -532,6 +617,28 @@ Alan kurallari:
   `quantity * unitPrice * taxRatePercent / 100` hesaplanir; ikisi de yoksa
   KDV tutari `0` olur.
 - `taxPointer` verilmezse stok kartindaki `sto_toptan_vergi` kullanilir.
+
+UI satir hazirlama kurali:
+
+- `supplierCode`: fatura detayindaki `matchedSupplierCode`; bos ise kullanicinin sectigi tedarikci.
+- `date`: fatura `issueDate` veya kullanicinin mal kabul tarihi.
+- `documentNo`: fatura `invoiceId`/resmi belge no; manuel akista kullanicinin girdigi belge no.
+- `stockCode`: once `lines[].matchedStockCode`; bos ise kullanicinin stok aramasiyla sectigi MNV stok kodu.
+- `quantity`: kesin kabul miktari. Manavda bu alan genelde tartim/etiket kaydindaki `netReceivedWeight` toplamidir; fatura miktari sadece varsayilan/oneri gibi gosterilebilir.
+- `unitPrice`: fatura detay satirindaki `unitPrice`; manuel akista kullanici girer.
+- `taxPointer`: varsa fatura detay satirindaki veya stok kartindan gelen KDV pointer'i.
+- `taxRatePercent`: `taxPointer` yoksa fatura detay satirindaki KDV yuzdesi.
+- `acceptanceRecordId`: satir bir Furpa etiket/kabul kaydina baglandiysa ilgili kaydin `id` degeri.
+- `description`: fatura kalem adi, etiket notu veya kullanici aciklamasi.
+
+Mikro aktarim butonu su kosullarda acilmalidir:
+
+- Tedarikci secili veya `matchedSupplierCode` dolu olmali.
+- Aktarilacak her satirda `stockCode` dolu olmali.
+- `quantity > 0` olmali.
+- `unitPrice >= 0` olmali; fiyat bilinmiyorsa kullanici onayi alinmadan aktarim acilmamali.
+- `taxPointer` veya `taxRatePercent` bilinmeli; ikisi de yoksa UI KDV bilgisini uyarili gostermeli.
+- Etiket kaydiyla bagli aktarim yapiliyorsa `acceptanceRecordId` dolu olmali.
 
 Mikro'ya yazilan canli format:
 
