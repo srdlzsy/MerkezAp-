@@ -8892,10 +8892,49 @@ Bu bolum UI tarafinin baska bir dokumana gitmeden kullanabilmesi icin tum endpoi
 
 Canli akis ayrimi:
 
+- Bu ekranda operasyonun ana kaynagi halden gelen resmi faturadir. UI mumkun oldugunca manuel bos evrakla baslamamali; once gelen fatura listesinden ilgili hal faturasini buldurmali, sonra tartim/etiket ve Mikro mal kabul adimlarini bu faturanin ustune kurmalidir.
+- Gelen hal faturasi `GET /incoming-invoices` ile Auth DB'deki Uyumsoft gelen fatura cache'inden okunur. UI ayrica Uyumsoft/Fatura Goruntuleme ekranina gidip fatura detayi toplamak zorunda degildir.
 - Etiket/tartim kaydi `Furpa.dbo.Manav_Depo_Mal_Kabul_Etiket` tablosuna yazilir; bu kayit tek basina Mikro fatura/mal kabul belgesi degildir.
 - Mikro mal kabul olusturma ayrica `POST /micro/goods-receipts` ile yapilir.
 - Mikro aktariminda canli formata uygun olarak `CARI_HESAP_HAREKETLERI` tarafinda fatura/cari hareket basligi acilir ve `STOK_HAREKETLERI` satirlari bu basliga `sth_fat_uid = cha_Guid` ile baglanir.
 - UI fiyat ve KDV bilgisi netlesmeden Mikro aktarimi yaptirmamalidir; sadece etiket basmak istiyorsa `acceptance-records` ve `label` endpointleri yeterlidir.
+- Fatura bulunamazsa UI manuel kabul acabilir ama bunu istisna akisi gibi gostermelidir; normal hal kabul akisinda kullanici gelen fatura uzerinden ilerlemelidir.
+
+Hal faturasi odakli en saglikli senaryo:
+
+1. Ekran acilisinda UI tarih araligini bugun veya son 7 gun olarak ayarlar.
+2. Kullanici hal tedarikcisini secer veya arar; UI `GET /suppliers?query=...` ile Mikro carisini bulur.
+3. UI secili tarih/tedarikci icin `GET /incoming-invoices?startDate=...&endDate=...&supplierCode=...` cagirir.
+4. Kullanici listeden hal faturasini secer. UI ust baslikta `invoiceId`, `documentId`, `supplierTitle`, `supplierTaxNo`, `invoiceDate`, `invoiceTotal`, `taxExclusiveAmount`, `taxTotal`, `documentCurrencyCode`, `status` alanlarini gosterir.
+5. UI fatura secilmeden Mikro aktarim butonunu acmaz. Fatura secili degilse sadece tartim/etiket taslagi yapilabilir.
+6. Faturadaki urun satirlari mevcut endpointte satir satir donmuyorsa UI ilk fazda satirlari kullaniciya stok arama ile ekletir; fakat belge no/fatura no ve tedarikci secimi faturadan gelir.
+7. Kullanici her urun icin `GET /stocks?query=...&prefix=MNV` ile MNV stokunu secer, fatura miktari/fiyati/KDV bilgisini girer veya kontrol eder.
+8. Tartim geldikce `POST /acceptance-records/calculate` ile net kg ve kasa ortalamasi hesaplanir.
+9. Onaylanan her tartim satiri `POST /acceptance-records` ile Furpa etiket kaydina yazilir. Bu satirda `documentSeries/documentNo` alanlari secili hal faturasinin gorunen belge bilgisiyle doldurulmalidir.
+10. Etiket basimi `GET /acceptance-records/{id}/label` ile yapilir. Etiket basmak Mikro'ya aktarim anlamina gelmez.
+11. Fatura satirlari ve tartim satirlari kontrol edildikten sonra UI `POST /micro/goods-receipts` ile Mikro alis/mal kabul belgesini olusturur.
+12. Aktarimdan sonra UI `GET /micro/goods-receipts?date=...&supplierCode=...` ve `GET /micro/goods-receipts/comparison?date=...&supplierCode=...` cagirip ekrani yeniler.
+13. Gun sonu kontrolunde `GET /reports/received-products?date=...` ana mutabakat raporu, `GET /reports/depot-stock?warehouseNo=56&date=...` Manav Depo stok raporu olarak kullanilir.
+
+UI icin sade ekran kurgusu:
+
+- Ust bant: tarih, tedarikci, gelen fatura secimi, fatura toplam tutari ve durum.
+- Sol/ust liste: gelen hal faturalari. Kaynak endpoint `incoming-invoices`.
+- Orta grid: fatura/kabul satirlari. Stok, fatura miktari, fiyat, KDV, tartilan net miktar, fark, etiket durumu, Mikro aktarim durumu.
+- Sag panel veya modal: tartim girisi. Brut, kasa darasi, kasa sayisi, palet darasi, kasa tipi, teslim alan.
+- Alt sekmeler: `Etiketler`, `Mikro Belgeleri`, `Fark Kontrolu`, `Rapor`.
+
+UI karar kurallari:
+
+- `CanStartAcceptance=false` gelen fatura satirinda kabul baslatma butonu pasif olmalidir; mesaj/durum kullaniciya gosterilir.
+- `MatchedSupplierCode` doluysa UI tedarikciyi otomatik eslestirebilir; bos ise kullanici Mikro carisini secmelidir.
+- `IsArchived=true` faturalar varsayilan listede gizlenmelidir; gerekiyorsa `includeArchived=true` ile arsivli fatura aranabilir.
+- Mikro aktarimda satir `quantity`, `unitPrice`, `taxPointer/taxRatePercent` netlesmeden buton acilmamalidir.
+- `acceptance-records` satiri Mikro'ya aktarildiktan sonra update/delete kapali olmalidir; backend zaten `409 Conflict` doner.
+- `comparison.status = SADECE_ETIKET` ise tartim var ama Mikro aktarim yok demektir; kullaniciya "Mikro'ya aktar" aksiyonu onerilir.
+- `comparison.status = SADECE_MIKRO` ise Mikro'da belge var ama Furpa etiket/tartim kaydi yok demektir; kullaniciya "etiket/tartim kaydi eksik" uyarisi verilir.
+- `comparison.status = FARKLI` ise etiket net kg ile Mikro miktari farklidir; satir kirmizi/uyari olarak gosterilir.
+- `comparison.status = ESLESTI` veya `YAKIN` ise satir operasyonel olarak tamamlanmis kabul edilebilir.
 
 UI hedef tasarimi:
 
