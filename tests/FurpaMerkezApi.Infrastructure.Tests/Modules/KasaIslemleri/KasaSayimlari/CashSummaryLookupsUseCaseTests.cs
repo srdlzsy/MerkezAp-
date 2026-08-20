@@ -151,6 +151,43 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
+    public async Task ListBankPaymentTypesAsync_IgnoresCashRegisterRowsWithMissingBank()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        mikroDbContext.PaymentTypes.AddRange(
+            CreatePaymentType(1, "Akbank", "108.01.001"),
+            CreatePaymentType(2, "Halkbank", "108.01.002"));
+
+        furpaDbContext.CashRegisterDetails.AddRange(
+            CreateCashRegisterDetail(1, "UB0016026394", "Akbank", "T001"),
+            new FurpaCashRegisterDetailEntity
+            {
+                Id = 2,
+                CashRegisterNo = "UB0016026394",
+                Bank = null,
+                TerminalId = null,
+                MerchantNo = null,
+                CashNo = null
+            });
+
+        await mikroDbContext.SaveChangesAsync();
+        await furpaDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var result = await useCase.ListBankPaymentTypesAsync(
+            new BankPaymentTypeRequest("UB0016026394"),
+            CancellationToken.None);
+
+        var item = Assert.Single(result);
+        Assert.Equal("Akbank", item.PaymentName);
+        Assert.Equal("T001", item.TerminalId);
+        Assert.Equal("108.01.001", item.AccountCode);
+    }
+
+    [Fact]
     public async Task GetCashRegisterDetailAsync_ReadsTerminalDetailFromFurpaDatabase()
     {
         await using var mikroDbContext = CreateMikroDbContext();
@@ -188,6 +225,37 @@ public sealed class CashSummaryLookupsUseCaseTests
         Assert.Equal(3528, result.Id);
         Assert.Equal("PAV210010590", result.CashRegisterNo);
         Assert.Equal("S0Q1FF05", result.TerminalId);
+    }
+
+    [Fact]
+    public async Task GetCashRegisterDetailAsync_ReturnsEmptyStringsWhenOptionalTerminalFieldsAreNull()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        furpaDbContext.CashRegisterDetails.Add(new FurpaCashRegisterDetailEntity
+        {
+            Id = 3529,
+            CashRegisterNo = "PAV210010591",
+            Bank = null,
+            TerminalId = null,
+            MerchantNo = null,
+            CashNo = 34
+        });
+
+        await furpaDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var result = await useCase.GetCashRegisterDetailAsync(
+            new CashRegisterLookupRequest(34, null),
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("PAV210010591", result.CashRegisterNo);
+        Assert.Equal(string.Empty, result.Bank);
+        Assert.Equal(string.Empty, result.TerminalId);
+        Assert.Equal(string.Empty, result.MerchantNo);
     }
 
     private static PaymentTypeEntity CreatePaymentType(

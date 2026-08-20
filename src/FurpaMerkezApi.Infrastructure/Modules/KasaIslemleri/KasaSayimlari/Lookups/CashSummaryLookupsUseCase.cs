@@ -100,10 +100,10 @@ public sealed class CashSummaryLookupsUseCase(
             .OrderBy(item => item.Id)
             .Select(item => new CashRegisterDetailDto(
                 item.Id,
-                item.CashRegisterNo,
-                item.Bank,
-                item.TerminalId,
-                item.MerchantNo,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
                 item.CashNo))
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -265,14 +265,14 @@ public sealed class CashSummaryLookupsUseCase(
         CancellationToken cancellationToken) =>
         await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
-            .Where(item => item.Bank.ToLower().Contains("online"))
+            .Where(item => item.Bank != null && item.Bank.ToLower().Contains("online"))
             .OrderBy(item => item.CashRegisterNo)
             .Select(item => new CashRegisterDetailDto(
                 item.Id,
-                item.CashRegisterNo,
-                item.Bank,
-                item.TerminalId,
-                item.MerchantNo,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
                 item.CashNo))
             .ToArrayAsync(cancellationToken);
 
