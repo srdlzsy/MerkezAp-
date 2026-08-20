@@ -420,10 +420,10 @@ public sealed class AyarlarService(
             .OrderBy(item => item.CashRegisterNo)
             .Select(item => new CashRegisterTerminalDto(
                 item.Id,
-                item.CashRegisterNo,
-                item.Bank,
-                item.TerminalId,
-                item.MerchantNo,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
                 item.CashNo))
             .ToArrayAsync(cancellationToken);
     }
@@ -450,6 +450,7 @@ public sealed class AyarlarService(
         var terminalNos = terminalDetails
             .Select(item => item.CashRegisterNo)
             .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -469,7 +470,9 @@ public sealed class AyarlarService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var terminalDetailsToRemove = terminalDetails
-            .Where(item => removableTerminalNos.Contains(item.CashRegisterNo))
+            .Where(item =>
+                !string.IsNullOrWhiteSpace(item.CashRegisterNo) &&
+                removableTerminalNos.Contains(item.CashRegisterNo))
             .ToArray();
         var terminalMappingsToRemove = terminalMappings
             .Where(item =>
@@ -840,10 +843,10 @@ public sealed class AyarlarService(
     private static CashRegisterTerminalDto ToTerminalDto(MikroCashRegisterDetailEntity item) =>
         new(
             item.Id,
-            item.CashRegisterNo,
-            item.Bank,
-            item.TerminalId,
-            item.MerchantNo,
+            item.CashRegisterNo ?? string.Empty,
+            item.Bank ?? string.Empty,
+            item.TerminalId ?? string.Empty,
+            item.MerchantNo ?? string.Empty,
             item.CashNo);
 
     private static CashierDto ToCashierDto(CashierEntity item) =>

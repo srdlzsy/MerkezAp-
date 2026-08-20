@@ -82,30 +82,21 @@ public sealed class CashSummaryLookupsUseCase(
             throw new ArgumentException("Either cash no or cash register no must be provided.");
         }
 
-        var query = furpaDbContext.CashRegisterDetails
-            .AsNoTracking()
-            .AsQueryable();
-
-        if (request.CashNo is > 0)
+        CashRegisterTerminalSource? detail;
+        if (!string.IsNullOrWhiteSpace(request.CashRegisterNo))
         {
-            query = query.Where(item => item.CashNo == request.CashNo.Value);
+            var cashRegisterNo = request.CashRegisterNo.Trim();
+            detail = await GetMikroCashRegisterDetailByRegisterNoAsync(cashRegisterNo, cancellationToken)
+                ?? await GetFurpaCashRegisterDetailByRegisterNoAsync(cashRegisterNo, cancellationToken);
         }
         else
         {
-            var cashRegisterNo = request.CashRegisterNo!.Trim();
-            query = query.Where(item => item.CashRegisterNo == cashRegisterNo);
+            var cashNo = request.CashNo!.Value;
+            detail = await GetFurpaCashRegisterDetailByCashNoAsync(cashNo, cancellationToken)
+                ?? await GetMikroCashRegisterDetailByCashNoAsync(cashNo, cancellationToken);
         }
 
-        return await query
-            .OrderBy(item => item.Id)
-            .Select(item => new CashRegisterDetailDto(
-                item.Id,
-                item.CashRegisterNo ?? string.Empty,
-                item.Bank ?? string.Empty,
-                item.TerminalId ?? string.Empty,
-                item.MerchantNo ?? string.Empty,
-                item.CashNo))
-            .FirstOrDefaultAsync(cancellationToken);
+        return detail is null ? null : ToCashRegisterDetailDto(detail);
     }
 
     public async Task<IReadOnlyCollection<CashierSearchItemDto>> SearchCashiersAsync(
@@ -168,15 +159,9 @@ public sealed class CashSummaryLookupsUseCase(
         }
 
         var cashRegisterNo = request.CashRegisterNo.Trim();
-        var cashRegisterTerminals = await furpaDbContext.CashRegisterDetails
-            .AsNoTracking()
-            .Where(item => item.CashRegisterNo == cashRegisterNo)
-            .Select(item => new
-            {
-                Bank = item.Bank ?? string.Empty,
-                TerminalId = item.TerminalId ?? string.Empty
-            })
-            .ToArrayAsync(cancellationToken);
+        var cashRegisterTerminals = await ListMikroCashRegisterDetailsByRegisterNoAsync(
+            cashRegisterNo,
+            cancellationToken);
 
         var terminalBanks = cashRegisterTerminals
             .Select(item => item.Bank)
@@ -186,7 +171,20 @@ public sealed class CashSummaryLookupsUseCase(
 
         if (terminalBanks.Length == 0)
         {
-            return [];
+            cashRegisterTerminals = await ListFurpaCashRegisterDetailsByRegisterNoAsync(
+                cashRegisterNo,
+                cancellationToken);
+
+            terminalBanks = cashRegisterTerminals
+                .Select(item => item.Bank)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (terminalBanks.Length == 0)
+            {
+                return [];
+            }
         }
 
         var paymentTypeRows = await mikroDbContext.PaymentTypes
@@ -262,12 +260,13 @@ public sealed class CashSummaryLookupsUseCase(
             cancellationToken);
 
     public async Task<IReadOnlyCollection<CashRegisterDetailDto>> ListOnlineCashRegistersAsync(
-        CancellationToken cancellationToken) =>
-        await furpaDbContext.CashRegisterDetails
+        CancellationToken cancellationToken)
+    {
+        var mikroRows = await mikroDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item => item.Bank != null && item.Bank.ToLower().Contains("online"))
             .OrderBy(item => item.CashRegisterNo)
-            .Select(item => new CashRegisterDetailDto(
+            .Select(item => new CashRegisterTerminalSource(
                 item.Id,
                 item.CashRegisterNo ?? string.Empty,
                 item.Bank ?? string.Empty,
@@ -275,6 +274,24 @@ public sealed class CashSummaryLookupsUseCase(
                 item.MerchantNo ?? string.Empty,
                 item.CashNo))
             .ToArrayAsync(cancellationToken);
+
+        var furpaRows = await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.Bank != null && item.Bank.ToLower().Contains("online"))
+            .OrderBy(item => item.CashRegisterNo)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .ToArrayAsync(cancellationToken);
+
+        return PreferFirstSource(mikroRows, furpaRows)
+            .Select(ToCashRegisterDetailDto)
+            .ToArray();
+    }
 
     private async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListPaymentTypesByPredicateAsync(
         Func<string?, bool> predicate,
@@ -338,4 +355,141 @@ public sealed class CashSummaryLookupsUseCase(
         }
     }
 
+    private async Task<CashRegisterTerminalSource?> GetMikroCashRegisterDetailByRegisterNoAsync(
+        string cashRegisterNo,
+        CancellationToken cancellationToken) =>
+        await mikroDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashRegisterNo == cashRegisterNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<CashRegisterTerminalSource?> GetFurpaCashRegisterDetailByRegisterNoAsync(
+        string cashRegisterNo,
+        CancellationToken cancellationToken) =>
+        await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashRegisterNo == cashRegisterNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<CashRegisterTerminalSource?> GetMikroCashRegisterDetailByCashNoAsync(
+        int cashNo,
+        CancellationToken cancellationToken) =>
+        await mikroDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo == cashNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<CashRegisterTerminalSource?> GetFurpaCashRegisterDetailByCashNoAsync(
+        int cashNo,
+        CancellationToken cancellationToken) =>
+        await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo == cashNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<CashRegisterTerminalSource[]> ListMikroCashRegisterDetailsByRegisterNoAsync(
+        string cashRegisterNo,
+        CancellationToken cancellationToken) =>
+        await mikroDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashRegisterNo == cashRegisterNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .ToArrayAsync(cancellationToken);
+
+    private async Task<CashRegisterTerminalSource[]> ListFurpaCashRegisterDetailsByRegisterNoAsync(
+        string cashRegisterNo,
+        CancellationToken cancellationToken) =>
+        await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashRegisterNo == cashRegisterNo)
+            .OrderBy(item => item.Id)
+            .Select(item => new CashRegisterTerminalSource(
+                item.Id,
+                item.CashRegisterNo ?? string.Empty,
+                item.Bank ?? string.Empty,
+                item.TerminalId ?? string.Empty,
+                item.MerchantNo ?? string.Empty,
+                item.CashNo))
+            .ToArrayAsync(cancellationToken);
+
+    private static IReadOnlyCollection<CashRegisterTerminalSource> PreferFirstSource(
+        IReadOnlyCollection<CashRegisterTerminalSource> firstSource,
+        IReadOnlyCollection<CashRegisterTerminalSource> fallbackSource)
+    {
+        var result = new List<CashRegisterTerminalSource>(firstSource.Count + fallbackSource.Count);
+        var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in firstSource.Concat(fallbackSource))
+        {
+            var key = string.Join(
+                "|",
+                item.CashRegisterNo,
+                item.Bank,
+                item.TerminalId,
+                item.MerchantNo);
+
+            if (seenKeys.Add(key))
+            {
+                result.Add(item);
+            }
+        }
+
+        return result;
+    }
+
+    private static CashRegisterDetailDto ToCashRegisterDetailDto(CashRegisterTerminalSource item) =>
+        new(
+            item.Id,
+            item.CashRegisterNo,
+            item.Bank,
+            item.TerminalId,
+            item.MerchantNo,
+            item.CashNo);
+
+    private sealed record CashRegisterTerminalSource(
+        int Id,
+        string CashRegisterNo,
+        string Bank,
+        string TerminalId,
+        string MerchantNo,
+        int? CashNo);
 }
