@@ -21,6 +21,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var rawBarcode = NormalizeOrNull(request.Barcode)
             ?? throw new ArgumentException("Barcode is required.", nameof(request.Barcode));
         var lookup = BarcodeLookupNormalizer.Normalize(rawBarcode);
+        var lookupCandidates = BarcodeLookupNormalizer.GetLookupCandidates(lookup);
         var screenCode = NormalizeOrNull(request.ScreenCode);
         var operationType = NormalizeOperationType(request.OperationType) ?? NormalizeOperationType(screenCode);
         var supplierCode = NormalizeOrNull(request.SupplierCode);
@@ -38,12 +39,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             warnings.Add("EAN-13 check digit appears invalid.");
         }
 
-        var barcodeMatch = await FindBarcodeRowAsync(lookup.LookupBarcode, cancellationToken);
-        if (barcodeMatch is null && !string.Equals(lookup.LookupBarcode, lookup.OriginalBarcode, StringComparison.Ordinal))
-        {
-            barcodeMatch = await FindBarcodeRowAsync(lookup.OriginalBarcode, cancellationToken);
-        }
-
+        var barcodeMatch = await FindBarcodeRowAsync(lookupCandidates, cancellationToken);
         string? stockCode = null;
         string? resolutionSource = null;
         var matchedUnitPointer = 1;
@@ -55,13 +51,13 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             matchedUnitPointer = Math.Max((int)barcodeMatch.UnitPointer.GetValueOrDefault(1), 1);
             matchedBarcode = barcodeMatch.Barcode;
             resolutionSource = lookup.IsVariableWeightBarcode &&
-                               string.Equals(barcodeMatch.Barcode, lookup.LookupBarcode, StringComparison.Ordinal)
+                               lookupCandidates.Contains(barcodeMatch.Barcode, StringComparer.Ordinal)
                 ? "variable-weight"
                 : "barcode";
         }
         else
         {
-            var stockSeed = await FindStockSeedAsync(lookup, cancellationToken);
+            var stockSeed = await FindStockSeedAsync(lookupCandidates, cancellationToken);
             if (stockSeed is null)
             {
                 errors.Add("Barkod veya stok referansi sistemde bulunamadi.");
@@ -83,7 +79,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
             stockCode = stockSeed.StockCode;
             resolutionSource = stockSeed.Source;
-            matchedBarcode = resolutionSource == "stock-code" ? null : lookup.LookupBarcode;
+            matchedBarcode = resolutionSource == "stock-code" ? null : stockSeed.MatchedReference;
         }
 
         if (string.IsNullOrWhiteSpace(stockCode))
@@ -330,35 +326,50 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
     }
 
     private async Task<BarcodeRow?> FindBarcodeRowAsync(
-        string barcode,
-        CancellationToken cancellationToken) =>
-        await mikroDbContext.BARKOD_TANIMLARIs
+        IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroDbContext.BARKOD_TANIMLARIs
             .AsNoTracking()
-            .Where(row => row.bar_iptal != true && row.bar_kodu == barcode)
+            .Where(row => row.bar_iptal != true && row.bar_kodu != null && barcodes.Contains(row.bar_kodu))
             .Select(row => new BarcodeRow(
                 row.bar_kodu ?? string.Empty,
                 row.bar_stokkodu,
                 row.bar_birimpntr,
                 row.bar_master ?? false,
                 row.bar_icerigi))
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        return barcodes
+            .Select(candidate => rows.FirstOrDefault(row => string.Equals(row.Barcode, candidate, StringComparison.Ordinal)))
+            .FirstOrDefault(row => row is not null);
+    }
 
     private async Task<StockSeed?> FindStockSeedAsync(
-        BarcodeLookupInfo lookup,
-        CancellationToken cancellationToken) =>
-        await mikroDbContext.STOKLARs
+        IReadOnlyCollection<string> lookupCandidates,
+        CancellationToken cancellationToken)
+    {
+        var row = await mikroDbContext.STOKLARs
             .AsNoTracking()
             .Where(stock =>
-                stock.sto_kod == lookup.LookupBarcode ||
-                stock.sto_kuresel_urun_numarasi == lookup.LookupBarcode ||
-                stock.sto_kod == lookup.OriginalBarcode ||
-                stock.sto_kuresel_urun_numarasi == lookup.OriginalBarcode)
-            .Select(stock => new StockSeed(
+                lookupCandidates.Contains(stock.sto_kod) ||
+                lookupCandidates.Contains(stock.sto_kuresel_urun_numarasi))
+            .Select(stock => new
+            {
                 stock.sto_kod,
-                stock.sto_kod == lookup.LookupBarcode || stock.sto_kod == lookup.OriginalBarcode
-                    ? "stock-code"
-                    : "gtin"))
+                stock.sto_kuresel_urun_numarasi
+            })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (row is null)
+        {
+            return null;
+        }
+
+        return lookupCandidates.Contains(row.sto_kod, StringComparer.Ordinal)
+            ? new StockSeed(row.sto_kod, "stock-code", row.sto_kod)
+            : new StockSeed(row.sto_kod, "gtin", row.sto_kuresel_urun_numarasi);
+    }
 
     private async Task<TargetWarehouseEvaluation> EvaluateTargetWarehouseAsync(
         int? targetWarehouseNo,
@@ -852,7 +863,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
     private sealed record StockSeed(
         string StockCode,
-        string Source);
+        string Source,
+        string? MatchedReference);
 
     private sealed record StockSnapshot(
         string StockCode,

@@ -96,17 +96,18 @@ Desteklenen tipik islem tipleri:
    - Ornek: `2700174041103` icin `lookupBarcode = 2700174`,
      `embeddedQuantity = 4.11`, `embeddedQuantityUnit = KG`.
 4. Once `BARKOD_TANIMLARI.bar_kodu = lookupBarcode` exact aranir.
-5. Terazi barkodunda bulunamazsa orijinal barkodla tekrar denenir.
-6. Barkod tablosunda bulunamazsa `STOKLAR.sto_kod` veya
+5. Terazi barkodunda bulunamazsa ayni 5 haneli urun/PLU kismi icin `27`/`29` alternatif prefix'i denenir. Ornek: `2700740000008` icin `2700740`, sonra `2900740` aranir.
+6. Hala bulunamazsa orijinal barkodla tekrar denenir.
+7. Barkod tablosunda bulunamazsa `STOKLAR.sto_kod` veya
    `STOKLAR.sto_kuresel_urun_numarasi` ile eslesme denenir.
-7. Stok bulunursa `STOKLAR` ve varsa `STOK_DEPO_DETAYLARI` bilgileri okunur.
-8. Stokun tum aktif barkodlari okunur; primary, koli/master ve alternatif
+8. Stok bulunursa `STOKLAR` ve varsa `STOK_DEPO_DETAYLARI` bilgileri okunur.
+9. Stokun tum aktif barkodlari okunur; primary, koli/master ve alternatif
    barkod bilgileri hesaplanir.
-9. Hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` model kod listesi
+10. Hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` model kod listesi
    okunur ve `STOKLAR.sto_model_kodu` ile karsilastirilir.
-10. Tedarikci veya ilgili islem tipi varsa `SATINALMA_SARTLARI` kontrol edilir.
-11. Depo fiyat bilgisi bulunur.
-12. `isUsableInOperation`, `operationDecision`, `warnings` ve `errors`
+11. Tedarikci veya ilgili islem tipi varsa `SATINALMA_SARTLARI` kontrol edilir.
+12. Depo fiyat bilgisi bulunur.
+13. `isUsableInOperation`, `operationDecision`, `warnings` ve `errors`
     alanlari uretilir.
 
 ## Response Alanlari Nasil Okunur
@@ -277,7 +278,8 @@ Kurallar:
 - `stockName` en az 2 karakter olmalidir.
 - `take` default 20, max 100 olur.
 - Barkod 27/29 terazi barkoduysa burada da `lookupBarcode` ilk 7 haneye
-  normalize edilir.
+  normalize edilir; sonuc bulunamazsa ayni urun/PLU kismi icin `27`/`29`
+  alternatif prefix'i de denenir.
 - Bu endpoint `dbo.__StokveFiyatArama_Gokhan` prosedurunu kullanir.
 - Liste icin uygundur, ama satira ekleme karari icin son kontrol yine
   `barkodlar/{barcode}/cozumle` olmalidir.

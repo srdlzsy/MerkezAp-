@@ -19,6 +19,26 @@ public sealed class BarcodeLookupNormalizerTests
     }
 
     [Fact]
+    public void GetLookupCandidates_AddsAlternate29Prefix_For27ScaleBarcode()
+    {
+        var result = BarcodeLookupNormalizer.Normalize("2700740000008");
+
+        Assert.Equal(
+            ["2700740", "2900740", "2700740000008"],
+            BarcodeLookupNormalizer.GetLookupCandidates(result));
+    }
+
+    [Fact]
+    public void GetLookupCandidates_AddsAlternate27Prefix_For29ScaleBarcode()
+    {
+        var result = BarcodeLookupNormalizer.Normalize("2900740000002");
+
+        Assert.Equal(
+            ["2900740", "2700740", "2900740000002"],
+            BarcodeLookupNormalizer.GetLookupCandidates(result));
+    }
+
+    [Fact]
     public void Normalize_KeepsBarcode_ForRegularBarcode()
     {
         var result = BarcodeLookupNormalizer.Normalize("8690000000000");

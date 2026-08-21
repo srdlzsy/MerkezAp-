@@ -25,12 +25,11 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         var barcodeLookup = requestedBarcode is null
             ? null
             : BarcodeLookupNormalizer.Normalize(requestedBarcode);
-        var barcode = barcodeLookup?.LookupBarcode;
         var stockCode = NormalizeOrNull(request.StockCode);
         var stockName = NormalizeOrNull(request.StockName);
         var supplierCode = NormalizeOrNull(request.SupplierCode);
 
-        if (barcode is null && stockCode is null && stockName is null && supplierCode is null)
+        if (barcodeLookup is null && stockCode is null && stockName is null && supplierCode is null)
         {
             throw new ArgumentException("At least one product search filter is required.");
         }
@@ -51,49 +50,57 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
         try
         {
-            var products = await ReadProductsAsync(
-                connection,
-                request.WarehouseNo,
-                barcode,
-                stockCode,
-                stockName,
-                supplierCode,
-                take,
-                barcodeLookup,
-                cancellationToken);
+            var products = barcodeLookup is null
+                ? await ReadProductsAsync(
+                    connection,
+                    request.WarehouseNo,
+                    null,
+                    stockCode,
+                    stockName,
+                    supplierCode,
+                    take,
+                    null,
+                    cancellationToken)
+                : await ReadProductsByBarcodeCandidatesAsync(
+                    connection,
+                    request.WarehouseNo,
+                    barcodeLookup,
+                    stockCode,
+                    stockName,
+                    supplierCode,
+                    take,
+                    cancellationToken);
 
             if (products.Count == 0 &&
-                barcode is null &&
+                barcodeLookup is null &&
                 IsDigitsOnly(stockCode))
             {
                 var fallbackBarcodeLookup = BarcodeLookupNormalizer.Normalize(stockCode!);
-                products = await ReadProductsAsync(
+                products = await ReadProductsByBarcodeCandidatesAsync(
                     connection,
                     request.WarehouseNo,
-                    fallbackBarcodeLookup.LookupBarcode,
+                    fallbackBarcodeLookup,
                     null,
                     null,
                     supplierCode,
                     take,
-                    fallbackBarcodeLookup,
                     cancellationToken);
             }
 
             if (products.Count == 0 &&
-                barcode is null &&
+                barcodeLookup is null &&
                 stockCode is null &&
                 IsDigitsOnly(stockName))
             {
                 var fallbackBarcodeLookup = BarcodeLookupNormalizer.Normalize(stockName!);
-                products = await ReadProductsAsync(
+                products = await ReadProductsByBarcodeCandidatesAsync(
                     connection,
                     request.WarehouseNo,
-                    fallbackBarcodeLookup.LookupBarcode,
+                    fallbackBarcodeLookup,
                     null,
                     null,
                     supplierCode,
                     take,
-                    fallbackBarcodeLookup,
                     cancellationToken);
 
                 if (products.Count == 0)
@@ -120,6 +127,38 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                 await connection.CloseAsync();
             }
         }
+    }
+
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByBarcodeCandidatesAsync(
+        DbConnection connection,
+        int warehouseNo,
+        BarcodeLookupInfo barcodeLookup,
+        string? stockCode,
+        string? stockName,
+        string? supplierCode,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        foreach (var barcode in BarcodeLookupNormalizer.GetLookupCandidates(barcodeLookup))
+        {
+            var products = await ReadProductsAsync(
+                connection,
+                warehouseNo,
+                barcode,
+                stockCode,
+                stockName,
+                supplierCode,
+                take,
+                barcodeLookup,
+                cancellationToken);
+
+            if (products.Count > 0)
+            {
+                return products;
+            }
+        }
+
+        return Array.Empty<ProductLookupItemDto>();
     }
 
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsAsync(

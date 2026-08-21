@@ -31,6 +31,31 @@ public static class BarcodeLookupNormalizer
             isCheckDigitValid);
     }
 
+    public static IReadOnlyCollection<string> GetLookupCandidates(BarcodeLookupInfo lookup)
+    {
+        var candidates = new List<string>();
+
+        AddLookupCandidate(candidates, lookup.LookupBarcode);
+
+        if (lookup.IsVariableWeightBarcode && lookup.LookupBarcode.Length == 7)
+        {
+            var alternatePrefix = lookup.LookupBarcode.StartsWith("27", StringComparison.Ordinal)
+                ? "29"
+                : lookup.LookupBarcode.StartsWith("29", StringComparison.Ordinal)
+                    ? "27"
+                    : null;
+
+            if (alternatePrefix is not null)
+            {
+                AddLookupCandidate(candidates, alternatePrefix + lookup.LookupBarcode[2..]);
+            }
+        }
+
+        AddLookupCandidate(candidates, lookup.OriginalBarcode);
+
+        return candidates;
+    }
+
     private static bool IsVariableWeightBarcode(string value) =>
         IsEan13Candidate(value) &&
         (value.StartsWith("27", StringComparison.Ordinal) ||
@@ -51,6 +76,19 @@ public static class BarcodeLookupNormalizer
 
         var expectedCheckDigit = (10 - sum % 10) % 10;
         return expectedCheckDigit == value[12] - '0';
+    }
+
+    private static void AddLookupCandidate(List<string> candidates, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!candidates.Contains(value, StringComparer.Ordinal))
+        {
+            candidates.Add(value);
+        }
     }
 }
 
