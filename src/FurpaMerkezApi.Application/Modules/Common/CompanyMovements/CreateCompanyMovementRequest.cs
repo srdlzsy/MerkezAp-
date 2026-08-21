@@ -8,6 +8,8 @@ public sealed record CreateCompanyMovementRequest(
     string? DocumentNo,
     string? Description,
     IReadOnlyCollection<CreateCompanyMovementLineRequest> Lines,
+    string? Deliverer = null,
+    string? Receiver = null,
     Guid? ClientRequestId = null,
     Guid? RequestedByUserId = null);
 

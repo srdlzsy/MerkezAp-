@@ -67,10 +67,10 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
                     1,
                     string.Empty,
                     string.Empty,
-                    string.Empty,
+                    NormalizeText(request.Deliverer, 25),
+                    NormalizeText(request.Receiver, 25),
                     FormatDate(movementDate),
                     NormalizeText(offlineTraceKey, 25),
-                    string.Empty,
                     string.Empty,
                     [],
                     []);

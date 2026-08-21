@@ -23,6 +23,12 @@ public sealed class CreateCompanyMovementHttpRequest
     [StringLength(50)]
     public string? Description { get; init; }
 
+    [StringLength(25)]
+    public string? Deliverer { get; init; }
+
+    [StringLength(25)]
+    public string? Receiver { get; init; }
+
     [Required]
     [MinLength(1)]
     public IReadOnlyCollection<CreateCompanyMovementLineHttpRequest> Lines { get; init; } =

@@ -105,6 +105,8 @@ public sealed class FirmaIadeleriController(
                         line.ProductResponsibilityCenter,
                         line.OrderLineGuid))
                     .ToArray(),
+                request.Deliverer,
+                request.Receiver,
                 request.ClientRequestId,
                 User.GetRequiredUserId()),
             cancellationToken);

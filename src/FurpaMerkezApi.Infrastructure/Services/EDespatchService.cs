@@ -89,12 +89,18 @@ public sealed class EDespatchService(
             await RecordEDespatchFlowAsync(
                 request,
                 DocumentFlowStatus.Succeeded,
-                "E-irsaliye Uyumsoft'a basariyla gonderildi.",
-                null,
+                response.LocalMikroMetadataUpdated
+                    ? "E-irsaliye Uyumsoft'a basariyla gonderildi."
+                    : "E-irsaliye Uyumsoft'a gonderildi ancak Mikro gonderim bilgisi isaretlenemedi.",
+                response.Warning,
                 response,
                 cancellationToken);
 
             return response;
+        }
+        catch (EDespatchAlreadySubmittedException)
+        {
+            throw;
         }
         catch (Exception exception)
         {
@@ -145,14 +151,7 @@ public sealed class EDespatchService(
         SendEDespatchResponse? response,
         CancellationToken cancellationToken)
     {
-        var documentType = request.DocumentType switch
-        {
-            EDespatchDocumentType.OutgoingCompanyShipment => DocumentFlowType.CompanyShipment,
-            EDespatchDocumentType.CompanyReturn => DocumentFlowType.CompanyReturn,
-            EDespatchDocumentType.InterWarehouseShipment => DocumentFlowType.InterWarehouseShipment,
-            EDespatchDocumentType.WarehouseReturn => DocumentFlowType.WarehouseReturn,
-            _ => throw new ArgumentOutOfRangeException(nameof(request.DocumentType))
-        };
+        var documentType = ToDocumentFlowType(request.DocumentType);
 
         var targetWarehouseNo = await ResolveDocumentFlowTargetWarehouseNoAsync(request, cancellationToken);
 
@@ -176,6 +175,51 @@ public sealed class EDespatchService(
                 ExternalUuid: response?.EDespatchUuid),
             cancellationToken);
     }
+
+    private async Task EnsureNotAlreadySubmittedInDocumentFlowAsync(
+        SendEDespatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentType = ToDocumentFlowType(request.DocumentType);
+        var flowKey = DocumentFlowKeys.Create(
+            documentType,
+            request.WarehouseNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo);
+
+        var sentFlow = await authDbContext.DocumentFlows
+            .AsNoTracking()
+            .Where(flow =>
+                flow.FlowKey == flowKey &&
+                flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                flow.Status == DocumentFlowStatus.Succeeded &&
+                flow.ExternalDocumentNo != null &&
+                flow.ExternalUuid != null)
+            .Select(flow => new
+            {
+                flow.ExternalDocumentNo,
+                flow.ExternalUuid
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (sentFlow is null)
+        {
+            return;
+        }
+
+        throw new EDespatchAlreadySubmittedException(
+            $"E-despatch was already submitted to Uyumsoft. EDespatchDocumentNo={sentFlow.ExternalDocumentNo}, EDespatchUuid={sentFlow.ExternalUuid}. Do not resend; update local Mikro metadata if it is missing.");
+    }
+
+    private static DocumentFlowType ToDocumentFlowType(EDespatchDocumentType documentType) =>
+        documentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => DocumentFlowType.CompanyShipment,
+            EDespatchDocumentType.CompanyReturn => DocumentFlowType.CompanyReturn,
+            EDespatchDocumentType.InterWarehouseShipment => DocumentFlowType.InterWarehouseShipment,
+            EDespatchDocumentType.WarehouseReturn => DocumentFlowType.WarehouseReturn,
+            _ => throw new ArgumentOutOfRangeException(nameof(documentType))
+        };
 
     private async Task<int?> ResolveDocumentFlowTargetWarehouseNoAsync(
         SendEDespatchRequest request,
@@ -314,6 +358,7 @@ public sealed class EDespatchService(
             movementKind,
             cancellationToken);
         EnsureNotAlreadySent(document.TrackedMovements);
+        await EnsureNotAlreadySubmittedInDocumentFlowAsync(request, cancellationToken);
         var config = options.Value;
         var now = DateTime.Now;
         var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
@@ -354,7 +399,7 @@ public sealed class EDespatchService(
             config,
             cancellationToken);
 
-        await TryMarkAsSentAsync(
+        var localMikroMetadataUpdated = await TryMarkAsSentAsync(
             document.Context,
             document.TrackedMovements,
             eDespatchDocumentNo,
@@ -375,7 +420,9 @@ public sealed class EDespatchService(
             serviceResult.ServiceDocumentId,
             serviceResult.ServiceDocumentNumber,
             now,
-            config.EndpointUrl);
+            config.EndpointUrl,
+            localMikroMetadataUpdated,
+            BuildLocalMikroMetadataWarning(localMikroMetadataUpdated));
     }
 
     private async Task<SendEDespatchResponse> SendInterWarehouseDocumentAsync(
@@ -390,6 +437,7 @@ public sealed class EDespatchService(
             isReturn,
             cancellationToken);
         EnsureNotAlreadySent(document.TrackedMovements);
+        await EnsureNotAlreadySubmittedInDocumentFlowAsync(request, cancellationToken);
         var config = options.Value;
         var now = DateTime.Now;
         var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
@@ -429,7 +477,7 @@ public sealed class EDespatchService(
             config,
             cancellationToken);
 
-        await TryMarkAsSentAsync(
+        var localMikroMetadataUpdated = await TryMarkAsSentAsync(
             document.Context,
             document.TrackedMovements,
             eDespatchDocumentNo,
@@ -450,7 +498,9 @@ public sealed class EDespatchService(
             serviceResult.ServiceDocumentId,
             serviceResult.ServiceDocumentNumber,
             now,
-            config.EndpointUrl);
+            config.EndpointUrl,
+            localMikroMetadataUpdated,
+            BuildLocalMikroMetadataWarning(localMikroMetadataUpdated));
     }
 
     private async Task<ResolvedCompanyMovementDocument> ResolveCompanyMovementAsync(
@@ -1394,7 +1444,7 @@ public sealed class EDespatchService(
             config.Password,
             "IBasicDespatchIntegration");
 
-    private async Task TryMarkAsSentAsync(
+    private async Task<bool> TryMarkAsSentAsync(
         MikroDbContext context,
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
         string eDespatchDocumentNo,
@@ -1436,14 +1486,22 @@ public sealed class EDespatchService(
             }
 
             await context.SaveChangesAsync(cancellationToken);
+            return true;
         }
         catch (Exception exception)
         {
             logger.LogWarning(
                 exception,
                 "E-despatch was sent but local Mikro metadata could not be updated.");
+
+            return false;
         }
     }
+
+    private static string? BuildLocalMikroMetadataWarning(bool localMikroMetadataUpdated) =>
+        localMikroMetadataUpdated
+            ? null
+            : "E-despatch was sent to Uyumsoft, but Mikro STOK_HAREKETLERI metadata could not be updated. Do not resend; use the returned FRM document number and ETTN to repair the local document metadata.";
 
     private async Task<string> BuildEDespatchDocumentNoAsync(
         int year,
@@ -1908,6 +1966,8 @@ public sealed class EDespatchService(
         string? Deliverer,
         string? Receiver,
         string? DriverTckn);
+
+    private sealed class EDespatchAlreadySubmittedException(string message) : InvalidOperationException(message);
 
     private sealed class DocumentNumberLockLease(
         DbConnection connection,

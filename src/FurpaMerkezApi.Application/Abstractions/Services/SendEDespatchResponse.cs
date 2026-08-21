@@ -9,4 +9,6 @@ public sealed record SendEDespatchResponse(
     string ServiceDocumentId,
     string ServiceDocumentNumber,
     DateTime SentAt,
-    string EndpointUrl);
+    string EndpointUrl,
+    bool LocalMikroMetadataUpdated = true,
+    string? Warning = null);

@@ -27,7 +27,21 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
         Assert.Equal(string.Empty, line.sth_sip_uid);
     }
 
-    private static CompanyMovementIrsaliyeMikroApiPayload CreatePayload(Guid? orderLineGuid)
+    [Fact]
+    public void Create_MapsDelivererAndReceiverToMovementGroupCodes()
+    {
+        var payload = CreatePayload(null, "Teslim Eden", "Teslim Alan");
+
+        var line = payload.evraklar.Single().satirlar.Single();
+
+        Assert.Equal("Teslim Eden", line.sth_HareketGrupKodu2);
+        Assert.Equal("Teslim Alan", line.sth_HareketGrupKodu3);
+    }
+
+    private static CompanyMovementIrsaliyeMikroApiPayload CreatePayload(
+        Guid? orderLineGuid,
+        string? deliverer = null,
+        string? receiver = null)
     {
         var request = new CreateCompanyMovementRequest(
             50,
@@ -43,7 +57,9 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
                     2d,
                     1,
                     OrderLineGuid: orderLineGuid)
-            ]);
+            ],
+            deliverer,
+            receiver);
 
         return CompanyMovementIrsaliyeMikroApiPayloadFactory.Create(
             request,

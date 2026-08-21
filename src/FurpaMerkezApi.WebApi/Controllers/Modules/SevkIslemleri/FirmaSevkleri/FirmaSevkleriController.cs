@@ -224,6 +224,8 @@ public sealed class FirmaSevkleriController(
                         line.ProductResponsibilityCenter,
                         line.OrderLineGuid))
                     .ToArray(),
+                request.Deliverer,
+                request.Receiver,
                 request.ClientRequestId,
                 User.GetRequiredUserId()),
             cancellationToken);

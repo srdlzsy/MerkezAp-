@@ -40,6 +40,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private const int FirstDocumentOrderNo = 0;
     private const int ShipmentCreateLockTimeoutMilliseconds = 120_000;
     private const int RecentDuplicateLookupMinutes = 5;
+    private const int DatabaseWriteRetryAttemptCount = 3;
+    private const int DatabaseWriteRetryBaseDelayMilliseconds = 750;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const string OfflineOperationCode = "sevk-islemleri.giden-depolar-arasi-sevkler.create";
@@ -79,6 +81,39 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         };
 
     private async Task<CreateInterWarehouseShipmentResponse> ExecuteDatabaseAsync(
+        CreateInterWarehouseShipmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await ExecuteDatabaseOnceAsync(request, cancellationToken);
+            }
+            catch (Exception exception) when (
+                !cancellationToken.IsCancellationRequested &&
+                attempt < DatabaseWriteRetryAttemptCount &&
+                IsTransientSqlWriteException(exception))
+            {
+                mikroWriteDbContext.ChangeTracker.Clear();
+
+                logger.LogWarning(
+                    exception,
+                    "Transient SQL error occurred while creating inter warehouse shipment. Retrying database write. Attempt={Attempt}, MaxAttempt={MaxAttempt}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, LineCount={LineCount}",
+                    attempt,
+                    DatabaseWriteRetryAttemptCount,
+                    request.SourceWarehouseNo,
+                    request.TargetWarehouseNo,
+                    request.Lines.Count);
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(DatabaseWriteRetryBaseDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+    }
+
+    private async Task<CreateInterWarehouseShipmentResponse> ExecuteDatabaseOnceAsync(
         CreateInterWarehouseShipmentRequest request,
         CancellationToken cancellationToken)
     {
@@ -1579,6 +1614,58 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 error.Message.Contains("STOK_HAREKETLERI", StringComparison.OrdinalIgnoreCase) &&
                 error.Message.Contains("NDX_STOK_HAREKETLERI_05", StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsTransientSqlWriteException(Exception exception)
+    {
+        if (exception is OperationCanceledException)
+        {
+            return false;
+        }
+
+        if (exception is TimeoutException)
+        {
+            return true;
+        }
+
+        if (exception is SqlException sqlException)
+        {
+            return ContainsTransientSqlError(sqlException);
+        }
+
+        if (exception is AggregateException aggregateException)
+        {
+            return aggregateException.InnerExceptions.Any(IsTransientSqlWriteException);
+        }
+
+        return exception.InnerException is not null &&
+            IsTransientSqlWriteException(exception.InnerException);
+    }
+
+    private static bool ContainsTransientSqlError(SqlException sqlException)
+    {
+        foreach (SqlError error in sqlException.Errors)
+        {
+            if (IsTransientSqlErrorNumber(error.Number))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsTransientSqlErrorNumber(int errorNumber) =>
+        errorNumber is
+            -2 or
+            1205 or
+            40613 or
+            40197 or
+            40501 or
+            49918 or
+            49919 or
+            49920 or
+            10928 or
+            10929;
 
     private sealed record AutomaticWarehouseOrderRow(
         int OriginalRowNo,
