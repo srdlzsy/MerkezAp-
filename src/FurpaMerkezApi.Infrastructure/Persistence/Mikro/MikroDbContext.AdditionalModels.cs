@@ -47,6 +47,8 @@ public partial class MikroDbContext
 
     public virtual DbSet<ExpenseNoteLineEntity> ExpenseNoteLines { get; set; }
 
+    public virtual DbSet<SATINALMA_SARTLARI> SATINALMA_SARTLARIs { get; set; }
+
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CARI_HESAP_YETKILILERI>(entity =>
@@ -403,6 +405,17 @@ public partial class MikroDbContext
             entity.Property(item => item.LineId).ValueGeneratedOnAdd();
             entity.Property(item => item.Amount).HasColumnType("decimal(18,2)");
             entity.Property(item => item.TaxAmount).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<SATINALMA_SARTLARI>(entity =>
+        {
+            entity.HasKey(item => item.sas_Guid).HasName("NDX_SATINALMA_SARTLARI_00");
+            entity.ToTable("SATINALMA_SARTLARI");
+            entity.Property(item => item.sas_Guid).HasDefaultValueSql("(newid())");
+            entity.Property(item => item.sas_stok_kod).HasMaxLength(25);
+            entity.Property(item => item.sas_cari_kod).HasMaxLength(25);
+            entity.Property(item => item.sas_belge_tarih).HasColumnType("datetime");
+            entity.Property(item => item.sas_create_date).HasColumnType("datetime");
         });
     }
 }

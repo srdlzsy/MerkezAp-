@@ -53,7 +53,7 @@ public sealed class CompanyMovementListQueryExecutorTests
         Assert.Equal(1, item.DocumentOrderNo);
         Assert.Equal(2, item.LineCount);
         Assert.Equal(10d, item.TotalQuantity);
-        Assert.Equal("AUTO IADE FMK101/0 S0", item.Description);
+        Assert.Equal(string.Empty, item.Description);
     }
 
     private static STOK_HAREKETLERI CreatePurchaseReturnMovement(

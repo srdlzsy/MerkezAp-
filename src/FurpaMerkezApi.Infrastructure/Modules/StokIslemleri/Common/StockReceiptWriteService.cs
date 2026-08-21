@@ -90,6 +90,7 @@ public sealed class StockReceiptWriteService(
         return await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
+            var pricedLines = await BuildPricedLinesAsync(lines, kind, cancellationToken);
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
@@ -100,10 +101,11 @@ public sealed class StockReceiptWriteService(
                     documentSerie,
                     movementGenre,
                     cancellationToken);
-                var movements = lines
-                    .Select((line, rowNo) => CreateMovement(
+                var movements = pricedLines
+                    .Select((pricedLine, rowNo) => CreateMovement(
                         request,
-                        line,
+                        pricedLine.Line,
+                        pricedLine.LineAmount,
                         creator,
                         acceptor,
                         description,
@@ -166,9 +168,10 @@ public sealed class StockReceiptWriteService(
             documentSerie,
             movementGenre,
             cancellationToken);
+        var pricedLines = await BuildPricedLinesAsync(lines, kind, cancellationToken);
         var payload = StockMovementMikroApiPayloadFactory.CreateStockReceipt(
             request,
-            lines,
+            pricedLines,
             movementGenre,
             workOrderExpenseCode,
             movementDate,
@@ -206,7 +209,7 @@ public sealed class StockReceiptWriteService(
             documentSerie,
             documentOrderNo,
             request,
-            lines,
+            pricedLines,
             movementGenre,
             movementDate,
             documentDate,
@@ -239,7 +242,7 @@ public sealed class StockReceiptWriteService(
         string documentSerie,
         int documentOrderNo,
         CreateStockReceiptRequest request,
-        IReadOnlyList<CreateStockReceiptLineRequest> lines,
+        IReadOnlyList<StockReceiptLineWithAmount> lines,
         byte movementGenre,
         DateTime movementDate,
         DateTime documentDate,
@@ -303,7 +306,7 @@ public sealed class StockReceiptWriteService(
         string documentSerie,
         int documentOrderNo,
         CreateStockReceiptRequest request,
-        IReadOnlyList<CreateStockReceiptLineRequest> lines,
+        IReadOnlyList<StockReceiptLineWithAmount> lines,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
@@ -331,8 +334,8 @@ public sealed class StockReceiptWriteService(
             creator,
             acceptor,
             lines.Count,
-            lines.Sum(line => line.Quantity),
-            0d,
+            lines.Sum(line => line.Line.Quantity),
+            lines.Sum(line => line.LineAmount),
             writeConnectionName);
 
         return true;
@@ -507,9 +510,98 @@ public sealed class StockReceiptWriteService(
         return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
+    private async Task<StockReceiptLineWithAmount[]> BuildPricedLinesAsync(
+        IReadOnlyCollection<CreateStockReceiptLineRequest> lines,
+        StockReceiptKind kind,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = lines
+            .Select(line => NormalizeText(line.StockCode, 25))
+            .Where(stockCode => stockCode.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var unitPrices = await GetLatestPurchaseRequirementPricesAsync(stockCodes, cancellationToken);
+        var missingStockCodes = stockCodes
+            .Where(stockCode => !unitPrices.ContainsKey(stockCode))
+            .ToArray();
+
+        if (missingStockCodes.Length > 0)
+        {
+            logger.LogWarning(
+                "Latest purchase requirement price could not be found for {Count} stock receipt line(s). Kind={Kind}, StockCodes={StockCodes}",
+                missingStockCodes.Length,
+                kind,
+                string.Join(", ", missingStockCodes));
+        }
+
+        return lines
+            .Select(line =>
+            {
+                var stockCode = NormalizeText(line.StockCode, 25);
+                var lineAmount = unitPrices.TryGetValue(stockCode, out var unitPrice)
+                    ? unitPrice * line.Quantity
+                    : 0d;
+
+                return new StockReceiptLineWithAmount(line, lineAmount);
+            })
+            .ToArray();
+    }
+
+    private async Task<Dictionary<string, double>> GetLatestPurchaseRequirementPricesAsync(
+        IReadOnlyCollection<string> stockCodes,
+        CancellationToken cancellationToken)
+    {
+        var unitPrices = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        if (stockCodes.Count == 0)
+        {
+            return unitPrices;
+        }
+
+        var purchaseRows = await mikroWriteDbContext.SATINALMA_SARTLARIs
+            .AsNoTracking()
+            .Where(purchase =>
+                purchase.sas_stok_kod != null &&
+                stockCodes.Contains(purchase.sas_stok_kod.Trim()))
+            .Select(purchase => new
+            {
+                StockCode = purchase.sas_stok_kod!,
+                purchase.sas_belge_tarih,
+                purchase.sas_create_date,
+                purchase.sas_net_alis_kdvli,
+                purchase.sas_isk_miktar1,
+                purchase.sas_isk_miktar2,
+                purchase.sas_isk_miktar3,
+                purchase.sas_isk_miktar4,
+                purchase.sas_isk_miktar5,
+                purchase.sas_isk_miktar6
+            })
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in purchaseRows
+                     .GroupBy(row => NormalizeText(row.StockCode, 25), StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group
+                         .OrderByDescending(row => row.sas_belge_tarih ?? DateTime.MinValue)
+                         .ThenByDescending(row => row.sas_create_date ?? DateTime.MinValue)
+                         .First()))
+        {
+            var stockCode = NormalizeText(row.StockCode, 25);
+            unitPrices[stockCode] =
+                (row.sas_net_alis_kdvli ?? 0d) -
+                ((row.sas_isk_miktar1 ?? 0d) +
+                 (row.sas_isk_miktar2 ?? 0d) +
+                 (row.sas_isk_miktar3 ?? 0d) +
+                 (row.sas_isk_miktar4 ?? 0d) +
+                 (row.sas_isk_miktar5 ?? 0d) +
+                 (row.sas_isk_miktar6 ?? 0d));
+        }
+
+        return unitPrices;
+    }
+
     private static STOK_HAREKETLERI CreateMovement(
         CreateStockReceiptRequest request,
         CreateStockReceiptLineRequest line,
+        double lineAmount,
         string creator,
         string acceptor,
         string description,
@@ -589,7 +681,7 @@ public sealed class StockReceiptWriteService(
             sth_miktar = line.Quantity,
             sth_miktar2 = 0d,
             sth_birim_pntr = Convert.ToByte(line.UnitPointer),
-            sth_tutar = 0d,
+            sth_tutar = lineAmount,
             sth_iskonto1 = 0d,
             sth_iskonto2 = 0d,
             sth_iskonto3 = 0d,

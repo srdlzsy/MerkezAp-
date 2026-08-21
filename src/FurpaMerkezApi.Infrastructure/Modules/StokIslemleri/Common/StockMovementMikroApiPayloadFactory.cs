@@ -17,7 +17,7 @@ internal static class StockMovementMikroApiPayloadFactory
 
     internal static StockMovementMikroApiPayload CreateStockReceipt(
         CreateStockReceiptRequest request,
-        IReadOnlyCollection<CreateStockReceiptLineRequest> lines,
+        IReadOnlyCollection<StockReceiptLineWithAmount> lines,
         byte movementGenre,
         string workOrderExpenseCode,
         DateTime movementDate,
@@ -31,42 +31,47 @@ internal static class StockMovementMikroApiPayloadFactory
         string offlineTraceKey)
     {
         var satirlar = lines
-            .Select((line, rowNo) => new StockMovementMikroApiLine(
-                FormatDate(movementDate),
-                OutgoingMovementType,
-                movementGenre,
-                NormalMovement,
-                StockReceiptDocumentType,
-                NormalizeText(documentSerie, 20),
-                documentOrderNo,
-                rowNo,
-                NormalizeText(documentNo, 50),
-                FormatDate(documentDate),
-                NormalizeText(line.StockCode, 25),
-                0,
-                string.Empty,
-                NormalizeText(workOrderExpenseCode, 25),
-                line.Quantity,
-                0d,
-                line.UnitPointer,
-                0d,
-                0,
-                0d,
-                false,
-                0,
-                1,
-                0,
-                request.WarehouseNo,
-                NormalizeText(line.Description ?? description, 50),
-                NormalizeText(line.PartyCode, 25),
-                line.LotNo,
-                NormalizeText(line.ProjectCode, 25),
-                1,
-                NormalizeText(creator, 25),
-                NormalizeText(acceptor, 25),
-                string.Empty,
-                NormalizeText(offlineTraceKey, 25),
-                FormatDate(movementDate)))
+            .Select((pricedLine, rowNo) =>
+            {
+                var line = pricedLine.Line;
+
+                return new StockMovementMikroApiLine(
+                    FormatDate(movementDate),
+                    OutgoingMovementType,
+                    movementGenre,
+                    NormalMovement,
+                    StockReceiptDocumentType,
+                    NormalizeText(documentSerie, 20),
+                    documentOrderNo,
+                    rowNo,
+                    NormalizeText(documentNo, 50),
+                    FormatDate(documentDate),
+                    NormalizeText(line.StockCode, 25),
+                    0,
+                    string.Empty,
+                    NormalizeText(workOrderExpenseCode, 25),
+                    line.Quantity,
+                    0d,
+                    line.UnitPointer,
+                    pricedLine.LineAmount,
+                    0,
+                    0d,
+                    false,
+                    0,
+                    1,
+                    0,
+                    request.WarehouseNo,
+                    NormalizeText(line.Description ?? description, 50),
+                    NormalizeText(line.PartyCode, 25),
+                    line.LotNo,
+                    NormalizeText(line.ProjectCode, 25),
+                    1,
+                    NormalizeText(creator, 25),
+                    NormalizeText(acceptor, 25),
+                    string.Empty,
+                    NormalizeText(offlineTraceKey, 25),
+                    FormatDate(movementDate));
+            })
             .ToArray();
 
         return new StockMovementMikroApiPayload(
@@ -168,6 +173,10 @@ internal sealed record StockMovementMikroApiPayload(
 
 internal sealed record StockMovementMikroApiDocument(
     IReadOnlyCollection<StockMovementMikroApiLine> satirlar);
+
+internal sealed record StockReceiptLineWithAmount(
+    CreateStockReceiptLineRequest Line,
+    double LineAmount);
 
 internal sealed record StockMovementMikroApiLine(
     string sth_tarih,

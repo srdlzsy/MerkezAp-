@@ -36,17 +36,8 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
         var endDateExclusive = endDate.AddDays(1);
         var movements = CreateFilteredMovementQuery(request.WarehouseNo, startDate, endDateExclusive, kind);
 
-        var query =
+        var documentSummaries =
             from movement in movements
-            join customer in mikroDbContext.CARI_HESAPLARs.AsNoTracking()
-                on movement.sth_cari_kodu equals customer.cari_kod into customerGroup
-            from customer in customerGroup.DefaultIfEmpty()
-            join inputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
-                on movement.sth_giris_depo_no equals inputWarehouse.dep_no into inputWarehouseGroup
-            from inputWarehouse in inputWarehouseGroup.DefaultIfEmpty()
-            join outputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
-                on movement.sth_cikis_depo_no equals outputWarehouse.dep_no into outputWarehouseGroup
-            from outputWarehouse in outputWarehouseGroup.DefaultIfEmpty()
             group movement
             by new
             {
@@ -56,21 +47,13 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 movement.sth_evrakno_seri,
                 movement.sth_evrakno_sira,
                 movement.sth_cari_kodu,
-                CustomerName = customer.cari_unvan1,
-                CustomerTitle = customer.cari_unvan2,
                 movement.sth_giris_depo_no,
-                InputWarehouseName = inputWarehouse.dep_adi,
                 movement.sth_cikis_depo_no,
-                OutputWarehouseName = outputWarehouse.dep_adi,
                 movement.sth_evraktip,
                 movement.sth_tip,
                 movement.sth_normal_iade
             }
             into grouped
-            orderby grouped.Key.sth_belge_tarih,
-                grouped.Min(item => item.sth_create_date),
-                grouped.Key.sth_evrakno_seri,
-                grouped.Key.sth_evrakno_sira
             select new
             {
                 grouped.Key.sth_belge_tarih,
@@ -80,22 +63,52 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 grouped.Key.sth_evrakno_seri,
                 grouped.Key.sth_evrakno_sira,
                 grouped.Key.sth_cari_kodu,
-                grouped.Key.CustomerName,
-                grouped.Key.CustomerTitle,
                 grouped.Key.sth_giris_depo_no,
-                grouped.Key.InputWarehouseName,
                 grouped.Key.sth_cikis_depo_no,
-                grouped.Key.OutputWarehouseName,
                 grouped.Key.sth_evraktip,
                 grouped.Key.sth_tip,
                 grouped.Key.sth_normal_iade,
-                Description = grouped
-                    .OrderBy(item => item.sth_satirno)
-                    .Select(item => item.sth_aciklama)
-                    .FirstOrDefault(),
                 LineCount = grouped.Count(),
                 TotalQuantity = grouped.Sum(item => item.sth_miktar ?? 0d),
                 TotalAmount = grouped.Sum(item => item.sth_tutar ?? 0d)
+            };
+
+        var query =
+            from document in documentSummaries
+            join customer in mikroDbContext.CARI_HESAPLARs.AsNoTracking()
+                on document.sth_cari_kodu equals customer.cari_kod into customerGroup
+            from customer in customerGroup.DefaultIfEmpty()
+            join inputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
+                on document.sth_giris_depo_no equals inputWarehouse.dep_no into inputWarehouseGroup
+            from inputWarehouse in inputWarehouseGroup.DefaultIfEmpty()
+            join outputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
+                on document.sth_cikis_depo_no equals outputWarehouse.dep_no into outputWarehouseGroup
+            from outputWarehouse in outputWarehouseGroup.DefaultIfEmpty()
+            orderby document.sth_belge_tarih,
+                document.MovementCreateDate,
+                document.sth_evrakno_seri,
+                document.sth_evrakno_sira
+            select new
+            {
+                document.sth_belge_tarih,
+                document.MovementCreateDate,
+                document.sth_tarih,
+                document.sth_belge_no,
+                document.sth_evrakno_seri,
+                document.sth_evrakno_sira,
+                document.sth_cari_kodu,
+                CustomerName = customer.cari_unvan1,
+                CustomerTitle = customer.cari_unvan2,
+                document.sth_giris_depo_no,
+                InputWarehouseName = inputWarehouse.dep_adi,
+                document.sth_cikis_depo_no,
+                OutputWarehouseName = outputWarehouse.dep_adi,
+                document.sth_evraktip,
+                document.sth_tip,
+                document.sth_normal_iade,
+                document.LineCount,
+                document.TotalQuantity,
+                document.TotalAmount
             };
 
         var documents = await ExecuteReadOnlyListAsync(query, cancellationToken);
@@ -130,7 +143,7 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                     document.sth_evraktip ?? 0,
                     document.sth_tip ?? 0,
                     document.sth_normal_iade ?? 0,
-                    document.Description ?? string.Empty,
+                    string.Empty,
                     document.LineCount,
                     document.TotalQuantity,
                     document.TotalAmount);
