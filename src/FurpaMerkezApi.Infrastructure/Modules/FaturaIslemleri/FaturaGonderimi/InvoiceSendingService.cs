@@ -609,6 +609,35 @@ public sealed class InvoiceSendingService(
                     AND ch.cha_tip = 0
                     AND ISNULL(ch.cha_iptal, 0) = 0
             ),
+            Sevkiyatlar AS (
+                SELECT
+                    ranked.FatGuid,
+                    ranked.IrsaliyeNo,
+                    ranked.IrsaliyeTarihi,
+                    ranked.Depo
+                FROM (
+                    SELECT
+                        sh.sth_fat_uid AS FatGuid,
+                        sh.sth_belge_no AS IrsaliyeNo,
+                        sh.sth_belge_tarih AS IrsaliyeTarihi,
+                        dep.dep_adi AS Depo,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sh.sth_fat_uid
+                            ORDER BY
+                                sh.sth_satirno,
+                                sh.sth_create_date,
+                                sh.sth_Guid
+                        ) AS RowNo
+                    FROM dbo.STOK_HAREKETLERI sh WITH (NOLOCK)
+                    INNER JOIN (SELECT DISTINCT cha_Guid FROM BaseFaturalar) baseFat
+                        ON baseFat.cha_Guid = sh.sth_fat_uid
+                    LEFT JOIN dbo.DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
+                    WHERE
+                        sh.sth_fat_uid IS NOT NULL
+                        AND ISNULL(sh.sth_iptal, 0) = 0
+                ) ranked
+                WHERE ranked.RowNo = 1
+            ),
             Faturalar AS (
                 SELECT
                     ch.cha_Guid AS FatGuid,
@@ -679,8 +708,11 @@ public sealed class InvoiceSendingService(
                     END AS TaxRateSummary
                 FROM BaseFaturalar ch
                 INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
-                INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
+                INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK)
+                    ON c.cari_kod = adr.adr_cari_kod
+                    AND adr.adr_adres_no = 1
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
+                LEFT JOIN Sevkiyatlar sevkiyat ON sevkiyat.FatGuid = ch.cha_Guid
                 LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK)
                     ON @includeFullDetails = 1
                     AND ch.cha_kasa_hizkod = hiz.hiz_kod
@@ -721,15 +753,6 @@ public sealed class InvoiceSendingService(
                 ) stokIstisna
                 OUTER APPLY (
                     SELECT TOP (1)
-                        sh.sth_belge_no AS IrsaliyeNo,
-                        sh.sth_belge_tarih AS IrsaliyeTarihi,
-                        dep.dep_adi AS Depo
-                    FROM STOK_HAREKETLERI sh WITH (NOLOCK)
-                    LEFT JOIN DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
-                    WHERE sh.sth_fat_uid = ch.cha_Guid
-                ) sevkiyat
-                OUTER APPLY (
-                    SELECT TOP (1)
                         LTRIM(RTRIM(ISNULL(ebh.ebh_iade_fat_no1, N''))) AS IadeFaturaNo,
                         COALESCE(
                             TRY_CONVERT(
@@ -749,8 +772,7 @@ public sealed class InvoiceSendingService(
                         ebh.ebh_create_date DESC
                 ) iadeRef
                 WHERE
-                    adr.adr_adres_no = 1
-                    AND fatSer.efatura = @efatura
+                    fatSer.efatura = @efatura
                     AND c.cari_efatura_fl = @efatura
             )
             SELECT
