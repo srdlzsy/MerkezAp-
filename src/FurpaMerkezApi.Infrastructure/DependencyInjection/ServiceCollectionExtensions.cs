@@ -42,6 +42,7 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Create;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.List;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BirlikKartSorgulama;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCirolari.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCirolari.List;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCirolari.Overview;
@@ -187,6 +188,7 @@ using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.MasrafFisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.MasrafFisleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.MasrafFisleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.BirlikKartSorgulama;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Operations;
 using FurpaMerkezApi.Infrastructure.Modules.OrtakIslemler.Duyurular;
 using FurpaMerkezApi.Infrastructure.Modules.OrtakIslemler.SikayetOneri;
@@ -206,6 +208,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using FurpaMerkezApi.Infrastructure.Persistence.Puan;
 using FurpaMerkezApi.Infrastructure.Persistence.Shopigo;
 using FurpaMerkezApi.Infrastructure.Services;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -235,6 +238,7 @@ public static class ServiceCollectionExtensions
         var furpaConnection = configuration.GetConnectionString("FurpaConnection");
         var furpaB2BConnection = configuration.GetConnectionString("FurpaB2BConnection");
         var axataConnection = configuration.GetConnectionString("AxataConnection");
+        var puanConnection = configuration.GetConnectionString("PuanConnection");
         var shopigoCiroConnection = configuration.GetConnectionString("ShopigoCiroConnection");
         var defaultCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
             configuration,
@@ -259,6 +263,10 @@ public static class ServiceCollectionExtensions
         var axataCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
             configuration,
             "AxataSeconds",
+            defaultCommandTimeoutSeconds);
+        var puanCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
+            configuration,
+            "PuanSeconds",
             defaultCommandTimeoutSeconds);
         var shopigoCiroCommandTimeoutSeconds = GetDatabaseCommandTimeoutSeconds(
             configuration,
@@ -448,6 +456,24 @@ public static class ServiceCollectionExtensions
                         sqlServer.EnableRetryOnFailure();
                         sqlServer.CommandTimeout(axataCommandTimeoutSeconds);
                     }));
+        }
+
+        if (!string.IsNullOrWhiteSpace(puanConnection))
+        {
+            services.AddDbContext<PuanDbContext>(options =>
+                options.UseSqlServer(
+                    puanConnection,
+                    sqlServer =>
+                    {
+                        sqlServer.EnableRetryOnFailure();
+                        sqlServer.CommandTimeout(puanCommandTimeoutSeconds);
+                    }));
+
+            services.AddScoped<IBirlikKartSorgulamaUseCase, BirlikKartSorgulamaExecutor>();
+        }
+        else
+        {
+            services.AddScoped<IBirlikKartSorgulamaUseCase, PuanConnectionNotConfiguredBirlikKartSorgulamaExecutor>();
         }
 
         if (!string.IsNullOrWhiteSpace(shopigoCiroConnection))
