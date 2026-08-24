@@ -21,7 +21,13 @@ public static class PermissionCatalog
         UpdateAction,
         AllWarehousesAction
     ];
-
+    private static readonly PermissionActionDefinition[] PageListDetailUpdateActions =
+    [
+        PageAction,
+        ListAction,
+        DetailAction,
+        UpdateAction
+    ];
     private static readonly PermissionActionDefinition[] ManageCrudActions =
     [
         ManageAction,
@@ -300,7 +306,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "manav-mal-kabul-etiket", "ManavMalKabulVeEtiket", ManavMalKabulVeEtiketActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "kunye-etiket-yazdirma", "KunyeEtiketYazdirma"),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "manav-kunye-etiket-yazdirma", "ManavKunyeEtiketYazdirma", ListActions),
-        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "birlik-kart-sorgulama", "BirlikKartSorgulama", PageListActions),
+        ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "birlik-kart-sorgulama", "BirlikKartSorgulama", PageListDetailUpdateActions),
         ..CreateMenuPermissions("kasa-islemleri", "KasaIslemleri", "banknot-takipleri", "BanknotTakipleri", ReadCreateActions)
     ];
 
@@ -330,5 +336,4 @@ public static class PermissionCatalog
 
     private sealed record PermissionActionDefinition(string Code, string Name);
 }
-
 

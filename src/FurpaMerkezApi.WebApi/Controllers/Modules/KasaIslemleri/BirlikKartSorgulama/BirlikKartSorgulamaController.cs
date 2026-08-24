@@ -17,6 +17,8 @@ public sealed class BirlikKartSorgulamaController(IBirlikKartSorgulamaUseCase bi
     private const string MenuCode = "birlik-kart-sorgulama";
     private const string MenuName = "BirlikKartSorgulama";
     private const string ListPolicy = "kasa-islemleri.birlik-kart-sorgulama.list";
+    private const string DetailPolicy = "kasa-islemleri.birlik-kart-sorgulama.detail";
+    private const string UpdatePolicy = "kasa-islemleri.birlik-kart-sorgulama.update";
 
     [HttpPost("sorgula")]
     [Authorize(Policy = ListPolicy)]
@@ -32,6 +34,45 @@ public sealed class BirlikKartSorgulamaController(IBirlikKartSorgulamaUseCase bi
         }
 
         var response = await birlikKartSorgulamaUseCase.SorgulaAsync(request, cancellationToken);
+        return Ok(response);
+    }
+
+    [HttpPost("guncelle")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(BirlikKartGuncelleResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BirlikKartGuncelleResponse>> Guncelle(
+        [FromBody] BirlikKartSorgulamaGuncelleRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.CekNo))
+        {
+            return ValidationProblem("CekNo zorunludur.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CariKod))
+        {
+            return ValidationProblem("CariKod zorunludur.");
+        }
+
+        var response = await birlikKartSorgulamaUseCase.GuncelleAsync(request, cancellationToken);
+        return Ok(response);
+    }
+
+    [HttpPost("detay")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(BirlikKartDetayResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BirlikKartDetayResponse>> Detay(
+        [FromBody] BirlikKartDetayRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.CekNo))
+        {
+            return ValidationProblem("CekNo zorunludur.");
+        }
+
+        var response = await birlikKartSorgulamaUseCase.DetayAsync(request, cancellationToken);
         return Ok(response);
     }
 }
