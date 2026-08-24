@@ -12707,7 +12707,7 @@ Not:
 
 ### Birlik Kart Sorgulama
 
-Birlik kart / indirim ceki bilgisini Puan DB tarafindaki `INTERBONUS_INDIRIM_CEK` tablosundan `CEK_NO` ile sorgular, detayini getirir ve yetkili kullanicida ayni cek kaydini gunceller.
+Birlik kart / indirim ceki bilgisini Puan DB tarafindaki `INTERBONUS_INDIRIMCEK` tablosundan `Cek_No` ile sorgular, detayini getirir ve yetkili kullanicida ayni cek kaydini gunceller.
 
 Yetki:
 
