@@ -28,14 +28,16 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
             FROM dbo.DEPOLAR WITH (NOLOCK)
             WHERE dep_no = @sourceWarehouseNo;
 
-            IF NULLIF(LTRIM(RTRIM(ISNULL(@SourceModelCodes, N''))), N'') IS NULL
+            SET @SourceModelCodes = REPLACE(REPLACE(ISNULL(@SourceModelCodes, N''), N';', N','), N'|', N',');
+
+            IF NULLIF(LTRIM(RTRIM(@SourceModelCodes)), N'') IS NULL
             BEGIN
                 THROW 50001, 'Secilen kaynak depo icin model kodlari tanimli degil.', 1;
             END;
 
             ;WITH SourceModels AS (
                 SELECT LTRIM(RTRIM(value)) AS ModelCode
-                FROM STRING_SPLIT(@SourceModelCodes, ',')
+                FROM STRING_SPLIT(@SourceModelCodes, N',')
                 WHERE LTRIM(RTRIM(value)) <> ''
             ),
             StockBase AS (
