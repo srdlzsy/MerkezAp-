@@ -210,6 +210,21 @@ public sealed class AuthService(
                 clock.UtcNow);
         }
 
+        if (!int.TryParse(user.WarehouseNo, out var userWarehouseNo))
+        {
+            return new WarehouseContextResponse(
+                user.Id,
+                user.Username,
+                user.WarehouseNo,
+                user.WarehouseName,
+                null,
+                null,
+                true,
+                true,
+                "InvalidTokenWarehouse",
+                clock.UtcNow);
+        }
+
         var currentWarehouse = await ResolveWarehouseFromIpAsync(ipAddress, cancellationToken);
         if (currentWarehouse.Status != "Resolved")
         {
@@ -226,10 +241,11 @@ public sealed class AuthService(
                 clock.UtcNow);
         }
 
-        var requiresRelogin = !string.Equals(
-            user.WarehouseNo.Trim(),
-            currentWarehouse.WarehouseNo?.ToString(),
-            StringComparison.Ordinal);
+        var currentWarehouseNo = currentWarehouse.WarehouseNo.GetValueOrDefault();
+        var isSameWarehouse = currentWarehouseNo == userWarehouseNo;
+        var isAllowedSharedNetworkWarehouse = !isSameWarehouse &&
+            GetAllowedNetworkBranchNos(userWarehouseNo).Contains(currentWarehouseNo);
+        var requiresRelogin = !isSameWarehouse && !isAllowedSharedNetworkWarehouse;
 
         return new WarehouseContextResponse(
             user.Id,
@@ -240,7 +256,11 @@ public sealed class AuthService(
             currentWarehouse.WarehouseName,
             true,
             requiresRelogin,
-            requiresRelogin ? "WarehouseChanged" : "Ok",
+            requiresRelogin
+                ? "WarehouseChanged"
+                : isAllowedSharedNetworkWarehouse
+                    ? "SharedNetwork"
+                    : "Ok",
             clock.UtcNow);
     }
 
