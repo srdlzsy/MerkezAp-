@@ -3926,6 +3926,7 @@ Not:
 - Mobil offline fiyat okutma icin tekil `fiyat-gor` endpointleri yerine `GET /api/mobile-sync/urun-fiyat-katalogu` ile depo bazli katalog cihaza indirilmelidir.
 - Mobil offline cari ve depo secimleri icin online arama endpointleri yerine `GET /api/mobile-sync/cari-katalogu` ve `GET /api/mobile-sync/depo-katalogu` kataloglari cihaza indirilmelidir.
 - Mal kabul create ekranlarinda cari secimini hizlandirmak icin `urunler/{stockCode}/cari-onerileri` endpoint'i yardimci olarak kullanilabilir.
+- `warehouseNo` arama endpointlerinde her zaman islemi yapan kullanicinin/magazanin deposudur; siparis verilen kaynak depo degildir. Normal sube/terminal kullanicisinda UI bu alani bos birakmali veya token deposunu gondermelidir. Kaynak depo secildi diye `warehouseNo` kaynak depoya cevrilmemelidir.
 
 ### Urun Ara
 
@@ -3959,6 +3960,10 @@ Kural:
 
 - `barcode`, `stockCode`, `stockName`, `companyCode` veya `supplierCode` alanlarindan en az biri verilmelidir.
 - Bos arama engellenir; cunku Mikro procedure genis fiyat/stok seti dondurebilir.
+- `warehouseNo`, fiyat/stok/blok bilgisinin hangi islem deposuna gore okunacagini belirler. Bu alan kaynak depo secimi icin kullanilmaz.
+- Merkez depoya siparis verme ekraninda kullanici deposu `56`, kaynak depo `50` ise urun arama istegi `warehouseNo=50` ile degil, `warehouseNo=56` ile veya `warehouseNo` bos gonderilerek yapilmalidir.
+- Ornek yanlis kullanim: `GET /api/arama-islemleri/urunler?warehouseNo=50&stockName=aytac`. Kullanici token deposu `56` ise ve tum depo yetkisi yoksa backend `403 Forbidden` dondurur.
+- Ornek dogru kullanim: `GET /api/arama-islemleri/urunler?stockName=aytac&take=20` veya `GET /api/arama-islemleri/urunler?warehouseNo=56&stockName=aytac&take=20`.
 - Barkod okutulduysa UI mumkunse degeri `barcode` alaninda gondermelidir. 27/29 terazi barkodunda backend ilk 7 haneyi arar; sonuc bulunamazsa ayni urun/PLU kismi icin `27`/`29` alternatif prefix'ini de dener. Ornek: `2700740000008` okutulursa `2700740`, sonra `2900740`, sonra orijinal barkod denenir.
 - Genel arama kutusunda kullanici sadece numerik metin yazarsa ve ilk arama sonuc donmezse backend bu metni once barkod, sonra stok kodu gibi tekrar dener.
 - Ornek: `stockName=2900729` gibi yanlis/genel arama seklinde gelirse backend sonuc bulamazsa `barcode=2900729` gibi tekrar deneyip `015806` stokunu dondurebilir. En temiz UI yolu yine `barcode=2900729` veya `GET /api/arama-islemleri/barkodlar/2900729/cozumle` kullanmaktir.
@@ -4507,6 +4512,8 @@ Onemli not:
 - `documentOrderNo` ayni seri icin test DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` yoksa `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `inWarehouseNo` gonderilebilir.
 - `outWarehouseNo` siparis verilen/karsi depo numarasidir.
+- Merkez depoya siparis verme senaryosunda `inWarehouseNo` islemi yapan sube/magaza, `outWarehouseNo` kaynak/merkez depodur. Normal sube kullanicisinda `inWarehouseNo` gonderilmemeli, yalniz `outWarehouseNo=50` gonderilmelidir.
+- UI urun arama veya barkod cozumleme isteklerinde kaynak depo olan `50` degerini `warehouseNo` alanina basmamalidir. `warehouseNo` bos kalirsa backend JWT deposunu kullanir; kaynak depo yalniz siparis create body icindeki `outWarehouseNo` alanina yazilir.
 - Manav depo siparisinde `outWarehouseNo=56` olmalidir. UI `resolution-preview` kullandiysa satirda `quantity = estimatedQuantity` gonderir; kullanicinin girdigi kasa/koli ve ortalama bilgisi opsiyonel `greenGrocerCase` nesnesinde gonderilir.
 - `greenGrocerCase` gonderilirse `estimatedQuantity` ile satir `quantity` birebir eslesmelidir; eslesmezse API `400 Bad Request` doner.
 - `greenGrocerCase` sadece snapshot/rapor/detay gosterimi icindir; Mikro siparis satirina yine `quantity` alani yazilir.
@@ -4641,6 +4648,7 @@ Liste satiri modeli:
 UI akisi:
 
 - Tek sayfada kullanici once kaynak depo secer.
+- Kaynak depo secimi, genel urun arama endpointindeki `warehouseNo` degerini degistirmemelidir. Kaynak depo sadece bu endpointte `SourceWarehouseNo` olarak, siparise cevirme endpointinde de `sourceWarehouseNo` olarak gonderilir.
 - UI listeyi getirir ve stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis, ihtiyac, koli katsayisi ve onerilen siparis miktarini gosterir.
 - Kullanici satirlari secer, `quantity` alanini varsayilan olarak `suggestedOrderQuantity` ile doldurur.
 - Kullanici miktari degistirebilir; `recommendedQuantity` alanina orijinal `suggestedOrderQuantity` yazilmasi onerilir.
@@ -4735,6 +4743,7 @@ Not:
 - Bu endpoint mevcut `Verilen Depo Siparisi Olustur` altyapisini kullanir.
 - `siparis-islemleri.onerilen-depo-siparisleri.all-warehouses` yoksa `targetWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `targetWarehouseNo` gonderilebilir.
 - `sourceWarehouseNo`, olusacak depo siparisindeki `outWarehouseNo` olarak kullanilir.
+- Normal sube/terminal kullanicisinda `targetWarehouseNo` gonderilmemelidir. Merkez depo siparisi icin `sourceWarehouseNo=50` yeterlidir; hedef subeyi backend token deposundan cozer.
 
 Request:
 

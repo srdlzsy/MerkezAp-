@@ -21,7 +21,9 @@ public sealed class WarehouseAccessFilter : IActionFilter
     {
         var user = context.HttpContext.User;
 
-        if (user.Identity?.IsAuthenticated != true || CanAccessAllWarehouses(user, context))
+        var allWarehousesPermissionCodes = GetAllWarehousesPermissionCodes(context).ToArray();
+
+        if (user.Identity?.IsAuthenticated != true || CanAccessAllWarehouses(user, allWarehousesPermissionCodes))
         {
             return;
         }
@@ -35,6 +37,7 @@ public sealed class WarehouseAccessFilter : IActionFilter
                 argument.Key,
                 argument.Value,
                 currentWarehouseNo,
+                allWarehousesPermissionCodes,
                 visited);
         }
     }
@@ -47,6 +50,7 @@ public sealed class WarehouseAccessFilter : IActionFilter
         string? name,
         object? value,
         int currentWarehouseNo,
+        IReadOnlyCollection<string> allWarehousesPermissionCodes,
         ISet<object> visited)
     {
         if (value is null)
@@ -56,7 +60,7 @@ public sealed class WarehouseAccessFilter : IActionFilter
 
         if (IsScopedWarehouseName(name) && TryGetWarehouseNo(value, out var requestedWarehouseNo))
         {
-            EnsureWarehouseAccess(currentWarehouseNo, requestedWarehouseNo);
+            EnsureWarehouseAccess(currentWarehouseNo, requestedWarehouseNo, name, allWarehousesPermissionCodes);
             return currentWarehouseNo;
         }
 
@@ -74,7 +78,7 @@ public sealed class WarehouseAccessFilter : IActionFilter
         {
             foreach (var item in enumerable)
             {
-                NormalizeValue(null, item, currentWarehouseNo, visited);
+                NormalizeValue(null, item, currentWarehouseNo, allWarehousesPermissionCodes, visited);
             }
 
             return value;
@@ -98,19 +102,27 @@ public sealed class WarehouseAccessFilter : IActionFilter
             {
                 if (property.PropertyType == typeof(int))
                 {
-                    EnsureWarehouseAccess(currentWarehouseNo, propertyValue);
+                    EnsureWarehouseAccess(
+                        currentWarehouseNo,
+                        propertyValue,
+                        property.Name,
+                        allWarehousesPermissionCodes);
                     SetPropertyValue(property, value, currentWarehouseNo);
                 }
                 else if (property.PropertyType == typeof(int?))
                 {
-                    EnsureWarehouseAccess(currentWarehouseNo, propertyValue);
+                    EnsureWarehouseAccess(
+                        currentWarehouseNo,
+                        propertyValue,
+                        property.Name,
+                        allWarehousesPermissionCodes);
                     SetPropertyValue(property, value, currentWarehouseNo);
                 }
 
                 continue;
             }
 
-            NormalizeValue(property.Name, propertyValue, currentWarehouseNo, visited);
+            NormalizeValue(property.Name, propertyValue, currentWarehouseNo, allWarehousesPermissionCodes, visited);
         }
 
         return value;
@@ -119,9 +131,10 @@ public sealed class WarehouseAccessFilter : IActionFilter
     private static bool IsScopedWarehouseName(string? name) =>
         !string.IsNullOrWhiteSpace(name) && ScopedWarehousePropertyNames.Contains(name);
 
-    private static bool CanAccessAllWarehouses(ClaimsPrincipal user, ActionExecutingContext context) =>
-        GetAllWarehousesPermissionCodes(context)
-            .Any(user.HasPermission);
+    private static bool CanAccessAllWarehouses(
+        ClaimsPrincipal user,
+        IReadOnlyCollection<string> allWarehousesPermissionCodes) =>
+        allWarehousesPermissionCodes.Any(user.HasPermission);
 
     private static IEnumerable<string> GetAllWarehousesPermissionCodes(ActionExecutingContext context)
     {
@@ -146,7 +159,11 @@ public sealed class WarehouseAccessFilter : IActionFilter
         return value is int;
     }
 
-    private static void EnsureWarehouseAccess(int currentWarehouseNo, object? requestedWarehouseNo)
+    private static void EnsureWarehouseAccess(
+        int currentWarehouseNo,
+        object? requestedWarehouseNo,
+        string? propertyName,
+        IReadOnlyCollection<string> allWarehousesPermissionCodes)
     {
         if (requestedWarehouseNo is null)
         {
@@ -155,9 +172,19 @@ public sealed class WarehouseAccessFilter : IActionFilter
 
         if (requestedWarehouseNo is int warehouseNo && warehouseNo != currentWarehouseNo)
         {
-            throw new ForbiddenAccessException("Current user is not allowed to access the requested warehouse.");
+            throw new ForbiddenAccessException(
+                "Current user is not allowed to access the requested warehouse. " +
+                $"Property={propertyName ?? "-"}; " +
+                $"CurrentWarehouseNo={currentWarehouseNo}; " +
+                $"RequestedWarehouseNo={warehouseNo}; " +
+                $"RequiredAllWarehousesPermission={FormatPermissionCodes(allWarehousesPermissionCodes)}.");
         }
     }
+
+    private static string FormatPermissionCodes(IReadOnlyCollection<string> permissionCodes) =>
+        permissionCodes.Count == 0
+            ? "-"
+            : string.Join(",", permissionCodes);
 
     private static void SetPropertyValue(PropertyInfo property, object target, int currentWarehouseNo)
     {

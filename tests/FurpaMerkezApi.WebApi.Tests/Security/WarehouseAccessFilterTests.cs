@@ -59,7 +59,11 @@ public sealed class WarehouseAccessFilterTests
         var context = CreateContext(request, currentWarehouseNo: 50);
         var filter = new WarehouseAccessFilter();
 
-        Assert.Throws<ForbiddenAccessException>(() => filter.OnActionExecuting(context));
+        var exception = Assert.Throws<ForbiddenAccessException>(() => filter.OnActionExecuting(context));
+
+        Assert.Contains("Property=WarehouseNo", exception.Message);
+        Assert.Contains("CurrentWarehouseNo=50", exception.Message);
+        Assert.Contains("RequestedWarehouseNo=1", exception.Message);
     }
 
     [Fact]

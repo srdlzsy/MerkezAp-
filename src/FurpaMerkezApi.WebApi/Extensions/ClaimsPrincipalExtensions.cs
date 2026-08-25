@@ -46,7 +46,11 @@ internal static class ClaimsPrincipalExtensions
     {
         var currentWarehouseNo = user.GetRequiredWarehouseNo();
 
-        EnsureWarehouseAccess(currentWarehouseNo, requestedWarehouseNo);
+        EnsureWarehouseAccess(
+            currentWarehouseNo,
+            requestedWarehouseNo,
+            propertyName: "warehouseNo",
+            requiredAllWarehousesPermissionCode: null);
 
         return currentWarehouseNo;
     }
@@ -63,7 +67,11 @@ internal static class ClaimsPrincipalExtensions
             return requestedWarehouseNo ?? currentWarehouseNo;
         }
 
-        EnsureWarehouseAccess(currentWarehouseNo, requestedWarehouseNo);
+        EnsureWarehouseAccess(
+            currentWarehouseNo,
+            requestedWarehouseNo,
+            propertyName: "warehouseNo",
+            requiredAllWarehousesPermissionCode: allWarehousesPermissionCode);
 
         return currentWarehouseNo;
     }
@@ -113,11 +121,20 @@ internal static class ClaimsPrincipalExtensions
     private static bool CanAccessAllWarehouses(this ClaimsPrincipal user, string allWarehousesPermissionCode) =>
         user.HasPermission(allWarehousesPermissionCode);
 
-    private static void EnsureWarehouseAccess(int currentWarehouseNo, int? requestedWarehouseNo)
+    private static void EnsureWarehouseAccess(
+        int currentWarehouseNo,
+        int? requestedWarehouseNo,
+        string propertyName,
+        string? requiredAllWarehousesPermissionCode)
     {
         if (requestedWarehouseNo.HasValue && requestedWarehouseNo.Value != currentWarehouseNo)
         {
-            throw new ForbiddenAccessException("Current user is not allowed to access the requested warehouse.");
+            throw new ForbiddenAccessException(
+                "Current user is not allowed to access the requested warehouse. " +
+                $"Property={propertyName}; " +
+                $"CurrentWarehouseNo={currentWarehouseNo}; " +
+                $"RequestedWarehouseNo={requestedWarehouseNo.Value}; " +
+                $"RequiredAllWarehousesPermission={requiredAllWarehousesPermissionCode ?? "-"}.");
         }
     }
 }
