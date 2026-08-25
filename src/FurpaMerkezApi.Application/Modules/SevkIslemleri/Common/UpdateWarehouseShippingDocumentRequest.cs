@@ -15,7 +15,8 @@ public sealed record UpdateWarehouseShippingDocumentRequest(
     Guid? RequestedByUserId = null);
 
 public sealed record UpdateWarehouseShippingDocumentLineRequest(
-    Guid MovementGuid,
+    Guid? MovementGuid,
+    string? Action = null,
     int? RowNo = null,
     string? StockCode = null,
     double? Quantity = null,

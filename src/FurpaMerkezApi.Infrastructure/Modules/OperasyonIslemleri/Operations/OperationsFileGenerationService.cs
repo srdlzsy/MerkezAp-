@@ -70,6 +70,7 @@ internal sealed class OperationsFileGenerationService(
             OperationFileKind.ProductBarcodePluNoFile => await GenerateProductFilesAsync(warehouseNo, jobId, cancellationToken),
             OperationFileKind.CashierFile => await GenerateCashierFilesAsync(warehouseNo, jobId, cancellationToken),
             OperationFileKind.PromoFile => await GeneratePromoFilesAsync(warehouseNo, jobId, cancellationToken),
+            OperationFileKind.CustomerFile => await GenerateCustomerFileAsync(warehouseNo, jobId, cancellationToken),
             _ => throw new InvalidOperationException($"Unsupported operation file kind: {kind}.")
         };
     }
@@ -216,6 +217,25 @@ internal sealed class OperationsFileGenerationService(
         return new OperationGenerationResult(
             "PROMO.DAT ve yardimci promosyon dosyalari olusturuldu.",
             generatedFiles);
+    }
+
+    private async Task<OperationGenerationResult> GenerateCustomerFileAsync(
+        int warehouseNo,
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        var branchDetail = await GetOptionalBranchDetailAsync(warehouseNo, cancellationToken);
+        var gibTaxNumbers = await TryListGibTaxNumbersAsync(cancellationToken);
+        var exportDirectory = EnsureLocalDirectory(warehouseNo, jobId, "customerfile");
+        var generatedFile = await WriteEInvoiceTaxNumberFileAsync(
+            exportDirectory,
+            branchDetail,
+            gibTaxNumbers,
+            cancellationToken);
+
+        return new OperationGenerationResult(
+            "EFATVNO.DAT dosyasi olusturuldu.",
+            [generatedFile]);
     }
 
     private async Task<GeneratedOperationFileDto> WriteCas16ScaleFileAsync(

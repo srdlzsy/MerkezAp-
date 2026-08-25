@@ -89,6 +89,23 @@ public sealed class OperationsController(IOperationsService operationsService)
         return AcceptedAtAction(nameof(GetJob), new { jobId = response.JobId }, response);
     }
 
+    [HttpGet("customerfile")]
+    [HttpGet("einvoicevnofile")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OperationJobDto), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<OperationJobDto>> CustomerFile(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var response = await operationsService.QueueCustomerFileAsync(
+            User.ResolveWarehouseNoForPolicy(warehouseNo, CreatePolicy),
+            User.GetRequiredUserId(),
+            cancellationToken);
+
+        return AcceptedAtAction(nameof(GetJob), new { jobId = response.JobId }, response);
+    }
+
     [HttpGet("jobs/{jobId:guid}")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(OperationJobDetailDto), StatusCodes.Status200OK)]

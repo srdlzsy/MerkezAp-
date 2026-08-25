@@ -153,6 +153,7 @@ public sealed class DepoIadeleriController(
                 (request.Lines ?? Array.Empty<UpdateWarehouseShippingDocumentLineHttpRequest>())
                     .Select(line => new UpdateWarehouseShippingDocumentLineRequest(
                         line.MovementGuid,
+                        line.Action,
                         line.RowNo,
                         line.StockCode,
                         line.Quantity,

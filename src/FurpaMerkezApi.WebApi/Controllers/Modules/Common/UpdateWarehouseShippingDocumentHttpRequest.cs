@@ -26,7 +26,10 @@ public sealed class UpdateWarehouseShippingDocumentHttpRequest
 
 public sealed class UpdateWarehouseShippingDocumentLineHttpRequest
 {
-    public Guid MovementGuid { get; init; }
+    public Guid? MovementGuid { get; init; }
+
+    [StringLength(20)]
+    public string? Action { get; init; }
 
     [Range(0, int.MaxValue)]
     public int? RowNo { get; init; }

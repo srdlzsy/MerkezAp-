@@ -35,6 +35,12 @@ internal sealed class OperationsService(
         CancellationToken cancellationToken) =>
         Task.FromResult(Enqueue(OperationFileKind.PromoFile, warehouseNo, requestedByUserId));
 
+    public Task<OperationJobDto> QueueCustomerFileAsync(
+        int warehouseNo,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(Enqueue(OperationFileKind.CustomerFile, warehouseNo, requestedByUserId));
+
     public Task<OperationJobDetailDto> GetJobAsync(Guid jobId, CancellationToken cancellationToken) =>
         Task.FromResult(jobQueue.Get(jobId));
 

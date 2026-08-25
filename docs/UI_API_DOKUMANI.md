@@ -5453,10 +5453,12 @@ Onemli not:
 - `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kaynak depo kabul eder. Bu yetki varsa baska kaynak depo icin `warehouseNo` query parametresi gonderilebilir.
 - Evrak e-irsaliye olarak gonderildiyse update reddedilir. Backend `sth_kilitli`, `sth_belge_no = FRM...` ve `sth_aciklama = UUID` izlerini kontrol eder.
 - Evrak alici depo tarafindan kabul edildiyse (`sth_nakliyedurumu = 1`) update reddedilir.
-- Satir eslestirmesi zorunlu olarak `movementGuid` ile yapilir; stok kodu tek basina kullanilmaz.
-- Bu endpoint mevcut satirlari gunceller; yeni satir ekleme veya satir silme yapmaz.
+- Satir aksiyonu `lines[].action` ile belirlenir: `update`, `add`, `delete`. Bos/null gonderilirse geriye uyum icin `update` kabul edilir.
+- `update` ve `delete` aksiyonlarinda satir eslestirmesi zorunlu olarak `movementGuid` ile yapilir; stok kodu tek basina kullanilmaz.
+- `add` aksiyonunda `movementGuid` gonderilmez; `stockCode` ve `quantity` zorunludur. `rowNo` bos birakilirsa backend mevcut evraktaki son satirdan sonra yeni satir no verir.
+- `delete` aksiyonu satiri fiziksel olarak siler. Satira bagli `STOK_HAREKETLERI_EK` kaydi varsa o da silinir.
 - `quantity` alani `sth_miktar` degerini degistirir. `unitPrice` gonderilip `amount` bos birakilirsa backend `sth_tutar = quantity * unitPrice` hesaplar. `amount` gonderilirse tutar aynen kullanilir.
-- Siparise bagli sevkte miktar degisirse backend bagli depo siparis satirinin `ssip_teslim_miktar` alanini delta kadar gunceller; siparis miktarini asan update reddedilir.
+- Siparise bagli sevkte miktar degisirse backend bagli depo siparis satirinin `ssip_teslim_miktar` alanini delta kadar gunceller; siparis miktarini asan update reddedilir. Siparise bagli satir silinirse teslim miktari silinen sevk miktari kadar geri dusurulur.
 
 Request:
 
@@ -5469,11 +5471,24 @@ Request:
   "description": "Sevk duzeltildi",
   "lines": [
     {
+      "action": "update",
       "movementGuid": "8d4a5a77-1b3f-4f2a-93a1-b90a1b7d3c11",
       "quantity": 8,
       "unitPrice": 12.5,
       "unitPointer": 1,
       "description": "Miktar duzeltildi"
+    },
+    {
+      "action": "add",
+      "stockCode": "015550",
+      "quantity": 3,
+      "unitPrice": 12.5,
+      "unitPointer": 1,
+      "description": "Yeni satir"
+    },
+    {
+      "action": "delete",
+      "movementGuid": "03d6df6a-b1b2-4923-b8f0-28060446e61f"
     }
   ]
 }
@@ -5489,10 +5504,12 @@ Response:
   "targetWarehouseNo": 50,
   "transitWarehouseNo": 60,
   "isReturn": false,
-  "updatedLineCount": 1,
-  "lineCount": 1,
-  "totalQuantity": 8,
-  "totalAmount": 100,
+  "updatedLineCount": 3,
+  "addedLineCount": 1,
+  "deletedLineCount": 1,
+  "lineCount": 2,
+  "totalQuantity": 11,
+  "totalAmount": 137.5,
   "updatedAt": "2026-08-13T14:30:00",
   "updateUser": 110,
   "writeConnectionName": "testMikroConnection"
@@ -10307,10 +10324,12 @@ Onemli not:
 - `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kaynak depo kabul eder. Bu yetki varsa baska kaynak depo icin `warehouseNo` query parametresi gonderilebilir.
 - Evrak e-irsaliye olarak gonderildiyse update reddedilir. Backend `sth_kilitli`, `sth_belge_no = FRM...` ve `sth_aciklama = UUID` izlerini kontrol eder.
 - Evrak karsi depo tarafindan kabul edildiyse (`sth_nakliyedurumu = 1`) update reddedilir.
-- Satir eslestirmesi zorunlu olarak `movementGuid` ile yapilir.
-- Bu endpoint mevcut satirlari gunceller; yeni satir ekleme veya satir silme yapmaz.
+- Satir aksiyonu `lines[].action` ile belirlenir: `update`, `add`, `delete`. Bos/null gonderilirse geriye uyum icin `update` kabul edilir.
+- `update` ve `delete` aksiyonlarinda satir eslestirmesi zorunlu olarak `movementGuid` ile yapilir.
+- `add` aksiyonunda `movementGuid` gonderilmez; `stockCode` ve `quantity` zorunludur. `rowNo` bos birakilirsa backend mevcut evraktaki son satirdan sonra yeni satir no verir.
+- `delete` aksiyonu satiri fiziksel olarak siler. Satira bagli `STOK_HAREKETLERI_EK` kaydi varsa o da silinir.
 - `quantity` alani `sth_miktar` degerini degistirir. `unitPrice` gonderilip `amount` bos birakilirsa backend `sth_tutar = quantity * unitPrice` hesaplar. `amount` gonderilirse tutar aynen kullanilir.
-- Iade icin otomatik depo siparis satiri olusturulduysa backend bagli `DEPOLAR_ARASI_SIPARISLER` satirini yeni miktar, tutar, stok, depo ve aciklama bilgileriyle aynalar.
+- Iade icin otomatik depo siparis satiri olusturulduysa backend bagli `DEPOLAR_ARASI_SIPARISLER` satirini yeni miktar, tutar, stok, depo ve aciklama bilgileriyle aynalar. Iade satiri silinirse bu satira bagli otomatik depo siparis satiri da fiziksel olarak silinir.
 
 Request:
 
@@ -10323,11 +10342,24 @@ Request:
   "description": "Iade duzeltildi",
   "lines": [
     {
+      "action": "update",
       "movementGuid": "8d4a5a77-1b3f-4f2a-93a1-b90a1b7d3c11",
       "quantity": 8,
       "unitPrice": 12.5,
       "unitPointer": 1,
       "description": "Miktar duzeltildi"
+    },
+    {
+      "action": "add",
+      "stockCode": "015550",
+      "quantity": 3,
+      "unitPrice": 12.5,
+      "unitPointer": 1,
+      "description": "Yeni satir"
+    },
+    {
+      "action": "delete",
+      "movementGuid": "03d6df6a-b1b2-4923-b8f0-28060446e61f"
     }
   ]
 }
@@ -10343,10 +10375,12 @@ Response:
   "targetWarehouseNo": 50,
   "transitWarehouseNo": 60,
   "isReturn": true,
-  "updatedLineCount": 1,
-  "lineCount": 1,
-  "totalQuantity": 8,
-  "totalAmount": 100,
+  "updatedLineCount": 3,
+  "addedLineCount": 1,
+  "deletedLineCount": 1,
+  "lineCount": 2,
+  "totalQuantity": 11,
+  "totalAmount": 137.5,
   "updatedAt": "2026-08-13T14:30:00",
   "updateUser": 110,
   "writeConnectionName": "testMikroConnection"
@@ -15384,6 +15418,7 @@ Legacy farklarini okurken su noktalari esas alinmalidir:
 - `warehouseNo` artik `ClaimTypes.Name` degil, `warehouse_no` claim'inden okunur
 - `operasyon-islemleri.operations.all-warehouses` yoksa dosya olusturma aksiyonlari icin depo sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo icin job baslatilacaksa query'de opsiyonel `warehouseNo` gonderilebilir.
 - `promofile` de yeni kuyruk/polling modeliyle calisir; eski yardimci dosya zinciri job icinde uretilir
+- `customerfile` sadece `EFATVNO.DAT` cari/vergi no dosyasini uretir.
 
 Temel route:
 
@@ -15406,6 +15441,10 @@ Mevcut endpointler:
   - promosyon ve yardimci POS dosyalari isi kuyruga alinir
   - response `202 Accepted`
   - Mayday/UYUM connection stringleri eksikse job `Failed` durumuna duser ve `errorMessage` ile sebep doner
+- `GET /api/operations/customerfile?warehouseNo=110`
+  - cari/vergi no dosyasi `EFATVNO.DAT` isi kuyruga alinir
+  - response `202 Accepted`
+  - alias: `GET /api/operations/einvoicevnofile`
 - `GET /api/operations/jobs/{jobId}`
   - kuyruga atilan isin durumunu dondurur
   - admin olmayan kullanici baska deponun job detayini okuyamaz
@@ -15431,6 +15470,7 @@ Ayni akis su ekran aksiyonlari icin de gecerlidir:
 - `Urun/Barcode/PLU Dosyasi Olustur`
 - `Kasiyer Dosyasi Olustur`
 - `Promosyon Dosyasi Olustur`
+- `Cari / EFATVNO Dosyasi Olustur`
 
 Job response modelleri:
 
@@ -16348,9 +16388,10 @@ Operasyon modulu notlari:
 - bu modul Hangfire yerine uygulama ici hosted queue kullanir
 - UI canli progress stream beklememelidir; polling yeterlidir
 - `scalesfile` icin `BranchDetails` kaydi ve `ScalesType` bilgisi zorunludur
-- `scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointlerinde `warehouseNo` query parametresi opsiyoneldir; yalniz `operasyon-islemleri.operations.all-warehouses` yetkisi icin depo secimi anlamlidir
+- `scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile`, `promofile`, `customerfile` ve `einvoicevnofile` endpointlerinde `warehouseNo` query parametresi opsiyoneldir; yalniz `operasyon-islemleri.operations.all-warehouses` yetkisi icin depo secimi anlamlidir
 - `productbarcodeplunofile` ve `cashierfile` lokal export uretebilir; branch network path varsa ek olarak paylasima da kopyalanir
 - `promofile` `PROMO.DAT`, `NOPROMO.DAT`, `NOCEK.DAT`, `NOYEMEK.DAT`, `GRUP.DAT`, `OZELKOD.DAT`, `EFATVNO.DAT` ve kasa bazli `MESAJ.xxx` dosyalarini uretir
+- `customerfile` sadece `EFATVNO.DAT` uretir; kaynak `ConnectionStrings:UyumConnection` / `UYUMConnection` / `UyumDbConnection` altindaki `dbo.CarilerGib` tablosudur.
 - export klasoru config'deki `OperationsExport:BasePath` ile verilebilir; bos ise uygulama altindaki `App_Data/OperationsExports` kullanilir
 - `promofile` icin `ConnectionStrings:MaydayConnection` ve `ConnectionStrings:UyumConnection` ayarlari gereklidir
 
@@ -21974,7 +22015,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 ### Operasyon Request Modelleri
 
 - `SaveAuthorizationFileHttpRequest`: `Id`, `UpdateDate`, `Name`, `Z`, `R`, `X`
-- `GET /api/operations/scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile` ve `promofile` endpointleri body almaz; opsiyonel `warehouseNo` query parametresi yalniz `operasyon-islemleri.operations.all-warehouses` yetkili depo secimi icindir.
+- `GET /api/operations/scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile`, `promofile`, `customerfile` ve `einvoicevnofile` endpointleri body almaz; opsiyonel `warehouseNo` query parametresi yalniz `operasyon-islemleri.operations.all-warehouses` yetkili depo secimi icindir.
 - `POST /api/operations/saveauthorizationfile` ve `POST /api/operations/authorization-files` body modeli tek obje degil, `IReadOnlyCollection<SaveAuthorizationFileHttpRequest>` dizisidir.
 - `DocumentFlowListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `DocumentType`, `Status`, `Search`, `Take`
 - `GET /api/operasyon-islemleri/belge-akis-takibi` body almaz; filtreleri query parametresi olarak alir.

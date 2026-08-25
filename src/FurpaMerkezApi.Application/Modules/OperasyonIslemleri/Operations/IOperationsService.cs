@@ -22,6 +22,11 @@ public interface IOperationsService
         Guid requestedByUserId,
         CancellationToken cancellationToken);
 
+    Task<OperationJobDto> QueueCustomerFileAsync(
+        int warehouseNo,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken);
+
     Task<OperationJobDetailDto> GetJobAsync(Guid jobId, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<AuthorizationFileDto>> GetAuthorizationFilesAsync(CancellationToken cancellationToken);

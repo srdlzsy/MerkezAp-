@@ -3160,6 +3160,11 @@ Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+GET {{baseUrl}}/api/operations/customerfile
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 GET {{baseUrl}}/api/operations/getauthorizationfile
 Accept: application/json
 Authorization: Bearer {{token}}

@@ -15,6 +15,8 @@ Endpointler:
 - `GET /api/operations/productbarcodeplonofile?warehouseNo=135`
 - `GET /api/operations/cashierfile?warehouseNo=135`
 - `GET /api/operations/promofile?warehouseNo=135`
+- `GET /api/operations/customerfile?warehouseNo=135`
+- `GET /api/operations/einvoicevnofile?warehouseNo=135`
 - `GET /api/operations/jobs/{jobId}`
 
 Dosya olusturma endpointleri `operasyon-islemleri.operations.create` yetkisi ister. Job detayini okumak icin `operasyon-islemleri.operations.detail` yetkisi gerekir.
@@ -481,6 +483,15 @@ Okunan kolon varyasyonlari:
 - `vkn`
 
 UYUM connection string yoksa veya okuma sirasinda SQL hatasi olursa job fail edilmez. Sistem warning log yazar ve bos `EFATVNO.DAT` uretmeye devam eder.
+
+Bu dosya tek basina da uretilebilir:
+
+```http
+GET /api/operations/customerfile
+GET /api/operations/einvoicevnofile
+```
+
+Yeni API'de bu islem `customerfile` dosya aksiyonu olarak kuyruga alinir ve response `202 Accepted` + `OperationJobDto` doner.
 
 Basarili mesaj:
 

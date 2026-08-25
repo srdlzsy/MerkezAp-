@@ -8,6 +8,8 @@ public sealed record UpdateWarehouseShippingDocumentResponse(
     int TransitWarehouseNo,
     bool IsReturn,
     int UpdatedLineCount,
+    int AddedLineCount,
+    int DeletedLineCount,
     int LineCount,
     double TotalQuantity,
     double TotalAmount,

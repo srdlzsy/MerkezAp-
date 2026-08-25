@@ -18,8 +18,14 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
     private const byte ReturnMovement = 1;
     private const byte InterWarehouseShipmentDocumentType = 17;
     private const byte DeliveredToTargetWarehouseState = 1;
+    private const byte WaitingShippingState = 0;
+    private const short MovementFileId = 16;
     private const short FallbackMikroUserNo = 39;
     private const double QuantityTolerance = 0.000001d;
+    private const string LineActionUpdate = "update";
+    private const string LineActionAdd = "add";
+    private const string LineActionDelete = "delete";
+    private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<UpdateWarehouseShippingDocumentResponse> ExecuteAsync(
         UpdateWarehouseShippingDocumentRequest request,
@@ -104,7 +110,14 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
                 var updateUser = ResolveMikroUserNo(request.SourceWarehouseNo);
                 var updatedAt = DateTime.Now;
                 var touchedRows = new HashSet<Guid>();
+                var addedRows = new List<STOK_HAREKETLERI>();
+                var deletedRows = new HashSet<Guid>();
                 var quantityChanges = new Dictionary<Guid, LineQuantityChange>();
+                var usedRowNos = rows
+                    .Where(row => row.sth_satirno.HasValue)
+                    .Select(row => row.sth_satirno!.Value)
+                    .ToHashSet();
+                var nextRowNo = usedRowNos.Count == 0 ? 0 : usedRowNos.Max() + 1;
 
                 if (HasHeaderPatch(request))
                 {
@@ -117,9 +130,48 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
 
                 foreach (var line in request.Lines)
                 {
-                    if (!rowsByGuid.TryGetValue(line.MovementGuid, out var row))
+                    var action = NormalizeLineAction(line.Action);
+                    if (action == LineActionAdd)
                     {
-                        throw new KeyNotFoundException($"Warehouse shipping line was not found: {line.MovementGuid}");
+                        var addedRowNo = ResolveAddedRowNo(line, usedRowNos, ref nextRowNo);
+                        var addedRow = CreateAddedMovement(rows[0], request, line, addedRowNo, updatedAt, updateUser);
+                        if (HasHeaderPatch(request))
+                        {
+                            ApplyHeaderPatch(addedRow, request);
+                        }
+
+                        mikroWriteDbContext.STOK_HAREKETLERIs.Add(addedRow);
+                        addedRows.Add(addedRow);
+                        rowsByGuid.Add(addedRow.sth_Guid, addedRow);
+                        touchedRows.Add(addedRow.sth_Guid);
+                        continue;
+                    }
+
+                    var movementGuid = line.MovementGuid!.Value;
+                    if (!rowsByGuid.TryGetValue(movementGuid, out var row))
+                    {
+                        throw new KeyNotFoundException($"Warehouse shipping line was not found: {movementGuid}");
+                    }
+
+                    if (action == LineActionDelete)
+                    {
+                        var deletedOldQuantity = row.sth_miktar ?? 0d;
+                        mikroWriteDbContext.STOK_HAREKETLERIs.Remove(row);
+                        mikroWriteDbContext.STOK_HAREKETLERI_EKs.RemoveRange(
+                            movementExtras.Where(extra => extra.sthek_related_uid == row.sth_Guid));
+                        if (request.IsReturn &&
+                            orderGuidsByMovementGuid.TryGetValue(row.sth_Guid, out var deletedReturnOrderGuids))
+                        {
+                            foreach (var orderGuid in deletedReturnOrderGuids)
+                            {
+                                mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.Remove(linkedOrders[orderGuid]);
+                            }
+                        }
+
+                        touchedRows.Add(row.sth_Guid);
+                        deletedRows.Add(row.sth_Guid);
+                        quantityChanges[row.sth_Guid] = new LineQuantityChange(row.sth_Guid, deletedOldQuantity, 0d);
+                        continue;
                     }
 
                     if (!HasLinePatch(line))
@@ -151,6 +203,7 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
                     linkedOrders,
                     rowsByGuid,
                     touchedRows,
+                    deletedRows,
                     quantityChanges,
                     updatedAt,
                     updateUser);
@@ -160,6 +213,16 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
                     row.sth_lastup_user = updateUser;
                     row.sth_lastup_date = updatedAt;
                     row.sth_degisti = true;
+                }
+
+                var activeRows = rows
+                    .Concat(addedRows)
+                    .Where(row => row.sth_iptal != true && !deletedRows.Contains(row.sth_Guid))
+                    .ToArray();
+
+                if (activeRows.Length == 0)
+                {
+                    throw new ArgumentException("Warehouse shipping document must have at least one active line.", nameof(request.Lines));
                 }
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
@@ -173,9 +236,11 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
                     rows[0].sth_giris_depo_no ?? transitWarehouseNo,
                     request.IsReturn,
                     touchedRows.Count,
-                    rows.Length,
-                    rows.Sum(row => row.sth_miktar ?? 0d),
-                    rows.Sum(row => row.sth_tutar ?? 0d),
+                    addedRows.Count,
+                    deletedRows.Count,
+                    activeRows.Length,
+                    activeRows.Sum(row => row.sth_miktar ?? 0d),
+                    activeRows.Sum(row => row.sth_tutar ?? 0d),
                     updatedAt,
                     updateUser,
                     mikroWriteOptions.Value.ConnectionStringName);
@@ -296,6 +361,164 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
         return changed;
     }
 
+    private static STOK_HAREKETLERI CreateAddedMovement(
+        STOK_HAREKETLERI template,
+        UpdateWarehouseShippingDocumentRequest request,
+        UpdateWarehouseShippingDocumentLineRequest line,
+        int rowNo,
+        DateTime now,
+        short updateUser)
+    {
+        var movementDate = request.MovementDate?.Date ?? template.sth_tarih?.Date ?? now.Date;
+        var documentDate = request.DocumentDate?.Date ?? template.sth_belge_tarih?.Date ?? movementDate;
+        var quantity = ValidatePositive(line.Quantity!.Value, nameof(line.Quantity));
+        var unitPrice = line.UnitPrice ??
+            (line.Amount.HasValue ? line.Amount.Value / quantity : 0d);
+        var amount = line.Amount ?? quantity * ValidateNonNegative(unitPrice, nameof(line.UnitPrice));
+
+        return new STOK_HAREKETLERI
+        {
+            sth_Guid = Guid.NewGuid(),
+            sth_DBCno = 0,
+            sth_SpecRECno = 0,
+            sth_iptal = false,
+            sth_fileid = MovementFileId,
+            sth_hidden = false,
+            sth_kilitli = false,
+            sth_degisti = true,
+            sth_checksum = 0,
+            sth_create_user = updateUser,
+            sth_create_date = now,
+            sth_lastup_user = updateUser,
+            sth_lastup_date = now,
+            sth_special1 = string.Empty,
+            sth_special2 = string.Empty,
+            sth_special3 = string.Empty,
+            sth_firmano = template.sth_firmano ?? 0,
+            sth_subeno = template.sth_subeno ?? 0,
+            sth_tarih = movementDate,
+            sth_tip = MovementType,
+            sth_cins = MovementGenre,
+            sth_normal_iade = request.IsReturn ? ReturnMovement : NormalMovement,
+            sth_evraktip = InterWarehouseShipmentDocumentType,
+            sth_evrakno_seri = template.sth_evrakno_seri,
+            sth_evrakno_sira = template.sth_evrakno_sira,
+            sth_satirno = rowNo,
+            sth_belge_no = NormalizeText(request.DocumentNo ?? template.sth_belge_no, 50, nameof(request.DocumentNo)),
+            sth_belge_tarih = documentDate,
+            sth_stok_kod = NormalizeRequiredText(line.StockCode!, 25, nameof(line.StockCode)),
+            sth_isk_mas1 = 0,
+            sth_isk_mas2 = 1,
+            sth_isk_mas3 = 1,
+            sth_isk_mas4 = 1,
+            sth_isk_mas5 = 1,
+            sth_isk_mas6 = 1,
+            sth_isk_mas7 = 1,
+            sth_isk_mas8 = 1,
+            sth_isk_mas9 = 1,
+            sth_isk_mas10 = 1,
+            sth_sat_iskmas1 = false,
+            sth_sat_iskmas2 = false,
+            sth_sat_iskmas3 = false,
+            sth_sat_iskmas4 = false,
+            sth_sat_iskmas5 = false,
+            sth_sat_iskmas6 = false,
+            sth_sat_iskmas7 = false,
+            sth_sat_iskmas8 = false,
+            sth_sat_iskmas9 = false,
+            sth_sat_iskmas10 = false,
+            sth_pos_satis = 0,
+            sth_promosyon_fl = false,
+            sth_cari_cinsi = 0,
+            sth_cari_kodu = string.Empty,
+            sth_cari_grup_no = 0,
+            sth_isemri_gider_kodu = string.Empty,
+            sth_plasiyer_kodu = string.Empty,
+            sth_har_doviz_cinsi = 0,
+            sth_har_doviz_kuru = 1d,
+            sth_alt_doviz_kuru = 0d,
+            sth_stok_doviz_cinsi = 0,
+            sth_stok_doviz_kuru = 1d,
+            sth_miktar = quantity,
+            sth_miktar2 = 0d,
+            sth_birim_pntr = ValidateUnitPointer(line.UnitPointer ?? 1, nameof(line.UnitPointer)),
+            sth_tutar = amount,
+            sth_iskonto1 = 0d,
+            sth_iskonto2 = 0d,
+            sth_iskonto3 = 0d,
+            sth_iskonto4 = 0d,
+            sth_iskonto5 = 0d,
+            sth_iskonto6 = 0d,
+            sth_masraf1 = 0d,
+            sth_masraf2 = 0d,
+            sth_masraf3 = 0d,
+            sth_masraf4 = 0d,
+            sth_vergi_pntr = 0,
+            sth_vergi = 0d,
+            sth_masraf_vergi_pntr = 0,
+            sth_masraf_vergi = 0d,
+            sth_netagirlik = 0d,
+            sth_odeme_op = 0,
+            sth_aciklama = NormalizeText(line.Description ?? request.Description ?? template.sth_aciklama, 50, nameof(line.Description)),
+            sth_sip_uid = Guid.Empty,
+            sth_fat_uid = Guid.Empty,
+            sth_giris_depo_no = request.TransitWarehouseNo ?? template.sth_giris_depo_no,
+            sth_cikis_depo_no = request.SourceWarehouseNo,
+            sth_malkbl_sevk_tarihi = movementDate,
+            sth_cari_srm_merkezi = NormalizeText(line.CustomerResponsibilityCenter, 25, nameof(line.CustomerResponsibilityCenter)),
+            sth_stok_srm_merkezi = NormalizeText(line.ProductResponsibilityCenter, 25, nameof(line.ProductResponsibilityCenter)),
+            sth_fis_tarihi = MikroEmptyDate,
+            sth_fis_sirano = 0,
+            sth_vergisiz_fl = false,
+            sth_maliyet_ana = 0d,
+            sth_maliyet_alternatif = 0d,
+            sth_maliyet_orjinal = 0d,
+            sth_adres_no = 1,
+            sth_parti_kodu = NormalizeText(line.PartyCode, 25, nameof(line.PartyCode)),
+            sth_lot_no = line.LotNo,
+            sth_kons_uid = Guid.Empty,
+            sth_proje_kodu = NormalizeText(line.ProjectCode, 25, nameof(line.ProjectCode)),
+            sth_exim_kodu = string.Empty,
+            sth_otv_pntr = 0,
+            sth_otv_vergi = 0d,
+            sth_brutagirlik = 0d,
+            sth_disticaret_turu = 0,
+            sth_otvtutari = 0d,
+            sth_otvvergisiz_fl = false,
+            sth_oiv_pntr = 0,
+            sth_oiv_vergi = 0d,
+            sth_oivvergisiz_fl = false,
+            sth_fiyat_liste_no = -1,
+            sth_oivtutari = 0d,
+            sth_Tevkifat_turu = 0,
+            sth_nakliyedeposu = request.TargetWarehouseNo ?? template.sth_nakliyedeposu,
+            sth_nakliyedurumu = template.sth_nakliyedurumu ?? WaitingShippingState,
+            sth_yetkili_uid = Guid.Empty,
+            sth_taxfree_fl = false,
+            sth_ilave_edilecek_kdv = 0d,
+            sth_ismerkezi_kodu = string.Empty,
+            sth_HareketGrupKodu1 = string.Empty,
+            sth_HareketGrupKodu2 = string.Empty,
+            sth_HareketGrupKodu3 = string.Empty,
+            sth_Olcu1 = 0d,
+            sth_Olcu2 = 0d,
+            sth_Olcu3 = 0d,
+            sth_Olcu4 = 0d,
+            sth_Olcu5 = 0d,
+            sth_FormulMiktarNo = 0,
+            sth_FormulMiktar = 0d,
+            sth_eirs_senaryo = 0,
+            sth_eirs_tipi = 0,
+            sth_teslim_tarihi = movementDate,
+            sth_matbu_fl = false,
+            sth_satis_fiyat_doviz_cinsi = 0,
+            sth_satis_fiyat_doviz_kuru = 1d,
+            sth_eticaret_kanal_kodu = template.sth_eticaret_kanal_kodu ?? string.Empty,
+            sth_bagli_ithalat_kodu = string.Empty,
+            sth_tevkifat_sifirlandi_fl = false
+        };
+    }
+
     private static void ApplyLinkedOrderUpdates(
         bool isReturn,
         int sourceWarehouseNo,
@@ -304,6 +527,7 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
         IReadOnlyDictionary<Guid, DEPOLAR_ARASI_SIPARISLER> linkedOrders,
         IReadOnlyDictionary<Guid, STOK_HAREKETLERI> rowsByGuid,
         IReadOnlySet<Guid> touchedRows,
+        IReadOnlySet<Guid> deletedRows,
         IReadOnlyDictionary<Guid, LineQuantityChange> quantityChanges,
         DateTime updatedAt,
         short updateUser)
@@ -319,6 +543,19 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
             foreach (var orderGuid in orderGuids)
             {
                 var order = linkedOrders[orderGuid];
+
+                if (deletedRows.Contains(movementGuid))
+                {
+                    if (!isReturn &&
+                        quantityChanges.TryGetValue(movementGuid, out var deletedQuantityChange) &&
+                        Math.Abs(deletedQuantityChange.Delta) > QuantityTolerance)
+                    {
+                        ApplyDeliveredQuantityDelta(order, deletedQuantityChange.Delta);
+                        TouchWarehouseOrder(order, updatedAt, updateUser);
+                    }
+
+                    continue;
+                }
 
                 if (isReturn)
                 {
@@ -589,7 +826,26 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
 
     private static void Validate(UpdateWarehouseShippingDocumentLineRequest line)
     {
-        if (line.MovementGuid == Guid.Empty)
+        var action = NormalizeLineAction(line.Action);
+
+        if (action == LineActionAdd)
+        {
+            if (line.MovementGuid is { } movementGuid && movementGuid != Guid.Empty)
+            {
+                throw new ArgumentException("Movement guid must be empty for add line action.", nameof(line.MovementGuid));
+            }
+
+            if (string.IsNullOrWhiteSpace(line.StockCode))
+            {
+                throw new ArgumentException("Stock code is required for add line action.", nameof(line.StockCode));
+            }
+
+            if (!line.Quantity.HasValue)
+            {
+                throw new ArgumentException("Quantity is required for add line action.", nameof(line.Quantity));
+            }
+        }
+        else if (!line.MovementGuid.HasValue || line.MovementGuid.Value == Guid.Empty)
         {
             throw new ArgumentException("Movement guid is required.", nameof(line.MovementGuid));
         }
@@ -630,6 +886,35 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
         }
     }
 
+    private static int ResolveAddedRowNo(
+        UpdateWarehouseShippingDocumentLineRequest line,
+        ISet<int> usedRowNos,
+        ref int nextRowNo)
+    {
+        if (line.RowNo.HasValue)
+        {
+            var requestedRowNo = ValidateNonNegative(line.RowNo.Value, nameof(line.RowNo));
+            if (!usedRowNos.Add(requestedRowNo))
+            {
+                throw new ArgumentException("Line row no already exists in the document.", nameof(line.RowNo));
+            }
+
+            if (requestedRowNo >= nextRowNo)
+            {
+                nextRowNo = requestedRowNo + 1;
+            }
+
+            return requestedRowNo;
+        }
+
+        while (!usedRowNos.Add(nextRowNo))
+        {
+            nextRowNo++;
+        }
+
+        return nextRowNo++;
+    }
+
     private static bool HasHeaderPatch(UpdateWarehouseShippingDocumentRequest request) =>
         request.MovementDate.HasValue ||
         request.DocumentDate.HasValue ||
@@ -651,6 +936,25 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
         line.ProjectCode is not null ||
         line.CustomerResponsibilityCenter is not null ||
         line.ProductResponsibilityCenter is not null;
+
+    private static string NormalizeLineAction(string? action)
+    {
+        var normalized = NormalizeText(action, 20, nameof(UpdateWarehouseShippingDocumentLineRequest.Action))
+            .ToLowerInvariant();
+
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return LineActionUpdate;
+        }
+
+        return normalized switch
+        {
+            LineActionUpdate => LineActionUpdate,
+            LineActionAdd or "create" => LineActionAdd,
+            LineActionDelete or "remove" => LineActionDelete,
+            _ => throw new ArgumentException("Line action must be update, add or delete.", nameof(action))
+        };
+    }
 
     private static string NormalizeRequiredText(string value, int maxLength, string parameterName)
     {
