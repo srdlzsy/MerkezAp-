@@ -633,6 +633,8 @@ public sealed class InvoiceSendingService(
                         ON baseFat.cha_Guid = sh.sth_fat_uid
                     LEFT JOIN dbo.DEPOLAR dep WITH (NOLOCK) ON dep.dep_no = sh.sth_cikis_depo_no
                     WHERE
+                        @includeFullDetails = 1
+                        AND
                         sh.sth_fat_uid IS NOT NULL
                         AND ISNULL(sh.sth_iptal, 0) = 0
                 ) ranked

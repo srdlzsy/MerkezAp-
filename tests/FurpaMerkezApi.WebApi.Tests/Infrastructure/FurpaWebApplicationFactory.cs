@@ -15,6 +15,20 @@ namespace FurpaMerkezApi.WebApi.Tests.Infrastructure;
 
 public sealed class FurpaWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly Dictionary<string, string?> previousEnvironmentValues;
+
+    public FurpaWebApplicationFactory()
+    {
+        previousEnvironmentValues = TestEnvironmentValues.ToDictionary(
+            pair => pair.Key,
+            pair => Environment.GetEnvironmentVariable(pair.Key));
+
+        foreach (var (key, value) in TestEnvironmentValues)
+        {
+            Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -59,8 +73,45 @@ public sealed class FurpaWebApplicationFactory : WebApplicationFactory<Program>
         });
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        foreach (var (key, value) in previousEnvironmentValues)
+        {
+            Environment.SetEnvironmentVariable(key, value);
+        }
+
+        base.Dispose(disposing);
+    }
+
     private const string FakeSqlServerConnection =
         "Server=localhost;Database=FurpaMerkezApiTests;User Id=fake;Password=fake;TrustServerCertificate=True";
+
+    private static readonly IReadOnlyDictionary<string, string?> TestEnvironmentValues =
+        new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Testing",
+            ["DOTNET_ENVIRONMENT"] = "Testing",
+            ["Auth__AllowSelfRegistration"] = "false",
+            ["Hosting__EnableSwagger"] = "false",
+            ["Hosting__ExposeDiagnosticsOnRoot"] = "false",
+            ["Hosting__EnforceHttps"] = "false",
+            ["Hosting__UseHsts"] = "false",
+            ["Logging__File__Enabled"] = "false",
+            ["StartupTasks__ApplyAuthMigrations"] = "false",
+            ["StartupTasks__SynchronizePermissionCatalog"] = "false",
+            ["StartupTasks__SynchronizeWarehouseUsers"] = "false",
+            ["AxataSynchronization__Enabled"] = "false",
+            ["AxataSynchronization__WorkerEnabled"] = "false",
+            ["AxataSynchronization__SchedulerEnabled"] = "false",
+            ["ConnectionStrings__AuthConnection"] = FakeSqlServerConnection,
+            ["ConnectionStrings__FurpaConnection"] = FakeSqlServerConnection,
+            ["ConnectionStrings__MikroConnection"] = FakeSqlServerConnection,
+            ["ConnectionStrings__MikroWriteConnection"] = FakeSqlServerConnection,
+            ["Jwt__Issuer"] = "FurpaMerkezApi.Tests",
+            ["Jwt__Audience"] = "FurpaMerkezApi.Tests",
+            ["Jwt__SecretKey"] = "0123456789012345678901234567890123456789",
+            ["Jwt__ExpiryMinutes"] = "60"
+        };
 }
 
 internal sealed class FakeKunyeLabelTagsUseCase : IListKunyeLabelTagsUseCase

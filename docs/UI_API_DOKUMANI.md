@@ -14610,11 +14610,11 @@ Response `InvoiceSendingListResponse`:
       "taxTotal": 180.00,
       "chargeTotal": 0.00,
       "payableTotal": 1180.00,
-      "shipmentDocumentNo": "IRS-001",
-      "shipmentDocumentDate": "2026-05-05T00:00:00",
+      "shipmentDocumentNo": "",
+      "shipmentDocumentDate": null,
       "returnInvoiceNo": "",
       "returnInvoiceDate": null,
-      "warehouseName": "MERKEZ DEPO",
+      "warehouseName": "",
       "description": "Aciklama",
       "sourceLineCount": 1,
       "sourceLineSummary": "",
@@ -14665,9 +14665,9 @@ Davranis:
 
 Performans notlari:
 
-- Liste endpoint'i hiz icin hafif modda calisir. Stok satiri istisna aramasi, iade referansi lookup'i, hizmet/demirbas satir ozeti ve KDV oran ozeti liste sirasinda hesaplanmaz.
+- Liste endpoint'i hiz icin hafif modda calisir. Faturaya bagli sevkiyat/depo bilgisi, stok satiri istisna aramasi, iade referansi lookup'i, hizmet/demirbas satir ozeti ve KDV oran ozeti liste sirasinda hesaplanmaz.
 - Bu agir alanlar detay/render/validate/send gibi belge odakli akislar sirasinda tam modda hesaplanir.
-- UI liste ekraninda `sourceLineSummary`, `taxRateSummary`, `returnInvoiceNo` ve `returnInvoiceDate` alanlarini kesin kaynak gibi kullanmamalidir; kesin kontrol icin detay, iade adaylari veya validate akisi kullanilmalidir.
+- UI liste ekraninda `shipmentDocumentNo`, `shipmentDocumentDate`, `warehouseName`, `sourceLineSummary`, `taxRateSummary`, `returnInvoiceNo` ve `returnInvoiceDate` alanlarini kesin kaynak gibi kullanmamalidir; kesin kontrol icin detay, iade adaylari veya validate akisi kullanilmalidir.
 - UI mumkunse bu endpoint'i kisa tarih araligi ile cagirmalidir; gunluk listeleme en hizli kullanimdir.
 - UI `isSent` ve `SentState` parametrelerinden sadece birini gondermelidir. Tercih edilen parametre `isSent`tir; ikisi birlikte gelirse backend `isSent` degerini esas alir.
 - `isSent=-1` tum kayitlari getirdigi icin en pahali moddur; ekran varsayilani `isSent=0` veya ihtiyaca gore `isSent=1` olmalidir.

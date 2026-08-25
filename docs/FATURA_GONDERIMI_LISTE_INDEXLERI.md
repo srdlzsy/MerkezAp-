@@ -12,15 +12,17 @@ docs/FATURA_GONDERIMI_LISTE_INDEXLERI.sql
 ## Neyi Hizlandirir?
 
 - `CARI_HESAP_HAREKETLERI` uzerindeki tarih, seri/sira ve gonderildi/gonderilmedi liste filtrelerini.
-- Faturaya bagli irsaliye/depo bilgisini okuyan `STOK_HAREKETLERI.sth_fat_uid` aramasini.
+- Detay/send sirasinda faturaya bagli irsaliye/depo ve kalem bilgisini okuyan `STOK_HAREKETLERI.sth_fat_uid` aramasini.
 - Fatura adresi icin kullanilan `CARI_HESAP_ADRESLERI` adres no 1 join'ini.
 - Detay/send sirasinda fatura kalemlerinin `sth_fat_uid` ile okunmasini.
 
-Kod tarafinda liste sorgusu da sadeleştirildi:
+Kod tarafinda liste sorgusu da sadelestirildi:
 
 - Faturaya bagli sevkiyat bilgisi artik her cari hareket satirinda ayri `OUTER APPLY`
   ile aranmaz.
-- Secilen fatura hareketleri icin `STOK_HAREKETLERI` bilgisi tek CTE ile okunur.
+- Hafif liste modunda faturaya bagli sevkiyat/depo bilgisi hesaplanmaz; bu alanlar
+  detay/render/validate/send gibi tam mod akislarinda okunur.
+- Tam mod akislarinda secilen fatura hareketleri icin `STOK_HAREKETLERI` bilgisi tek CTE ile okunur.
 - Adres join'i `adr_adres_no = 1` filtresiyle daraltildi.
 
 ## Uygulama

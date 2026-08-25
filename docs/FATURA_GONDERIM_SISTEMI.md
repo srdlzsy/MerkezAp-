@@ -139,9 +139,9 @@ Liste belge bazinda doner. Ayni `cha_evrakno_seri` + `cha_evrakno_sira` altinda 
 
 Liste performansi icin dikkat:
 
-- Liste endpoint'i hiz icin hafif modda calisir. Stok satiri istisna aramasi, iade referansi lookup'i, hizmet/demirbas satir ozeti ve KDV oran ozeti liste sirasinda hesaplanmaz.
+- Liste endpoint'i hiz icin hafif modda calisir. Faturaya bagli sevkiyat/depo bilgisi, stok satiri istisna aramasi, iade referansi lookup'i, hizmet/demirbas satir ozeti ve KDV oran ozeti liste sirasinda hesaplanmaz.
 - Bu agir alanlar detay/render/validate/send gibi belge odakli akislar sirasinda tam modda hesaplanir.
-- UI liste ekraninda `sourceLineSummary`, `taxRateSummary` ve iade referansi alanlarini kesin kaynak gibi kullanmamalidir; kesin kontrol icin detay, iade adaylari veya validate akisi kullanilmalidir.
+- UI liste ekraninda `shipmentDocumentNo`, `shipmentDocumentDate`, `warehouseName`, `sourceLineSummary`, `taxRateSummary` ve iade referansi alanlarini kesin kaynak gibi kullanmamalidir; kesin kontrol icin detay, iade adaylari veya validate akisi kullanilmalidir.
 - UI gunluk veya kisa tarih araligi ile sorgulamalidir.
 - UI `isSent` ve `SentState` parametrelerinden sadece birini gondermelidir; tercih edilen parametre `isSent`tir.
 - `isSent=-1` en pahali moddur; ekran varsayilani mumkunse `isSent=0`, gonderilenler sekmesi icin `isSent=1` olmalidir.
