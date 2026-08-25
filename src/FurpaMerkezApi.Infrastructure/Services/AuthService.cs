@@ -157,6 +157,93 @@ public sealed class AuthService(
         return user.ToDto();
     }
 
+    public async Task<WarehouseContextResponse> GetWarehouseContextAsync(
+        Guid userId,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users
+            .AsNoTracking()
+            .Select(currentUser => new
+            {
+                currentUser.Id,
+                currentUser.Username,
+                currentUser.WarehouseNo,
+                currentUser.WarehouseName,
+                currentUser.IsActive,
+                IsTerminalUser = currentUser.UserRoles.Any(userRole => userRole.RoleId == TerminalRoleId)
+            })
+            .FirstOrDefaultAsync(currentUser => currentUser.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            throw new KeyNotFoundException("User was not found.");
+        }
+
+        if (!user.IsActive)
+        {
+            return new WarehouseContextResponse(
+                user.Id,
+                user.Username,
+                user.WarehouseNo,
+                user.WarehouseName,
+                null,
+                null,
+                user.IsTerminalUser,
+                true,
+                "UserInactive",
+                clock.UtcNow);
+        }
+
+        if (!user.IsTerminalUser)
+        {
+            return new WarehouseContextResponse(
+                user.Id,
+                user.Username,
+                user.WarehouseNo,
+                user.WarehouseName,
+                null,
+                null,
+                false,
+                false,
+                "NotTerminalUser",
+                clock.UtcNow);
+        }
+
+        var currentWarehouse = await ResolveWarehouseFromIpAsync(ipAddress, cancellationToken);
+        if (currentWarehouse.Status != "Resolved")
+        {
+            return new WarehouseContextResponse(
+                user.Id,
+                user.Username,
+                user.WarehouseNo,
+                user.WarehouseName,
+                currentWarehouse.WarehouseNo?.ToString(),
+                currentWarehouse.WarehouseName,
+                true,
+                false,
+                currentWarehouse.Status,
+                clock.UtcNow);
+        }
+
+        var requiresRelogin = !string.Equals(
+            user.WarehouseNo.Trim(),
+            currentWarehouse.WarehouseNo?.ToString(),
+            StringComparison.Ordinal);
+
+        return new WarehouseContextResponse(
+            user.Id,
+            user.Username,
+            user.WarehouseNo,
+            user.WarehouseName,
+            currentWarehouse.WarehouseNo?.ToString(),
+            currentWarehouse.WarehouseName,
+            true,
+            requiresRelogin,
+            requiresRelogin ? "WarehouseChanged" : "Ok",
+            clock.UtcNow);
+    }
+
     private async Task<AuthResponse> CreateAuthResponseAsync(AppUser user, CancellationToken cancellationToken)
     {
         var refreshToken = CreateRefreshToken(user.Id, clock.UtcNow);
@@ -258,6 +345,52 @@ public sealed class AuthService(
         return allowedBranchNos.ToArray();
     }
 
+    private async Task<ResolvedWarehouseContext> ResolveWarehouseFromIpAsync(
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ipAddress))
+        {
+            return new ResolvedWarehouseContext(null, null, "NetworkUnknown");
+        }
+
+        var inboundNetworkPrefix = GetIpv4NetworkPrefix(ipAddress);
+        if (inboundNetworkPrefix is null)
+        {
+            return new ResolvedWarehouseContext(null, null, "NetworkUnknown");
+        }
+
+        var matches = await furpaDbContext.BranchDetails
+            .AsNoTracking()
+            .Where(item => item.BranchIpAddress != "")
+            .Select(item => new
+            {
+                item.BranchNo,
+                item.BranchIpAddress
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var resolvedBranches = matches
+            .Where(item => string.Equals(
+                GetIpv4NetworkPrefix(item.BranchIpAddress),
+                inboundNetworkPrefix,
+                StringComparison.Ordinal))
+            .Select(item => item.BranchNo)
+            .Distinct()
+            .Order()
+            .ToArray();
+
+        return resolvedBranches.Length switch
+        {
+            0 => new ResolvedWarehouseContext(null, null, "NetworkUnknown"),
+            1 => new ResolvedWarehouseContext(
+                resolvedBranches[0],
+                $"Depo {resolvedBranches[0]}",
+                "Resolved"),
+            _ => new ResolvedWarehouseContext(null, null, "NetworkAmbiguous")
+        };
+    }
+
     private static string? GetIpv4NetworkPrefix(string ipAddress)
     {
         var parts = ipAddress.Trim().Split('.', StringSplitOptions.TrimEntries);
@@ -315,4 +448,9 @@ public sealed class AuthService(
 
         return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken.Trim())));
     }
+
+    private sealed record ResolvedWarehouseContext(
+        int? WarehouseNo,
+        string? WarehouseName,
+        string Status);
 }

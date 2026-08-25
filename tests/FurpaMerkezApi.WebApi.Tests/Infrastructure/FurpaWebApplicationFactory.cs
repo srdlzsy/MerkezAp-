@@ -109,6 +109,22 @@ internal sealed class FakeAuthService : IAuthService
     public Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken) =>
         Task.FromResult(CreateUser());
 
+    public Task<WarehouseContextResponse> GetWarehouseContextAsync(
+        Guid userId,
+        string? ipAddress,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new WarehouseContextResponse(
+            userId,
+            "test",
+            "101",
+            "TEST BRANCH",
+            "101",
+            "TEST BRANCH",
+            true,
+            false,
+            "Ok",
+            DateTime.UtcNow));
+
     private static AuthResponse CreateAuthResponse() =>
         new(
             "fake-token",

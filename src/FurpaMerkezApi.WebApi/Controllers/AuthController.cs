@@ -82,6 +82,23 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
         return Ok(await authService.GetUserByIdAsync(userId, cancellationToken));
     }
 
+    [Authorize]
+    [HttpGet("warehouse-context")]
+    [ProducesResponseType(typeof(WarehouseContextResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<WarehouseContextResponse>> WarehouseContext(CancellationToken cancellationToken)
+    {
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!Guid.TryParse(userIdValue, out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        return Ok(await authService.GetWarehouseContextAsync(userId, ipAddress, cancellationToken));
+    }
+
     public sealed class RegisterUserRequest
     {
         [Required(AllowEmptyStrings = false)]

@@ -14,4 +14,9 @@ public interface IAuthService
     Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken);
 
     Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<WarehouseContextResponse> GetWarehouseContextAsync(
+        Guid userId,
+        string? ipAddress,
+        CancellationToken cancellationToken);
 }
