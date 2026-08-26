@@ -379,6 +379,9 @@ public sealed class EDespatchService(
             document.Detail.Header.CustomerCode,
             document.Metadata.AddressNo,
             cancellationToken);
+        EnsureDeliveryAddressPostalCode(
+            deliveryCustomer.PostalCode,
+            $"customer {deliveryCustomer.CustomerCode} ({deliveryCustomer.DisplayName}) address {document.Metadata.AddressNo}");
         var despatchInfo = BuildDespatchInfo(
             BuildCompanyMovementDespatchAdvice(
                 document.Detail,
@@ -457,6 +460,9 @@ public sealed class EDespatchService(
             document.Context,
             document.Detail.Header.TargetWarehouseNo,
             cancellationToken);
+        EnsureDeliveryAddressPostalCode(
+            targetWarehouse.PostalCode,
+            $"warehouse {targetWarehouse.WarehouseNo} ({targetWarehouse.Name})");
         var despatchInfo = BuildDespatchInfo(
             BuildInterWarehouseDespatchAdvice(
                 document.Detail,
@@ -1605,6 +1611,19 @@ public sealed class EDespatchService(
             throw new InvalidOperationException(
                 $"E-despatch has already been sent with document number {sentMovement.sth_belge_no}.");
         }
+    }
+
+    private static void EnsureDeliveryAddressPostalCode(
+        string postalCode,
+        string targetDescription)
+    {
+        if (!string.IsNullOrWhiteSpace(postalCode))
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"E-despatch delivery address postal code is required. Target={targetDescription}.");
     }
 
     private async Task<string> GetLatestDocumentNoAsync(

@@ -7255,6 +7255,7 @@ Body'de sadece degistirilecek alanlar gonderilmelidir:
   "projectCode": "",
   "city": "BURSA",
   "district": "KESTEL",
+  "postalCode": "16000",
   "phoneCountryCode": "90",
   "phoneAreaCode": "224",
   "phoneNo1": "0000000",
@@ -7271,6 +7272,13 @@ Guncellenebilir alanlar:
 - Adres: `street`, `neighborhood`, `avenue`, `quarter`, `apartmentNo`, `apartmentUnitNo`, `postalCode`, `district`, `city`, `country`, `addressCode`
 - Konum/iletisim: `latitude`, `longitude`, `authorizedEmail`, `phoneCountryCode`, `phoneAreaCode`, `phoneNo1`, `phoneNo2`, `faxNo`
 - Durum: `excludedFromInventory`, `detailTrackingType`, `outgoingEDespatchEnabled`, `incomingEDespatchEnabled`, `isPassive`, `isHidden`, `isLocked`, `lockDate`
+
+E-irsaliye notu:
+
+- Depolar arasi sevk/iade e-irsaliyesinde Uyumsoft `DeliveryAddress/PostalZone` alanini zorunlu ister.
+- Bu alan hedef teslim deposunun `postalCode` degerinden gelir.
+- Yoldaki sevklerde `girisDepo/transitWarehouseNo` 60 gibi nakliye depo olabilir; asil teslim deposu `targetWarehouseNo`/Mikro `sth_nakliyedeposu` alanidir.
+- Hedef teslim deposunun `postalCode` alani bos ise e-irsaliye gonderimi Uyumsoft'a gitmeden `400 Bad Request` ile durdurulur. UI bu durumda Duzeltme Islemleri > Mikro Evrak Duzenleme > Depo Karti ekranindan ilgili deponun posta kodunu doldurtmalidir.
 
 Response:
 
