@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using FurpaMerkezApi.WebApi.Configuration;
 using FurpaMerkezApi.WebApi.Filters;
@@ -8,6 +9,8 @@ using FurpaMerkezApi.WebApi.Middleware;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using ApiDataProtectionOptions = FurpaMerkezApi.WebApi.Configuration.DataProtectionOptions;
@@ -43,6 +46,30 @@ builder.Services.Configure<ApiAuthOptions>(builder.Configuration.GetSection("Aut
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<WarehouseAccessFilter>();
+});
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    var defaultFactory = options.InvalidModelStateResponseFactory;
+
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        if (IsCompanyReceivingCreateRequest(context.HttpContext.Request))
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("FurpaMerkezApi.WebApi.Validation.CompanyReceiving");
+
+            logger.LogWarning(
+                "Company receiving request model validation failed. Method={Method}; Path={Path}; QueryString={QueryString}; UserId={UserId}; ValidationErrors={ValidationErrors}",
+                context.HttpContext.Request.Method,
+                context.HttpContext.Request.Path,
+                context.HttpContext.Request.QueryString.Value,
+                context.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier),
+                FormatModelStateErrors(context.ModelState));
+        }
+
+        return defaultFactory(context);
+    };
 });
 builder.Services.AddHealthChecks()
     .AddCheck<CoreDependenciesHealthCheck>(
@@ -219,6 +246,35 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 app.MapControllers();
 
 app.Run();
+
+static bool IsCompanyReceivingCreateRequest(HttpRequest request) =>
+    HttpMethods.IsPost(request.Method) &&
+    (request.Path.StartsWithSegments("/api/mal-kabul-islemleri/firma-mal-kabulleri") ||
+     request.Path.StartsWithSegments("/api/mal-kabul-islemleri/mal-kabuller/firma"));
+
+static string FormatModelStateErrors(ModelStateDictionary modelState)
+{
+    const int maxErrors = 20;
+
+    var errors = modelState
+        .Where(item => item.Value?.Errors.Count > 0)
+        .SelectMany(item => item.Value!.Errors.Select(error =>
+            $"{item.Key}: {ResolveModelStateErrorMessage(error)}"))
+        .Take(maxErrors + 1)
+        .ToArray();
+
+    if (errors.Length <= maxErrors)
+    {
+        return string.Join(" | ", errors);
+    }
+
+    return string.Join(" | ", errors.Take(maxErrors)) + " | ...";
+}
+
+static string ResolveModelStateErrorMessage(ModelError error) =>
+    !string.IsNullOrWhiteSpace(error.ErrorMessage)
+        ? error.ErrorMessage
+        : error.Exception?.Message ?? "Invalid value.";
 
 static void ValidateProductionConfiguration(
     IConfiguration configuration,

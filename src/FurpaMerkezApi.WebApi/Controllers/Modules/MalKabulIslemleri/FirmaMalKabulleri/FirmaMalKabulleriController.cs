@@ -26,7 +26,8 @@ public sealed class FirmaMalKabulleriController(
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
     IGetCompanyReceivingOfflineSyncStatusUseCase getCompanyReceivingOfflineSyncStatusUseCase,
     IDocumentFlowService documentFlowService,
-    IGetInboundDespatchLookupUseCase getInboundDespatchLookupUseCase)
+    IGetInboundDespatchLookupUseCase getInboundDespatchLookupUseCase,
+    ILogger<FirmaMalKabulleriController> logger)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "mal-kabul-islemleri";
@@ -89,48 +90,81 @@ public sealed class FirmaMalKabulleriController(
         [FromBody] CreateCompanyReceivingHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
-        var response = await createCompanyReceivingUseCase.ExecuteAsync(
-            new CreateCompanyReceivingRequest(
-                warehouseNo,
-                User.GetRequiredUserId(),
-                request.ClientRequestId,
-                request.CustomerCode,
-                request.MovementDate,
-                request.DocumentDate,
-                request.DocumentNo,
-                request.Deliverer,
-                request.Receiver,
-                request.Description,
-                request.AllowOrderOverReceiving,
-                request.AutoCreateReturnForPartialAcceptance,
-                request.Lines
-                    .Select(MapLine)
-                    .ToArray()),
-            cancellationToken);
+        Guid? requestedByUserId = null;
+        int? warehouseNo = null;
 
-        await documentFlowService.RecordAsync(
-            new RecordDocumentFlowRequest(
-                DocumentFlowKeys.Create(
+        try
+        {
+            requestedByUserId = User.GetRequiredUserId();
+            warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
+
+            logger.LogInformation(
+                "Company receiving create requested. {RequestSummary}",
+                BuildCreateRequestLogSummary(request, warehouseNo, requestedByUserId));
+
+            var response = await createCompanyReceivingUseCase.ExecuteAsync(
+                new CreateCompanyReceivingRequest(
+                    warehouseNo.Value,
+                    requestedByUserId.Value,
+                    request.ClientRequestId,
+                    request.CustomerCode,
+                    request.MovementDate,
+                    request.DocumentDate,
+                    request.DocumentNo,
+                    request.Deliverer,
+                    request.Receiver,
+                    request.Description,
+                    request.AllowOrderOverReceiving,
+                    request.AutoCreateReturnForPartialAcceptance,
+                    request.Lines
+                        .Select(MapLine)
+                        .ToArray()),
+                cancellationToken);
+
+            await documentFlowService.RecordAsync(
+                new RecordDocumentFlowRequest(
+                    DocumentFlowKeys.Create(
+                        DocumentFlowType.CompanyReceiving,
+                        response.WarehouseNo,
+                        response.DocumentSerie,
+                        response.DocumentOrderNo),
                     DocumentFlowType.CompanyReceiving,
                     response.WarehouseNo,
+                    null,
                     response.DocumentSerie,
-                    response.DocumentOrderNo),
-                DocumentFlowType.CompanyReceiving,
+                    response.DocumentOrderNo,
+                    DocumentFlowStep.DocumentCreated,
+                    DocumentFlowStatus.Succeeded,
+                    BuildDocumentFlowMessage(request),
+                    ChangedByUserId: requestedByUserId.Value,
+                    DocumentNo: response.DocumentNo,
+                    ExternalDocumentNo: ResolveOfficialDocumentNo(request),
+                    ExternalUuid: ResolveOfficialDocumentEttn(request)),
+                cancellationToken);
+
+            logger.LogInformation(
+                "Company receiving create succeeded. WarehouseNo={WarehouseNo}; DocumentSerie={DocumentSerie}; DocumentOrderNo={DocumentOrderNo}; DocumentNo={DocumentNo}; ClientRequestId={ClientRequestId}; LineCount={LineCount}; TotalReceivedQuantity={TotalReceivedQuantity}; TotalDispatchQuantity={TotalDispatchQuantity}; TotalNetAcceptedQuantity={TotalNetAcceptedQuantity}",
                 response.WarehouseNo,
-                null,
                 response.DocumentSerie,
                 response.DocumentOrderNo,
-                DocumentFlowStep.DocumentCreated,
-                DocumentFlowStatus.Succeeded,
-                BuildDocumentFlowMessage(request),
-                ChangedByUserId: User.GetRequiredUserId(),
-                DocumentNo: response.DocumentNo,
-                ExternalDocumentNo: ResolveOfficialDocumentNo(request),
-                ExternalUuid: ResolveOfficialDocumentEttn(request)),
-            cancellationToken);
+                response.DocumentNo,
+                request.ClientRequestId,
+                response.LineCount,
+                response.TotalReceivedQuantity,
+                response.TotalDispatchQuantity,
+                response.TotalNetAcceptedQuantity);
 
-        return StatusCode(StatusCodes.Status201Created, response);
+            return StatusCode(StatusCodes.Status201Created, response);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "Company receiving create failed. {RequestSummary}",
+                BuildCreateRequestLogSummary(request, warehouseNo, requestedByUserId));
+
+            throw;
+        }
     }
 
     private static string BuildDocumentFlowMessage(CreateCompanyReceivingHttpRequest request)
@@ -233,6 +267,71 @@ public sealed class FirmaMalKabulleriController(
             line.CustomerResponsibilityCenter,
             line.ProductResponsibilityCenter);
     }
+
+    private static string BuildCreateRequestLogSummary(
+        CreateCompanyReceivingHttpRequest request,
+        int? warehouseNo,
+        Guid? requestedByUserId)
+    {
+        var lineCount = request.Lines.Count;
+        var totalQuantity = request.Lines.Sum(line => line.Quantity ?? 0d);
+        var totalDispatchQuantity = request.Lines.Sum(line => line.DispatchQuantity ?? line.Quantity ?? 0d);
+        var totalAcceptedQuantity = request.Lines.Sum(line => line.AcceptedQuantity ?? line.Quantity ?? line.DispatchQuantity ?? 0d);
+
+        return string.Join(
+            "; ",
+            $"UserId={requestedByUserId?.ToString() ?? "-"}",
+            $"WarehouseNo={warehouseNo?.ToString(CultureInfo.InvariantCulture) ?? "-"}",
+            $"RequestedWarehouseNo={request.WarehouseNo?.ToString(CultureInfo.InvariantCulture) ?? "-"}",
+            $"ClientRequestId={request.ClientRequestId?.ToString() ?? "-"}",
+            $"CustomerCode={NormalizeForLog(request.CustomerCode)}",
+            $"MovementDate={FormatDateForLog(request.MovementDate)}",
+            $"DocumentDate={FormatDateForLog(request.DocumentDate)}",
+            $"DocumentNo={NormalizeForLog(request.DocumentNo)}",
+            $"OfficialDocumentKind={NormalizeForLog(ResolveOfficialDocumentKind(request))}",
+            $"OfficialDocumentNo={NormalizeForLog(ResolveOfficialDocumentNo(request))}",
+            $"OfficialDocumentEttn={NormalizeForLog(ResolveOfficialDocumentEttn(request))}",
+            $"AllowOrderOverReceiving={request.AllowOrderOverReceiving}",
+            $"AutoCreateReturnForPartialAcceptance={request.AutoCreateReturnForPartialAcceptance}",
+            $"LineCount={lineCount}",
+            $"TotalQuantity={totalQuantity.ToString("0.######", CultureInfo.InvariantCulture)}",
+            $"TotalDispatchQuantity={totalDispatchQuantity.ToString("0.######", CultureInfo.InvariantCulture)}",
+            $"TotalAcceptedQuantity={totalAcceptedQuantity.ToString("0.######", CultureInfo.InvariantCulture)}",
+            $"FirstLines={BuildLinePreview(request.Lines)}");
+    }
+
+    private static string BuildLinePreview(IReadOnlyCollection<CreateCompanyReceivingLineHttpRequest> lines)
+    {
+        const int maxLinePreviewCount = 10;
+
+        var preview = lines
+            .Take(maxLinePreviewCount)
+            .Select((line, index) =>
+                $"{index + 1}:{NormalizeForLog(line.StockCode)}/qty={FormatNumberForLog(line.Quantity)}/dispatch={FormatNumberForLog(line.DispatchQuantity)}/accepted={FormatNumberForLog(line.AcceptedQuantity)}/order={line.OrderGuid?.ToString() ?? "-"}")
+            .ToArray();
+
+        if (lines.Count <= maxLinePreviewCount)
+        {
+            return string.Join(",", preview);
+        }
+
+        return string.Join(",", preview) + ",...";
+    }
+
+    private static string NormalizeForLog(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "-"
+            : value.Trim();
+
+    private static string FormatDateForLog(DateTime? value) =>
+        value.HasValue
+            ? value.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : "-";
+
+    private static string FormatNumberForLog(double? value) =>
+        value.HasValue
+            ? value.Value.ToString("0.######", CultureInfo.InvariantCulture)
+            : "-";
 
     [HttpGet("offline-sync/{clientRequestId:guid}")]
     [Authorize(Policy = CreatePolicy)]
