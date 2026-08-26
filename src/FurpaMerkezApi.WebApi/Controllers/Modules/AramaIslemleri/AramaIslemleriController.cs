@@ -19,6 +19,7 @@ public sealed class AramaIslemleriController(
     ISearchProductsUseCase searchProductsUseCase,
     ISearchCustomersUseCase searchCustomersUseCase,
     ISearchWarehousesUseCase searchWarehousesUseCase,
+    ISearchSourceWarehousesUseCase searchSourceWarehousesUseCase,
     IResolveBarcodeUseCase resolveBarcodeUseCase,
     IGetProductCustomerSuggestionsUseCase getProductCustomerSuggestionsUseCase,
     IGetProductLatestTagUseCase getProductLatestTagUseCase) : ControllerBase
@@ -135,6 +136,17 @@ public sealed class AramaIslemleriController(
             new WarehouseSearchRequest(
                 request.SearchText,
                 request.LookupWarehouseNo,
+                request.Take),
+            cancellationToken));
+
+    [HttpGet("depolar/kaynaklar")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<SourceWarehouseLookupItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<SourceWarehouseLookupItemDto>>> SearchSourceWarehouses(
+        [FromQuery] SourceWarehouseSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await searchSourceWarehousesUseCase.ExecuteAsync(
+            new SourceWarehouseSearchRequest(
+                request.SearchText,
                 request.Take),
             cancellationToken));
 
@@ -328,6 +340,14 @@ public sealed class WarehouseSearchHttpRequest
     [FromQuery(Name = "WarehouseNo")]
     [Range(1, int.MaxValue)]
     public int? LookupWarehouseNo { get; init; }
+
+    [Range(1, 200)]
+    public int Take { get; init; } = 100;
+}
+
+public sealed class SourceWarehouseSearchHttpRequest
+{
+    public string? SearchText { get; init; }
 
     [Range(1, 200)]
     public int Take { get; init; } = 100;

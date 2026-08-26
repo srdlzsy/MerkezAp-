@@ -135,6 +135,11 @@ Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+GET {{baseUrl}}/api/arama-islemleri/depolar/kaynaklar?Take=100
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 GET {{baseUrl}}/api/arama-islemleri/fiyat-gor?WarehouseNo=1&Barcode=8690000000000&StockCode=015550&StockName=015550&SupplierCode=120.01.03106&CompanyCode=sample&Take=1
 Accept: application/json
 Authorization: Bearer {{token}}

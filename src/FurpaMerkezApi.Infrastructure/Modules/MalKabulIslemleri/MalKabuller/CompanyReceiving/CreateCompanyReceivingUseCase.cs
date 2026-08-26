@@ -34,7 +34,7 @@ public sealed class CreateCompanyReceivingUseCase(
     private const byte ReturnMovement = 1;
     private const byte IssuedCompanyOrderType = 1;
     private const byte NormalOrderGenre = 0;
-    private const int FirstDocumentOrderNo = 0;
+    private const int FirstDocumentOrderNo = 1;
     private const int DerivedDocumentOrderNoLength = 9;
     private const int MaxDocumentSerieLength = 20;
     private const double QuantityTolerance = 0.000001d;
@@ -1447,7 +1447,8 @@ public sealed class CreateCompanyReceivingUseCase(
                 documentNo.AsSpan(documentNo.Length - DerivedDocumentOrderNoLength),
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
-                out var derivedDocumentOrderNo))
+                out var derivedDocumentOrderNo) ||
+            derivedDocumentOrderNo < FirstDocumentOrderNo)
         {
             return false;
         }

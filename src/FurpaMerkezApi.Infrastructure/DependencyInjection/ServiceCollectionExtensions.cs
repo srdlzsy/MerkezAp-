@@ -510,6 +510,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISearchProductsUseCase, SearchProductsUseCase>();
         services.AddScoped<ISearchCustomersUseCase, SearchCustomersUseCase>();
         services.AddScoped<ISearchWarehousesUseCase, SearchWarehousesUseCase>();
+        services.AddScoped<ISearchSourceWarehousesUseCase, SearchSourceWarehousesUseCase>();
         services.AddScoped<IResolveBarcodeUseCase, ResolveBarcodeUseCase>();
         services.AddScoped<IGetProductCustomerSuggestionsUseCase, GetProductCustomerSuggestionsUseCase>();
         services.AddScoped<IGetProductLatestTagUseCase, GetProductLatestTagUseCase>();

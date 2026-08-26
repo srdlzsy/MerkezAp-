@@ -118,6 +118,7 @@ Tam format kurallari:
 - Bosluk iceremez.
 - Toplam uzunluk 10-29 karakter araliginda olmalidir.
 - Son 9 karakter sadece rakam olmalidir.
+- Son 9 karakterin sayisal degeri `0` olamaz; Mikro arayuzunde evrak bulunabilirligi icin sira `1` ve uzeri olmalidir.
 - Son 9 karakterden once en az 1 karakterlik seri prefix olmalidir.
 - Seri prefix en fazla 20 karakter olabilir.
 - `documentSerie` backend tarafinda son 9 hane atilarak uretilir.
@@ -160,6 +161,7 @@ documentSerie = FMK{kullaniciDeposu}
 
 - Ayni depo ve `FMK{kullaniciDeposu}` serisi icin siradaki `documentOrderNo`
   degerini verir.
+- Bu seri daha once hic kullanilmadiysa ilk `documentOrderNo` degeri `1` olur.
 - Response'taki `documentNo`, uretilen nihai evrak no olur.
 
 Ornek:
@@ -177,6 +179,7 @@ Prefix davranisi:
 - UI veya kullanici `ULK`, `ABC`, `IRS-000123` gibi harf iceren bir deger
   gonderirse backend bunu seri/prefix olarak kullanabilir.
 - Ayni depo ve seri icin siradaki `documentOrderNo` degerini verir.
+- Bu seri daha once hic kullanilmadiysa ilk `documentOrderNo` degeri `1` olur.
 - Response'taki `documentNo`, uretilen nihai evrak no olur.
 
 Kullanici veya UI prefix gondermek isterse:
