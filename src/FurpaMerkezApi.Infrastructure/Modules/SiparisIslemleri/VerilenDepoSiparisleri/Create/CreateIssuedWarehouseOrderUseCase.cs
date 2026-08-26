@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
@@ -60,6 +61,29 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         var deliveryDate = (request.DeliveryDate ?? orderDate).Date;
         var documentSerie = $"F{request.InWarehouseNo}";
         var lines = request.Lines.ToArray();
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStartedAt = Stopwatch.GetTimestamp();
+
+        void LogCreatePhase(string phase, int? documentOrderNo)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(phaseStartedAt);
+            if (elapsed.TotalMilliseconds >= 500d)
+            {
+                logger.LogInformation(
+                    "Issued warehouse order create phase {Phase} completed in {ElapsedMs} ms. TotalMs={TotalMs}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}, Route=Database",
+                    phase,
+                    elapsed.TotalMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    documentSerie,
+                    documentOrderNo,
+                    request.InWarehouseNo,
+                    request.OutWarehouseNo,
+                    lines.Length);
+            }
+
+            phaseStartedAt = Stopwatch.GetTimestamp();
+        }
+
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -68,10 +92,12 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
+            LogCreatePhase("begin-transaction", null);
 
             try
             {
                 var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                LogCreatePhase("next-document-order-no", documentOrderNo);
                 var entities = lines
                     .Select((line, rowNo) => CreateOrderLine(
                         request,
@@ -83,10 +109,14 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                         documentSerie,
                         documentOrderNo))
                     .ToArray();
+                LogCreatePhase("build-order-rows", documentOrderNo);
 
                 await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(entities, cancellationToken);
+                LogCreatePhase("track-entities", documentOrderNo);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                LogCreatePhase("save-changes", documentOrderNo);
                 await transaction.CommitAsync(cancellationToken);
+                LogCreatePhase("commit", documentOrderNo);
 
                 await TryCreateGreenGrocerOrderLineSnapshotsAsync(
                     request,
@@ -96,6 +126,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                     documentOrderNo,
                     orderDate,
                     CancellationToken.None);
+                LogCreatePhase("green-grocer-snapshots", documentOrderNo);
 
                 return new CreateIssuedWarehouseOrderResponse(
                     documentSerie,
@@ -125,7 +156,31 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         var deliveryDate = (request.DeliveryDate ?? orderDate).Date;
         var documentSerie = $"F{request.InWarehouseNo}";
         var lines = request.Lines.ToArray();
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStartedAt = Stopwatch.GetTimestamp();
+
+        void LogCreatePhase(string phase, int? documentOrderNo)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(phaseStartedAt);
+            if (elapsed.TotalMilliseconds >= 500d)
+            {
+                logger.LogInformation(
+                    "Issued warehouse order create phase {Phase} completed in {ElapsedMs} ms. TotalMs={TotalMs}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}, Route=MikroApi",
+                    phase,
+                    elapsed.TotalMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    documentSerie,
+                    documentOrderNo,
+                    request.InWarehouseNo,
+                    request.OutWarehouseNo,
+                    lines.Length);
+            }
+
+            phaseStartedAt = Stopwatch.GetTimestamp();
+        }
+
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+        LogCreatePhase("next-document-order-no", documentOrderNo);
         var payload = IssuedWarehouseOrderMikroApiPayloadFactory.Create(
             request,
             lines,
@@ -133,6 +188,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             deliveryDate,
             documentSerie,
             documentOrderNo);
+        LogCreatePhase("build-payload", documentOrderNo);
 
         logger.LogInformation(
             "Issued warehouse order create is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}",
@@ -147,6 +203,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             DepolarArasiSiparisKaydetPath,
             payload,
             cancellationToken);
+        LogCreatePhase("mikro-api-post", documentOrderNo);
 
         if (result.IsError)
         {
@@ -164,12 +221,14 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             options.ConnectionStringName,
             result.RawResponse,
             cancellationToken);
+        LogCreatePhase("recover-response", documentOrderNo);
 
         var orderLineGuidByRowNo = await GetOrderLineGuidByRowNoAsync(
             documentSerie,
             documentOrderNo,
             request,
             cancellationToken);
+        LogCreatePhase("load-created-line-guids", documentOrderNo);
         if (orderLineGuidByRowNo.Count == 0)
         {
             orderLineGuidByRowNo = TryMapMikroApiResultRowsByRowNo(result.RawResponse, lines.Length, out var responseLineGuids)
@@ -185,11 +244,13 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             recovered.DocumentOrderNo,
             recovered.OrderDate,
             CancellationToken.None);
+        LogCreatePhase("green-grocer-snapshots", recovered.DocumentOrderNo);
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
             $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
             cancellationToken: cancellationToken);
+        LogCreatePhase("mark-recovered", recovered.DocumentOrderNo);
         return recovered;
     }
 

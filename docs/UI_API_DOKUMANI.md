@@ -6263,7 +6263,7 @@ Yetki:
 Onemli not:
 
 - Bu liste yeni create kaynagi degil, mevcut yapilmis mal kabul fislerinin gecmis listesidir.
-- Firma mal kabul liste tarih filtresi `documentDate` alanina, Mikro tarafinda `STOK_HAREKETLERI.sth_belge_tarih` kolonuna uygulanir; `movementCreateDate` filtre alani degildir.
+- Firma mal kabul liste tarih filtresi Mikro tarafinda `STOK_HAREKETLERI.sth_tarih` kolonuna uygulanir. Bu alan kabul/islem tarihidir; resmi e-belge tarihi veya Mikro `sth_belge_tarih` farkli olsa bile bugun kabul edilen evrak bugunun listesinde gorunur.
 - Response modeli `CompanyMovementListItemDto` ile aynidir.
 - UI ana ekranda gecmisi gosterip `Yeni Mal Kabul` aksiyonuyla create ekranina gecebilir.
 

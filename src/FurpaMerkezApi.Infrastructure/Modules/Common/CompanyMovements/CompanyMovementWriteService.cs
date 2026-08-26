@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -81,6 +82,30 @@ public sealed class CompanyMovementWriteService(
         var lines = request.Lines.ToArray();
         var returnType = ResolveReturnType(kind);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStartedAt = Stopwatch.GetTimestamp();
+
+        void LogCreatePhase(string phase, int lineCount)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(phaseStartedAt);
+            if (elapsed.TotalMilliseconds >= 500d)
+            {
+                logger.LogInformation(
+                    "Company movement create phase {Phase} completed in {ElapsedMs} ms. TotalMs={TotalMs}, Kind={Kind}, DocumentSerie={DocumentSerie}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, ReturnType={ReturnType}, LineCount={LineCount}, Route=Database",
+                    phase,
+                    elapsed.TotalMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    kind,
+                    documentSerie,
+                    request.WarehouseNo,
+                    customerCode,
+                    returnType,
+                    lineCount);
+            }
+
+            phaseStartedAt = Stopwatch.GetTimestamp();
+        }
+
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -89,12 +114,15 @@ public sealed class CompanyMovementWriteService(
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
+            LogCreatePhase("begin-transaction", lines.Length);
 
             try
             {
                 var customer = await GetCustomerAsync(customerCode, cancellationToken);
+                LogCreatePhase("customer-lookup", lines.Length);
                 var customerAddressNo = ResolveCustomerAddressNo(customer);
                 var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);
+                LogCreatePhase("next-document-order-no", lines.Length);
                 var movements = lines
                     .Select((line, rowNo) => CreateMovement(
                         request,
@@ -111,10 +139,14 @@ public sealed class CompanyMovementWriteService(
                         documentOrderNo,
                         offlineTraceKey))
                     .ToArray();
+                LogCreatePhase("build-movement-rows", movements.Length);
 
                 await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                LogCreatePhase("track-entities", movements.Length);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                LogCreatePhase("save-changes", movements.Length);
                 await transaction.CommitAsync(cancellationToken);
+                LogCreatePhase("commit", movements.Length);
 
                 return new CreateCompanyMovementResponse(
                     documentSerie,

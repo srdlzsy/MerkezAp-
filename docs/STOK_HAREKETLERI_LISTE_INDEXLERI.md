@@ -55,6 +55,11 @@ Gelen sevk       sth_nakliyedeposu OR sth_giris_depo_no
 
 Tek index bu uc farkli erisim yolunu ayni verimle karsilamaz.
 
+Firma mal kabul listesinde tarih filtresi `sth_tarih` uzerinden calisir. Bu nedenle
+`IX_FR_STH_FirmaMalKabul_Liste` indexinin ikinci key kolonu `sth_tarih` olmalidir.
+Eski scriptle `sth_belge_tarih` key'li index olustuysa guncel script bu indexi tespit
+eder, sadece bu indexi dusurur ve dogru kolonla yeniden olusturur.
+
 ## Uygulama Oncesi
 
 Canliya gecmeden once onerilen kontrol:

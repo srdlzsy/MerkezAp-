@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
@@ -82,6 +83,29 @@ public sealed class CreateWarehouseReturnUseCase(
         var documentNo = NormalizeText(request.DocumentNo);
         var lines = request.Lines.ToArray();
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStartedAt = Stopwatch.GetTimestamp();
+
+        void LogCreatePhase(string phase, int lineCount)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(phaseStartedAt);
+            if (elapsed.TotalMilliseconds >= 500d)
+            {
+                logger.LogInformation(
+                    "Warehouse return create phase {Phase} completed in {ElapsedMs} ms. TotalMs={TotalMs}, DocumentSerie={DocumentSerie}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, TransitWarehouseNo={TransitWarehouseNo}, LineCount={LineCount}, Route=Database",
+                    phase,
+                    elapsed.TotalMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    documentSerie,
+                    request.SourceWarehouseNo,
+                    request.TargetWarehouseNo,
+                    request.TransitWarehouseNo,
+                    lineCount);
+            }
+
+            phaseStartedAt = Stopwatch.GetTimestamp();
+        }
+
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -90,16 +114,19 @@ public sealed class CreateWarehouseReturnUseCase(
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
+            LogCreatePhase("begin-transaction", lines.Length);
 
             try
             {
                 var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                LogCreatePhase("next-document-order-no", lines.Length);
                 var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
                     request,
                     lines,
                     movementDate,
                     now,
                     cancellationToken);
+                LogCreatePhase("automatic-warehouse-order-lines", lines.Length);
                 var movements = new List<STOK_HAREKETLERI>(lines.Length);
                 var movementExtras = new List<STOK_HAREKETLERI_EK>();
 
@@ -127,6 +154,7 @@ public sealed class CreateWarehouseReturnUseCase(
                             now));
                     }
                 }
+                LogCreatePhase("build-movement-rows", movements.Count);
 
                 if (automaticOrderLines.Count > 0)
                 {
@@ -140,9 +168,12 @@ public sealed class CreateWarehouseReturnUseCase(
                 {
                     await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(movementExtras, cancellationToken);
                 }
+                LogCreatePhase("track-entities", movements.Count);
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                LogCreatePhase("save-changes", movements.Count);
                 await transaction.CommitAsync(cancellationToken);
+                LogCreatePhase("commit", movements.Count);
 
                 return new CreateWarehouseReturnResponse(
                     documentSerie,

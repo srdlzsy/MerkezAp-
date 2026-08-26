@@ -171,9 +171,9 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 (!warehouseNo.HasValue || movement.sth_cikis_depo_no == warehouseNo.Value)),
 
             CompanyMovementKind.IncomingShipment => movements.Where(movement =>
-                movement.sth_belge_tarih.HasValue &&
-                movement.sth_belge_tarih.Value >= startDate &&
-                movement.sth_belge_tarih.Value < endDateExclusive &&
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= startDate &&
+                movement.sth_tarih.Value < endDateExclusive &&
                 movement.sth_evraktip == ReceivingReceiptDocumentType &&
                 movement.sth_tip == IncomingMovementType &&
                 movement.sth_normal_iade == NormalMovement &&

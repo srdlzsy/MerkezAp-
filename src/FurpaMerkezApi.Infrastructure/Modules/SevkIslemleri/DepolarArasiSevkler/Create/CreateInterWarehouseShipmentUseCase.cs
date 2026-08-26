@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
@@ -124,17 +125,41 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         var documentSerie = $"F{request.SourceWarehouseNo}";
         var documentNo = NormalizeText(request.DocumentNo);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStartedAt = Stopwatch.GetTimestamp();
+        void LogCreatePhase(string phase, int lineCount)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(phaseStartedAt);
+            if (elapsed.TotalMilliseconds >= 500d)
+            {
+                logger.LogInformation(
+                    "Inter warehouse shipment create phase {Phase} completed in {ElapsedMs} ms. TotalMs={TotalMs}, DocumentSerie={DocumentSerie}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, TransitWarehouseNo={TransitWarehouseNo}, LineCount={LineCount}, Route=Database",
+                    phase,
+                    elapsed.TotalMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    documentSerie,
+                    request.SourceWarehouseNo,
+                    request.TargetWarehouseNo,
+                    request.TransitWarehouseNo,
+                    lineCount);
+            }
+
+            phaseStartedAt = Stopwatch.GetTimestamp();
+        }
+
         var lines = await GreenGrocerShipmentLineNormalizer.DetachWarehouseOrderLinksAsync(
             mikroWriteDbContext,
             request,
             request.Lines.ToArray(),
             IsGreenGrocerOrderLinkingEnabled(),
             cancellationToken);
+        LogCreatePhase("normalize-green-grocer-lines", lines.Length);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
         {
             await using var createLock = await AcquireShipmentCreateLockAsync(documentSerie, cancellationToken);
+            LogCreatePhase("acquire-create-lock", lines.Length);
             mikroWriteDbContext.ChangeTracker.Clear();
 
             var duplicate = await TryFindRecentDuplicateAsync(
@@ -145,6 +170,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 now,
                 options.ConnectionStringName,
                 cancellationToken);
+            LogCreatePhase("duplicate-lookup", lines.Length);
 
             if (duplicate is not null)
             {
@@ -154,18 +180,22 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.ReadCommitted,
                 cancellationToken);
+            LogCreatePhase("begin-transaction", lines.Length);
             int? documentOrderNo = null;
 
             try
             {
                 var linkedOrderLines = await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
+                LogCreatePhase("linked-order-validation", lines.Length);
                 documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                LogCreatePhase("next-document-order-no", lines.Length);
                 var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
                     request,
                     lines,
                     movementDate,
                     now,
                     cancellationToken);
+                LogCreatePhase("automatic-warehouse-order-lines", lines.Length);
                 var movements = new List<STOK_HAREKETLERI>(lines.Length);
                 var movementExtras = new List<STOK_HAREKETLERI_EK>();
 
@@ -201,6 +231,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                             now));
                     }
                 }
+                LogCreatePhase("build-movement-rows", movements.Count);
 
                 if (automaticOrderLines.Count > 0)
                 {
@@ -220,9 +251,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 {
                     ApplyLinkedOrderDeliveredQuantities(lines, linkedOrderLines, now);
                 }
+                LogCreatePhase("track-entities", movements.Count);
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                LogCreatePhase("save-changes", movements.Count);
                 await transaction.CommitAsync(cancellationToken);
+                LogCreatePhase("commit", movements.Count);
 
                 return new CreateInterWarehouseShipmentResponse(
                     documentSerie,

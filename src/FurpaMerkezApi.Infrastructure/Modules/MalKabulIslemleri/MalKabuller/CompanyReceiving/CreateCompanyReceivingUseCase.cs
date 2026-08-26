@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -103,6 +104,30 @@ public sealed class CreateCompanyReceivingUseCase(
         var offlineTraceKey = request.ClientRequestId.HasValue
             ? MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value)
             : string.Empty;
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStartedAt = Stopwatch.GetTimestamp();
+
+        void LogCreatePhase(string phase, string documentSerie, int? documentOrderNo, int movementCount, int returnMovementCount)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(phaseStartedAt);
+            if (elapsed.TotalMilliseconds >= 500d)
+            {
+                logger.LogInformation(
+                    "Company receiving create phase {Phase} completed in {ElapsedMs} ms. TotalMs={TotalMs}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, LineCount={LineCount}, MovementCount={MovementCount}, ReturnMovementCount={ReturnMovementCount}, Route=Database",
+                    phase,
+                    elapsed.TotalMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    documentSerie,
+                    documentOrderNo,
+                    request.WarehouseNo,
+                    customerCode,
+                    lines.Length,
+                    movementCount,
+                    returnMovementCount);
+            }
+
+            phaseStartedAt = Stopwatch.GetTimestamp();
+        }
 
         try
         {
@@ -112,10 +137,12 @@ public sealed class CreateCompanyReceivingUseCase(
                 await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable,
                     cancellationToken);
+                LogCreatePhase("begin-transaction", "-", null, 0, 0);
 
                 try
                 {
                     var customer = await GetCustomerAsync(customerCode, cancellationToken);
+                    LogCreatePhase("customer-lookup", "-", null, 0, 0);
                     var customerAddressNo = ResolveCustomerAddressNo(customer);
                     var resolvedDocumentIdentity = await ResolveDocumentIdentityAsync(
                         request.DocumentNo,
@@ -123,12 +150,14 @@ public sealed class CreateCompanyReceivingUseCase(
                         cancellationToken);
                     var documentSerie = resolvedDocumentIdentity.DocumentSerie;
                     var documentOrderNo = resolvedDocumentIdentity.DocumentOrderNo;
+                    LogCreatePhase("resolve-document-identity", documentSerie, documentOrderNo, 0, 0);
                     var documentNo = BuildDocumentNo(documentSerie, documentOrderNo);
                     await EnsureDocumentDoesNotExistAsync(
                         request.WarehouseNo,
                         customerCode,
                         documentNo,
                         cancellationToken);
+                    LogCreatePhase("document-no-duplicate-check", documentSerie, documentOrderNo, 0, 0);
 
                     var ordersByGuid = await LoadOrdersAsync(
                         request,
@@ -136,11 +165,13 @@ public sealed class CreateCompanyReceivingUseCase(
                         customerCode,
                         trackChanges: true,
                         cancellationToken);
+                    LogCreatePhase("load-linked-orders", documentSerie, documentOrderNo, 0, 0);
                     await EnsureDocumentIdentityDoesNotExistAsync(
                         request.WarehouseNo,
                         documentSerie,
                         documentOrderNo,
                         cancellationToken);
+                    LogCreatePhase("document-identity-duplicate-check", documentSerie, documentOrderNo, 0, 0);
                     var shouldCreateReturnDocument = request.AutoCreateReturnForPartialAcceptance &&
                         lines.Any(line => CalculateReturnQuantity(line) > QuantityTolerance);
                     var returnDocumentSerie = shouldCreateReturnDocument
@@ -149,6 +180,7 @@ public sealed class CreateCompanyReceivingUseCase(
                     var returnDocumentOrderNo = shouldCreateReturnDocument
                         ? await GetNextReturnDocumentOrderNoAsync(returnDocumentSerie!, cancellationToken)
                         : (int?)null;
+                    LogCreatePhase("resolve-return-document-identity", documentSerie, documentOrderNo, 0, 0);
                     var movements = new List<STOK_HAREKETLERI>();
                     var returnMovements = new List<STOK_HAREKETLERI>();
                     var results = new List<CreateCompanyReceivingLineResultDto>();
@@ -322,15 +354,19 @@ public sealed class CreateCompanyReceivingUseCase(
                             offlineTraceKey);
                         ApplyOrderDelivery(order, dispatchQuantity, now);
                     }
+                    LogCreatePhase("build-movement-rows", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
                     await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
                     if (returnMovements.Count > 0)
                     {
                         await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(returnMovements, cancellationToken);
                     }
+                    LogCreatePhase("track-entities", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
                     await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                    LogCreatePhase("save-changes", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
                     await transaction.CommitAsync(cancellationToken);
+                    LogCreatePhase("commit", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
                     return new CreateCompanyReceivingResponse(
                         documentSerie,

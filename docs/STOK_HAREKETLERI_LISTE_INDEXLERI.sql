@@ -19,6 +19,29 @@ BEGIN
 END;
 GO
 
+IF EXISTS (
+    SELECT 1
+    FROM sys.indexes AS i
+    WHERE i.object_id = OBJECT_ID(N'dbo.STOK_HAREKETLERI')
+      AND i.name = N'IX_FR_STH_FirmaMalKabul_Liste'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM sys.index_columns AS ic
+          INNER JOIN sys.columns AS c
+              ON c.object_id = ic.object_id
+             AND c.column_id = ic.column_id
+          WHERE ic.object_id = i.object_id
+            AND ic.index_id = i.index_id
+            AND ic.key_ordinal = 2
+            AND c.name = N'sth_tarih'
+      )
+)
+BEGIN
+    DROP INDEX IX_FR_STH_FirmaMalKabul_Liste
+    ON dbo.STOK_HAREKETLERI;
+END;
+GO
+
 IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
@@ -30,14 +53,14 @@ BEGIN
     ON dbo.STOK_HAREKETLERI
     (
         sth_giris_depo_no,
-        sth_belge_tarih
+        sth_tarih
     )
     INCLUDE
     (
         sth_evrakno_seri,
         sth_evrakno_sira,
         sth_belge_no,
-        sth_tarih,
+        sth_belge_tarih,
         sth_create_date,
         sth_cari_kodu,
         sth_cikis_depo_no,
@@ -51,7 +74,7 @@ BEGIN
         sth_evraktip = 13
         AND sth_tip = 0
         AND sth_normal_iade = 0
-        AND sth_belge_tarih IS NOT NULL;
+        AND sth_tarih IS NOT NULL;
 END;
 GO
 
