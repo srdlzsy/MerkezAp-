@@ -6,6 +6,7 @@ using FurpaMerkezApi.WebApi.Filters;
 using FurpaMerkezApi.WebApi.HealthChecks;
 using FurpaMerkezApi.WebApi.Logging;
 using FurpaMerkezApi.WebApi.Middleware;
+using FurpaMerkezApi.WebApi.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -87,6 +88,7 @@ builder.Services.AddRouting(options =>
 });
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<IInvoicePdfPrintOptimizer, InvoicePdfPrintOptimizer>();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =

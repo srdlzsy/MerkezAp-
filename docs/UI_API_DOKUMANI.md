@@ -14787,6 +14787,35 @@ Bu endpoint ne yapmaz:
 - `isPrinted` alanini kendiliginden guncellemez
 - kullanicinin "yazdirildi" karari yerine gecmez
 
+### Fatura Goruntuleme Yazdirma PDF
+
+`GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/pdf/yazdirma`
+
+Alias:
+
+`GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/pdf/print`
+
+Yetki:
+
+- `fatura-islemleri.fatura-goruntuleme.detail`
+
+Response:
+
+- `Content-Type: application/pdf`
+- Backend once Uyumsoft gelen fatura PDF'ini alir.
+- PDF zaten tek sayfaysa veya son sayfa anlamli doluysa orijinal PDF aynen doner.
+- Son sayfa tamamen bos kuyruk sayfaysa bu sayfa atilir.
+- PDF 2-3 sayfaliysa ve son sayfa cok az icerik tasiyan kuyruk sayfa gibi gorunuyorsa tek sayfaya kompakt yerlestirme denenir.
+- Kompakt yerlestirme okunabilirligi fazla dusurecekse orijinal PDF doner; 2 veya 3 sayfayi gercekten hak eden belgeler zorla tek sayfaya sikistirilmaz.
+
+UI uygulama kurali:
+
+- `PDF Goster` aksiyonu icin ham endpoint kullanilabilir: `/pdf`
+- `Yazdir` aksiyonu icin bu endpoint tercih edilmelidir: `/pdf/yazdirma`
+- Tarayici print dialog'unda `2 kagit` gorunmeye devam ediyorsa UI eski `/pdf` yolunu yazdiriyor olabilir; yazdirma aksiyonu mutlaka bu optimize endpointten gelen blob ile acilmalidir.
+- UI yine response'u JSON gibi okumaz; `blob`/`application/pdf` olarak acar veya print iframe'ine basar.
+- Yazdirma gercekten basarili olduysa sonra `PATCH /api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed` ile yazdirildi durumu isaretlenebilir.
+
 ### Fatura Goruntuleme HTML Detay
 
 `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}/detail`

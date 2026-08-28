@@ -4,6 +4,7 @@ using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGoruntuleme;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,7 +21,8 @@ public sealed class FaturaGoruntulemeController(
     IGetInvoiceViewingDocumentUseCase getInvoiceViewingDocumentUseCase,
     IRenderInvoiceViewingDocumentUseCase renderInvoiceViewingDocumentUseCase,
     ISetInvoiceViewingPrintedStateUseCase setInvoiceViewingPrintedStateUseCase,
-    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService)
+    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService,
+    IInvoicePdfPrintOptimizer invoicePdfPrintOptimizer)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "fatura-islemleri";
@@ -103,6 +105,23 @@ public sealed class FaturaGoruntulemeController(
             cancellationToken);
 
         return File(pdfBytes, "application/pdf");
+    }
+
+    [HttpGet("{documentId}/pdf/yazdirma")]
+    [HttpGet("{documentId}/pdf/print")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetPrintOptimizedPdf(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        var pdfBytes = await uyumsoftConnectedQueryService.GetInboxInvoicePdfFileAsync(
+            documentId,
+            cancellationToken);
+
+        return File(invoicePdfPrintOptimizer.OptimizeForPrinting(pdfBytes), "application/pdf");
     }
 
     [HttpGet("{documentId}/detail")]
