@@ -7362,7 +7362,7 @@ Depo ozel kayit zaten yoksa `deletedRowCount=0` doner. Stok veya depo bulunamazs
 
 Query:
 
-- `searchText`: opsiyonel; depo no, depo adi, grup kodu, il veya ilce icinde arar
+- `searchText`: opsiyonel; depo no, depo adi, grup kodu, bolge kodu, il veya ilce icinde arar
 - `includePassive`: varsayilan `false`; `true` olursa pasif/gizli depolar da gelir
 - `take`: varsayilan `50`, maksimum `200`
 
@@ -7373,6 +7373,7 @@ Response item:
   "warehouseNo": 110,
   "name": "KESTEL 1",
   "groupCode": "MAGAZA",
+  "regionCode": "1",
   "warehouseType": 0,
   "city": "BURSA",
   "district": "KESTEL",
@@ -7446,6 +7447,7 @@ Body'de sadece degistirilecek alanlar gonderilmelidir:
   "groupCode": "MAGAZA",
   "responsibilityCenter": "SRM-110",
   "projectCode": "",
+  "regionCode": "1",
   "city": "BURSA",
   "district": "KESTEL",
   "postalCode": "16000",
@@ -7472,6 +7474,12 @@ E-irsaliye notu:
 - Bu alan hedef teslim deposunun `postalCode` degerinden gelir.
 - Yoldaki sevklerde `girisDepo/transitWarehouseNo` 60 gibi nakliye depo olabilir; asil teslim deposu `targetWarehouseNo`/Mikro `sth_nakliyedeposu` alanidir.
 - Hedef teslim deposunun `postalCode` alani bos ise e-irsaliye gonderimi Uyumsoft'a gitmeden `400 Bad Request` ile durdurulur. UI bu durumda Duzeltme Islemleri > Mikro Evrak Duzenleme > Depo Karti ekranindan ilgili deponun posta kodunu doldurtmalidir.
+
+Bolge notu:
+
+- Sube/depo bolgesi Mikro `DEPOLAR.dep_bolge_kodu` alanidir.
+- Liste response'unda `regionCode` gelir; UI depo karti listesinde bolge kolonunu gostermeli ve bos bolge kodlarini kolay filtrelenebilir yapmalidir.
+- Depo karti guncellemede body'ye `regionCode` gonderilirse ilgili deponun bolge kodu degisir. Bos string gondermek bolge kodunu temizleme istegidir; alan hic gonderilmezse mevcut bolge korunur.
 
 Response:
 

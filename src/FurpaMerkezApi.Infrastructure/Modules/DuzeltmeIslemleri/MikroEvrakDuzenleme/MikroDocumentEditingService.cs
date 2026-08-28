@@ -398,6 +398,7 @@ public sealed class MikroDocumentEditingService(
                 (hasWarehouseNo && warehouse.dep_no == warehouseNo) ||
                 (warehouse.dep_adi != null && warehouse.dep_adi.Contains(searchText)) ||
                 (warehouse.dep_grup_kodu != null && warehouse.dep_grup_kodu.Contains(searchText)) ||
+                (warehouse.dep_bolge_kodu != null && warehouse.dep_bolge_kodu.Contains(searchText)) ||
                 (warehouse.dep_Il != null && warehouse.dep_Il.Contains(searchText)) ||
                 (warehouse.dep_Ilce != null && warehouse.dep_Ilce.Contains(searchText)));
         }
@@ -409,6 +410,7 @@ public sealed class MikroDocumentEditingService(
                 warehouse.dep_no.GetValueOrDefault(),
                 warehouse.dep_adi ?? string.Empty,
                 warehouse.dep_grup_kodu ?? string.Empty,
+                warehouse.dep_bolge_kodu ?? string.Empty,
                 warehouse.dep_tipi ?? 0,
                 warehouse.dep_Il ?? string.Empty,
                 warehouse.dep_Ilce ?? string.Empty,

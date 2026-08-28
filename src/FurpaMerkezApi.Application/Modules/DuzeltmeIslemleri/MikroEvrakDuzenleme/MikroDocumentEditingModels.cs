@@ -157,6 +157,7 @@ public sealed record WarehouseCardListItemDto(
     int WarehouseNo,
     string Name,
     string GroupCode,
+    string RegionCode,
     byte WarehouseType,
     string City,
     string District,
