@@ -1,5 +1,6 @@
 using System.Data;
 using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -1670,6 +1671,129 @@ public sealed class MikroDocumentEditingService(
         });
     }
 
+    public async Task<BanknoteTrackDto> GetBanknoteTrackAsync(
+        BanknoteTrackEditingLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateBanknoteTrackLookup(request);
+
+        var entity = await CreateBanknoteTrackQuery(
+                mikroDbContext.BanknoteTracks.AsNoTracking(),
+                request)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new KeyNotFoundException("Banknote track was not found.");
+
+        return await MapBanknoteTrackAsync(mikroDbContext, entity, cancellationToken);
+    }
+
+    public async Task<BanknoteTrackUpdateResponse> UpdateBanknoteTrackAsync(
+        UpdateBanknoteTrackDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateBanknoteTrackLookup(request.Lookup);
+        ValidateBanknoteTrackUpdate(request);
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var entity = await CreateBanknoteTrackQuery(mikroWriteDbContext.BanknoteTracks, request.Lookup)
+                    .FirstOrDefaultAsync(cancellationToken)
+                    ?? throw new KeyNotFoundException("Banknote track was not found in Mikro write database.");
+
+                var targetWarehouseNo = request.Patch.WarehouseNo ?? entity.WarehouseNo;
+                var targetDate = (request.Patch.BanknoteTrackDate ?? entity.BanknoteTrackDate).Date;
+                await EnsureWarehouseNosExistAsync([targetWarehouseNo], cancellationToken);
+
+                var duplicateExists = await mikroWriteDbContext.BanknoteTracks
+                    .AsNoTracking()
+                    .AnyAsync(item =>
+                        item.Id != entity.Id &&
+                        item.WarehouseNo == targetWarehouseNo &&
+                        item.BanknoteTrackDate >= targetDate &&
+                        item.BanknoteTrackDate < targetDate.AddDays(1),
+                        cancellationToken);
+                if (duplicateExists)
+                {
+                    throw new InvalidOperationException(
+                        "Another banknote track already exists for the target warehouse and date.");
+                }
+
+                var changed = ApplyBanknoteTrackPatch(entity, request.Patch);
+                if (!changed)
+                {
+                    throw new ArgumentException("At least one banknote track field must be provided.", nameof(request.Patch));
+                }
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new BanknoteTrackUpdateResponse(
+                    new MikroDocumentUpdateSummary("banknot-takipleri", 1, updatedAt, updateUser),
+                    await MapBanknoteTrackAsync(mikroWriteDbContext, entity, cancellationToken));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    public async Task<MikroDocumentDeleteResponse> DeleteBanknoteTrackAsync(
+        DeleteBanknoteTrackDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        ValidateBanknoteTrackLookup(request.Lookup);
+
+        var deleteUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var deletedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var entity = await CreateBanknoteTrackQuery(mikroWriteDbContext.BanknoteTracks, request.Lookup)
+                    .FirstOrDefaultAsync(cancellationToken)
+                    ?? throw new KeyNotFoundException("Banknote track was not found in Mikro write database.");
+
+                mikroWriteDbContext.BanknoteTracks.Remove(entity);
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new MikroDocumentDeleteResponse(
+                    $"banknot-takipleri/{request.Lookup.BanknoteTrackId}",
+                    1,
+                    deletedAt,
+                    deleteUser,
+                    "hard-delete");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     private IQueryable<STOK_HAREKETLERI> CreateStockMovementQuery(
         IQueryable<STOK_HAREKETLERI> source,
         StockMovementDocumentLookupRequest request)
@@ -1710,6 +1834,13 @@ public sealed class MikroDocumentEditingService(
 
         return query;
     }
+
+    private static IQueryable<BanknoteTrackEntity> CreateBanknoteTrackQuery(
+        IQueryable<BanknoteTrackEntity> source,
+        BanknoteTrackEditingLookupRequest request) =>
+        source.Where(item =>
+            item.Id == request.BanknoteTrackId &&
+            (request.WarehouseNo == 1 || item.WarehouseNo == request.WarehouseNo));
 
     private IQueryable<CARI_HESAP_HAREKETLERI> CreateCustomerMovementQuery(
         IQueryable<CARI_HESAP_HAREKETLERI> source,
@@ -2337,6 +2468,33 @@ public sealed class MikroDocumentEditingService(
             rows.Max(row => row.ssip_lastup_date));
 
         return new WarehouseOrderDocumentDto(header, lines);
+    }
+
+    private async Task<BanknoteTrackDto> MapBanknoteTrackAsync(
+        MikroDbContext lookupContext,
+        BanknoteTrackEntity entity,
+        CancellationToken cancellationToken)
+    {
+        var warehouseName = await lookupContext.DEPOLARs
+            .AsNoTracking()
+            .Where(warehouse => warehouse.dep_no == entity.WarehouseNo)
+            .Select(warehouse => warehouse.dep_adi ?? string.Empty)
+            .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+
+        var totalAmount = Math.Round(entity.TotalAmount, 2, MidpointRounding.AwayFromZero);
+        var deliveryTotalAmount = Math.Round(entity.DeliveryTotalAmount, 2, MidpointRounding.AwayFromZero);
+
+        return new BanknoteTrackDto(
+            entity.Id,
+            entity.WarehouseNo,
+            warehouseName,
+            entity.BanknoteTrackDate,
+            totalAmount,
+            deliveryTotalAmount,
+            Math.Round(deliveryTotalAmount - totalAmount, 2, MidpointRounding.AwayFromZero),
+            entity.Deliverer,
+            entity.Receiver,
+            entity.CreateDate);
     }
 
     private static async Task<Dictionary<string, STOKLAR>> LoadStocksAsync(
@@ -3160,6 +3318,21 @@ public sealed class MikroDocumentEditingService(
         return changed;
     }
 
+    private static bool ApplyBanknoteTrackPatch(
+        BanknoteTrackEntity entity,
+        BanknoteTrackPatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.BanknoteTrackDate, value => entity.BanknoteTrackDate = value.Date, ref changed);
+        SetIfPresent(patch.WarehouseNo, value => entity.WarehouseNo = ValidateBanknoteTrackWarehouseNo(value), ref changed);
+        SetIfPresent(patch.TotalAmount, value => entity.TotalAmount = ValidateNonNegative(value, nameof(patch.TotalAmount)), ref changed);
+        SetIfPresent(patch.DeliveryTotalAmount, value => entity.DeliveryTotalAmount = ValidateNonNegative(value, nameof(patch.DeliveryTotalAmount)), ref changed);
+        SetIfPresent(patch.Deliverer, value => entity.Deliverer = NormalizeText(value, 100, nameof(patch.Deliverer)), ref changed);
+        SetIfPresent(patch.Receiver, value => entity.Receiver = NormalizeText(value, 100, nameof(patch.Receiver)), ref changed);
+
+        return changed;
+    }
+
     private static void ApplyCustomerMovementHeaderPatch(
         CARI_HESAP_HAREKETLERI row,
         CustomerMovementHeaderPatchDto patch)
@@ -3475,6 +3648,19 @@ public sealed class MikroDocumentEditingService(
         }
     }
 
+    private static void ValidateBanknoteTrackLookup(BanknoteTrackEditingLookupRequest request)
+    {
+        if (request.BanknoteTrackId == Guid.Empty)
+        {
+            throw new ArgumentException("Banknote track id is required.", nameof(request.BanknoteTrackId));
+        }
+
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+    }
+
     private static void ValidateCustomerMovementLookup(CustomerMovementDocumentLookupRequest request)
     {
         _ = NormalizeRequiredText(request.DocumentSerie, 20, nameof(request.DocumentSerie));
@@ -3606,6 +3792,30 @@ public sealed class MikroDocumentEditingService(
         }
     }
 
+    private static void ValidateBanknoteTrackUpdate(UpdateBanknoteTrackDocumentRequest request)
+    {
+        if (request.Patch is null)
+        {
+            throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        }
+
+        if (!HasBanknoteTrackPatch(request.Patch))
+        {
+            throw new ArgumentException("At least one banknote track field must be provided.", nameof(request.Patch));
+        }
+
+        if (request.Patch.BanknoteTrackDate is { } banknoteTrackDate &&
+            banknoteTrackDate == default)
+        {
+            throw new ArgumentException("Banknote track date can not be default.", nameof(request.Patch.BanknoteTrackDate));
+        }
+
+        if (request.Patch.WarehouseNo is <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.Patch.WarehouseNo));
+        }
+    }
+
     private static void ValidateCustomerMovementUpdate(UpdateCustomerMovementDocumentRequest request)
     {
         if (request.Lines is null)
@@ -3681,6 +3891,14 @@ public sealed class MikroDocumentEditingService(
         patch.DocumentDate.HasValue ||
         patch.WarehouseNo.HasValue ||
         patch.Name is not null;
+
+    private static bool HasBanknoteTrackPatch(BanknoteTrackPatchDto patch) =>
+        patch.BanknoteTrackDate.HasValue ||
+        patch.WarehouseNo.HasValue ||
+        patch.TotalAmount.HasValue ||
+        patch.DeliveryTotalAmount.HasValue ||
+        patch.Deliverer is not null ||
+        patch.Receiver is not null;
 
     private static bool HasCustomerMovementHeaderPatch(CustomerMovementHeaderPatchDto patch) =>
         patch.MovementDate.HasValue ||
@@ -3889,6 +4107,16 @@ public sealed class MikroDocumentEditingService(
         if (value < 0)
         {
             throw new ArgumentException("Value can not be negative.", parameterName);
+        }
+
+        return value;
+    }
+
+    private static int ValidateBanknoteTrackWarehouseNo(int value)
+    {
+        if (value <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", "WarehouseNo");
         }
 
         return value;

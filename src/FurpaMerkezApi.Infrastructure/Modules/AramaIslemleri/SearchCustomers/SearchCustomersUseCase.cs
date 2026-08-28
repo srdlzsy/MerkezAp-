@@ -22,6 +22,8 @@ public sealed class SearchCustomersUseCase(MikroDbContext mikroDbContext) : ISea
 
         var take = NormalizeTake(request.Take);
         var like = $"%{searchText}%";
+        var prefixLike = $"{searchText}%";
+        var suffixLike = $"%{searchText}";
 
         var customers = await (
             from customer in mikroDbContext.CARI_HESAPLARs.AsNoTracking()
@@ -42,7 +44,15 @@ public sealed class SearchCustomersUseCase(MikroDbContext mikroDbContext) : ISea
             join representative in mikroDbContext.CARI_PERSONEL_TANIMLARIs.AsNoTracking()
                 on customer.cari_temsilci_kodu equals representative.cari_per_kod into representativeGroup
             from representative in representativeGroup.DefaultIfEmpty()
-            orderby customer.cari_kod
+            orderby
+                customer.cari_kod == searchText ? 0 :
+                customer.cari_kod != null && EF.Functions.Like(customer.cari_kod, prefixLike) ? 1 :
+                customer.cari_kod != null && EF.Functions.Like(customer.cari_kod, suffixLike) ? 2 :
+                customer.cari_kod != null && EF.Functions.Like(customer.cari_kod, like) ? 3 :
+                customer.cari_VergiKimlikNo != null && EF.Functions.Like(customer.cari_VergiKimlikNo, like) ? 4 :
+                customer.cari_vdaire_no != null && EF.Functions.Like(customer.cari_vdaire_no, like) ? 5 :
+                6,
+                customer.cari_kod
             select new
             {
                 customer.cari_kod,

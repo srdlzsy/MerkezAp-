@@ -274,6 +274,23 @@ public static class MikroDocumentFieldCatalog
                     Field("lines[].special3", "Ozel kod 3", "sym_special3", "string", "En fazla 4 karakter.")
                 ]),
             Section(
+                "banknote-track",
+                "Banknot Takibi",
+                "PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}",
+                "BanknoteTrackPatchHttpRequest",
+                "BanknoteTracks",
+                [
+                    Field("banknoteTrackId", "Banknot takip GUID", "Id", "guid", "Path/lookup anahtaridir; patch edilmez.", editable: false),
+                    Field("banknoteTrackDate", "Takip tarihi", "BanknoteTrackDate", "date"),
+                    Field("warehouseNo", "Depo", "WarehouseNo", "int"),
+                    Field("totalAmount", "Sayim toplami", "TotalAmount", "double"),
+                    Field("deliveryTotalAmount", "Teslim toplami", "DeliveryTotalAmount", "double"),
+                    Field("differenceAmount", "Fark", "-", "double", "Response alanidir; deliveryTotalAmount - totalAmount olarak hesaplanir.", editable: false),
+                    Field("deliverer", "Teslim eden", "Deliverer", "string"),
+                    Field("receiver", "Teslim alan", "Receiver", "string"),
+                    Field("createDate", "Olusturma tarihi", "CreateDate", "date", "Response alanidir; patch edilmez.", editable: false)
+                ]),
+            Section(
                 "customer-movement-line",
                 "Cari Hareket Evraki Satir",
                 "PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri",

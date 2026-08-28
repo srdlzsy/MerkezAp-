@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.BanknotTakipleri;
 using Microsoft.AspNetCore.Authorization;
 using Xunit;
@@ -21,5 +22,13 @@ public sealed class BanknotTakipleriPermissionTests
             .Single();
 
         Assert.Equal(expectedPolicy, authorizeAttribute.Policy);
+    }
+
+    [Theory]
+    [InlineData("kasa-islemleri.banknot-takipleri.update")]
+    [InlineData("kasa-islemleri.banknot-takipleri.delete")]
+    public void PermissionCatalog_IncludesMutationPermissions(string permissionCode)
+    {
+        Assert.Contains(PermissionCatalog.Codes, code => code == permissionCode);
     }
 }

@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
+
 namespace FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 
 public interface IMikroDocumentEditingService
@@ -120,5 +122,17 @@ public interface IMikroDocumentEditingService
 
     Task<MikroDocumentDeleteResponse> DeleteWarehouseOrderDocumentAsync(
         DeleteWarehouseOrderDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BanknoteTrackDto> GetBanknoteTrackAsync(
+        BanknoteTrackEditingLookupRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BanknoteTrackUpdateResponse> UpdateBanknoteTrackAsync(
+        UpdateBanknoteTrackDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<MikroDocumentDeleteResponse> DeleteBanknoteTrackAsync(
+        DeleteBanknoteTrackDocumentRequest request,
         CancellationToken cancellationToken);
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Extensions;
@@ -452,6 +453,68 @@ public sealed class MikroEvrakDuzenlemeController(
         CancellationToken cancellationToken) =>
         Ok(await service.UpdateInventoryCountDocumentAsync(
             request.ToApplicationRequest(User.GetRequiredWarehouseNo()),
+            cancellationToken));
+
+    [HttpGet("banknot-takipleri/{banknoteTrackId:guid}")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(BanknoteTrackDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BanknoteTrackDto>> GetBanknoteTrack(
+        Guid banknoteTrackId,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetBanknoteTrackAsync(
+            new BanknoteTrackEditingLookupRequest(
+                banknoteTrackId,
+                User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy)),
+            cancellationToken));
+
+    [HttpPut("banknot-takipleri/{banknoteTrackId:guid}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(BanknoteTrackUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BanknoteTrackUpdateResponse>> UpdateBanknoteTrack(
+        Guid banknoteTrackId,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        [FromBody] BanknoteTrackPatchHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var lookupWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, UpdatePolicy);
+        var patch = request.ToApplicationRequest();
+        if (request.WarehouseNo.HasValue)
+        {
+            patch = patch with
+            {
+                WarehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, UpdatePolicy)
+            };
+        }
+
+        return Ok(await service.UpdateBanknoteTrackAsync(
+            new UpdateBanknoteTrackDocumentRequest(
+                new BanknoteTrackEditingLookupRequest(banknoteTrackId, lookupWarehouseNo),
+                patch,
+                User.GetRequiredWarehouseNo()),
+            cancellationToken));
+    }
+
+    [HttpDelete("banknot-takipleri/{banknoteTrackId:guid}")]
+    [Authorize(Policy = DeletePolicy)]
+    [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MikroDocumentDeleteResponse>> DeleteBanknoteTrack(
+        Guid banknoteTrackId,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken) =>
+        Ok(await service.DeleteBanknoteTrackAsync(
+            new DeleteBanknoteTrackDocumentRequest(
+                new BanknoteTrackEditingLookupRequest(
+                    banknoteTrackId,
+                    User.ResolveWarehouseNoForPolicy(warehouseNo, DeletePolicy)),
+                User.GetRequiredWarehouseNo()),
             cancellationToken));
 
     [HttpGet("cari-hareketleri")]
@@ -1807,6 +1870,35 @@ public sealed class InventoryCountLinePatchHttpRequest
             Special1,
             Special2,
             Special3);
+}
+
+public sealed class BanknoteTrackPatchHttpRequest
+{
+    public DateTime? BanknoteTrackDate { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(0d, double.MaxValue)]
+    public double? TotalAmount { get; init; }
+
+    [Range(0d, double.MaxValue)]
+    public double? DeliveryTotalAmount { get; init; }
+
+    [StringLength(100)]
+    public string? Deliverer { get; init; }
+
+    [StringLength(100)]
+    public string? Receiver { get; init; }
+
+    public BanknoteTrackPatchDto ToApplicationRequest() =>
+        new(
+            BanknoteTrackDate,
+            WarehouseNo,
+            TotalAmount,
+            DeliveryTotalAmount,
+            Deliverer,
+            Receiver);
 }
 
 public sealed class CustomerMovementDocumentLookupHttpRequest

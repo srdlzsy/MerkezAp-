@@ -70,6 +70,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.List;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.SupplierProducts;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.List;
@@ -168,6 +169,7 @@ using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.List;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.SupplierProducts;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Detail;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.List;
@@ -562,6 +564,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IListIssuedCompanyOrdersUseCase, ListIssuedCompanyOrdersUseCase>();
         services.AddScoped<IGetIssuedCompanyOrderDetailUseCase, GetIssuedCompanyOrderDetailUseCase>();
         services.AddScoped<ICreateIssuedCompanyOrderUseCase, CreateIssuedCompanyOrderUseCase>();
+        services.AddScoped<IListIssuedCompanyOrderSupplierProductsUseCase, ListIssuedCompanyOrderSupplierProductsUseCase>();
         services.AddScoped<IListIssuedWarehouseOrdersUseCase, ListIssuedWarehouseOrdersUseCase>();
         services.AddScoped<IGetIssuedWarehouseOrderDetailUseCase, GetIssuedWarehouseOrderDetailUseCase>();
         services.AddScoped<ICreateIssuedWarehouseOrderUseCase, CreateIssuedWarehouseOrderUseCase>();

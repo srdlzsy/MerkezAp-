@@ -5,6 +5,7 @@ using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.List;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.SupplierProducts;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,8 @@ public sealed class VerilenFirmaSiparisleriController(
     IListIssuedCompanyOrdersUseCase listIssuedCompanyOrdersUseCase,
     IGetIssuedCompanyOrderDetailUseCase getIssuedCompanyOrderDetailUseCase,
     IDocumentFlowService documentFlowService,
-    ICreateIssuedCompanyOrderUseCase createIssuedCompanyOrderUseCase)
+    ICreateIssuedCompanyOrderUseCase createIssuedCompanyOrderUseCase,
+    IListIssuedCompanyOrderSupplierProductsUseCase listSupplierProductsUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "siparis-islemleri";
@@ -84,6 +86,25 @@ public sealed class VerilenFirmaSiparisleriController(
         Ok(await getIssuedCompanyOrderDetailUseCase.ExecuteAsync(
             CompanyOrderDocumentKey.Parse(documentKey),
             cancellationToken));
+
+    [HttpGet("firma-urunleri")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<IssuedCompanyOrderSupplierProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<IssuedCompanyOrderSupplierProductDto>>> SupplierProducts(
+        [FromQuery] IssuedCompanyOrderSupplierProductsHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, CreatePolicy);
+
+        return Ok(await listSupplierProductsUseCase.ExecuteAsync(
+            new IssuedCompanyOrderSupplierProductsRequest(
+                warehouseNo,
+                request.CustomerCode,
+                request.Search,
+                request.Take),
+            cancellationToken));
+    }
 
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]
@@ -196,6 +217,22 @@ public sealed class CreateIssuedCompanyOrderHttpRequest
     [MinLength(1)]
     public IReadOnlyCollection<CreateIssuedCompanyOrderLineHttpRequest> Lines { get; init; } =
         Array.Empty<CreateIssuedCompanyOrderLineHttpRequest>();
+}
+
+public sealed class IssuedCompanyOrderSupplierProductsHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    [StringLength(25)]
+    public string CustomerCode { get; init; } = string.Empty;
+
+    [StringLength(100)]
+    public string? Search { get; init; }
+
+    [Range(1, 2000)]
+    public int Take { get; init; } = 500;
 }
 
 public sealed class CreateIssuedCompanyOrderLineHttpRequest

@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
+
 namespace FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 
 public sealed record MikroDocumentFieldCatalogDto(
@@ -1059,6 +1061,27 @@ public sealed record DeleteWarehouseOrderDocumentRequest(
     int CurrentUserWarehouseNo,
     bool HardDelete = false);
 
+public sealed record BanknoteTrackEditingLookupRequest(
+    Guid BanknoteTrackId,
+    int WarehouseNo);
+
+public sealed record BanknoteTrackPatchDto(
+    DateTime? BanknoteTrackDate,
+    int? WarehouseNo,
+    double? TotalAmount,
+    double? DeliveryTotalAmount,
+    string? Deliverer,
+    string? Receiver);
+
+public sealed record UpdateBanknoteTrackDocumentRequest(
+    BanknoteTrackEditingLookupRequest Lookup,
+    BanknoteTrackPatchDto Patch,
+    int CurrentUserWarehouseNo);
+
+public sealed record DeleteBanknoteTrackDocumentRequest(
+    BanknoteTrackEditingLookupRequest Lookup,
+    int CurrentUserWarehouseNo);
+
 public sealed record MikroDocumentUpdateSummary(
     string Target,
     int UpdatedRowCount,
@@ -1107,3 +1130,7 @@ public sealed record CompanyOrderDocumentUpdateResponse(
 public sealed record WarehouseOrderDocumentUpdateResponse(
     MikroDocumentUpdateSummary Summary,
     WarehouseOrderDocumentDto Document);
+
+public sealed record BanknoteTrackUpdateResponse(
+    MikroDocumentUpdateSummary Summary,
+    BanknoteTrackDto BanknoteTrack);
