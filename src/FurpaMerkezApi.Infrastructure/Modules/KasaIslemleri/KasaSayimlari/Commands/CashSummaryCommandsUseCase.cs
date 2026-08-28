@@ -255,7 +255,7 @@ public sealed class CashSummaryCommandsUseCase(
                     {
                         Id = Guid.NewGuid(),
                         CreateUser = MikroUserNo,
-                        CreateDate = now,
+                        CreateDate = summaryHeader.SummaryDate.Date,
                         UpdateUser = MikroUserNo,
                         UpdateDate = now,
                         DocumentSerie = request.DocumentSerie,
@@ -877,7 +877,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             Id = Guid.NewGuid(),
             CreateUser = MikroUserNo,
-            CreateDate = now,
+            CreateDate = request.SummaryDate.Date,
             UpdateUser = MikroUserNo,
             UpdateDate = now,
             DocumentSerie = documentSerie,

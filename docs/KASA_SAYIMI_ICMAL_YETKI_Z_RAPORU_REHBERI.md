@@ -229,6 +229,7 @@ Not:
 - Bu kural odeme/masraf detaylari, banknot hareketleri ve hediye ceki hareketleri icin aynidir.
 - Belge bazinda update create'e donmez. `{documentSerie}/{documentOrderNo}` DB'de yoksa yeni belge acilmaz; yeni belge icin Icmal Kaydi Girisi `POST` akisi kullanilir.
 - Belge `Summaries` tarafinda varsa ama `CARI_HESAP_HAREKETLERI` satirlari eksikse update canli/eski uyumlu `X + aciklama` formatinda alt CARI hareketlerini yeniden olusturur.
+- Banknot hareketleri update edilirken `BanknoteMovements` satirlari yeniden yazilir, fakat `CreateDate` mevcut belgenin `Summaries.SummaryDate` gununde tutulur; teknik duzenleme zamani `UpdateDate` alanindadir. Boylece gecmis tarihli icmal duzeltmesi gunluk banknot toplamlarini bugune tasimaz.
 
 Ekrandaki bloklarin update karsiligi:
 

@@ -13367,7 +13367,8 @@ Yetki:
 Not:
 
 - Banknot teslim formunda `totalAmount` alanini backendden doldurmak icindir
-- toplam, eski `GetTotalAmountForBanknoteTrack` davranisina uygun olarak `BanknoteMovements.CreateDate` gunu ve depo filtresiyle `Total` toplamidir
+- toplam, kasa sayimi/icmal belge tarihine gore hesaplanir: backend once `Summaries.SummaryDate` gunu ve depo filtresiyle icmal evraklarini bulur, sonra ayni `DocumentSerie + DocumentOrderNo + BranchNo` evraklarinin `BanknoteMovements.Total` toplamlarini toplar
+- `BanknoteMovements.CreateDate` hesap tarihi olarak kullanilmaz; gecmis tarihli icmalin banknotlari sonradan duzenlense bile toplam ilgili `SummaryDate` gununde kalir
 - `kasa-islemleri.banknot-takipleri.all-warehouses` yoksa `warehouseNo` gonderilmez; backend JWT deposunu kullanir
 - all-warehouses yetkisi varsa baska depo icin `warehouseNo` gonderilebilir
 
@@ -13660,6 +13661,7 @@ Onemli not:
 - CARI tarafinda odeme tipleri, nakit toplam, `300 = total - zTotalValue fark` ve `400 = Z Rapor Toplami` satirlari ayri hareketler olarak yazilir
 - nakit toplam `paymentTypes` icinde manuel gonderilmez; backend banknot hareketlerinden `PaymentTypeID = 500`, `description = "Nakit Toplam"` satirini garanti eder
 - UI yanlislikla `paymentTypes` icinde `Nakit` veya `paymentTypeNo = 500` gonderirse backend bunu ayri odeme satiri olarak yazmaz, 500 satirini banknot toplamindan uretir
+- `BanknoteMovements.CreateDate` eski sistem uyumu icin `summaryDate` gunu olarak yazilir; `UpdateDate` teknik olusturma/guncelleme anini tasir
 
 Request:
 
@@ -13746,6 +13748,7 @@ Not:
 - nakit/500 satiri UI tarafindan normal detay gibi yonetilmez; backend mevcut banknot/nakit toplamindan 500 satirini yeniden uretir
 - banknot update de patch degildir; `banknoteMovements` son durumda kalacak tum banknotlari icermelidir
 - banknot update request'inde `banknoteMovements` bos gonderilirse mevcut banknot satirlari temizlenebilir
+- banknot update eski satirlari silip yeniden yazar, ancak yeni `BanknoteMovements.CreateDate` mevcut icmal belgesinin `Summaries.SummaryDate` gununde kalir; boylece gecmis tarihli icmal duzeltmesi baska ekranlarda bugunun banknot toplamına kaymaz
 - banknot update sonrasi backend `PaymentTypeID = 500` nakit toplam satirini ve ilgili cari hareket toplamlarini yeni belge toplamiyla gunceller
 - hediye ceki update de patch degildir; `giftCheckMovements` son durumda kalacak tum hediye ceki satirlarini icermelidir
 - hediye ceki update request'inde `giftCheckMovements` bos gonderilirse mevcut hediye ceki satirlari temizlenebilir

@@ -96,9 +96,16 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
             SELECT
                 COALESCE(SUM(bm.Total), 0) AS TotalAmount
             FROM BanknoteMovements bm
-            WHERE bm.CreateDate >= @date
-              AND bm.CreateDate < @nextDate
-              AND bm.BranchNo = @warehouseNo;
+            WHERE bm.BranchNo = @warehouseNo
+              AND EXISTS (
+                  SELECT 1
+                  FROM Summaries s
+                  WHERE s.BranchNo = bm.BranchNo
+                    AND s.DocumentSerie = bm.DocumentSerie
+                    AND s.DocumentOrderNo = bm.DocumentOrderNo
+                    AND s.SummaryDate >= @date
+                    AND s.SummaryDate < @nextDate
+              );
             """;
 
         var totals = await ExecuteReaderAsync(
