@@ -14807,6 +14807,7 @@ Response:
 - Son sayfa tamamen bos kuyruk sayfaysa bu sayfa atilir.
 - PDF 2-3 sayfaliysa ve son sayfa cok az icerik tasiyan kuyruk sayfa gibi gorunuyorsa tek sayfaya kompakt yerlestirme denenir.
 - Kompakt yerlestirme okunabilirligi fazla dusurecekse orijinal PDF doner; 2 veya 3 sayfayi gercekten hak eden belgeler zorla tek sayfaya sikistirilmaz.
+- Okunabilirlik siniri hem ilk sayfa hem kuyruk parca icin yaklasik `%88` olcek altidir. Tek sayfaya sigdirmak icin bu sinirin altina inmek gerekiyorsa backend kagit tasarrufu yerine orijinal cok sayfali PDF'i tercih eder.
 
 UI uygulama kurali:
 

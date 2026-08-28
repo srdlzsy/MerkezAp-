@@ -23,16 +23,14 @@ public sealed class InvoicePdfPrintOptimizerTests
     }
 
     [Fact]
-    public void OptimizeForPrinting_ReturnsSinglePagePdf_WhenTailPageHasOnlyFooterRows()
+    public void OptimizeForPrinting_KeepsTwoPages_WhenTailPageCompactionWouldReduceReadability()
     {
         var optimizer = new InvoicePdfPrintOptimizer();
         var source = CreatePdf(firstPageLineCount: 48, tailPageLineCount: 3);
 
         var result = optimizer.OptimizeForPrinting(source);
 
-        Assert.True(
-            CountPages(result) == 1,
-            BuildPdfTextDiagnostic(source, result));
+        Assert.Equal(2, CountPages(result));
     }
 
     [Fact]

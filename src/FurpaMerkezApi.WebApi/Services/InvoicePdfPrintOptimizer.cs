@@ -13,7 +13,8 @@ public sealed class InvoicePdfPrintOptimizer : IInvoicePdfPrintOptimizer
     private const double MaxLastPageHeightRatio = 0.24d;
     private const double PageMargin = 18d;
     private const double GapBetweenPages = 8d;
-    private const double FirstPageMinScale = 0.80d;
+    private const double FirstPageMinScale = 0.88d;
+    private const double TailPageMinScale = 0.88d;
     private const double TailPageCropPadding = 24d;
 
     public byte[] OptimizeForPrinting(byte[] pdfBytes)
@@ -69,10 +70,14 @@ public sealed class InvoicePdfPrintOptimizer : IInvoicePdfPrintOptimizer
             var tailSlotHeights = tailPageContents
                 .Select(content => content.CropHeight * (contentWidth / content.PageWidth))
                 .ToArray();
+            var tailScales = tailPageContents
+                .Select(content => contentWidth / content.PageWidth)
+                .ToArray();
             var firstSlotHeight = contentHeight - tailSlotHeights.Sum() - (tailSlotHeights.Length * GapBetweenPages);
             var firstScale = Math.Min(contentWidth / input.Pages[0].Width.Point, firstSlotHeight / input.Pages[0].Height.Point);
 
-            if (firstScale < FirstPageMinScale)
+            if (firstScale < FirstPageMinScale ||
+                tailScales.Any(scale => scale < TailPageMinScale))
             {
                 return pdfBytes;
             }
