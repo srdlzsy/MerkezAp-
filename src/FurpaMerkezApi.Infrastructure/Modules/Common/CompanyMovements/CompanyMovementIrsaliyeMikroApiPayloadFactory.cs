@@ -7,13 +7,13 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
 {
     private const byte CompanyDispatchDocumentType = 1;
     private const byte OutgoingMovementType = 1;
-    private const byte MovementGenre = 0;
 
     internal static CompanyMovementIrsaliyeMikroApiPayload Create(
         CreateCompanyMovementRequest request,
         IReadOnlyCollection<CreateCompanyMovementLineRequest> lines,
         string customerCode,
         int customerAddressNo,
+        byte movementGenre,
         byte returnType,
         DateTime movementDate,
         DateTime documentDate,
@@ -21,17 +21,19 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
         string documentSerie,
         int documentOrderNo,
         string description,
-        string offlineTraceKey = "")
+        string offlineTraceKey = "",
+        IReadOnlyDictionary<string, CompanyMovementLineTaxInfo>? lineTaxInfos = null)
     {
         var satirlar = lines
             .Select((line, rowNo) =>
             {
                 var amount = line.Quantity * line.UnitPrice;
+                var taxInfo = ResolveLineTaxInfo(line, lineTaxInfos);
 
                 return new CompanyMovementIrsaliyeMikroApiLine(
                     FormatDate(movementDate),
                     OutgoingMovementType,
-                    MovementGenre,
+                    movementGenre,
                     returnType,
                     CompanyDispatchDocumentType,
                     NormalizeText(documentSerie, 20),
@@ -46,14 +48,14 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
                     0d,
                     line.UnitPointer,
                     amount,
-                    0,
-                    0d,
+                    taxInfo.TaxPointer,
+                    CompanyMovementWriteService.CalculateTaxAmount(amount, taxInfo.TaxRatePercent),
                     false,
                     0d,
                     0d,
                     0,
                     1,
-                    0,
+                    ResolveIncomingWarehouseNo(returnType),
                     request.WarehouseNo,
                     FormatDate(movementDate),
                     NormalizeText(line.Description ?? description, 50),
@@ -98,6 +100,24 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
 
     private static string NormalizeGuid(Guid? value) =>
         value.HasValue && value.Value != Guid.Empty ? value.Value.ToString() : string.Empty;
+
+    private static CompanyMovementLineTaxInfo ResolveLineTaxInfo(
+        CreateCompanyMovementLineRequest line,
+        IReadOnlyDictionary<string, CompanyMovementLineTaxInfo>? lineTaxInfos)
+    {
+        if (lineTaxInfos is null)
+        {
+            return CompanyMovementLineTaxInfo.Empty;
+        }
+
+        var stockCode = line.StockCode.Trim();
+        return lineTaxInfos.TryGetValue(stockCode, out var taxInfo)
+            ? taxInfo
+            : CompanyMovementLineTaxInfo.Empty;
+    }
+
+    private static int ResolveIncomingWarehouseNo(byte returnType) =>
+        returnType == 1 ? 1 : 0;
 
     private static string NormalizeText(string? value, int maxLength)
     {

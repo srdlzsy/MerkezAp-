@@ -38,10 +38,21 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
         Assert.Equal("Teslim Alan", line.sth_HareketGrupKodu3);
     }
 
+    [Fact]
+    public void Create_MapsMovementGenre()
+    {
+        var payload = CreatePayload(null, movementGenre: 1);
+
+        var line = payload.evraklar.Single().satirlar.Single();
+
+        Assert.Equal(1, line.sth_cins);
+    }
+
     private static CompanyMovementIrsaliyeMikroApiPayload CreatePayload(
         Guid? orderLineGuid,
         string? deliverer = null,
-        string? receiver = null)
+        string? receiver = null,
+        byte movementGenre = 0)
     {
         var request = new CreateCompanyMovementRequest(
             50,
@@ -66,6 +77,7 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
             request.Lines,
             "32000001",
             1,
+            movementGenre,
             0,
             new DateTime(2026, 8, 5),
             new DateTime(2026, 8, 5),

@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
@@ -24,7 +25,8 @@ public sealed class CompanyMovementWriteService(
     private const short MikroUserNo = 39;
     private const byte CompanyDispatchDocumentType = 1;
     private const byte OutgoingMovementType = 1;
-    private const byte MovementGenre = 0;
+    private const byte WholesaleMovementGenre = 0;
+    private const byte RetailMovementGenre = 1;
     private const byte NormalMovement = 0;
     private const byte ReturnMovement = 1;
     private const int FirstDocumentOrderNo = 0;
@@ -81,6 +83,7 @@ public sealed class CompanyMovementWriteService(
         var documentNo = NormalizeText(request.DocumentNo);
         var lines = request.Lines.ToArray();
         var returnType = ResolveReturnType(kind);
+        var movementGenre = ResolveMovementGenre(kind);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var totalStopwatch = Stopwatch.StartNew();
         var phaseStartedAt = Stopwatch.GetTimestamp();
@@ -111,6 +114,8 @@ public sealed class CompanyMovementWriteService(
         return await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
+            var lineTaxInfos = await LoadLineTaxInfosAsync(lines, kind, cancellationToken);
+            LogCreatePhase("line-tax-info-lookup", lines.Length);
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
@@ -129,6 +134,7 @@ public sealed class CompanyMovementWriteService(
                         line,
                         customerCode,
                         customerAddressNo,
+                        movementGenre,
                         returnType,
                         rowNo,
                         now,
@@ -137,7 +143,8 @@ public sealed class CompanyMovementWriteService(
                         documentNo,
                         documentSerie,
                         documentOrderNo,
-                        offlineTraceKey))
+                        offlineTraceKey,
+                        lineTaxInfos))
                     .ToArray();
                 LogCreatePhase("build-movement-rows", movements.Length);
 
@@ -183,15 +190,18 @@ public sealed class CompanyMovementWriteService(
         var description = NormalizeText(request.Description);
         var lines = request.Lines.ToArray();
         var returnType = ResolveReturnType(kind);
+        var movementGenre = ResolveMovementGenre(kind);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var customer = await GetCustomerAsync(customerCode, cancellationToken);
         var customerAddressNo = ResolveCustomerAddressNo(customer);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);
+        var lineTaxInfos = await LoadLineTaxInfosAsync(lines, kind, cancellationToken);
         var payload = CompanyMovementIrsaliyeMikroApiPayloadFactory.Create(
             request,
             lines,
             customerCode,
             customerAddressNo,
+            movementGenre,
             returnType,
             movementDate,
             documentDate,
@@ -199,7 +209,8 @@ public sealed class CompanyMovementWriteService(
             documentSerie,
             documentOrderNo,
             description,
-            offlineTraceKey);
+            offlineTraceKey,
+            lineTaxInfos);
 
         logger.LogInformation(
             "Company movement create is routed to Mikro API {Path}. Kind={Kind}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, ReturnType={ReturnType}, LineCount={LineCount}",
@@ -234,6 +245,7 @@ public sealed class CompanyMovementWriteService(
             documentDate,
             documentNo,
             options.ConnectionStringName,
+            movementGenre,
             result.RawResponse,
             cancellationToken);
 
@@ -266,6 +278,7 @@ public sealed class CompanyMovementWriteService(
         DateTime documentDate,
         string documentNo,
         string writeConnectionName,
+        byte movementGenre,
         string rawResponse,
         CancellationToken cancellationToken)
     {
@@ -281,6 +294,7 @@ public sealed class CompanyMovementWriteService(
                 documentDate,
                 documentNo,
                 writeConnectionName,
+                movementGenre,
                 cancellationToken);
 
             if (response is not null)
@@ -363,6 +377,7 @@ public sealed class CompanyMovementWriteService(
         DateTime documentDate,
         string documentNo,
         string writeConnectionName,
+        byte movementGenre,
         CancellationToken cancellationToken)
     {
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
@@ -370,7 +385,7 @@ public sealed class CompanyMovementWriteService(
             .Where(movement =>
                 movement.sth_evraktip == CompanyDispatchDocumentType &&
                 movement.sth_tip == OutgoingMovementType &&
-                movement.sth_cins == MovementGenre &&
+                movement.sth_cins == movementGenre &&
                 movement.sth_normal_iade == returnType &&
                 movement.sth_evrakno_seri == documentSerie &&
                 movement.sth_evrakno_sira == documentOrderNo &&
@@ -440,12 +455,13 @@ public sealed class CompanyMovementWriteService(
 
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
         var returnType = ResolveReturnType(kind);
+        var movementGenre = ResolveMovementGenre(kind);
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
                 movement.sth_evraktip == CompanyDispatchDocumentType &&
                 movement.sth_tip == OutgoingMovementType &&
-                movement.sth_cins == MovementGenre &&
+                movement.sth_cins == movementGenre &&
                 movement.sth_normal_iade == returnType &&
                 movement.sth_cikis_depo_no == request.WarehouseNo &&
                 movement.sth_eticaret_kanal_kodu == traceKey)
@@ -535,11 +551,89 @@ public sealed class CompanyMovementWriteService(
         return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
+    private async Task<IReadOnlyDictionary<string, CompanyMovementLineTaxInfo>> LoadLineTaxInfosAsync(
+        IReadOnlyCollection<CreateCompanyMovementLineRequest> lines,
+        CompanyMovementKind kind,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = lines
+            .Select(line => line.StockCode.Trim())
+            .Where(stockCode => stockCode.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (stockCodes.Length == 0)
+        {
+            return new Dictionary<string, CompanyMovementLineTaxInfo>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var stockTaxPointers = await mikroWriteDbContext.STOKLARs
+            .AsNoTracking()
+            .Where(stock => stock.sto_kod != null && stockCodes.Contains(stock.sto_kod))
+            .Select(stock => new
+            {
+                StockCode = stock.sto_kod ?? string.Empty,
+                TaxPointer = kind == CompanyMovementKind.OutgoingShipment
+                    ? stock.sto_perakende_vergi ?? 0
+                    : stock.sto_toptan_vergi ?? 0
+            })
+            .ToListAsync(cancellationToken);
+
+        var taxRates = await LoadTaxRatesAsync(cancellationToken);
+        return stockTaxPointers.ToDictionary(
+            row => row.StockCode,
+            row => new CompanyMovementLineTaxInfo(
+                row.TaxPointer,
+                taxRates.TryGetValue(row.TaxPointer, out var taxRatePercent) ? taxRatePercent : 0m),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<IReadOnlyDictionary<int, decimal>> LoadTaxRatesAsync(CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<int, decimal>();
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT DepartmentNo, Rate
+                FROM dbo.fn_hs_vergi_oran_listesi();
+                """;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 300;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var departmentNo = Convert.ToInt32(reader["DepartmentNo"]);
+                var rate = Convert.ToDecimal(reader["Rate"]);
+                result[departmentNo] = rate;
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        return result;
+    }
+
     private static STOK_HAREKETLERI CreateMovement(
         CreateCompanyMovementRequest request,
         CreateCompanyMovementLineRequest line,
         string customerCode,
         int customerAddressNo,
+        byte movementGenre,
         byte returnType,
         int rowNo,
         DateTime now,
@@ -548,10 +642,12 @@ public sealed class CompanyMovementWriteService(
         string documentNo,
         string documentSerie,
         int documentOrderNo,
-        string offlineTraceKey)
+        string offlineTraceKey,
+        IReadOnlyDictionary<string, CompanyMovementLineTaxInfo> lineTaxInfos)
     {
         var unitPrice = line.UnitPrice;
         var amount = line.Quantity * unitPrice;
+        var taxInfo = ResolveLineTaxInfo(line, lineTaxInfos);
 
         return new STOK_HAREKETLERI
         {
@@ -575,7 +671,7 @@ public sealed class CompanyMovementWriteService(
             sth_subeno = 0,
             sth_tarih = movementDate,
             sth_tip = OutgoingMovementType,
-            sth_cins = MovementGenre,
+            sth_cins = movementGenre,
             sth_normal_iade = returnType,
             sth_evraktip = CompanyDispatchDocumentType,
             sth_evrakno_seri = documentSerie,
@@ -630,8 +726,8 @@ public sealed class CompanyMovementWriteService(
             sth_masraf2 = 0d,
             sth_masraf3 = 0d,
             sth_masraf4 = 0d,
-            sth_vergi_pntr = 0,
-            sth_vergi = 0d,
+            sth_vergi_pntr = taxInfo.TaxPointer,
+            sth_vergi = CalculateTaxAmount(amount, taxInfo.TaxRatePercent),
             sth_masraf_vergi_pntr = 0,
             sth_masraf_vergi = 0d,
             sth_netagirlik = 0d,
@@ -639,7 +735,7 @@ public sealed class CompanyMovementWriteService(
             sth_aciklama = NormalizeText(line.Description ?? request.Description),
             sth_sip_uid = line.OrderLineGuid ?? Guid.Empty,
             sth_fat_uid = Guid.Empty,
-            sth_giris_depo_no = 0,
+            sth_giris_depo_no = ResolveIncomingWarehouseNo(returnType),
             sth_cikis_depo_no = request.WarehouseNo,
             sth_malkbl_sevk_tarihi = movementDate,
             sth_cari_srm_merkezi = NormalizeText(line.CustomerResponsibilityCenter),
@@ -696,6 +792,26 @@ public sealed class CompanyMovementWriteService(
         };
     }
 
+    private static CompanyMovementLineTaxInfo ResolveLineTaxInfo(
+        CreateCompanyMovementLineRequest line,
+        IReadOnlyDictionary<string, CompanyMovementLineTaxInfo> lineTaxInfos)
+    {
+        var stockCode = line.StockCode.Trim();
+        return lineTaxInfos.TryGetValue(stockCode, out var taxInfo)
+            ? taxInfo
+            : CompanyMovementLineTaxInfo.Empty;
+    }
+
+    internal static double CalculateTaxAmount(double amount, decimal taxRatePercent)
+    {
+        if (amount <= 0d || taxRatePercent <= 0m)
+        {
+            return 0d;
+        }
+
+        return (double)Math.Round((decimal)amount * taxRatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+    }
+
     private static int ResolveCustomerAddressNo(CARI_HESAPLAR customer)
     {
         var addressNo = customer.cari_sevk_adres_no ?? customer.cari_fatura_adres_no ?? 1;
@@ -709,6 +825,17 @@ public sealed class CompanyMovementWriteService(
             CompanyMovementKind.PurchaseReturn => ReturnMovement,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported company movement kind for create.")
         };
+
+    private static byte ResolveMovementGenre(CompanyMovementKind kind) =>
+        kind switch
+        {
+            CompanyMovementKind.OutgoingShipment => RetailMovementGenre,
+            CompanyMovementKind.PurchaseReturn => WholesaleMovementGenre,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported company movement kind for create.")
+        };
+
+    private static int ResolveIncomingWarehouseNo(byte returnType) =>
+        returnType == ReturnMovement ? 1 : 0;
 
     private static string ResolveOfflineOperationCode(CompanyMovementKind kind) =>
         kind switch
@@ -776,4 +903,9 @@ public sealed class CompanyMovementWriteService(
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+}
+
+internal sealed record CompanyMovementLineTaxInfo(byte TaxPointer, decimal TaxRatePercent)
+{
+    public static readonly CompanyMovementLineTaxInfo Empty = new(0, 0m);
 }
