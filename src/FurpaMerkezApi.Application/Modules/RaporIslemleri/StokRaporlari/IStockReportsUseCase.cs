@@ -57,4 +57,9 @@ public interface IStockReportsUseCase
     Task<IReadOnlyCollection<CountingComparisonReportItemDto>> GetCountingComparisonAsync(
         CountingComparisonReportRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<ProductShipmentDistributionDto>> GetProductShipmentDistributionAsync(
+        ProductShipmentDistributionRequest request,
+        CancellationToken cancellationToken);
+
 }

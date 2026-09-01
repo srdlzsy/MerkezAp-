@@ -161,6 +161,21 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
                 request.Take),
             cancellationToken));
 
+    [HttpGet("urun-sevk-dagilimi")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProductShipmentDistributionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<ProductShipmentDistributionDto>>> ProductShipmentDistribution(
+        [FromQuery] ProductShipmentDistributionHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetProductShipmentDistributionAsync(
+            new ProductShipmentDistributionRequest(
+                request.ShipmentDate ?? DateTime.Today,
+                User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy),
+                request.StockCodeOrBarcode ?? string.Empty,
+                request.Take),
+            cancellationToken));
+
     [HttpGet("stok-kartlari")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<StockCardDetailDto>), StatusCodes.Status200OK)]
@@ -481,6 +496,21 @@ public sealed class ProductWarehouseStockByPathHttpRequest
     public DateTime? ReportDate { get; init; }
 
     public bool OnlyWithStock { get; init; } = true;
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 250;
+}
+
+public sealed class ProductShipmentDistributionHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public DateTime? ShipmentDate { get; init; }
+
+    [Required]
+    [StringLength(50)]
+    public string? StockCodeOrBarcode { get; init; }
 
     [Range(1, 1000)]
     public int Take { get; init; } = 250;

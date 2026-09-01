@@ -12024,6 +12024,7 @@ Endpoint ozeti:
 | `GET /api/rapor-islemleri/stok-raporlari/envanter-degeri` | query | `StockOnHandReportHttpRequest` | `StockOnHandReportDto` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/urun-depo-durum` | query | `ProductWarehouseStockHttpRequest` | `ProductWarehouseStockDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/urun/{stockCodeOrBarcode}/depo-durum` | path + query | `ProductWarehouseStockByPathHttpRequest` | `ProductWarehouseStockDto[]` | `list` |
+| `GET /api/rapor-islemleri/stok-raporlari/urun-sevk-dagilimi` | query | `ProductShipmentDistributionHttpRequest` | `ProductShipmentDistributionDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/stok-kartlari` | query | `StockCardDetailHttpRequest` | `StockCardDetailDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/urun-ara` | query | `StockCardDetailHttpRequest` | `StockCardDetailDto[]` | `list` |
 | `GET /api/rapor-islemleri/stok-raporlari/depoda-var-subede-yok` | query | `WarehouseMissingStockHttpRequest` | `WarehouseMissingStockDto[]` | `list` |
@@ -12049,7 +12050,7 @@ take          opsiyonel; max 1000
 
 Depo kapsami:
 
-- `son-stok`, `tedarikci-son-stok`, `kategori-son-stok`, `uretici-son-stok`, `envanter-degeri`, `depoda-var-subede-yok`, `depo-sifir-stok` ve `sayim-karsilastirma` tek depo raporudur.
+- `son-stok`, `tedarikci-son-stok`, `kategori-son-stok`, `uretici-son-stok`, `envanter-degeri`, `depoda-var-subede-yok`, `depo-sifir-stok`, `urun-sevk-dagilimi` ve `sayim-karsilastirma` tek kaynak/tek depo raporudur.
 - `urun-depo-durum`, `stok-kartlari`, `hareketler`, `giris-cikis-karsilastirma`, satis, iade, satmayan urun ve karlilik raporlarinda `rapor-islemleri.stok-raporlari.all-warehouses` yetkisi olan kullanici `warehouseNo` bos birakirsa tum depolar okunabilir.
 - `rapor-islemleri.stok-raporlari.all-warehouses` olmayan kullanicida backend token deposunu uygular; UI depo secimi gostermemelidir.
 - Ornek: Asistan rolune sadece stok raporlari icin tum sube erisimi verilecekse role `rapor-islemleri.stok-raporlari.list` ve `rapor-islemleri.stok-raporlari.all-warehouses` yetkileri atanir; `Admin` rolu verilmesi gerekmez.
@@ -12083,12 +12084,13 @@ UI akisi:
 4. `son-stok` response icindeki `totalQuantity`, `totalSalesValue`, `returnedCount` ust ozet kartlarinda; `items` gridde gosterilir.
 5. `envanter-degeri` ayni response modelini kullanan deger odakli kisayoldur; UI ayni endpoint ailesini kullanip toplam satis degerini one cikarabilir.
 6. `urun-depo-durum` tek urunun subeler/depolar bazinda miktar ve satis degerini gosterir; arama icin `stockCodeOrBarcode` zorunludur. Barkod okutma veya urun kartindan gecis icin `urun/{stockCodeOrBarcode}/depo-durum` path kisayolu da kullanilabilir.
-7. `urun-ara`, `stok-kartlari` ile ayni response'u donen kolay okunur arama alias'idir.
-8. `depoda-var-subede-yok` kaynak depoda mevcut, hedef subede olmayan urunleri listeler; kaynak depo UI tarafinda zorunlu secilmelidir.
-9. `depo-sifir-stok` secili depoda sistem miktari sifir olan urunleri listeler.
-10. `giris-cikis-karsilastirma`, `satislar/sube-detay`, `satislar/yil-karsilastirma`, `iadeler/subeler`, `satislar/satmayan-urunler` tarih araligi ile calisir.
-11. `karlilik` raporunda UI `scope` icin segmented control veya select kullanmali; sonuc `groupCode/groupName` bazli ozetlenir.
-12. `sayim-karsilastirma` sayim gunu, opsiyonel belge no ve paket kodu ile sistem miktari/sayim miktari farkini gosterir.
+7. `urun-sevk-dagilimi`, secili kaynak deponun secili tarihte bir urunu hedef depolara toplam kac miktar sevk ettigini gosterir. Manav deposu 56 icin "bugun kesilen kavun hangi subeye kac kilo gitti?" raporu bu endpoint ile karsilanir.
+8. `urun-ara`, `stok-kartlari` ile ayni response'u donen kolay okunur arama alias'idir.
+9. `depoda-var-subede-yok` kaynak depoda mevcut, hedef subede olmayan urunleri listeler; kaynak depo UI tarafinda zorunlu secilmelidir.
+10. `depo-sifir-stok` secili depoda sistem miktari sifir olan urunleri listeler.
+11. `giris-cikis-karsilastirma`, `satislar/sube-detay`, `satislar/yil-karsilastirma`, `iadeler/subeler`, `satislar/satmayan-urunler` tarih araligi ile calisir.
+12. `karlilik` raporunda UI `scope` icin segmented control veya select kullanmali; sonuc `groupCode/groupName` bazli ozetlenir.
+13. `sayim-karsilastirma` sayim gunu, opsiyonel belge no ve paket kodu ile sistem miktari/sayim miktari farkini gosterir.
 
 Ornekler:
 
@@ -12097,6 +12099,8 @@ Ornekler:
 `GET /api/rapor-islemleri/stok-raporlari/kategori-secenekleri?search=MEYVE&take=50`
 
 `GET /api/rapor-islemleri/stok-raporlari/urun/8690000000000/depo-durum?onlyWithStock=true`
+
+`GET /api/rapor-islemleri/stok-raporlari/urun-sevk-dagilimi?warehouseNo=56&shipmentDate=2026-08-28&stockCodeOrBarcode=023740`
 
 `GET /api/rapor-islemleri/stok-raporlari/karlilik?startDate=2026-07-01&endDate=2026-07-21&scope=producer&take=250`
 

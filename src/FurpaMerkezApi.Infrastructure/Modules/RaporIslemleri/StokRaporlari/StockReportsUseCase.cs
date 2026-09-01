@@ -1439,6 +1439,119 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         return rows.FirstOrDefault() ?? string.Empty;
     }
 
+    public async Task<IReadOnlyCollection<ProductShipmentDistributionDto>> GetProductShipmentDistributionAsync(
+        ProductShipmentDistributionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var shipmentDate = NormalizeReportDate(request.ShipmentDate);
+        var nextDate = shipmentDate.AddDays(1);
+        var stockCodeOrBarcode = NormalizeOrNull(request.StockCodeOrBarcode)
+            ?? throw new ArgumentException("Stock code or barcode is required.", nameof(request.StockCodeOrBarcode));
+        var take = NormalizeTake(request.Take);
+
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        const string sql = """
+            ;WITH ProductRows AS (
+                SELECT TOP (1)
+                    stock.sto_kod AS StockCode,
+                    COALESCE(stock.sto_isim, '') AS StockName,
+                    COALESCE(stock.sto_birim1_ad, '') AS UnitName
+                FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                WHERE COALESCE(stock.sto_iptal, 0) = 0
+                  AND (
+                        stock.sto_kod = @stockCodeOrBarcode
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                            WHERE barcode.bar_stokkodu = stock.sto_kod
+                              AND barcode.bar_kodu = @stockCodeOrBarcode
+                              AND COALESCE(barcode.bar_iptal, 0) = 0
+                        )
+                  )
+                ORDER BY
+                    CASE WHEN stock.sto_kod = @stockCodeOrBarcode THEN 0 ELSE 1 END,
+                    stock.sto_kod
+            ),
+            ShipmentRows AS (
+                SELECT
+                    movement.sth_cikis_depo_no AS SourceWarehouseNo,
+                    COALESCE(sourceWarehouse.dep_adi, '') AS SourceWarehouseName,
+                    COALESCE(
+                        CASE
+                            WHEN COALESCE(movement.sth_nakliyedurumu, 0) = 1 THEN movement.sth_giris_depo_no
+                            ELSE movement.sth_nakliyedeposu
+                        END,
+                        movement.sth_giris_depo_no,
+                        0
+                    ) AS TargetWarehouseNo,
+                    product.StockCode,
+                    product.StockName,
+                    product.UnitName,
+                    movement.sth_evrakno_seri AS DocumentSerie,
+                    movement.sth_evrakno_sira AS DocumentOrderNo,
+                    COALESCE(movement.sth_miktar, 0) AS Quantity,
+                    COALESCE(movement.sth_tutar, 0) AS Amount
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                INNER JOIN ProductRows AS product
+                    ON product.StockCode = movement.sth_stok_kod
+                LEFT JOIN dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK)
+                    ON sourceWarehouse.dep_no = movement.sth_cikis_depo_no
+                WHERE movement.sth_tarih >= @shipmentDate
+                  AND movement.sth_tarih < @nextDate
+                  AND movement.sth_cikis_depo_no = @warehouseNo
+                  AND movement.sth_tip = 2
+                  AND movement.sth_evraktip = 17
+                  AND COALESCE(movement.sth_normal_iade, 0) = 0
+                  AND COALESCE(movement.sth_iptal, 0) = 0
+            )
+            SELECT TOP (@take)
+                rows.SourceWarehouseNo,
+                rows.SourceWarehouseName,
+                rows.TargetWarehouseNo,
+                COALESCE(targetWarehouse.dep_adi, '') AS TargetWarehouseName,
+                rows.StockCode,
+                rows.StockName,
+                rows.UnitName,
+                SUM(rows.Quantity) AS TotalQuantity,
+                SUM(rows.Amount) AS TotalAmount,
+                COUNT(1) AS LineCount,
+                COUNT(DISTINCT CONCAT(COALESCE(rows.DocumentSerie, ''), '|', COALESCE(rows.DocumentOrderNo, 0))) AS DocumentCount
+            FROM ShipmentRows AS rows
+            LEFT JOIN dbo.DEPOLAR AS targetWarehouse WITH (NOLOCK)
+                ON targetWarehouse.dep_no = rows.TargetWarehouseNo
+            GROUP BY
+                rows.SourceWarehouseNo,
+                rows.SourceWarehouseName,
+                rows.TargetWarehouseNo,
+                COALESCE(targetWarehouse.dep_adi, ''),
+                rows.StockCode,
+                rows.StockName,
+                rows.UnitName
+            ORDER BY
+                SUM(rows.Quantity) DESC,
+                COALESCE(targetWarehouse.dep_adi, ''),
+                rows.TargetWarehouseNo
+            OPTION (RECOMPILE);
+            """;
+
+        return await ExecuteReaderAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@shipmentDate", shipmentDate, DbType.DateTime);
+                AddParameter(command, "@nextDate", nextDate, DbType.DateTime);
+                AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
+                AddParameter(command, "@stockCodeOrBarcode", stockCodeOrBarcode, DbType.String);
+                AddParameter(command, "@take", take, DbType.Int32);
+            },
+            reader => ReadProductShipmentDistribution(reader, shipmentDate),
+            cancellationToken);
+    }
+
     private async Task<IReadOnlyCollection<T>> ExecuteReaderAsync<T>(
         string sql,
         Action<DbCommand> configureCommand,
@@ -1709,6 +1822,23 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             ReadNullableInt(reader, "GoodsAcceptanceBlockCode"),
             ReadBool(reader, "IsPassive"));
     }
+
+    private static ProductShipmentDistributionDto ReadProductShipmentDistribution(
+        DbDataReader reader,
+        DateTime shipmentDate) =>
+        new(
+            ReadInt(reader, "SourceWarehouseNo"),
+            ReadString(reader, "SourceWarehouseName"),
+            ReadInt(reader, "TargetWarehouseNo"),
+            ReadString(reader, "TargetWarehouseName"),
+            shipmentDate,
+            ReadString(reader, "StockCode"),
+            ReadString(reader, "StockName"),
+            ReadString(reader, "UnitName"),
+            Round(ReadDouble(reader, "TotalQuantity")),
+            Round(ReadDouble(reader, "TotalAmount")),
+            ReadInt(reader, "LineCount"),
+            ReadInt(reader, "DocumentCount"));
 
     private static StockCardDetailDto ReadStockCardDetail(DbDataReader reader) =>
         new(

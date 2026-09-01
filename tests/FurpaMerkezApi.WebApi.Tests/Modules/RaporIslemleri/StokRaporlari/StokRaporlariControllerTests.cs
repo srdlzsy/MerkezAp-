@@ -86,6 +86,26 @@ public sealed class StokRaporlariControllerTests
         Assert.Equal("8690000000000", useCase.LastProductWarehouseStockRequest.StockCodeOrBarcode);
     }
 
+    [Fact]
+    public async Task ProductShipmentDistribution_UsesCurrentWarehouseForRegularUser()
+    {
+        var useCase = new CapturingStockReportsUseCase();
+        var controller = CreateController(useCase, warehouseNo: 56);
+
+        await controller.ProductShipmentDistribution(
+            new ProductShipmentDistributionHttpRequest
+            {
+                ShipmentDate = new DateTime(2026, 8, 28),
+                StockCodeOrBarcode = "023740"
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(useCase.LastProductShipmentDistributionRequest);
+        Assert.Equal(56, useCase.LastProductShipmentDistributionRequest.WarehouseNo);
+        Assert.Equal("023740", useCase.LastProductShipmentDistributionRequest.StockCodeOrBarcode);
+        Assert.Equal(new DateTime(2026, 8, 28), useCase.LastProductShipmentDistributionRequest.ShipmentDate);
+    }
+
     private static StokRaporlariController CreateController(
         IStockReportsUseCase useCase,
         int warehouseNo,
@@ -117,6 +137,7 @@ public sealed class StokRaporlariControllerTests
     {
         public StockOnHandReportRequest? LastStockOnHandRequest { get; private set; }
         public ProductWarehouseStockRequest? LastProductWarehouseStockRequest { get; private set; }
+        public ProductShipmentDistributionRequest? LastProductShipmentDistributionRequest { get; private set; }
 
         public Task<StockOnHandReportDto> GetStockOnHandAsync(
             StockOnHandReportRequest request,
@@ -140,6 +161,14 @@ public sealed class StokRaporlariControllerTests
         {
             LastProductWarehouseStockRequest = request;
             return Task.FromResult<IReadOnlyCollection<ProductWarehouseStockDto>>([]);
+        }
+
+        public Task<IReadOnlyCollection<ProductShipmentDistributionDto>> GetProductShipmentDistributionAsync(
+            ProductShipmentDistributionRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastProductShipmentDistributionRequest = request;
+            return Task.FromResult<IReadOnlyCollection<ProductShipmentDistributionDto>>([]);
         }
 
         public Task<IReadOnlyCollection<StockCardDetailDto>> GetStockCardDetailsAsync(

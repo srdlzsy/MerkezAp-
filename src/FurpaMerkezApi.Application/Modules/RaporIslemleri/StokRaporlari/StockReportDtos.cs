@@ -331,3 +331,23 @@ public sealed record CountingComparisonReportItemDto(
     double DifferenceQuantity,
     double SalesPrice,
     double DifferenceSalesValue);
+
+public sealed record ProductShipmentDistributionRequest(
+    DateTime ShipmentDate,
+    int WarehouseNo,
+    string StockCodeOrBarcode,
+    int Take);
+
+public sealed record ProductShipmentDistributionDto(
+    int SourceWarehouseNo,
+    string SourceWarehouseName,
+    int TargetWarehouseNo,
+    string TargetWarehouseName,
+    DateTime ShipmentDate,
+    string StockCode,
+    string StockName,
+    string UnitName,
+    double TotalQuantity,
+    double TotalAmount,
+    int LineCount,
+    int DocumentCount);
