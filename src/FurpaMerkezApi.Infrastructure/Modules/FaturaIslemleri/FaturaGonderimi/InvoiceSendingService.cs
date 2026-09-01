@@ -1457,14 +1457,22 @@ public sealed class InvoiceSendingService(
                 st.sto_birim1_ad AS UnitName
             FROM STOK_HAREKETLERI sh WITH (NOLOCK)
             INNER JOIN STOKLAR st WITH (NOLOCK) ON sh.sth_stok_kod = st.sto_kod
+            INNER JOIN (
+                SELECT DISTINCT cha_Guid
+                FROM CARI_HESAP_HAREKETLERI WITH (NOLOCK)
+                WHERE
+                    cha_evrakno_seri = @documentSerie
+                    AND cha_evrakno_sira = @documentOrderNo
+                    AND cha_tip = 0
+                    AND ISNULL(cha_iptal, 0) = 0
+            ) invoiceMovements ON invoiceMovements.cha_Guid = sh.sth_fat_uid
             OUTER APPLY (
                 SELECT TOP (1) rateList.Rate
                 FROM dbo.fn_hs_vergi_oran_listesi() rateList
                 WHERE rateList.DepartmentNo = ISNULL(sh.sth_vergi_pntr, 0)
             ) taxRate
             WHERE
-                sh.sth_fat_uid = @invoiceGuid
-                AND ISNULL(sh.sth_iptal, 0) = 0
+                ISNULL(sh.sth_iptal, 0) = 0
             GROUP BY
                 sh.sth_stok_kod,
                 st.sto_isim,
@@ -1480,7 +1488,8 @@ public sealed class InvoiceSendingService(
             sql,
             command =>
             {
-                AddParameter(command, "@invoiceGuid", invoice.InvoiceGuid);
+                AddParameter(command, "@documentSerie", invoice.DocumentSerie);
+                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo);
             },
             reader =>
             {
