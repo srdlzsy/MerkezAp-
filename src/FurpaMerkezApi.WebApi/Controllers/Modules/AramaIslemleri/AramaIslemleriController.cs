@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductAvailability;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
@@ -17,6 +18,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.AramaIslemleri;
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 public sealed class AramaIslemleriController(
     ISearchProductsUseCase searchProductsUseCase,
+    IGetProductAvailabilityUseCase getProductAvailabilityUseCase,
     ISearchCustomersUseCase searchCustomersUseCase,
     ISearchWarehousesUseCase searchWarehousesUseCase,
     ISearchSourceWarehousesUseCase searchSourceWarehousesUseCase,
@@ -26,6 +28,7 @@ public sealed class AramaIslemleriController(
 {
     private const string PriceLookupPolicy = "arama-islemleri.fiyat-gor.list";
     private const string BarcodeCustomerLookupPolicy = "arama-islemleri.cari-bul.list";
+    private const string ProductAvailabilityPolicy = "arama-islemleri.var-yok.list";
 
     [HttpGet("urunler")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProductLookupItemDto>), StatusCodes.Status200OK)]
@@ -90,6 +93,27 @@ public sealed class AramaIslemleriController(
                 null,
                 null,
                 null,
+                request.Take),
+            cancellationToken));
+    }
+
+    [HttpGet("var-yok")]
+    [Authorize(Policy = ProductAvailabilityPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProductAvailabilityItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyCollection<ProductAvailabilityItemDto>>> GetProductAvailability(
+        [FromQuery] ProductAvailabilityHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, ProductAvailabilityPolicy);
+
+        return Ok(await getProductAvailabilityUseCase.ExecuteAsync(
+            new ProductAvailabilityRequest(
+                warehouseNo,
+                request.Barcode,
+                request.StockCode,
+                request.StockName,
                 request.Take),
             cancellationToken));
     }
@@ -357,6 +381,21 @@ public sealed class ProductBarcodePriceLookupHttpRequest
 {
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
+
+    [Range(1, 100)]
+    public int Take { get; init; } = 20;
+}
+
+public sealed class ProductAvailabilityHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public string? Barcode { get; init; }
+
+    public string? StockCode { get; init; }
+
+    public string? StockName { get; init; }
 
     [Range(1, 100)]
     public int Take { get; init; } = 20;

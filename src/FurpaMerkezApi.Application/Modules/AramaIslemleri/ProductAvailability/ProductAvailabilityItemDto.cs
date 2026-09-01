@@ -1,0 +1,28 @@
+namespace FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductAvailability;
+
+public sealed record ProductAvailabilityItemDto(
+    int WarehouseNo,
+    string WarehouseName,
+    string Barcode,
+    string StockCode,
+    string StockName,
+    string UnitName,
+    double CurrentStockQuantity,
+    bool HasStock,
+    double Price,
+    int PriceTypeCode,
+    string SecondaryUnitName,
+    double SecondaryUnitMultiplier,
+    int? SalesBlockCode,
+    int? OrderBlockCode,
+    int? GoodsAcceptanceBlockCode,
+    bool IsSalesBlocked,
+    bool IsOrderBlocked,
+    bool IsGoodsAcceptanceBlocked,
+    string ProductManagerCode,
+    string? RequestedBarcode,
+    string? LookupBarcode,
+    bool IsVariableWeightBarcode,
+    double? EmbeddedQuantity,
+    string? EmbeddedQuantityUnit,
+    bool? IsBarcodeCheckDigitValid);

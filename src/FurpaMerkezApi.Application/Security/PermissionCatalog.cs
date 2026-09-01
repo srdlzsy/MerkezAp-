@@ -253,6 +253,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("home", "AnaSayfa", "depo-oncelikleri", "DepoOncelikleri", HomeWarehousePriorityActions),
 
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "fiyat-gor", "FiyatGor", ListActions),
+        ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "var-yok", "VarYok", ListActions),
         ..CreateMenuPermissions("arama-islemleri", "AramaIslemleri", "cari-bul", "CariBul", ListActions),
 
         ..CreateMenuPermissions("green-grocer", "Manav", "reports", "ManavRaporlari", ReadUpdateActions),
