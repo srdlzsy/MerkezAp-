@@ -134,6 +134,8 @@ public sealed class CreateCompanyReceivingUseCase(
             var response = await executionStrategy.ExecuteAsync(async () =>
             {
                 mikroWriteDbContext.ChangeTracker.Clear();
+                var lineTaxInfos = await LoadLineTaxInfosAsync(lines, cancellationToken);
+                LogCreatePhase("line-tax-info-lookup", "-", null, 0, 0);
                 await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable,
                     cancellationToken);
@@ -211,7 +213,8 @@ public sealed class CreateCompanyReceivingUseCase(
                             sourceLineNo,
                             ref returnRowNo,
                             returnQuantity,
-                            offlineTraceKey);
+                            offlineTraceKey,
+                            lineTaxInfos);
 
                         if (orderGuid is null)
                         {
@@ -241,7 +244,8 @@ public sealed class CreateCompanyReceivingUseCase(
                                 0d,
                                 movementPhysicalAcceptedQuantity,
                                 ConsumeReturnInfo(ref returnInfoForNextMovement),
-                                offlineTraceKey);
+                                offlineTraceKey,
+                                lineTaxInfos);
 
                             continue;
                         }
@@ -289,7 +293,8 @@ public sealed class CreateCompanyReceivingUseCase(
                                 0d,
                                 movementPhysicalAcceptedQuantity,
                                 ConsumeReturnInfo(ref returnInfoForNextMovement),
-                                offlineTraceKey);
+                                offlineTraceKey,
+                                lineTaxInfos);
                             ApplyOrderDelivery(order, remainingBefore, now);
 
                             var overflowQuantity = dispatchQuantity - remainingBefore;
@@ -319,7 +324,8 @@ public sealed class CreateCompanyReceivingUseCase(
                                 0d,
                                 movementPhysicalAcceptedQuantity,
                                 ConsumeReturnInfo(ref returnInfoForNextMovement),
-                                offlineTraceKey);
+                                offlineTraceKey,
+                                lineTaxInfos);
 
                             continue;
                         }
@@ -351,7 +357,8 @@ public sealed class CreateCompanyReceivingUseCase(
                             remainingAfter,
                             linkedPhysicalAcceptedQuantity,
                             ConsumeReturnInfo(ref returnInfoForNextMovement),
-                            offlineTraceKey);
+                            offlineTraceKey,
+                            lineTaxInfos);
                         ApplyOrderDelivery(order, dispatchQuantity, now);
                     }
                     LogCreatePhase("build-movement-rows", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
@@ -493,6 +500,7 @@ public sealed class CreateCompanyReceivingUseCase(
             customerCode,
             documentNo,
             cancellationToken);
+        var lineTaxInfos = await LoadLineTaxInfosAsync(lines, cancellationToken);
 
         var ordersByGuid = await LoadOrdersAsync(
             request,
@@ -544,7 +552,8 @@ public sealed class CreateCompanyReceivingUseCase(
                 sourceLineNo,
                 ref returnRowNo,
                 returnQuantity,
-                offlineTraceKey);
+                offlineTraceKey,
+                lineTaxInfos);
 
             if (orderGuid is null)
             {
@@ -574,7 +583,8 @@ public sealed class CreateCompanyReceivingUseCase(
                     0d,
                     movementPhysicalAcceptedQuantity,
                     ConsumeReturnInfo(ref returnInfoForNextMovement),
-                    offlineTraceKey);
+                    offlineTraceKey,
+                    lineTaxInfos);
 
                 continue;
             }
@@ -622,7 +632,8 @@ public sealed class CreateCompanyReceivingUseCase(
                     0d,
                     movementPhysicalAcceptedQuantity,
                     ConsumeReturnInfo(ref returnInfoForNextMovement),
-                    offlineTraceKey);
+                    offlineTraceKey,
+                    lineTaxInfos);
                 ApplyOrderDelivery(order, remainingBefore, now);
 
                 var overflowQuantity = dispatchQuantity - remainingBefore;
@@ -652,7 +663,8 @@ public sealed class CreateCompanyReceivingUseCase(
                     0d,
                     movementPhysicalAcceptedQuantity,
                     ConsumeReturnInfo(ref returnInfoForNextMovement),
-                    offlineTraceKey);
+                    offlineTraceKey,
+                    lineTaxInfos);
 
                 continue;
             }
@@ -684,7 +696,8 @@ public sealed class CreateCompanyReceivingUseCase(
                 remainingAfter,
                 linkedPhysicalAcceptedQuantity,
                 ConsumeReturnInfo(ref returnInfoForNextMovement),
-                offlineTraceKey);
+                offlineTraceKey,
+                lineTaxInfos);
             ApplyOrderDelivery(order, dispatchQuantity, now);
         }
 
@@ -1310,6 +1323,80 @@ public sealed class CreateCompanyReceivingUseCase(
         return customer;
     }
 
+    private async Task<IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo>> LoadLineTaxInfosAsync(
+        IReadOnlyCollection<CreateCompanyReceivingLineRequest> lines,
+        CancellationToken cancellationToken)
+    {
+        var stockCodes = lines
+            .Select(line => line.StockCode.Trim())
+            .Where(stockCode => stockCode.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (stockCodes.Length == 0)
+        {
+            return new Dictionary<string, CompanyReceivingLineTaxInfo>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var stockTaxPointers = await mikroWriteDbContext.STOKLARs
+            .AsNoTracking()
+            .Where(stock => stock.sto_kod != null && stockCodes.Contains(stock.sto_kod))
+            .Select(stock => new
+            {
+                StockCode = stock.sto_kod ?? string.Empty,
+                TaxPointer = stock.sto_perakende_vergi ?? 0
+            })
+            .ToListAsync(cancellationToken);
+
+        var taxRates = await LoadTaxRatesAsync(cancellationToken);
+        return stockTaxPointers.ToDictionary(
+            row => row.StockCode,
+            row => new CompanyReceivingLineTaxInfo(
+                row.TaxPointer,
+                taxRates.TryGetValue(row.TaxPointer, out var taxRatePercent) ? taxRatePercent : 0m),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<IReadOnlyDictionary<int, decimal>> LoadTaxRatesAsync(CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<int, decimal>();
+        var connection = mikroWriteDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT DepartmentNo, Rate
+                FROM dbo.fn_hs_vergi_oran_listesi();
+                """;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 300;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var departmentNo = Convert.ToInt32(reader["DepartmentNo"]);
+                var rate = Convert.ToDecimal(reader["Rate"]);
+                result[departmentNo] = rate;
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        return result;
+    }
+
     private async Task EnsureDocumentDoesNotExistAsync(
         int warehouseNo,
         string customerCode,
@@ -1553,7 +1640,8 @@ public sealed class CreateCompanyReceivingUseCase(
         int sourceLineNo,
         ref int returnRowNo,
         double returnQuantity,
-        string offlineTraceKey)
+        string offlineTraceKey,
+        IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
     {
         if (returnQuantity <= QuantityTolerance)
         {
@@ -1591,7 +1679,8 @@ public sealed class CreateCompanyReceivingUseCase(
             receivingDocumentSerie,
             receivingDocumentOrderNo,
             sourceLineNo,
-            offlineTraceKey);
+            offlineTraceKey,
+            lineTaxInfos);
         returnMovements.Add(returnMovement);
         returnRowNo++;
 
@@ -1648,7 +1737,8 @@ public sealed class CreateCompanyReceivingUseCase(
         double orderRemainingAfter,
         double physicalAcceptedQuantity,
         PartialAcceptanceReturnInfo returnInfo,
-        string offlineTraceKey)
+        string offlineTraceKey,
+        IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
     {
         if (acceptedQuantity <= QuantityTolerance)
         {
@@ -1668,7 +1758,8 @@ public sealed class CreateCompanyReceivingUseCase(
             rowNo,
             acceptedQuantity,
             orderGuid,
-            offlineTraceKey);
+            offlineTraceKey,
+            lineTaxInfos);
 
         movements.Add(movement);
         results.Add(new CreateCompanyReceivingLineResultDto(
@@ -1710,10 +1801,12 @@ public sealed class CreateCompanyReceivingUseCase(
         int rowNo,
         double acceptedQuantity,
         Guid? orderGuid,
-        string offlineTraceKey)
+        string offlineTraceKey,
+        IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
     {
         var unitPrice = line.UnitPrice;
         var amount = acceptedQuantity * unitPrice;
+        var taxInfo = ResolveLineTaxInfo(line, lineTaxInfos);
 
         return new STOK_HAREKETLERI
         {
@@ -1792,8 +1885,8 @@ public sealed class CreateCompanyReceivingUseCase(
             sth_masraf2 = 0d,
             sth_masraf3 = 0d,
             sth_masraf4 = 0d,
-            sth_vergi_pntr = 0,
-            sth_vergi = 0d,
+            sth_vergi_pntr = taxInfo.TaxPointer,
+            sth_vergi = CalculateTaxAmount(amount, taxInfo.TaxRatePercent),
             sth_masraf_vergi_pntr = 0,
             sth_masraf_vergi = 0d,
             sth_netagirlik = 0d,
@@ -1873,10 +1966,12 @@ public sealed class CreateCompanyReceivingUseCase(
         string receivingDocumentSerie,
         int receivingDocumentOrderNo,
         int sourceLineNo,
-        string offlineTraceKey)
+        string offlineTraceKey,
+        IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
     {
         var unitPrice = line.UnitPrice;
         var amount = returnQuantity * unitPrice;
+        var taxInfo = ResolveLineTaxInfo(line, lineTaxInfos);
 
         return new STOK_HAREKETLERI
         {
@@ -1955,8 +2050,8 @@ public sealed class CreateCompanyReceivingUseCase(
             sth_masraf2 = 0d,
             sth_masraf3 = 0d,
             sth_masraf4 = 0d,
-            sth_vergi_pntr = 0,
-            sth_vergi = 0d,
+            sth_vergi_pntr = taxInfo.TaxPointer,
+            sth_vergi = CalculateTaxAmount(amount, taxInfo.TaxRatePercent),
             sth_masraf_vergi_pntr = 0,
             sth_masraf_vergi = 0d,
             sth_netagirlik = 0d,
@@ -2045,6 +2140,26 @@ public sealed class CreateCompanyReceivingUseCase(
     {
         var returnQuantity = ResolveDispatchQuantity(line) - ResolvePhysicalAcceptedQuantity(line);
         return returnQuantity > QuantityTolerance ? returnQuantity : 0d;
+    }
+
+    private static CompanyReceivingLineTaxInfo ResolveLineTaxInfo(
+        CreateCompanyReceivingLineRequest line,
+        IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
+    {
+        var stockCode = line.StockCode.Trim();
+        return lineTaxInfos.TryGetValue(stockCode, out var taxInfo)
+            ? taxInfo
+            : CompanyReceivingLineTaxInfo.Empty;
+    }
+
+    internal static double CalculateTaxAmount(double amount, decimal taxRatePercent)
+    {
+        if (amount <= 0d || taxRatePercent <= 0m)
+        {
+            return 0d;
+        }
+
+        return (double)Math.Round((decimal)amount * taxRatePercent / 100m, 2, MidpointRounding.AwayFromZero);
     }
 
     private static string BuildReturnDocumentSerie(int warehouseNo) => $"F{warehouseNo}";
@@ -2501,4 +2616,9 @@ public sealed class CreateCompanyReceivingUseCase(
                 0d,
                 new Dictionary<int, Guid>());
     }
+}
+
+internal sealed record CompanyReceivingLineTaxInfo(byte TaxPointer, decimal TaxRatePercent)
+{
+    public static readonly CompanyReceivingLineTaxInfo Empty = new(0, 0m);
 }

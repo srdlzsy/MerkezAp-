@@ -7,6 +7,22 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.MalKabulIslemleri.MalKabul
 public sealed class CompanyReceivingIrsaliyeMikroApiPayloadFactoryTests
 {
     [Fact]
+    public void CalculateTaxAmount_ReturnsRoundedTaxForPositiveAmount()
+    {
+        var taxAmount = CreateCompanyReceivingUseCase.CalculateTaxAmount(11935d, 1m);
+
+        Assert.Equal(119.35d, taxAmount);
+    }
+
+    [Fact]
+    public void CalculateTaxAmount_ReturnsZeroWhenAmountIsZero()
+    {
+        var taxAmount = CreateCompanyReceivingUseCase.CalculateTaxAmount(0d, 20m);
+
+        Assert.Equal(0d, taxAmount);
+    }
+
+    [Fact]
     public void Create_MapsOrderGuidToSipUid()
     {
         var orderGuid = Guid.Parse("0f4db720-3374-4f80-ae21-6f7d2edec8b1");

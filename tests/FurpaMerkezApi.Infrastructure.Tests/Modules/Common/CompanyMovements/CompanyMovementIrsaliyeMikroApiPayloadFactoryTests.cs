@@ -48,6 +48,17 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
         Assert.Equal(1, line.sth_cins);
     }
 
+    [Fact]
+    public void ResolveStockTaxPointer_ReturnsRetailPointerForPurchaseReturns()
+    {
+        var taxPointer = CompanyMovementWriteService.ResolveStockTaxPointer(
+            CompanyMovementKind.PurchaseReturn,
+            retailTaxPointer: 3,
+            wholesaleTaxPointer: 4);
+
+        Assert.Equal(3, taxPointer);
+    }
+
     private static CompanyMovementIrsaliyeMikroApiPayload CreatePayload(
         Guid? orderLineGuid,
         string? deliverer = null,

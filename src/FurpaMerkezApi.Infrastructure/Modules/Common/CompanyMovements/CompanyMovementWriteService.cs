@@ -573,9 +573,10 @@ public sealed class CompanyMovementWriteService(
             .Select(stock => new
             {
                 StockCode = stock.sto_kod ?? string.Empty,
-                TaxPointer = kind == CompanyMovementKind.OutgoingShipment
-                    ? stock.sto_perakende_vergi ?? 0
-                    : stock.sto_toptan_vergi ?? 0
+                TaxPointer = ResolveStockTaxPointer(
+                    kind,
+                    stock.sto_perakende_vergi ?? 0,
+                    stock.sto_toptan_vergi ?? 0)
             })
             .ToListAsync(cancellationToken);
 
@@ -811,6 +812,17 @@ public sealed class CompanyMovementWriteService(
 
         return (double)Math.Round((decimal)amount * taxRatePercent / 100m, 2, MidpointRounding.AwayFromZero);
     }
+
+    internal static byte ResolveStockTaxPointer(
+        CompanyMovementKind kind,
+        byte retailTaxPointer,
+        byte wholesaleTaxPointer) =>
+        kind switch
+        {
+            CompanyMovementKind.OutgoingShipment => retailTaxPointer,
+            CompanyMovementKind.PurchaseReturn => retailTaxPointer,
+            _ => wholesaleTaxPointer
+        };
 
     private static int ResolveCustomerAddressNo(CARI_HESAPLAR customer)
     {
