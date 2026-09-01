@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
@@ -39,7 +40,10 @@ public sealed class InvoiceSendingService(
     private const string CurrencyCode = "TRY";
     private const string PreviewSource = "pending-send";
     private const int InvoiceSendLockTimeoutMilliseconds = 0;
+    private const int SlowListThresholdMilliseconds = 2_000;
+    private const int SlowRenderThresholdMilliseconds = 5_000;
     private static readonly CultureInfo TurkishCulture = new("tr-TR");
+    private readonly Dictionary<InvoiceSendingScenario, string?> xsltContentCache = [];
 
     public async Task<InvoiceSendingListResponse> ListAsync(
         InvoiceSendingListRequest request,
@@ -47,6 +51,7 @@ public sealed class InvoiceSendingService(
     {
         ValidateListRequest(request);
 
+        var listStartedAt = Stopwatch.GetTimestamp();
         var items = await LoadPendingInvoicesAsync(
             request.Scenario,
             request.StartDate.Date,
@@ -65,6 +70,20 @@ public sealed class InvoiceSendingService(
             .Select(MapListItem)
             .ToArray();
 
+        var listElapsed = Stopwatch.GetElapsedTime(listStartedAt);
+        if (listElapsed.TotalMilliseconds >= SlowListThresholdMilliseconds)
+        {
+            logger.LogWarning(
+                "Slow invoice list detected for {Scenario}. StartDate={StartDate} EndDate={EndDate} SentState={SentState} " +
+                "ItemCount={ItemCount} ElapsedMs={ElapsedMs}.",
+                request.Scenario,
+                request.StartDate,
+                request.EndDate,
+                request.SentState,
+                mappedItems.Length,
+                listElapsed.TotalMilliseconds);
+        }
+
         return new InvoiceSendingListResponse(mappedItems.Length, mappedItems);
     }
 
@@ -72,16 +91,21 @@ public sealed class InvoiceSendingService(
         InvoiceSendingRenderRequest request,
         CancellationToken cancellationToken)
     {
+        var renderStartedAt = Stopwatch.GetTimestamp();
         var invoice = await LoadSingleInvoiceAsync(
             request.Scenario,
             request.DocumentSerie,
             request.DocumentOrderNo,
             cancellationToken);
+        var loadElapsed = Stopwatch.GetElapsedTime(renderStartedAt);
+        var buildStartedAt = Stopwatch.GetTimestamp();
         var builtInvoice = await BuildInvoiceDocumentAsync(invoice, cancellationToken);
+        var buildElapsed = Stopwatch.GetElapsedTime(buildStartedAt);
         var profile = request.Profile == InvoiceDocumentProfile.Auto
             ? MapProfile(request.Scenario)
             : request.Profile;
         var preferEmbeddedXslt = request.PreferEmbeddedXslt ?? true;
+        var documentRenderStartedAt = Stopwatch.GetTimestamp();
         var renderedDocument = await invoiceDocumentRenderer.RenderXmlAsync(
             PreviewSource,
             builtInvoice.InvoiceId,
@@ -90,9 +114,25 @@ public sealed class InvoiceSendingService(
             preferEmbeddedXslt,
             cancellationToken,
             request.FallbackToDefaultXslt);
+        var documentRenderElapsed = Stopwatch.GetElapsedTime(documentRenderStartedAt);
+        var renderElapsed = Stopwatch.GetElapsedTime(renderStartedAt);
+
+        if (renderElapsed.TotalMilliseconds >= SlowRenderThresholdMilliseconds)
+        {
+            logger.LogWarning(
+                "Slow invoice render detected for {Scenario} {DocumentSerie}/{DocumentOrderNo}. " +
+                "TotalMs={TotalMs} LoadMs={LoadMs} BuildMs={BuildMs} RenderMs={RenderMs}.",
+                request.Scenario,
+                invoice.DocumentSerie,
+                invoice.DocumentOrderNo,
+                renderElapsed.TotalMilliseconds,
+                loadElapsed.TotalMilliseconds,
+                buildElapsed.TotalMilliseconds,
+                documentRenderElapsed.TotalMilliseconds);
+        }
 
         return new InvoiceSendingDetailDto(
-            MapListItem(invoice),
+            MapListItem(ApplyBuiltTotals(invoice, builtInvoice)),
             renderedDocument with { InvoiceId = builtInvoice.InvoiceId });
     }
 
@@ -155,6 +195,7 @@ public sealed class InvoiceSendingService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             PendingInvoiceRecord? invoice = null;
+            var sendStartedAt = Stopwatch.GetTimestamp();
 
             try
             {
@@ -188,15 +229,21 @@ public sealed class InvoiceSendingService(
 
                 invoice = await EnsureReturnReferenceBeforeSendAsync(invoice, cancellationToken);
                 supplier ??= await LoadSupplierAsync(cancellationToken);
+                var buildStartedAt = Stopwatch.GetTimestamp();
                 var builtInvoice = await BuildInvoiceDocumentAsync(
                     invoice,
                     supplier,
                     cancellationToken);
+                ValidateBuiltInvoice(builtInvoice, request.Scenario);
+                var buildElapsed = Stopwatch.GetElapsedTime(buildStartedAt);
+                var uyumsoftStartedAt = Stopwatch.GetTimestamp();
                 var serviceResponse = await SendToUyumsoftAsync(
                     builtInvoice,
                     request.Scenario,
                     cancellationToken);
+                var uyumsoftElapsed = Stopwatch.GetElapsedTime(uyumsoftStartedAt);
 
+                var markStartedAt = Stopwatch.GetTimestamp();
                 await MarkAsSentAsync(
                     invoice.DocumentSerie,
                     invoice.DocumentOrderNo,
@@ -205,6 +252,18 @@ public sealed class InvoiceSendingService(
                         ? invoice.InvoiceGuid.ToString()
                         : serviceResponse.ServiceDocumentId,
                     cancellationToken);
+                var markElapsed = Stopwatch.GetElapsedTime(markStartedAt);
+
+                logger.LogInformation(
+                    "Invoice send completed for {Scenario} {DocumentSerie}/{DocumentOrderNo}. " +
+                    "TotalMs={TotalMs} BuildAndValidateMs={BuildAndValidateMs} UyumsoftMs={UyumsoftMs} MarkAsSentMs={MarkAsSentMs}.",
+                    request.Scenario,
+                    invoice.DocumentSerie,
+                    invoice.DocumentOrderNo,
+                    Stopwatch.GetElapsedTime(sendStartedAt).TotalMilliseconds,
+                    buildElapsed.TotalMilliseconds,
+                    uyumsoftElapsed.TotalMilliseconds,
+                    markElapsed.TotalMilliseconds);
 
                 results.Add(new SendInvoiceDocumentResultDto(
                     invoice.DocumentSerie,
@@ -221,10 +280,11 @@ public sealed class InvoiceSendingService(
             {
                 logger.LogWarning(
                     exception,
-                    "Invoice send failed for {Scenario} {DocumentSerie}/{DocumentOrderNo}.",
+                    "Invoice send failed for {Scenario} {DocumentSerie}/{DocumentOrderNo} after {ElapsedMs} ms.",
                     request.Scenario,
                     document.DocumentSerie,
-                    document.DocumentOrderNo);
+                    document.DocumentOrderNo,
+                    Stopwatch.GetElapsedTime(sendStartedAt).TotalMilliseconds);
 
                 results.Add(new SendInvoiceDocumentResultDto(
                     invoice?.DocumentSerie ?? document.DocumentSerie,
@@ -303,12 +363,7 @@ public sealed class InvoiceSendingService(
                     invoice,
                     supplier,
                     cancellationToken);
-                ublTrInvoiceBusinessRuleValidator.Validate(
-                    builtInvoice.XmlContent,
-                    builtInvoice.InvoiceId,
-                    request.Scenario,
-                    builtInvoice.TargetAlias);
-                ublTrInvoiceXmlValidator.Validate(builtInvoice.XmlContent, builtInvoice.InvoiceId);
+                ValidateBuiltInvoice(builtInvoice, request.Scenario);
 
                 results.Add(new ValidateInvoiceDocumentResultDto(
                     invoice.DocumentSerie,
@@ -609,6 +664,29 @@ public sealed class InvoiceSendingService(
                     AND ch.cha_tip = 0
                     AND ISNULL(ch.cha_iptal, 0) = 0
             ),
+            StokSatirSayilari AS (
+                SELECT
+                    grouped.FatGuid,
+                    COUNT(*) AS LineCount
+                FROM (
+                    SELECT
+                        sh.sth_fat_uid AS FatGuid,
+                        sh.sth_stok_kod,
+                        ISNULL(sh.sth_vergi_pntr, 0) AS TaxPointer
+                    FROM dbo.STOK_HAREKETLERI sh WITH (NOLOCK)
+                    INNER JOIN (SELECT DISTINCT cha_Guid FROM BaseFaturalar) baseFat
+                        ON baseFat.cha_Guid = sh.sth_fat_uid
+                    WHERE
+                        @includeFullDetails = 1
+                        AND sh.sth_fat_uid IS NOT NULL
+                        AND ISNULL(sh.sth_iptal, 0) = 0
+                    GROUP BY
+                        sh.sth_fat_uid,
+                        sh.sth_stok_kod,
+                        ISNULL(sh.sth_vergi_pntr, 0)
+                ) grouped
+                GROUP BY grouped.FatGuid
+            ),
             Sevkiyatlar AS (
                 SELECT
                     ranked.FatGuid,
@@ -652,6 +730,12 @@ public sealed class InvoiceSendingService(
                     ch.cha_aciklama AS Aciklama,
                     ch.cha_belge_no AS BelgeNo,
                     ISNULL(ch.cha_aratoplam, 0) AS AraToplam,
+                    ISNULL(ch.cha_ft_iskonto1, 0)
+                        + ISNULL(ch.cha_ft_iskonto2, 0)
+                        + ISNULL(ch.cha_ft_iskonto3, 0)
+                        + ISNULL(ch.cha_ft_iskonto4, 0)
+                        + ISNULL(ch.cha_ft_iskonto5, 0)
+                        + ISNULL(ch.cha_ft_iskonto6, 0) AS DiscountTotal,
                     ISNULL(ch.cha_vergi1, 0)
                         + ISNULL(ch.cha_vergi2, 0)
                         + ISNULL(ch.cha_vergi3, 0)
@@ -661,7 +745,17 @@ public sealed class InvoiceSendingService(
                         + ISNULL(ch.cha_vergi7, 0)
                         + ISNULL(ch.cha_vergi8, 0)
                         + ISNULL(ch.cha_vergi9, 0)
-                        + ISNULL(ch.cha_vergi10, 0) AS TaxTotal,
+                        + ISNULL(ch.cha_vergi10, 0)
+                        + ISNULL(ch.cha_vergi11, 0)
+                        + ISNULL(ch.cha_vergi12, 0)
+                        + ISNULL(ch.cha_vergi13, 0)
+                        + ISNULL(ch.cha_vergi14, 0)
+                        + ISNULL(ch.cha_vergi15, 0)
+                        + ISNULL(ch.cha_vergi16, 0)
+                        + ISNULL(ch.cha_vergi17, 0)
+                        + ISNULL(ch.cha_vergi18, 0)
+                        + ISNULL(ch.cha_vergi19, 0)
+                        + ISNULL(ch.cha_vergi20, 0) AS TaxTotal,
                     ISNULL(ch.cha_ebelge_turu, 0) AS EBelgeTuru,
                     LTRIM(RTRIM(CONCAT(
                         ISNULL(c.cari_unvan1, N''),
@@ -704,16 +798,21 @@ public sealed class InvoiceSendingService(
                                 N''))
                     END AS SourceLineSummary,
                     CASE
+                        WHEN ch.cha_cinsi IN (8, 14) THEN 1
+                        ELSE ISNULL(stokSatir.LineCount, 0)
+                    END AS SourceLineCount,
+                    CASE
                         WHEN @includeFullDetails = 0 THEN N''
                         WHEN taxRate.Rate IS NULL THEN N''
                         ELSE CONCAT(N'%', CONVERT(nvarchar(32), CONVERT(decimal(9, 2), taxRate.Rate)))
                     END AS TaxRateSummary
                 FROM BaseFaturalar ch
                 INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
-                INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK)
+                LEFT JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK)
                     ON c.cari_kod = adr.adr_cari_kod
                     AND adr.adr_adres_no = 1
                 LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
+                LEFT JOIN StokSatirSayilari stokSatir ON stokSatir.FatGuid = ch.cha_Guid
                 LEFT JOIN Sevkiyatlar sevkiyat ON sevkiyat.FatGuid = ch.cha_Guid
                 LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK)
                     ON @includeFullDetails = 1
@@ -788,6 +887,7 @@ public sealed class InvoiceSendingService(
                 MAX(Aciklama) AS Aciklama,
                 BelgeNo,
                 SUM(AraToplam) AS AraToplam,
+                SUM(DiscountTotal) AS DiscountTotal,
                 SUM(TaxTotal) AS TaxTotal,
                 SUM(Rusum) AS Rusum,
                 MAX(EBelgeTuru) AS EBelgeTuru,
@@ -813,7 +913,10 @@ public sealed class InvoiceSendingService(
                 MAX(IadeFaturaNo) AS IadeFaturaNo,
                 MAX(IadeFaturaTarihi) AS IadeFaturaTarihi,
                 MAX(Depo) AS Depo,
-                COUNT(DISTINCT FatGuid) AS SourceLineCount,
+                CASE
+                    WHEN @includeFullDetails = 1 THEN SUM(SourceLineCount)
+                    ELSE COUNT(DISTINCT FatGuid)
+                END AS SourceLineCount,
                 ISNULL(STRING_AGG(NULLIF(SourceLineSummary, N''), N' | '), N'') AS SourceLineSummary,
                 ISNULL(STRING_AGG(NULLIF(TaxRateSummary, N''), N' | '), N'') AS TaxRateSummary
             FROM Faturalar
@@ -951,25 +1054,27 @@ public sealed class InvoiceSendingService(
         }
 
         var lookupSeries = ResolveDocumentSerieLookupCandidates(documentSerie);
+        var items = await LoadPendingInvoicesAsync(
+            scenario,
+            null,
+            null,
+            null,
+            null,
+            -1,
+            lookupSeries
+                .Select(lookupSerie => new SendInvoiceDocumentSelection(lookupSerie, documentOrderNo))
+                .ToArray(),
+            InvoiceLoadShape.Full,
+            cancellationToken);
+        var invoice = lookupSeries
+            .Select(candidate => items.FirstOrDefault(item =>
+                item.DocumentOrderNo == documentOrderNo &&
+                string.Equals(item.DocumentSerie, candidate, StringComparison.OrdinalIgnoreCase)))
+            .FirstOrDefault(item => item is not null);
 
-        foreach (var lookupSerie in lookupSeries)
+        if (invoice is not null)
         {
-            var items = await LoadPendingInvoicesAsync(
-                scenario,
-                null,
-                null,
-                lookupSerie,
-                documentOrderNo,
-                -1,
-                null,
-                InvoiceLoadShape.Full,
-                cancellationToken);
-
-            var invoice = items.FirstOrDefault();
-            if (invoice is not null)
-            {
-                return invoice;
-            }
+            return invoice;
         }
 
         throw new KeyNotFoundException(
@@ -1352,16 +1457,14 @@ public sealed class InvoiceSendingService(
                 st.sto_birim1_ad AS UnitName
             FROM STOK_HAREKETLERI sh WITH (NOLOCK)
             INNER JOIN STOKLAR st WITH (NOLOCK) ON sh.sth_stok_kod = st.sto_kod
-            INNER JOIN CARI_HESAP_HAREKETLERI ch WITH (NOLOCK) ON ch.cha_Guid = sh.sth_fat_uid
             OUTER APPLY (
                 SELECT TOP (1) rateList.Rate
                 FROM dbo.fn_hs_vergi_oran_listesi() rateList
                 WHERE rateList.DepartmentNo = ISNULL(sh.sth_vergi_pntr, 0)
             ) taxRate
             WHERE
-                ch.cha_evrakno_seri = @documentSerie
-                AND ch.cha_evrakno_sira = @documentOrderNo
-                AND ISNULL(ch.cha_iptal, 0) = 0
+                sh.sth_fat_uid = @invoiceGuid
+                AND ISNULL(sh.sth_iptal, 0) = 0
             GROUP BY
                 sh.sth_stok_kod,
                 st.sto_isim,
@@ -1377,8 +1480,7 @@ public sealed class InvoiceSendingService(
             sql,
             command =>
             {
-                AddParameter(command, "@documentSerie", invoice.DocumentSerie);
-                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo);
+                AddParameter(command, "@invoiceGuid", invoice.InvoiceGuid);
             },
             reader =>
             {
@@ -1426,6 +1528,12 @@ public sealed class InvoiceSendingService(
                 ISNULL(hiz.hiz_isim, ISNULL(dm.dem_isim, N'')) AS ItemName,
                 SUM(ISNULL(ch.cha_miktari, 0)) AS Quantity,
                 SUM(ISNULL(ch.cha_aratoplam, 0)) AS GrossAmount,
+                SUM(ISNULL(ch.cha_ft_iskonto1, 0)) AS Discount1,
+                SUM(ISNULL(ch.cha_ft_iskonto2, 0)) AS Discount2,
+                SUM(ISNULL(ch.cha_ft_iskonto3, 0)) AS Discount3,
+                SUM(ISNULL(ch.cha_ft_iskonto4, 0)) AS Discount4,
+                SUM(ISNULL(ch.cha_ft_iskonto5, 0)) AS Discount5,
+                SUM(ISNULL(ch.cha_ft_iskonto6, 0)) AS Discount6,
                 SUM(CASE ISNULL(ch.cha_vergipntr, 0)
                     WHEN 1 THEN ISNULL(ch.cha_vergi1, 0)
                     WHEN 2 THEN ISNULL(ch.cha_vergi2, 0)
@@ -1437,13 +1545,21 @@ public sealed class InvoiceSendingService(
                     WHEN 8 THEN ISNULL(ch.cha_vergi8, 0)
                     WHEN 9 THEN ISNULL(ch.cha_vergi9, 0)
                     WHEN 10 THEN ISNULL(ch.cha_vergi10, 0)
+                    WHEN 11 THEN ISNULL(ch.cha_vergi11, 0)
+                    WHEN 12 THEN ISNULL(ch.cha_vergi12, 0)
+                    WHEN 13 THEN ISNULL(ch.cha_vergi13, 0)
+                    WHEN 14 THEN ISNULL(ch.cha_vergi14, 0)
+                    WHEN 15 THEN ISNULL(ch.cha_vergi15, 0)
+                    WHEN 16 THEN ISNULL(ch.cha_vergi16, 0)
+                    WHEN 17 THEN ISNULL(ch.cha_vergi17, 0)
+                    WHEN 18 THEN ISNULL(ch.cha_vergi18, 0)
+                    WHEN 19 THEN ISNULL(ch.cha_vergi19, 0)
+                    WHEN 20 THEN ISNULL(ch.cha_vergi20, 0)
                     ELSE ISNULL(ch.cha_vergi1, 0)
                 END) AS TaxAmount,
                 ISNULL(ch.cha_vergipntr, 0) AS TaxPointer,
                 ISNULL(taxRate.Rate, -1) AS ConfiguredTaxRate
             FROM CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
-            INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
-            INNER JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK) ON c.cari_kod = adr.adr_cari_kod
             LEFT JOIN HIZMET_HESAPLARI hiz WITH (NOLOCK) ON ch.cha_kasa_hizkod = hiz.hiz_kod
             LEFT JOIN DEMIRBASLAR dm WITH (NOLOCK) ON ch.cha_kasa_hizkod = dm.dem_kod
             OUTER APPLY (
@@ -1452,8 +1568,7 @@ public sealed class InvoiceSendingService(
                 WHERE rateList.DepartmentNo = ISNULL(ch.cha_vergipntr, 0)
             ) taxRate
             WHERE
-                adr.adr_adres_no = 1
-                AND ch.cha_tip = 0
+                ch.cha_tip = 0
                 AND ch.cha_evrakno_seri = @documentSerie
                 AND ch.cha_evrakno_sira = @documentOrderNo
                 AND ISNULL(ch.cha_iptal, 0) = 0
@@ -1478,9 +1593,19 @@ public sealed class InvoiceSendingService(
             reader =>
             {
                 var grossAmount = ReadDecimal(reader, "GrossAmount");
+                var discounts = new[]
+                {
+                    ReadDecimal(reader, "Discount1"),
+                    ReadDecimal(reader, "Discount2"),
+                    ReadDecimal(reader, "Discount3"),
+                    ReadDecimal(reader, "Discount4"),
+                    ReadDecimal(reader, "Discount5"),
+                    ReadDecimal(reader, "Discount6")
+                };
+                var netAmount = Math.Max(0m, grossAmount - discounts.Sum());
                 var taxAmount = ReadDecimal(reader, "TaxAmount");
                 var taxRate = ResolveTaxRate(
-                    grossAmount,
+                    netAmount,
                     taxAmount,
                     ReadDecimal(reader, "ConfiguredTaxRate"));
 
@@ -1489,8 +1614,8 @@ public sealed class InvoiceSendingService(
                     ReadString(reader, "ItemName"),
                     NormalizeQuantity(ReadDecimal(reader, "Quantity")),
                     grossAmount,
-                    [],
-                    grossAmount,
+                    discounts,
+                    netAmount,
                     taxAmount,
                     taxRate,
                     "NIU");
@@ -1529,6 +1654,7 @@ public sealed class InvoiceSendingService(
             invoice.Scenario,
             invoiceDate,
             cancellationToken);
+        var grossTotal = RoundMoney(invoiceLines.Sum(line => line.GrossAmount));
         var totalDiscount = RoundMoney(invoiceLines.Sum(line => line.Discounts.Sum()));
         var lineExtensionTotal = RoundMoney(invoiceLines.Sum(line => line.NetAmount));
         var taxTotal = RoundMoney(invoiceLines.Sum(line => line.TaxAmount));
@@ -1567,7 +1693,14 @@ public sealed class InvoiceSendingService(
             xmlContent,
             document,
             profileId,
-            invoiceTypeCode);
+            invoiceTypeCode,
+            grossTotal,
+            totalDiscount,
+            lineExtensionTotal,
+            taxTotal,
+            chargeTotal,
+            payableTotal,
+            invoiceLines.Count);
     }
 
     private XElement BuildInvoiceElement(
@@ -2148,14 +2281,25 @@ public sealed class InvoiceSendingService(
             : "efatura.xslt";
         var path = Path.Combine(hostEnvironment.ContentRootPath, "Assets", "Xslt", fileName);
 
-        if (!File.Exists(path))
+        if (!xsltContentCache.TryGetValue(scenario, out var encoded))
         {
-            logger.LogWarning("XSLT asset was not found for invoice sending preview: {Path}", path);
+            if (!File.Exists(path))
+            {
+                logger.LogWarning("XSLT asset was not found for invoice sending preview: {Path}", path);
+                xsltContentCache[scenario] = null;
+                return null;
+            }
+
+            var content = await File.ReadAllTextAsync(path, cancellationToken);
+            encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
+            xsltContentCache[scenario] = encoded;
+        }
+
+        if (encoded is null)
+        {
             return null;
         }
 
-        var content = await File.ReadAllTextAsync(path, cancellationToken);
-        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
         var aggregate = XNamespace.Get(AggregateNamespace);
         var basic = XNamespace.Get(BasicNamespace);
 
@@ -2398,10 +2542,11 @@ public sealed class InvoiceSendingService(
         var documentSerie = ReadString(reader, "DocumentSerie");
         var documentOrderNo = ReadInt32(reader, "DocumentOrderNo");
         var documentDate = ReadDateTime(reader, "BelgeTarihi");
-        var lineExtensionTotal = RoundMoney(ReadDecimal(reader, "AraToplam"));
-        var taxTotal = RoundMoney(ReadDecimal(reader, "TaxTotal"));
-        var chargeTotal = RoundMoney(ReadDecimal(reader, "Rusum"));
-        var payableTotal = RoundMoney(lineExtensionTotal + taxTotal + chargeTotal);
+        var totals = InvoiceSendingAmountFormatter.CalculateTotals(
+            ReadDecimal(reader, "AraToplam"),
+            ReadDecimal(reader, "DiscountTotal"),
+            ReadDecimal(reader, "TaxTotal"),
+            ReadDecimal(reader, "Rusum"));
         var customerTitle = ReadString(reader, "MusteriAdi");
         var targetAlias = ResolveTargetAlias(
             ReadString(reader, "FaturaMail"),
@@ -2433,10 +2578,12 @@ public sealed class InvoiceSendingService(
             ReadInt32(reader, "EBelgeTuru"),
             ReadString(reader, "IstisnaKodu"),
             ReadString(reader, "OzelMatrahKodu"),
-            lineExtensionTotal,
-            taxTotal,
-            chargeTotal,
-            payableTotal,
+            totals.GrossTotal,
+            totals.DiscountTotal,
+            totals.LineExtensionTotal,
+            totals.TaxTotal,
+            totals.ChargeTotal,
+            totals.PayableTotal,
             ReadString(reader, "IrsaliyeNo"),
             ReadNullableDateTime(reader, "IrsaliyeTarihi"),
             ReadString(reader, "IadeFaturaNo"),
@@ -2465,6 +2612,8 @@ public sealed class InvoiceSendingService(
             ResolveProfileId(invoice),
             ResolveInvoiceTypeCode(invoice),
             invoice.Scenario,
+            invoice.GrossTotal,
+            invoice.DiscountTotal,
             invoice.LineExtensionTotal,
             invoice.TaxTotal,
             invoice.Rusum,
@@ -2479,6 +2628,32 @@ public sealed class InvoiceSendingService(
             invoice.SourceLineSummary,
             invoice.TaxRateSummary);
     }
+
+    private void ValidateBuiltInvoice(
+        BuiltInvoiceDocument invoice,
+        InvoiceSendingScenario scenario)
+    {
+        ublTrInvoiceBusinessRuleValidator.Validate(
+            invoice.XmlContent,
+            invoice.InvoiceId,
+            scenario,
+            invoice.TargetAlias);
+        ublTrInvoiceXmlValidator.Validate(invoice.XmlContent, invoice.InvoiceId);
+    }
+
+    private static PendingInvoiceRecord ApplyBuiltTotals(
+        PendingInvoiceRecord invoice,
+        BuiltInvoiceDocument builtInvoice) =>
+        invoice with
+        {
+            GrossTotal = builtInvoice.GrossTotal,
+            DiscountTotal = builtInvoice.DiscountTotal,
+            LineExtensionTotal = builtInvoice.LineExtensionTotal,
+            TaxTotal = builtInvoice.TaxTotal,
+            Rusum = builtInvoice.ChargeTotal,
+            PayableTotal = builtInvoice.PayableTotal,
+            SourceLineCount = builtInvoice.LineCount
+        };
 
     private static void EnsureReturnInvoice(PendingInvoiceRecord invoice)
     {
@@ -3111,6 +3286,8 @@ public sealed class InvoiceSendingService(
         int EBelgeTuru,
         string IstisnaKodu,
         string OzelMatrahKodu,
+        decimal GrossTotal,
+        decimal DiscountTotal,
         decimal LineExtensionTotal,
         decimal TaxTotal,
         decimal Rusum,
@@ -3179,7 +3356,14 @@ public sealed class InvoiceSendingService(
         string XmlContent,
         XElement InvoiceElement,
         string ProfileId,
-        string InvoiceTypeCode);
+        string InvoiceTypeCode,
+        decimal GrossTotal,
+        decimal DiscountTotal,
+        decimal LineExtensionTotal,
+        decimal TaxTotal,
+        decimal ChargeTotal,
+        decimal PayableTotal,
+        int LineCount);
 
     private sealed record ServiceSendResponse(
         string ServiceDocumentId,

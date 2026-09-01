@@ -27,4 +27,20 @@ public sealed class InvoiceSendingAmountFormatterTests
 
         Assert.Equal("0.60", result);
     }
+
+    [Fact]
+    public void CalculateTotals_SubtractsDiscountBeforeAddingTax()
+    {
+        var result = InvoiceSendingAmountFormatter.CalculateTotals(
+            5756.65m,
+            832.558288m,
+            105.60983232m,
+            0m);
+
+        Assert.Equal(5756.65m, result.GrossTotal);
+        Assert.Equal(832.56m, result.DiscountTotal);
+        Assert.Equal(4924.09m, result.LineExtensionTotal);
+        Assert.Equal(105.61m, result.TaxTotal);
+        Assert.Equal(5029.70m, result.PayableTotal);
+    }
 }

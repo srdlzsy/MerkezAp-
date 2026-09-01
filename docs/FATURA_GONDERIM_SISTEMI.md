@@ -11,7 +11,7 @@ Sistemde resmi fatura verisi **UBL Invoice XML** olarak uretilir. UI tarafindan 
 Onemli ayrim:
 
 - `/validate` akisi XML'i uretir, is kurallarini ve UBL-TR XSD kontrolunu calistirir, Uyumsoft'a gondermez.
-- `/send` akisi hiz icin business/XSD validator'larini tekrar calistirmaz; UBL XML'i uretir ve Uyumsoft'a gonderir. Bu nedenle UI toplu gonderimde once `/validate`, sadece basarili belgeler icin `/send` cagirmalidir.
+- `/send` akisi UBL XML'i uretir, business/XSD validator'larini zorunlu calistirir ve yalniz basarili belgeyi Uyumsoft'a gonderir. UI yine hatayi kullaniciya erken gostermek icin once `/validate`, sadece basarili belgeler icin `/send` cagirmalidir.
 
 XSLT ise faturanin resmi verisi degildir. XSLT, faturanin HTML/PDF gibi goruntulendiginde nasil gorunecegini belirleyen sablondur. Karsi taraf ve entegrator asil olarak XML icindeki UBL alanlarini isler.
 
@@ -50,7 +50,7 @@ XSLT ise faturanin resmi verisi degildir. XSLT, faturanin HTML/PDF gibi goruntul
 | Iade adaylari | `GET /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/return-reference-candidates` | `fatura-islemleri.fatura-gonderimi.detail` | Iade faturasi icin referans olabilecek faturalari listeler. | Mikro'ya yazmaz. |
 | Iade referansi | `PUT /api/fatura-islemleri/fatura-gonderimi/{documentSerie}/{documentOrderNo}/return-reference` | `fatura-islemleri.fatura-gonderimi.create` | Secilen iade referansini `EBELGE_EVRAK_HAREKETLERI` tablosuna yazar. | Send oncesi manuel duzeltme icindir. |
 | Validate | `POST /api/fatura-islemleri/fatura-gonderimi/validate` | `fatura-islemleri.fatura-gonderimi.create` | Gonderim oncesi UBL/is kurali/XSD kontrolu yapar. | Uyumsoft'a gondermez, Mikro'yu guncellemez. |
-| Send | `POST /api/fatura-islemleri/fatura-gonderimi/send` | `fatura-islemleri.fatura-gonderimi.create` | Belgeyi Uyumsoft'a gonderir ve basariliysa Mikro'ya belge no/UUID yazar. | Hiz icin validate'i tekrar calistirmaz. |
+| Send | `POST /api/fatura-islemleri/fatura-gonderimi/send` | `fatura-islemleri.fatura-gonderimi.create` | Belgeyi dogrular, Uyumsoft'a gonderir ve basariliysa Mikro'ya belge no/UUID yazar. | Hatali UBL Uyumsoft'a cikmaz. |
 | Retry | `POST /api/fatura-islemleri/fatura-gonderimi/retry` | `fatura-islemleri.fatura-gonderimi.create` | Daha once gonderilmis faturayi Uyumsoft'ta yeniden kuyruya alir. | Ilk gonderim degildir, UBL yeniden uretilmez. |
 | XML preview | `POST /api/fatura-islemleri/fatura-gonderimi/preview` | `fatura-islemleri.fatura-gonderimi.create` | Disaridan verilen XML'i HTML olarak render eder. | Mikro veya Uyumsoft guncellemesi yapmaz. |
 
@@ -149,6 +149,7 @@ Liste performansi icin dikkat:
 - Bu optimizasyon `cha_tarihi` ve `cha_belge_tarih` ayni gun oldugu fatura akisinda guvenlidir; canli kontrolde 2026-07-07 gonderilmis e-fatura setinde farkli tarihli satir bulunmamistir.
 - DBA tarafinda kontrol edilecek mevcut indeks: `NDX_CARI_HESAP_HAREKETLERI_02 (cha_tarihi)`. Bu indeks kullanilmiyorsa istatistikler ve execution plan incelenmelidir.
 - `STOK_HAREKETLERI.sth_fat_uid` indeksi sevkiyat/istisna apply'lari icin kritiktir; modelde var gorunuyor, canli planda kullanildigi kontrol edilmelidir.
+- 2026-09-01 canli Mikro olcumunde hafif liste sorgusu bir gun, yedi gun ve 31 gun araliklarinda yaklasik `0,35-0,45 saniye` surmustur. Deploy sonrasi HTTP suresi belirgin yuksekse DB sorgusundan cok eski API surumu, ag gecikmesi veya sunucu yukunun loglardan ayrilmasi gerekir.
 
 ### 2. Detay ve Render
 
@@ -351,6 +352,7 @@ Iskonto hassasiyeti:
 - Stok satir iskontolari Mikro `STOK_HAREKETLERI.sth_iskonto1..6` alanlarindan okunur.
 - UBL satir iskonto oraninin bozulmamasi icin `cac:InvoiceLine/cac:AllowanceCharge/cbc:Amount` ve `cbc:BaseAmount` en fazla 4 ondalik hassasiyetle yazilir. Ornek: `sth_tutar = 20.14` ve `sth_iskonto1 = 0.6042` ise UBL `Amount` degeri `0.6042` olur.
 - Fatura genel para toplamlari (`LineExtensionAmount`, `TaxAmount`, `AllowanceTotalAmount`, `PayableAmount`) 2 ondalik yazilmaya devam eder.
+- Liste response'unda `grossTotal` iskonto oncesi tutar, `discountTotal` toplam iskonto, `lineExtensionTotal` iskonto sonrasi KDV haric net matrah ve `payableTotal` net matrah + KDV + masraf/rusum toplamidir.
 
 Kritik Mikro yazimlari:
 
@@ -719,9 +721,10 @@ Degisiklikten veya deploydan sonra onerilen hizli kontrol:
 - KDV pointer eslesmesi hard-coded yapilmamali; canli Mikro `dbo.fn_hs_vergi_oran_listesi()` fonksiyonu esas alinmali.
 - Hizmet faturalarinda KDV hesabi degisirse `cha_vergi1..cha_vergi10` secimi mutlaka tekrar test edilmeli.
 - `FaturaSeries` eslesmesi degistirilirse toplam tutarlar tekrar kontrol edilmeli.
-- Uyumsoft gonderiminden once validate katmanini atlayan bir UI akisina izin verilmemeli.
+- UI kullaniciya hizli geri bildirim icin Uyumsoft gonderiminden once `/validate` kullanmalidir; backend `/send` de ayni kontrolleri zorunlu tekrarlar.
 - Sunucuya deploy/restart yapilmadan `10.0.0.100:7508` uzerindeki endpointler yeni kodu yansitmaz.
-- `/send` performans nedeniyle validator calistirmadigi icin bu davranis degistirilecekse UI akisi ve operasyon suresi birlikte degerlendirilmelidir.
+- `/send` loglarindaki `BuildAndValidateMs`, `UyumsoftMs` ve `MarkAsSentMs` alanlari yavasligin XML/DB, dis servis veya Mikro geri yazma kaynakli olup olmadigini gosterir.
+- Liste 2 saniyeyi, onizleme 5 saniyeyi asarsa warning logu uretilir. Onizleme warning'i `LoadMs`, `BuildMs` ve `RenderMs` surelerini ayri verir; normal hizdaki istekler icin ek log yazilmaz.
 
 ## Komutlar
 

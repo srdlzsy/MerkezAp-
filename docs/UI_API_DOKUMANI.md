@@ -15134,6 +15134,8 @@ Response `InvoiceSendingListResponse`:
       "invoiceProfileId": "TICARIFATURA",
       "invoiceTypeCode": "SATIS",
       "scenario": 0,
+      "grossTotal": 1000.00,
+      "discountTotal": 0.00,
       "lineExtensionTotal": 1000.00,
       "taxTotal": 180.00,
       "chargeTotal": 0.00,
@@ -15162,6 +15164,8 @@ Response `InvoiceSendingListResponse`:
       "invoiceProfileId": "TICARIFATURA",
       "invoiceTypeCode": "SATIS",
       "scenario": 0,
+      "grossTotal": 1000.00,
+      "discountTotal": 0.00,
       "lineExtensionTotal": 1000.00,
       "taxTotal": 180.00,
       "chargeTotal": 0.00,
@@ -15190,6 +15194,10 @@ Davranis:
 - `invoiceId` legacy WinForms mantigina uygun sekilde `seri + yil + 9 haneli sira` olarak uretilir
 - `invoiceId`, UBL icindeki `cbc:ID` degeridir; PDF endpoint path'i icin bunun yerine `documentSerie` ve `documentOrderNo` kullanilir
 - `sentDocumentNo` Mikro `cha_belge_no` alanidir; gonderim sonrasi kullaniciya gosterilen resmi belge numarasidir
+- `grossTotal`, Mikro iskonto oncesi mal/hizmet toplamidir.
+- `discountTotal`, Mikro `cha_ft_iskonto1..6` alanlarinin toplamidir.
+- `lineExtensionTotal`, iskonto sonrasi KDV haric net matrahtir: `grossTotal - discountTotal`.
+- `payableTotal`, `lineExtensionTotal + taxTotal + chargeTotal` olarak hesaplanir. UI toplam kartinda brut, iskonto, net matrah, KDV ve genel toplam ayri satirlarda gosterilmelidir.
 
 Performans notlari:
 
@@ -15204,7 +15212,7 @@ Performans notlari:
 - DBA ile kontrol edilmesi gereken mevcut indeks: `NDX_CARI_HESAP_HAREKETLERI_02 (cha_tarihi)`. Bu indeks kullanilmiyorsa istatistikler ve execution plan incelenmelidir.
 - `STOK_HAREKETLERI.sth_fat_uid` icin modelde indeks gorunuyor; sevkiyat/istisna apply'lari bu indeksten yararlanmalidir. Canli planda bu indeks kullanilmiyorsa istatistikler guncellenmelidir.
 - liste belge bazinda doner; ayni `cha_evrakno_seri` + `cha_evrakno_sira` altindaki birden fazla hizmet/cari hareket satiri tek fatura satirinda toplanir
-- `sourceLineCount`, belge altinda birlesen Mikro kaynak cari hareket satiri sayisidir; hizmet faturalarinda tek fatura icindeki hizmet kalemlerini anlamak icin kullanilir
+- hafif liste response'undaki `sourceLineCount`, belge altinda birlesen Mikro kaynak cari hareket satiri sayisidir. Detay/render response'unda XML'e uretilen gercek fatura kalem sayisiyla guncellenir.
 - `sourceLineSummary`, hizmet/demirbas kaynakli satirlarda `kod - ad` ozetidir; ornek: `0056 - CIRO PRIMI GELIRI % 20 | 0055 - CIRO PRIMI GELIRI % 10`
 - `taxRateSummary`, kaynak satirlarin Mikro vergi pointer'larindan cozulen KDV oran ozetidir; farkli KDV'li hizmet satirlari ayni faturada gorunebilir
 - `isSent = false` ise UI lokal HTML onizleme endpoint'ini acar
@@ -15621,7 +15629,7 @@ Davranis:
 - UBL-TR is kurali ve XSD dogrulamalari calistirilir
 - Uyumsoft'a fatura gonderilmez
 - Mikro `cha_belge_no`, `cha_kilitli` veya baska alanlar guncellenmez
-- bu endpoint UI'daki "Kontrol Et" butonunun karsiligidir; `send` hiz icin bu dogrulamalari tekrar calistirmaz
+- bu endpoint UI'daki "Kontrol Et" butonunun karsiligidir. UI kullaniciya hatalari gonderimden once gostermek icin bu endpoint'i kullanir; guvenlik icin `send` de ayni UBL-TR ve XSD kontrollerini Uyumsoft cagrisindan hemen once zorunlu olarak tekrar calistirir.
 
 Response `ValidateInvoiceDocumentsResponse`:
 
@@ -15722,13 +15730,16 @@ Davranis:
 - secimler duplicate ise backend tekilleÃƒâ€¦Ã…Â¸tirir
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
-- hiz icin UBL-TR is kurali ve XSD dogrulamalari burada tekrar calistirilmaz; bu kontroller icin kullanici once `/validate` endpoint'ini cagirir
+- UBL-TR is kurali ve XSD dogrulamalari Uyumsoft cagrisi oncesinde zorunlu calisir. UI'nin once `/validate` cagirmasi hizli kullanici geri bildirimi saglar ancak veri guvenligi UI davranisina birakilmaz.
+- backend satir neti, satir KDV matrahi, iskonto toplami, belge net matrahi, KDV ve `PayableAmount` aritmetigini kontrol eder; tutarsiz XML Uyumsoft'a gonderilmez.
 - ayni belge icin SQL application lock alinir; ayni belge baska bir istek tarafindan gonderiliyorsa ikinci istek Uyumsoft'a cagrilmaz ve ilgili satir hata mesaji ile doner
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
 - `serviceDocumentId` Uyumsoft'un teknik id'sidir; basarili gonderimde Mikro `cha_uuid` alanina yazilir, servis id bos donerse faturanin lokal UUID degeri fallback olarak saklanir
 - sonraki liste ekraninda gonderilmis fatura PDF ve tekrar gonderim aksiyonlari backend tarafinda bu UUID uzerinden cozulur; UI teknik UUID gondermek zorunda degildir
 - ayni anda `cha_kilitli = true`, `cha_degisti = true`, `cha_lastup_user = 39` ve `cha_lastup_date = now` set edilir
 - zaten gonderilmis kayitlar response'ta `isSucceeded = false` ile doner; genel request tamamen patlatilmaz
+- basarili veya hatali gonderim loglarinda toplam sureye ek olarak `BuildAndValidateMs`, `UyumsoftMs` ve `MarkAsSentMs` sureleri bulunur. Uzun beklemenin DB/XML, Uyumsoft veya Mikro geri yazma asamasindan hangisinde oldugu bu alanlarla ayristirilir.
+- Liste 2 saniyeyi veya onizleme 5 saniyeyi asarsa backend tek bir warning logu yazar. Liste logunda filtreler, kayit sayisi ve toplam sure; onizleme logunda `LoadMs`, `BuildMs` ve `RenderMs` alanlari bulunur. Normal hizdaki istekler icin ek log uretilmez.
 
 UBL / gonderim kurallari:
 

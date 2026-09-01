@@ -310,6 +310,34 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
                 errors.Add($"Line {lineId}: price amount is required.");
             }
 
+            var allowanceCharges = line.Elements(aggregate + "AllowanceCharge").ToArray();
+            if (lineExtensionAmount.HasValue && allowanceCharges.Length > 0)
+            {
+                var baseAmount = ReadCurrencyAmount(
+                    allowanceCharges[0].Element(basic + "BaseAmount"));
+                var allowanceTotal = allowanceCharges
+                    .Where(item => !string.Equals(
+                        Text(item.Element(basic + "ChargeIndicator")),
+                        "true",
+                        StringComparison.OrdinalIgnoreCase))
+                    .Sum(item => ReadCurrencyAmount(item.Element(basic + "Amount")) ?? 0m);
+                var chargeTotal = allowanceCharges
+                    .Where(item => string.Equals(
+                        Text(item.Element(basic + "ChargeIndicator")),
+                        "true",
+                        StringComparison.OrdinalIgnoreCase))
+                    .Sum(item => ReadCurrencyAmount(item.Element(basic + "Amount")) ?? 0m);
+
+                if (baseAmount.HasValue)
+                {
+                    MustMatch(
+                        lineExtensionAmount,
+                        baseAmount.Value - allowanceTotal + chargeTotal,
+                        $"Line {lineId}: LineExtensionAmount",
+                        errors);
+                }
+            }
+
             ValidateLineTax(line, aggregate, basic, lineId, errors);
         }
     }
@@ -332,6 +360,7 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
         }
 
         var taxableAmount = ReadDecimal(taxSubtotal.Element(basic + "TaxableAmount"));
+        var lineExtensionAmount = ReadDecimal(line.Element(basic + "LineExtensionAmount"));
         var taxAmount = ReadDecimal(taxSubtotal.Element(basic + "TaxAmount"));
         var percent = ReadDecimal(taxSubtotal.Element(basic + "Percent"));
         var taxTypeCode = taxSubtotal
@@ -349,6 +378,12 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
         if (!string.Equals(taxTypeCode, "0015", StringComparison.Ordinal))
         {
             errors.Add($"Line {lineId}: KDV TaxTypeCode must be 0015.");
+        }
+
+        if (taxableAmount.HasValue && lineExtensionAmount.HasValue &&
+            Math.Abs(taxableAmount.Value - lineExtensionAmount.Value) > 0.05m)
+        {
+            errors.Add($"Line {lineId}: TaxableAmount must match LineExtensionAmount.");
         }
 
         if (!percent.HasValue || !AllowedVatRates.Contains(percent.Value))
@@ -389,6 +424,7 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
         var taxExclusiveAmount = ReadCurrencyAmount(legalTotal?.Element(basic + "TaxExclusiveAmount"));
         var taxInclusiveAmount = ReadCurrencyAmount(legalTotal?.Element(basic + "TaxInclusiveAmount"));
         var chargeTotalAmount = ReadCurrencyAmount(legalTotal?.Element(basic + "ChargeTotalAmount")) ?? 0m;
+        var allowanceTotalAmount = ReadCurrencyAmount(legalTotal?.Element(basic + "AllowanceTotalAmount"));
         var payableAmount = ReadCurrencyAmount(legalTotal?.Element(basic + "PayableAmount"));
         var taxAmount = ReadCurrencyAmount(taxTotal?.Element(basic + "TaxAmount"));
 
@@ -396,10 +432,18 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
             ReadCurrencyAmount(line.Element(basic + "LineExtensionAmount")) ?? 0m));
         var lineTaxSum = RoundMoney(lines.Sum(line =>
             ReadCurrencyAmount(line.Element(aggregate + "TaxTotal")?.Element(basic + "TaxAmount")) ?? 0m));
+        var lineAllowanceSum = RoundMoney(lines.Sum(line =>
+            line.Elements(aggregate + "AllowanceCharge")
+                .Where(item => !string.Equals(
+                    Text(item.Element(basic + "ChargeIndicator")),
+                    "true",
+                    StringComparison.OrdinalIgnoreCase))
+                .Sum(item => ReadCurrencyAmount(item.Element(basic + "Amount")) ?? 0m)));
 
         MustMatch(lineExtensionTotal, lineSum, "LegalMonetaryTotal.LineExtensionAmount", errors);
         MustMatch(taxExclusiveAmount, lineSum, "LegalMonetaryTotal.TaxExclusiveAmount", errors);
         MustMatch(taxAmount, lineTaxSum, "TaxTotal.TaxAmount", errors);
+        MustMatch(allowanceTotalAmount, lineAllowanceSum, "AllowanceTotalAmount", errors);
 
         if (taxInclusiveAmount.HasValue)
         {

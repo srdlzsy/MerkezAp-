@@ -15,4 +15,33 @@ internal static class InvoiceSendingAmountFormatter
 
     public static string FormatAllowanceAmount(decimal value) =>
         RoundAllowanceAmount(value).ToString("0.00##", CultureInfo.InvariantCulture);
+
+    public static InvoiceSendingTotals CalculateTotals(
+        decimal grossTotal,
+        decimal discountTotal,
+        decimal taxTotal,
+        decimal chargeTotal)
+    {
+        var roundedGrossTotal = RoundMoney(grossTotal);
+        var roundedDiscountTotal = RoundMoney(Math.Max(0m, discountTotal));
+        var lineExtensionTotal = RoundMoney(Math.Max(0m, roundedGrossTotal - roundedDiscountTotal));
+        var roundedTaxTotal = RoundMoney(taxTotal);
+        var roundedChargeTotal = RoundMoney(chargeTotal);
+
+        return new InvoiceSendingTotals(
+            roundedGrossTotal,
+            roundedDiscountTotal,
+            lineExtensionTotal,
+            roundedTaxTotal,
+            roundedChargeTotal,
+            RoundMoney(lineExtensionTotal + roundedTaxTotal + roundedChargeTotal));
+    }
 }
+
+internal sealed record InvoiceSendingTotals(
+    decimal GrossTotal,
+    decimal DiscountTotal,
+    decimal LineExtensionTotal,
+    decimal TaxTotal,
+    decimal ChargeTotal,
+    decimal PayableTotal);

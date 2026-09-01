@@ -68,6 +68,8 @@ public sealed record InvoiceSendingListItemDto(
     string InvoiceProfileId,
     string InvoiceTypeCode,
     InvoiceSendingScenario Scenario,
+    decimal GrossTotal,
+    decimal DiscountTotal,
     decimal LineExtensionTotal,
     decimal TaxTotal,
     decimal ChargeTotal,
