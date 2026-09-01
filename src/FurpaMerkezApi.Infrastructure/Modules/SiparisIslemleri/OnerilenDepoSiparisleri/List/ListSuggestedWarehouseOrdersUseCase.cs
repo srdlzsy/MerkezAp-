@@ -340,7 +340,7 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
             ReadDouble(reader, "SourceOnHand"),
             ReadDouble(reader, "SalesQuantity"),
             ReadDouble(reader, "OpenIncomingOrderQuantity"),
-            ReadDouble(reader, "PackageFactor"),
+            NormalizeUnitMultiplier(ReadDouble(reader, "PackageFactor")),
             ReadDouble(reader, "MinDay"),
             ReadDouble(reader, "RecommendedDay"),
             ReadDouble(reader, "MaxDay"),
@@ -382,6 +382,12 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
 
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static double NormalizeUnitMultiplier(double value)
+    {
+        var normalized = Math.Abs(value);
+        return normalized > 0d ? normalized : 0d;
+    }
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;

@@ -9,7 +9,7 @@ public sealed record SuggestedWarehouseOrderListItemDto(
     double SourceOnHand,
     double SalesQuantity,
     double OpenIncomingOrderQuantity,
-    double PackageFactor,
+    double UnitMultiplier,
     double MinDay,
     double RecommendedDay,
     double MaxDay,

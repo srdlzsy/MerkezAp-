@@ -283,7 +283,8 @@ public sealed class AramaIslemleriController(
                 resolved.UnitsPerCase,
                 resolved.DefaultSupplierCode,
                 resolved.DefaultSupplierName,
-                Array.Empty<ProductCustomerSuggestionDto>());
+                Array.Empty<ProductCustomerSuggestionDto>(),
+                resolved.UnitMultiplier);
         }
 
         var suggestions = await getProductCustomerSuggestionsUseCase.ExecuteAsync(
@@ -303,7 +304,8 @@ public sealed class AramaIslemleriController(
             resolved.UnitsPerCase,
             suggestions.DefaultSupplierCode ?? resolved.DefaultSupplierCode,
             suggestions.DefaultSupplierName ?? resolved.DefaultSupplierName,
-            suggestions.Suggestions);
+            suggestions.Suggestions,
+            resolved.UnitMultiplier);
     }
 
     private int ResolveWarehouseNo(int? warehouseNo)

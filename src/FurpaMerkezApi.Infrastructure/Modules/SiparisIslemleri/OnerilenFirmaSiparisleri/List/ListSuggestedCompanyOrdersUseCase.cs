@@ -350,7 +350,7 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
             ReadDouble(reader, "TargetOnHand"),
             ReadDouble(reader, "SalesQuantity"),
             ReadDouble(reader, "OpenCompanyOrderQuantity"),
-            ReadDouble(reader, "PackageFactor"),
+            NormalizeUnitMultiplier(ReadDouble(reader, "PackageFactor")),
             ReadDouble(reader, "MinDay"),
             ReadDouble(reader, "RecommendedDay"),
             ReadDouble(reader, "MaxDay"),
@@ -401,6 +401,12 @@ public sealed class ListSuggestedCompanyOrdersUseCase(
 
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static double NormalizeUnitMultiplier(double value)
+    {
+        var normalized = Math.Abs(value);
+        return normalized > 0d ? normalized : 0d;
+    }
 
     private static int? ReadNullableInt(DbDataReader reader, string name) =>
         reader[name] is DBNull ? null : Convert.ToInt32(reader[name]);

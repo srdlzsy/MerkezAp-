@@ -192,6 +192,8 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             var salesBlockCode = ReadNullableInt(reader, "SatisDursun");
             var orderBlockCode = ReadNullableInt(reader, "SipDursun");
             var goodsAcceptanceBlockCode = ReadNullableInt(reader, "MalKabulDursun");
+            var primaryUnitMultiplier = ReadDouble(reader, "BirimKatsayisi");
+            var secondaryUnitMultiplier = NormalizeUnitMultiplier(ReadDouble(reader, "BirimKatsayisi2"));
 
             products.Add(new ProductLookupItemDto(
                 ReadInt(reader, "DepoNo"),
@@ -201,9 +203,9 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                 ReadDouble(reader, "Fiyati"),
                 ReadInt(reader, "FiyatTipKodu"),
                 ReadString(reader, "BirimAd"),
-                ReadDouble(reader, "BirimKatsayisi"),
+                secondaryUnitMultiplier > 0d ? secondaryUnitMultiplier : NormalizeUnitMultiplier(primaryUnitMultiplier, 1d),
                 ReadString(reader, "BirimAd2"),
-                ReadDouble(reader, "BirimKatsayisi2"),
+                secondaryUnitMultiplier,
                 salesBlockCode,
                 orderBlockCode,
                 goodsAcceptanceBlockCode,
@@ -253,6 +255,12 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static double NormalizeUnitMultiplier(double value, double fallback = 0d)
+    {
+        var normalized = Math.Abs(value);
+        return normalized > 0d ? normalized : fallback;
+    }
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;

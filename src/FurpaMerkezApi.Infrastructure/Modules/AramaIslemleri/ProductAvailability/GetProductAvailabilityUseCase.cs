@@ -74,6 +74,7 @@ public sealed class GetProductAvailabilityUseCase(
                     Math.Abs(currentStockQuantity) > 0.000001d,
                     product.Price,
                     product.PriceTypeCode,
+                    product.UnitMultiplier,
                     product.SecondaryUnitName,
                     product.SecondaryUnitMultiplier,
                     product.SalesBlockCode,

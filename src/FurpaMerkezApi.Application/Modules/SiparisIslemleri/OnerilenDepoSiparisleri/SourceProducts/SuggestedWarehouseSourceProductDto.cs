@@ -9,7 +9,7 @@ public sealed record SuggestedWarehouseSourceProductDto(
     string ModelName,
     string UnitName,
     string SecondaryUnitName,
-    double PackageFactor,
+    double UnitMultiplier,
     string Barcode,
     string CaseBarcode,
     double Quantity,

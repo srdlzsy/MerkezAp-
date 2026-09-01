@@ -48,4 +48,5 @@ public sealed record BarcodeResolutionDto(
     bool IsUsableInOperation = false,
     string? OperationDecision = null,
     IReadOnlyCollection<string>? Warnings = null,
-    IReadOnlyCollection<string>? Errors = null);
+    IReadOnlyCollection<string>? Errors = null,
+    double? UnitMultiplier = null);

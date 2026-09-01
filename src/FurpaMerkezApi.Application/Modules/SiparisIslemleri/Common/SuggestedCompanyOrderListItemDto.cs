@@ -10,7 +10,7 @@ public sealed record SuggestedCompanyOrderListItemDto(
     double TargetOnHand,
     double SalesQuantity,
     double OpenCompanyOrderQuantity,
-    double PackageFactor,
+    double UnitMultiplier,
     double MinDay,
     double RecommendedDay,
     double MaxDay,

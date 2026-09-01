@@ -645,7 +645,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             isUsableInOperation,
             operationDecision,
             warnings,
-            errors);
+            errors,
+            ResolveUnitMultiplier(unitsPerCase, matchedUnitsPerCase, matchedUnitMultiplier));
 
     private static OperationEvaluation EvaluateScreenUsability(
         string? screenCode,
@@ -829,6 +830,12 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             _ => NormalizeMultiplier(stock.Unit1Multiplier)
         };
 
+    private static double? ResolveUnitMultiplier(double? unitsPerCase, double? matchedUnitsPerCase, double? matchedUnitMultiplier)
+    {
+        var value = matchedUnitsPerCase ?? unitsPerCase ?? matchedUnitMultiplier;
+        return NormalizeMultiplier(value);
+    }
+
     private static double? NormalizeMultiplier(double? value)
     {
         if (!value.HasValue)
@@ -836,7 +843,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             return null;
         }
 
-        return value.Value <= 0d ? 1d : value.Value;
+        var normalized = Math.Abs(value.Value);
+        return normalized <= 0d ? 1d : normalized;
     }
 
     private static string? NormalizeOrNull(string? value)

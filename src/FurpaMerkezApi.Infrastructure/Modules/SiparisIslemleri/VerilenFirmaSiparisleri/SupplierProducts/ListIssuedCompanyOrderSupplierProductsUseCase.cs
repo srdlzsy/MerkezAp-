@@ -212,7 +212,7 @@ public sealed class ListIssuedCompanyOrderSupplierProductsUseCase(MikroDbContext
             GetModelName(modelCode),
             ReadString(reader, "UnitName"),
             ReadString(reader, "SecondaryUnitName"),
-            ReadDouble(reader, "PackageFactor"),
+            NormalizeUnitMultiplier(ReadDouble(reader, "PackageFactor")),
             ReadString(reader, "Barcode"),
             ReadString(reader, "CaseBarcode"),
             0,
@@ -264,6 +264,12 @@ public sealed class ListIssuedCompanyOrderSupplierProductsUseCase(MikroDbContext
 
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static double NormalizeUnitMultiplier(double value)
+    {
+        var normalized = Math.Abs(value);
+        return normalized > 0d ? normalized : 0d;
+    }
 
     private static int? ReadNullableInt(DbDataReader reader, string name) =>
         reader[name] is DBNull ? null : Convert.ToInt32(reader[name]);

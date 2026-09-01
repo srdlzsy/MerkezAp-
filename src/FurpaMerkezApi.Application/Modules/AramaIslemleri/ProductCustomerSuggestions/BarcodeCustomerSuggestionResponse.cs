@@ -13,4 +13,5 @@ public sealed record BarcodeCustomerSuggestionResponse(
     double? UnitsPerCase,
     string? DefaultSupplierCode,
     string? DefaultSupplierName,
-    IReadOnlyCollection<ProductCustomerSuggestionDto> Suggestions);
+    IReadOnlyCollection<ProductCustomerSuggestionDto> Suggestions,
+    double? UnitMultiplier = null);

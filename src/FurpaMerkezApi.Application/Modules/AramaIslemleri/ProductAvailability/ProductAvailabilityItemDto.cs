@@ -11,6 +11,7 @@ public sealed record ProductAvailabilityItemDto(
     bool HasStock,
     double Price,
     int PriceTypeCode,
+    double UnitMultiplier,
     string SecondaryUnitName,
     double SecondaryUnitMultiplier,
     int? SalesBlockCode,

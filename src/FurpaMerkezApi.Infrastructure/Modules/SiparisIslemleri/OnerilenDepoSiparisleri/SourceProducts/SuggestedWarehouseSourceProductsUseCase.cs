@@ -154,7 +154,7 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
             GetModelName(modelCode),
             ReadString(reader, "UnitName"),
             ReadString(reader, "SecondaryUnitName"),
-            ReadDouble(reader, "PackageFactor"),
+            NormalizeUnitMultiplier(ReadDouble(reader, "PackageFactor")),
             ReadString(reader, "Barcode"),
             ReadString(reader, "CaseBarcode"),
             0,
@@ -177,6 +177,12 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
 
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static double NormalizeUnitMultiplier(double value)
+    {
+        var normalized = Math.Abs(value);
+        return normalized > 0d ? normalized : 0d;
+    }
 
     private static bool IsBusinessRuleSqlException(SqlException exception) =>
         exception.Number is 50001 or 50002;
