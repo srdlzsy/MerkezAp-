@@ -536,6 +536,12 @@ public sealed class GetInboundDespatchLookupUseCase(
         {
             UnitPrice = line.UnitPrice,
             LineAmount = line.LineAmount,
+            NetUnitPrice = CalculateNetUnitPrice(line.LineAmount, line.Quantity) ?? line.UnitPrice,
+            PriceSource = line.LineAmount is not null && line.Quantity > 0d
+                ? "line-extension-amount"
+                : line.UnitPrice is not null
+                    ? "price-amount"
+                    : null,
             QuantitySource = line.QuantitySource
         };
     }
@@ -978,6 +984,16 @@ public sealed class GetInboundDespatchLookupUseCase(
         double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;
+
+    private static double? CalculateNetUnitPrice(decimal? lineAmount, double quantity)
+    {
+        if (lineAmount is null || quantity <= 0d)
+        {
+            return null;
+        }
+
+        return Math.Round((double)(lineAmount.Value / (decimal)quantity), 4, MidpointRounding.AwayFromZero);
+    }
 
     private static decimal? ParseDecimalOrNull(string? value) =>
         decimal.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)

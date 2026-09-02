@@ -282,6 +282,12 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             request.WarehouseNo,
             matchedUnitPointer,
             cancellationToken);
+        var purchasePrice = supplierCode is null
+            ? null
+            : await FindLatestPurchasePriceAsync(
+                stock.StockCode,
+                supplierCode,
+                cancellationToken);
 
         var salesBlockCode = warehouseDetail?.SalesBlockCode ?? stock.SalesBlockCode;
         var orderBlockCode = warehouseDetail?.OrderBlockCode ?? stock.OrderBlockCode;
@@ -357,6 +363,10 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             purchaseRequirementReason,
             price?.Price,
             price?.PriceTypeCode,
+            purchasePrice?.NetPrice,
+            purchasePrice?.GrossPrice,
+            purchasePrice is null ? null : "purchase-requirement",
+            purchasePrice?.SupplierCode,
             operationDecision.IsUsable,
             operationDecision.Reason,
             warnings,
@@ -562,6 +572,74 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 price.sfiyat_listesirano))
             .FirstOrDefaultAsync(cancellationToken);
 
+    private async Task<PurchasePriceSnapshot?> FindLatestPurchasePriceAsync(
+        string stockCode,
+        string? supplierCode,
+        CancellationToken cancellationToken)
+    {
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT TOP (1)
+                    LTRIM(RTRIM(sas_cari_kod)) AS SupplierCode,
+                    ISNULL(sas_brut_fiyat, 0) AS GrossPrice,
+                    ISNULL(sas_isk_yuzde1, 0) AS DiscountRate1,
+                    ISNULL(sas_isk_yuzde2, 0) AS DiscountRate2,
+                    ISNULL(sas_isk_yuzde3, 0) AS DiscountRate3,
+                    ISNULL(sas_isk_yuzde4, 0) AS DiscountRate4,
+                    ISNULL(sas_isk_yuzde5, 0) AS DiscountRate5,
+                    ISNULL(sas_isk_yuzde6, 0) AS DiscountRate6
+                FROM dbo.SATINALMA_SARTLARI WITH (NOLOCK)
+                WHERE sas_stok_kod = @stockCode
+                  AND (@supplierCode IS NULL OR sas_cari_kod = @supplierCode)
+                ORDER BY
+                    ISNULL(sas_belge_tarih, CONVERT(datetime, '19000101', 112)) DESC,
+                    ISNULL(sas_create_date, CONVERT(datetime, '19000101', 112)) DESC,
+                    sas_Guid DESC;
+                """;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 300;
+
+            AddParameter(command, "@stockCode", stockCode, DbType.String);
+            AddParameter(command, "@supplierCode", supplierCode, DbType.String);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            var grossPrice = ReadDouble(reader, "GrossPrice");
+            return new PurchasePriceSnapshot(
+                CalculateNetPurchasePrice(
+                    grossPrice,
+                    ReadDouble(reader, "DiscountRate1"),
+                    ReadDouble(reader, "DiscountRate2"),
+                    ReadDouble(reader, "DiscountRate3"),
+                    ReadDouble(reader, "DiscountRate4"),
+                    ReadDouble(reader, "DiscountRate5"),
+                    ReadDouble(reader, "DiscountRate6")),
+                grossPrice,
+                NormalizeOrNull(ReadString(reader, "SupplierCode")));
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
     private static BarcodeResolutionDto CreateMissingResponse(
         BarcodeLookupInfo lookup,
         int warehouseNo,
@@ -616,6 +694,10 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             purchaseRequirementReason: null,
             salesPrice: null,
             priceTypeCode: null,
+            purchasePrice: null,
+            purchaseGrossPrice: null,
+            purchasePriceSource: null,
+            purchaseSupplierCode: null,
             isUsableInOperation: false,
             operationDecision: reason,
             warnings: warnings,
@@ -661,6 +743,10 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         string? purchaseRequirementReason,
         double? salesPrice,
         int? priceTypeCode,
+        double? purchasePrice,
+        double? purchaseGrossPrice,
+        string? purchasePriceSource,
+        string? purchaseSupplierCode,
         bool isUsableInOperation,
         string? operationDecision,
         IReadOnlyCollection<string> warnings,
@@ -714,7 +800,11 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             operationDecision,
             warnings,
             errors,
-            ResolveUnitMultiplier(unitsPerCase, matchedUnitsPerCase, matchedUnitMultiplier));
+            ResolveUnitMultiplier(unitsPerCase, matchedUnitsPerCase, matchedUnitMultiplier),
+            purchasePrice,
+            purchaseGrossPrice,
+            purchasePriceSource,
+            purchaseSupplierCode);
 
     private static OperationEvaluation EvaluateScreenUsability(
         string? screenCode,
@@ -921,6 +1011,24 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
+    private static double CalculateNetPurchasePrice(
+        double grossPrice,
+        params double[] discountRates)
+    {
+        var netPrice = grossPrice;
+        foreach (var discountRate in discountRates)
+        {
+            if (discountRate <= 0d)
+            {
+                continue;
+            }
+
+            netPrice -= netPrice * discountRate / 100d;
+        }
+
+        return Math.Round(netPrice, 4, MidpointRounding.AwayFromZero);
+    }
+
     private static void AddParameter(DbCommand command, string name, object? value, DbType dbType)
     {
         var parameter = command.CreateParameter();
@@ -929,6 +1037,12 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
+
+    private static double ReadDouble(DbDataReader reader, string name) =>
+        reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static string ReadString(DbDataReader reader, string name) =>
+        reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;
 
     private sealed record BarcodeRow(
         string Barcode,
@@ -980,6 +1094,11 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
     private sealed record PriceSnapshot(
         double? Price,
         int? PriceTypeCode);
+
+    private sealed record PurchasePriceSnapshot(
+        double NetPrice,
+        double GrossPrice,
+        string? SupplierCode);
 
     private sealed record OperationEvaluation(
         bool IsUsable,

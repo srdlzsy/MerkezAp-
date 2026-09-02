@@ -49,4 +49,8 @@ public sealed record BarcodeResolutionDto(
     string? OperationDecision = null,
     IReadOnlyCollection<string>? Warnings = null,
     IReadOnlyCollection<string>? Errors = null,
-    double? UnitMultiplier = null);
+    double? UnitMultiplier = null,
+    double? PurchasePrice = null,
+    double? PurchaseGrossPrice = null,
+    string? PurchasePriceSource = null,
+    string? PurchaseSupplierCode = null);

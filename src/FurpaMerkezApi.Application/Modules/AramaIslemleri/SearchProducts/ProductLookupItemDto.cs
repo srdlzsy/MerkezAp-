@@ -23,4 +23,8 @@ public sealed record ProductLookupItemDto(
     bool IsVariableWeightBarcode = false,
     double? EmbeddedQuantity = null,
     string? EmbeddedQuantityUnit = null,
-    bool? IsBarcodeCheckDigitValid = null);
+    bool? IsBarcodeCheckDigitValid = null,
+    double? PurchasePrice = null,
+    double? PurchaseGrossPrice = null,
+    string? PurchasePriceSource = null,
+    string? PurchaseSupplierCode = null);

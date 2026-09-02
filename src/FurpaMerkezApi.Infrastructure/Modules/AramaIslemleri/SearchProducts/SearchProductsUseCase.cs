@@ -107,7 +107,11 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     cancellationToken);
             }
 
-            return products;
+            return await EnrichWithPurchasePricesAsync(
+                connection,
+                products,
+                supplierCode,
+                cancellationToken);
         }
         finally
         {
@@ -358,6 +362,176 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         return products;
     }
 
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> EnrichWithPurchasePricesAsync(
+        DbConnection connection,
+        IReadOnlyCollection<ProductLookupItemDto> products,
+        string? supplierCode,
+        CancellationToken cancellationToken)
+    {
+        if (products.Count == 0 || supplierCode is null)
+        {
+            return products;
+        }
+
+        var stockCodes = products
+            .Select(product => NormalizeOrNull(product.StockCode))
+            .Where(stockCode => stockCode is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxTake)
+            .ToArray();
+
+        if (stockCodes.Length == 0)
+        {
+            return products;
+        }
+
+        var purchasePrices = await ReadLatestPurchasePricesAsync(
+            connection,
+            stockCodes,
+            supplierCode,
+            cancellationToken);
+
+        if (purchasePrices.Count == 0)
+        {
+            return products;
+        }
+
+        return products
+            .Select(product =>
+            {
+                var stockCode = NormalizeOrNull(product.StockCode);
+                return stockCode is not null && purchasePrices.TryGetValue(stockCode, out var purchasePrice)
+                    ? product with
+                    {
+                        PurchasePrice = purchasePrice.NetPrice,
+                        PurchaseGrossPrice = purchasePrice.GrossPrice,
+                        PurchasePriceSource = "purchase-requirement",
+                        PurchaseSupplierCode = purchasePrice.SupplierCode
+                    }
+                    : product;
+            })
+            .ToArray();
+    }
+
+    private static async Task<Dictionary<string, PurchasePriceSnapshot>> ReadLatestPurchasePricesAsync(
+        DbConnection connection,
+        IReadOnlyCollection<string> stockCodes,
+        string? supplierCode,
+        CancellationToken cancellationToken)
+    {
+        var purchasePrices = new Dictionary<string, PurchasePriceSnapshot>(StringComparer.OrdinalIgnoreCase);
+        using var command = connection.CreateCommand();
+        var stockCodeParameterNames = stockCodes
+            .Select((stockCode, index) =>
+            {
+                var parameterName = $"@stockCode{index}";
+                AddParameter(command, parameterName, stockCode);
+                return parameterName;
+            })
+            .ToArray();
+
+        command.CommandText = $"""
+            WITH LatestPurchaseTerms AS
+            (
+                SELECT
+                    LTRIM(RTRIM(sas_stok_kod)) AS StockCode,
+                    LTRIM(RTRIM(sas_cari_kod)) AS SupplierCode,
+                    ISNULL(sas_brut_fiyat, 0) AS GrossPrice,
+                    ISNULL(sas_isk_yuzde1, 0) AS DiscountRate1,
+                    ISNULL(sas_isk_yuzde2, 0) AS DiscountRate2,
+                    ISNULL(sas_isk_yuzde3, 0) AS DiscountRate3,
+                    ISNULL(sas_isk_yuzde4, 0) AS DiscountRate4,
+                    ISNULL(sas_isk_yuzde5, 0) AS DiscountRate5,
+                    ISNULL(sas_isk_yuzde6, 0) AS DiscountRate6,
+                    ROW_NUMBER() OVER
+                    (
+                        PARTITION BY LTRIM(RTRIM(sas_stok_kod))
+                        ORDER BY
+                            ISNULL(sas_belge_tarih, CONVERT(datetime, '19000101', 112)) DESC,
+                            ISNULL(sas_create_date, CONVERT(datetime, '19000101', 112)) DESC,
+                            sas_Guid DESC
+                    ) AS RowNo
+                FROM dbo.SATINALMA_SARTLARI WITH (NOLOCK)
+                WHERE sas_stok_kod IS NOT NULL
+                  AND LTRIM(RTRIM(sas_stok_kod)) IN ({string.Join(", ", stockCodeParameterNames)})
+                  AND (@supplierCode IS NULL OR sas_cari_kod = @supplierCode)
+            )
+            SELECT
+                StockCode,
+                SupplierCode,
+                GrossPrice,
+                DiscountRate1,
+                DiscountRate2,
+                DiscountRate3,
+                DiscountRate4,
+                DiscountRate5,
+                DiscountRate6
+            FROM LatestPurchaseTerms
+            WHERE RowNo = 1;
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+
+        AddParameter(command, "@supplierCode", supplierCode);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var stockCode = ReadString(reader, "StockCode");
+            if (string.IsNullOrWhiteSpace(stockCode))
+            {
+                continue;
+            }
+
+            var grossPrice = ReadDouble(reader, "GrossPrice");
+            purchasePrices[stockCode] = new PurchasePriceSnapshot(
+                CalculateNetPurchasePrice(
+                    grossPrice,
+                    ReadDouble(reader, "DiscountRate1"),
+                    ReadDouble(reader, "DiscountRate2"),
+                    ReadDouble(reader, "DiscountRate3"),
+                    ReadDouble(reader, "DiscountRate4"),
+                    ReadDouble(reader, "DiscountRate5"),
+                    ReadDouble(reader, "DiscountRate6")),
+                grossPrice,
+                NormalizeOrNull(ReadString(reader, "SupplierCode")));
+        }
+
+        return purchasePrices;
+    }
+
+    private static double CalculateNetPurchasePrice(
+        double grossPrice,
+        double discountRate1,
+        double discountRate2,
+        double discountRate3,
+        double discountRate4,
+        double discountRate5,
+        double discountRate6)
+    {
+        var netPrice = grossPrice;
+        foreach (var discountRate in new[]
+                 {
+                     discountRate1,
+                     discountRate2,
+                     discountRate3,
+                     discountRate4,
+                     discountRate5,
+                     discountRate6
+                 })
+        {
+            if (discountRate <= 0d)
+            {
+                continue;
+            }
+
+            netPrice -= netPrice * discountRate / 100d;
+        }
+
+        return Math.Round(netPrice, 4, MidpointRounding.AwayFromZero);
+    }
+
     private static async Task<IReadOnlyCollection<string>> ReadPartialBarcodeSuffixCandidatesAsync(
         DbConnection connection,
         string suffix,
@@ -440,4 +614,9 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
     private static string ReadString(DbDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name]) ?? string.Empty;
+
+    private sealed record PurchasePriceSnapshot(
+        double NetPrice,
+        double GrossPrice,
+        string? SupplierCode);
 }

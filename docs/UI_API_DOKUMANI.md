@@ -3993,6 +3993,10 @@ Response:
     "stockName": "MNV SEFTALI KG",
     "price": 99.9,
     "priceTypeCode": 1,
+    "purchasePrice": 50,
+    "purchaseGrossPrice": 62.5,
+    "purchasePriceSource": "purchase-requirement",
+    "purchaseSupplierCode": "120.01.03106",
     "unitName": "ADET",
     "unitMultiplier": 6,
     "secondaryUnitName": "KOLI",
@@ -4016,6 +4020,10 @@ Response:
 
 UI kullanim notu:
 
+- `price` satis fiyatidir; firma mal kabul veya alis maliyeti icin body'ye basilmamalidir.
+- `purchasePrice` sadece `companyCode/supplierCode` ile cari baglamli aramada dolabilir; son `SATINALMA_SARTLARI` kaydindan iskonto sonrasi alis birim fiyatidir. Firma mal kabulde e-belge satirindan `netUnitPrice` gelmiyorsa UI `unitPrice` icin sadece `purchasePrice` alanini kullanmalidir.
+- Firma mal kabul ekraninda kullaniciya alis fiyati elle yazdirilmamalidir. `netUnitPrice` veya `purchasePrice` yoksa UI satiri durdurmadan `unitPrice=0` gondermelidir; satis fiyati fallback olarak kullanilmamalidir.
+- `purchaseGrossPrice` satin alma sartindaki brut fiyat, `purchaseSupplierCode` ise fiyat kaydinin carisidir. `companyCode/supplierCode` ile arama yapilirsa fiyat o carinin satin alma sartindan gelir.
 - Mal kabulde `isGoodsAcceptanceBlocked = true` olan urunlerde uyari gosterilebilir.
 - Siparis girisinde `isOrderBlocked = true` olan urunlerde uyari veya engel uygulanabilir.
 - Satis/sevk formlarinda `isSalesBlocked = true` olan urunlerde uyari gosterilebilir; depolar arasi sevkte bu alan tek basina satira ekleme engeli degildir.
@@ -4288,6 +4296,10 @@ Response:
   "purchaseRequirementReason": "Secili tedarikci icin satinalma sarti bulundu.",
   "salesPrice": 99.9,
   "priceTypeCode": 1,
+  "purchasePrice": 50.0,
+  "purchaseGrossPrice": 62.5,
+  "purchasePriceSource": "purchase-requirement",
+  "purchaseSupplierCode": "120.01.03106",
   "isPassive": false,
   "isUsableInOperation": true,
   "operationDecision": "Urun mal kabul isleminde kullanilabilir.",
@@ -4307,6 +4319,7 @@ UI kullanim notu:
 - Kamera ile tek barkod okutulan ekranlarda once bu endpoint cagrilmalidir.
 - UI barkodun urun/stok/ad/tipi tahminini frontend'de yapmamalidir; okutulan degeri aynen bu endpoint'e gondermelidir.
 - Satira ekleme karari icin ana alan `isUsableInOperation` olmalidir. `false` ise `operationDecision` ve `errors` kullaniciya gosterilmelidir. Sevkte `isSalesBlocked` tek basina engel gibi yorumlanmamalidir.
+- `salesPrice` satis fiyatidir; firma mal kabul body fiyatina basilmaz. `purchasePrice` sadece `supplierCode/companyCode` verilirse dolabilir. Mal kabulde e-belge `netUnitPrice` yoksa ve barkod cozumleme `purchasePrice` donduruyorsa UI `unitPrice` icin sadece `purchasePrice` kullanmalidir. `purchasePrice` yoksa kullaniciya fiyat alani actirmadan `unitPrice=0` gonderilmelidir.
 - Terazi barkodunda satir miktari icin `embeddedQuantity` kullanilabilir; bos ise varsayilan miktar UI tarafinda `1` kabul edilebilir.
 - Koli ici gosterim icin `unitMultiplier > 1` ise `KOLI ici 12 ADET` gibi gosterim yapilabilir.
 - Koli barkodu okutulduysa `isCaseBarcode = true` ve `matchedUnitsPerCase` dolu gelir; bu durumda UI barkoddan gelen koli miktarini da onerebilir.
@@ -6509,7 +6522,9 @@ UI on dolum kurali:
 | `ettn` | `officialDocumentEttn` | Belge Akis Takibi `externalUuid` icin asil alandir. |
 | `lines[].internalStockCode` | `lines[].stockCode` | Sadece `isMatched=true` ve `canUseForGoodsAcceptance=true` ise otomatik satira tasinir. |
 | `lines[].quantity` | `lines[].dispatchQuantity` ve ilk oneride `acceptedQuantity` | Resmi belge miktari sevk/gelen miktar kabul edilir; kullanici fiili sayimla `acceptedQuantity` degerini degistirebilir. |
-| `lines[].unitPrice` | `lines[].unitPrice` | Varsa on dolumdur; kullanici/ekran son degeri create body'de gonderir. |
+| `lines[].netUnitPrice` | `lines[].unitPrice` | E-faturada iskonto sonrasi net satir tutari / miktar hesabidir; firma mal kabul create icin oncelikli fiyat alanidir. |
+| `lines[].unitPrice` | bilgi/ekranda brut fiyat | UBL `PriceAmount` degeridir; iskonto varsa brut olabilir. `netUnitPrice` doluyken mal kabul body'deki `unitPrice` icin bu alan kullanilmamalidir. |
+| `lines[].lineAmount` | kontrol/ozet | E-fatura satirinin iskonto sonrasi net mal hizmet tutaridir. |
 | `lines[].description` | `lines[].description` | Max 50 karaktere kirpilerek gonderilmelidir. |
 
 Not:
@@ -6517,6 +6532,7 @@ Not:
 - `documentNo`, Mikro `STOK_HAREKETLERI.sth_belge_no` alanidir; ETTN degildir.
 - `officialDocumentEttn` gonderilmezse mal kabul fisinin Mikro kaydi olusabilir, fakat Belge Akis Takibi'nde ETTN/UUID ile izleme yapilamaz.
 - UI lookup response'unu sakliyorsa bile kaydetmede sade ve net model olarak `officialDocumentKind`, `officialDocumentNo`, `officialDocumentDate`, `officialDocumentEttn` alanlarini gondermelidir.
+- Firma mal kabulde satis fiyati kullanilmamalidir. E-belge satiri icin fiyat onceligi `netUnitPrice` olmalidir. E-belge fiyat vermiyorsa cari baglamli urun/barkod aramasindan gelen `purchasePrice` kullanilir. Bu iki kaynak da yoksa UI fiyat girisi actirmadan `unitPrice=0` gondermelidir.
 
 Response:
 
@@ -6599,6 +6615,8 @@ Response:
       "canUseForGoodsAcceptance": true,
       "unitPrice": null,
       "lineAmount": null,
+      "netUnitPrice": null,
+      "priceSource": null,
       "quantitySource": "despatch"
     },
     {
@@ -6619,6 +6637,8 @@ Response:
       "canUseForGoodsAcceptance": false,
       "unitPrice": null,
       "lineAmount": null,
+      "netUnitPrice": null,
+      "priceSource": null,
       "quantitySource": "despatch"
     }
   ]
@@ -6663,8 +6683,10 @@ E-fatura bulunursa ayni response modeli kullanilir; farkli dolan alanlar ornegi:
       "internalStockName": "Stok Adi",
       "isMatched": true,
       "canUseForGoodsAcceptance": true,
-      "unitPrice": 1000.0,
-      "lineAmount": 10000.0,
+      "unitPrice": 62.5,
+      "lineAmount": 150.0,
+      "netUnitPrice": 50.0,
+      "priceSource": "line-extension-amount",
       "quantitySource": "invoice"
     }
   ]
@@ -6724,6 +6746,7 @@ Onemli not:
 - `autoCreateReturnForPartialAcceptance = false` gonderilirse fark icin iade evragi olusmaz; satir `returnStatus = IadeBekliyor` olarak doner ve UI bunu manuel cozum bekleyen fark gibi gostermelidir.
 - Satirda `orderGuid` doluysa `sth_sip_uid = orderGuid` kullanilir. `Database` modunda `SIPARISLER.sip_teslim_miktar` mal kabul hareket miktari, yani `dispatchQuantity`, kadar artirilir; `MikroApi` modunda teslim etkisi Mikro API'ye birakilir ve backend siparis tablosuna ek DB update yapmaz.
 - Satirda `orderGuid` bos veya `null` ise siparis GUID'i bos gider ve siparis tablosuna dokunulmaz.
+- Satir `unitPrice` degeri net alis birim fiyatidir; `urunler/fiyat-gor` response'undaki `price` satis fiyati oldugu icin buraya basilmaz. E-belge lookup'tan geliyorsa `lines[].netUnitPrice`, cari baglamli urun/barkod aramadan geliyorsa `purchasePrice` kullanilmalidir. UI kullaniciya alis fiyati elle girdirmemeli; bu iki otomatik kaynak da yoksa `unitPrice=0` gondermelidir.
 - Siparis kalanindan fazla kabul varsayilan olarak engellenir. `allowOrderOverReceiving = true` gonderilirse kalan kadar siparisli, fazla kisim siparissiz hareket olarak bolunur.
 - `documentNo` opsiyoneldir. E-belge/e-irsaliye no varsa tam `seri + 9 haneli sayisal sira` formatinda gonderilebilir.
 - ETTN/UUID ile cozumlenen resmi belge varsa UI kaydetmede `officialDocumentKind`, `officialDocumentNo`, `officialDocumentDate` ve `officialDocumentEttn` alanlarini da gondermelidir. Backend bu bilgileri Mikro hareket satirina yazmaz; `document_flows.external_document_no` ve `document_flows.external_uuid` alanlarina iz olarak kaydeder.

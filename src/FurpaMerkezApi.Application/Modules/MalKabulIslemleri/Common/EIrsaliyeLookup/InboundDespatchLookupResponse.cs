@@ -81,5 +81,9 @@ public sealed record InboundDespatchLineDto(
 
     public decimal? LineAmount { get; init; }
 
+    public double? NetUnitPrice { get; init; }
+
+    public string? PriceSource { get; init; }
+
     public string? QuantitySource { get; init; }
 }
