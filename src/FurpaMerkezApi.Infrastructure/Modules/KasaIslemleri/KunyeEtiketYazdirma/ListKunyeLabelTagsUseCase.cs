@@ -83,6 +83,7 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                     COALESCE(sk.ProductionCity, '') AS ProductionCity,
                     s.sto_kod AS StockCode,
                     COALESCE(s.sto_isim, '') AS StockName,
+                    COALESCE(barcode.bar_kodu, '') AS Barcode,
                     dbo.[fn_StokSatisFiyati](s.sto_kod, '1', sk.BranchNo, '1') AS SalesPrice,
                     COALESCE(sk.ProductionDistrict, '') AS ProductionDistrict,
                     COALESCE(sk.ProductName, '') AS ProductName,
@@ -102,6 +103,19 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                 INNER JOIN SonKunye sk
                     ON sk.StokId = ms.Stokid
                     AND sk.RN = 1
+                OUTER APPLY
+                (
+                    SELECT TOP (1) LTRIM(RTRIM(bar.bar_kodu)) AS bar_kodu
+                    FROM dbo.BARKOD_TANIMLARI AS bar WITH (NOLOCK)
+                    WHERE bar.bar_stokkodu = s.sto_kod
+                      AND COALESCE(bar.bar_iptal, 0) = 0
+                      AND bar.bar_kodu IS NOT NULL
+                      AND LTRIM(RTRIM(bar.bar_kodu)) <> ''
+                    ORDER BY
+                        CASE WHEN COALESCE(bar.bar_master, 0) = 1 THEN 0 ELSE 1 END,
+                        CASE WHEN COALESCE(bar.bar_birimpntr, 0) = 1 THEN 0 ELSE 1 END,
+                        bar.bar_create_date DESC
+                ) AS barcode
                 WHERE s.sto_model_kodu IN ('10', '11', '12', '23')
                     AND ISNULL(s.sto_satis_dursun, 0) = 0
                     AND ISNULL(s.sto_siparis_dursun, 0) = 0
@@ -128,6 +142,7 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                     ReadString(reader, "ProductionCity"),
                     ReadString(reader, "StockCode"),
                     ReadString(reader, "StockName"),
+                    ReadString(reader, "Barcode"),
                     ReadDouble(reader, "SalesPrice"),
                     ReadString(reader, "ProductionDistrict"),
                     ReadString(reader, "ProductName"),

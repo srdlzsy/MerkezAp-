@@ -6,6 +6,7 @@ public sealed record KunyeLabelTagDto(
     string ProductionCity,
     string StockCode,
     string StockName,
+    string Barcode,
     double SalesPrice,
     string ProductionDistrict,
     string ProductName,

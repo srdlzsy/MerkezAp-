@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FurpaMerkezApi.WebApi.Tests.Infrastructure;
 using Xunit;
 
@@ -19,7 +20,10 @@ public sealed class AuthorizationPipelineTests(FurpaWebApplicationFactory factor
         var content = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("STK-001", content);
+        using var document = JsonDocument.Parse(content);
+        var tag = document.RootElement[0];
+        Assert.Equal("STK-001", tag.GetProperty("stockCode").GetString());
+        Assert.Equal("8690000000001", tag.GetProperty("barcode").GetString());
     }
 
     [Fact]

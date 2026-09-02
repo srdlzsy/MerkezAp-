@@ -127,6 +127,7 @@ internal sealed class FakeKunyeLabelTagsUseCase : IListKunyeLabelTagsUseCase
                 "ISTANBUL",
                 "STK-001",
                 "Test Stock",
+                "8690000000001",
                 10.5,
                 "KADIKOY",
                 "Test Product",

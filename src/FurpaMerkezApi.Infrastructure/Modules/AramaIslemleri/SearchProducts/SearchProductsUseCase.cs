@@ -51,18 +51,11 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
         try
         {
-            var products = barcodeLookup is null
-                ? await ReadProductsAsync(
-                    connection,
-                    request.WarehouseNo,
-                    null,
-                    stockCode,
-                    stockName,
-                    supplierCode,
-                    take,
-                    null,
-                    cancellationToken)
-                : await ReadProductsByBarcodeCandidatesAsync(
+            IReadOnlyCollection<ProductLookupItemDto> products;
+
+            if (barcodeLookup is not null)
+            {
+                products = await ReadProductsByBarcodeCandidatesAsync(
                     connection,
                     request.WarehouseNo,
                     barcodeLookup,
@@ -70,7 +63,32 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     stockName,
                     supplierCode,
                     take,
+                    allowPartialSuffix: true,
                     cancellationToken);
+            }
+            else if (stockCode is null && IsDigitsOnly(stockName))
+            {
+                products = await ReadProductsByUnifiedNumericInputAsync(
+                    connection,
+                    request.WarehouseNo,
+                    stockName!,
+                    supplierCode,
+                    take,
+                    cancellationToken);
+            }
+            else
+            {
+                products = await ReadProductsAsync(
+                    connection,
+                    request.WarehouseNo,
+                    null,
+                    stockCode,
+                    stockName,
+                    supplierCode,
+                    take,
+                    null,
+                    cancellationToken);
+            }
 
             if (products.Count == 0 &&
                 barcodeLookup is null &&
@@ -85,38 +103,8 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     null,
                     supplierCode,
                     take,
+                    allowPartialSuffix: true,
                     cancellationToken);
-            }
-
-            if (products.Count == 0 &&
-                barcodeLookup is null &&
-                stockCode is null &&
-                IsDigitsOnly(stockName))
-            {
-                var fallbackBarcodeLookup = BarcodeLookupNormalizer.Normalize(stockName!);
-                products = await ReadProductsByBarcodeCandidatesAsync(
-                    connection,
-                    request.WarehouseNo,
-                    fallbackBarcodeLookup,
-                    null,
-                    null,
-                    supplierCode,
-                    take,
-                    cancellationToken);
-
-                if (products.Count == 0)
-                {
-                    products = await ReadProductsAsync(
-                        connection,
-                        request.WarehouseNo,
-                        null,
-                        stockName,
-                        null,
-                        supplierCode,
-                        take,
-                        null,
-                        cancellationToken);
-                }
             }
 
             return products;
@@ -130,6 +118,78 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         }
     }
 
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByUnifiedNumericInputAsync(
+        DbConnection connection,
+        int warehouseNo,
+        string input,
+        string? supplierCode,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var stockCodeProducts = await ReadProductsAsync(
+            connection,
+            warehouseNo,
+            null,
+            input,
+            null,
+            supplierCode,
+            take,
+            null,
+            cancellationToken);
+        var barcodeLookup = BarcodeLookupNormalizer.Normalize(input);
+        var exactBarcodeProducts = await ReadProductsByBarcodeCandidatesAsync(
+            connection,
+            warehouseNo,
+            barcodeLookup,
+            null,
+            null,
+            supplierCode,
+            take,
+            allowPartialSuffix: false,
+            cancellationToken);
+        var exactProducts = MergeDistinctProducts(stockCodeProducts, exactBarcodeProducts, take);
+
+        if (exactProducts.Count > 0)
+        {
+            return exactProducts;
+        }
+
+        return await ReadProductsByPartialBarcodeSuffixAsync(
+            connection,
+            warehouseNo,
+            barcodeLookup,
+            null,
+            null,
+            supplierCode,
+            take,
+            cancellationToken);
+    }
+
+    private static IReadOnlyCollection<ProductLookupItemDto> MergeDistinctProducts(
+        IReadOnlyCollection<ProductLookupItemDto> primary,
+        IReadOnlyCollection<ProductLookupItemDto> secondary,
+        int take)
+    {
+        var products = new List<ProductLookupItemDto>(Math.Min(take, primary.Count + secondary.Count));
+        var seenStockCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var product in primary.Concat(secondary))
+        {
+            if (!seenStockCodes.Add(product.StockCode))
+            {
+                continue;
+            }
+
+            products.Add(product);
+            if (products.Count >= take)
+            {
+                break;
+            }
+        }
+
+        return products;
+    }
+
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByBarcodeCandidatesAsync(
         DbConnection connection,
         int warehouseNo,
@@ -138,6 +198,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         string? stockName,
         string? supplierCode,
         int take,
+        bool allowPartialSuffix,
         CancellationToken cancellationToken)
     {
         foreach (var barcode in BarcodeLookupNormalizer.GetLookupCandidates(barcodeLookup))
@@ -157,6 +218,11 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             {
                 return products;
             }
+        }
+
+        if (!allowPartialSuffix)
+        {
+            return Array.Empty<ProductLookupItemDto>();
         }
 
         return await ReadProductsByPartialBarcodeSuffixAsync(
