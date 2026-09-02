@@ -70,6 +70,9 @@ public sealed class CashTurnoverQueryExecutor(
 
         var branchItems = MergeOverviewItems(items);
         var dailyTotal = Round(branchItems.Sum(item => item.OverallTotal));
+        var dailyCollectionTotal = Round(branchItems.Sum(item => item.CollectionTotal));
+        var dailyGrossSalesTotal = Round(branchItems.Sum(item => item.GrossSalesTotal));
+        var dailyComparisonTotal = Round(branchItems.Sum(item => item.ComparisonTotal));
         var dailyCustomerCount = branchItems.Sum(item => item.CustomerCount);
 
         return new CashTurnoverOverviewDto(
@@ -85,6 +88,10 @@ public sealed class CashTurnoverQueryExecutor(
             Divide(dailyTotal, dailyCustomerCount),
             branchItems.Sum(item => item.FuturesSalesCount),
             Round(branchItems.Sum(item => item.FuturesSalesTotal)),
+            dailyCollectionTotal,
+            dailyGrossSalesTotal,
+            dailyComparisonTotal,
+            branchItems.Count(item => item.PaymentDataMissing),
             branchItems);
     }
 
@@ -170,7 +177,11 @@ public sealed class CashTurnoverQueryExecutor(
                     totalCollectionAmount,
                     totalCustomerCommission,
                     Round(totalCollectionAmount - totalCustomerCommission),
-                    CashTurnoverSource.New.ToApiValue());
+                    CashTurnoverSource.New.ToApiValue(),
+                    totalSalesAmount,
+                    totalCollectionAmount,
+                    0d,
+                    salesRow is not null && collectionRow is null);
             })
             .ToArray();
     }
@@ -187,8 +198,26 @@ public sealed class CashTurnoverQueryExecutor(
                     CAST(tt.TurnoverDate AS date) AS BusinessDate,
                     tt.BranchNo AS WarehouseNo,
                     SUM(tt.CustomerCount) AS CustomerCount,
-                    SUM(tt.TurnoverOverallTotal) AS TotalAmount
+                    SUM(tt.TurnoverOverallTotal) AS GrossSalesTotal
                 FROM TurnoverTotals tt
+                WHERE tt.TurnoverDate >= @startDate
+                  AND tt.TurnoverDate < @endDateExclusive
+                  AND (@warehouseNo IS NULL OR tt.BranchNo = @warehouseNo)
+                GROUP BY
+                    CAST(tt.TurnoverDate AS date),
+                    tt.BranchNo
+            ),
+            LegacyDetails AS (
+                SELECT
+                    CAST(tt.TurnoverDate AS date) AS BusinessDate,
+                    tt.BranchNo AS WarehouseNo,
+                    SUM(ISNULL(td.CashTotal, 0)) AS CashTotal,
+                    SUM(ISNULL(td.CreditTotal, 0)) AS CreditTotal,
+                    SUM(ISNULL(td.GiftCardTotal, 0)) AS GiftCardTotal,
+                    SUM(ISNULL(td.FuturesSalesTotal, 0)) AS FuturesSalesTotal
+                FROM TurnoverTotals tt
+                INNER JOIN TurnoverDetails td
+                    ON tt.TurnoverId = td.TurnoverId
                 WHERE tt.TurnoverDate >= @startDate
                   AND tt.TurnoverDate < @endDateExclusive
                   AND (@warehouseNo IS NULL OR tt.BranchNo = @warehouseNo)
@@ -201,11 +230,22 @@ public sealed class CashTurnoverQueryExecutor(
                 lt.WarehouseNo,
                 COALESCE(w.dep_adi, '') AS WarehouseName,
                 lt.CustomerCount,
-                lt.TotalAmount
+                lt.GrossSalesTotal,
+                COALESCE(ld.CashTotal, 0) AS CashTotal,
+                COALESCE(ld.CreditTotal, 0) AS CreditTotal,
+                COALESCE(ld.GiftCardTotal, 0) AS GiftCardTotal,
+                COALESCE(ld.FuturesSalesTotal, 0) AS FuturesSalesTotal
             FROM LegacyTotals lt
+            LEFT JOIN LegacyDetails ld
+                ON lt.BusinessDate = ld.BusinessDate
+               AND lt.WarehouseNo = ld.WarehouseNo
             LEFT JOIN DEPOLAR w
                 ON lt.WarehouseNo = w.dep_no
-            WHERE lt.TotalAmount <> 0
+            WHERE lt.GrossSalesTotal <> 0
+               OR COALESCE(ld.CashTotal, 0) <> 0
+               OR COALESCE(ld.CreditTotal, 0) <> 0
+               OR COALESCE(ld.GiftCardTotal, 0) <> 0
+               OR COALESCE(ld.FuturesSalesTotal, 0) <> 0
             ORDER BY
                 lt.BusinessDate,
                 lt.WarehouseNo;
@@ -221,7 +261,12 @@ public sealed class CashTurnoverQueryExecutor(
             },
             reader =>
             {
-                var totalAmount = Round(ReadDouble(reader, "TotalAmount"));
+                var grossSalesTotal = Round(ReadDouble(reader, "GrossSalesTotal"));
+                var collectionTotal = Round(
+                    ReadDouble(reader, "CashTotal") +
+                    ReadDouble(reader, "CreditTotal") +
+                    ReadDouble(reader, "GiftCardTotal"));
+                var futuresSalesTotal = Round(ReadDouble(reader, "FuturesSalesTotal"));
 
                 return new CashTurnoverListItemDto(
                     ReadDateTime(reader, "BusinessDate"),
@@ -232,12 +277,16 @@ public sealed class CashTurnoverQueryExecutor(
                     string.Empty,
                     0,
                     0d,
-                    totalAmount,
+                    grossSalesTotal,
                     ReadInt(reader, "CustomerCount"),
-                    totalAmount,
+                    collectionTotal,
                     0d,
-                    totalAmount,
-                    CashTurnoverSource.Old.ToApiValue());
+                    collectionTotal,
+                    CashTurnoverSource.Old.ToApiValue(),
+                    grossSalesTotal,
+                    collectionTotal,
+                    futuresSalesTotal,
+                    false);
             },
             cancellationToken);
     }
@@ -288,7 +337,11 @@ public sealed class CashTurnoverQueryExecutor(
                 totalCollectionAmount,
                 totalCustomerCommission,
                 Round(totalCollectionAmount - totalCustomerCommission),
-                CashTurnoverSource.New.ToApiValue()),
+                CashTurnoverSource.New.ToApiValue(),
+                totalSalesAmount,
+                totalCollectionAmount,
+                0d,
+                salesRow is not null && collectionRow is null && paymentRows.Count == 0),
             paymentRows
                 .OrderBy(item => item.PaymentTypeNo)
                 .ThenBy(item => item.CashBankCode, StringComparer.OrdinalIgnoreCase)
@@ -384,7 +437,11 @@ public sealed class CashTurnoverQueryExecutor(
             },
             reader =>
             {
-                var overallTotal = Round(ReadDouble(reader, "OverallTotal"));
+                var grossSalesTotal = Round(ReadDouble(reader, "OverallTotal"));
+                var collectionTotal = Round(
+                    ReadDouble(reader, "CashTotal") +
+                    ReadDouble(reader, "CreditTotal") +
+                    ReadDouble(reader, "GiftCardTotal"));
                 var customerCount = ReadInt(reader, "CustomerCount");
 
                 return new BranchOverviewRow(
@@ -400,10 +457,14 @@ public sealed class CashTurnoverQueryExecutor(
                     Round(ReadDouble(reader, "GiftCardTotal")),
                     Round(ReadDouble(reader, "ExpenseNoteTotal")),
                     ReadInt(reader, "ExpenseNoteCount"),
-                    overallTotal,
+                    grossSalesTotal,
                     Round(ReadDouble(reader, "FuturesSalesTotal")),
                     ReadInt(reader, "FuturesSalesCount"),
-                    Divide(overallTotal, customerCount));
+                    Divide(grossSalesTotal, customerCount),
+                    collectionTotal,
+                    grossSalesTotal,
+                    collectionTotal,
+                    false);
             },
             cancellationToken);
     }
@@ -548,8 +609,10 @@ public sealed class CashTurnoverQueryExecutor(
                 shopigoBranchLookup.TryGetValue(currentWarehouseNo, out var shopigoBranchName);
                 legacyWarehouseLookup.TryGetValue(currentWarehouseNo, out var legacyWarehouseInfo);
 
-                var overallTotal = Round(paymentTotals?.TotalAmount ?? salesRow?.OverallTotal ?? 0d);
+                var grossSalesTotal = Round(salesRow?.OverallTotal ?? 0d);
+                var collectionTotal = Round(paymentTotals?.TotalAmount ?? 0d);
                 var customerCount = salesRow?.CustomerCount ?? 0;
+                var paymentDataMissing = salesRow is not null && paymentTotals is null;
 
                 return new BranchOverviewRow(
                     legacyWarehouseInfo?.Region ?? string.Empty,
@@ -564,13 +627,18 @@ public sealed class CashTurnoverQueryExecutor(
                     paymentTotals?.GiftCardTotal ?? 0d,
                     0d,
                     0,
-                    overallTotal,
+                    grossSalesTotal,
                     0d,
                     0,
-                    Divide(overallTotal, customerCount));
+                    Divide(grossSalesTotal, customerCount),
+                    collectionTotal,
+                    grossSalesTotal,
+                    collectionTotal,
+                    paymentDataMissing);
             })
             .Where(item =>
                 item.OverallTotal != 0 ||
+                item.CollectionTotal != 0 ||
                 item.CashTotal != 0 ||
                 item.CreditTotal != 0 ||
                 item.GiftCardTotal != 0)
@@ -1075,7 +1143,11 @@ public sealed class CashTurnoverQueryExecutor(
             Round(details.Sum(item => item.Header.TotalCollectionAmount)),
             Round(details.Sum(item => item.Header.TotalCustomerCommission)),
             Round(details.Sum(item => item.Header.NetCollectionAmount)),
-            source.ToApiValue());
+            source.ToApiValue(),
+            Round(details.Sum(item => item.Header.GrossSalesTotal)),
+            Round(details.Sum(item => item.Header.ComparisonTotal)),
+            Round(details.Sum(item => item.Header.FuturesSalesTotal)),
+            details.Any(item => item.Header.PaymentDataMissing));
 
         var payments = details
             .SelectMany(item => item.Payments)
@@ -1111,7 +1183,9 @@ public sealed class CashTurnoverQueryExecutor(
             .GroupBy(item => item.BranchNo)
             .Select(grouped =>
             {
-                var overallTotal = Round(grouped.Sum(item => item.OverallTotal));
+                var grossSalesTotal = Round(grouped.Sum(item => item.GrossSalesTotal));
+                var collectionTotal = Round(grouped.Sum(item => item.CollectionTotal));
+                var comparisonTotal = Round(grouped.Sum(item => item.ComparisonTotal));
                 var customerCount = grouped.Sum(item => item.CustomerCount);
 
                 return new CashTurnoverBranchOverviewItemDto(
@@ -1127,10 +1201,14 @@ public sealed class CashTurnoverQueryExecutor(
                     Round(grouped.Sum(item => item.GiftCardTotal)),
                     Round(grouped.Sum(item => item.ExpenseNoteTotal)),
                     grouped.Sum(item => item.ExpenseNoteCount),
-                    overallTotal,
+                    grossSalesTotal,
                     Round(grouped.Sum(item => item.FuturesSalesTotal)),
                     grouped.Sum(item => item.FuturesSalesCount),
-                    Divide(overallTotal, customerCount));
+                    Divide(grossSalesTotal, customerCount),
+                    collectionTotal,
+                    grossSalesTotal,
+                    comparisonTotal,
+                    grouped.Any(item => item.PaymentDataMissing));
             })
             .OrderBy(item => item.BranchName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.BranchNo)
@@ -1577,7 +1655,11 @@ public sealed class CashTurnoverQueryExecutor(
         double OverallTotal,
         double FuturesSalesTotal,
         int FuturesSalesCount,
-        double AverageBasketAmount);
+        double AverageBasketAmount,
+        double CollectionTotal,
+        double GrossSalesTotal,
+        double ComparisonTotal,
+        bool PaymentDataMissing);
 
     private enum PaymentCategory
     {

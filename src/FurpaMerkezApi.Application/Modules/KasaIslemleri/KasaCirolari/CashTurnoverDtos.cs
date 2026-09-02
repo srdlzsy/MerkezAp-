@@ -14,7 +14,11 @@ public sealed record CashTurnoverListItemDto(
     double TotalCollectionAmount,
     double TotalCustomerCommission,
     double NetCollectionAmount,
-    string Source);
+    string Source,
+    double GrossSalesTotal,
+    double ComparisonTotal,
+    double FuturesSalesTotal,
+    bool PaymentDataMissing);
 
 public sealed record CashTurnoverHeaderDto(
     DateTime BusinessDate,
@@ -30,7 +34,11 @@ public sealed record CashTurnoverHeaderDto(
     double TotalCollectionAmount,
     double TotalCustomerCommission,
     double NetCollectionAmount,
-    string Source);
+    string Source,
+    double GrossSalesTotal,
+    double ComparisonTotal,
+    double FuturesSalesTotal,
+    bool PaymentDataMissing);
 
 public sealed record CashTurnoverPaymentDetailItemDto(
     int PaymentTypeNo,
@@ -60,6 +68,10 @@ public sealed record CashTurnoverOverviewDto(
     double AverageBasketAmount,
     int DailyFuturesSalesCount,
     double DailyFuturesSalesTotal,
+    double DailyCollectionTotal,
+    double DailyGrossSalesTotal,
+    double DailyComparisonTotal,
+    int DailyPaymentDataMissingBranchCount,
     IReadOnlyCollection<CashTurnoverBranchOverviewItemDto> SubeCirolari);
 
 public sealed record CashTurnoverBranchOverviewItemDto(
@@ -78,4 +90,8 @@ public sealed record CashTurnoverBranchOverviewItemDto(
     double OverallTotal,
     double FuturesSalesTotal,
     int FuturesSalesCount,
-    double AverageBasketAmount);
+    double AverageBasketAmount,
+    double CollectionTotal,
+    double GrossSalesTotal,
+    double ComparisonTotal,
+    bool PaymentDataMissing);

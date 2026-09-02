@@ -106,6 +106,7 @@ public sealed class YeniKasaAnalizleriService(
                     Round(paymentTotals.GiftCardTotal),
                     Round(paymentTotals.OtherTotal),
                     Round(paymentTotals.UnknownTotal),
+                    Round(paymentTotals.NoneTotal),
                     Round(saleTotal - paymentTotal),
                     grouped
                         .Select(item => item.CashierCode)
@@ -810,6 +811,13 @@ public sealed class YeniKasaAnalizleriService(
             return orderedRows;
         }
 
+        var matchingSubset = FindPaymentSubsetMatchingTotal(orderedRows, saleTotal);
+
+        if (matchingSubset is not null)
+        {
+            return matchingSubset;
+        }
+
         return orderedRows
             .GroupBy(row => new
             {
@@ -819,6 +827,58 @@ public sealed class YeniKasaAnalizleriService(
             .Select(grouped => grouped.OrderBy(row => row.Id).First())
             .OrderBy(row => row.Id)
             .ToArray();
+    }
+
+    private static IReadOnlyCollection<PaymentRow>? FindPaymentSubsetMatchingTotal(
+        IReadOnlyList<PaymentRow> rows,
+        double total)
+    {
+        var target = ToCents(total);
+
+        if (target <= 0 || rows.Count > 24)
+        {
+            return null;
+        }
+
+        var orderedRows = rows
+            .OrderByDescending(row => ToCents(row.Amount))
+            .ThenBy(row => row.Id)
+            .ToArray();
+        var selectedRows = new List<PaymentRow>();
+
+        if (!TryFindPaymentSubset(0, 0))
+        {
+            return null;
+        }
+
+        return selectedRows
+            .OrderBy(row => row.Id)
+            .ToArray();
+
+        bool TryFindPaymentSubset(int index, long totalInCents)
+        {
+            if (totalInCents == target)
+            {
+                return true;
+            }
+
+            if (totalInCents > target || index >= orderedRows.Length)
+            {
+                return false;
+            }
+
+            var row = orderedRows[index];
+            selectedRows.Add(row);
+
+            if (TryFindPaymentSubset(index + 1, totalInCents + ToCents(row.Amount)))
+            {
+                return true;
+            }
+
+            selectedRows.RemoveAt(selectedRows.Count - 1);
+
+            return TryFindPaymentSubset(index + 1, totalInCents);
+        }
     }
 
     private static IReadOnlyCollection<YeniKasaFisMutabakatItemDto> CreateReconciliationItems(AnalysisData data) =>
@@ -1013,7 +1073,8 @@ public sealed class YeniKasaAnalizleriService(
             Round(saleUuids.Sum(uuid => paymentTotalsBySaleUuid.TryGetValue(uuid, out var totals) ? totals.CreditCardTotal : 0d)),
             Round(saleUuids.Sum(uuid => paymentTotalsBySaleUuid.TryGetValue(uuid, out var totals) ? totals.GiftCardTotal : 0d)),
             Round(saleUuids.Sum(uuid => paymentTotalsBySaleUuid.TryGetValue(uuid, out var totals) ? totals.OtherTotal : 0d)),
-            Round(saleUuids.Sum(uuid => paymentTotalsBySaleUuid.TryGetValue(uuid, out var totals) ? totals.UnknownTotal : 0d)));
+            Round(saleUuids.Sum(uuid => paymentTotalsBySaleUuid.TryGetValue(uuid, out var totals) ? totals.UnknownTotal : 0d)),
+            Round(saleUuids.Sum(uuid => paymentTotalsBySaleUuid.TryGetValue(uuid, out var totals) ? totals.NoneTotal : 0d)));
     }
 
     private static ItemTotals SumItems(
@@ -1050,12 +1111,13 @@ public sealed class YeniKasaAnalizleriService(
 
         return new PaymentTotals(
             rows.Length,
-            Round(rows.Sum(item => item.Amount)),
+            Round(categorizedRows.Where(item => item.Category != PaymentCategory.None).Sum(item => item.Amount)),
             Round(categorizedRows.Where(item => item.Category == PaymentCategory.Cash).Sum(item => item.Amount)),
             Round(categorizedRows.Where(item => item.Category == PaymentCategory.CreditCard).Sum(item => item.Amount)),
             Round(categorizedRows.Where(item => item.Category == PaymentCategory.GiftCard).Sum(item => item.Amount)),
             Round(categorizedRows.Where(item => item.Category == PaymentCategory.Other).Sum(item => item.Amount)),
-            Round(categorizedRows.Where(item => item.Category == PaymentCategory.Unknown).Sum(item => item.Amount)));
+            Round(categorizedRows.Where(item => item.Category == PaymentCategory.Unknown).Sum(item => item.Amount)),
+            Round(categorizedRows.Where(item => item.Category == PaymentCategory.None).Sum(item => item.Amount)));
     }
 
     private static PaymentMethodInfo? ResolvePaymentMethod(
@@ -1083,7 +1145,7 @@ public sealed class YeniKasaAnalizleriService(
             1 => PaymentCategory.Cash,
             2 => PaymentCategory.CreditCard,
             3 => PaymentCategory.GiftCard,
-            14 => PaymentCategory.Other,
+            14 when NormalizeToken(paymentMethod.Name).Contains("odemesiz", StringComparison.OrdinalIgnoreCase) => PaymentCategory.None,
             _ => ClassifyPaymentMethodByName(paymentMethod.Name, PaymentCategory.Other)
         };
     }
@@ -1097,6 +1159,11 @@ public sealed class YeniKasaAnalizleriService(
         if (string.IsNullOrWhiteSpace(normalized))
         {
             return fallback;
+        }
+
+        if (normalized.Contains("odemesiz", StringComparison.OrdinalIgnoreCase))
+        {
+            return PaymentCategory.None;
         }
 
         if (normalized.Contains("nakit", StringComparison.OrdinalIgnoreCase) ||
@@ -1372,9 +1439,10 @@ public sealed class YeniKasaAnalizleriService(
         double CreditCardTotal,
         double GiftCardTotal,
         double OtherTotal,
-        double UnknownTotal)
+        double UnknownTotal,
+        double NoneTotal)
     {
-        public static PaymentTotals Empty { get; } = new(0, 0d, 0d, 0d, 0d, 0d, 0d);
+        public static PaymentTotals Empty { get; } = new(0, 0d, 0d, 0d, 0d, 0d, 0d, 0d);
     }
 
     private sealed record PaymentMethodInfo(
@@ -1385,6 +1453,7 @@ public sealed class YeniKasaAnalizleriService(
 
     private enum PaymentCategory
     {
+        None,
         Cash,
         CreditCard,
         GiftCard,

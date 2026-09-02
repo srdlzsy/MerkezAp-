@@ -11267,6 +11267,10 @@ Not:
 - response modeli `CashTurnoverListItemDto` doner
 - `source` alani satirin `new` veya `old` kaynagini gosterir
 - `netCollectionAmount` backend tarafinda `totalCollectionAmount - totalCustomerCommission` olarak hesaplanir
+- `grossSalesTotal` satis/brut ciro toplamidir; eski kasada `TurnoverOverallTotal`, yeni kasada satis header toplamlarindan gelir.
+- `comparisonTotal` icmal/mutabakat karsilastirmasinda kullanilacak tahsilat toplamidir. Eski kasada `CashTotal + CreditTotal + GiftCardTotal`, yeni kasada duplicate cozulmus ve tahsilata giren odeme satirlari toplamidir.
+- `futuresSalesTotal` eski POS dosyalarinda veresiye/acik hesap gibi hemen tahsil edilmemis satis toplamidir; icmal karsilastirmasina dahil edilmemelidir.
+- `paymentDataMissing=true` ise satis vardir ama yeni kasa odeme satiri bulunamamistir; UI bunu tahsilat 0 gibi sessiz gecmek yerine veri kalitesi uyarisi olarak gostermelidir.
 
 Response:
 
@@ -11286,7 +11290,11 @@ Response:
     "totalCollectionAmount": 25640.75,
     "totalCustomerCommission": 142.3,
     "netCollectionAmount": 25498.45,
-    "source": "new"
+    "source": "new",
+    "grossSalesTotal": 25640.75,
+    "comparisonTotal": 25640.75,
+    "futuresSalesTotal": 0,
+    "paymentDataMissing": false
   }
 ]
 ```
@@ -11318,7 +11326,11 @@ Not:
 - yeni kasa tarafinda `customerCount` alani yalnizca tamamlanmis (`status = 4`) `received_sales` fislerinden hesaplanir; fisler `receipt_number`, bu bos ise `uuid` bazinda ve gun/kasa kiriliminda tekillestirilir
 - yeni kasa tarafinda `discountCardCustomerCount`, `furparaCardCustomerCount`, `expenseNoteTotal`, `expenseNoteCount`, `futuresSalesTotal` ve `futuresSalesCount` alanlari kaynakta dogrudan olmadigi icin `0` doner
 - yeni kasa odeme kiriliminda `Nakit` nakit, yemek/gift kart tipleri `giftCardTotal`, diger tahsilat tipleri `creditTotal` tarafina yazilir
-- `averageBasketAmount` backend tarafinda `overallTotal / customerCount` olarak hesaplanir
+- `overallTotal` ve `grossSalesTotal` satis/brut ciro toplamidir; `averageBasketAmount` bu toplam uzerinden hesaplanir.
+- `collectionTotal` tahsilat toplamidir; nakit, kredi/kart ve yemek/gift kart toplamlarindan olusur.
+- `comparisonTotal` icmal ile karsilastirilmesi gereken toplamdir. UI icmal farki hesaplarken `overallTotal` yerine bu alani kullanmalidir.
+- `futuresSalesTotal` veresiye/acik hesap gibi tahsilata girmeyen eski POS satisidir; satis analizinde gosterilebilir ama icmal farkina katilmamalidir.
+- yeni kasa tarafinda satis olup odeme satiri yoksa `paymentDataMissing=true` doner ve `comparisonTotal` 0 kalir; bu durumda fark "ciro eksik" degil, "odeme verisi eksik" olarak ele alinmalidir.
 
 Response:
 
@@ -11336,6 +11348,10 @@ Response:
   "averageBasketAmount": 185.12,
   "dailyFuturesSalesCount": 0,
   "dailyFuturesSalesTotal": 0,
+  "dailyCollectionTotal": 397343.74,
+  "dailyGrossSalesTotal": 398941.24,
+  "dailyComparisonTotal": 397343.74,
+  "dailyPaymentDataMissingBranchCount": 0,
   "subeCirolari": [
     {
       "region": "1",
@@ -11353,7 +11369,11 @@ Response:
       "overallTotal": 2295.9,
       "futuresSalesTotal": 0,
       "futuresSalesCount": 0,
-      "averageBasketAmount": 135.05
+      "averageBasketAmount": 135.05,
+      "collectionTotal": 1464.24,
+      "grossSalesTotal": 2295.9,
+      "comparisonTotal": 1464.24,
+      "paymentDataMissing": false
     }
   ]
 }
@@ -11403,7 +11423,11 @@ Response:
     "totalCollectionAmount": 25640.75,
     "totalCustomerCommission": 142.3,
     "netCollectionAmount": 25498.45,
-    "source": "new"
+    "source": "new",
+    "grossSalesTotal": 25640.75,
+    "comparisonTotal": 25640.75,
+    "futuresSalesTotal": 0,
+    "paymentDataMissing": false
   },
   "payments": [
     {
@@ -11481,7 +11505,7 @@ Not:
 - Fis tekillestirme once `uuid`, yoksa `receipt_number`, o da yoksa satir `id` uzerinden yapilir.
 - `saleTotal` satis header toplamidir.
 - `productLineCount` ve `productQuantity` silinmemis/iade edilmemis `sale_items` satirlarindan gelir.
-- `paymentTotal` silinmemis/iade edilmemis `payments` satirlarindan gelir.
+- `paymentTotal` silinmemis/iade edilmemis, duplicate cozulmus ve tahsilata giren `payments` satirlarindan gelir. `Odemesiz` gibi tahsilata girmeyen tipler bu toplama dahil edilmez.
 - `difference = saleTotal - paymentTotal` olarak hesaplanir.
 
 Response:
@@ -11520,8 +11544,9 @@ Odeme kategorileri:
 - `cashTotal`: nakit odemeler
 - `creditCardTotal`: kredi/banka karti odemeleri
 - `giftCardTotal`: yemek karti/gift card benzeri odemeler
-- `otherPaymentTotal`: odemesiz, kapali hesap veya baska kategoriye dusen odemeler
+- `otherPaymentTotal`: tahsilat sayilan ama nakit/kredi/yemek karti disinda kalan odemeler
 - `unknownPaymentTotal`: `payment_methods` ile eslesmeyen odemeler
+- `nonCollectionPaymentTotal`: `Odemesiz` gibi satis var ama kasa tahsilatina girmeyen odemeler. Icmal karsilastirmasina dahil edilmemelidir.
 
 Response:
 
@@ -11541,6 +11566,7 @@ Response:
     "giftCardTotal": 20080,
     "otherPaymentTotal": 0,
     "unknownPaymentTotal": 0,
+    "nonCollectionPaymentTotal": 0,
     "difference": 0,
     "cashierCount": 4,
     "lastSaleAt": "2026-07-08T22:45:10"
@@ -11648,7 +11674,7 @@ Not:
 
 - `paymentMethodCode`, `payments.payment_method` alanidir.
 - `isKnown = false` ise kod `payment_methods.id` veya `payment_methods.pavo_mediator` ile eslesmemistir.
-- `category`: `Cash`, `CreditCard`, `GiftCard`, `Other`, `Unknown`
+- `category`: `Cash`, `CreditCard`, `GiftCard`, `Other`, `Unknown`, `None`
 
 Response:
 
@@ -21184,7 +21210,11 @@ public sealed record CashTurnoverListItemDto(
     double TotalCollectionAmount,
     double TotalCustomerCommission,
     double NetCollectionAmount,
-    string Source);
+    string Source,
+    double GrossSalesTotal,
+    double ComparisonTotal,
+    double FuturesSalesTotal,
+    bool PaymentDataMissing);
 
 public sealed record CashTurnoverHeaderDto(
     DateTime BusinessDate,
@@ -21200,7 +21230,11 @@ public sealed record CashTurnoverHeaderDto(
     double TotalCollectionAmount,
     double TotalCustomerCommission,
     double NetCollectionAmount,
-    string Source);
+    string Source,
+    double GrossSalesTotal,
+    double ComparisonTotal,
+    double FuturesSalesTotal,
+    bool PaymentDataMissing);
 
 public sealed record CashTurnoverPaymentDetailItemDto(
     int PaymentTypeNo,
@@ -21230,6 +21264,10 @@ public sealed record CashTurnoverOverviewDto(
     double AverageBasketAmount,
     int DailyFuturesSalesCount,
     double DailyFuturesSalesTotal,
+    double DailyCollectionTotal,
+    double DailyGrossSalesTotal,
+    double DailyComparisonTotal,
+    int DailyPaymentDataMissingBranchCount,
     IReadOnlyCollection<CashTurnoverBranchOverviewItemDto> SubeCirolari);
 
 public sealed record CashTurnoverBranchOverviewItemDto(
@@ -21248,7 +21286,11 @@ public sealed record CashTurnoverBranchOverviewItemDto(
     double OverallTotal,
     double FuturesSalesTotal,
     int FuturesSalesCount,
-    double AverageBasketAmount);
+    double AverageBasketAmount,
+    double CollectionTotal,
+    double GrossSalesTotal,
+    double ComparisonTotal,
+    bool PaymentDataMissing);
 
 public sealed record YeniKasaCiroOzetItemDto(
     DateTime BusinessDate,
@@ -21282,6 +21324,7 @@ public sealed record YeniKasaKasaOzetItemDto(
     double GiftCardTotal,
     double OtherPaymentTotal,
     double UnknownPaymentTotal,
+    double NonCollectionPaymentTotal,
     double Difference,
     int CashierCount,
     DateTime? LastSaleAt);

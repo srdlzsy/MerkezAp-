@@ -48,6 +48,7 @@ public sealed record YeniKasaKasaOzetItemDto(
     double GiftCardTotal,
     double OtherPaymentTotal,
     double UnknownPaymentTotal,
+    double NonCollectionPaymentTotal,
     double Difference,
     int CashierCount,
     DateTime? LastSaleAt);
