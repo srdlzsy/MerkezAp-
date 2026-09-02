@@ -508,7 +508,6 @@ public sealed class ProductShipmentDistributionHttpRequest
 
     public DateTime? ShipmentDate { get; init; }
 
-    [Required]
     [StringLength(50)]
     public string? StockCodeOrBarcode { get; init; }
 

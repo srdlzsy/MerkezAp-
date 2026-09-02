@@ -12084,7 +12084,7 @@ UI akisi:
 4. `son-stok` response icindeki `totalQuantity`, `totalSalesValue`, `returnedCount` ust ozet kartlarinda; `items` gridde gosterilir.
 5. `envanter-degeri` ayni response modelini kullanan deger odakli kisayoldur; UI ayni endpoint ailesini kullanip toplam satis degerini one cikarabilir.
 6. `urun-depo-durum` tek urunun subeler/depolar bazinda miktar ve satis degerini gosterir; arama icin `stockCodeOrBarcode` zorunludur. Barkod okutma veya urun kartindan gecis icin `urun/{stockCodeOrBarcode}/depo-durum` path kisayolu da kullanilabilir.
-7. `urun-sevk-dagilimi`, secili kaynak deponun secili tarihte bir urunu hedef depolara toplam kac miktar sevk ettigini gosterir. Manav deposu 56 icin "bugun kesilen kavun hangi subeye kac kilo gitti?" raporu bu endpoint ile karsilanir.
+7. `urun-sevk-dagilimi`, secili kaynak deponun secili tarihte yaptigi sevkleri gosterir. `stockCodeOrBarcode` bos birakilirsa urun bazli toplam doner; ornek armut 150 KG, elma 500 KG. `stockCodeOrBarcode` dolu gonderilirse sadece ilgili stok/barkod hedef depolara gore dagitilir; ornek kavun hangi subeye kac kilo gitti. Filtresiz cevapta `targetWarehouseNo=0`, `targetWarehouseName="Tum hedef depolar"` gelir.
 8. `urun-ara`, `stok-kartlari` ile ayni response'u donen kolay okunur arama alias'idir.
 9. `depoda-var-subede-yok` kaynak depoda mevcut, hedef subede olmayan urunleri listeler; kaynak depo UI tarafinda zorunlu secilmelidir.
 10. `depo-sifir-stok` secili depoda sistem miktari sifir olan urunleri listeler.
@@ -12099,6 +12099,8 @@ Ornekler:
 `GET /api/rapor-islemleri/stok-raporlari/kategori-secenekleri?search=MEYVE&take=50`
 
 `GET /api/rapor-islemleri/stok-raporlari/urun/8690000000000/depo-durum?onlyWithStock=true`
+
+`GET /api/rapor-islemleri/stok-raporlari/urun-sevk-dagilimi?warehouseNo=56&shipmentDate=2026-08-28`
 
 `GET /api/rapor-islemleri/stok-raporlari/urun-sevk-dagilimi?warehouseNo=56&shipmentDate=2026-08-28&stockCodeOrBarcode=023740`
 

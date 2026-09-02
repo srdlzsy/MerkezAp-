@@ -106,6 +106,24 @@ public sealed class StokRaporlariControllerTests
         Assert.Equal(new DateTime(2026, 8, 28), useCase.LastProductShipmentDistributionRequest.ShipmentDate);
     }
 
+    [Fact]
+    public async Task ProductShipmentDistribution_AllowsEmptyStockFilter()
+    {
+        var useCase = new CapturingStockReportsUseCase();
+        var controller = CreateController(useCase, warehouseNo: 56);
+
+        await controller.ProductShipmentDistribution(
+            new ProductShipmentDistributionHttpRequest
+            {
+                ShipmentDate = new DateTime(2026, 8, 28)
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(useCase.LastProductShipmentDistributionRequest);
+        Assert.Equal(56, useCase.LastProductShipmentDistributionRequest.WarehouseNo);
+        Assert.Equal(string.Empty, useCase.LastProductShipmentDistributionRequest.StockCodeOrBarcode);
+    }
+
     private static StokRaporlariController CreateController(
         IStockReportsUseCase useCase,
         int warehouseNo,

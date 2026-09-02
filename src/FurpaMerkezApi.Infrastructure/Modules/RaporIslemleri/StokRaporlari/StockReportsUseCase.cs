@@ -1445,8 +1445,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
     {
         var shipmentDate = NormalizeReportDate(request.ShipmentDate);
         var nextDate = shipmentDate.AddDays(1);
-        var stockCodeOrBarcode = NormalizeOrNull(request.StockCodeOrBarcode)
-            ?? throw new ArgumentException("Stock code or barcode is required.", nameof(request.StockCodeOrBarcode));
+        var stockCodeOrBarcode = NormalizeOrNull(request.StockCodeOrBarcode);
         var take = NormalizeTake(request.Take);
 
         if (request.WarehouseNo <= 0)
@@ -1455,28 +1454,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         }
 
         const string sql = """
-            ;WITH ProductRows AS (
-                SELECT TOP (1)
-                    stock.sto_kod AS StockCode,
-                    COALESCE(stock.sto_isim, '') AS StockName,
-                    COALESCE(stock.sto_birim1_ad, '') AS UnitName
-                FROM dbo.STOKLAR AS stock WITH (NOLOCK)
-                WHERE COALESCE(stock.sto_iptal, 0) = 0
-                  AND (
-                        stock.sto_kod = @stockCodeOrBarcode
-                        OR EXISTS (
-                            SELECT 1
-                            FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
-                            WHERE barcode.bar_stokkodu = stock.sto_kod
-                              AND barcode.bar_kodu = @stockCodeOrBarcode
-                              AND COALESCE(barcode.bar_iptal, 0) = 0
-                        )
-                  )
-                ORDER BY
-                    CASE WHEN stock.sto_kod = @stockCodeOrBarcode THEN 0 ELSE 1 END,
-                    stock.sto_kod
-            ),
-            ShipmentRows AS (
+            ;WITH ShipmentRows AS (
                 SELECT
                     movement.sth_cikis_depo_no AS SourceWarehouseNo,
                     COALESCE(sourceWarehouse.dep_adi, '') AS SourceWarehouseName,
@@ -1488,16 +1466,17 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                         movement.sth_giris_depo_no,
                         0
                     ) AS TargetWarehouseNo,
-                    product.StockCode,
-                    product.StockName,
-                    product.UnitName,
+                    stock.sto_kod AS StockCode,
+                    COALESCE(stock.sto_isim, '') AS StockName,
+                    COALESCE(stock.sto_birim1_ad, '') AS UnitName,
                     movement.sth_evrakno_seri AS DocumentSerie,
                     movement.sth_evrakno_sira AS DocumentOrderNo,
                     COALESCE(movement.sth_miktar, 0) AS Quantity,
                     COALESCE(movement.sth_tutar, 0) AS Amount
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
-                INNER JOIN ProductRows AS product
-                    ON product.StockCode = movement.sth_stok_kod
+                INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
+                    ON stock.sto_kod = movement.sth_stok_kod
+                   AND COALESCE(stock.sto_iptal, 0) = 0
                 LEFT JOIN dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK)
                     ON sourceWarehouse.dep_no = movement.sth_cikis_depo_no
                 WHERE movement.sth_tarih >= @shipmentDate
@@ -1507,12 +1486,29 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                   AND movement.sth_evraktip = 17
                   AND COALESCE(movement.sth_normal_iade, 0) = 0
                   AND COALESCE(movement.sth_iptal, 0) = 0
+                  AND (
+                        @stockCodeOrBarcode IS NULL
+                        OR stock.sto_kod = @stockCodeOrBarcode
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                            WHERE barcode.bar_stokkodu = stock.sto_kod
+                              AND barcode.bar_kodu = @stockCodeOrBarcode
+                              AND COALESCE(barcode.bar_iptal, 0) = 0
+                        )
+                  )
             )
             SELECT TOP (@take)
                 rows.SourceWarehouseNo,
                 rows.SourceWarehouseName,
-                rows.TargetWarehouseNo,
-                COALESCE(targetWarehouse.dep_adi, '') AS TargetWarehouseName,
+                CASE
+                    WHEN @stockCodeOrBarcode IS NULL THEN 0
+                    ELSE rows.TargetWarehouseNo
+                END AS TargetWarehouseNo,
+                CASE
+                    WHEN @stockCodeOrBarcode IS NULL THEN 'Tum hedef depolar'
+                    ELSE COALESCE(targetWarehouse.dep_adi, '')
+                END AS TargetWarehouseName,
                 rows.StockCode,
                 rows.StockName,
                 rows.UnitName,
@@ -1526,15 +1522,21 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             GROUP BY
                 rows.SourceWarehouseNo,
                 rows.SourceWarehouseName,
-                rows.TargetWarehouseNo,
-                COALESCE(targetWarehouse.dep_adi, ''),
+                CASE
+                    WHEN @stockCodeOrBarcode IS NULL THEN 0
+                    ELSE rows.TargetWarehouseNo
+                END,
+                CASE
+                    WHEN @stockCodeOrBarcode IS NULL THEN 'Tum hedef depolar'
+                    ELSE COALESCE(targetWarehouse.dep_adi, '')
+                END,
                 rows.StockCode,
                 rows.StockName,
                 rows.UnitName
             ORDER BY
                 SUM(rows.Quantity) DESC,
-                COALESCE(targetWarehouse.dep_adi, ''),
-                rows.TargetWarehouseNo
+                rows.StockName,
+                rows.StockCode
             OPTION (RECOMPILE);
             """;
 
