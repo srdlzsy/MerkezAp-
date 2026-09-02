@@ -2,6 +2,8 @@ namespace FurpaMerkezApi.Application.Modules.AramaIslemleri.Common;
 
 public static class BarcodeLookupNormalizer
 {
+    public const int MinPartialBarcodeSuffixLength = 6;
+
     public static BarcodeLookupInfo Normalize(string barcode)
     {
         var originalBarcode = barcode.Trim();
@@ -55,6 +57,11 @@ public static class BarcodeLookupNormalizer
 
         return candidates;
     }
+
+    public static bool IsPartialSuffixCandidate(string? value) =>
+        value is not null &&
+        value.Length >= MinPartialBarcodeSuffixLength &&
+        value.All(char.IsDigit);
 
     private static bool IsVariableWeightBarcode(string value) =>
         IsEan13Candidate(value) &&

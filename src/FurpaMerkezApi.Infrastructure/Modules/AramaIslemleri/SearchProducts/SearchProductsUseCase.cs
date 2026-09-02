@@ -11,6 +11,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 {
     private const int DefaultTake = 20;
     private const int MaxTake = 100;
+    private const int MaxPartialBarcodeCandidates = 50;
 
     public async Task<IReadOnlyCollection<ProductLookupItemDto>> ExecuteAsync(
         ProductSearchRequest request,
@@ -158,7 +159,74 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             }
         }
 
-        return Array.Empty<ProductLookupItemDto>();
+        return await ReadProductsByPartialBarcodeSuffixAsync(
+            connection,
+            warehouseNo,
+            barcodeLookup,
+            stockCode,
+            stockName,
+            supplierCode,
+            take,
+            cancellationToken);
+    }
+
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByPartialBarcodeSuffixAsync(
+        DbConnection connection,
+        int warehouseNo,
+        BarcodeLookupInfo barcodeLookup,
+        string? stockCode,
+        string? stockName,
+        string? supplierCode,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (!BarcodeLookupNormalizer.IsPartialSuffixCandidate(barcodeLookup.LookupBarcode))
+        {
+            return Array.Empty<ProductLookupItemDto>();
+        }
+
+        var exactCandidates = BarcodeLookupNormalizer
+            .GetLookupCandidates(barcodeLookup)
+            .ToHashSet(StringComparer.Ordinal);
+        var suffixCandidates = await ReadPartialBarcodeSuffixCandidatesAsync(
+            connection,
+            barcodeLookup.LookupBarcode,
+            Math.Min(Math.Max(take, DefaultTake), MaxPartialBarcodeCandidates),
+            cancellationToken);
+        var products = new List<ProductLookupItemDto>(take);
+        var seenStockCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var barcode in suffixCandidates.Where(candidate => !exactCandidates.Contains(candidate)))
+        {
+            var candidateProducts = await ReadProductsAsync(
+                connection,
+                warehouseNo,
+                barcode,
+                stockCode,
+                stockName,
+                supplierCode,
+                take,
+                barcodeLookup,
+                cancellationToken);
+
+            foreach (var product in candidateProducts)
+            {
+                if (!string.IsNullOrWhiteSpace(product.StockCode) &&
+                    !seenStockCodes.Add(product.StockCode))
+                {
+                    continue;
+                }
+
+                products.Add(product);
+
+                if (products.Count >= take)
+                {
+                    return products;
+                }
+            }
+        }
+
+        return products;
     }
 
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsAsync(
@@ -222,6 +290,48 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         }
 
         return products;
+    }
+
+    private static async Task<IReadOnlyCollection<string>> ReadPartialBarcodeSuffixCandidatesAsync(
+        DbConnection connection,
+        string suffix,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var barcodes = new List<string>(take);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT TOP (@take)
+                LTRIM(RTRIM(bar_kodu)) AS Barcode
+            FROM dbo.BARKOD_TANIMLARI WITH (NOLOCK)
+            WHERE COALESCE(bar_iptal, 0) <> 1
+              AND bar_kodu IS NOT NULL
+              AND LTRIM(RTRIM(bar_kodu)) <> ''
+              AND LTRIM(RTRIM(bar_kodu)) LIKE '%' + @suffix
+            ORDER BY
+                CASE WHEN LEN(LTRIM(RTRIM(bar_kodu))) = @suffixLength THEN 0 ELSE 1 END,
+                LTRIM(RTRIM(bar_kodu));
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+
+        AddParameter(command, "@suffix", suffix);
+        AddParameter(command, "@suffixLength", suffix.Length);
+        AddParameter(command, "@take", take);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var barcode = ReadString(reader, "Barcode");
+            if (!string.IsNullOrWhiteSpace(barcode))
+            {
+                barcodes.Add(barcode);
+            }
+        }
+
+        return barcodes;
     }
 
     private static int NormalizeTake(int take) =>

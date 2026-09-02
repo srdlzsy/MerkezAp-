@@ -3949,7 +3949,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; barkod ile exact arama; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir
+barcode        opsiyonel; once tam barkod arar; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
@@ -3966,6 +3966,7 @@ Kural:
 - Ornek yanlis kullanim: `GET /api/arama-islemleri/urunler?warehouseNo=50&stockName=aytac`. Kullanici token deposu `56` ise ve tum depo yetkisi yoksa backend `403 Forbidden` dondurur.
 - Ornek dogru kullanim: `GET /api/arama-islemleri/urunler?stockName=aytac&take=20` veya `GET /api/arama-islemleri/urunler?warehouseNo=56&stockName=aytac&take=20`.
 - Barkod okutulduysa UI mumkunse degeri `barcode` alaninda gondermelidir. 27/29 terazi barkodunda backend ilk 7 haneyi arar; sonuc bulunamazsa ayni urun/PLU kismi icin `27`/`29` alternatif prefix'ini de dener. Ornek: `2700740000008` okutulursa `2700740`, sonra `2900740`, sonra orijinal barkod denenir.
+- Kullanici barkodu elle ve eksik yazarsa, en az 6 rakamlik degerlerde backend once tam barkod dener; sonuc yoksa `BARKOD_TANIMLARI.bar_kodu` son hanelerine gore arama yapar. Ornek `barcode=321158` istegi `...321158` ile biten barkodlari bulabilir. Bu fallback birden fazla urun dondurebilir; UI liste olarak gostermelidir.
 - Genel arama kutusunda kullanici sadece numerik metin yazarsa ve ilk arama sonuc donmezse backend bu metni once barkod, sonra stok kodu gibi tekrar dener.
 - Ornek: `stockName=2900729` gibi yanlis/genel arama seklinde gelirse backend sonuc bulamazsa `barcode=2900729` gibi tekrar deneyip `015806` stokunu dondurebilir. En temiz UI yolu yine `barcode=2900729` veya `GET /api/arama-islemleri/barkodlar/2900729/cozumle` kullanmaktir.
 - UI barkodu yanlislikla `stockCode` alaninda gonderirse de backend ilk stok kodu aramasindan sonuc alamazsa ayni numerik degeri barkod gibi tekrar dener. Ornek: `stockCode=2900728&companyCode=8880325699` sonuc bulamazsa backend `barcode=2900728&companyCode=8880325699` gibi tekrar arar ve stok `015805` donebilir.
@@ -4043,7 +4044,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; barkod ile exact arama; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir
+barcode        opsiyonel; once tam barkod arar; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
@@ -4083,7 +4084,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; barkod ile exact arama; 27/29 terazi barkodunda arama barkodu normalize edilir
+barcode        opsiyonel; once tam barkod arar; 27/29 terazi barkodunda arama barkodu normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 take           opsiyonel; default 20, max 100
@@ -4221,6 +4222,7 @@ Onemli not:
 - Endpoint once 13 haneli terazi barkodunu normalize eder. `27` veya `29` ile baslayan EAN-13 barkodlarda ilk 7 hane urun barkodu kabul edilir; 8-12. haneler KG miktari olarak `embeddedQuantity` alanina yazilir.
 - Ornek: `2700174041103` okutulursa `lookupBarcode = 2700174`, `embeddedQuantity = 4.11`, `embeddedQuantityUnit = KG` doner.
 - Endpoint normalize edilen barkodu `BARKOD_TANIMLARI` tablosunda exact arar. Terazi barkodunda sonuc bulunamazsa ayni urun/PLU kismi icin `27`/`29` alternatif prefix'i denenir. Ornek: `2700740000008` icin `2700740`, sonra `2900740`, sonra orijinal barkod aranir.
+- Tam barkod ve stok/GTIN eslesmesi bulunamazsa, en az 6 rakamlik girislerde barkod son hane fallback'i denenir. Bu fallback tek stoga denk gelirse barkod cozumlenir ve `warnings` icinde kismi barkodla eslesme uyarisi gelir. Birden fazla stoga denk gelirse yanlis urun secmemek icin `isFound=false`, `resolutionSource=ambiguous-partial-barcode` ve tam barkod isteme hatasi doner.
 - Barkod bulunamazsa barkodu stok kodu veya global urun numarasi gibi degerlerle eslestirmeyi dener.
 - `resolutionSource` alani eslestirmenin `variable-weight`, `barcode`, `stock-code`, `gtin` veya `not-found` kaynakli oldugunu anlatir.
 - `barcodeKind` alani okutulan barkodun `variable-weight`, `product`, `case`, `alternative`, `stock-code` veya `gtin` gibi pratik tipini verir.

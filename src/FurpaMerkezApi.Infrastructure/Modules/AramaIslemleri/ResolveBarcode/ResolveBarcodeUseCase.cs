@@ -45,6 +45,44 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var matchedUnitPointer = 1;
         string? matchedBarcode = null;
 
+        if (barcodeMatch is null)
+        {
+            var partialMatches = await FindPartialBarcodeRowsAsync(lookup, cancellationToken);
+            var distinctStockCodes = partialMatches
+                .Select(row => NormalizeOrNull(row.StockCode))
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            if (distinctStockCodes.Length == 1)
+            {
+                barcodeMatch = partialMatches
+                    .FirstOrDefault(row => string.Equals(
+                        NormalizeOrNull(row.StockCode),
+                        distinctStockCodes[0],
+                        StringComparison.Ordinal));
+                warnings.Add("Barkod tam bulunamadi; girilen son hane bilgisiyle eslesen barkod kullanildi.");
+            }
+            else if (distinctStockCodes.Length > 1)
+            {
+                errors.Add("Girilen barkod sonu birden fazla stoga denk geldi. Tam barkod okutulmali veya yazilmalidir.");
+                return CreateMissingResponse(
+                    lookup,
+                    request.WarehouseNo,
+                    screenCode,
+                    operationType,
+                    targetWarehouseNo,
+                    supplierCode,
+                    "ambiguous-partial-barcode",
+                    null,
+                    null,
+                    null,
+                    "Girilen barkod sonu birden fazla stoga denk geldi.",
+                    warnings,
+                    errors);
+            }
+        }
+
         if (barcodeMatch is not null)
         {
             stockCode = NormalizeOrNull(barcodeMatch.StockCode);
@@ -343,6 +381,36 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         return barcodes
             .Select(candidate => rows.FirstOrDefault(row => string.Equals(row.Barcode, candidate, StringComparison.Ordinal)))
             .FirstOrDefault(row => row is not null);
+    }
+
+    private async Task<IReadOnlyCollection<BarcodeRow>> FindPartialBarcodeRowsAsync(
+        BarcodeLookupInfo lookup,
+        CancellationToken cancellationToken)
+    {
+        if (!BarcodeLookupNormalizer.IsPartialSuffixCandidate(lookup.LookupBarcode))
+        {
+            return Array.Empty<BarcodeRow>();
+        }
+
+        var suffix = lookup.LookupBarcode;
+
+        return await mikroDbContext.BARKOD_TANIMLARIs
+            .AsNoTracking()
+            .Where(row =>
+                row.bar_iptal != true &&
+                row.bar_kodu != null &&
+                row.bar_kodu != string.Empty &&
+                row.bar_kodu.EndsWith(suffix))
+            .OrderBy(row => row.bar_kodu!.Length == suffix.Length ? 0 : 1)
+            .ThenBy(row => row.bar_kodu)
+            .Take(25)
+            .Select(row => new BarcodeRow(
+                row.bar_kodu ?? string.Empty,
+                row.bar_stokkodu,
+                row.bar_birimpntr,
+                row.bar_master ?? false,
+                row.bar_icerigi))
+            .ToListAsync(cancellationToken);
     }
 
     private async Task<StockSeed?> FindStockSeedAsync(

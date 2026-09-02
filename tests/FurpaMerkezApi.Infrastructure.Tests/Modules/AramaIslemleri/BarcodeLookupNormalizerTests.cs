@@ -49,4 +49,14 @@ public sealed class BarcodeLookupNormalizerTests
         Assert.Null(result.EmbeddedQuantity);
         Assert.Null(result.EmbeddedQuantityUnit);
     }
+
+    [Theory]
+    [InlineData("123456", true)]
+    [InlineData("1234567", true)]
+    [InlineData("12345", false)]
+    [InlineData("ABC456", false)]
+    public void IsPartialSuffixCandidate_RequiresAtLeastSixDigits(string value, bool expected)
+    {
+        Assert.Equal(expected, BarcodeLookupNormalizer.IsPartialSuffixCandidate(value));
+    }
 }
