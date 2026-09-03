@@ -255,9 +255,7 @@ public sealed class CashSummaryLookupsUseCase(
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListStoreExpensePaymentTypesAsync(
         CancellationToken cancellationToken) =>
-        await ListPaymentTypesByPredicateAsync(
-            CashSummaryCategoryMatcher.IsStoreExpensePaymentType,
-            cancellationToken);
+        await ListPaymentTypesByNumberRangeAsync(110, 113, cancellationToken);
 
     public async Task<IReadOnlyCollection<CashRegisterDetailDto>> ListOnlineCashRegistersAsync(
         CancellationToken cancellationToken)
@@ -328,6 +326,34 @@ public sealed class CashSummaryLookupsUseCase(
             .AsNoTracking()
             .Where(item => item.PaymentGenus == paymentGenus)
             .OrderBy(item => item.PaymentName)
+            .Select(item => new
+            {
+                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentTypeNo,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return paymentTypes
+            .Select(item => new PaymentTypeItemDto(
+                item.PaymentName,
+                item.PaymentTypeNo,
+                string.Empty,
+                item.AccountCode ?? string.Empty,
+                0,
+                0d))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListPaymentTypesByNumberRangeAsync(
+        int start,
+        int end,
+        CancellationToken cancellationToken)
+    {
+        var paymentTypes = await mikroDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item => item.PaymentTypeNo >= start && item.PaymentTypeNo <= end)
+            .OrderBy(item => item.PaymentTypeNo)
             .Select(item => new
             {
                 PaymentName = item.PaymentName ?? string.Empty,

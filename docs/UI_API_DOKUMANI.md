@@ -13820,10 +13820,26 @@ Onemli not:
 - `documentSerie` backend tarafinda legacy kasa icmal formatinda `F{islemDepoNo}.{cashNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
 - `zReportNo` Z rapor numarasidir; `zTotalValue` Z rapor tutaridir
+- `total` UI tarafinda hesaplanip gonderilmek zorunda degildir; kasa/Z fark uyumu icin backend legacy belge toplamlarini kendi hesaplar. UI tercihen `0` gondermelidir.
+- legacy CARI/Z fark toplaminda `paymentTypeNo < 100` odemeler + backend'in banknotlardan urettigi nakit toplam + `storeExpenses` toplami sayilir; `paymentTypeNo = 100` Gider Pusulasi bu toplamdan haric tutulur
+- create response icindeki `total`, ekranda gosterilen tahsilat toplamindan farkli olabilir; bu alan CARI/Z fark uyumu icin kullanilan legacy belge toplamidir. Liste, detay ve yazdirma ekranlari satir tutarlarindan kendi toplamlarini hesaplamalidir.
+- UI create ekraninda kullaniciya ayri toplamlar gosterilmelidir:
+  - `Tahsilat Toplami`: banknotlardan hesaplanan nakit + `paymentTypeNo < 100` odeme satirlari
+  - `Magaza Gideri`: `storeExpenses` satirlari toplami
+  - `Gider Pusulasi`: `paymentTypes` icindeki `paymentTypeNo = 100` satiri
+  - `Z Fark Bazi`: `Tahsilat Toplami + Magaza Gideri`
+  - `Z Farki`: `Z Fark Bazi - zTotalValue`
+  - `Genel Bilgi Toplami`: istenirse `Tahsilat Toplami + Magaza Gideri + Gider Pusulasi`; bu deger CARI/Z fark hesabi degildir
+- UI yazdirma/detayda tek bir "toplam" alanini belirsiz kullanmamalidir; ekranda bu toplam isimleriyle ayrilmalidir.
 - `zTotalValue` eski sistemle uyumlu sekilde `Summaries` satiri olarak saklanmaz; `CARI_HESAP_HAREKETLERI` tarafinda canli/eski uyumlu `X / sira` evraklari olarak tutulur, gercek kasa sayimi belgesi `cha_aciklama = "{documentSerie}.{documentOrderNo}"` icinden izlenir
 - CARI tarafinda odeme tipleri, nakit toplam, `300 = total - zTotalValue fark` ve `400 = Z Rapor Toplami` satirlari ayri hareketler olarak yazilir
 - nakit toplam `paymentTypes` icinde manuel gonderilmez; backend banknot hareketlerinden `PaymentTypeID = 500`, `description = "Nakit Toplam"` satirini garanti eder
+- backend nakit satirinin `slipNumber` degerini banknot adet toplami olarak yazar; ornegin 137 adet 200 TL + 46 adet 100 TL varsa nakit `slipNumber = 183` olur
 - UI yanlislikla `paymentTypes` icinde `Nakit` veya `paymentTypeNo = 500` gonderirse backend bunu ayri odeme satiri olarak yazmaz, 500 satirini banknot toplamindan uretir
+- UI sifir tutar/adetli odeme, banknot, hediye ceki veya magaza gideri satirlarini gondermemelidir; backend create sirasinda bu satirlari da yazmadan eler
+- Gider Pusulasi `paymentTypes` icinde `paymentTypeNo = 100` olarak gonderilir; fis/adet bilgisi varsa `slipNumber` dolu gelmelidir
+- Magaza giderleri `storeExpenses` icinden gonderilir; dogru `storeExpensesType` ve kullanicinin girdigi aciklama aynen gonderilmelidir.
+- Magaza gider tipi secimi icin UI `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi` endpointini kullanmalidir. Bu endpoint `PaymentTypeNo 110-113` araligindaki tipleri dondurur; eski sistemdeki "Disaridan Alinan" tipi `112` olarak gelirse UI bunu secilebilir yapmalidir.
 - `BanknoteMovements.CreateDate` eski sistem uyumu icin `summaryDate` gunu olarak yazilir; `UpdateDate` teknik olusturma/guncelleme anini tasir
 
 Request:
@@ -13836,7 +13852,7 @@ Request:
   "cashierNo": 1001,
   "managerNo": 1002,
   "zTotalValue": 6500,
-  "total": 6500,
+  "total": 0,
   "summaryDate": "2026-04-24",
   "giftCheckMovements": [],
   "banknoteMovements": [
