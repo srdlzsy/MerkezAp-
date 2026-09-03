@@ -52,15 +52,11 @@ public sealed class InvoiceSendingService(
         ValidateListRequest(request);
 
         var listStartedAt = Stopwatch.GetTimestamp();
-        var items = await LoadPendingInvoicesAsync(
+        var items = await LoadInvoiceListAsync(
             request.Scenario,
             request.StartDate.Date,
             request.EndDate.Date,
-            null,
-            null,
             request.SentState,
-            null,
-            InvoiceLoadShape.Lightweight,
             cancellationToken);
 
         var mappedItems = items
@@ -140,7 +136,7 @@ public sealed class InvoiceSendingService(
         InvoiceSendingDocumentRequest request,
         CancellationToken cancellationToken)
     {
-        var invoice = await LoadSingleInvoiceAsync(
+        var invoice = await LoadOutboxPdfLookupAsync(
             request.Scenario,
             request.DocumentSerie,
             request.DocumentOrderNo,
@@ -234,7 +230,6 @@ public sealed class InvoiceSendingService(
                     invoice,
                     supplier,
                     cancellationToken);
-                ValidateBuiltInvoice(builtInvoice, request.Scenario);
                 var buildElapsed = Stopwatch.GetElapsedTime(buildStartedAt);
                 var uyumsoftStartedAt = Stopwatch.GetTimestamp();
                 var serviceResponse = await SendToUyumsoftAsync(
@@ -256,7 +251,7 @@ public sealed class InvoiceSendingService(
 
                 logger.LogInformation(
                     "Invoice send completed for {Scenario} {DocumentSerie}/{DocumentOrderNo}. " +
-                    "TotalMs={TotalMs} BuildAndValidateMs={BuildAndValidateMs} UyumsoftMs={UyumsoftMs} MarkAsSentMs={MarkAsSentMs}.",
+                    "TotalMs={TotalMs} BuildMs={BuildMs} UyumsoftMs={UyumsoftMs} MarkAsSentMs={MarkAsSentMs}.",
                     request.Scenario,
                     invoice.DocumentSerie,
                     invoice.DocumentOrderNo,
@@ -597,6 +592,222 @@ public sealed class InvoiceSendingService(
                     : ResolveReferenceSource(reference, "selected")));
     }
 
+    private async Task<IReadOnlyCollection<PendingInvoiceRecord>> LoadInvoiceListAsync(
+        InvoiceSendingScenario scenario,
+        DateTime startDate,
+        DateTime endDate,
+        int sentState,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            CREATE TABLE #SelectedInvoiceRows
+            (
+                FatGuid uniqueidentifier NOT NULL PRIMARY KEY
+            );
+
+            DECLARE @InvoiceSeries TABLE
+            (
+                Serie nvarchar(20) NOT NULL PRIMARY KEY
+            );
+
+            INSERT INTO @InvoiceSeries (Serie)
+            SELECT DISTINCT
+                candidate.Serie
+            FROM (
+                SELECT
+                    LTRIM(RTRIM(fatSer.seri)) AS BaseSerie
+                FROM Furpa.dbo.FaturaSeries fatSer WITH (NOLOCK)
+                WHERE
+                    NULLIF(LTRIM(RTRIM(ISNULL(fatSer.seri, N''))), N'') IS NOT NULL
+                    AND fatSer.efatura = @efatura
+            ) series
+            CROSS APPLY (VALUES
+                (series.BaseSerie),
+                (CASE
+                    WHEN LEN(series.BaseSerie) = 3
+                    THEN CONCAT(series.BaseSerie, RIGHT(CONVERT(char(4), YEAR(@startDate)), 2))
+                    ELSE NULL
+                END),
+                (CASE
+                    WHEN LEN(series.BaseSerie) = 3
+                    THEN CONCAT(series.BaseSerie, RIGHT(CONVERT(char(4), YEAR(DATEADD(day, -1, @endDateExclusive))), 2))
+                    ELSE NULL
+                END)
+            ) candidate(Serie)
+            WHERE
+                NULLIF(candidate.Serie, N'') IS NOT NULL;
+
+            INSERT INTO #SelectedInvoiceRows (FatGuid)
+            SELECT DISTINCT
+                ch.cha_Guid
+            FROM @InvoiceSeries invoiceSeries
+            INNER JOIN dbo.CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                ON ch.cha_evrak_tip = 63
+                AND ch.cha_evrakno_seri = invoiceSeries.Serie
+            WHERE
+                ch.cha_tarihi >= @startDate
+                AND ch.cha_tarihi < @endDateExclusive
+                AND ch.cha_belge_tarih >= @startDate
+                AND ch.cha_belge_tarih < @endDateExclusive
+                AND (@sentState = -1
+                    OR (@sentState = 0 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NULL)
+                    OR (@sentState = 1 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NOT NULL))
+                AND ch.cha_tip = 0
+                AND ISNULL(ch.cha_iptal, 0) = 0;
+
+            WITH Faturalar AS (
+                SELECT
+                    ch.cha_Guid AS FatGuid,
+                    ISNULL(ch.cha_uuid, N'') AS Ettn,
+                    ch.cha_evrakno_seri AS DocumentSerie,
+                    ch.cha_evrakno_sira AS DocumentOrderNo,
+                    ch.cha_evrak_tip AS EvrakTip,
+                    ch.cha_normal_Iade AS Iade,
+                    CAST(ch.cha_belge_tarih AS date) AS BelgeTarihi,
+                    ch.cha_aciklama AS Aciklama,
+                    ch.cha_belge_no AS BelgeNo,
+                    ISNULL(ch.cha_aratoplam, 0) AS AraToplam,
+                    ISNULL(ch.cha_ft_iskonto1, 0)
+                        + ISNULL(ch.cha_ft_iskonto2, 0)
+                        + ISNULL(ch.cha_ft_iskonto3, 0)
+                        + ISNULL(ch.cha_ft_iskonto4, 0)
+                        + ISNULL(ch.cha_ft_iskonto5, 0)
+                        + ISNULL(ch.cha_ft_iskonto6, 0) AS DiscountTotal,
+                    ISNULL(ch.cha_vergi1, 0)
+                        + ISNULL(ch.cha_vergi2, 0)
+                        + ISNULL(ch.cha_vergi3, 0)
+                        + ISNULL(ch.cha_vergi4, 0)
+                        + ISNULL(ch.cha_vergi5, 0)
+                        + ISNULL(ch.cha_vergi6, 0)
+                        + ISNULL(ch.cha_vergi7, 0)
+                        + ISNULL(ch.cha_vergi8, 0)
+                        + ISNULL(ch.cha_vergi9, 0)
+                        + ISNULL(ch.cha_vergi10, 0)
+                        + ISNULL(ch.cha_vergi11, 0)
+                        + ISNULL(ch.cha_vergi12, 0)
+                        + ISNULL(ch.cha_vergi13, 0)
+                        + ISNULL(ch.cha_vergi14, 0)
+                        + ISNULL(ch.cha_vergi15, 0)
+                        + ISNULL(ch.cha_vergi16, 0)
+                        + ISNULL(ch.cha_vergi17, 0)
+                        + ISNULL(ch.cha_vergi18, 0)
+                        + ISNULL(ch.cha_vergi19, 0)
+                        + ISNULL(ch.cha_vergi20, 0) AS TaxTotal,
+                    ISNULL(ch.cha_ebelge_turu, 0) AS EBelgeTuru,
+                    LTRIM(RTRIM(CONCAT(
+                        ISNULL(c.cari_unvan1, N''),
+                        CASE WHEN ISNULL(c.cari_unvan2, N'') = N'' THEN N'' ELSE N' ' + c.cari_unvan2 END))) AS MusteriAdi,
+                    c.cari_kod AS MusteriKodu,
+                    ISNULL(NULLIF(c.cari_vdaire_no, N''), ISNULL(c.cari_VergiKimlikNo, N'')) AS VDNo,
+                    c.cari_efatura_fl AS EFaturaMukellefiMi,
+                    ch.cha_cinsi AS CariHareketCins,
+                    c.cari_vdaire_adi AS VergiDairesi,
+                    adr.adr_cadde AS Cadde,
+                    adr.adr_sokak AS Sokak,
+                    adr.adr_ilce AS Ilce,
+                    adr.adr_il AS Il,
+                    adr.adr_efatura_alias AS FaturaMail,
+                    ISNULL(ch.cha_miktari, 0) AS Miktar,
+                    adr.adr_posta_kodu AS PostaKodu,
+                    c.cari_CepTel AS CariTel,
+                    c.cari_EMail AS Mail,
+                    ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(ek.cha_Istisna1, N''))), N''), N'') AS IstisnaKodu,
+                    ISNULL(ek.cha_HalRusum, 0) AS Rusum,
+                    ISNULL(ek.cha_ozel_matrah_kodu, N'') AS OzelMatrahKodu
+                FROM #SelectedInvoiceRows selected
+                INNER JOIN dbo.CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                    ON ch.cha_Guid = selected.FatGuid
+                INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
+                LEFT JOIN CARI_HESAP_ADRESLERI adr WITH (NOLOCK)
+                    ON c.cari_kod = adr.adr_cari_kod
+                    AND adr.adr_adres_no = 1
+                LEFT JOIN CARI_HESAP_HAREKETLERI_EK ek WITH (NOLOCK) ON ch.cha_Guid = ek.chaek_related_uid
+                WHERE
+                    c.cari_efatura_fl = @efatura
+            )
+            SELECT
+                MIN(FatGuid) AS FatGuid,
+                MAX(Ettn) AS Ettn,
+                DocumentSerie,
+                DocumentOrderNo,
+                MAX(EvrakTip) AS EvrakTip,
+                MAX(Iade) AS Iade,
+                BelgeTarihi,
+                MAX(Aciklama) AS Aciklama,
+                BelgeNo,
+                SUM(AraToplam) AS AraToplam,
+                SUM(DiscountTotal) AS DiscountTotal,
+                SUM(TaxTotal) AS TaxTotal,
+                SUM(Rusum) AS Rusum,
+                MAX(EBelgeTuru) AS EBelgeTuru,
+                MusteriAdi,
+                MusteriKodu,
+                VDNo,
+                EFaturaMukellefiMi,
+                MAX(CariHareketCins) AS CariHareketCins,
+                VergiDairesi,
+                Cadde,
+                Sokak,
+                Ilce,
+                Il,
+                FaturaMail,
+                SUM(Miktar) AS Miktar,
+                PostaKodu,
+                CariTel,
+                Mail,
+                MAX(IstisnaKodu) AS IstisnaKodu,
+                MAX(OzelMatrahKodu) AS OzelMatrahKodu,
+                N'' AS IrsaliyeNo,
+                CAST(NULL AS date) AS IrsaliyeTarihi,
+                N'' AS IadeFaturaNo,
+                CAST(NULL AS date) AS IadeFaturaTarihi,
+                N'' AS Depo,
+                COUNT(DISTINCT FatGuid) AS SourceLineCount,
+                N'' AS SourceLineSummary,
+                N'' AS TaxRateSummary
+            FROM Faturalar
+            GROUP BY
+                DocumentSerie,
+                DocumentOrderNo,
+                BelgeTarihi,
+                BelgeNo,
+                MusteriAdi,
+                MusteriKodu,
+                VDNo,
+                EFaturaMukellefiMi,
+                VergiDairesi,
+                Cadde,
+                Sokak,
+                Ilce,
+                Il,
+                FaturaMail,
+                PostaKodu,
+                CariTel,
+                Mail
+            ORDER BY
+                BelgeTarihi DESC,
+                DocumentSerie DESC,
+                DocumentOrderNo DESC;
+            """;
+
+        var efatura = scenario == InvoiceSendingScenario.EFatura;
+        var endDateExclusive = endDate.Date.AddDays(1);
+        var items = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate.Date, DbType.DateTime);
+                AddParameter(command, "@endDateExclusive", endDateExclusive, DbType.DateTime);
+                AddParameter(command, "@sentState", sentState, DbType.Int32);
+                AddParameter(command, "@efatura", efatura, DbType.Boolean);
+            },
+            reader => MapPendingInvoice(reader, scenario),
+            cancellationToken);
+
+        return items;
+    }
+
     private async Task<IReadOnlyCollection<PendingInvoiceRecord>> LoadPendingInvoicesAsync(
         InvoiceSendingScenario scenario,
         DateTime? startDate,
@@ -642,6 +853,7 @@ public sealed class InvoiceSendingService(
                     AND (@sentState = -1
                         OR (@sentState = 0 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NULL)
                         OR (@sentState = 1 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NOT NULL))
+                    AND ch.cha_evrak_tip = 63
                     AND ch.cha_tip = 0
                     AND ISNULL(ch.cha_iptal, 0) = 0
 
@@ -661,6 +873,7 @@ public sealed class InvoiceSendingService(
                     AND (@sentState = -1
                         OR (@sentState = 0 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NULL)
                         OR (@sentState = 1 AND NULLIF(LTRIM(RTRIM(ISNULL(ch.cha_belge_no, N''))), N'') IS NOT NULL))
+                    AND ch.cha_evrak_tip = 63
                     AND ch.cha_tip = 0
                     AND ISNULL(ch.cha_iptal, 0) = 0
             ),
@@ -952,17 +1165,24 @@ public sealed class InvoiceSendingService(
             sql,
             command =>
             {
-                AddParameter(command, "@startDate", startDate);
-                AddParameter(command, "@endDateExclusive", endDateExclusive);
-                AddParameter(command, "@documentSerie", string.IsNullOrWhiteSpace(documentSerie) ? null : documentSerie.Trim());
-                AddParameter(command, "@documentOrderNo", documentOrderNo);
-                AddParameter(command, "@sentState", sentState);
-                AddParameter(command, "@efatura", efatura);
-                AddParameter(command, "@includeFullDetails", loadShape == InvoiceLoadShape.Full ? 1 : 0);
+                AddParameter(command, "@startDate", startDate, DbType.DateTime);
+                AddParameter(command, "@endDateExclusive", endDateExclusive, DbType.DateTime);
+                AddParameter(
+                    command,
+                    "@documentSerie",
+                    string.IsNullOrWhiteSpace(documentSerie) ? null : documentSerie.Trim(),
+                    DbType.String,
+                    20);
+                AddParameter(command, "@documentOrderNo", documentOrderNo, DbType.Int32);
+                AddParameter(command, "@sentState", sentState, DbType.Int32);
+                AddParameter(command, "@efatura", efatura, DbType.Boolean);
+                AddParameter(command, "@includeFullDetails", loadShape == InvoiceLoadShape.Full ? 1 : 0, DbType.Int32);
                 AddParameter(
                     command,
                     "@documentSelectionsXml",
-                    documentSelections is null ? null : SerializeDocumentSelections(documentSelections));
+                    documentSelections is null ? null : SerializeDocumentSelections(documentSelections),
+                    DbType.String,
+                    -1);
             },
             reader => MapPendingInvoice(reader, scenario),
             cancellationToken);
@@ -1041,6 +1261,91 @@ public sealed class InvoiceSendingService(
                     new XAttribute("Serie", document.DocumentSerie),
                     new XAttribute("OrderNo", document.DocumentOrderNo))))
         .ToString(SaveOptions.DisableFormatting);
+
+    private async Task<InvoicePdfLookupRecord> LoadOutboxPdfLookupAsync(
+        InvoiceSendingScenario scenario,
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(documentSerie))
+        {
+            throw new ArgumentException("Document serie is required.", nameof(documentSerie));
+        }
+
+        const string sql = """
+            WITH SelectedDocuments AS (
+                SELECT
+                    selected.Node.value('(@Serie)[1]', 'nvarchar(20)') AS DocumentSerie,
+                    selected.Node.value('(@OrderNo)[1]', 'int') AS DocumentOrderNo
+                FROM (SELECT CAST(@documentSelectionsXml AS xml) AS Value) selectionPayload
+                CROSS APPLY selectionPayload.Value.nodes('/Documents/Document') selected(Node)
+            )
+            SELECT TOP (1)
+                ch.cha_Guid AS FatGuid,
+                ISNULL(ch.cha_uuid, N'') AS Ettn,
+                ch.cha_evrakno_seri AS DocumentSerie,
+                ch.cha_evrakno_sira AS DocumentOrderNo,
+                CAST(ch.cha_belge_tarih AS date) AS BelgeTarihi
+            FROM SelectedDocuments selected
+            INNER JOIN dbo.CARI_HESAP_HAREKETLERI ch WITH (NOLOCK)
+                ON ch.cha_evrak_tip = 63
+                AND ch.cha_evrakno_seri = selected.DocumentSerie
+                AND ch.cha_evrakno_sira = selected.DocumentOrderNo
+            INNER JOIN CARI_HESAPLAR c WITH (NOLOCK) ON ch.cha_ciro_cari_kodu = c.cari_kod
+            WHERE
+                ch.cha_tip = 0
+                AND ISNULL(ch.cha_iptal, 0) = 0
+                AND c.cari_efatura_fl = @efatura
+                AND EXISTS (
+                    SELECT 1
+                    FROM Furpa.dbo.FaturaSeries fatSer WITH (NOLOCK)
+                    WHERE
+                        NULLIF(LTRIM(RTRIM(ISNULL(fatSer.seri, N''))), N'') IS NOT NULL
+                        AND fatSer.efatura = @efatura
+                        AND ch.cha_evrakno_seri LIKE CONCAT(LTRIM(RTRIM(fatSer.seri)), N'%')
+                )
+            ORDER BY
+                CASE WHEN ch.cha_evrakno_seri = @requestedDocumentSerie THEN 0 ELSE 1 END,
+                ch.cha_satir_no,
+                ch.cha_Guid;
+            """;
+
+        var lookupSeries = ResolveDocumentSerieLookupCandidates(documentSerie);
+        var lookupSelections = lookupSeries
+            .Select(lookupSerie => new SendInvoiceDocumentSelection(lookupSerie, documentOrderNo))
+            .ToArray();
+        var items = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command =>
+            {
+                AddParameter(command, "@efatura", scenario == InvoiceSendingScenario.EFatura, DbType.Boolean);
+                AddParameter(command, "@requestedDocumentSerie", documentSerie.Trim(), DbType.String, 20);
+                AddParameter(command, "@documentSelectionsXml", SerializeDocumentSelections(lookupSelections), DbType.String, -1);
+            },
+            reader =>
+            {
+                var resolvedSerie = ReadString(reader, "DocumentSerie");
+                var resolvedOrderNo = ReadInt32(reader, "DocumentOrderNo");
+                var documentDate = ReadDateTime(reader, "BelgeTarihi");
+
+                return new InvoicePdfLookupRecord(
+                    ReadGuid(reader, "FatGuid"),
+                    ReadString(reader, "Ettn"),
+                    BuildInvoiceId(resolvedSerie, resolvedOrderNo, documentDate.Year));
+            },
+            cancellationToken);
+        var invoice = items.FirstOrDefault();
+
+        if (invoice is not null)
+        {
+            return invoice;
+        }
+
+        throw new KeyNotFoundException(
+            $"Pending invoice was not found for {documentSerie}/{documentOrderNo}. Scenario={scenario}. Tried series: {string.Join(", ", lookupSeries)}.");
+    }
 
     private async Task<PendingInvoiceRecord> LoadSingleInvoiceAsync(
         InvoiceSendingScenario scenario,
@@ -1463,6 +1768,7 @@ public sealed class InvoiceSendingService(
                 WHERE
                     cha_evrakno_seri = @documentSerie
                     AND cha_evrakno_sira = @documentOrderNo
+                    AND cha_evrak_tip = 63
                     AND cha_tip = 0
                     AND ISNULL(cha_iptal, 0) = 0
             ) invoiceMovements ON invoiceMovements.cha_Guid = sh.sth_fat_uid
@@ -1488,8 +1794,8 @@ public sealed class InvoiceSendingService(
             sql,
             command =>
             {
-                AddParameter(command, "@documentSerie", invoice.DocumentSerie);
-                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo);
+                AddParameter(command, "@documentSerie", invoice.DocumentSerie, DbType.String, 20);
+                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo, DbType.Int32);
             },
             reader =>
             {
@@ -1580,6 +1886,7 @@ public sealed class InvoiceSendingService(
                 ch.cha_tip = 0
                 AND ch.cha_evrakno_seri = @documentSerie
                 AND ch.cha_evrakno_sira = @documentOrderNo
+                AND ch.cha_evrak_tip = 63
                 AND ISNULL(ch.cha_iptal, 0) = 0
             GROUP BY
                 ISNULL(hiz.hiz_kod, ISNULL(dm.dem_kod, N'')),
@@ -1596,8 +1903,8 @@ public sealed class InvoiceSendingService(
             sql,
             command =>
             {
-                AddParameter(command, "@documentSerie", invoice.DocumentSerie);
-                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo);
+                AddParameter(command, "@documentSerie", invoice.DocumentSerie, DbType.String, 20);
+                AddParameter(command, "@documentOrderNo", invoice.DocumentOrderNo, DbType.Int32);
             },
             reader =>
             {
@@ -2499,6 +2806,7 @@ public sealed class InvoiceSendingService(
             .Where(row =>
                 row.cha_evrakno_seri == documentSerie &&
                 row.cha_evrakno_sira == documentOrderNo &&
+                row.cha_evrak_tip == 63 &&
                 row.cha_tip == 0 &&
                 row.cha_iptal != true)
             .ToListAsync(cancellationToken);
@@ -2534,6 +2842,7 @@ public sealed class InvoiceSendingService(
             .Where(row =>
                 row.cha_evrakno_seri == documentSerie &&
                 row.cha_evrakno_sira == documentOrderNo &&
+                row.cha_evrak_tip == 63 &&
                 row.cha_tip == 0 &&
                 row.cha_iptal != true &&
                 row.cha_belge_no != null &&
@@ -3150,8 +3459,38 @@ public sealed class InvoiceSendingService(
 
     private static void AddParameter(DbCommand command, string name, object? value)
     {
+        AddParameter(command, name, value, null, null);
+    }
+
+    private static void AddParameter(
+        DbCommand command,
+        string name,
+        object? value,
+        DbType dbType,
+        int? size = null)
+    {
+        AddParameter(command, name, value, dbType, size);
+    }
+
+    private static void AddParameter(
+        DbCommand command,
+        string name,
+        object? value,
+        DbType? dbType,
+        int? size)
+    {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
+        if (dbType.HasValue)
+        {
+            parameter.DbType = dbType.Value;
+        }
+
+        if (size.HasValue)
+        {
+            parameter.Size = size.Value;
+        }
+
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
@@ -3330,6 +3669,11 @@ public sealed class InvoiceSendingService(
         decimal TaxTotal,
         decimal PayableTotal,
         bool IsGeneratedInvoiceNo);
+
+    private sealed record InvoicePdfLookupRecord(
+        Guid InvoiceGuid,
+        string Ettn,
+        string InvoiceId);
 
     private sealed record InvoiceLineSeed(
         string Code,

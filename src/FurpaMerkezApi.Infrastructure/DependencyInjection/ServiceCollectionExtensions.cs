@@ -499,7 +499,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEDespatchService, EDespatchService>();
         services.AddScoped<IEInvoiceDocumentRenderer, EInvoiceDocumentRenderer>();
         services.AddScoped<UblTrInvoiceBusinessRuleValidator>();
-        services.AddScoped<UblTrInvoiceXmlValidator>();
+        services.AddSingleton<UblTrInvoiceXmlValidator>();
         services.AddScoped<IUyumsoftConnectedQueryService, UyumsoftConnectedQueryService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IRoleService, RoleService>();
