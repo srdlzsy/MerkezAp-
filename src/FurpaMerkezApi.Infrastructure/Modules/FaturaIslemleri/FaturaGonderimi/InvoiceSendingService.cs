@@ -3469,7 +3469,7 @@ public sealed class InvoiceSendingService(
         DbType dbType,
         int? size = null)
     {
-        AddParameter(command, name, value, dbType, size);
+        AddParameter(command, name, value, (DbType?)dbType, size);
     }
 
     private static void AddParameter(
