@@ -6,6 +6,7 @@ using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,7 @@ public sealed class GreenGrocerOperationsUseCase(
     MikroWriteDbContext mikroWriteDbContext,
     AuthDbContext authDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MobileOfflineSyncService mobileOfflineSyncService)
     : IGreenGrocerOperationsUseCase
 {
@@ -145,7 +147,7 @@ public sealed class GreenGrocerOperationsUseCase(
 
         try
         {
-            var response = await ExecuteAdjustmentDatabaseAsync(request, cancellationToken);
+            var response = await ExecuteAdjustmentRoutedAsync(request, cancellationToken);
             await mobileOfflineSyncService.CompleteAsync(
                 OfflineOperationCode,
                 request.RequestedByUserId,
@@ -165,6 +167,18 @@ public sealed class GreenGrocerOperationsUseCase(
             throw;
         }
     }
+
+    private Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentRoutedAsync(
+        GreenGrocerOperationsAdjustmentApplyRequest request,
+        CancellationToken cancellationToken) =>
+        mikroWriteRoutingOptions.CurrentValue.GreenGrocerOperations switch
+        {
+            MikroWriteMode.Database => ExecuteAdjustmentDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => throw CreateUnsupportedMikroApiModeException(),
+            MikroWriteMode.DualShadow => throw CreateUnsupportedMikroApiModeException(),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:GreenGrocerOperations mode '{mode}'.")
+        };
 
     private async Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentDatabaseAsync(
         GreenGrocerOperationsAdjustmentApplyRequest request,
@@ -1316,6 +1330,11 @@ public sealed class GreenGrocerOperationsUseCase(
             _ => throw new ArgumentException("Unsupported green grocer type code.")
         };
     }
+
+    private static NotSupportedException CreateUnsupportedMikroApiModeException() =>
+        new(
+            "MikroWriteRouting:GreenGrocerOperations MikroApi/DualShadow is not wired yet. " +
+            "MNV adjustment payload must be mapped and live-tested with DahiliStokHareketKaydetV2 before enabling this route.");
 
     private static string GetModelName(string modelCode) =>
         modelCode switch

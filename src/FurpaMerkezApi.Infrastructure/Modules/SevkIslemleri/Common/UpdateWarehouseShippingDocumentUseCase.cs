@@ -2,6 +2,7 @@ using System.Data;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -9,7 +10,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 
 public sealed class UpdateWarehouseShippingDocumentUseCase(
     MikroWriteDbContext mikroWriteDbContext,
-    IOptions<MikroWriteOptions> mikroWriteOptions)
+    IOptions<MikroWriteOptions> mikroWriteOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
     : IUpdateWarehouseShippingDocumentUseCase
 {
     private const byte MovementType = 2;
@@ -33,6 +35,20 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
     {
         Validate(request);
 
+        return mikroWriteRoutingOptions.CurrentValue.WarehouseShippingUpdate switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => throw CreateUnsupportedMikroApiModeException(),
+            MikroWriteMode.DualShadow => throw CreateUnsupportedMikroApiModeException(),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:WarehouseShippingUpdate mode '{mode}'.")
+        };
+    }
+
+    private async Task<UpdateWarehouseShippingDocumentResponse> ExecuteDatabaseAsync(
+        UpdateWarehouseShippingDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
         return await executionStrategy.ExecuteAsync(async () =>
         {
@@ -252,6 +268,12 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
             }
         });
     }
+
+    private static NotSupportedException CreateUnsupportedMikroApiModeException() =>
+        new(
+            "MikroWriteRouting:WarehouseShippingUpdate MikroApi/DualShadow is not wired yet. " +
+            "This flow must use DahiliStokHareketDuzeltV2/DahiliStokHareketGuidSilV2 " +
+            "and DepolarArasiSiparisDuzeltV2 with live payload tests before DB writes can be disabled.");
 
     private async Task EnsureRequestedStocksExistAsync(
         UpdateWarehouseShippingDocumentRequest request,

@@ -3,13 +3,16 @@ using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 
 public sealed class MikroDocumentEditingService(
     MikroDbContext mikroDbContext,
-    MikroWriteDbContext mikroWriteDbContext)
+    MikroWriteDbContext mikroWriteDbContext,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
     : IMikroDocumentEditingService
 {
     private const short FallbackMikroUserNo = 39;
@@ -874,6 +877,8 @@ public sealed class MikroDocumentEditingService(
         UpdateStockMovementDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureMicroDocumentEditingDatabaseMode(
+            "Stock movement update requires DahiliStokHareketDuzeltV2 payload mapping before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateStockMovementLookup(request.Lookup);
         ValidateStockMovementUpdate(request);
@@ -962,6 +967,8 @@ public sealed class MikroDocumentEditingService(
         DeleteStockMovementDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureMicroDocumentEditingDatabaseMode(
+            "Stock movement delete requires DahiliStokHareketGuidSilV2/DahiliStokHareketSilV2 live tests before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateStockMovementLookup(request.Lookup);
 
@@ -1234,6 +1241,8 @@ public sealed class MikroDocumentEditingService(
         UpdateCompanyOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureMicroDocumentEditingDatabaseMode(
+            "Company order update requires SiparisDuzeltV2 payload mapping before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateCompanyOrderLookup(request.Lookup);
         ValidateCompanyOrderUpdate(request);
@@ -1322,6 +1331,8 @@ public sealed class MikroDocumentEditingService(
         DeleteCompanyOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureMicroDocumentEditingDatabaseMode(
+            "Company order delete requires SiparisGuidSilV2/SiparisSilV2 live tests before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateCompanyOrderLookup(request.Lookup);
 
@@ -1411,6 +1422,8 @@ public sealed class MikroDocumentEditingService(
         UpdateWarehouseOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureMicroDocumentEditingDatabaseMode(
+            "Warehouse order update requires DepolarArasiSiparisDuzeltV2 payload mapping before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateWarehouseOrderLookup(request.Lookup);
         ValidateWarehouseOrderUpdate(request);
@@ -1499,6 +1512,8 @@ public sealed class MikroDocumentEditingService(
         DeleteWarehouseOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureMicroDocumentEditingDatabaseMode(
+            "Warehouse order delete requires DepolarArasiSiparisGuidSilV2/DepolarArasiSiparisSilV2 live tests before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateWarehouseOrderLookup(request.Lookup);
 
@@ -4094,6 +4109,24 @@ public sealed class MikroDocumentEditingService(
         }
 
         return normalized;
+    }
+
+    private void EnsureMicroDocumentEditingDatabaseMode(string detail)
+    {
+        var mode = mikroWriteRoutingOptions.CurrentValue.MicroDocumentEditing;
+        if (mode == MikroWriteMode.Database)
+        {
+            return;
+        }
+
+        if (mode is MikroWriteMode.MikroApi or MikroWriteMode.DualShadow)
+        {
+            throw new NotSupportedException(
+                $"MikroWriteRouting:MicroDocumentEditing mode '{mode}' is not wired for this operation. {detail}");
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported MikroWriteRouting:MicroDocumentEditing mode '{mode}'.");
     }
 
     private static void ValidateUpdateUser(int warehouseNo)

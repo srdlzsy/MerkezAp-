@@ -10,6 +10,8 @@ public sealed class MikroWriteRoutingOptions
 
     public MikroWriteMode IssuedCompanyOrder { get; init; } = MikroWriteMode.Database;
 
+    public MikroWriteMode CompanyOrderSentFlag { get; init; } = MikroWriteMode.Database;
+
     public MikroWriteMode StockReceipt { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode Virman { get; init; } = MikroWriteMode.Database;
@@ -23,6 +25,18 @@ public sealed class MikroWriteRoutingOptions
     public MikroWriteMode CompanyReceiving { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode WarehouseReceivingAcceptance { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode WarehouseShippingUpdate { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode GreenGrocerOrderDelete { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode MicroDocumentEditing { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode GreenGrocerOperations { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode ProductDistribution { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode InvoiceSendingMarkAsSent { get; init; } = MikroWriteMode.Database;
 }
 
 public enum MikroWriteMode

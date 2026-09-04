@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
@@ -11,6 +12,7 @@ using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGonderimi;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -28,6 +30,8 @@ public sealed class InvoiceSendingService(
     UblTrInvoiceXmlValidator ublTrInvoiceXmlValidator,
     IOptions<UyumsoftConnectedServicesOptions> uyumsoftOptions,
     IOptions<EDespatchOptions> eDespatchOptions,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
     IHostEnvironment hostEnvironment,
     ILogger<InvoiceSendingService> logger)
 {
@@ -42,6 +46,9 @@ public sealed class InvoiceSendingService(
     private const int InvoiceSendLockTimeoutMilliseconds = 0;
     private const int SlowListThresholdMilliseconds = 2_000;
     private const int SlowRenderThresholdMilliseconds = 5_000;
+    private const string AlimSatimEvragiDuzeltPath = "/Api/apiMethods/AlimSatimEvragiDuzeltV2";
+    private const int MikroApiMarkerRecoveryAttemptCount = 5;
+    private const int MikroApiMarkerRecoveryDelayMilliseconds = 250;
     private static readonly CultureInfo TurkishCulture = new("tr-TR");
     private readonly Dictionary<InvoiceSendingScenario, string?> xsltContentCache = [];
 
@@ -2802,6 +2809,45 @@ public sealed class InvoiceSendingService(
         string ettn,
         CancellationToken cancellationToken)
     {
+        switch (mikroWriteRoutingOptions.CurrentValue.InvoiceSendingMarkAsSent)
+        {
+            case MikroWriteMode.Database:
+                await MarkAsSentDatabaseAsync(
+                    documentSerie,
+                    documentOrderNo,
+                    serviceDocumentNumber,
+                    ettn,
+                    cancellationToken);
+                break;
+            case MikroWriteMode.MikroApi:
+                await MarkAsSentMikroApiAsync(
+                    documentSerie,
+                    documentOrderNo,
+                    serviceDocumentNumber,
+                    ettn,
+                    cancellationToken);
+                break;
+            case MikroWriteMode.DualShadow:
+                await MarkAsSentDatabaseAsync(
+                    documentSerie,
+                    documentOrderNo,
+                    serviceDocumentNumber,
+                    ettn,
+                    cancellationToken);
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported MikroWriteRouting:InvoiceSendingMarkAsSent mode '{mikroWriteRoutingOptions.CurrentValue.InvoiceSendingMarkAsSent}'.");
+        }
+    }
+
+    private async Task MarkAsSentDatabaseAsync(
+        string documentSerie,
+        int documentOrderNo,
+        string serviceDocumentNumber,
+        string ettn,
+        CancellationToken cancellationToken)
+    {
         var trackedRows = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
             .Where(row =>
                 row.cha_evrakno_seri == documentSerie &&
@@ -2830,6 +2876,114 @@ public sealed class InvoiceSendingService(
         }
 
         await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task MarkAsSentMikroApiAsync(
+        string documentSerie,
+        int documentOrderNo,
+        string serviceDocumentNumber,
+        string ettn,
+        CancellationToken cancellationToken)
+    {
+        var rows = await LoadInvoiceMarkerRowsAsync(documentSerie, documentOrderNo, cancellationToken);
+        if (rows.Count == 0)
+        {
+            throw new KeyNotFoundException(
+                $"Mikro hareketleri bulunamadi: {documentSerie}/{documentOrderNo}.");
+        }
+
+        var payload = new
+        {
+            evraklar = rows
+                .Select(row => new
+                {
+                    row.cha_Guid,
+                    row.cha_evrak_tip,
+                    row.cha_evrakno_seri,
+                    row.cha_evrakno_sira,
+                    row.cha_satir_no,
+                    cha_tarihi = FormatMikroApiDate(row.cha_tarihi),
+                    cha_belge_no = serviceDocumentNumber,
+                    cha_uuid = ettn,
+                    cha_kilitli = true
+                })
+                .ToArray()
+        };
+
+        logger.LogInformation(
+            "Invoice sent marker is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, RowCount={RowCount}",
+            AlimSatimEvragiDuzeltPath,
+            documentSerie,
+            documentOrderNo,
+            rows.Count);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            AlimSatimEvragiDuzeltPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API invoice sent marker update failed.");
+        }
+
+        if (!await VerifyInvoiceMarkerAsync(
+                rows.Select(row => row.cha_Guid).ToArray(),
+                serviceDocumentNumber,
+                ettn,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Mikro API invoice sent marker update returned success, but cha_belge_no/cha_uuid/cha_kilitli could not be verified.");
+        }
+    }
+
+    private async Task<List<CARI_HESAP_HAREKETLERI>> LoadInvoiceMarkerRowsAsync(
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        return await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .AsNoTracking()
+            .Where(row =>
+                row.cha_evrakno_seri == documentSerie &&
+                row.cha_evrakno_sira == documentOrderNo &&
+                row.cha_evrak_tip == 63 &&
+                row.cha_tip == 0 &&
+                row.cha_iptal != true)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<bool> VerifyInvoiceMarkerAsync(
+        Guid[] rowGuids,
+        string serviceDocumentNumber,
+        string ettn,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MikroApiMarkerRecoveryAttemptCount; attempt++)
+        {
+            var markedRowCount = await mikroDbContext.CARI_HESAP_HAREKETLERIs
+                .AsNoTracking()
+                .Where(row =>
+                    rowGuids.Contains(row.cha_Guid) &&
+                    row.cha_belge_no == serviceDocumentNumber &&
+                    row.cha_uuid == ettn &&
+                    row.cha_kilitli == true)
+                .CountAsync(cancellationToken);
+
+            if (markedRowCount == rowGuids.Length)
+            {
+                return true;
+            }
+
+            if (attempt < MikroApiMarkerRecoveryAttemptCount)
+            {
+                await Task.Delay(MikroApiMarkerRecoveryDelayMilliseconds, cancellationToken);
+            }
+        }
+
+        return false;
     }
 
     private async Task<string> GetCurrentSentDocumentNoAsync(
@@ -3494,6 +3648,9 @@ public sealed class InvoiceSendingService(
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
+
+    private static string? FormatMikroApiDate(DateTime? value) =>
+        value?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
     private static string ReadString(DbDataReader reader, string columnName)
     {

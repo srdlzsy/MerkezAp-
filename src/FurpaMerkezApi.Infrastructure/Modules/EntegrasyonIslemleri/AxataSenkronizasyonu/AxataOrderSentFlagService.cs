@@ -17,6 +17,7 @@ internal sealed class AxataOrderSentFlagService(
     private const short MikroUserNo = 39;
     private const string CompletedStatus = "1";
     private const string DepolarArasiSiparisDuzeltPath = "/Api/apiMethods/DepolarArasiSiparisDuzeltV2";
+    private const string SiparisDuzeltPath = "/Api/apiMethods/SiparisDuzeltV2";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
 
@@ -46,11 +47,32 @@ internal sealed class AxataOrderSentFlagService(
         CompanyOrderListDirection direction,
         CancellationToken cancellationToken)
     {
+        return mikroWriteRoutingOptions.CurrentValue.CompanyOrderSentFlag switch
+        {
+            MikroWriteMode.MikroApi => new AxataOrderSentFlagMarkResult(
+                await MarkCompanyOrderAsSentWithMikroApiAsync(request, direction, cancellationToken),
+                "MikroApi:SiparisDuzeltV2"),
+            MikroWriteMode.Database => new AxataOrderSentFlagMarkResult(
+                await MarkCompanyOrderAsSentInDatabaseAsync(request, direction, cancellationToken),
+                "Database"),
+            MikroWriteMode.DualShadow => new AxataOrderSentFlagMarkResult(
+                await MarkCompanyOrderAsSentInDatabaseAsync(request, direction, cancellationToken),
+                "Database:DualShadowFallback"),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:CompanyOrderSentFlag mode '{mode}'.")
+        };
+    }
+
+    private async Task<int> MarkCompanyOrderAsSentInDatabaseAsync(
+        CompanyOrderDetailRequest request,
+        CompanyOrderListDirection direction,
+        CancellationToken cancellationToken)
+    {
         var documentSerie = request.DocumentSerie.Trim();
         var orderType = direction == CompanyOrderListDirection.Issued ? (byte)1 : (byte)0;
         var now = DateTime.Now;
 
-        var lineCount = await mikroWriteDbContext.SIPARISLERs
+        return await mikroWriteDbContext.SIPARISLERs
             .Where(order =>
                 order.sip_iptal != true &&
                 order.sip_tip == orderType &&
@@ -63,8 +85,53 @@ internal sealed class AxataOrderSentFlagService(
                 .SetProperty(order => order.sip_lastup_user, MikroUserNo)
                 .SetProperty(order => order.sip_lastup_date, now),
                 cancellationToken);
+    }
 
-        return new AxataOrderSentFlagMarkResult(lineCount, "Database");
+    private async Task<int> MarkCompanyOrderAsSentWithMikroApiAsync(
+        CompanyOrderDetailRequest request,
+        CompanyOrderListDirection direction,
+        CancellationToken cancellationToken)
+    {
+        var lineGuids = await GetCompanyOrderLineGuidsAsync(request, direction, cancellationToken);
+
+        if (lineGuids.Length == 0)
+        {
+            return 0;
+        }
+
+        var payload = AxataCompanyOrderSentFlagMikroApiPayloadFactory.Create(
+            lineGuids,
+            CompletedStatus);
+
+        logger.LogInformation(
+            "AXATA company order sent flag is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}, LineCount={LineCount}",
+            SiparisDuzeltPath,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            request.WarehouseNo,
+            lineGuids.Length);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<System.Text.Json.JsonElement>(
+            SiparisDuzeltPath,
+            payload,
+            cancellationToken);
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API company order sent flag update failed.");
+        }
+
+        var markedLineCount = await RecoverMikroApiCompanyOrderSentFlagAsync(
+            lineGuids,
+            cancellationToken);
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{request.DocumentSerie.Trim()}/{request.DocumentOrderNo}",
+            cancellationToken: cancellationToken);
+
+        return markedLineCount;
     }
 
     private async Task<int> MarkWarehouseOrderAsSentInDatabaseAsync(
@@ -159,6 +226,27 @@ internal sealed class AxataOrderSentFlagService(
             .ToArrayAsync(cancellationToken);
     }
 
+    private async Task<Guid[]> GetCompanyOrderLineGuidsAsync(
+        CompanyOrderDetailRequest request,
+        CompanyOrderListDirection direction,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = request.DocumentSerie.Trim();
+        var orderType = direction == CompanyOrderListDirection.Issued ? (byte)1 : (byte)0;
+
+        return await mikroWriteDbContext.SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.sip_iptal != true &&
+                order.sip_tip == orderType &&
+                order.sip_cins == 0 &&
+                order.sip_depono == request.WarehouseNo &&
+                order.sip_evrakno_seri == documentSerie &&
+                order.sip_evrakno_sira == request.DocumentOrderNo)
+            .Select(order => order.sip_Guid)
+            .ToArrayAsync(cancellationToken);
+    }
+
     private async Task<int> RecoverMikroApiWarehouseOrderSentFlagAsync(
         IReadOnlyCollection<Guid> lineGuids,
         CancellationToken cancellationToken)
@@ -189,6 +277,38 @@ internal sealed class AxataOrderSentFlagService(
 
         throw new InvalidOperationException(
             "Mikro API warehouse order sent flag update succeeded, but ssip_special1=1 could not be verified for all order lines.");
+    }
+
+    private async Task<int> RecoverMikroApiCompanyOrderSentFlagAsync(
+        IReadOnlyCollection<Guid> lineGuids,
+        CancellationToken cancellationToken)
+    {
+        var lineGuidArray = lineGuids.ToArray();
+
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var markedLineCount = await mikroWriteDbContext.SIPARISLERs
+                .AsNoTracking()
+                .Where(order =>
+                    lineGuidArray.Contains(order.sip_Guid) &&
+                    order.sip_special1 == CompletedStatus)
+                .CountAsync(cancellationToken);
+
+            if (markedLineCount == lineGuids.Count)
+            {
+                return markedLineCount;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API company order sent flag update succeeded, but sip_special1=1 could not be verified for all order lines.");
     }
 }
 

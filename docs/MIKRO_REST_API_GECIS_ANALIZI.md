@@ -237,6 +237,7 @@ Uygulama durumu:
 - Payload mapper mevcut sistem davranisini korur: `sip_tip=1`, `sip_cins=0`, `sip_evrakno_seri=F{WarehouseNo}`, `sip_evrakno_sira` DB max + 1.
 - Cari defaultlari (`cari_odemeplan_no`, `cari_pasaport_no == "1"`) REST payload olusmadan once Mikro DB'den okunmaya devam eder.
 - REST create sonrasi belge `SIPARISLER` tablosundan geri okunup mevcut `CreateIssuedCompanyOrderResponse` formatina cevrilir.
+- AXATA canli dispatch sonrasi firma siparisi gonderildi bayragi `MikroWriteRouting:CompanyOrderSentFlag=MikroApi` ise `POST /Api/apiMethods/SiparisDuzeltV2` ile `sip_Guid + sip_special1=1` olarak isaretlenir; DB fallback yoktur, read-only geri okuma ile dogrulanir.
 
 ### Zayiat Fisi / Masraf Fisi
 
@@ -687,6 +688,18 @@ Bu fazda update/sil endpointleri de contract olarak hazirlanabilir:
 - `DahiliStokHareketGuidSilV2`
 - `IrsaliyeDuzeltV2`
 - `IrsaliyeSatirSilV2`
+
+2026-09-04 itibariyla eklenen opsiyonel routing kapilari:
+
+| Routing key | Varsayilan | Durum | Mikro API hedefi |
+|---|---|---|---|
+| `WarehouseShippingUpdate` | `Database` | Guard eklendi; API mapper bekliyor | `DahiliStokHareketDuzeltV2`, `DahiliStokHareketGuidSilV2`, `DepolarArasiSiparisDuzeltV2` |
+| `GreenGrocerOrderDelete` | `Database` | `MikroApi` modu baglandi | `DepolarArasiSiparisGuidSilV2` |
+| `MicroDocumentEditing` | `Database` | Depo siparisi/firma siparisi/stok hareketi update-sil ailelerinde guard eklendi | `DepolarArasiSiparisDuzeltV2`, `DepolarArasiSiparisGuidSilV2`, `SiparisDuzeltV2`, `SiparisGuidSilV2`, `DahiliStokHareketDuzeltV2`, `DahiliStokHareketGuidSilV2` |
+| `GreenGrocerOperations` | `Database` | Guard eklendi; MNV payload mapper bekliyor | `DahiliStokHareketKaydetV2` |
+| `ProductDistribution` | `Database` | Guard eklendi; `D{depo}` seri ve rezervasyon semantigi icin ozel mapper bekliyor | `DepolarArasiSiparisKaydetV2` |
+| `InvoiceSendingMarkAsSent` | `Database` | `MikroApi` modu deneysel olarak baglandi; response sonrasi DB readback ile dogrular | `AlimSatimEvragiDuzeltV2` (`cha_Guid`, `cha_belge_no`, `cha_uuid`, `cha_kilitli`) |
+| `CompanyOrderSentFlag` | `Database` | AXATA worker/manual dispatch firma siparisi gonderildi bayragi icin `MikroApi` modu baglandi | `SiparisDuzeltV2` (`sip_Guid`, `sip_special1`) |
 
 ### Faz 3 - Yuksek risk ve karma is akislari
 

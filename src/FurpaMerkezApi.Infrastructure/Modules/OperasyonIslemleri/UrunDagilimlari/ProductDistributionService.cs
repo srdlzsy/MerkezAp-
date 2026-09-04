@@ -8,8 +8,10 @@ using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimlari;
 
@@ -17,7 +19,8 @@ public sealed class ProductDistributionService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     FurpaDbContext furpaDbContext,
-    IProductDistributionNotificationMailer notificationMailer)
+    IProductDistributionNotificationMailer notificationMailer,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
     : IProductDistributionService
 {
     private const int DefaultSalesDayCount = 42;
@@ -1299,6 +1302,32 @@ public sealed class ProductDistributionService(
         DateTime now,
         CancellationToken cancellationToken)
     {
+        return mikroWriteRoutingOptions.CurrentValue.ProductDistribution switch
+        {
+            MikroWriteMode.Database => await CreateWarehouseOrdersDatabaseAsync(
+                detail,
+                positiveLines,
+                description,
+                orderDate,
+                deliveryDate,
+                now,
+                cancellationToken),
+            MikroWriteMode.MikroApi => throw CreateUnsupportedMikroApiModeException(),
+            MikroWriteMode.DualShadow => throw CreateUnsupportedMikroApiModeException(),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:ProductDistribution mode '{mode}'.")
+        };
+    }
+
+    private async Task<IReadOnlyCollection<ProductDistributionWarehouseOrderDto>> CreateWarehouseOrdersDatabaseAsync(
+        ProductDistributionDetailDto detail,
+        IReadOnlyCollection<ProductDistributionLineDto> positiveLines,
+        string description,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
         return await executionStrategy.ExecuteAsync(async () =>
         {
@@ -1368,6 +1397,11 @@ public sealed class ProductDistributionService(
             }
         });
     }
+
+    private static NotSupportedException CreateUnsupportedMikroApiModeException() =>
+        new(
+            "MikroWriteRouting:ProductDistribution MikroApi/DualShadow is not wired yet. " +
+            "Distribution keeps D{warehouse} series and reservation quantity semantics, so DepolarArasiSiparisKaydetV2 needs a dedicated payload mapper before enabling this route.");
 
     private async Task<Dictionary<int, ExistingWarehouseOrderRow>> QueryExistingWarehouseOrdersAsync(
         ProductDistributionDetailDto detail,
