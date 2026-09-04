@@ -1461,38 +1461,112 @@ public sealed class EDespatchService(
         try
         {
             var now = DateTime.Now;
+            var movementGuids = trackedMovements
+                .Select(movement => movement.sth_Guid)
+                .Distinct()
+                .ToArray();
+
+            if (movementGuids.Length == 0)
+            {
+                logger.LogWarning(
+                    "E-despatch was sent but no Mikro movement row was available for local metadata update.");
+
+                return false;
+            }
+
+            var documentNo = Truncate(eDespatchDocumentNo, 50);
+            var uuid = Truncate(eDespatchUuid, 50);
+            var plaque = string.IsNullOrWhiteSpace(metadata.Plaque)
+                ? null
+                : Truncate(metadata.Plaque.Trim(), 25);
+            var deliverer = string.IsNullOrWhiteSpace(metadata.Deliverer)
+                ? null
+                : Truncate(metadata.Deliverer.Trim(), 25);
+            var receiver = string.IsNullOrWhiteSpace(metadata.Receiver)
+                ? null
+                : Truncate(metadata.Receiver.Trim(), 25);
+            var driverTckn = string.IsNullOrWhiteSpace(metadata.DriverTckn)
+                ? null
+                : Truncate(metadata.DriverTckn.Trim(), 25);
+
+            var updatedCount = await context.STOK_HAREKETLERIs
+                .Where(movement => movementGuids.Contains(movement.sth_Guid))
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(movement => movement.sth_kilitli, true)
+                        .SetProperty(movement => movement.sth_lastup_user, MikroUserNo)
+                        .SetProperty(movement => movement.sth_lastup_date, now)
+                        .SetProperty(movement => movement.sth_belge_no, documentNo)
+                        .SetProperty(movement => movement.sth_aciklama, uuid)
+                        .SetProperty(movement => movement.sth_HareketGrupKodu1, movement => plaque ?? movement.sth_HareketGrupKodu1)
+                        .SetProperty(movement => movement.sth_HareketGrupKodu2, movement => deliverer ?? movement.sth_HareketGrupKodu2)
+                        .SetProperty(movement => movement.sth_HareketGrupKodu3, movement => receiver ?? movement.sth_HareketGrupKodu3)
+                        .SetProperty(movement => movement.sth_ismerkezi_kodu, movement => driverTckn ?? movement.sth_ismerkezi_kodu),
+                    cancellationToken);
+
+            if (updatedCount != movementGuids.Length)
+            {
+                logger.LogWarning(
+                    "E-despatch local Mikro metadata update affected {UpdatedCount} rows, expected {ExpectedCount}. EDespatchDocumentNo={EDespatchDocumentNo}, EDespatchUuid={EDespatchUuid}",
+                    updatedCount,
+                    movementGuids.Length,
+                    eDespatchDocumentNo,
+                    eDespatchUuid);
+
+                return false;
+            }
 
             foreach (var movement in trackedMovements)
             {
                 movement.sth_kilitli = true;
                 movement.sth_lastup_user = MikroUserNo;
                 movement.sth_lastup_date = now;
-                movement.sth_belge_no = Truncate(eDespatchDocumentNo, 50);
-                movement.sth_aciklama = Truncate(eDespatchUuid, 50);
+                movement.sth_belge_no = documentNo;
+                movement.sth_aciklama = uuid;
 
-                if (!string.IsNullOrWhiteSpace(metadata.Plaque))
+                if (plaque is not null)
                 {
-                    movement.sth_HareketGrupKodu1 = Truncate(metadata.Plaque.Trim(), 25);
+                    movement.sth_HareketGrupKodu1 = plaque;
                 }
 
-                if (!string.IsNullOrWhiteSpace(metadata.Deliverer))
+                if (deliverer is not null)
                 {
-                    movement.sth_HareketGrupKodu2 = Truncate(metadata.Deliverer.Trim(), 25);
+                    movement.sth_HareketGrupKodu2 = deliverer;
                 }
 
-                if (!string.IsNullOrWhiteSpace(metadata.Receiver))
+                if (receiver is not null)
                 {
-                    movement.sth_HareketGrupKodu3 = Truncate(metadata.Receiver.Trim(), 25);
+                    movement.sth_HareketGrupKodu3 = receiver;
                 }
 
-                if (!string.IsNullOrWhiteSpace(metadata.DriverTckn))
+                if (driverTckn is not null)
                 {
-                    movement.sth_ismerkezi_kodu = Truncate(metadata.DriverTckn.Trim(), 25);
+                    movement.sth_ismerkezi_kodu = driverTckn;
                 }
             }
 
-            await context.SaveChangesAsync(cancellationToken);
-            return true;
+            var verifiedCount = await context.STOK_HAREKETLERIs
+                .AsNoTracking()
+                .Where(movement =>
+                    movementGuids.Contains(movement.sth_Guid) &&
+                    movement.sth_kilitli == true &&
+                    movement.sth_belge_no == documentNo &&
+                    movement.sth_aciklama == uuid)
+                .CountAsync(cancellationToken);
+
+            if (verifiedCount == movementGuids.Length)
+            {
+                return true;
+            }
+
+            logger.LogWarning(
+                "E-despatch local Mikro metadata update verification found {VerifiedCount} marked rows, expected {ExpectedCount}. EDespatchDocumentNo={EDespatchDocumentNo}, EDespatchUuid={EDespatchUuid}",
+                verifiedCount,
+                movementGuids.Length,
+                eDespatchDocumentNo,
+                eDespatchUuid);
+
+            return false;
         }
         catch (Exception exception)
         {
