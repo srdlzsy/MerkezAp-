@@ -524,6 +524,16 @@ Fatura gonderimi icin tipik akis:
 3. `POST /api/fatura-islemleri/fatura-gonderimi/send`
 4. Gonderimden sonra `GET /api/fatura-islemleri/fatura-gonderimi/{seri}/{sira}/pdf?scenario=EFatura`
 
+Send akisi Uyumsoft basarili dondukten sonra Mikro'daki gonderildi marker'ini yazar.
+`MikroWriteRouting:InvoiceSendingMarkAsSent=Database` ise `CARI_HESAP_HAREKETLERI`
+satirlarinda `cha_belge_no`, `cha_uuid` ve `cha_kilitli` alanlari dogrudan DB update
+ile set edilir. `MikroApi` secilirse `POST /Api/apiMethods/KayitKaydetV2` kullanilir:
+`Tablo.No=51`, `KayitTipi=1`, `Kayit[].cha_Guid` hedef satir GUID'idir. Mikro API
+bu update'te `cha_degisti` ve `cha_lastup_user` alanlarini kaydin mevcut concurrency
+bilgisi gibi bekledigi icin backend bu alanlari DB'den okunan mevcut degerle gonderir.
+API cevabi basarili olsa bile backend `cha_belge_no`, `cha_uuid` ve `cha_kilitli`
+alanlarini Mikro'dan tekrar okuyup dogrulamadan belgeyi basarili saymaz.
+
 Gelen fatura goruntuleme icin tipik akis:
 
 1. `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`

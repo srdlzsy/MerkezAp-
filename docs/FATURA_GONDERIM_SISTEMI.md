@@ -264,9 +264,19 @@ Gonderim basarili olunca Mikro'da guncellenen alanlar:
 - `cha_belge_no`: Uyumsoft'un verdigi fatura numarasi
 - `cha_uuid`: Uyumsoft teknik invoice id/ETTN bilgisi; servis id bos donerse lokal fatura UUID degeri saklanir
 - `cha_kilitli`: `true`
-- `cha_degisti`: `true`
-- `cha_lastup_user`: sistemde sabit Mikro kullanicisi
-- `cha_lastup_date`: guncelleme zamani
+- `cha_degisti`: DB yolunda `true` set edilir; Mikro API yolunda kaydin mevcut degeri gonderilir
+- `cha_lastup_user`: DB yolunda sistem Mikro kullanicisi set edilir; Mikro API yolunda kaydin mevcut degeri gonderilir
+- `cha_lastup_date`: DB yolunda guncelleme zamani set edilir; Mikro API yolunda Mikro kendi guncelleme bilgisini uretir
+
+`MikroWriteRouting:InvoiceSendingMarkAsSent=MikroApi` ise send sonrasi marker yazimi
+dogrudan DB update yerine `POST /Api/apiMethods/KayitKaydetV2` ile yapilir. Bu cagri
+`CARI_HESAP_HAREKETLERI` tablo no `51` ve `KayitTipi=1` kullanir; payload sadece
+`cha_Guid`, `cha_belge_no`, `cha_uuid`, `cha_kilitli`, `cha_degisti` ve
+`cha_lastup_user` alanlarini tasir. Mikro API update sirasinda `cha_degisti` ve
+`cha_lastup_user` alanlarini concurrency kontrolunun parcasi gibi degerlendirdigi icin
+bu iki alan sabit uretilmez, DB'den okunan mevcut satir degeriyle gonderilir. API 200
+donduktan sonra sistem `cha_belge_no`, `cha_uuid` ve `cha_kilitli` alanlarini tekrar
+Mikro'dan okuyup dogrular; dogrulama gecmeden belge basarili kabul edilmez.
 
 ### 5. Gonderilmis Fatura PDF
 
@@ -668,6 +678,8 @@ Fatura gonderimi icin temel ayarlar:
 | --- | --- | --- |
 | `ConnectionStrings:MikroConnection` | Okuma akislari | Liste, detay, validate, render, PDF belge lookup icin Mikro okuma baglantisi. |
 | `ConnectionStrings:MikroWriteConnection` | Yazma akislari | Send sonrasi `cha_belge_no`/`cha_uuid` yazimi ve iade referansi kaydi. |
+| `MikroWriteRouting:InvoiceSendingMarkAsSent` | Send sonrasi marker yazimi | `Database` ise dogrudan DB update, `MikroApi` ise `KayitKaydetV2` tablo `51` update yolu kullanilir. |
+| `MikroApi:*` | Mikro API yazma rotasi | `InvoiceSendingMarkAsSent=MikroApi` secildiginde auth ve endpoint bilgileri buradan okunur. |
 | `EInvoice:EndpointUrl` | Uyumsoft e-fatura servisi | `SendInvoiceAsync`, `RetrySendInvoicesAsync`, outbox PDF sorgulari. |
 | `EInvoice:Username` | Uyumsoft user info | E-fatura WCF cagrilarinda kullanilir. |
 | `EInvoice:Password` | Uyumsoft user info | E-fatura WCF cagrilarinda kullanilir. |

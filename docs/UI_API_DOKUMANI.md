@@ -15807,13 +15807,14 @@ Davranis:
 - secimler duplicate ise backend tekilleÃƒâ€¦Ã…Â¸tirir
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
-- UBL-TR is kurali ve XSD dogrulamalari Uyumsoft cagrisi oncesinde zorunlu calisir. UI'nin once `/validate` cagirmasi hizli kullanici geri bildirimi saglar ancak veri guvenligi UI davranisina birakilmaz.
-- backend satir neti, satir KDV matrahi, iskonto toplami, belge net matrahi, KDV ve `PayableAmount` aritmetigini kontrol eder; tutarsiz XML Uyumsoft'a gonderilmez.
+- performans icin `/send` agir UBL-TR is kurali ve XSD dogrulamasini otomatik calistirmaz; kullanici kontrol istiyorsa veya toplu gonderim oncesi guvence isteniyorsa UI once `/validate` cagirmalidir
+- `/validate` backend satir neti, satir KDV matrahi, iskonto toplami, belge net matrahi, KDV ve `PayableAmount` aritmetigini kontrol eder; UI validasyon sonucunu kullaniciya ayri aksiyon olarak gostermelidir
 - ayni belge icin SQL application lock alinir; ayni belge baska bir istek tarafindan gonderiliyorsa ikinci istek Uyumsoft'a cagrilmaz ve ilgili satir hata mesaji ile doner
 - basarili donuste `serviceDocumentNumber` Mikro `cha_belge_no` alanina yazilir
 - `serviceDocumentId` Uyumsoft'un teknik id'sidir; basarili gonderimde Mikro `cha_uuid` alanina yazilir, servis id bos donerse faturanin lokal UUID degeri fallback olarak saklanir
 - sonraki liste ekraninda gonderilmis fatura PDF ve tekrar gonderim aksiyonlari backend tarafinda bu UUID uzerinden cozulur; UI teknik UUID gondermek zorunda degildir
-- ayni anda `cha_kilitli = true`, `cha_degisti = true`, `cha_lastup_user = 39` ve `cha_lastup_date = now` set edilir
+- ayni anda Mikro'da `cha_kilitli = true` olur; write rotasi DB ise `cha_degisti`, `cha_lastup_user` ve `cha_lastup_date` backend tarafindan set edilir, write rotasi Mikro API ise backend `KayitKaydetV2` icin kaydin mevcut `cha_degisti` ve `cha_lastup_user` degerlerini kullanir
+- `MikroWriteRouting:InvoiceSendingMarkAsSent=MikroApi` ortaminda marker yazimi `POST /Api/apiMethods/KayitKaydetV2` ile `CARI_HESAP_HAREKETLERI` tablo no `51`, `KayitTipi=1` uzerinden yapilir; backend yazimdan sonra `cha_belge_no`, `cha_uuid` ve `cha_kilitli` alanlarini readback ile dogrular
 - zaten gonderilmis kayitlar response'ta `isSucceeded = false` ile doner; genel request tamamen patlatilmaz
 - basarili veya hatali gonderim loglarinda toplam sureye ek olarak `BuildAndValidateMs`, `UyumsoftMs` ve `MarkAsSentMs` sureleri bulunur. Uzun beklemenin DB/XML, Uyumsoft veya Mikro geri yazma asamasindan hangisinde oldugu bu alanlarla ayristirilir.
 - Liste 2 saniyeyi veya onizleme 5 saniyeyi asarsa backend tek bir warning logu yazar. Liste logunda filtreler, kayit sayisi ve toplam sure; onizleme logunda `LoadMs`, `BuildMs` ve `RenderMs` alanlari bulunur. Normal hizdaki istekler icin ek log uretilmez.
@@ -15927,7 +15928,7 @@ Fatura modulu notlari:
 - `fatura-goruntuleme` icinde legacy'deki "goruntule" ve "yazdirildi say" ayrimi artik ayri endpointlerle temsil edilir
 - `GET /{documentId}/detail` ile `POST render` ayni response tipini doner; fark, `POST render` ile XSLT davranisinin override edilebilmesidir
 - `fatura-gonderimi` detail/send akisinda invoice XML Mikro verisinden backend tarafinda yeniden uretilir; UI ham XML kurmak zorunda degildir
-- `fatura-gonderimi` send akisinda basarili sonuclarda Mikro `cha_belge_no` ve `cha_uuid` geri yazilir, kayit kilitlenir
+- `fatura-gonderimi` send akisinda basarili sonuclarda Mikro `cha_belge_no` ve `cha_uuid` geri yazilir, kayit kilitlenir; `InvoiceSendingMarkAsSent=MikroApi` ise bu is `KayitKaydetV2` tablo `51` update yolu ile yapilir ve backend readback dogrulamasi olmadan basarili donmez
 - render sirasinda once embedded XSLT denenir; yoksa WebApi icindeki `Assets/Xslt/efatura.xslt` veya `Assets/Xslt/earsiv.xslt` fallback olarak kullanilir
 - ortak renderer artik ek karekod uretmez; fatura-gonderimi ve fatura-goruntuleme HTML'inde karekodun tek kaynagi secilen XSLT'dir
 - `fatura-goruntuleme` PDF/detail lookup anahtari `documentId`'dir; `invoiceId` ise kullaniciya gosterilen numaradir

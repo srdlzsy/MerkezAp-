@@ -46,7 +46,11 @@ public sealed class InvoiceSendingService(
     private const int InvoiceSendLockTimeoutMilliseconds = 0;
     private const int SlowListThresholdMilliseconds = 2_000;
     private const int SlowRenderThresholdMilliseconds = 5_000;
-    private const string AlimSatimEvragiDuzeltPath = "/Api/apiMethods/AlimSatimEvragiDuzeltV2";
+    private const string KayitKaydetPath = "/Api/apiMethods/KayitKaydetV2";
+    private const string CariHesapHareketleriTableNo = "51";
+    private const string MikroApiUpdateRecordType = "1";
+    private const string MikroApiMarkerVerificationFailureMessage =
+        "Mikro API invoice sent marker update returned success, but cha_belge_no/cha_uuid/cha_kilitli could not be verified.";
     private const int MikroApiMarkerRecoveryAttemptCount = 5;
     private const int MikroApiMarkerRecoveryDelayMilliseconds = 250;
     private static readonly CultureInfo TurkishCulture = new("tr-TR");
@@ -2820,12 +2824,31 @@ public sealed class InvoiceSendingService(
                     cancellationToken);
                 break;
             case MikroWriteMode.MikroApi:
-                await MarkAsSentMikroApiAsync(
-                    documentSerie,
-                    documentOrderNo,
-                    serviceDocumentNumber,
-                    ettn,
-                    cancellationToken);
+                try
+                {
+                    await MarkAsSentMikroApiAsync(
+                        documentSerie,
+                        documentOrderNo,
+                        serviceDocumentNumber,
+                        ettn,
+                        cancellationToken);
+                }
+                catch (InvalidOperationException ex) when (
+                    ex.Message.StartsWith(MikroApiMarkerVerificationFailureMessage, StringComparison.Ordinal))
+                {
+                    logger.LogWarning(
+                        ex,
+                        "Mikro API invoice sent marker returned success but did not persist marker fields. Falling back to database marker update. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}",
+                        documentSerie,
+                        documentOrderNo);
+
+                    await MarkAsSentDatabaseAsync(
+                        documentSerie,
+                        documentOrderNo,
+                        serviceDocumentNumber,
+                        ettn,
+                        cancellationToken);
+                }
                 break;
             case MikroWriteMode.DualShadow:
                 await MarkAsSentDatabaseAsync(
@@ -2894,31 +2917,36 @@ public sealed class InvoiceSendingService(
 
         var payload = new
         {
-            evraklar = rows
+            Tablo = new[]
+            {
+                new
+                {
+                    No = CariHesapHareketleriTableNo,
+                    KayitTipi = MikroApiUpdateRecordType
+                }
+            },
+            Kayit = rows
                 .Select(row => new
                 {
                     row.cha_Guid,
-                    row.cha_evrak_tip,
-                    row.cha_evrakno_seri,
-                    row.cha_evrakno_sira,
-                    row.cha_satir_no,
-                    cha_tarihi = FormatMikroApiDate(row.cha_tarihi),
                     cha_belge_no = serviceDocumentNumber,
                     cha_uuid = ettn,
-                    cha_kilitli = true
+                    cha_kilitli = true,
+                    cha_degisti = row.cha_degisti ?? false,
+                    cha_lastup_user = row.cha_lastup_user ?? MikroUserNo
                 })
                 .ToArray()
         };
 
         logger.LogInformation(
             "Invoice sent marker is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, RowCount={RowCount}",
-            AlimSatimEvragiDuzeltPath,
+            KayitKaydetPath,
             documentSerie,
             documentOrderNo,
             rows.Count);
 
         var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
-            AlimSatimEvragiDuzeltPath,
+            KayitKaydetPath,
             payload,
             cancellationToken);
 
@@ -2928,15 +2956,35 @@ public sealed class InvoiceSendingService(
                 result.ErrorMessage ?? "Mikro API invoice sent marker update failed.");
         }
 
+        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(result.RawResponse);
+        var responseGuids = responseRows
+            .Select(row => row.Guid)
+            .Distinct()
+            .ToArray();
+        var expectedGuids = rows
+            .Select(row => row.cha_Guid)
+            .Distinct()
+            .ToArray();
+        var verificationGuids = responseGuids.Length > 0 ? responseGuids : expectedGuids;
+
         if (!await VerifyInvoiceMarkerAsync(
-                rows.Select(row => row.cha_Guid).ToArray(),
+                verificationGuids,
+                documentSerie,
+                documentOrderNo,
                 serviceDocumentNumber,
                 ettn,
                 cancellationToken))
         {
             throw new InvalidOperationException(
-                "Mikro API invoice sent marker update returned success, but cha_belge_no/cha_uuid/cha_kilitli could not be verified.");
+                MikroApiMarkerVerificationFailureMessage + " " +
+                $"ResponseGuidCount={responseGuids.Length}, ExpectedGuidCount={expectedGuids.Length}.");
         }
+
+        await mikroApiClient.MarkRecoveredAsync(
+            result,
+            $"{documentSerie.Trim()}/{documentOrderNo}",
+            responseGuids.Length > 0 ? responseGuids[0] : null,
+            cancellationToken: cancellationToken);
     }
 
     private async Task<List<CARI_HESAP_HAREKETLERI>> LoadInvoiceMarkerRowsAsync(
@@ -2957,22 +3005,40 @@ public sealed class InvoiceSendingService(
 
     private async Task<bool> VerifyInvoiceMarkerAsync(
         Guid[] rowGuids,
+        string documentSerie,
+        int documentOrderNo,
         string serviceDocumentNumber,
         string ettn,
         CancellationToken cancellationToken)
     {
+        var normalizedServiceDocumentNumber = serviceDocumentNumber.Trim();
+        var normalizedEttn = ettn.Trim();
+
         for (var attempt = 1; attempt <= MikroApiMarkerRecoveryAttemptCount; attempt++)
         {
-            var markedRowCount = await mikroDbContext.CARI_HESAP_HAREKETLERIs
+            var query = mikroDbContext.CARI_HESAP_HAREKETLERIs
                 .AsNoTracking()
                 .Where(row =>
-                    rowGuids.Contains(row.cha_Guid) &&
-                    row.cha_belge_no == serviceDocumentNumber &&
-                    row.cha_uuid == ettn &&
-                    row.cha_kilitli == true)
+                    row.cha_evrakno_seri == documentSerie &&
+                    row.cha_evrakno_sira == documentOrderNo &&
+                    row.cha_evrak_tip == 63 &&
+                    row.cha_tip == 0 &&
+                    row.cha_iptal != true &&
+                    row.cha_belge_no != null &&
+                    row.cha_belge_no.Trim() == normalizedServiceDocumentNumber &&
+                    row.cha_uuid != null &&
+                    row.cha_uuid.Trim() == normalizedEttn &&
+                    row.cha_kilitli == true);
+
+            if (rowGuids.Length > 0)
+            {
+                query = query.Where(row => rowGuids.Contains(row.cha_Guid));
+            }
+
+            var markedRowCount = await query
                 .CountAsync(cancellationToken);
 
-            if (markedRowCount == rowGuids.Length)
+            if (markedRowCount > 0 && (rowGuids.Length == 0 || markedRowCount == rowGuids.Length))
             {
                 return true;
             }
@@ -3649,8 +3715,6 @@ public sealed class InvoiceSendingService(
         command.Parameters.Add(parameter);
     }
 
-    private static string? FormatMikroApiDate(DateTime? value) =>
-        value?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
     private static string ReadString(DbDataReader reader, string columnName)
     {
