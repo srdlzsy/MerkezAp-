@@ -12,16 +12,20 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 
-public sealed class ManavMalKabulVeEtiketService(
+public sealed partial class ManavMalKabulVeEtiketService(
     AuthDbContext authDbContext,
     FurpaDbContext furpaDbContext,
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
-    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService) : IManavMalKabulVeEtiketService
+    IUyumsoftConnectedQueryService uyumsoftConnectedQueryService,
+    MikroApiClient mikroApiClient,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions) : IManavMalKabulVeEtiketService
 {
     private const int DefaultTake = 20;
     private const int MaxTake = 100;
@@ -1061,6 +1065,22 @@ public sealed class ManavMalKabulVeEtiketService(
     }
 
     public async Task<ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto> CreateMicroGoodsReceiptAsync(
+        ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        var mode = mikroWriteRoutingOptions.CurrentValue.GreenGrocerGoodsReceipt;
+        return mode switch
+        {
+            MikroWriteMode.Database or MikroWriteMode.DualShadow =>
+                await CreateMicroGoodsReceiptDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi =>
+                await CreateMicroGoodsReceiptMikroApiAsync(request, cancellationToken),
+            _ => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:GreenGrocerGoodsReceipt mode '{mode}'.")
+        };
+    }
+
+    private async Task<ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto> CreateMicroGoodsReceiptDatabaseAsync(
         ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
         CancellationToken cancellationToken)
     {

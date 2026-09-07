@@ -9,10 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 
-public sealed class MikroDocumentEditingService(
+public sealed partial class MikroDocumentEditingService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
-    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient)
     : IMikroDocumentEditingService
 {
     private const short FallbackMikroUserNo = 39;
@@ -84,6 +85,11 @@ public sealed class MikroDocumentEditingService(
         UpdateStockCardRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateStockCardMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
         var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
@@ -204,6 +210,11 @@ public sealed class MikroDocumentEditingService(
         UpdateStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateStockCardWarehouseSettingsMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
         var warehouseNo = request.WarehouseNo > 0
@@ -314,6 +325,11 @@ public sealed class MikroDocumentEditingService(
         DeleteStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await DeleteStockCardWarehouseSettingsMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
         var warehouseNo = request.WarehouseNo > 0
@@ -444,6 +460,11 @@ public sealed class MikroDocumentEditingService(
         UpdateWarehouseCardRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateWarehouseCardMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var warehouseNo = request.WarehouseNo > 0
             ? request.WarehouseNo
@@ -561,6 +582,11 @@ public sealed class MikroDocumentEditingService(
         UpdateCustomerCardRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateCustomerCardMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var customerCode = NormalizeRequiredText(request.CustomerCode, 25, nameof(request.CustomerCode));
         var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
@@ -684,6 +710,11 @@ public sealed class MikroDocumentEditingService(
         UpsertStockSalesPriceRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpsertStockSalesPriceMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
         ValidateStockSalesPriceRequest(request);
@@ -796,6 +827,11 @@ public sealed class MikroDocumentEditingService(
         DeleteStockSalesPriceRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await DeleteStockSalesPriceMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
         ValidateStockSalesPriceKey(request.WarehouseNo, request.PriceListNo, request.PaymentPlanNo, request.UnitPointer);
@@ -877,6 +913,11 @@ public sealed class MikroDocumentEditingService(
         UpdateStockMovementDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateStockMovementDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         EnsureMicroDocumentEditingDatabaseMode(
             "Stock movement update requires DahiliStokHareketDuzeltV2 payload mapping before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
@@ -967,6 +1008,11 @@ public sealed class MikroDocumentEditingService(
         DeleteStockMovementDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await DeleteStockMovementDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         EnsureMicroDocumentEditingDatabaseMode(
             "Stock movement delete requires DahiliStokHareketGuidSilV2/DahiliStokHareketSilV2 live tests before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
@@ -1064,6 +1110,11 @@ public sealed class MikroDocumentEditingService(
         UpdateCustomerMovementDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateCustomerMovementDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateCustomerMovementLookup(request.Lookup);
         ValidateCustomerMovementUpdate(request);
@@ -1152,6 +1203,11 @@ public sealed class MikroDocumentEditingService(
         DeleteCustomerMovementDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await DeleteCustomerMovementDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateCustomerMovementLookup(request.Lookup);
 
@@ -1241,6 +1297,11 @@ public sealed class MikroDocumentEditingService(
         UpdateCompanyOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateCompanyOrderDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         EnsureMicroDocumentEditingDatabaseMode(
             "Company order update requires SiparisDuzeltV2 payload mapping before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
@@ -1331,6 +1392,11 @@ public sealed class MikroDocumentEditingService(
         DeleteCompanyOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await DeleteCompanyOrderDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         EnsureMicroDocumentEditingDatabaseMode(
             "Company order delete requires SiparisGuidSilV2/SiparisSilV2 live tests before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
@@ -1422,6 +1488,11 @@ public sealed class MikroDocumentEditingService(
         UpdateWarehouseOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateWarehouseOrderDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         EnsureMicroDocumentEditingDatabaseMode(
             "Warehouse order update requires DepolarArasiSiparisDuzeltV2 payload mapping before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
@@ -1512,6 +1583,11 @@ public sealed class MikroDocumentEditingService(
         DeleteWarehouseOrderDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await DeleteWarehouseOrderDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         EnsureMicroDocumentEditingDatabaseMode(
             "Warehouse order delete requires DepolarArasiSiparisGuidSilV2/DepolarArasiSiparisSilV2 live tests before MikroApi mode can be enabled.");
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
@@ -1603,6 +1679,11 @@ public sealed class MikroDocumentEditingService(
         UpdateInventoryCountDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await UpdateInventoryCountDocumentMikroApiAsync(request, cancellationToken);
+        }
+
         ValidateUpdateUser(request.CurrentUserWarehouseNo);
         ValidateInventoryCountLookup(request.Lookup);
         ValidateInventoryCountUpdate(request);

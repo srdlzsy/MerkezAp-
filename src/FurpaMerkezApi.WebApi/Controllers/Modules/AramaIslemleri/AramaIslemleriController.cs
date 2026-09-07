@@ -351,8 +351,8 @@ public sealed class ProductSearchHttpRequest
 
     public bool IncludeDelisted { get; init; } = true;
 
-    [Range(1, 100)]
-    public int Take { get; init; } = 20;
+    [Range(1, 150)]
+    public int Take { get; init; } = 150;
 }
 
 public sealed class CustomerSearchHttpRequest

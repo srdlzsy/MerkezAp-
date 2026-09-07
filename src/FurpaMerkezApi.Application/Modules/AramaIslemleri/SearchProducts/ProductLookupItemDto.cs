@@ -30,4 +30,12 @@ public sealed record ProductLookupItemDto(
     string? PurchaseSupplierCode = null,
     bool IsPassive = false,
     bool IsDelisted = false,
-    string? DelistReason = null);
+    string? DelistReason = null,
+    string ModelCode = "",
+    string ProcurementType = "Unassigned",
+    IReadOnlyCollection<ProductSourceWarehouseDto>? SourceWarehouses = null,
+    bool HasPurchaseRequirement = false);
+
+public sealed record ProductSourceWarehouseDto(
+    int WarehouseNo,
+    string WarehouseName);

@@ -561,7 +561,12 @@ REST karsiliklari:
 Gecis notu:
 
 - Bu modul once staging/import mantigini korumali.
-- "ERP'ye gonder" asamasinda Mikro REST writer eklenebilir.
+- "ERP'ye gonder" asamasindaki `MUHASEBE_FISLERI` ve `MUHASEBE_FIS_DETAYLARI` yazimi `MuhasebeFisKaydetV2` adayidir.
+- Resmi Postman orneginde her evrak `evraklar[]`, muhasebe satirlari `satirlar[]`, ticari fis detayi ise `fis_detay[]` icinde gonderilir.
+- Borc/alacak ayrimi satir bazinda `fis_tur=0/1` yapilarak degil, ayni fis turunde `fis_meblag0` isaretiyle kurulmustur: borc pozitif, alacak negatif tutardir. Projedeki mevcut `AccountingSlipLine.Amount` modeli de bu kuralla uyumludur.
+- `fis_hesap_kod` sabit bir enum degil, Mikro muhasebe hesap kodudur. Projedeki `100...`, `391...`, `600...` gibi tam hesap kodlari string olarak korunmalidir.
+- `fis_meblag1` ve `fis_meblag2` doviz/alternatif tutarlaridir; sadece gercek kur ve doviz karsiliklari hesaplandiginda doldurulmalidir. Bunlar `fis_d_cins` gibi varsayilan bir enum yorumu ile uretilmemelidir.
+- Mevcut DB yazari fis sira ve yevmiye numarasini kendisi uretiyor. API modunda bu numaralar Mikro'ya birakilacaksa basarili response semasi ve DB readback anahtari canli pilotta kesinlestirilmeden staging kaydi `IsSent=true` yapilmamalidir.
 - Fatura/masraf muhasebe etkisi yuksek oldugu icin P3.
 
 ### Fatura Gonderimi
@@ -689,17 +694,20 @@ Bu fazda update/sil endpointleri de contract olarak hazirlanabilir:
 - `IrsaliyeDuzeltV2`
 - `IrsaliyeSatirSilV2`
 
-2026-09-04 itibariyla eklenen opsiyonel routing kapilari:
+2026-09-07 itibariyla aktif opsiyonel routing kapilari:
 
 | Routing key | Varsayilan | Durum | Mikro API hedefi |
 |---|---|---|---|
-| `WarehouseShippingUpdate` | `Database` | Guard eklendi; API mapper bekliyor | `DahiliStokHareketDuzeltV2`, `DahiliStokHareketGuidSilV2`, `DepolarArasiSiparisDuzeltV2` |
-| `GreenGrocerOrderDelete` | `Database` | `MikroApi` modu baglandi | `DepolarArasiSiparisGuidSilV2` |
-| `MicroDocumentEditing` | `Database` | Depo siparisi/firma siparisi/stok hareketi update-sil ailelerinde guard eklendi | `DepolarArasiSiparisDuzeltV2`, `DepolarArasiSiparisGuidSilV2`, `SiparisDuzeltV2`, `SiparisGuidSilV2`, `DahiliStokHareketDuzeltV2`, `DahiliStokHareketGuidSilV2` |
-| `GreenGrocerOperations` | `Database` | Guard eklendi; MNV payload mapper bekliyor | `DahiliStokHareketKaydetV2` |
-| `ProductDistribution` | `Database` | Guard eklendi; `D{depo}` seri ve rezervasyon semantigi icin ozel mapper bekliyor | `DepolarArasiSiparisKaydetV2` |
-| `InvoiceSendingMarkAsSent` | `Database` | `MikroApi` modu deneysel olarak baglandi; response sonrasi DB readback ile dogrular | `AlimSatimEvragiDuzeltV2` (`cha_Guid`, `cha_belge_no`, `cha_uuid`, `cha_kilitli`) |
-| `CompanyOrderSentFlag` | `Database` | AXATA worker/manual dispatch firma siparisi gonderildi bayragi icin `MikroApi` modu baglandi | `SiparisDuzeltV2` (`sip_Guid`, `sip_special1`) |
+| `WarehouseShippingUpdate` | `MikroApi` | Hareket ekleme/guncelleme/silme ve bagli depo siparisi teslim miktari API ile yazilir; son satir seti DB readback ile dogrulanir | `DahiliStokHareketDuzeltV2`, `DahiliStokHareketGuidSilV2`, `DepolarArasiSiparisDuzeltV2` |
+| `GreenGrocerOrderDelete` | `MikroApi` | API modu baglandi | `DepolarArasiSiparisGuidSilV2` |
+| `MicroDocumentEditing` | `MikroApi` | Stok hareketi, cari hareket, firma/depo siparisi, sayim, stok/cari/depo karti, stok-depo override ve satis fiyati islemleri API'ye baglandi. Update/delete isteklerinde DB'den okunan eski `lastup_date` milisaniyeli lokal ISO formatinda gonderilir | Evrak ailesine gore `*DuzeltV2`, `*GuidSilV2`; `CariGuncelleV2`; `KayitKaydetTopluV2` tablo 10/13/51/111/228 |
+| `GreenGrocerOperations` | `MikroApi` | MNV artis/azalis duzeltmeleri API ile olusur ve clientRequestId iziyle geri okunur | `DahiliStokHareketKaydetV2` |
+| `ProductDistribution` | `MikroApi` | `STOK_DAGILIM` Furpa DB'de kalir; kesinlestirmede gercek depo siparisleri API ile uretilir ve stok kartindaki siparis durdurma bayragi API ile guncellenir | `DepolarArasiSiparisKaydetV2`; `KayitKaydetTopluV2` (`STOKLAR=13`) |
+| `InvoiceSendingMarkAsSent` | `MikroApi` | Toplu update sonrasi tum hareketler DB readback ile dogrulanir | `KayitKaydetTopluV2` (her kayitta `TabloNo=51`, `KayitTipi=1`, `cha_Guid`, `cha_belge_no`, `cha_uuid`, `cha_kilitli`) |
+| `CompanyOrderSentFlag` | `MikroApi` | AXATA worker/manual dispatch firma siparisi bayragi API ile yazilir; her satirda DB'den okunan eski `sip_lastup_date`/`ssip_lastup_date` gonderilir | `SiparisDuzeltV2`, `DepolarArasiSiparisDuzeltV2` |
+| `EDespatchMarkAsSent` | `MikroApi` | Uyumsoft basarisi sonrasi tum stok hareketlerine belge no, ETTN, kilit ve surucu metadatasi API ile yazilir; her satir eski `sth_lastup_date` ile gonderilir ve sonuc geri okunur | `DahiliStokHareketDuzeltV2` |
+| `GreenGrocerGoodsReceipt` | `MikroApi` | Manav kabzimal faturasi API ile yazilir; ayni seri/sira retry oncesi geri okunur, API basarisi sonrasi cari baslik ile stok satirlarinin miktar/tutar/vergi degerleri dogrulanir | `AlimSatimEvragiKaydetV2` |
+| `PosAccountingSlip` | `MikroApi` | POS staging kayitlari DB'de kalir; ERP muhasebe fisi API ile yazilir ve `fis_ticari_uid`/evrak anahtari ile hesap kodu-tutar satirlari geri okunmadan staging kaydi gonderildi sayilmaz | `MuhasebeFisKaydetV2` |
 
 ### Faz 3 - Yuksek risk ve karma is akislari
 
@@ -711,7 +719,44 @@ Bu fazda update/sil endpointleri de contract olarak hazirlanabilir:
 - POS muhasebe
 - Fatura gonderimi sonrasi Mikro isaretleme
 
-Bu fazda bazi islemler DB'de kalabilir. Amac her seyi REST'e tasimak degil, Mikro'nun resmi API'sinin guvenli oldugu noktalari kullanmak olmali.
+Standart Mikro evrak yazmalari REST'e yonlendirilir. Auth/Furpa/B2B tablolari, `STOK_DAGILIM`, offline retry, audit ve belge akis tablolari Mikro ERP tablosu olmadigi icin DB'de kalir. SQL okuma ve API sonrasi readback da devam eder; `MikroApi` modu SQL baglantisini kaldirmaz.
+
+Routing blogu disinda kalan ve sonraki mapper paketinde ele alinacak standart Mikro yazmalari:
+
+- Manav mal kabul icindeki `CARI_HESAP_HAREKETLERI` + `STOK_HAREKETLERI`, `GreenGrocerGoodsReceipt` routing anahtariyla `AlimSatimEvragiKaydetV2` uzerinden yazilir.
+- AXATA dinamik sayim/import stok hareketleri: `DahiliStokHareketKaydetV2` adayi.
+- POS muhasebe fisinin standart `MUHASEBE_FISLERI` ve `MUHASEBE_FIS_DETAYLARI` kismi `PosAccountingSlip` routing anahtariyla `MuhasebeFisKaydetV2` uzerinden yazilir; POS staging tablolari DB'de kalir.
+- Mikro evrak duzeltme ekranindaki kart islemleri `MikroApi` modunda API'ye baglidir: `STOKLAR=13`, `STOK_DEPO_DETAYLARI=10`, `DEPOLAR=111`, `STOK_SATIS_FIYAT_LISTELERI=228`, `CARI_HESAPLAR` ise `CariGuncelleV2` kullanir.
+- `KayitKaydetTopluV2` atomik degildir. Kart, override ve fiyat islemleri bu nedenle tek kayitlik requestlerle gonderilir; her cevap sonrasi DB readback yapilir.
+- Update ve delete islemlerinde kaydin API cagrisi oncesinde DB'den okunan eski `lastup_date` degeri `yyyy-MM-ddTHH:mm:ss.fff` lokal saat formatinda gonderilir. Yeni bir tarih uretilmez.
+- Generic insertlerde GUID istemci tarafinda uretilir; DBCno, SpecRECno, fileid, create/lastup user-date ve checksum alanlari Mikro cekirdegine birakilir.
+- Generic `TabloNo`, Mikro tablosundaki `*_fileid` ile aynidir. Teyitli eslemeler: `STOK_DEPO_DETAYLARI=10`, `STOKLAR=13`, `CARI_HESAPLAR=31`, `CARI_HESAP_HAREKETLERI=51`, `DEPOLAR=111`, `SUBELER=112`, `STOK_SATIS_FIYAT_LISTELERI=228`.
+- `KayitOkuV2`, ASCII uyumlu `POST /API/APIMethods/KayitOkuV2` adresinde `TableNo`, `ChangeStartDate`, `ChangeEndDate`, `Size` (en fazla 500) ve `Index` ile change-tracking okumasi yapar. Turkce karakterli `/API/APIMethods/KayıtOkuV2` yolu da desteklenir. Proje islem sonrasi kesin dogrulamada mevcut read-only SQL/EF sorgularini kullanmaya devam eder.
+- `STOK_DEPO_DETAYLARI` insert kaydi `TabloNo=10`, `KayitTipi=0`, istemci tarafinda uretilen `sdp_Guid`, stok kodunu tasiyan `sdp_depo_kod` ve `sdp_depo_no` ile gonderilir. Projedeki Mikro modelinde ayri bir `sdp_stok_kod` alani yoktur.
+- Generic delete `KayitTipi=2` ile GUID ve DB'den okunan eski `lastup_date` degerini gonderir. Ozel `*GuidSilV2` endpointleri kendi sozlesmeleri geregi yalniz GUID ile cagrilir.
+- Siparis baglantisi numeric satir id ile degil satir GUID'iyle kurulur: firma siparisi icin `sth_sip_uid=sip_Guid`, depolar arasi siparis icin `sth_subesip_uid=ssip_Guid`. Mikro teslim miktari ve bagli hareket etkilerini bu GUID uzerinden uygular.
+- `STOK_SATIS_FIYAT_LISTELERI` insertinde stok kodu, liste sira no, depo sira no, fiyat ve doviz zorunludur. Update icin `sfiyat_Guid`, eski `sfiyat_lastup_date` ve degisen alan yeterlidir.
+- Veritabani sema/build kontrolu `SELECT * FROM dbo.VERSIONS WITH (NOLOCK)` sorgusu ve `V_DB_VERSION` alaniyla yapilir. V17 API, V16 semasiyla temel islemlerde calisabilse de V17'ye ozgu alanlar eksikse hata verebilir; major surum uyumu icin DB Yonet ile V17 sema guncellemesi onerilir.
+- `AlimSatimEvragiKaydetV2` resmi alis faturasi orneginde ust hareket `cha_tip=1`, `cha_cinsi=6`, `cha_normal_Iade=0`, `cha_evrak_tip=0`; stok satiri ise `sth_tip=0`, `sth_cins=0`, `sth_normal_iade=0`, `sth_evraktip=3` degerleriyle gonderilir. Bu degerler evrak senaryosuna gore degisir; `cha_tip=0 her zaman alis` gibi genel bir UI/backend sabiti kullanilamaz.
+- `sth_vergi_pntr` Mikro vergi tanimi pointer'idir; `sth_vergi` yuzde oran degil hesaplanmis vergi tutaridir. Ornegin `%20` seklinde `sth_vergi=20` gonderilmemelidir.
+- `sth_birim_pntr` `0=ADET, 1=KG` gibi global bir enum degildir. Stok kartindaki birim sirasini gosterir ve mevcut request satirindaki `unitPointer` degeri korunmalidir.
+- Manav mal kabul DB yazari ozel olarak `cha_tip=1`, `cha_cinsi=35`, `cha_evrak_tip=0`; stok satirlarinda `sth_tip=0`, `sth_cins=16`, `sth_evraktip=3`, giris depo `56`, cikis depo `1` kullanir. API mapper bu mevcut davranisi korumali; genel Postman ornegindeki `cha_cinsi=6` veya `sth_cins=0` degerlerini korlemesine kopyalamamalidir.
+- Mikro'dan gelen aciklamada `sth_cins=16` destegi sorusuna `sth_evraktip=16` tanimi anlatilarak cevap verilmistir. Bunlar farkli kolonlardir ve bu cevap `sth_cins=16` destegini teyit etmez. Canli DB'de calisan kombinasyon `sth_cins=16`, `sth_evraktip=3` oldugundan API pilotunda aynen bu ikili denenmelidir.
+- `AlimSatimEvragiKaydetV2` yayinlanan request semasinda `cha_Guid`, `sth_Guid` ve `sth_fat_uid` bulunmaz. API bunlari kabul etmiyorsa create oncesi GUID tabanli idempotency kurulamaz; timeout sonrasi ayni seri/sira ve is kurali anahtarlariyla readback yapilmadan yeniden POST edilmemelidir.
+- Hizmet ve masraf, yalnizca stok `detay[]` satirina rastgele eklenen alanlar degildir. Koleksiyondaki ayri orneklerde hizmet icin `cha_kasa_hizmet=3`, masraf icin `cha_kasa_hizmet=5` kullanilir. Karma evrak destegi canli V17 build'i ve tam request semasi ile ayrica test edilmelidir.
+- `MuhasebeFisKaydetV2` resmi orneginde `fis_sira_no`, `fis_yevmiye_no`, `fis_ticari_uid` ve `fis_detay` request alanlari gosterilmez; dokumante edilen basarili response govdesi de alan bazinda yayinlanmamistir. Bu alanlar icin "genellikle doner" ifadesi entegrasyon sozlesmesi kabul edilmemelidir.
+- POS muhasebe mevcut DB yazari `fis_ticari_tip=2`, `fis_ticari_evraktip=63` ve `fis_ticari_uid=document.SourceGuid` kullanir. Onerilen `fis_ticari_tip=1` + `sth_Guid` ornegi stok hareketine baglama senaryosudur; POS staging belgesinin mevcut muhasebe semantigini karsiladigi kanitlanmadan kullanilmamalidir.
+- POS API yolunda `fis_sira_no` ve `fis_yevmiye_no` istemci tarafinda uretilmez. Eski DB yolundaki `MAX+1` sorgusu API cagrisi oncesinde calistirilmaz; aksi halde alinan SQL range lock Mikro API insertini bloke edebilir. Mikro'nun urettigi degerler API sonrasi DB readback ile bulunur.
+
+## Mikro'ya Sorulacak Kalan Sozlesme Sorulari
+
+Asagidaki maddeler dokumantasyon cevabiyla yetinilmeden gercek V17 request/response ornegi ve canli pilotla kapatilmalidir:
+
+1. `AlimSatimEvragiKaydetV2` icin cok satirli `detay[]`, KDV tutari/pointer'i, birim pointer'i ve depo alanlari teyit edildi. Mikro'dan alan adlari karistirilmadan su kombinasyon icin acik onay veya calisan request istenmelidir: ustte `cha_tip=1`, `cha_cinsi=35`, `cha_evrak_tip=0`; satirda `sth_tip=0`, `sth_cins=16`, `sth_evraktip=3`, giris depo `56`, cikis depo `1`.
+2. Ayni endpoint icin istemci GUID'leri request semasinda yoktur. Basarili response'un ham JSON'u, uretilen `cha_Guid`/`sth_Guid` degerleri ve timeout sonrasi seri/sirayla resmi sorgulama ornegi alinmalidir.
+3. `MuhasebeFisKaydetV2` icin `satirlar[]` ve pozitif/negatif `fis_meblag0` ile coklu borc/alacak destegi teyit edildi. Canli pilotta otomatik `fis_sira_no`/`fis_yevmiye_no` iceren ham response ve bu numaralar donmuyorsa resmi readback anahtari alinmalidir.
+4. POS icin mevcut semantikle birebir ornek istenmelidir: `fis_ticari_tip=2`, `fis_ticari_evraktip=63`, `fis_ticari_uid` olarak POS fatura/gider/Z raporu kaynak GUID'i ve buna bagli `fis_detay[]`. `fis_ticari_tip=1` + `sth_Guid` farkli bir stok hareketi senaryosudur.
+5. Canli ortamdaki gercek `V_DB_VERSION`, Mikro ERP build ve REST API build degerleri kaydedilmeli; pilot test sonucu bu dokumana eklenmelidir.
 
 ## Endpoint Dogrulama Checklist'i
 

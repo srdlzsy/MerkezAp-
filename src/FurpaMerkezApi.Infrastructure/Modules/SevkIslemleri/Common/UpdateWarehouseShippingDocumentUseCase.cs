@@ -8,10 +8,11 @@ using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 
-public sealed class UpdateWarehouseShippingDocumentUseCase(
+public sealed partial class UpdateWarehouseShippingDocumentUseCase(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
-    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient)
     : IUpdateWarehouseShippingDocumentUseCase
 {
     private const byte MovementType = 2;
@@ -38,8 +39,8 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
         return mikroWriteRoutingOptions.CurrentValue.WarehouseShippingUpdate switch
         {
             MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
-            MikroWriteMode.MikroApi => throw CreateUnsupportedMikroApiModeException(),
-            MikroWriteMode.DualShadow => throw CreateUnsupportedMikroApiModeException(),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => await ExecuteDatabaseAsync(request, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:WarehouseShippingUpdate mode '{mode}'.")
         };
@@ -268,12 +269,6 @@ public sealed class UpdateWarehouseShippingDocumentUseCase(
             }
         });
     }
-
-    private static NotSupportedException CreateUnsupportedMikroApiModeException() =>
-        new(
-            "MikroWriteRouting:WarehouseShippingUpdate MikroApi/DualShadow is not wired yet. " +
-            "This flow must use DahiliStokHareketDuzeltV2/DahiliStokHareketGuidSilV2 " +
-            "and DepolarArasiSiparisDuzeltV2 with live payload tests before DB writes can be disabled.");
 
     private async Task EnsureRequestedStocksExistAsync(
         UpdateWarehouseShippingDocumentRequest request,

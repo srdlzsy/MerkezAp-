@@ -46,7 +46,7 @@ public sealed class InvoiceSendingService(
     private const int InvoiceSendLockTimeoutMilliseconds = 0;
     private const int SlowListThresholdMilliseconds = 2_000;
     private const int SlowRenderThresholdMilliseconds = 5_000;
-    private const string KayitKaydetPath = "/Api/apiMethods/KayitKaydetV2";
+    private const string KayitKaydetTopluPath = "/Api/apiMethods/KayitKaydetTopluV2";
     private const string CariHesapHareketleriTableNo = "51";
     private const string MikroApiUpdateRecordType = "1";
     private const string MikroApiMarkerVerificationFailureMessage =
@@ -2917,36 +2917,28 @@ public sealed class InvoiceSendingService(
 
         var payload = new
         {
-            Tablo = new[]
-            {
-                new
-                {
-                    No = CariHesapHareketleriTableNo,
-                    KayitTipi = MikroApiUpdateRecordType
-                }
-            },
             Kayit = rows
                 .Select(row => new
                 {
+                    TabloNo = CariHesapHareketleriTableNo,
+                    KayitTipi = MikroApiUpdateRecordType,
                     row.cha_Guid,
                     cha_belge_no = serviceDocumentNumber,
                     cha_uuid = ettn,
-                    cha_kilitli = true,
-                    cha_degisti = row.cha_degisti ?? false,
-                    cha_lastup_user = row.cha_lastup_user ?? MikroUserNo
+                    cha_kilitli = true
                 })
                 .ToArray()
         };
 
         logger.LogInformation(
             "Invoice sent marker is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, RowCount={RowCount}",
-            KayitKaydetPath,
+            KayitKaydetTopluPath,
             documentSerie,
             documentOrderNo,
             rows.Count);
 
         var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
-            KayitKaydetPath,
+            KayitKaydetTopluPath,
             payload,
             cancellationToken);
 
@@ -2965,10 +2957,8 @@ public sealed class InvoiceSendingService(
             .Select(row => row.cha_Guid)
             .Distinct()
             .ToArray();
-        var verificationGuids = responseGuids.Length > 0 ? responseGuids : expectedGuids;
-
         if (!await VerifyInvoiceMarkerAsync(
-                verificationGuids,
+                expectedGuids,
                 documentSerie,
                 documentOrderNo,
                 serviceDocumentNumber,

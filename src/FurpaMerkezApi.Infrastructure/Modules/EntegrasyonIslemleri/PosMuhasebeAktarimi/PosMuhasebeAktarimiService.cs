@@ -5,18 +5,22 @@ using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.PosMuhasebeAktarim
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
 
-public sealed class PosMuhasebeAktarimiService(
+public sealed partial class PosMuhasebeAktarimiService(
     MikroDbContext mikroDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     FurpaDbContext furpaDbContext,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    MikroApiClient mikroApiClient,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
     : IPosMuhasebeAktarimiService
 {
     private const string CashPaymentType = "Nakit";
@@ -963,6 +967,22 @@ public sealed class PosMuhasebeAktarimiService(
     }
 
     private async Task<AccountingSlipIdentity> WriteAccountingSlipAsync(
+        AccountingSlipDocument document,
+        CancellationToken cancellationToken)
+    {
+        var mode = mikroWriteRoutingOptions.CurrentValue.PosAccountingSlip;
+        return mode switch
+        {
+            MikroWriteMode.Database or MikroWriteMode.DualShadow =>
+                await WriteAccountingSlipDatabaseAsync(document, cancellationToken),
+            MikroWriteMode.MikroApi =>
+                await WriteAccountingSlipMikroApiAsync(document, cancellationToken),
+            _ => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:PosAccountingSlip mode '{mode}'.")
+        };
+    }
+
+    private async Task<AccountingSlipIdentity> WriteAccountingSlipDatabaseAsync(
         AccountingSlipDocument document,
         CancellationToken cancellationToken)
     {

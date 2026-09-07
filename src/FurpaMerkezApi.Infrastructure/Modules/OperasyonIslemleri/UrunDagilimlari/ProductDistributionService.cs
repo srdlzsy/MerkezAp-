@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
@@ -20,7 +21,8 @@ public sealed class ProductDistributionService(
     MikroWriteDbContext mikroWriteDbContext,
     FurpaDbContext furpaDbContext,
     IProductDistributionNotificationMailer notificationMailer,
-    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient)
     : IProductDistributionService
 {
     private const int DefaultSalesDayCount = 42;
@@ -33,6 +35,8 @@ public sealed class ProductDistributionService(
     private const int FirstDocumentOrderNo = 0;
     private const int LongRunningQueryTimeoutSeconds = 300;
     private const string FinalizeDescriptionPrefix = "Dagilim";
+    private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
+    private const string KayitKaydetTopluPath = "/Api/apiMethods/KayitKaydetTopluV2";
     private static readonly int[] KnownDistributionCenters = [50, 53, 56];
     private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");
 
@@ -1284,6 +1288,70 @@ public sealed class ProductDistributionService(
         string stockCode,
         CancellationToken cancellationToken)
     {
+        if (mikroWriteRoutingOptions.CurrentValue.ProductDistribution == MikroWriteMode.MikroApi)
+        {
+            var stock = await mikroWriteDbContext.STOKLARs
+                .AsNoTracking()
+                .Where(item => item.sto_kod == stockCode)
+                .Select(item => new
+                {
+                    item.sto_Guid,
+                    item.sto_siparis_dursun,
+                    item.sto_lastup_date
+                })
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KeyNotFoundException($"Stock card was not found: {stockCode}");
+
+            if (stock.sto_siparis_dursun == 1)
+            {
+                return false;
+            }
+
+            var record = new Dictionary<string, object?>
+            {
+                ["TabloNo"] = "13",
+                ["KayitTipi"] = "1",
+                ["sto_Guid"] = stock.sto_Guid,
+                ["sto_siparis_dursun"] = 1
+            };
+            if (stock.sto_lastup_date.HasValue)
+            {
+                record["sto_lastup_date"] = stock.sto_lastup_date.Value
+                    .ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+            }
+
+            var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+                KayitKaydetTopluPath,
+                new { Kayit = new[] { record } },
+                cancellationToken);
+            if (result.IsError)
+            {
+                throw new InvalidOperationException(
+                    result.ErrorMessage ?? "Mikro API stock ordering stop update failed.");
+            }
+
+            for (var attempt = 1; attempt <= 5; attempt++)
+            {
+                var isStopped = await mikroWriteDbContext.STOKLARs
+                    .AsNoTracking()
+                    .AnyAsync(
+                        item => item.sto_Guid == stock.sto_Guid && item.sto_siparis_dursun == 1,
+                        cancellationToken);
+                if (isStopped)
+                {
+                    return true;
+                }
+
+                if (attempt < 5)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken);
+                }
+            }
+
+            throw new InvalidOperationException(
+                "Mikro API stock ordering stop update returned success, but sto_siparis_dursun could not be verified.");
+        }
+
         var updatedRows = await mikroWriteDbContext.STOKLARs
             .Where(stock => stock.sto_kod == stockCode && stock.sto_siparis_dursun != 1)
             .ExecuteUpdateAsync(
@@ -1312,11 +1380,163 @@ public sealed class ProductDistributionService(
                 deliveryDate,
                 now,
                 cancellationToken),
-            MikroWriteMode.MikroApi => throw CreateUnsupportedMikroApiModeException(),
-            MikroWriteMode.DualShadow => throw CreateUnsupportedMikroApiModeException(),
+            MikroWriteMode.MikroApi => await CreateWarehouseOrdersMikroApiAsync(
+                detail,
+                positiveLines,
+                description,
+                orderDate,
+                deliveryDate,
+                cancellationToken),
+            MikroWriteMode.DualShadow => await CreateWarehouseOrdersDatabaseAsync(
+                detail,
+                positiveLines,
+                description,
+                orderDate,
+                deliveryDate,
+                now,
+                cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:ProductDistribution mode '{mode}'.")
         };
+    }
+
+    private async Task<IReadOnlyCollection<ProductDistributionWarehouseOrderDto>> CreateWarehouseOrdersMikroApiAsync(
+        ProductDistributionDetailDto detail,
+        IReadOnlyCollection<ProductDistributionLineDto> positiveLines,
+        string description,
+        DateTime orderDate,
+        DateTime deliveryDate,
+        CancellationToken cancellationToken)
+    {
+        var orders = new List<ProductDistributionWarehouseOrderDto>();
+        var existingOrders = await QueryExistingWarehouseOrdersAsync(detail, description, cancellationToken);
+
+        foreach (var line in positiveLines)
+        {
+            if (existingOrders.TryGetValue(line.WarehouseNo, out var existingOrder))
+            {
+                orders.Add(MapWarehouseOrder(
+                    existingOrder.DocumentSerie,
+                    existingOrder.DocumentOrderNo,
+                    line,
+                    detail,
+                    alreadyExisted: true));
+                continue;
+            }
+
+            var documentSerie = $"D{line.WarehouseNo}";
+            var documentOrderNo = await GetNextWarehouseOrderNoAsync(documentSerie, cancellationToken);
+            var payload = new
+            {
+                evraklar = new[]
+                {
+                    new
+                    {
+                        satirlar = new[]
+                        {
+                            new
+                            {
+                                ssip_tarih = FormatMikroDate(orderDate),
+                                ssip_teslim_tarih = FormatMikroDate(deliveryDate),
+                                ssip_belge_tarih = FormatMikroDate(orderDate),
+                                ssip_belgeno = string.Empty,
+                                ssip_evrakno_seri = documentSerie,
+                                ssip_evrakno_sira = documentOrderNo,
+                                ssip_satirno = 0,
+                                ssip_stok_kod = detail.Header.Stock.StockCode,
+                                ssip_b_fiyat = 0d,
+                                ssip_miktar = line.UnitQuantity,
+                                ssip_tutar = 0d,
+                                ssip_teslim_miktar = 0d,
+                                ssip_girdepo = line.WarehouseNo,
+                                ssip_cikdepo = detail.Header.DistributionCenter.WarehouseNo,
+                                ssip_aciklama = description,
+                                ssip_birim_pntr = 1,
+                                ssip_paket_kod = string.Empty,
+                                ssip_projekodu = string.Empty,
+                                ssip_sormerkezi = string.Empty,
+                                ssip_gecerlilik_tarihi = string.Empty,
+                                ssip_rezervasyon_miktari = line.CaseQuantity
+                            }
+                        }
+                    }
+                }
+            };
+
+            var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+                DepolarArasiSiparisKaydetPath,
+                payload,
+                cancellationToken);
+
+            var recovered = await TryRecoverDistributionOrderAsync(
+                detail,
+                line,
+                description,
+                documentSerie,
+                documentOrderNo,
+                cancellationToken);
+            if (recovered is null)
+            {
+                if (result.IsError)
+                {
+                    throw new InvalidOperationException(
+                        result.ErrorMessage ?? "Mikro API product distribution order create failed.");
+                }
+
+                throw new InvalidOperationException(
+                    "Mikro API product distribution order succeeded, but the created order could not be verified.");
+            }
+
+            await mikroApiClient.MarkRecoveredAsync(
+                result,
+                $"{documentSerie}/{documentOrderNo}",
+                recovered.Value.Guid,
+                cancellationToken: cancellationToken);
+            orders.Add(MapWarehouseOrder(
+                documentSerie,
+                documentOrderNo,
+                line,
+                detail,
+                alreadyExisted: false));
+        }
+
+        return orders;
+    }
+
+    private async Task<(Guid Guid, int RowCount)?> TryRecoverDistributionOrderAsync(
+        ProductDistributionDetailDto detail,
+        ProductDistributionLineDto line,
+        string description,
+        string documentSerie,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+                .AsNoTracking()
+                .Where(order =>
+                    order.ssip_iptal != true &&
+                    order.ssip_evrakno_seri == documentSerie &&
+                    order.ssip_evrakno_sira == documentOrderNo &&
+                    order.ssip_stok_kod == detail.Header.Stock.StockCode &&
+                    order.ssip_girdepo == line.WarehouseNo &&
+                    order.ssip_cikdepo == detail.Header.DistributionCenter.WarehouseNo &&
+                    order.ssip_aciklama == description)
+                .Select(order => order.ssip_Guid)
+                .ToArrayAsync(cancellationToken);
+            if (rows.Length > 0)
+            {
+                return (rows[0], rows.Length);
+            }
+
+            if (attempt < 3)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+            }
+        }
+
+        return null;
     }
 
     private async Task<IReadOnlyCollection<ProductDistributionWarehouseOrderDto>> CreateWarehouseOrdersDatabaseAsync(
@@ -1398,10 +1618,8 @@ public sealed class ProductDistributionService(
         });
     }
 
-    private static NotSupportedException CreateUnsupportedMikroApiModeException() =>
-        new(
-            "MikroWriteRouting:ProductDistribution MikroApi/DualShadow is not wired yet. " +
-            "Distribution keeps D{warehouse} series and reservation quantity semantics, so DepolarArasiSiparisKaydetV2 needs a dedicated payload mapper before enabling this route.");
+    private static string FormatMikroDate(DateTime value) =>
+        value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
     private async Task<Dictionary<int, ExistingWarehouseOrderRow>> QueryExistingWarehouseOrdersAsync(
         ProductDistributionDetailDto detail,

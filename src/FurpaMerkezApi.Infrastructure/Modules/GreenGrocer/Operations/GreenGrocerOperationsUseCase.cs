@@ -1,6 +1,7 @@
 ﻿using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
@@ -18,6 +19,7 @@ public sealed class GreenGrocerOperationsUseCase(
     AuthDbContext authDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService)
     : IGreenGrocerOperationsUseCase
 {
@@ -38,6 +40,7 @@ public sealed class GreenGrocerOperationsUseCase(
     private const string DecreaseSerie = "MNVF";
     private const string DefaultReasonCode = "weighing-difference";
     private const string OfflineOperationCode = "green-grocer.operations.adjustment.apply";
+    private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
 
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
     private static readonly string[] GreenGrocerModelCodes = ["10", "11", "12", "23"];
@@ -174,11 +177,113 @@ public sealed class GreenGrocerOperationsUseCase(
         mikroWriteRoutingOptions.CurrentValue.GreenGrocerOperations switch
         {
             MikroWriteMode.Database => ExecuteAdjustmentDatabaseAsync(request, cancellationToken),
-            MikroWriteMode.MikroApi => throw CreateUnsupportedMikroApiModeException(),
-            MikroWriteMode.DualShadow => throw CreateUnsupportedMikroApiModeException(),
+            MikroWriteMode.MikroApi => ExecuteAdjustmentMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => ExecuteAdjustmentDatabaseAsync(request, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:GreenGrocerOperations mode '{mode}'.")
         };
+
+    private async Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentMikroApiAsync(
+        GreenGrocerOperationsAdjustmentApplyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalized = NormalizeApply(request);
+        await EnsureGreenGrocerStocksAsync(normalized.Lines, cancellationToken);
+
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+        var documentNo = NormalizeText(request.DocumentNo, 50);
+        var creator = NormalizeText(request.Creator, 25);
+        var acceptor = NormalizeText(request.Acceptor, 25);
+        var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId);
+        var headerDescription = CreateTraceDescription(request.Description, traceKey);
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(
+            normalized.DocumentSerie,
+            normalized.MovementType,
+            normalized.DocumentType,
+            cancellationToken);
+
+        var payload = new
+        {
+            evraklar = new[]
+            {
+                new
+                {
+                    satirlar = normalized.Lines.Select((line, rowNo) => new
+                    {
+                        sth_tarih = FormatMikroDate(movementDate),
+                        sth_tip = normalized.MovementType,
+                        sth_cins = normalized.MovementGenre,
+                        sth_normal_iade = NormalMovement,
+                        sth_evraktip = normalized.DocumentType,
+                        sth_evrakno_seri = normalized.DocumentSerie,
+                        sth_evrakno_sira = documentOrderNo,
+                        sth_satirno = rowNo,
+                        sth_belge_no = documentNo,
+                        sth_belge_tarih = FormatMikroDate(documentDate),
+                        sth_stok_kod = NormalizeText(line.StockCode, 25),
+                        sth_miktar = line.Quantity,
+                        sth_miktar2 = 0d,
+                        sth_birim_pntr = line.UnitPointer,
+                        sth_tutar = line.Quantity * line.UnitPrice,
+                        sth_vergi_pntr = 0,
+                        sth_vergi = 0d,
+                        sth_vergisiz_fl = false,
+                        sth_isk_mas1 = 0,
+                        sth_isk_mas2 = 1,
+                        sth_giris_depo_no = normalized.Direction == "increase"
+                            ? normalized.WarehouseNo
+                            : normalized.CounterWarehouseNo,
+                        sth_cikis_depo_no = normalized.Direction == "increase"
+                            ? normalized.CounterWarehouseNo
+                            : normalized.WarehouseNo,
+                        sth_aciklama = CreateTraceDescription(line.Description ?? headerDescription, traceKey),
+                        sth_parti_kodu = NormalizeText(line.PartyCode, 25),
+                        sth_lot_no = line.LotNo,
+                        sth_proje_kodu = NormalizeText(line.ProjectCode, 25),
+                        sth_fiyat_liste_no = 1,
+                        sth_HareketGrupKodu1 = creator,
+                        sth_HareketGrupKodu2 = acceptor,
+                        sth_HareketGrupKodu3 = normalized.ReasonCode,
+                        sth_eticaret_kanal_kodu = traceKey,
+                        sth_teslim_tarihi = FormatMikroDate(movementDate)
+                    }).ToArray()
+                }
+            }
+        };
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DahiliStokHareketKaydetPath,
+            payload,
+            cancellationToken);
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API green grocer adjustment create failed.");
+        }
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var recovered = await TryRecoverAdjustmentResponseAsync(request, cancellationToken);
+            if (recovered is not null)
+            {
+                await mikroApiClient.MarkRecoveredAsync(
+                    result,
+                    $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
+                    recovered.MovementGuids.FirstOrDefault(),
+                    cancellationToken: cancellationToken);
+                return recovered;
+            }
+
+            if (attempt < 3)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API green grocer adjustment succeeded, but created movement rows could not be verified.");
+    }
 
     private async Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentDatabaseAsync(
         GreenGrocerOperationsAdjustmentApplyRequest request,
@@ -1331,10 +1436,8 @@ public sealed class GreenGrocerOperationsUseCase(
         };
     }
 
-    private static NotSupportedException CreateUnsupportedMikroApiModeException() =>
-        new(
-            "MikroWriteRouting:GreenGrocerOperations MikroApi/DualShadow is not wired yet. " +
-            "MNV adjustment payload must be mapped and live-tested with DahiliStokHareketKaydetV2 before enabling this route.");
+    private static string FormatMikroDate(DateTime value) =>
+        value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
     private static string GetModelName(string modelCode) =>
         modelCode switch

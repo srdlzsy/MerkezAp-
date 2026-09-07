@@ -1,6 +1,8 @@
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
@@ -12,6 +14,7 @@ using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,6 +28,8 @@ public sealed class EDespatchService(
     MikroWriteDbContext mikroWriteDbContext,
     IDocumentFlowService documentFlowService,
     IOptions<EDespatchOptions> options,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient,
     ILogger<EDespatchService> logger)
     : IEDespatchService
 {
@@ -44,6 +49,7 @@ public sealed class EDespatchService(
     private const int DocumentNumberLockTimeoutMilliseconds = 120_000;
     private const int PostSubmissionCompletionTimeoutSeconds = 120;
     private const int LocalMetadataUpdateAttemptCount = 2;
+    private const string StockMovementUpdatePath = "/Api/apiMethods/DahiliStokHareketDuzeltV2";
     private static readonly SemaphoreSlim LocalDocumentNumberLock = new(1, 1);
 
     public async Task<SendEDespatchResponse> SendAsync(
@@ -1496,20 +1502,61 @@ public sealed class EDespatchService(
 
             for (var attempt = 1; attempt <= LocalMetadataUpdateAttemptCount; attempt++)
             {
-                var updatedCount = await context.STOK_HAREKETLERIs
-                    .Where(movement => movementGuids.Contains(movement.sth_Guid))
-                    .ExecuteUpdateAsync(
-                        setters => setters
-                            .SetProperty(movement => movement.sth_kilitli, true)
-                            .SetProperty(movement => movement.sth_lastup_user, MikroUserNo)
-                            .SetProperty(movement => movement.sth_lastup_date, now)
-                            .SetProperty(movement => movement.sth_belge_no, documentNo)
-                            .SetProperty(movement => movement.sth_aciklama, uuid)
-                            .SetProperty(movement => movement.sth_HareketGrupKodu1, movement => plaque ?? movement.sth_HareketGrupKodu1)
-                            .SetProperty(movement => movement.sth_HareketGrupKodu2, movement => deliverer ?? movement.sth_HareketGrupKodu2)
-                            .SetProperty(movement => movement.sth_HareketGrupKodu3, movement => receiver ?? movement.sth_HareketGrupKodu3)
-                            .SetProperty(movement => movement.sth_ismerkezi_kodu, movement => driverTckn ?? movement.sth_ismerkezi_kodu),
+                int updatedCount;
+                if (mikroWriteRoutingOptions.CurrentValue.EDespatchMarkAsSent == MikroWriteMode.MikroApi)
+                {
+                    var payload = new
+                    {
+                        evraklar = new[]
+                        {
+                            new
+                            {
+                                satirlar = trackedMovements.Select(movement => new
+                                {
+                                    movement.sth_Guid,
+                                    sth_lastup_date = movement.sth_lastup_date?.ToString(
+                                        "yyyy-MM-ddTHH:mm:ss.fff",
+                                        CultureInfo.InvariantCulture),
+                                    sth_kilitli = true,
+                                    sth_belge_no = documentNo,
+                                    sth_aciklama = uuid,
+                                    sth_HareketGrupKodu1 = plaque ?? movement.sth_HareketGrupKodu1,
+                                    sth_HareketGrupKodu2 = deliverer ?? movement.sth_HareketGrupKodu2,
+                                    sth_HareketGrupKodu3 = receiver ?? movement.sth_HareketGrupKodu3,
+                                    sth_ismerkezi_kodu = driverTckn ?? movement.sth_ismerkezi_kodu
+                                }).ToArray()
+                            }
+                        }
+                    };
+                    var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+                        StockMovementUpdatePath,
+                        payload,
                         cancellationToken);
+                    if (result.IsError)
+                    {
+                        throw new InvalidOperationException(
+                            result.ErrorMessage ?? "Mikro API e-despatch marker update failed.");
+                    }
+
+                    updatedCount = movementGuids.Length;
+                }
+                else
+                {
+                    updatedCount = await context.STOK_HAREKETLERIs
+                        .Where(movement => movementGuids.Contains(movement.sth_Guid))
+                        .ExecuteUpdateAsync(
+                            setters => setters
+                                .SetProperty(movement => movement.sth_kilitli, true)
+                                .SetProperty(movement => movement.sth_lastup_user, MikroUserNo)
+                                .SetProperty(movement => movement.sth_lastup_date, now)
+                                .SetProperty(movement => movement.sth_belge_no, documentNo)
+                                .SetProperty(movement => movement.sth_aciklama, uuid)
+                                .SetProperty(movement => movement.sth_HareketGrupKodu1, movement => plaque ?? movement.sth_HareketGrupKodu1)
+                                .SetProperty(movement => movement.sth_HareketGrupKodu2, movement => deliverer ?? movement.sth_HareketGrupKodu2)
+                                .SetProperty(movement => movement.sth_HareketGrupKodu3, movement => receiver ?? movement.sth_HareketGrupKodu3)
+                                .SetProperty(movement => movement.sth_ismerkezi_kodu, movement => driverTckn ?? movement.sth_ismerkezi_kodu),
+                            cancellationToken);
+                }
 
                 var verifiedCount = await context.STOK_HAREKETLERIs
                     .AsNoTracking()

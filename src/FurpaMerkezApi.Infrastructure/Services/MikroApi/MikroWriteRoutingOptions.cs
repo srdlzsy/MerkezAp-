@@ -37,6 +37,12 @@ public sealed class MikroWriteRoutingOptions
     public MikroWriteMode ProductDistribution { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode InvoiceSendingMarkAsSent { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode EDespatchMarkAsSent { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode GreenGrocerGoodsReceipt { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode PosAccountingSlip { get; init; } = MikroWriteMode.Database;
 }
 
 public enum MikroWriteMode

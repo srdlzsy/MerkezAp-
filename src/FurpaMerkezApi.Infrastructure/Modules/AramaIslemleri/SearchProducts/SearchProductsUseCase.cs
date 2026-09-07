@@ -9,8 +9,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchProducts;
 
 public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISearchProductsUseCase
 {
-    private const int DefaultTake = 20;
-    private const int MaxTake = 100;
+    private const int DefaultTake = 150;
+    private const int MaxTake = 150;
     private const int MaxPartialBarcodeCandidates = 50;
 
     public async Task<IReadOnlyCollection<ProductLookupItemDto>> ExecuteAsync(
@@ -118,10 +118,16 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                 take,
                 cancellationToken);
 
-            return await EnrichWithPurchasePricesAsync(
+            products = await EnrichWithPurchasePricesAsync(
                 connection,
                 products,
                 supplierCode,
+                cancellationToken);
+
+            return await EnrichWithProcurementSourcesAsync(
+                connection,
+                products,
+                request.WarehouseNo,
                 cancellationToken);
         }
         finally
@@ -620,6 +626,167 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         return purchasePrices;
     }
 
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> EnrichWithProcurementSourcesAsync(
+        DbConnection connection,
+        IReadOnlyCollection<ProductLookupItemDto> products,
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        if (products.Count == 0)
+        {
+            return products;
+        }
+
+        var stockCodes = products
+            .Select(product => NormalizeOrNull(product.StockCode))
+            .Where(stockCode => stockCode is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxTake)
+            .ToArray();
+
+        if (stockCodes.Length == 0)
+        {
+            return products;
+        }
+
+        var procurementSources = await ReadProcurementSourcesAsync(
+            connection,
+            stockCodes,
+            warehouseNo,
+            cancellationToken);
+
+        return products
+            .Select(product =>
+            {
+                var stockCode = NormalizeOrNull(product.StockCode);
+                var source = stockCode is not null && procurementSources.TryGetValue(stockCode, out var value)
+                    ? value
+                    : ProcurementSourceSnapshot.Empty;
+
+                return product with
+                {
+                    ModelCode = source.ModelCode,
+                    ProcurementType = ResolveProcurementType(
+                        source.SourceWarehouses.Count > 0,
+                        source.HasPurchaseRequirement),
+                    SourceWarehouses = source.SourceWarehouses,
+                    HasPurchaseRequirement = source.HasPurchaseRequirement
+                };
+            })
+            .ToArray();
+    }
+
+    private static async Task<Dictionary<string, ProcurementSourceSnapshot>> ReadProcurementSourcesAsync(
+        DbConnection connection,
+        IReadOnlyCollection<string> stockCodes,
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var sources = new Dictionary<string, ProcurementSourceAccumulator>(StringComparer.OrdinalIgnoreCase);
+        using var command = connection.CreateCommand();
+        var stockCodeParameterNames = stockCodes
+            .Select((stockCode, index) =>
+            {
+                var parameterName = $"@procurementStockCode{index}";
+                AddParameter(command, parameterName, stockCode);
+                return parameterName;
+            })
+            .ToArray();
+
+        command.CommandText = $"""
+            SELECT
+                LTRIM(RTRIM(stock.sto_kod)) AS StockCode,
+                LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, N''))) AS ModelCode,
+                CASE
+                    WHEN NULLIF(LTRIM(RTRIM(ISNULL(stock.sto_sat_cari_kod, N''))), N'') IS NOT NULL
+                         OR EXISTS
+                         (
+                             SELECT 1
+                             FROM dbo.SATINALMA_SARTLARI AS purchaseTerm WITH (NOLOCK)
+                             WHERE purchaseTerm.sas_stok_kod = stock.sto_kod
+                               AND ISNULL(purchaseTerm.sas_iptal, 0) = 0
+                               AND NULLIF(LTRIM(RTRIM(ISNULL(purchaseTerm.sas_cari_kod, N''))), N'') IS NOT NULL
+                               AND (purchaseTerm.sas_depo_no IS NULL OR purchaseTerm.sas_depo_no IN (0, @warehouseNo))
+                               AND (purchaseTerm.sas_basla_tarih IS NULL OR purchaseTerm.sas_basla_tarih <= GETDATE())
+                               AND
+                               (
+                                   purchaseTerm.sas_bitis_tarih IS NULL
+                                   OR purchaseTerm.sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                                   OR purchaseTerm.sas_bitis_tarih >= CONVERT(date, GETDATE())
+                               )
+                         )
+                    THEN CAST(1 AS bit)
+                    ELSE CAST(0 AS bit)
+                END AS HasPurchaseRequirement,
+                sourceWarehouse.dep_no AS SourceWarehouseNo,
+                sourceWarehouse.dep_adi AS SourceWarehouseName
+            FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+            OUTER APPLY
+            (
+                SELECT warehouse.dep_no, warehouse.dep_adi
+                FROM dbo.DEPOLAR AS warehouse WITH (NOLOCK)
+                CROSS APPLY STRING_SPLIT(
+                    REPLACE(REPLACE(ISNULL(warehouse.dep_barkod_yazici_yolu, N''), N';', N','), N'|', N','),
+                    N',') AS sourceModel
+                WHERE LTRIM(RTRIM(sourceModel.value)) = LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, N'')))
+                  AND EXISTS
+                  (
+                      SELECT 1
+                      FROM dbo.STOK_DEPO_DETAYLARI AS sourceDetail WITH (NOLOCK)
+                      WHERE sourceDetail.sdp_depo_no = warehouse.dep_no
+                        AND sourceDetail.sdp_depo_kod = stock.sto_kod
+                        AND ISNULL(sourceDetail.sdp_sipdursun, 0) = 0
+                  )
+            ) AS sourceWarehouse
+            WHERE stock.sto_kod IN ({string.Join(", ", stockCodeParameterNames)})
+            ORDER BY stock.sto_kod, sourceWarehouse.dep_no;
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+
+        AddParameter(command, "@warehouseNo", warehouseNo);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var stockCode = ReadString(reader, "StockCode");
+            if (string.IsNullOrWhiteSpace(stockCode))
+            {
+                continue;
+            }
+
+            if (!sources.TryGetValue(stockCode, out var source))
+            {
+                source = new ProcurementSourceAccumulator(
+                    ReadString(reader, "ModelCode"),
+                    ReadBool(reader, "HasPurchaseRequirement"));
+                sources[stockCode] = source;
+            }
+
+            if (reader["SourceWarehouseNo"] is not DBNull)
+            {
+                source.AddWarehouse(new ProductSourceWarehouseDto(
+                    Convert.ToInt32(reader["SourceWarehouseNo"]),
+                    ReadString(reader, "SourceWarehouseName")));
+            }
+        }
+
+        return sources.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.ToSnapshot(),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveProcurementType(bool hasSourceWarehouse, bool hasPurchaseRequirement) =>
+        (hasSourceWarehouse, hasPurchaseRequirement) switch
+        {
+            (true, true) => "Mixed",
+            (true, false) => "Warehouse",
+            (false, true) => "Company",
+            _ => "Unassigned"
+        };
+
     private static double CalculateNetPurchasePrice(
         double grossPrice,
         double discountRate1,
@@ -753,6 +920,34 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         double NetPrice,
         double GrossPrice,
         string? SupplierCode);
+
+    private sealed record ProcurementSourceSnapshot(
+        string ModelCode,
+        bool HasPurchaseRequirement,
+        IReadOnlyCollection<ProductSourceWarehouseDto> SourceWarehouses)
+    {
+        public static readonly ProcurementSourceSnapshot Empty = new(
+            string.Empty,
+            false,
+            Array.Empty<ProductSourceWarehouseDto>());
+    }
+
+    private sealed class ProcurementSourceAccumulator(
+        string modelCode,
+        bool hasPurchaseRequirement)
+    {
+        private readonly Dictionary<int, ProductSourceWarehouseDto> sourceWarehouses = new();
+
+        public void AddWarehouse(ProductSourceWarehouseDto warehouse) =>
+            sourceWarehouses.TryAdd(warehouse.WarehouseNo, warehouse);
+
+        public ProcurementSourceSnapshot ToSnapshot() => new(
+            modelCode,
+            hasPurchaseRequirement,
+            sourceWarehouses.Values
+                .OrderBy(warehouse => warehouse.WarehouseNo)
+                .ToArray());
+    }
 
     private sealed record DelistState(
         bool IsPassive,

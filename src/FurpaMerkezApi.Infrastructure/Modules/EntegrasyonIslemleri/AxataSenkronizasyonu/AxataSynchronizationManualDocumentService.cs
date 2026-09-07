@@ -690,15 +690,15 @@ internal sealed class AxataSynchronizationManualDocumentService(
         WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
-        var lineGuids = await GetWarehouseOrderLineGuidsAsync(request, direction, cancellationToken);
+        var lines = await GetWarehouseOrderLinesAsync(request, direction, cancellationToken);
 
-        if (lineGuids.Length == 0)
+        if (lines.Length == 0)
         {
             return 0;
         }
 
         var payload = AxataWarehouseOrderSentFlagMikroApiPayloadFactory.Create(
-            lineGuids,
+            lines,
             CompletedStatus);
 
         logger.LogInformation(
@@ -707,7 +707,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
             request.DocumentSerie,
             request.DocumentOrderNo,
             request.WarehouseNo,
-            lineGuids.Length);
+            lines.Length);
 
         var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
             DepolarArasiSiparisDuzeltPath,
@@ -721,7 +721,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
         }
 
         var markedLineCount = await RecoverMikroApiWarehouseOrderSentFlagAsync(
-            lineGuids,
+            lines.Select(line => line.LineGuid).ToArray(),
             cancellationToken);
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -732,7 +732,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
         return markedLineCount;
     }
 
-    private async Task<Guid[]> GetWarehouseOrderLineGuidsAsync(
+    private async Task<AxataWarehouseOrderSentFlagSource[]> GetWarehouseOrderLinesAsync(
         WarehouseOrderDetailRequest request,
         WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
@@ -749,7 +749,9 @@ internal sealed class AxataSynchronizationManualDocumentService(
                 (isInboundWarehouseOrder
                     ? order.ssip_girdepo == request.WarehouseNo
                     : order.ssip_cikdepo == request.WarehouseNo))
-            .Select(order => order.ssip_Guid)
+            .Select(order => new AxataWarehouseOrderSentFlagSource(
+                order.ssip_Guid,
+                order.ssip_lastup_date))
             .ToArrayAsync(cancellationToken);
     }
 
