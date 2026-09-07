@@ -26,4 +26,7 @@ public sealed record ProductAvailabilityItemDto(
     bool IsVariableWeightBarcode,
     double? EmbeddedQuantity,
     string? EmbeddedQuantityUnit,
-    bool? IsBarcodeCheckDigitValid);
+    bool? IsBarcodeCheckDigitValid,
+    bool IsPassive = false,
+    bool IsDelisted = false,
+    string? DelistReason = null);

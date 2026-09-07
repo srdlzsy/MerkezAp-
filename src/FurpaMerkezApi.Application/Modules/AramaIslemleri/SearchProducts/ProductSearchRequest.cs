@@ -6,4 +6,5 @@ public sealed record ProductSearchRequest(
     string? StockCode,
     string? StockName,
     string? SupplierCode,
-    int Take);
+    int Take,
+    bool IncludeDelisted = true);

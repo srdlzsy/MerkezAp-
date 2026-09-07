@@ -46,7 +46,8 @@ public sealed class AramaIslemleriController(
                 request.StockCode,
                 request.StockName,
                 request.CompanyCode ?? request.SupplierCode,
-                request.Take),
+                request.Take,
+                request.IncludeDelisted),
             cancellationToken));
     }
 
@@ -68,7 +69,8 @@ public sealed class AramaIslemleriController(
                 request.StockCode,
                 request.StockName,
                 request.CompanyCode ?? request.SupplierCode,
-                request.Take),
+                request.Take,
+                request.IncludeDelisted),
             cancellationToken));
     }
 
@@ -93,7 +95,8 @@ public sealed class AramaIslemleriController(
                 null,
                 null,
                 null,
-                request.Take),
+                request.Take,
+                request.IncludeDelisted),
             cancellationToken));
     }
 
@@ -114,7 +117,8 @@ public sealed class AramaIslemleriController(
                 request.Barcode,
                 request.StockCode,
                 request.StockName,
-                request.Take),
+                request.Take,
+                request.IncludeDelisted),
             cancellationToken));
     }
 
@@ -345,6 +349,8 @@ public sealed class ProductSearchHttpRequest
 
     public string? CompanyCode { get; init; }
 
+    public bool IncludeDelisted { get; init; } = true;
+
     [Range(1, 100)]
     public int Take { get; init; } = 20;
 }
@@ -384,6 +390,8 @@ public sealed class ProductBarcodePriceLookupHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
+    public bool IncludeDelisted { get; init; } = true;
+
     [Range(1, 100)]
     public int Take { get; init; } = 20;
 }
@@ -398,6 +406,8 @@ public sealed class ProductAvailabilityHttpRequest
     public string? StockCode { get; init; }
 
     public string? StockName { get; init; }
+
+    public bool IncludeDelisted { get; init; } = true;
 
     [Range(1, 100)]
     public int Take { get; init; } = 20;

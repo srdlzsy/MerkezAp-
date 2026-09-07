@@ -27,4 +27,7 @@ public sealed record ProductLookupItemDto(
     double? PurchasePrice = null,
     double? PurchaseGrossPrice = null,
     string? PurchasePriceSource = null,
-    string? PurchaseSupplierCode = null);
+    string? PurchaseSupplierCode = null,
+    bool IsPassive = false,
+    bool IsDelisted = false,
+    string? DelistReason = null);

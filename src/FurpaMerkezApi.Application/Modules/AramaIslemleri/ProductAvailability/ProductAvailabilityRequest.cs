@@ -5,4 +5,5 @@ public sealed record ProductAvailabilityRequest(
     string? Barcode,
     string? StockCode,
     string? StockName,
-    int Take);
+    int Take,
+    bool IncludeDelisted = true);

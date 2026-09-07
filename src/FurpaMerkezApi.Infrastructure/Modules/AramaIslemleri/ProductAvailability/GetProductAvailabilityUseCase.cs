@@ -41,7 +41,8 @@ public sealed class GetProductAvailabilityUseCase(
                 request.StockCode,
                 request.StockName,
                 null,
-                take),
+                take,
+                request.IncludeDelisted),
             cancellationToken);
 
         if (products.Count == 0)
@@ -89,7 +90,10 @@ public sealed class GetProductAvailabilityUseCase(
                     product.IsVariableWeightBarcode,
                     product.EmbeddedQuantity,
                     product.EmbeddedQuantityUnit,
-                    product.IsBarcodeCheckDigitValid);
+                    product.IsBarcodeCheckDigitValid,
+                    product.IsPassive,
+                    product.IsDelisted,
+                    product.DelistReason);
             })
             .ToArray();
     }

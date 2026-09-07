@@ -41,6 +41,9 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         }
 
         var take = NormalizeTake(request.Take);
+        var lookupTake = request.IncludeDelisted
+            ? take
+            : Math.Min(MaxTake, Math.Max(take, take * 3));
         var connection = mikroDbContext.Database.GetDbConnection();
         var closeConnection = connection.State == ConnectionState.Closed;
 
@@ -62,7 +65,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     stockCode,
                     stockName,
                     supplierCode,
-                    take,
+                    lookupTake,
                     allowPartialSuffix: true,
                     cancellationToken);
             }
@@ -73,7 +76,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     request.WarehouseNo,
                     stockName!,
                     supplierCode,
-                    take,
+                    lookupTake,
                     cancellationToken);
             }
             else
@@ -85,7 +88,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     stockCode,
                     stockName,
                     supplierCode,
-                    take,
+                    lookupTake,
                     null,
                     cancellationToken);
             }
@@ -102,10 +105,18 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     null,
                     null,
                     supplierCode,
-                    take,
+                    lookupTake,
                     allowPartialSuffix: true,
                     cancellationToken);
             }
+
+            products = await ApplyDelistStateAsync(
+                connection,
+                products,
+                request.WarehouseNo,
+                request.IncludeDelisted,
+                take,
+                cancellationToken);
 
             return await EnrichWithPurchasePricesAsync(
                 connection,
@@ -362,6 +373,114 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         return products;
     }
 
+    private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ApplyDelistStateAsync(
+        DbConnection connection,
+        IReadOnlyCollection<ProductLookupItemDto> products,
+        int warehouseNo,
+        bool includeDelisted,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (products.Count == 0)
+        {
+            return products;
+        }
+
+        var stockCodes = products
+            .Select(product => NormalizeOrNull(product.StockCode))
+            .Where(stockCode => stockCode is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxTake)
+            .ToArray();
+
+        if (stockCodes.Length == 0)
+        {
+            return products.Take(take).ToArray();
+        }
+
+        var delistStates = await ReadDelistStatesAsync(
+            connection,
+            stockCodes,
+            warehouseNo,
+            cancellationToken);
+
+        return products
+            .Select(product =>
+            {
+                var stockCode = NormalizeOrNull(product.StockCode);
+                var delistState = stockCode is not null && delistStates.TryGetValue(stockCode, out var state)
+                    ? state
+                    : DelistState.Active;
+
+                return product with
+                {
+                    IsPassive = delistState.IsPassive,
+                    IsDelisted = delistState.IsDelisted,
+                    DelistReason = delistState.Reason
+                };
+            })
+            .Where(product => includeDelisted || !product.IsDelisted)
+            .Take(take)
+            .ToArray();
+    }
+
+    private static async Task<Dictionary<string, DelistState>> ReadDelistStatesAsync(
+        DbConnection connection,
+        IReadOnlyCollection<string> stockCodes,
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var delistStates = new Dictionary<string, DelistState>(StringComparer.OrdinalIgnoreCase);
+        using var command = connection.CreateCommand();
+        var stockCodeParameterNames = stockCodes
+            .Select((stockCode, index) =>
+            {
+                var parameterName = $"@delistStockCode{index}";
+                AddParameter(command, parameterName, stockCode);
+                return parameterName;
+            })
+            .ToArray();
+
+        command.CommandText = $"""
+            SELECT
+                LTRIM(RTRIM(stock.sto_kod)) AS StockCode,
+                ISNULL(warehouseDetail.sdp_Pasif_fl, ISNULL(stock.sto_pasif_fl, 0)) AS IsPassive,
+                LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, ''))) AS ModelCode,
+                LTRIM(RTRIM(ISNULL(stock.sto_isim, ''))) AS StockName
+            FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+            LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS warehouseDetail WITH (NOLOCK)
+                ON warehouseDetail.sdp_depo_kod = stock.sto_kod
+               AND warehouseDetail.sdp_depo_no = @warehouseNo
+            WHERE stock.sto_kod IN ({string.Join(", ", stockCodeParameterNames)});
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+
+        AddParameter(command, "@warehouseNo", warehouseNo);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var stockCode = ReadString(reader, "StockCode");
+            if (string.IsNullOrWhiteSpace(stockCode))
+            {
+                continue;
+            }
+
+            var isPassive = ReadBool(reader, "IsPassive");
+            var isDls99 = string.Equals(NormalizeOrNull(ReadString(reader, "ModelCode")), "99", StringComparison.Ordinal) &&
+                          StartsWithDls(ReadString(reader, "StockName"));
+
+            delistStates[stockCode] = new DelistState(
+                isPassive,
+                isDls99,
+                BuildDelistReason(isPassive, isDls99));
+        }
+
+        return delistStates;
+    }
+
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> EnrichWithPurchasePricesAsync(
         DbConnection connection,
         IReadOnlyCollection<ProductLookupItemDto> products,
@@ -589,6 +708,18 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
     private static bool IsBlocked(int? code) =>
         code.GetValueOrDefault() != 0;
 
+    private static bool StartsWithDls(string? value) =>
+        NormalizeOrNull(value)?.StartsWith("DLS", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string? BuildDelistReason(bool isPassive, bool isDls99) =>
+        (isPassive, isDls99) switch
+        {
+            (true, true) => "Pasif; DLS/99",
+            (true, false) => "Pasif",
+            (false, true) => "DLS/99",
+            _ => null
+        };
+
     private static void AddParameter(DbCommand command, string name, object? value)
     {
         var parameter = command.CreateParameter();
@@ -606,6 +737,9 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
 
+    private static bool ReadBool(DbDataReader reader, string name) =>
+        reader[name] is not DBNull && Convert.ToBoolean(reader[name]);
+
     private static double NormalizeUnitMultiplier(double value, double fallback = 0d)
     {
         var normalized = Math.Abs(value);
@@ -619,4 +753,14 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         double NetPrice,
         double GrossPrice,
         string? SupplierCode);
+
+    private sealed record DelistState(
+        bool IsPassive,
+        bool IsDls99,
+        string? Reason)
+    {
+        public static readonly DelistState Active = new(false, false, null);
+
+        public bool IsDelisted => IsPassive || IsDls99;
+    }
 }
