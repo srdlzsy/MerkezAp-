@@ -42,6 +42,8 @@ public sealed class EDespatchService(
     private const string CommonEDespatchDocumentPrefix = "FRM";
     private const string DocumentNumberLockResource = "FurpaMerkezApi:EDespatchDocumentNumber";
     private const int DocumentNumberLockTimeoutMilliseconds = 120_000;
+    private const int PostSubmissionCompletionTimeoutSeconds = 120;
+    private const int LocalMetadataUpdateAttemptCount = 2;
     private static readonly SemaphoreSlim LocalDocumentNumberLock = new(1, 1);
 
     public async Task<SendEDespatchResponse> SendAsync(
@@ -86,6 +88,8 @@ public sealed class EDespatchService(
                     "Unsupported e-despatch document type.")
             };
 
+            using var completionCancellation = new CancellationTokenSource(
+                TimeSpan.FromSeconds(PostSubmissionCompletionTimeoutSeconds));
             await RecordEDespatchFlowAsync(
                 request,
                 DocumentFlowStatus.Succeeded,
@@ -94,7 +98,7 @@ public sealed class EDespatchService(
                     : "E-irsaliye Uyumsoft'a gonderildi ancak Mikro gonderim bilgisi isaretlenemedi.",
                 response.Warning,
                 response,
-                cancellationToken);
+                completionCancellation.Token);
 
             return response;
         }
@@ -411,8 +415,7 @@ public sealed class EDespatchService(
                 request.Plaque,
                 null,
                 request.DriverNameSurname,
-                request.DriverTckn),
-            cancellationToken);
+                request.DriverTckn));
 
         return new SendEDespatchResponse(
             request.DocumentType,
@@ -492,8 +495,7 @@ public sealed class EDespatchService(
                 request.Plaque,
                 null,
                 request.DriverNameSurname,
-                request.DriverTckn),
-            cancellationToken);
+                request.DriverTckn));
 
         return new SendEDespatchResponse(
             request.DocumentType,
@@ -1455,9 +1457,12 @@ public sealed class EDespatchService(
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
         string eDespatchDocumentNo,
         string eDespatchUuid,
-        SentMovementMetadata metadata,
-        CancellationToken cancellationToken)
+        SentMovementMetadata metadata)
     {
+        using var completionCancellation = new CancellationTokenSource(
+            TimeSpan.FromSeconds(PostSubmissionCompletionTimeoutSeconds));
+        var cancellationToken = completionCancellation.Token;
+
         try
         {
             var now = DateTime.Now;
@@ -1489,82 +1494,80 @@ public sealed class EDespatchService(
                 ? null
                 : Truncate(metadata.DriverTckn.Trim(), 25);
 
-            var updatedCount = await context.STOK_HAREKETLERIs
-                .Where(movement => movementGuids.Contains(movement.sth_Guid))
-                .ExecuteUpdateAsync(
-                    setters => setters
-                        .SetProperty(movement => movement.sth_kilitli, true)
-                        .SetProperty(movement => movement.sth_lastup_user, MikroUserNo)
-                        .SetProperty(movement => movement.sth_lastup_date, now)
-                        .SetProperty(movement => movement.sth_belge_no, documentNo)
-                        .SetProperty(movement => movement.sth_aciklama, uuid)
-                        .SetProperty(movement => movement.sth_HareketGrupKodu1, movement => plaque ?? movement.sth_HareketGrupKodu1)
-                        .SetProperty(movement => movement.sth_HareketGrupKodu2, movement => deliverer ?? movement.sth_HareketGrupKodu2)
-                        .SetProperty(movement => movement.sth_HareketGrupKodu3, movement => receiver ?? movement.sth_HareketGrupKodu3)
-                        .SetProperty(movement => movement.sth_ismerkezi_kodu, movement => driverTckn ?? movement.sth_ismerkezi_kodu),
-                    cancellationToken);
-
-            if (updatedCount != movementGuids.Length)
+            for (var attempt = 1; attempt <= LocalMetadataUpdateAttemptCount; attempt++)
             {
+                var updatedCount = await context.STOK_HAREKETLERIs
+                    .Where(movement => movementGuids.Contains(movement.sth_Guid))
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(movement => movement.sth_kilitli, true)
+                            .SetProperty(movement => movement.sth_lastup_user, MikroUserNo)
+                            .SetProperty(movement => movement.sth_lastup_date, now)
+                            .SetProperty(movement => movement.sth_belge_no, documentNo)
+                            .SetProperty(movement => movement.sth_aciklama, uuid)
+                            .SetProperty(movement => movement.sth_HareketGrupKodu1, movement => plaque ?? movement.sth_HareketGrupKodu1)
+                            .SetProperty(movement => movement.sth_HareketGrupKodu2, movement => deliverer ?? movement.sth_HareketGrupKodu2)
+                            .SetProperty(movement => movement.sth_HareketGrupKodu3, movement => receiver ?? movement.sth_HareketGrupKodu3)
+                            .SetProperty(movement => movement.sth_ismerkezi_kodu, movement => driverTckn ?? movement.sth_ismerkezi_kodu),
+                        cancellationToken);
+
+                var verifiedCount = await context.STOK_HAREKETLERIs
+                    .AsNoTracking()
+                    .Where(movement =>
+                        movementGuids.Contains(movement.sth_Guid) &&
+                        movement.sth_kilitli == true &&
+                        movement.sth_belge_no == documentNo &&
+                        movement.sth_aciklama == uuid)
+                    .CountAsync(cancellationToken);
+
+                if (verifiedCount == movementGuids.Length)
+                {
+                    foreach (var movement in trackedMovements)
+                    {
+                        movement.sth_kilitli = true;
+                        movement.sth_lastup_user = MikroUserNo;
+                        movement.sth_lastup_date = now;
+                        movement.sth_belge_no = documentNo;
+                        movement.sth_aciklama = uuid;
+
+                        if (plaque is not null)
+                        {
+                            movement.sth_HareketGrupKodu1 = plaque;
+                        }
+
+                        if (deliverer is not null)
+                        {
+                            movement.sth_HareketGrupKodu2 = deliverer;
+                        }
+
+                        if (receiver is not null)
+                        {
+                            movement.sth_HareketGrupKodu3 = receiver;
+                        }
+
+                        if (driverTckn is not null)
+                        {
+                            movement.sth_ismerkezi_kodu = driverTckn;
+                        }
+                    }
+
+                    return true;
+                }
+
                 logger.LogWarning(
-                    "E-despatch local Mikro metadata update affected {UpdatedCount} rows, expected {ExpectedCount}. EDespatchDocumentNo={EDespatchDocumentNo}, EDespatchUuid={EDespatchUuid}",
+                    "E-despatch local Mikro metadata update attempt {Attempt} affected {UpdatedCount} rows and verified {VerifiedCount} rows, expected {ExpectedCount}. EDespatchDocumentNo={EDespatchDocumentNo}, EDespatchUuid={EDespatchUuid}",
+                    attempt,
                     updatedCount,
+                    verifiedCount,
                     movementGuids.Length,
                     eDespatchDocumentNo,
                     eDespatchUuid);
 
-                return false;
-            }
-
-            foreach (var movement in trackedMovements)
-            {
-                movement.sth_kilitli = true;
-                movement.sth_lastup_user = MikroUserNo;
-                movement.sth_lastup_date = now;
-                movement.sth_belge_no = documentNo;
-                movement.sth_aciklama = uuid;
-
-                if (plaque is not null)
+                if (attempt < LocalMetadataUpdateAttemptCount)
                 {
-                    movement.sth_HareketGrupKodu1 = plaque;
-                }
-
-                if (deliverer is not null)
-                {
-                    movement.sth_HareketGrupKodu2 = deliverer;
-                }
-
-                if (receiver is not null)
-                {
-                    movement.sth_HareketGrupKodu3 = receiver;
-                }
-
-                if (driverTckn is not null)
-                {
-                    movement.sth_ismerkezi_kodu = driverTckn;
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
                 }
             }
-
-            var verifiedCount = await context.STOK_HAREKETLERIs
-                .AsNoTracking()
-                .Where(movement =>
-                    movementGuids.Contains(movement.sth_Guid) &&
-                    movement.sth_kilitli == true &&
-                    movement.sth_belge_no == documentNo &&
-                    movement.sth_aciklama == uuid)
-                .CountAsync(cancellationToken);
-
-            if (verifiedCount == movementGuids.Length)
-            {
-                return true;
-            }
-
-            logger.LogWarning(
-                "E-despatch local Mikro metadata update verification found {VerifiedCount} marked rows, expected {ExpectedCount}. EDespatchDocumentNo={EDespatchDocumentNo}, EDespatchUuid={EDespatchUuid}",
-                verifiedCount,
-                movementGuids.Length,
-                eDespatchDocumentNo,
-                eDespatchUuid);
 
             return false;
         }
