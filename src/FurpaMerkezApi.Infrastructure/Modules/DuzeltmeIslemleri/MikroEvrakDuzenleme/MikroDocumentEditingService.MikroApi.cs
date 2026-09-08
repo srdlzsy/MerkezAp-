@@ -584,11 +584,6 @@ public sealed partial class MikroDocumentEditingService
             [guidPropertyName] = byName[guidPropertyName].GetValue(row)
         };
 
-        if (original.TryGetValue(lastUpdatePropertyName, out var lastUpdate) && lastUpdate is not null)
-        {
-            result[lastUpdatePropertyName] = FormatConcurrencyDate(lastUpdate);
-        }
-
         foreach (var property in properties)
         {
             if (property.Name == guidPropertyName ||
@@ -608,7 +603,7 @@ public sealed partial class MikroDocumentEditingService
             }
         }
 
-        if (result.Count <= (result.ContainsKey(lastUpdatePropertyName) ? 2 : 1))
+        if (result.Count <= 1)
         {
             throw new ArgumentException("At least one changed stock movement field is required.", nameof(row));
         }
@@ -688,12 +683,12 @@ public sealed partial class MikroDocumentEditingService
         var result = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var property in row!.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
         {
-            if (IsMikroTechnicalColumn(property.Name)) continue;
+            if (IsMikroTechnicalColumn(property.Name) ||
+                property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase) ||
+                property.Name.EndsWith("_degisti", StringComparison.OrdinalIgnoreCase)) continue;
             var value = property.GetValue(row);
             if (value is null) continue;
-            result[property.Name] = property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase)
-                ? FormatConcurrencyDate(value)
-                : NormalizeMikroApiValue(value);
+            result[property.Name] = NormalizeMikroApiValue(value);
         }
         return result;
     }

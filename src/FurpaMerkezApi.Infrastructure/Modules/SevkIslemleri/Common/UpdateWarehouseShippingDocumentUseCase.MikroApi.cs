@@ -188,13 +188,13 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
                 name.EndsWith("_checksum", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("_create_user", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("_create_date", StringComparison.OrdinalIgnoreCase) ||
-                name.EndsWith("_lastup_user", StringComparison.OrdinalIgnoreCase)) continue;
+                name.EndsWith("_lastup_user", StringComparison.OrdinalIgnoreCase) ||
+                name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase) ||
+                name.EndsWith("_degisti", StringComparison.OrdinalIgnoreCase)) continue;
             var value = property.GetValue(row);
             if (value is null) continue;
             result[name] = value is DateTime date
-                ? name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase)
-                    ? date.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)
-                    : date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
+                ? date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
                 : value;
         }
         return result;

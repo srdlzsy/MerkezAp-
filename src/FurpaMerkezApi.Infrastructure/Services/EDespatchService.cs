@@ -1514,9 +1514,6 @@ public sealed class EDespatchService(
                                 satirlar = trackedMovements.Select(movement => new
                                 {
                                     movement.sth_Guid,
-                                    sth_lastup_date = movement.sth_lastup_date?.ToString(
-                                        "yyyy-MM-ddTHH:mm:ss.fff",
-                                        CultureInfo.InvariantCulture),
                                     sth_kilitli = true,
                                     sth_belge_no = documentNo,
                                     sth_aciklama = uuid,
