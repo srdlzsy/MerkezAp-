@@ -43,6 +43,8 @@ public sealed class MikroWriteRoutingOptions
     public MikroWriteMode GreenGrocerGoodsReceipt { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode PosAccountingSlip { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode AxataDynamicCensus { get; init; } = MikroWriteMode.Database;
 }
 
 public enum MikroWriteMode

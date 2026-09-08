@@ -176,7 +176,7 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
         if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? $"Mikro API warehouse shipping request failed: {path}");
     }
 
-    private static Dictionary<string, object?> ToShippingApiRow<T>(T row)
+    internal static Dictionary<string, object?> ToShippingApiRow<T>(T row)
     {
         var result = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var property in row!.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
@@ -190,6 +190,7 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
                 name.EndsWith("_create_date", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("_lastup_user", StringComparison.OrdinalIgnoreCase)) continue;
             var value = property.GetValue(row);
+            if (value is null) continue;
             result[name] = value is DateTime date
                 ? name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase)
                     ? date.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)

@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.ServiceModel;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using AxataExt = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Ext;
@@ -11,7 +13,9 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkro
 
 internal sealed class AxataDynamicCensusImportService(
     IOptionsMonitor<AxataSynchronizationOptions> options,
-    MikroWriteDbContext mikroWriteDbContext)
+    MikroWriteDbContext mikroWriteDbContext,
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    MikroApiClient mikroApiClient)
     : IAxataDynamicCensusImportService
 {
     private const string ViewName = "vw_stok_duzeltme";
@@ -34,6 +38,9 @@ internal sealed class AxataDynamicCensusImportService(
     private const int OutboundInputWarehouseNo = 1;
     private const int OutboundOutputWarehouseNo = 50;
     private const double QuantityTolerance = 0.000001d;
+    private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
+    private const int MikroApiRecoveryAttemptCount = 5;
+    private const int MikroApiRecoveryDelayMilliseconds = 250;
 
     public async Task<AxataDynamicCensusPreviewDto> PreviewAsync(
         AxataDynamicCensusPreviewRequest request,
@@ -113,48 +120,31 @@ internal sealed class AxataDynamicCensusImportService(
             analysis.Dto.OutputWarehouseNo
         }))
         {
+            var groupedAnalyses = group.ToArray();
             var documentOrderNo = await GetNextDocumentOrderNoAsync(
                 group.Key.MovementType,
                 group.Key.DocumentType,
                 cancellationToken);
-            var now = DateTime.Now;
-            var movementDate = DateTime.Today;
-            var rowNo = 0;
-            var groupResults = new List<AxataDynamicCensusResultDto>();
-
-            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(cancellationToken);
+            IReadOnlyCollection<AxataDynamicCensusResultDto> groupResults;
             try
             {
-                foreach (var analysis in group)
+                groupResults = mikroWriteRoutingOptions.CurrentValue.AxataDynamicCensus switch
                 {
-                    var movement = CreateMovement(
-                        analysis,
+                    MikroWriteMode.MikroApi => await ExecuteGroupWithMikroApiAsync(
+                        groupedAnalyses,
                         documentOrderNo,
-                        rowNo,
-                        now,
-                        movementDate);
-
-                    mikroWriteDbContext.STOK_HAREKETLERIs.Add(movement);
-                    groupResults.Add(new AxataDynamicCensusResultDto(
-                        analysis.Line.RowNo,
-                        analysis.Line.StockCode,
-                        DynamicDocumentSerie,
+                        cancellationToken),
+                    MikroWriteMode.Database or MikroWriteMode.DualShadow => await ExecuteGroupWithDatabaseAsync(
+                        groupedAnalyses,
                         documentOrderNo,
-                        rowNo,
-                        analysis.Line.Quantity,
-                        false,
-                        "Mikro dynamic census movement created."));
-                    rowNo++;
-                }
-
-                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
+                        cancellationToken),
+                    var mode => throw new InvalidOperationException(
+                        $"Unsupported MikroWriteRouting:AxataDynamicCensus mode '{mode}'.")
+                };
             }
             catch (Exception exception)
             {
-                await transaction.RollbackAsync(cancellationToken);
-
-                foreach (var analysis in group)
+                foreach (var analysis in groupedAnalyses)
                 {
                     failures.Add(new AxataDynamicCensusFailureDto(
                         analysis.Line.RowNo,
@@ -220,6 +210,182 @@ internal sealed class AxataDynamicCensusImportService(
             failures,
             skippedLineCount,
             requestedByUserId);
+    }
+
+    private async Task<IReadOnlyCollection<AxataDynamicCensusResultDto>> ExecuteGroupWithDatabaseAsync(
+        IReadOnlyList<DynamicCensusAnalysis> analyses,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.Now;
+        var movementDate = DateTime.Today;
+        var movements = analyses
+            .Select((analysis, rowNo) => CreateMovement(
+                analysis,
+                documentOrderNo,
+                rowNo,
+                now,
+                movementDate))
+            .ToArray();
+
+        await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+            await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        return movements.Select((movement, index) => new AxataDynamicCensusResultDto(
+            analyses[index].Line.RowNo,
+            movement.sth_stok_kod ?? analyses[index].Line.StockCode,
+            movement.sth_evrakno_seri ?? DynamicDocumentSerie,
+            movement.sth_evrakno_sira ?? documentOrderNo,
+            movement.sth_satirno ?? index,
+            movement.sth_miktar ?? analyses[index].Line.Quantity,
+            false,
+            "Mikro dynamic census movement created via database route."))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<AxataDynamicCensusResultDto>> ExecuteGroupWithMikroApiAsync(
+        IReadOnlyList<DynamicCensusAnalysis> analyses,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var movementDate = DateTime.Today;
+        var payload = new
+        {
+            evraklar = new[]
+            {
+                new
+                {
+                    satirlar = analyses.Select((analysis, rowNo) => new
+                    {
+                        sth_tarih = FormatMikroDate(movementDate),
+                        sth_tip = analysis.Dto.MovementType,
+                        sth_cins = analysis.Dto.MovementGenre,
+                        sth_normal_iade = NormalReturn,
+                        sth_evraktip = analysis.Dto.DocumentType,
+                        sth_evrakno_seri = DynamicDocumentSerie,
+                        sth_evrakno_sira = documentOrderNo,
+                        sth_satirno = rowNo,
+                        sth_belge_no = string.Empty,
+                        sth_belge_tarih = FormatMikroDate(movementDate),
+                        sth_stok_kod = analysis.Line.StockCode.Trim(),
+                        sth_miktar = analysis.Line.Quantity,
+                        sth_miktar2 = 0d,
+                        sth_birim_pntr = 1,
+                        sth_tutar = 0d,
+                        sth_vergi_pntr = 2,
+                        sth_vergi = 0d,
+                        sth_vergisiz_fl = false,
+                        sth_isk_mas1 = 0,
+                        sth_isk_mas2 = 1,
+                        sth_giris_depo_no = analysis.Dto.InputWarehouseNo,
+                        sth_cikis_depo_no = analysis.Dto.OutputWarehouseNo,
+                        sth_isemri_gider_kodu = DynamicExpenseCode,
+                        sth_HareketGrupKodu1 = BuildMovementGroupCode(analysis.Line.RowNo),
+                        sth_fiyat_liste_no = 0,
+                        sth_teslim_tarihi = FormatMikroDate(movementDate)
+                    }).ToArray()
+                }
+            }
+        };
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            DahiliStokHareketKaydetPath,
+            payload,
+            cancellationToken);
+
+        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        {
+            var recovered = await TryRecoverMikroApiGroupAsync(
+                analyses,
+                documentOrderNo,
+                cancellationToken);
+            if (recovered is not null)
+            {
+                await mikroApiClient.MarkRecoveredAsync(
+                    result,
+                    $"{DynamicDocumentSerie}/{documentOrderNo}",
+                    cancellationToken: cancellationToken);
+                return recovered;
+            }
+
+            if (attempt < MikroApiRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API dynamic census movement create failed.");
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API dynamic census movement create succeeded, but created rows could not be verified.");
+    }
+
+    private async Task<IReadOnlyCollection<AxataDynamicCensusResultDto>?> TryRecoverMikroApiGroupAsync(
+        IReadOnlyList<DynamicCensusAnalysis> analyses,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var rowKeys = analyses
+            .Select(analysis => BuildMovementGroupCode(analysis.Line.RowNo))
+            .ToArray();
+        var movements = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evrakno_seri == DynamicDocumentSerie &&
+                movement.sth_evrakno_sira == documentOrderNo &&
+                movement.sth_iptal != true &&
+                movement.sth_HareketGrupKodu1 != null &&
+                rowKeys.Contains(movement.sth_HareketGrupKodu1))
+            .OrderBy(movement => movement.sth_satirno)
+            .ToArrayAsync(cancellationToken);
+
+        if (movements.Length != analyses.Count)
+        {
+            return null;
+        }
+
+        var movementsByRowKey = movements.ToDictionary(
+            movement => movement.sth_HareketGrupKodu1!,
+            StringComparer.OrdinalIgnoreCase);
+        var recovered = new List<AxataDynamicCensusResultDto>(analyses.Count);
+        foreach (var analysis in analyses)
+        {
+            var rowKey = BuildMovementGroupCode(analysis.Line.RowNo);
+            if (!movementsByRowKey.TryGetValue(rowKey, out var movement) ||
+                !string.Equals(movement.sth_stok_kod, analysis.Line.StockCode.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                Math.Abs((movement.sth_miktar ?? 0d) - analysis.Line.Quantity) > QuantityTolerance)
+            {
+                return null;
+            }
+
+            recovered.Add(new AxataDynamicCensusResultDto(
+                analysis.Line.RowNo,
+                movement.sth_stok_kod ?? analysis.Line.StockCode,
+                movement.sth_evrakno_seri ?? DynamicDocumentSerie,
+                movement.sth_evrakno_sira ?? documentOrderNo,
+                movement.sth_satirno ?? 0,
+                movement.sth_miktar ?? analysis.Line.Quantity,
+                false,
+                "Mikro dynamic census movement created via Mikro API and verified."));
+        }
+
+        return recovered;
     }
 
     private AxataDynamicCensusExecuteDto BuildExecuteResponse(
@@ -464,6 +630,9 @@ internal sealed class AxataDynamicCensusImportService(
 
         return null;
     }
+
+    private static string FormatMikroDate(DateTime value) =>
+        value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
     private static STOK_HAREKETLERI CreateMovement(
         DynamicCensusAnalysis analysis,

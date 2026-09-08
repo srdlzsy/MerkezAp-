@@ -2863,8 +2863,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             cancellationToken);
 
         await VerifyC02MikroApiOrderLinksAsync(analysis, orderGuids, cancellationToken);
-        await UpdateC02OrderDeliveredQuantitiesAsync(analysis, cancellationToken);
-        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+        await VerifyC02MikroApiOrderDeliveredQuantitiesAsync(analysis, cancellationToken);
 
         var acknowledged = false;
         if (acknowledge)
@@ -2979,6 +2978,54 @@ internal sealed class AxataOutboundDeliveryImportService(
             order.sip_lastup_user = MikroUserNo;
             order.sip_lastup_date = now;
         }
+    }
+
+    private async Task VerifyC02MikroApiOrderDeliveredQuantitiesAsync(
+        C02DeliveryAnalysis analysis,
+        CancellationToken cancellationToken)
+    {
+        var expectedDeliveredByOrderGuid = analysis.MatchedLines
+            .GroupBy(line => line.OrderLine.sip_Guid)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(line => line.AxataLine.Quantity));
+        var orderGuids = expectedDeliveredByOrderGuid.Keys.ToArray();
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var orders = await mikroWriteDbContext.SIPARISLERs
+                .AsNoTracking()
+                .Where(order => orderGuids.Contains(order.sip_Guid))
+                .Select(order => new
+                {
+                    order.sip_Guid,
+                    order.sip_miktar,
+                    order.sip_teslim_miktar,
+                    order.sip_kapat_fl
+                })
+                .ToArrayAsync(cancellationToken);
+
+            var isVerified = orders.Length == orderGuids.Length && orders.All(order =>
+            {
+                var expectedDelivered = expectedDeliveredByOrderGuid[order.sip_Guid];
+                var expectedClosed = expectedDelivered + QuantityTolerance >= (order.sip_miktar ?? 0d);
+                return Math.Abs((order.sip_teslim_miktar ?? 0d) - expectedDelivered) <= QuantityTolerance &&
+                       order.sip_kapat_fl == expectedClosed;
+            });
+
+            if (isVerified)
+            {
+                return;
+            }
+
+            if (attempt < 3)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API C02 firma sevki olustu ancak SIPARISLER teslim miktari/kapanis etkisi dogrulanamadi; dogrudan DB duzeltmesi ve AXATA ack yapilmadi.");
     }
 
     private async Task<AxataOutboundDeliveryImportPreviewDto> PreviewLegacyOutboundAsync(

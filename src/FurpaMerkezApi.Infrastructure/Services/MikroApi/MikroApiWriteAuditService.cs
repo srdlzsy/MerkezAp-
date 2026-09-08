@@ -69,7 +69,7 @@ public sealed class MikroApiWriteAuditService(
             handle.AuditId,
             audit => audit.Complete(
                 result.IsError,
-                result.HttpStatusCode == 0,
+                IsUnknownWriteOutcome(result),
                 result.HttpStatusCode == 0 ? null : (int)result.HttpStatusCode,
                 result.StatusCode == 0 ? null : result.StatusCode,
                 Limit(
@@ -83,6 +83,26 @@ public sealed class MikroApiWriteAuditService(
                 clock.UtcNow),
             "completed",
             cancellationToken);
+
+    internal static bool IsUnknownWriteOutcome<TResponse>(MikroApiResult<TResponse> result)
+    {
+        if (result.HttpStatusCode == 0)
+        {
+            return true;
+        }
+
+        if (!result.IsError)
+        {
+            return false;
+        }
+
+        return ContainsTimeout(result.ErrorMessage) || ContainsTimeout(result.RawResponse);
+    }
+
+    private static bool ContainsTimeout(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        (value.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("timed out", StringComparison.OrdinalIgnoreCase));
 
     public Task MarkRecoveredAsync(
         Guid? auditId,

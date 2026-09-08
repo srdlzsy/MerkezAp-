@@ -475,13 +475,12 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             }
 
             var isPassive = ReadBool(reader, "IsPassive");
-            var isDls99 = string.Equals(NormalizeOrNull(ReadString(reader, "ModelCode")), "99", StringComparison.Ordinal) &&
-                          StartsWithDls(ReadString(reader, "StockName"));
+            var isDls = StartsWithDls(ReadString(reader, "StockName"));
 
             delistStates[stockCode] = new DelistState(
                 isPassive,
-                isDls99,
-                BuildDelistReason(isPassive, isDls99));
+                isDls,
+                BuildDelistReason(isPassive, isDls));
         }
 
         return delistStates;
@@ -878,12 +877,12 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
     private static bool StartsWithDls(string? value) =>
         NormalizeOrNull(value)?.StartsWith("DLS", StringComparison.OrdinalIgnoreCase) == true;
 
-    private static string? BuildDelistReason(bool isPassive, bool isDls99) =>
-        (isPassive, isDls99) switch
+    private static string? BuildDelistReason(bool isPassive, bool isDls) =>
+        (isPassive, isDls) switch
         {
-            (true, true) => "Pasif; DLS/99",
+            (true, true) => "Pasif; DLS",
             (true, false) => "Pasif",
-            (false, true) => "DLS/99",
+            (false, true) => "DLS",
             _ => null
         };
 
@@ -951,11 +950,11 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
     private sealed record DelistState(
         bool IsPassive,
-        bool IsDls99,
+        bool IsDls,
         string? Reason)
     {
         public static readonly DelistState Active = new(false, false, null);
 
-        public bool IsDelisted => IsPassive || IsDls99;
+        public bool IsDelisted => IsPassive || IsDls;
     }
 }

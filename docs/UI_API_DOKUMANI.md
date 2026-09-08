@@ -3988,7 +3988,7 @@ stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
 supplierCode   opsiyonel; companyCode ile ayni filtre icin geriye uyum alias'i
-includeDelisted opsiyonel; default true. true ise pasif veya DLS/99 urunler de doner; false ise bu urunler listeden gizlenir
+includeDelisted opsiyonel; default true. true ise pasif veya DLS prefixli urunler de doner; false ise bu urunler listeden gizlenir
 take           opsiyonel; default 150, max 150
 ```
 
@@ -3996,7 +3996,7 @@ Kural:
 
 - `barcode`, `stockCode`, `stockName`, `companyCode` veya `supplierCode` alanlarindan en az biri verilmelidir.
 - Bos arama engellenir; cunku Mikro procedure genis fiyat/stok seti dondurebilir.
-- Urun arama, fiyat gor ve var-yok listelerinde pasif veya DLS/99 urunler normalde gorunur; backend satiri `isPassive`, `isDelisted` ve `delistReason` alanlariyla isaretler.
+- Urun arama, fiyat gor ve var-yok listelerinde pasif veya stok adi `DLS` ile baslayan urunler normalde gorunur; backend satiri `isPassive`, `isDelisted` ve `delistReason` alanlariyla isaretler.
 - UI "delistleri/pasifleri gizle" toggle'i aciksa ayni istege `includeDelisted=false` eklemelidir. Toggle kapaliysa alan gonderilmeyebilir; default `true` kabul edilir.
 - UI sadece kendi icinde filtre yapmamalidir; gizleme karari backend tarafinda calismalidir ki web, terminal ve mobil ayni sonucu gorsun.
 - `warehouseNo`, fiyat/stok/blok bilgisinin hangi islem deposuna gore okunacagini belirler. Bu alan kaynak depo secimi icin kullanilmaz.
@@ -4113,7 +4113,7 @@ stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
 supplierCode   opsiyonel; companyCode ile ayni filtre icin geriye uyum alias'i
-includeDelisted opsiyonel; default true. true ise pasif veya DLS/99 urunler de doner; false ise bu urunler listeden gizlenir
+includeDelisted opsiyonel; default true. true ise pasif veya DLS prefixli urunler de doner; false ise bu urunler listeden gizlenir
 take           opsiyonel; default 20, max 100
 ```
 
@@ -4152,7 +4152,7 @@ warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
 barcode        opsiyonel; once tam barkod arar; 27/29 terazi barkodunda arama barkodu normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
-includeDelisted opsiyonel; default true. true ise pasif veya DLS/99 urunler de doner; false ise bu urunler listeden gizlenir
+includeDelisted opsiyonel; default true. true ise pasif veya DLS prefixli urunler de doner; false ise bu urunler listeden gizlenir
 take           opsiyonel; default 20, max 100
 ```
 
@@ -4274,7 +4274,7 @@ operationType  opsiyonel; islem tipini verir, satira ekleme kararinda kullanilir
 targetWarehouseNo opsiyonel; hedef depo/model kod uygunlugu hesaplamak icin kullanilir; shipment icin bloklayici degildir
 supplierCode   opsiyonel; secili tedarikciye gore SATINALMA_SARTLARI kontrolu yapar; receiving/order icin karar motoruna dahil edilir
 companyCode    opsiyonel; supplierCode ile ayni anlamda geriye uyum alias'i
-isRefund       opsiyonel; false ise eski sistemdeki iade disi DLS/99 filtresi uygulanir
+isRefund       opsiyonel; false ise eski sistemdeki iade disi DLS filtresi uygulanir
 screenCode     opsiyonel; eski UI uyumu icin korunur, operationType bos ise ekran baglami gibi kullanilir
 ```
 
@@ -17260,7 +17260,9 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - response `AxataOutboundDeliveryImportPreviewDto`
 - `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c02/import`
   - uygun C02 teslimatini Mikro firma sevk hareketine cevirir
-  - `sip_teslim_miktar` alanlarini gunceller; `acknowledge=true` ise `ENT006.S06STAT=1` yapar
+  - `MikroWriteRouting:CompanyMovement=Database` ise eski DB transaction yolu kullanilir ve `sip_teslim_miktar` backend tarafindan guncellenir
+  - `MikroWriteRouting:CompanyMovement=MikroApi` ise firma sevki API ile olusturulur; backend `sth_sip_uid`, `sip_teslim_miktar` ve `sip_kapat_fl` etkilerini read-only geri okumayla dogrular, ayrica DB update yapmaz
+  - MikroApi modunda teslim etkisi dogrulanamazsa AXATA ack atilmaz ve islem hata doner; `acknowledge=true` ise sadece tam dogrulamadan sonra `ENT006.S06STAT=1` yapar
   - body `AxataOutboundDeliveryImportExecuteHttpRequest`
   - response `AxataOutboundDeliveryImportExecuteDto`
 - `GET /api/integrations/axata-sync/live/axata/outbound-deliveries/c03/preview?take=20`
@@ -17332,7 +17334,9 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - response `AxataDynamicCensusPreviewDto`
 - `POST /api/integrations/axata-sync/live/axata/dynamic-census/import`
   - uygun `vw_stok_duzeltme` satirlarini Mikro `STOK_HAREKETLERI` dynamic census hareketine cevirir
-  - `acknowledge=true` ise `ENT011.S11STAT=1` yapar
+  - yazma yolu `MikroWriteRouting:AxataDynamicCensus` ile secilir; `Database` eski EF Core transaction yolunu, `MikroApi` ise `DahiliStokHareketKaydetV2` yolunu kullanir
+  - MikroApi modunda her AXATA satiri `sth_HareketGrupKodu1` iziyle geri okunup dogrulanmadan basarili sayilmaz
+  - `acknowledge=true` ise ancak Mikro yazimi ve readback tamamlandiktan sonra `ENT011.S11STAT=1` yapar
   - body `AxataOutboundDeliveryImportExecuteHttpRequest`
   - response `AxataDynamicCensusExecuteDto`
 - `POST /api/integrations/axata-sync/manual/axata/outbound-deliveries/inter-warehouse-shipments`
@@ -17721,7 +17725,7 @@ UI'da asil karistirilmamasi gereken farklar:
 | `g02/documents/{serie}/{sira}/preview` | G02 teslimatini AXATA'da belge no ile arar, status verilmezse `0` sonra `1` dener | Veri yazmaz |
 | `g02/documents/{serie}/{sira}/import` | Tek G02 teslimatini mevcut Mikro bekleyen sevk fisine kabul olarak uygular | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT status gunceller |
 | `g01/import` | AXATA G01 ATF satirlarini Mikro firma mal kabule cevirir | Mikro'ya yazar; `CompanyReceiving=Database` veya `MikroApi` rotasina uyar, `acknowledge=true` ise AXATA EXT `ENT016_IRS.S16STAT` gunceller |
-| `dynamic-census/import` | AXATA EXT `vw_stok_duzeltme` satirlarini Mikro stok duzeltme hareketine cevirir | Mikro'ya yazar, `acknowledge=true` ise AXATA EXT `ENT011.S11STAT` gunceller |
+| `dynamic-census/import` | AXATA EXT `vw_stok_duzeltme` satirlarini Mikro stok duzeltme hareketine cevirir | `AxataDynamicCensus=Database/MikroApi` rotasina uyar; API yolunda readback zorunludur, `acknowledge=true` ise AXATA EXT `ENT011.S11STAT` gunceller |
 | `manual/axata/*` | AXATA verisi body olarak UI/operasyon tarafindan saglanir | AXATA'dan canli fetch yapmaz |
 | `manual/incoming/*` | Mikro'ya manuel belge yazar | AXATA status guncellemez |
 

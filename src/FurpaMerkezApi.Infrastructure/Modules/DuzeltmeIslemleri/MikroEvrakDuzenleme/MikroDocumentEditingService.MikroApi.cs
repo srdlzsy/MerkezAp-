@@ -294,6 +294,7 @@ public sealed partial class MikroDocumentEditingService
             .ToArrayAsync(cancellationToken);
         if (rows.Length == 0) throw new KeyNotFoundException("Stock movement document was not found in Mikro write database.");
         EnsureSingleStockMovementDocument(rows);
+        var originalRows = rows.ToDictionary(row => row.sth_Guid, SnapshotValues);
 
         var touched = new HashSet<Guid>();
         if (request.Header is not null && HasStockMovementHeaderPatch(request.Header))
@@ -311,7 +312,11 @@ public sealed partial class MikroDocumentEditingService
         var updatedAt = DateTime.Now;
         foreach (var row in rows.Where(row => touched.Contains(row.sth_Guid))) { row.sth_lastup_user = updateUser; row.sth_degisti = true; }
 
-        await PostRowsAsync(StockMovementUpdatePath, rows.Where(row => touched.Contains(row.sth_Guid)), cancellationToken);
+        var updateRows = rows
+            .Where(row => touched.Contains(row.sth_Guid))
+            .Select(row => BuildStockMovementUpdateApiRow(row, originalRows[row.sth_Guid]))
+            .ToArray();
+        await PostStockMovementUpdateRowsAsync(updateRows, cancellationToken);
         var document = await ReadWithRetryAsync(() => GetStockMovementDocumentAsync(request.Lookup, cancellationToken), cancellationToken);
         return new(new("stok-hareketleri", touched.Count, updatedAt, updateUser), document);
     }
@@ -460,6 +465,22 @@ public sealed partial class MikroDocumentEditingService
         if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? $"Mikro API request failed: {path}");
     }
 
+    private async Task PostStockMovementUpdateRowsAsync(
+        IReadOnlyCollection<Dictionary<string, object?>> rows,
+        CancellationToken cancellationToken)
+    {
+        var payload = new { evraklar = new[] { new { satirlar = rows } } };
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            StockMovementUpdatePath,
+            payload,
+            cancellationToken);
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API stock movement update failed.");
+        }
+    }
+
     private async Task<StockCardWarehouseSettingsDto> ReadStockWarehouseSettingAsync(
         string stockCode,
         int warehouseNo,
@@ -550,7 +571,52 @@ public sealed partial class MikroDocumentEditingService
         return record;
     }
 
-    private static Dictionary<string, object?> BuildInsertRecord(object row, string tableNo)
+    internal static Dictionary<string, object?> BuildStockMovementUpdateApiRow(
+        object row,
+        IReadOnlyDictionary<string, object?> original)
+    {
+        const string guidPropertyName = "sth_Guid";
+        const string lastUpdatePropertyName = "sth_lastup_date";
+        var properties = row.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public);
+        var byName = properties.ToDictionary(property => property.Name, StringComparer.Ordinal);
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [guidPropertyName] = byName[guidPropertyName].GetValue(row)
+        };
+
+        if (original.TryGetValue(lastUpdatePropertyName, out var lastUpdate) && lastUpdate is not null)
+        {
+            result[lastUpdatePropertyName] = FormatConcurrencyDate(lastUpdate);
+        }
+
+        foreach (var property in properties)
+        {
+            if (property.Name == guidPropertyName ||
+                property.Name == lastUpdatePropertyName ||
+                property.Name.EndsWith("_degisti", StringComparison.OrdinalIgnoreCase) ||
+                IsMikroTechnicalColumn(property.Name))
+            {
+                continue;
+            }
+
+            var currentValue = property.GetValue(row);
+            if (currentValue is not null &&
+                original.TryGetValue(property.Name, out var originalValue) &&
+                !Equals(currentValue, originalValue))
+            {
+                result[property.Name] = NormalizeMikroApiValue(currentValue);
+            }
+        }
+
+        if (result.Count <= (result.ContainsKey(lastUpdatePropertyName) ? 2 : 1))
+        {
+            throw new ArgumentException("At least one changed stock movement field is required.", nameof(row));
+        }
+
+        return result;
+    }
+
+    internal static Dictionary<string, object?> BuildInsertRecord(object row, string tableNo)
     {
         var record = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -561,7 +627,9 @@ public sealed partial class MikroDocumentEditingService
         {
             if (IsMikroTechnicalColumn(property.Name) ||
                 property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase)) continue;
-            record[property.Name] = NormalizeMikroApiValue(property.GetValue(row));
+            var value = property.GetValue(row);
+            if (value is null) continue;
+            record[property.Name] = NormalizeMikroApiValue(value);
         }
         return record;
     }
@@ -607,7 +675,8 @@ public sealed partial class MikroDocumentEditingService
                 !property.Name.Equals("cha_lastup_date", StringComparison.OrdinalIgnoreCase)) continue;
             if (IsMikroTechnicalColumn(property.Name)) continue;
             var value = property.GetValue(row);
-            result[property.Name] = property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase) && value is not null
+            if (value is null) continue;
+            result[property.Name] = property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase)
                 ? FormatConcurrencyDate(value)
                 : NormalizeMikroApiValue(value);
         }
@@ -621,7 +690,8 @@ public sealed partial class MikroDocumentEditingService
         {
             if (IsMikroTechnicalColumn(property.Name)) continue;
             var value = property.GetValue(row);
-            result[property.Name] = property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase) && value is not null
+            if (value is null) continue;
+            result[property.Name] = property.Name.EndsWith("_lastup_date", StringComparison.OrdinalIgnoreCase)
                 ? FormatConcurrencyDate(value)
                 : NormalizeMikroApiValue(value);
         }

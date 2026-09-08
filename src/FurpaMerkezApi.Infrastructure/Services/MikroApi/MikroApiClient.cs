@@ -368,19 +368,27 @@ public sealed class MikroApiClient(
         var isError = TryGetProperty(element, "IsError", out var isErrorElement)
             ? ReadBoolean(isErrorElement)
             : null;
+        var success = TryGetProperty(element, "success", out var successElement)
+            ? ReadBoolean(successElement)
+            : null;
         var statusCode = TryGetProperty(element, "StatusCode", out var statusCodeElement)
             ? ReadInt32(statusCodeElement)
             : null;
         var errorMessage =
             TryGetStringProperty(element, "ErrorMessage") ??
+            TryGetStringProperty(element, "errorText") ??
             TryGetStringProperty(element, "Message") ??
             TryGetStringProperty(element, "HataMesaji") ??
             TryGetStringProperty(element, "Error") ??
             TryGetStringProperty(element, "Aciklama");
 
-        if (isError != true && statusCode is >= 400)
+        if (success == false || (isError != true && statusCode is >= 400))
         {
             isError = true;
+        }
+        else if (isError is null && success == true)
+        {
+            isError = false;
         }
 
         return new MikroApiResponseInfo(isError, statusCode, errorMessage);
@@ -527,8 +535,10 @@ public sealed class MikroApiClient(
         var sanitizedBody = SensitiveDataRedactor.RedactJsonValues(
             rawResponse,
             options.CurrentValue.MaxLoggedBodyLength);
+        var responseInfo = ParseResponseInfo(rawResponse);
+        var hasApplicationError = IsErrorInfo(responseInfo);
 
-        if (response.IsSuccessStatusCode)
+        if (response.IsSuccessStatusCode && !hasApplicationError)
         {
             logger.LogInformation(
                 "Mikro API {Method} {Path} returned HTTP {StatusCode} in {ElapsedMilliseconds} ms on attempt {Attempt}/{MaxAttempts}. Body: {Body}",
@@ -544,10 +554,11 @@ public sealed class MikroApiClient(
         }
 
         logger.LogWarning(
-            "Mikro API {Method} {Path} returned HTTP {StatusCode} in {ElapsedMilliseconds} ms on attempt {Attempt}/{MaxAttempts}. Body: {Body}",
+            "Mikro API {Method} {Path} returned HTTP {StatusCode} with IsApplicationError={IsApplicationError} in {ElapsedMilliseconds} ms on attempt {Attempt}/{MaxAttempts}. Body: {Body}",
             method,
             path,
             (int)response.StatusCode,
+            hasApplicationError,
             elapsed.TotalMilliseconds,
             attempt,
             maxAttempts,

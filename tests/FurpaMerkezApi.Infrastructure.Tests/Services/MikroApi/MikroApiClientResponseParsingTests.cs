@@ -83,6 +83,82 @@ public sealed class MikroApiClientResponseParsingTests
     }
 
     [Fact]
+    public void ParseResponseInfo_TreatsLowercaseSuccessFalseAsError()
+    {
+        const string response = """
+            {
+              "result": [
+                {
+                  "data": null,
+                  "success": false,
+                  "errorText": "MikroAPI - TimeOut"
+                }
+              ]
+            }
+            """;
+
+        var result = MikroApiClient.ParseResponseInfo(response);
+
+        Assert.True(result.IsError);
+        Assert.Null(result.StatusCode);
+        Assert.Equal("MikroAPI - TimeOut", result.ErrorMessage);
+    }
+
+    [Fact]
+    public void ParseResponseInfo_TreatsAnyFailedBulkItemAsError()
+    {
+        const string response = """
+            {
+              "result": [
+                { "data": { "guid": "first" }, "success": true, "errorText": "" },
+                { "data": null, "success": false, "errorText": "Ikinci satir kaydedilemedi." }
+              ]
+            }
+            """;
+
+        var result = MikroApiClient.ParseResponseInfo(response);
+
+        Assert.True(result.IsError);
+        Assert.Equal("Ikinci satir kaydedilemedi.", result.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData("MikroAPI - TimeOut")]
+    [InlineData("The operation timed out.")]
+    public void IsUnknownWriteOutcome_TreatsTimeoutErrorsAsAmbiguous(string errorMessage)
+    {
+        var result = new MikroApiResult<string>(
+            true,
+            200,
+            System.Net.HttpStatusCode.OK,
+            errorMessage,
+            $"{{\"errorText\":\"{errorMessage}\"}}",
+            null,
+            "/Api/apiMethods/DahiliStokHareketKaydetV2",
+            1,
+            TimeSpan.FromSeconds(130));
+
+        Assert.True(MikroApiWriteAuditService.IsUnknownWriteOutcome(result));
+    }
+
+    [Fact]
+    public void IsUnknownWriteOutcome_LeavesBusinessErrorAsFailed()
+    {
+        var result = new MikroApiResult<string>(
+            true,
+            400,
+            System.Net.HttpStatusCode.OK,
+            "Gider muhasebe kodu bos.",
+            "{}",
+            null,
+            "/Api/apiMethods/DahiliStokHareketKaydetV2",
+            1,
+            TimeSpan.FromSeconds(1));
+
+        Assert.False(MikroApiWriteAuditService.IsUnknownWriteOutcome(result));
+    }
+
+    [Fact]
     public void CreatedDocumentResultReader_ReadsNestedDataListRows()
     {
         const string response = """

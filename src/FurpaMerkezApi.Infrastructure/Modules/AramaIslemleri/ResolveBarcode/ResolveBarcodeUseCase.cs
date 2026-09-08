@@ -297,9 +297,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var isGoodsAcceptanceBlocked = IsBlocked(goodsAcceptanceBlockCode);
         var isPassive = warehouseDetail?.IsPassive ?? stock.IsPassive.GetValueOrDefault();
         var isBlocked = isPassive || isSalesBlocked || isOrderBlocked || isGoodsAcceptanceBlocked;
-        var isExcludedForNonRefund = request.IsRefund == false &&
-                                     string.Equals(NormalizeOrNull(stock.ModelCode), "99", StringComparison.Ordinal) &&
-                                     StartsWithDls(stock.StockName);
+        var isExcludedForNonRefund = request.IsRefund == false && StartsWithDls(stock.StockName);
 
         var screenUsability = EvaluateScreenUsability(
             screenCode,
@@ -860,7 +858,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
         if (isExcludedForNonRefund)
         {
-            return new OperationEvaluation(false, "DLS/99 urunler iade olmayan islemde kullanilamaz.");
+            return new OperationEvaluation(false, "DLS urunler iade olmayan islemde kullanilamaz.");
         }
 
         return operationType switch
