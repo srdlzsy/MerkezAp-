@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Infrastructure.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Services.MikroApi;
@@ -77,5 +78,53 @@ public sealed class MikroApiNullPayloadMappingTests
         Assert.DoesNotContain("sth_lastup_date", result.Keys);
         Assert.DoesNotContain("sth_miktar", result.Keys);
         Assert.DoesNotContain("sth_degisti", result.Keys);
+    }
+
+    [Fact]
+    public void PartialUpdate_MapsOnlyGuidAndChangedNonTechnicalFields()
+    {
+        var guid = Guid.Parse("c1217961-c164-42a6-9ec6-d3be96b8cf89");
+        var originalRow = new
+        {
+            ssip_Guid = guid,
+            ssip_miktar = 5d,
+            ssip_tutar = 50d,
+            ssip_lastup_date = new DateTime(2026, 9, 8, 11, 0, 0),
+            ssip_degisti = false
+        };
+        var changedRow = new
+        {
+            ssip_Guid = guid,
+            ssip_miktar = 7d,
+            ssip_tutar = 50d,
+            ssip_lastup_date = new DateTime(2026, 9, 8, 11, 1, 0),
+            ssip_degisti = true
+        };
+
+        var result = MikroApiPartialUpdateRowMapper.Build(
+            changedRow,
+            MikroApiPartialUpdateRowMapper.Snapshot(originalRow),
+            "ssip_Guid");
+
+        Assert.Equal(guid, result["ssip_Guid"]);
+        Assert.Equal(7d, result["ssip_miktar"]);
+        Assert.DoesNotContain("ssip_tutar", result.Keys);
+        Assert.DoesNotContain("ssip_lastup_date", result.Keys);
+        Assert.DoesNotContain("ssip_degisti", result.Keys);
+    }
+
+    [Fact]
+    public void PartialUpdate_ReturnsNullWhenOnlyTechnicalFieldsChanged()
+    {
+        var guid = Guid.Parse("6da92b05-e82e-45da-adc5-fbe62bdd2ebf");
+        var originalRow = new { sip_Guid = guid, sip_miktar = 5d, sip_degisti = false };
+        var changedRow = new { sip_Guid = guid, sip_miktar = 5d, sip_degisti = true };
+
+        var result = MikroApiPartialUpdateRowMapper.TryBuild(
+            changedRow,
+            MikroApiPartialUpdateRowMapper.Snapshot(originalRow),
+            "sip_Guid");
+
+        Assert.Null(result);
     }
 }

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
@@ -74,8 +75,8 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
             .GroupBy(extra => extra.sthek_related_uid!.Value)
             .ToDictionary(group => group.Key, group => group.Select(extra => extra.sth_subesip_uid!.Value).Distinct().ToArray());
         var rowsByGuid = rows.ToDictionary(row => row.sth_Guid);
-        var movementLastUpdateDates = rows.ToDictionary(row => row.sth_Guid, row => row.sth_lastup_date);
-        var orderLastUpdateDates = linkedOrders.ToDictionary(pair => pair.Key, pair => pair.Value.ssip_lastup_date);
+        var originalRows = rows.ToDictionary(row => row.sth_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
+        var originalOrders = linkedOrders.ToDictionary(pair => pair.Key, pair => MikroApiPartialUpdateRowMapper.Snapshot(pair.Value));
         var updateUser = ResolveMikroUserNo(request.SourceWarehouseNo);
         var updatedAt = DateTime.Now;
         var touchedRows = new HashSet<Guid>();
@@ -126,25 +127,30 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
         foreach (var row in rows.Where(row => touchedRows.Contains(row.sth_Guid) && !deletedRows.Contains(row.sth_Guid)))
         {
             row.sth_lastup_user = updateUser;
-            row.sth_lastup_date = movementLastUpdateDates[row.sth_Guid];
             row.sth_degisti = true;
-        }
-        foreach (var order in linkedOrders.Values)
-        {
-            order.ssip_lastup_date = orderLastUpdateDates[order.ssip_Guid];
         }
 
         var activeBeforeWrite = rows.Concat(addedRows).Where(row => !deletedRows.Contains(row.sth_Guid)).ToArray();
         if (activeBeforeWrite.Length == 0) throw new ArgumentException("Warehouse shipping document must have at least one active line.", nameof(request.Lines));
 
-        var upserts = rows.Where(row => touchedRows.Contains(row.sth_Guid) && !deletedRows.Contains(row.sth_Guid)).Concat(addedRows).ToArray();
-        if (upserts.Length > 0) await PostShippingRowsAsync(StockMovementUpdatePath, upserts, cancellationToken);
+        var existingUpdates = rows
+            .Where(row => touchedRows.Contains(row.sth_Guid) && !deletedRows.Contains(row.sth_Guid))
+            .Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.sth_Guid], nameof(row.sth_Guid)))
+            .Where(row => row is not null)
+            .Select(row => row!);
+        var upserts = existingUpdates.Concat(addedRows.Select(ToShippingApiRow)).ToArray();
+        if (upserts.Length > 0) await PostMappedShippingRowsAsync(StockMovementUpdatePath, upserts, cancellationToken);
 
         var returnOrderDeletes = request.IsReturn
             ? deletedRows.SelectMany(guid => orderGuidsByMovementGuid.GetValueOrDefault(guid) ?? []).Distinct().ToHashSet()
             : [];
-        var orderUpdates = linkedOrders.Values.Where(order => !returnOrderDeletes.Contains(order.ssip_Guid)).ToArray();
-        if (orderUpdates.Length > 0) await PostShippingRowsAsync(WarehouseOrderUpdatePath, orderUpdates, cancellationToken);
+        var orderUpdates = linkedOrders.Values
+            .Where(order => !returnOrderDeletes.Contains(order.ssip_Guid))
+            .Select(order => MikroApiPartialUpdateRowMapper.TryBuild(order, originalOrders[order.ssip_Guid], nameof(order.ssip_Guid)))
+            .Where(row => row is not null)
+            .Select(row => row!)
+            .ToArray();
+        if (orderUpdates.Length > 0) await PostMappedShippingRowsAsync(WarehouseOrderUpdatePath, orderUpdates, cancellationToken);
         if (deletedRows.Count > 0) await PostShippingRowsAsync(StockMovementGuidDeletePath, deletedRows.Select(guid => new { sth_Guid = guid }), cancellationToken);
         if (returnOrderDeletes.Count > 0) await PostShippingRowsAsync(WarehouseOrderGuidDeletePath, returnOrderDeletes.Select(guid => new { ssip_Guid = guid }), cancellationToken);
 
@@ -172,6 +178,16 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
     private async Task PostShippingRowsAsync<T>(string path, IEnumerable<T> rows, CancellationToken cancellationToken)
     {
         var payload = new { evraklar = new[] { new { satirlar = rows.Select(ToShippingApiRow).ToArray() } } };
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(path, payload, cancellationToken);
+        if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? $"Mikro API warehouse shipping request failed: {path}");
+    }
+
+    private async Task PostMappedShippingRowsAsync(
+        string path,
+        IReadOnlyCollection<Dictionary<string, object?>> rows,
+        CancellationToken cancellationToken)
+    {
+        var payload = new { evraklar = new[] { new { satirlar = rows } } };
         var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(path, payload, cancellationToken);
         if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? $"Mikro API warehouse shipping request failed: {path}");
     }

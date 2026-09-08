@@ -294,7 +294,7 @@ public sealed partial class MikroDocumentEditingService
             .ToArrayAsync(cancellationToken);
         if (rows.Length == 0) throw new KeyNotFoundException("Stock movement document was not found in Mikro write database.");
         EnsureSingleStockMovementDocument(rows);
-        var originalRows = rows.ToDictionary(row => row.sth_Guid, SnapshotValues);
+        var originalRows = rows.ToDictionary(row => row.sth_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
 
         var touched = new HashSet<Guid>();
         if (request.Header is not null && HasStockMovementHeaderPatch(request.Header))
@@ -314,9 +314,11 @@ public sealed partial class MikroDocumentEditingService
 
         var updateRows = rows
             .Where(row => touched.Contains(row.sth_Guid))
-            .Select(row => BuildStockMovementUpdateApiRow(row, originalRows[row.sth_Guid]))
+            .Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.sth_Guid], nameof(row.sth_Guid)))
+            .Where(row => row is not null)
+            .Select(row => row!)
             .ToArray();
-        await PostStockMovementUpdateRowsAsync(updateRows, cancellationToken);
+        if (updateRows.Length > 0) await PostStockMovementUpdateRowsAsync(updateRows, cancellationToken);
         var document = await ReadWithRetryAsync(() => GetStockMovementDocumentAsync(request.Lookup, cancellationToken), cancellationToken);
         return new(new("stok-hareketleri", touched.Count, updatedAt, updateUser), document);
     }
@@ -338,8 +340,14 @@ public sealed partial class MikroDocumentEditingService
         }
         else
         {
+            var originalRows = rows.ToDictionary(row => row.sth_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
             foreach (var row in rows) { row.sth_iptal = true; row.sth_hidden = true; row.sth_degisti = true; row.sth_lastup_user = user; }
-            await PostRowsAsync(StockMovementUpdatePath, rows, cancellationToken);
+            await PostMappedRowsAsync(
+                StockMovementUpdatePath,
+                rows.Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.sth_Guid], nameof(row.sth_Guid)))
+                    .Where(row => row is not null)
+                    .Select(row => row!),
+                cancellationToken);
         }
         return new($"stok-hareketleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}", rows.Length, now, user, request.HardDelete ? "hard-delete" : "soft-delete");
     }
@@ -353,6 +361,7 @@ public sealed partial class MikroDocumentEditingService
         var rows = await CreateCompanyOrderQuery(mikroWriteDbContext.SIPARISLERs.AsNoTracking(), request.Lookup).OrderBy(row => row.sip_satirno).ToArrayAsync(cancellationToken);
         if (rows.Length == 0) throw new KeyNotFoundException("Company order document was not found in Mikro write database.");
         EnsureSingleCompanyOrderDocument(rows);
+        var originalRows = rows.ToDictionary(row => row.sip_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
         var touched = new HashSet<Guid>();
         if (request.Header is not null && HasCompanyOrderHeaderPatch(request.Header)) foreach (var row in rows) { ApplyCompanyOrderHeaderPatch(row, request.Header); touched.Add(row.sip_Guid); }
         var byGuid = rows.ToDictionary(row => row.sip_Guid);
@@ -360,7 +369,13 @@ public sealed partial class MikroDocumentEditingService
         EnsureTouched(touched.Count, request);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
         foreach (var row in rows.Where(row => touched.Contains(row.sip_Guid))) { row.sip_lastup_user = user; row.sip_degisti = true; }
-        await PostRowsAsync(CompanyOrderUpdatePath, rows.Where(row => touched.Contains(row.sip_Guid)), cancellationToken);
+        await PostMappedRowsAsync(
+            CompanyOrderUpdatePath,
+            rows.Where(row => touched.Contains(row.sip_Guid))
+                .Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.sip_Guid], nameof(row.sip_Guid)))
+                .Where(row => row is not null)
+                .Select(row => row!),
+            cancellationToken);
         var document = await ReadWithRetryAsync(() => GetCompanyOrderDocumentAsync(request.Lookup, cancellationToken), cancellationToken);
         return new(new("firma-siparisleri", touched.Count, now, user), document);
     }
@@ -373,7 +388,17 @@ public sealed partial class MikroDocumentEditingService
         EnsureSingleCompanyOrderDocument(rows);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
         if (request.HardDelete) await PostRowsAsync(CompanyOrderGuidDeletePath, rows.Select(row => new { row.sip_Guid }), cancellationToken);
-        else { foreach (var row in rows) { row.sip_iptal = true; row.sip_hidden = true; row.sip_degisti = true; row.sip_lastup_user = user; } await PostRowsAsync(CompanyOrderUpdatePath, rows, cancellationToken); }
+        else
+        {
+            var originalRows = rows.ToDictionary(row => row.sip_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
+            foreach (var row in rows) { row.sip_iptal = true; row.sip_hidden = true; row.sip_degisti = true; row.sip_lastup_user = user; }
+            await PostMappedRowsAsync(
+                CompanyOrderUpdatePath,
+                rows.Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.sip_Guid], nameof(row.sip_Guid)))
+                    .Where(row => row is not null)
+                    .Select(row => row!),
+                cancellationToken);
+        }
         return new($"firma-siparisleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}", rows.Length, now, user, request.HardDelete ? "hard-delete" : "soft-delete");
     }
 
@@ -384,6 +409,7 @@ public sealed partial class MikroDocumentEditingService
         var rows = await CreateWarehouseOrderQuery(mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AsNoTracking(), request.Lookup).OrderBy(row => row.ssip_satirno).ToArrayAsync(cancellationToken);
         if (rows.Length == 0) throw new KeyNotFoundException("Warehouse order document was not found in Mikro write database.");
         EnsureSingleWarehouseOrderDocument(rows);
+        var originalRows = rows.ToDictionary(row => row.ssip_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
         var touched = new HashSet<Guid>();
         if (request.Header is not null && HasWarehouseOrderHeaderPatch(request.Header)) foreach (var row in rows) { ApplyWarehouseOrderHeaderPatch(row, request.Header); touched.Add(row.ssip_Guid); }
         var byGuid = rows.ToDictionary(row => row.ssip_Guid);
@@ -391,7 +417,13 @@ public sealed partial class MikroDocumentEditingService
         EnsureTouched(touched.Count, request);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
         foreach (var row in rows.Where(row => touched.Contains(row.ssip_Guid))) { row.ssip_lastup_user = user; row.ssip_degisti = true; }
-        await PostRowsAsync(WarehouseOrderUpdatePath, rows.Where(row => touched.Contains(row.ssip_Guid)), cancellationToken);
+        await PostMappedRowsAsync(
+            WarehouseOrderUpdatePath,
+            rows.Where(row => touched.Contains(row.ssip_Guid))
+                .Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.ssip_Guid], nameof(row.ssip_Guid)))
+                .Where(row => row is not null)
+                .Select(row => row!),
+            cancellationToken);
         var document = await ReadWithRetryAsync(() => GetWarehouseOrderDocumentAsync(request.Lookup, cancellationToken), cancellationToken);
         return new(new("depo-siparisleri", touched.Count, now, user), document);
     }
@@ -404,7 +436,17 @@ public sealed partial class MikroDocumentEditingService
         EnsureSingleWarehouseOrderDocument(rows);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
         if (request.HardDelete) await PostRowsAsync(WarehouseOrderGuidDeletePath, rows.Select(row => new { row.ssip_Guid }), cancellationToken);
-        else { foreach (var row in rows) { row.ssip_iptal = true; row.ssip_hidden = true; row.ssip_degisti = true; row.ssip_lastup_user = user; } await PostRowsAsync(WarehouseOrderUpdatePath, rows, cancellationToken); }
+        else
+        {
+            var originalRows = rows.ToDictionary(row => row.ssip_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
+            foreach (var row in rows) { row.ssip_iptal = true; row.ssip_hidden = true; row.ssip_degisti = true; row.ssip_lastup_user = user; }
+            await PostMappedRowsAsync(
+                WarehouseOrderUpdatePath,
+                rows.Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.ssip_Guid], nameof(row.ssip_Guid)))
+                    .Where(row => row is not null)
+                    .Select(row => row!),
+                cancellationToken);
+        }
         return new($"depo-siparisleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}", rows.Length, now, user, request.HardDelete ? "hard-delete" : "soft-delete");
     }
 
@@ -415,6 +457,7 @@ public sealed partial class MikroDocumentEditingService
         var rows = await CreateCustomerMovementQuery(mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AsNoTracking(), request.Lookup).OrderBy(row => row.cha_satir_no).ToArrayAsync(cancellationToken);
         if (rows.Length == 0) throw new KeyNotFoundException("Customer movement document was not found in Mikro write database.");
         EnsureSingleCustomerMovementDocument(rows);
+        var originalRows = rows.ToDictionary(row => row.cha_Guid, SnapshotValues);
         var touched = new HashSet<Guid>();
         if (request.Header is not null && HasCustomerMovementHeaderPatch(request.Header)) foreach (var row in rows) { ApplyCustomerMovementHeaderPatch(row, request.Header); touched.Add(row.cha_Guid); }
         var byGuid = rows.ToDictionary(row => row.cha_Guid);
@@ -422,7 +465,11 @@ public sealed partial class MikroDocumentEditingService
         EnsureTouched(touched.Count, request);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
         foreach (var row in rows.Where(row => touched.Contains(row.cha_Guid))) { row.cha_lastup_user = user; row.cha_degisti = true; }
-        await PostBulkRecordsAsync(rows.Where(row => touched.Contains(row.cha_Guid)), "1", cancellationToken);
+        await PostBulkRecordsAsync(
+            rows.Where(row => touched.Contains(row.cha_Guid))
+                .Where(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.cha_Guid], nameof(row.cha_Guid)) is not null)
+                .Select(row => BuildPartialUpdateRecord(row, originalRows[row.cha_Guid], CustomerMovementTableNo, nameof(row.cha_Guid), nameof(row.cha_lastup_date))),
+            cancellationToken);
         var document = await ReadWithRetryAsync(() => GetCustomerMovementDocumentAsync(request.Lookup, cancellationToken), cancellationToken);
         return new(new("cari-hareketleri", touched.Count, now, user), document);
     }
@@ -434,8 +481,19 @@ public sealed partial class MikroDocumentEditingService
         if (rows.Length == 0) throw new KeyNotFoundException("Customer movement document was not found in Mikro write database.");
         EnsureSingleCustomerMovementDocument(rows);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
-        if (!request.HardDelete) foreach (var row in rows) { row.cha_iptal = true; row.cha_hidden = true; row.cha_degisti = true; row.cha_lastup_user = user; }
-        await PostBulkRecordsAsync(rows, request.HardDelete ? "2" : "1", cancellationToken);
+        if (request.HardDelete)
+        {
+            await PostBulkRecordsAsync(rows, "2", cancellationToken);
+        }
+        else
+        {
+            var originalRows = rows.ToDictionary(row => row.cha_Guid, SnapshotValues);
+            foreach (var row in rows) { row.cha_iptal = true; row.cha_hidden = true; row.cha_degisti = true; row.cha_lastup_user = user; }
+            await PostBulkRecordsAsync(
+                rows.Where(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.cha_Guid], nameof(row.cha_Guid)) is not null)
+                    .Select(row => BuildPartialUpdateRecord(row, originalRows[row.cha_Guid], CustomerMovementTableNo, nameof(row.cha_Guid), nameof(row.cha_lastup_date))),
+                cancellationToken);
+        }
         return new($"cari-hareketleri/{request.Lookup.DocumentSerie.Trim()}/{request.Lookup.DocumentOrderNo}", rows.Length, now, user, request.HardDelete ? "hard-delete" : "soft-delete");
     }
 
@@ -446,6 +504,7 @@ public sealed partial class MikroDocumentEditingService
         var rows = await CreateInventoryCountQuery(mikroWriteDbContext.SAYIM_SONUCLARIs.AsNoTracking(), request.Lookup).OrderBy(row => row.sym_satirno).ToArrayAsync(cancellationToken);
         if (rows.Length == 0) throw new KeyNotFoundException("Inventory count document was not found in Mikro write database.");
         EnsureSingleInventoryCountDocument(rows); EnsureInventoryCountRowsAreEditable(rows);
+        var originalRows = rows.ToDictionary(row => row.sym_Guid, MikroApiPartialUpdateRowMapper.Snapshot);
         var touched = new HashSet<Guid>();
         if (request.Header is not null && HasInventoryCountHeaderPatch(request.Header)) foreach (var row in rows) { ApplyInventoryCountHeaderPatch(row, request.Header); touched.Add(row.sym_Guid); }
         var byGuid = rows.ToDictionary(row => row.sym_Guid);
@@ -453,7 +512,13 @@ public sealed partial class MikroDocumentEditingService
         EnsureTouched(touched.Count, request);
         var user = ResolveMikroUserNo(request.CurrentUserWarehouseNo); var now = DateTime.Now;
         foreach (var row in rows.Where(row => touched.Contains(row.sym_Guid))) { row.sym_lastup_user = user; row.sym_degisti = true; }
-        await PostRowsAsync(InventoryCountUpdatePath, rows.Where(row => touched.Contains(row.sym_Guid)), cancellationToken);
+        await PostMappedRowsAsync(
+            InventoryCountUpdatePath,
+            rows.Where(row => touched.Contains(row.sym_Guid))
+                .Select(row => MikroApiPartialUpdateRowMapper.TryBuild(row, originalRows[row.sym_Guid], nameof(row.sym_Guid)))
+                .Where(row => row is not null)
+                .Select(row => row!),
+            cancellationToken);
         var document = await ReadWithRetryAsync(() => GetInventoryCountDocumentAsync(request.Lookup, cancellationToken), cancellationToken);
         return new(new("sayim-sonuclari", touched.Count, now, user), document);
     }
@@ -479,6 +544,18 @@ public sealed partial class MikroDocumentEditingService
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API stock movement update failed.");
         }
+    }
+
+    private async Task PostMappedRowsAsync(
+        string path,
+        IEnumerable<Dictionary<string, object?>> rows,
+        CancellationToken cancellationToken)
+    {
+        var mappedRows = rows.ToArray();
+        if (mappedRows.Length == 0) return;
+        var payload = new { evraklar = new[] { new { satirlar = mappedRows } } };
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(path, payload, cancellationToken);
+        if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? $"Mikro API request failed: {path}");
     }
 
     private async Task<StockCardWarehouseSettingsDto> ReadStockWarehouseSettingAsync(
@@ -573,43 +650,8 @@ public sealed partial class MikroDocumentEditingService
 
     internal static Dictionary<string, object?> BuildStockMovementUpdateApiRow(
         object row,
-        IReadOnlyDictionary<string, object?> original)
-    {
-        const string guidPropertyName = "sth_Guid";
-        const string lastUpdatePropertyName = "sth_lastup_date";
-        var properties = row.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public);
-        var byName = properties.ToDictionary(property => property.Name, StringComparer.Ordinal);
-        var result = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            [guidPropertyName] = byName[guidPropertyName].GetValue(row)
-        };
-
-        foreach (var property in properties)
-        {
-            if (property.Name == guidPropertyName ||
-                property.Name == lastUpdatePropertyName ||
-                property.Name.EndsWith("_degisti", StringComparison.OrdinalIgnoreCase) ||
-                IsMikroTechnicalColumn(property.Name))
-            {
-                continue;
-            }
-
-            var currentValue = property.GetValue(row);
-            if (currentValue is not null &&
-                original.TryGetValue(property.Name, out var originalValue) &&
-                !Equals(currentValue, originalValue))
-            {
-                result[property.Name] = NormalizeMikroApiValue(currentValue);
-            }
-        }
-
-        if (result.Count <= 1)
-        {
-            throw new ArgumentException("At least one changed stock movement field is required.", nameof(row));
-        }
-
-        return result;
-    }
+        IReadOnlyDictionary<string, object?> original) =>
+        MikroApiPartialUpdateRowMapper.Build(row, original, "sth_Guid");
 
     internal static Dictionary<string, object?> BuildInsertRecord(object row, string tableNo)
     {
@@ -653,6 +695,16 @@ public sealed partial class MikroDocumentEditingService
     {
         var records = rows.Select(row => ToBulkRecord(row!, CustomerMovementTableNo, recordType)).ToArray();
         var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(BulkRecordPath, new { Kayit = records }, cancellationToken);
+        if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API bulk record update failed.");
+    }
+
+    private async Task PostBulkRecordsAsync(
+        IEnumerable<Dictionary<string, object?>> records,
+        CancellationToken cancellationToken)
+    {
+        var mappedRecords = records.ToArray();
+        if (mappedRecords.Length == 0) return;
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(BulkRecordPath, new { Kayit = mappedRecords }, cancellationToken);
         if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API bulk record update failed.");
     }
 
