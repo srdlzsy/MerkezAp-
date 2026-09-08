@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Detail;
+using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.EligibleProducts;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.List;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
@@ -20,6 +21,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.IadeIslemleri.DepoIadeleri;
 public sealed class DepoIadeleriController(
     IListWarehouseReturnsUseCase listWarehouseReturnsUseCase,
     IGetWarehouseReturnDetailUseCase getWarehouseReturnDetailUseCase,
+    IListWarehouseReturnEligibleProductsUseCase listWarehouseReturnEligibleProductsUseCase,
     ICreateWarehouseReturnUseCase createWarehouseReturnUseCase,
     IUpdateWarehouseShippingDocumentUseCase updateWarehouseShippingDocumentUseCase,
     IDocumentFlowService documentFlowService,
@@ -36,6 +38,24 @@ public sealed class DepoIadeleriController(
     private const string OutgoingUpdatePolicy = "iade-islemleri.giden-depo-iadeleri.update";
     private const string IncomingListPolicy = "iade-islemleri.gelen-depo-iadeleri.list";
     private const string IncomingDetailPolicy = "iade-islemleri.gelen-depo-iadeleri.detail";
+
+    [HttpGet("iade-edilebilir-urunler")]
+    [Authorize(Policy = OutgoingCreatePolicy)]
+    [ProducesResponseType(typeof(WarehouseReturnEligibleProductsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<WarehouseReturnEligibleProductsDto>> ListEligibleProducts(
+        [FromQuery] WarehouseReturnEligibleProductsHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var sourceWarehouseNo = User.ResolveWarehouseNoForPolicy(request.WarehouseNo, OutgoingCreatePolicy);
+
+        return Ok(await listWarehouseReturnEligibleProductsUseCase.ExecuteAsync(
+            new WarehouseReturnEligibleProductsRequest(
+                sourceWarehouseNo,
+                request.TargetWarehouseNo,
+                request.Search),
+            cancellationToken));
+    }
 
     [HttpGet]
     [Authorize(Policy = OutgoingListPolicy)]
@@ -383,6 +403,18 @@ public sealed class CreateWarehouseReturnHttpRequest
     [MinLength(1)]
     public IReadOnlyCollection<CreateWarehouseReturnLineHttpRequest> Lines { get; init; } =
         Array.Empty<CreateWarehouseReturnLineHttpRequest>();
+}
+
+public sealed class WarehouseReturnEligibleProductsHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? TargetWarehouseNo { get; init; }
+
+    [StringLength(100)]
+    public string? Search { get; init; }
 }
 
 public sealed class CreateWarehouseReturnLineHttpRequest

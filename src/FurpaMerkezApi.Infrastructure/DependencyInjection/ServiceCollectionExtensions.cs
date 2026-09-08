@@ -21,6 +21,7 @@ using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Detail;
+using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.EligibleProducts;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.List;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Detail;
@@ -125,6 +126,7 @@ using FurpaMerkezApi.Infrastructure.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.Detail;
+using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.EligibleProducts;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.List;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.FirmaIadeleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.FirmaIadeleri.Detail;
@@ -328,6 +330,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(SuggestedWarehouseOrderOptions.SectionName));
         services.Configure<SuggestedCompanyOrderOptions>(
             configuration.GetSection(SuggestedCompanyOrderOptions.SectionName));
+        services.Configure<WarehouseReturnProductOptions>(
+            configuration.GetSection(WarehouseReturnProductOptions.SectionName));
         services.Configure<InvoiceViewingAutomaticSynchronizationOptions>(
             configuration.GetSection(InvoiceViewingAutomaticSynchronizationOptions.SectionName));
         services.Configure<ProductDistributionMailOptions>(
@@ -580,6 +584,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICreateWarehouseReturnUseCase, CreateWarehouseReturnUseCase>();
         services.AddScoped<IGetWarehouseReturnDetailUseCase, GetWarehouseReturnDetailUseCase>();
         services.AddScoped<IListWarehouseReturnsUseCase, ListWarehouseReturnsUseCase>();
+        services.AddScoped<IListWarehouseReturnEligibleProductsUseCase, ListWarehouseReturnEligibleProductsUseCase>();
         services.AddScoped<ICreateCompanyReturnUseCase, CreateCompanyReturnUseCase>();
         services.AddScoped<IGetCompanyReturnDetailUseCase, GetCompanyReturnDetailUseCase>();
         services.AddScoped<IListCompanyReturnsUseCase, ListCompanyReturnsUseCase>();
