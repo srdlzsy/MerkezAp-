@@ -69,6 +69,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanFirmaSiparisleri
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanFirmaSiparisleri.List;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.List;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.Print;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.List;
@@ -87,6 +88,7 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.List;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Offline;
+using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.AlinanDepoSiparisleri.Print;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.StokAnomaliMerkezi;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.MasrafFisleri.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.MasrafFisleri.Detail;
@@ -534,6 +536,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CompanyOrderListQueryExecutor>();
         services.AddScoped<WarehouseOrderListQueryExecutor>();
         services.AddScoped<WarehouseOrderDetailQueryExecutor>();
+        services.AddScoped<ReceivedWarehouseOrderBulkPrintQueryExecutor>();
         services.AddScoped<IListSuggestedWarehouseOrdersUseCase, ListSuggestedWarehouseOrdersUseCase>();
         services.AddScoped<IListSuggestedCompanyOrdersUseCase, ListSuggestedCompanyOrdersUseCase>();
         services.AddScoped<CompanyMovementDetailQueryExecutor>();
@@ -568,6 +571,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetReceivedCompanyOrderDetailUseCase, GetReceivedCompanyOrderDetailUseCase>();
         services.AddScoped<IListReceivedWarehouseOrdersUseCase, ListReceivedWarehouseOrdersUseCase>();
         services.AddScoped<IGetReceivedWarehouseOrderDetailUseCase, GetReceivedWarehouseOrderDetailUseCase>();
+        services.AddScoped<IGetReceivedWarehouseOrdersForPrintUseCase, GetReceivedWarehouseOrdersForPrintUseCase>();
         services.AddScoped<IListIssuedCompanyOrdersUseCase, ListIssuedCompanyOrdersUseCase>();
         services.AddScoped<IGetIssuedCompanyOrderDetailUseCase, GetIssuedCompanyOrderDetailUseCase>();
         services.AddScoped<ICreateIssuedCompanyOrderUseCase, CreateIssuedCompanyOrderUseCase>();

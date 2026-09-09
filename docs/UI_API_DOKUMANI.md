@@ -46,6 +46,7 @@ Controller'da acik olan pratik alias/canonical route'lar:
 - `GET /api/arama-islemleri/urunler/{stockCode}/son-kunye`
 - `GET /api/siparis-islemleri/alinan-depo-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/alinan-depo-siparisleri/key/{documentKey}`
+- `POST /api/siparis-islemleri/alinan-depo-siparisleri/toplu-yazdir`
 - `GET /api/siparis-islemleri/alinan-firma-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/alinan-firma-siparisleri/key/{documentKey}`
 - `GET /api/siparis-islemleri/verilen-depo-siparisleri/{documentSerie}/{documentOrderNo}`
@@ -106,7 +107,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `ayar-islemleri` | `kasiyerler` | `ayar-islemleri.kasiyerler.manage` | `ayar-islemleri.kasiyerler.list`<br>`ayar-islemleri.kasiyerler.detail`<br>`ayar-islemleri.kasiyerler.create`<br>`ayar-islemleri.kasiyerler.update` | `ayar-islemleri.kasiyerler.all-warehouses` |
 | `ayar-islemleri` | `soforler` | `ayar-islemleri.soforler.manage` | `ayar-islemleri.soforler.list`<br>`ayar-islemleri.soforler.detail`<br>`ayar-islemleri.soforler.create`<br>`ayar-islemleri.soforler.update`<br>`ayar-islemleri.soforler.delete` | `ayar-islemleri.soforler.all-warehouses` |
 | `ayar-islemleri` | `b2b-ayarlari` | `ayar-islemleri.b2b-ayarlari.manage` | `ayar-islemleri.b2b-ayarlari.list`<br>`ayar-islemleri.b2b-ayarlari.detail`<br>`ayar-islemleri.b2b-ayarlari.create`<br>`ayar-islemleri.b2b-ayarlari.update`<br>`ayar-islemleri.b2b-ayarlari.delete` | `ayar-islemleri.b2b-ayarlari.all-warehouses` |
-| `siparis-islemleri` | `alinan-depo-siparisleri` | `siparis-islemleri.alinan-depo-siparisleri.page` | `siparis-islemleri.alinan-depo-siparisleri.list`<br>`siparis-islemleri.alinan-depo-siparisleri.detail`<br>`siparis-islemleri.alinan-depo-siparisleri.create`<br>`siparis-islemleri.alinan-depo-siparisleri.update` | `siparis-islemleri.alinan-depo-siparisleri.all-warehouses` |
+| `siparis-islemleri` | `alinan-depo-siparisleri` | `siparis-islemleri.alinan-depo-siparisleri.page` | `siparis-islemleri.alinan-depo-siparisleri.list`<br>`siparis-islemleri.alinan-depo-siparisleri.detail`<br>`siparis-islemleri.alinan-depo-siparisleri.create`<br>`siparis-islemleri.alinan-depo-siparisleri.update`<br>`siparis-islemleri.alinan-depo-siparisleri.print` | `siparis-islemleri.alinan-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `verilen-depo-siparisleri` | `siparis-islemleri.verilen-depo-siparisleri.page` | `siparis-islemleri.verilen-depo-siparisleri.list`<br>`siparis-islemleri.verilen-depo-siparisleri.detail`<br>`siparis-islemleri.verilen-depo-siparisleri.create`<br>`siparis-islemleri.verilen-depo-siparisleri.update` | `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `alinan-firma-siparisleri` | `siparis-islemleri.alinan-firma-siparisleri.page` | `siparis-islemleri.alinan-firma-siparisleri.list`<br>`siparis-islemleri.alinan-firma-siparisleri.detail`<br>`siparis-islemleri.alinan-firma-siparisleri.create`<br>`siparis-islemleri.alinan-firma-siparisleri.update` | `siparis-islemleri.alinan-firma-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `verilen-firma-siparisleri` | `siparis-islemleri.verilen-firma-siparisleri.page` | `siparis-islemleri.verilen-firma-siparisleri.list`<br>`siparis-islemleri.verilen-firma-siparisleri.detail`<br>`siparis-islemleri.verilen-firma-siparisleri.create`<br>`siparis-islemleri.verilen-firma-siparisleri.update` | `siparis-islemleri.verilen-firma-siparisleri.all-warehouses` |
@@ -5452,6 +5453,59 @@ Opsiyonel document key ile:
 Yetki:
 
 - `siparis-islemleri.alinan-depo-siparisleri.detail`
+
+### Alinan Depo Siparisleri Toplu Yazdir
+
+`POST /api/siparis-islemleri/alinan-depo-siparisleri/toplu-yazdir`
+
+Yetki:
+
+- `siparis-islemleri.alinan-depo-siparisleri.print`
+
+Request:
+
+```json
+{
+  "documentKeys": [
+    "MTEwfEQxMTB8MTkxNQ",
+    "MTEwfEQxMTB8MTkxNg"
+  ]
+}
+```
+
+Kurallar:
+
+- `documentKeys` liste response'undaki `documentKey` alanlarindan olusur.
+- En az 1, en fazla 100 evrak tek istekte yazdirilabilir.
+- Tekrar eden anahtarlar backend tarafinda tekillestirilir.
+- Her anahtarin icindeki depo no kullanicinin depo yetkisine gore yeniden kontrol edilir. Baska depo evraki icin ilgili menunun `all-warehouses` yetkisi gerekir.
+- Secilen evraklardan biri bulunamazsa eksik veya kismi PDF donmez; API `404 Not Found` doner.
+- Backend secilen evraklari ve satirlarini toplu Mikro sorgusuyla okur; UI'nin her evrak icin ayri detay istegi atmasi gerekmez.
+- Response JSON degildir. `Content-Type: application/pdf` ve `Content-Disposition: inline` ile tek PDF doner.
+- Her siparis yeni PDF sayfasindan baslar. Uzun siparisler devam sayfasina tasar; tablo basligi tekrar yazilir.
+
+UI akisi:
+
+1. Listeyi bugunun `StartDate` ve `EndDate` degerleriyle getir.
+2. Grid satirlarina checkbox, ust aksiyon alanina `Secilenleri Yazdir` ve `Bugunun Tumunu Yazdir` butonlari ekle.
+3. Butonlari sadece kullanicida `siparis-islemleri.alinan-depo-siparisleri.print` varsa goster.
+4. Secilen veya filtrelenmis tum satirlarin `documentKey` alanlarini tek POST body icinde gonder.
+5. Response'u `blob` olarak al, `application/pdf` object URL olustur ve tarayici yazdirma/onizleme penceresinde ac.
+6. Islem surerken butonu kilitle; hata halinde acilan bos pencereyi kapat ve API `ProblemDetails.detail` mesajini goster.
+
+Frontend ornegi:
+
+```ts
+const response = await api.post(
+  "/api/siparis-islemleri/alinan-depo-siparisleri/toplu-yazdir",
+  { documentKeys: selectedRows.map(row => row.documentKey) },
+  { responseType: "blob" }
+);
+
+const pdfUrl = URL.createObjectURL(response.data);
+window.open(pdfUrl, "_blank", "noopener,noreferrer");
+setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+```
 
 ### Siparis Detay Response
 

@@ -89,6 +89,7 @@ builder.Services.AddRouting(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<IInvoicePdfPrintOptimizer, InvoicePdfPrintOptimizer>();
+builder.Services.AddSingleton<IReceivedWarehouseOrderPdfRenderer, ReceivedWarehouseOrderPdfRenderer>();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =

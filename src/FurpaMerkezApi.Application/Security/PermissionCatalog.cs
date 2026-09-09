@@ -10,6 +10,7 @@ public static class PermissionCatalog
     private static readonly PermissionActionDefinition CreateAction = new("create", "Ekle");
     private static readonly PermissionActionDefinition UpdateAction = new("update", "Guncelle");
     private static readonly PermissionActionDefinition DeleteAction = new("delete", "Sil");
+    private static readonly PermissionActionDefinition PrintAction = new("print", "Yazdir");
     private static readonly PermissionActionDefinition AllWarehousesAction = new("all-warehouses", "Tum Depolar");
 
     private static readonly PermissionActionDefinition[] CrudActions =
@@ -19,6 +20,16 @@ public static class PermissionCatalog
         DetailAction,
         CreateAction,
         UpdateAction,
+        AllWarehousesAction
+    ];
+    private static readonly PermissionActionDefinition[] CrudPrintActions =
+    [
+        PageAction,
+        ListAction,
+        DetailAction,
+        CreateAction,
+        UpdateAction,
+        PrintAction,
         AllWarehousesAction
     ];
     private static readonly PermissionActionDefinition[] PageListDetailUpdateActions =
@@ -269,7 +280,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "soforler", "Soforler", ManageCrudDeleteActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "b2b-ayarlari", "B2BAyarlari", ManageCrudDeleteActions),
 
-        ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri"),
+        ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri", CrudPrintActions),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-firma-siparisleri", "AlinanFirmaSiparisleri"),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-firma-siparisleri", "VerilenFirmaSiparisleri"),
