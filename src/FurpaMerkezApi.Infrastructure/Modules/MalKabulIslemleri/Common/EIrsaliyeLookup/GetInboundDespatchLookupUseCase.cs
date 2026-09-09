@@ -3,6 +3,7 @@ using System.Net;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLookup;
+using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -125,6 +126,7 @@ public sealed class GetInboundDespatchLookupUseCase(
             "DriverPerson",
             "NationalityID");
         var despatchNumber = NormalizeOrNull(GetPathValue(despatchAdvice, "ID"));
+        var documentIdentity = ResolveDocumentIdentity(despatchNumber);
 
         return new InboundDespatchLookupResponse(
             true,
@@ -152,7 +154,9 @@ public sealed class GetInboundDespatchLookupUseCase(
         {
             SourceDocumentKind = EDespatchDocumentKind,
             SourceDocumentLabel = "E-Irsaliye",
-            SourceDocumentNumber = despatchNumber
+            SourceDocumentNumber = despatchNumber,
+            DocumentSerie = documentIdentity?.DocumentSerie,
+            DocumentOrderNo = documentIdentity?.DocumentOrderNo
         };
     }
 
@@ -185,6 +189,7 @@ public sealed class GetInboundDespatchLookupUseCase(
         var primaryCustomerSuggestion = customerSuggestions.FirstOrDefault();
         var matchedLineCount = resolvedLines.Count(line => line.IsMatched);
         var invoiceNumber = NormalizeOrNull(GetPathValue(invoice, "ID"));
+        var documentIdentity = ResolveDocumentIdentity(invoiceNumber);
         var issueDate = ParseDateOrNull(GetPathValue(invoice, "IssueDate"));
         var despatchReferences = invoice.Elements()
             .Where(element => element.Name.LocalName == "DespatchDocumentReference")
@@ -228,6 +233,8 @@ public sealed class GetInboundDespatchLookupUseCase(
             SourceDocumentKind = EInvoiceDocumentKind,
             SourceDocumentLabel = "E-Fatura",
             SourceDocumentNumber = invoiceNumber,
+            DocumentSerie = documentIdentity?.DocumentSerie,
+            DocumentOrderNo = documentIdentity?.DocumentOrderNo,
             InvoiceNumber = invoiceNumber,
             InvoiceDate = issueDate,
             InvoiceTotal = ParseDecimalOrNull(GetPathValue(invoice, "LegalMonetaryTotal", "PayableAmount")),
@@ -1011,6 +1018,11 @@ public sealed class GetInboundDespatchLookupUseCase(
         var digits = new string(normalized.Where(char.IsDigit).ToArray());
         return string.IsNullOrWhiteSpace(digits) ? null : digits;
     }
+
+    private static CompanyReceivingDocumentIdentity? ResolveDocumentIdentity(string? officialDocumentNo) =>
+        CompanyReceivingDocumentIdentityParser.TryParseOfficialDocumentNo(officialDocumentNo, out var identity)
+            ? identity
+            : null;
 
     private static string? NormalizeOrNull(string? value)
     {

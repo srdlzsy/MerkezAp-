@@ -110,7 +110,9 @@ public sealed class FirmaMalKabulleriController(
                     request.CustomerCode,
                     request.MovementDate,
                     request.DocumentDate,
-                    request.DocumentNo,
+                    request.DocumentSerie,
+                    request.DocumentOrderNo!.Value,
+                    ResolveOfficialDocumentNo(request),
                     request.Deliverer,
                     request.Receiver,
                     request.Description,
@@ -287,7 +289,8 @@ public sealed class FirmaMalKabulleriController(
             $"CustomerCode={NormalizeForLog(request.CustomerCode)}",
             $"MovementDate={FormatDateForLog(request.MovementDate)}",
             $"DocumentDate={FormatDateForLog(request.DocumentDate)}",
-            $"DocumentNo={NormalizeForLog(request.DocumentNo)}",
+            $"DocumentSerie={NormalizeForLog(request.DocumentSerie)}",
+            $"DocumentOrderNo={request.DocumentOrderNo?.ToString(CultureInfo.InvariantCulture) ?? "-"}",
             $"OfficialDocumentKind={NormalizeForLog(ResolveOfficialDocumentKind(request))}",
             $"OfficialDocumentNo={NormalizeForLog(ResolveOfficialDocumentNo(request))}",
             $"OfficialDocumentEttn={NormalizeForLog(ResolveOfficialDocumentEttn(request))}",
@@ -400,8 +403,6 @@ public sealed class FirmaMalKabulleriController(
 
 public sealed class CreateCompanyReceivingHttpRequest
 {
-    private const int MaxCompanyReceivingDocumentNoLength = 29;
-
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
@@ -415,10 +416,14 @@ public sealed class CreateCompanyReceivingHttpRequest
 
     public DateTime? DocumentDate { get; init; }
 
-    [StringLength(
-        MaxCompanyReceivingDocumentNoLength,
-        ErrorMessage = "DocumentNo can not be longer than 29 characters.")]
-    public string? DocumentNo { get; init; }
+    [Required]
+    [StringLength(20)]
+    [RegularExpression("^[A-Za-z0-9]+$", ErrorMessage = "DocumentSerie can contain only ASCII letters and digits.")]
+    public string DocumentSerie { get; init; } = string.Empty;
+
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? DocumentOrderNo { get; init; }
 
     [StringLength(30)]
     public string? OfficialDocumentKind { get; init; }

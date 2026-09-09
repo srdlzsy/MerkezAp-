@@ -330,9 +330,6 @@ internal sealed class AxataG01InboundAtfImportService(
         Guid requestedByUserId)
     {
         var movementDate = DateTime.Today;
-        var documentNo = BuildCompanyReceivingDocumentNo(
-            analysis.Dto.DocumentSerie,
-            analysis.Dto.DocumentOrderNo);
         var requestLines = analysis.MatchedLines
             .GroupBy(line => line.OrderLine.sip_Guid)
             .OrderBy(group => group.Min(line => line.OrderLine.sip_satirno ?? line.Line.LineNo))
@@ -368,7 +365,9 @@ internal sealed class AxataG01InboundAtfImportService(
             ResolveG01CustomerCode(analysis),
             movementDate,
             movementDate,
-            documentNo,
+            analysis.Dto.DocumentSerie,
+            analysis.Dto.DocumentOrderNo,
+            NormalizeText(analysis.Dto.DespatchNo),
             null,
             null,
             BuildG01Description(analysis),
@@ -399,11 +398,6 @@ internal sealed class AxataG01InboundAtfImportService(
 
         return orderCustomerCodes.FirstOrDefault() ?? NormalizeText(analysis.Dto.CustomerCode);
     }
-
-    private static string BuildCompanyReceivingDocumentNo(string documentSerie, int documentOrderNo) =>
-        string.Concat(
-            documentSerie,
-            documentOrderNo.ToString(new string('0', 9), CultureInfo.InvariantCulture));
 
     private static string BuildG01Description(G01InboundAtfAnalysis analysis) =>
         Truncate(

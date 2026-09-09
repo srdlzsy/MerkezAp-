@@ -30,6 +30,10 @@ public sealed record InboundDespatchLookupResponse(
 
     public string? SourceDocumentNumber { get; init; }
 
+    public string? DocumentSerie { get; init; }
+
+    public int? DocumentOrderNo { get; init; }
+
     public string? InvoiceNumber { get; init; }
 
     public DateTime? InvoiceDate { get; init; }

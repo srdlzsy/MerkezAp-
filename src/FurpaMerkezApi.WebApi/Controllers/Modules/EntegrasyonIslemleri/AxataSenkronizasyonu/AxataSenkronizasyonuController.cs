@@ -970,7 +970,9 @@ public sealed class AxataSenkronizasyonuController(
             request.CustomerCode,
             request.MovementDate,
             request.DocumentDate,
-            request.DocumentNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo!.Value,
+            ResolveOfficialDocumentNo(request),
             request.Deliverer,
             request.Receiver,
             request.Description,
@@ -1016,7 +1018,9 @@ public sealed class AxataSenkronizasyonuController(
             request.CustomerCode,
             request.MovementDate ?? request.DocumentDate,
             request.DocumentDate ?? request.MovementDate,
-            request.DocumentNo ?? request.InvoiceNo ?? request.AxataOrderNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo!.Value,
+            request.InvoiceNo,
             request.Deliverer,
             request.Receiver,
             request.Description
@@ -1114,9 +1118,7 @@ public sealed class AxataSenkronizasyonuController(
                 .ToArray());
 
     private static string BuildCompanyReceivingReference(CreateCompanyReceivingHttpRequest request) =>
-        string.IsNullOrWhiteSpace(request.DocumentNo)
-            ? request.CustomerCode
-            : $"{request.CustomerCode} / {request.DocumentNo}";
+        $"{request.CustomerCode} / {request.DocumentSerie}/{request.DocumentOrderNo}";
 
     private static string BuildAxataOutboundDeliveryReference(AxataOutboundDeliveryHttpRequest request) =>
         string.IsNullOrWhiteSpace(request.AxataDeliveryNo)
@@ -1125,8 +1127,17 @@ public sealed class AxataSenkronizasyonuController(
 
     private static string BuildAxataInboundAtfReference(AxataInboundAtfCompanyReceivingHttpRequest request) =>
         string.IsNullOrWhiteSpace(request.AxataOrderNo)
-            ? $"{request.CustomerCode} / {request.DocumentNo ?? request.InvoiceNo ?? "ATF"}"
+            ? $"{request.CustomerCode} / {request.DocumentSerie}/{request.DocumentOrderNo}"
             : $"{request.CustomerCode} / {request.AxataOrderNo}";
+
+    private static string? ResolveOfficialDocumentNo(CreateCompanyReceivingHttpRequest request) =>
+        new[]
+        {
+            request.OfficialDocumentNo,
+            request.SourceDocumentNumber,
+            request.DespatchNumber,
+            request.InvoiceNumber
+        }.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static string BuildInventoryCountReference(CreateInventoryCountHttpRequest request) =>
         request.Name
@@ -2601,8 +2612,14 @@ public sealed class AxataInboundAtfCompanyReceivingHttpRequest
 
     public DateTime? DocumentDate { get; init; }
 
-    [StringLength(50)]
-    public string? DocumentNo { get; init; }
+    [Required]
+    [StringLength(20)]
+    [RegularExpression("^[A-Za-z0-9]+$", ErrorMessage = "DocumentSerie can contain only ASCII letters and digits.")]
+    public string DocumentSerie { get; init; } = string.Empty;
+
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? DocumentOrderNo { get; init; }
 
     [StringLength(50)]
     public string? AxataOrderNo { get; init; }

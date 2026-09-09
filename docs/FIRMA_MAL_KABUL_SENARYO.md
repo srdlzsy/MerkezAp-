@@ -104,8 +104,8 @@ iade-islemleri.firma-iadeleri.detail
 
 ## Evrak No Kurali
 
-`documentNo` opsiyoneldir. E-belge/e-irsaliye no varsa body icinden gelen
-`documentNo` hem belge no hem de Mikro evrak seri/sira kaynagidir.
+Firma mal kabul create isteginde `documentSerie` ve `documentOrderNo` ayri ve
+zorunludur. Backend bu alanlari `documentNo`, cari, depo veya prefix'ten uretmez.
 
 Tam format:
 
@@ -121,8 +121,9 @@ Tam format kurallari:
 - Son 9 karakterin sayisal degeri `0` olamaz; Mikro arayuzunde evrak bulunabilirligi icin sira `1` ve uzeri olmalidir.
 - Son 9 karakterden once en az 1 karakterlik seri prefix olmalidir.
 - Seri prefix en fazla 20 karakter olabilir.
-- `documentSerie` backend tarafinda son 9 hane atilarak uretilir.
-- `documentOrderNo` backend tarafinda son 9 hane sayi olarak okunarak uretilir.
+- QR/e-belge lookup'u bu formati kesin olarak ayristirabiliyorsa response'ta
+  `documentSerie` ve `documentOrderNo` alanlarini doldurur.
+- Format kesin degilse iki alan `null` gelir; UI kullanicidan seri ve sirayi ayri ister.
 
 Ornek:
 
@@ -141,71 +142,24 @@ FRM2026600059281
 OY32026000000162
 ```
 
-Tam format sayilmayan ornekler:
+Otomatik ayristirilmayan ornekler:
 
 ```text
-IRS-000123      -> prefix moduna duser, seri IRS000123 olur
-IRS 000000123   -> prefix moduna duser, seri IRS000000123 olur
-000000123       -> sadece sayisal oldugu icin prefix kabul edilmez, FMK{depo} serisine duser
+IRS-000123
+IRS 000000123
+000000123
 ```
 
-E-belge/e-irsaliye yoksa:
-
-- UI `documentNo` alanini bos gonderebilir.
-- Backend bos belge no icin cari unvanindan seri uretmez.
-- Bos belge no icin backend depo bazli sabit seri kullanir:
-
-```text
-documentSerie = FMK{kullaniciDeposu}
-```
-
-- Ayni depo ve `FMK{kullaniciDeposu}` serisi icin siradaki `documentOrderNo`
-  degerini verir.
-- Bu seri daha once hic kullanilmadiysa ilk `documentOrderNo` degeri `1` olur.
-- Response'taki `documentNo`, uretilen nihai evrak no olur.
-
-Ornek:
-
-```text
-kullanici deposu  = 50
-request documentNo = bos
-uretilen seri      = FMK50
-siradaki sira      = 1
-response documentNo = FMK50000000001
-```
-
-Prefix davranisi:
-
-- UI veya kullanici `ULK`, `ABC`, `IRS-000123` gibi harf iceren bir deger
-  gonderirse backend bunu seri/prefix olarak kullanabilir.
-- Ayni depo ve seri icin siradaki `documentOrderNo` degerini verir.
-- Bu seri daha once hic kullanilmadiysa ilk `documentOrderNo` degeri `1` olur.
-- Response'taki `documentNo`, uretilen nihai evrak no olur.
-
-Kullanici veya UI prefix gondermek isterse:
-
-```text
-documentNo = ULK
-```
-
-Backend bunu tam evrak no degil seri/prefix kabul eder. Prefix olarak
-kullanilmasi icin degerin harf icermesi gerekir. Sadece harf-rakam
-karakterleri kullanilir, Turkce karakterler ASCII karsiligina cevrilir,
-bosluk/noktalama atilir ve seri en fazla 20 karaktere kisaltilir.
-
-Ornek:
-
-```text
-request documentNo = ULK
-uretilen seri      = ULK
-siradaki sira      = 42
-response documentNo = ULK000000042
-```
+E-belge/e-irsaliye yoksa UI birlesik belge no alani gostermez. Kullanici
+`documentSerie` ve `documentOrderNo` alanlarini ayri girer. `documentSerie`
+yalniz ASCII harf/rakam ve en fazla 20 karakter, `documentOrderNo` ise pozitif
+integer olmalidir. Bu manuel akista `officialDocumentNo` gonderilmez; Mikro
+`sth_belge_no` bos kalir ve response `documentNo` bos string doner.
 
 Tekrar kontrolu:
 
-- Ayni depoda ayni `documentNo` tekrar kullanilamaz.
 - Ayni depoda ayni `documentSerie + documentOrderNo` tekrar kullanilamaz.
+- Resmi belge no varsa ayni depoda ayni `officialDocumentNo` tekrar kullanilamaz.
 
 ## Firma Mal Kabul Icin E-Irsaliye ETTN Cozumleme
 
@@ -237,7 +191,9 @@ On dolum map'i:
 
 ```text
 primaryCustomerSuggestion.customerCode -> request.customerCode
-despatchNumber                         -> request.documentNo
+documentSerie                          -> request.documentSerie
+documentOrderNo                        -> request.documentOrderNo
+despatchNumber                         -> request.officialDocumentNo
 actualDespatchDate ?? issueDate        -> request.movementDate
 actualDespatchTime                     -> UI fiili sevk saati bilgisi
 plaque                                 -> UI arac plakasi bilgisi
@@ -248,12 +204,10 @@ ettn                                   -> UI referans bilgisi
 notes                                  -> UI not paneli veya kisa description adayi
 ```
 
-`despatchNumber` tam `seri + 9 haneli sira` formatindaysa backend seri/sirayi
-bundan cozer. Tam formatta degilse backend bunu harf iceren prefix olarak
-degerlendirebilir. Tam format degilse ve kullanilabilir harf iceren prefix
-uretmezse backend `FMK{kullaniciDeposu}` serisine duser. Bu yuzden kayit
-sonrasi UI yine response'taki `documentNo`, `documentSerie` ve
-`documentOrderNo` alanlarini esas almalidir.
+`despatchNumber` tam `seri + 9 haneli sira` formatindaysa lookup response'u
+`documentSerie` ve `documentOrderNo` alanlarini kesin olarak doldurur. Format
+uygun degilse tahmin yapilmaz; iki alan `null` gelir ve kullanici bunlari ayri
+girer.
 
 Cari secimi:
 
@@ -291,7 +245,9 @@ Ornek ETTN cozumleme cevabindan create taslagi:
   "customerCode": "120.01.03106",
   "movementDate": "2026-05-06",
   "documentDate": "2026-05-06",
-  "documentNo": "IRS2026000001234",
+  "documentSerie": "IRS2026",
+  "documentOrderNo": 1234,
+  "officialDocumentNo": "IRS2026000001234",
   "deliverer": "",
   "receiver": "",
   "description": "EIRS IRS2026000001234",
@@ -315,8 +271,8 @@ Bu taslak kullanici tarafindan kontrol edilir. Kullanici fiili sayimda 12 yerine
 10 kabul ederse UI sadece `acceptedQuantity` alanini 10 yapar; backend 12 mal
 kabul ve 2 firma iade yazar.
 
-E-irsaliye yoksa bu adim atlanir. UI cari secimiyle manuel create ekranini acar
-ve `documentNo` bos veya harf iceren prefix olarak gonderilebilir.
+E-irsaliye yoksa bu adim atlanir. UI cari secimiyle manuel create ekranini acar;
+kullanici seri ve sirayi ayri girer, `officialDocumentNo` gonderilmez.
 
 ## Request Modeli
 
@@ -326,7 +282,9 @@ ve `documentNo` bos veya harf iceren prefix olarak gonderilebilir.
   "customerCode": "32004621",
   "movementDate": "2026-04-20",
   "documentDate": "2026-04-20",
-  "documentNo": "ST12026000002395",
+  "documentSerie": "ST12026",
+  "documentOrderNo": 2395,
+  "officialDocumentNo": "ST12026000002395",
   "deliverer": "Teslim Eden",
   "receiver": "Teslim Alan",
   "description": "",
@@ -487,10 +445,10 @@ sth_evraktip       = 13
 sth_tip            = 0
 sth_cins           = 0
 sth_normal_iade    = 0
-sth_evrakno_seri   = documentNo icinden turetilen seri
-sth_evrakno_sira   = documentNo icinden turetilen sira
+sth_evrakno_seri   = request.documentSerie
+sth_evrakno_sira   = request.documentOrderNo
 sth_satirno        = hareket satir no
-sth_belge_no       = documentNo
+sth_belge_no       = officialDocumentNo; manuel kayitta bos
 sth_belge_tarih    = documentDate
 sth_tarih          = movementDate
 sth_cari_kodu      = customerCode
@@ -761,13 +719,10 @@ Yeni mal kabul:
 - E-irsaliye yoksa veya kullanici ETTN okutmayacaksa UI manuel akisa devam eder.
 - Manuel akista cari secimi zorunludur.
 - Cari secilmeden satir kaydetme ve `Siparis Bagla` pasif olmalidir.
-- E-belge/e-irsaliye no varsa UI `documentNo` alanini bosluksuz `seri + 9 haneli
-  sayisal sira` formatinda gonderebilir.
-- E-belge/e-irsaliye yoksa UI `documentNo` alanini bos birakabilir veya
-  kullanicidan `ULK`, `ABC` gibi kisa bir seri/prefix alabilir.
-- `documentNo` bos birakilirsa backend `FMK{kullaniciDeposu}` serisini kullanir.
-- UI kayit sonrasi request'teki bos/prefix degeri degil, response'taki
-  `documentNo`, `documentSerie` ve `documentOrderNo` alanlarini esas almalidir.
+- UI her kayitta ayri `documentSerie` ve `documentOrderNo` alanlarini zorunlu tutar.
+- QR lookup bu alanlari kesin cozerse otomatik doldurur; cozemiyorsa kullanici ayri girer.
+- E-belge/e-irsaliye yoksa `officialDocumentNo` gonderilmez ve Mikro belge no bos kalir.
+- UI detay gecisinde response `documentSerie` ve `documentOrderNo` alanlarini esas alir.
 - UI yeni taslakta `clientRequestId` uretip saklamalidir.
 
 Satir girisi:
@@ -1115,24 +1070,9 @@ quantity tek basina fark/iade olusturmaz.
 Kismi kabul gerekiyorsa bu endpoint yerine manuel incoming endpoint'i
 kullanilmalidir.
 
-`DocumentNo` bos ise backend sirasiyla su alanlari dener:
-
-```text
-DocumentNo
-InvoiceNo
-AxataOrderNo
-```
-
-Son secilen deger tam firma mal kabul `documentNo` formatindaysa aynen
-kullanilir:
-
-```text
-seri + 9 haneli sayisal sira
-```
-
-Tam formatta degilse seri/prefix kabul edilir ve siradaki sira backend
-tarafindan uretilir. Bu alanlarin hepsi bos ise backend `FMK{depo}` serisine
-duser.
+AXATA inbound ATF akisi da `DocumentSerie` ve `DocumentOrderNo` alanlarini
+zorunlu alir. `InvoiceNo` varsa yalniz resmi belge no olarak yazilir;
+`AxataOrderNo` seri, sira veya Mikro belge no uretmek icin kullanilmaz.
 
 ### Manuel Incoming Company Receiving
 
@@ -1156,7 +1096,9 @@ Bu yuzden kismi kabul icin dogru endpoint budur:
   "customerCode": "32004621",
   "movementDate": "2026-04-20",
   "documentDate": "2026-04-20",
-  "documentNo": "ST12026000002395",
+  "documentSerie": "ST12026",
+  "documentOrderNo": 2395,
+  "officialDocumentNo": "ST12026000002395",
   "allowOrderOverReceiving": false,
   "autoCreateReturnForPartialAcceptance": true,
   "lines": [
@@ -1198,12 +1140,9 @@ Receiving quantity is greater than remaining order quantity.
 ## UI Kontrol Listesi
 
 - Cari secilmeden `Siparis Bagla` pasif.
-- E-belge/e-irsaliye varsa `documentNo` bosluksuz `seri + 9 haneli sayisal sira`
-  formatinda gonderilebilir.
-- E-belge/e-irsaliye yoksa `documentNo` bos veya harf iceren kisa prefix
-  olabilir.
-- `documentNo` bos ise backend cari unvanindan seri uretmez; `FMK{kullaniciDeposu}`
-  serisini kullanir.
+- `documentSerie` ve `documentOrderNo` ayri ve zorunlu alanlardir.
+- Birlesik manuel belge no ve prefix girişi yoktur.
+- E-belge/e-irsaliye yoksa `officialDocumentNo` gonderilmez; `sth_belge_no` bos kalir.
 - Yeni UI `quantity` yerine `dispatchQuantity` ve `acceptedQuantity` gonderir.
 - `acceptedQuantity > dispatchQuantity` engellenir.
 - Eksik kabulde fark gosterilir.

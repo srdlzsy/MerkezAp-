@@ -47,6 +47,18 @@ public sealed class CompanyReceivingIrsaliyeMikroApiPayloadFactoryTests
         Assert.Equal(string.Empty, line.sth_sip_uid);
     }
 
+    [Fact]
+    public void Create_LeavesOfficialDocumentNoEmptyForManualReceiving()
+    {
+        var payload = CompanyReceivingIrsaliyeMikroApiPayloadFactory.Create(
+            [CreateMovement(Guid.Empty)],
+            "test");
+
+        var line = payload.evraklar.Single().satirlar.Single();
+
+        Assert.Equal(string.Empty, line.sth_belge_no);
+    }
+
     private static STOK_HAREKETLERI CreateMovement(Guid orderGuid) =>
         new()
         {
@@ -55,10 +67,10 @@ public sealed class CompanyReceivingIrsaliyeMikroApiPayloadFactoryTests
             sth_cins = 0,
             sth_normal_iade = 0,
             sth_evraktip = 13,
-            sth_evrakno_seri = "FMK1",
+            sth_evrakno_seri = "IRS1",
             sth_evrakno_sira = 1,
             sth_satirno = 0,
-            sth_belge_no = "FMK1000000001",
+            sth_belge_no = string.Empty,
             sth_belge_tarih = new DateTime(2026, 7, 29),
             sth_stok_kod = "01",
             sth_cari_cinsi = 0,

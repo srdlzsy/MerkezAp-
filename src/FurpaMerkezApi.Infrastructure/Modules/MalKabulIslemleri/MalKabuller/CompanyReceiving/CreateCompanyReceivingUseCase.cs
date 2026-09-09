@@ -36,7 +36,6 @@ public sealed class CreateCompanyReceivingUseCase(
     private const byte IssuedCompanyOrderType = 1;
     private const byte NormalOrderGenre = 0;
     private const int FirstDocumentOrderNo = 1;
-    private const int DerivedDocumentOrderNoLength = 9;
     private const int MaxDocumentSerieLength = 20;
     private const double QuantityTolerance = 0.000001d;
     private const string OfflineOperationCode = "mal-kabul-islemleri.firma-mal-kabulleri.create";
@@ -146,14 +145,10 @@ public sealed class CreateCompanyReceivingUseCase(
                     var customer = await GetCustomerAsync(customerCode, cancellationToken);
                     LogCreatePhase("customer-lookup", "-", null, 0, 0);
                     var customerAddressNo = ResolveCustomerAddressNo(customer);
-                    var resolvedDocumentIdentity = await ResolveDocumentIdentityAsync(
-                        request.DocumentNo,
-                        request.WarehouseNo,
-                        cancellationToken);
-                    var documentSerie = resolvedDocumentIdentity.DocumentSerie;
-                    var documentOrderNo = resolvedDocumentIdentity.DocumentOrderNo;
+                    var documentSerie = NormalizeDocumentSerie(request.DocumentSerie);
+                    var documentOrderNo = request.DocumentOrderNo;
                     LogCreatePhase("resolve-document-identity", documentSerie, documentOrderNo, 0, 0);
-                    var documentNo = BuildDocumentNo(documentSerie, documentOrderNo);
+                    var documentNo = NormalizeText(request.OfficialDocumentNo);
                     await EnsureDocumentDoesNotExistAsync(
                         request.WarehouseNo,
                         customerCode,
@@ -488,13 +483,9 @@ public sealed class CreateCompanyReceivingUseCase(
 
         var customer = await GetCustomerAsync(customerCode, cancellationToken);
         var customerAddressNo = ResolveCustomerAddressNo(customer);
-        var resolvedDocumentIdentity = await ResolveDocumentIdentityAsync(
-            request.DocumentNo,
-            request.WarehouseNo,
-            cancellationToken);
-        var documentSerie = resolvedDocumentIdentity.DocumentSerie;
-        var documentOrderNo = resolvedDocumentIdentity.DocumentOrderNo;
-        var documentNo = BuildDocumentNo(documentSerie, documentOrderNo);
+        var documentSerie = NormalizeDocumentSerie(request.DocumentSerie);
+        var documentOrderNo = request.DocumentOrderNo;
+        var documentNo = NormalizeText(request.OfficialDocumentNo);
         await EnsureDocumentDoesNotExistAsync(
             request.WarehouseNo,
             customerCode,
@@ -1467,23 +1458,6 @@ public sealed class CreateCompanyReceivingUseCase(
         return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
     }
 
-    private async Task<int> GetNextReceivingDocumentOrderNoAsync(
-        int warehouseNo,
-        string documentSerie,
-        CancellationToken cancellationToken)
-    {
-        var currentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
-            .Where(movement =>
-                movement.sth_evraktip == ReceivingReceiptDocumentType &&
-                movement.sth_tip == IncomingMovementType &&
-                movement.sth_normal_iade == NormalMovement &&
-                movement.sth_giris_depo_no == warehouseNo &&
-                movement.sth_evrakno_seri == documentSerie)
-            .MaxAsync(movement => movement.sth_evrakno_sira, cancellationToken);
-
-        return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
-    }
-
     private async Task<Dictionary<Guid, SIPARISLER>> LoadOrdersAsync(
         CreateCompanyReceivingRequest request,
         IReadOnlyCollection<CreateCompanyReceivingLineRequest> lines,
@@ -1532,59 +1506,6 @@ public sealed class CreateCompanyReceivingUseCase(
         }
 
         return ordersByGuid;
-    }
-
-    private async Task<ResolvedDocumentIdentity> ResolveDocumentIdentityAsync(
-        string? documentNo,
-        int warehouseNo,
-        CancellationToken cancellationToken)
-    {
-        var normalizedDocumentNo = NormalizeText(documentNo);
-        if (TryResolveExplicitDocumentIdentity(normalizedDocumentNo, out var explicitIdentity))
-        {
-            return explicitIdentity;
-        }
-
-        var generatedDocumentSerie = BuildGeneratedDocumentSerie(
-            normalizedDocumentNo,
-            warehouseNo);
-        var generatedDocumentOrderNo = await GetNextReceivingDocumentOrderNoAsync(
-            warehouseNo,
-            generatedDocumentSerie,
-            cancellationToken);
-
-        return new ResolvedDocumentIdentity(generatedDocumentSerie, generatedDocumentOrderNo);
-    }
-
-    private static bool TryResolveExplicitDocumentIdentity(
-        string documentNo,
-        out ResolvedDocumentIdentity identity)
-    {
-        identity = default!;
-
-        if (string.IsNullOrWhiteSpace(documentNo) ||
-            documentNo.Any(char.IsWhiteSpace) ||
-            documentNo.Length <= DerivedDocumentOrderNoLength ||
-            documentNo.Length > MaxDocumentSerieLength + DerivedDocumentOrderNoLength ||
-            !int.TryParse(
-                documentNo.AsSpan(documentNo.Length - DerivedDocumentOrderNoLength),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var derivedDocumentOrderNo) ||
-            derivedDocumentOrderNo < FirstDocumentOrderNo)
-        {
-            return false;
-        }
-
-        var derivedDocumentSerie = documentNo[..^DerivedDocumentOrderNoLength].Trim();
-        if (string.IsNullOrWhiteSpace(derivedDocumentSerie) ||
-            derivedDocumentSerie.Length > MaxDocumentSerieLength)
-        {
-            return false;
-        }
-
-        identity = new ResolvedDocumentIdentity(derivedDocumentSerie, derivedDocumentOrderNo);
-        return true;
     }
 
     private static void ValidateOrderLine(
@@ -2164,25 +2085,8 @@ public sealed class CreateCompanyReceivingUseCase(
 
     private static string BuildReturnDocumentSerie(int warehouseNo) => $"F{warehouseNo}";
 
-    private static string BuildDocumentNo(string documentSerie, int documentOrderNo) =>
-        string.Concat(
-            documentSerie,
-            documentOrderNo.ToString(
-                new string('0', DerivedDocumentOrderNoLength),
-                CultureInfo.InvariantCulture));
-
-    private static string BuildGeneratedDocumentSerie(
-        string requestedDocumentNo,
-        int warehouseNo)
-    {
-        var requestedSerie = NormalizeDocumentSerieToken(requestedDocumentNo);
-        if (requestedSerie.Any(character => character is >= 'A' and <= 'Z'))
-        {
-            return Truncate(requestedSerie, MaxDocumentSerieLength);
-        }
-
-        return Truncate($"FMK{warehouseNo}", MaxDocumentSerieLength);
-    }
+    private static string NormalizeDocumentSerie(string documentSerie) =>
+        documentSerie.Trim().ToUpperInvariant();
 
     private static string NormalizeDocumentSerieToken(string value)
     {
@@ -2246,6 +2150,18 @@ public sealed class CreateCompanyReceivingUseCase(
         if (string.IsNullOrWhiteSpace(request.CustomerCode))
         {
             throw new ArgumentException("Customer code is required.", nameof(request.CustomerCode));
+        }
+
+        if (!CompanyReceivingDocumentIdentityParser.IsValidSerie(request.DocumentSerie))
+        {
+            throw new ArgumentException(
+                $"Document serie is required, can not exceed {MaxDocumentSerieLength} characters and can contain only ASCII letters and digits.",
+                nameof(request.DocumentSerie));
+        }
+
+        if (request.DocumentOrderNo < FirstDocumentOrderNo)
+        {
+            throw new ArgumentException("Document order no must be greater than zero.", nameof(request.DocumentOrderNo));
         }
 
         if (request.DocumentDate.HasValue &&
@@ -2547,8 +2463,6 @@ public sealed class CreateCompanyReceivingUseCase(
             // Best effort only; preserve the original business exception.
         }
     }
-
-    private sealed record ResolvedDocumentIdentity(string DocumentSerie, int DocumentOrderNo);
 
     private sealed record PartialAcceptanceReturnInfo(
         double Quantity,
