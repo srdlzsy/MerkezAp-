@@ -342,6 +342,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(GreenGrocerProductCaseOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddSingleton<MikroApiWriteAuditService>();
+        services.AddScoped<MikroApiWriteAuditReconciliationService>();
+        services.AddHostedService<MikroApiWriteAuditReconciliationWorker>();
         services.AddHttpClient<MikroApiClient>((serviceProvider, client) =>
         {
             var mikroApiOptions = serviceProvider.GetRequiredService<IOptionsMonitor<MikroApiOptions>>().CurrentValue;

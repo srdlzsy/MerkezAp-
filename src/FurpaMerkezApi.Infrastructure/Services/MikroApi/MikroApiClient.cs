@@ -125,8 +125,7 @@ public sealed class MikroApiClient(
                 return await CompleteAuditAsync(
                     result,
                     auditHandle,
-                    auditWrite,
-                    cancellationToken);
+                    auditWrite);
             }
             catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
@@ -144,6 +143,26 @@ public sealed class MikroApiClient(
                     await DelayBeforeRetryAsync(attempt, currentOptions, cancellationToken);
                     continue;
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                var canceledResult = new MikroApiResult<TResponse>(
+                    true,
+                    0,
+                    0,
+                    "Mikro API request was canceled before its write outcome could be confirmed.",
+                    string.Empty,
+                    default,
+                    normalizedPath,
+                    attempt,
+                    stopwatch.Elapsed);
+
+                await CompleteAuditAsync(
+                    canceledResult,
+                    auditHandle,
+                    auditWrite);
+
+                throw;
             }
             catch (HttpRequestException exception)
             {
@@ -180,8 +199,7 @@ public sealed class MikroApiClient(
         return await CompleteAuditAsync(
             failureResult,
             auditHandle,
-            auditWrite,
-            cancellationToken);
+            auditWrite);
     }
 
     public Task MarkRecoveredAsync<TResponse>(
@@ -195,13 +213,12 @@ public sealed class MikroApiClient(
             documentNo,
             recoveredGuid,
             documentFlowId,
-            cancellationToken);
+            CancellationToken.None);
 
     private async Task<MikroApiResult<TResponse>> CompleteAuditAsync<TResponse>(
         MikroApiResult<TResponse> result,
         MikroApiWriteAuditHandle auditHandle,
-        bool auditWrite,
-        CancellationToken cancellationToken)
+        bool auditWrite)
     {
         var enrichedResult = result with
         {
@@ -211,7 +228,7 @@ public sealed class MikroApiClient(
 
         if (auditWrite)
         {
-            await writeAuditService.CompleteAsync(auditHandle, enrichedResult, cancellationToken);
+            await writeAuditService.CompleteAsync(auditHandle, enrichedResult, CancellationToken.None);
         }
 
         return enrichedResult;

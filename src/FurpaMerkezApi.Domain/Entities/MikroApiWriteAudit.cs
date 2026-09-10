@@ -105,6 +105,22 @@ public sealed class MikroApiWriteAudit
         RecoveredAtUtc = NormalizeUtc(recoveredAtUtc);
     }
 
+    public void MarkOutcomeUnknown(string reason, DateTime observedAtUtc)
+    {
+        if (Status == MikroApiWriteAuditStatus.Recovered)
+        {
+            return;
+        }
+
+        var normalizedObservedAtUtc = NormalizeUtc(observedAtUtc);
+        Status = MikroApiWriteAuditStatus.Unknown;
+        Error = NormalizeOptional(reason, 2000) ?? Error;
+        CompletedAtUtc ??= normalizedObservedAtUtc;
+        ElapsedMilliseconds ??= Math.Max(
+            0,
+            (long)(normalizedObservedAtUtc - CreatedAtUtc).TotalMilliseconds);
+    }
+
     private static DateTime NormalizeUtc(DateTime value) =>
         value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
 

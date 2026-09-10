@@ -129,10 +129,15 @@ public sealed class MikroApiWriteAuditService(
 
         try
         {
+            using var persistenceTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            persistenceTimeout.CancelAfter(TimeSpan.FromSeconds(
+                Math.Clamp(options.CurrentValue.PersistenceTimeoutSeconds, 1, 60)));
+            var persistenceToken = persistenceTimeout.Token;
+
             await using var scope = scopeFactory.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
             var audit = await dbContext.MikroApiWriteAudits
-                .SingleOrDefaultAsync(item => item.Id == auditId.Value, cancellationToken);
+                .SingleOrDefaultAsync(item => item.Id == auditId.Value, persistenceToken);
 
             if (audit is null)
             {
@@ -141,7 +146,7 @@ public sealed class MikroApiWriteAuditService(
             }
 
             update(audit);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await dbContext.SaveChangesAsync(persistenceToken);
         }
         catch (Exception exception)
         {

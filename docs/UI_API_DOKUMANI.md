@@ -32,6 +32,10 @@ Timeout ve tekrar deneme notu:
 - Manav mal kabul Mikro aktarimi `GreenGrocerGoodsReceipt`, POS muhasebe ERP aktarimi `PosAccountingSlip` routing ayariyla opsiyonel olarak Mikro API uzerinden calisir. Bu secim UI request modelini degistirmez; backend API sonrasi Mikro DB readback yapmadan islemi basarili saymaz.
 - Terminal, mobil ve web istemcileri liste ve create isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Subede internet zayifsa API islemi devam ederken istemci 30-60 saniyede vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
 - POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
+- Mikro API yazma audit kaydi istekten once `Pending` acilir. Kesin basari `Succeeded`, kesin is kurali hatasi `Failed`, timeout/baglanti kopmasi/istemci iptali gibi commit sonucu kanitlanamayan durumlar `Unknown`, Mikro DB readback ile evrak bulundugunda `Recovered` olur.
+- Istemci istegi iptal edilse bile audit kapanisi kullanici request token'ina bagli degildir; Auth DB yazimi kisa ve ayri bir timeout ile tamamlanmaya calisilir.
+- Arka plan uzlastirma islemi varsayilan olarak 5 dakikada bir calisir. 15 dakikadan eski `Pending` kayitlari `Unknown` yapar ve eski parser nedeniyle `Succeeded` yazilmis `MikroAPI - TimeOut` cevaplarini duzeltir. `Recovered` kayitlara dokunmaz.
+- `Unknown`, evrakin Mikro'da kesinlikle olusmadigi anlamina gelmez. UI veya islem servisi ayni payload ile kontrolsuz yeni kayit acmamalidir; once readback/guvenli retry akisi calistirilmalidir.
 
 Route parametre notu:
 
