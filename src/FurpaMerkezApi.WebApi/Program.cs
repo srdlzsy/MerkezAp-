@@ -44,6 +44,8 @@ if (builder.Environment.IsDevelopment())
 // -------------------- SERVICES --------------------
 
 builder.Services.Configure<ApiAuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.Configure<LegacyEDespatchBridgeOptions>(
+    builder.Configuration.GetSection(LegacyEDespatchBridgeOptions.SectionName));
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<WarehouseAccessFilter>();

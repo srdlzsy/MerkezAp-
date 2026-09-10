@@ -32,6 +32,17 @@ public sealed class ApiCorsOptions
     public bool AllowCredentials { get; init; } = true;
 }
 
+public sealed class LegacyEDespatchBridgeOptions
+{
+    public const string SectionName = "LegacyEDespatchBridge";
+
+    public bool Enabled { get; init; }
+
+    public string[] AllowedOrigins { get; init; } = [];
+
+    public int[] AllowedWarehouseNos { get; init; } = [];
+}
+
 public sealed class DataProtectionOptions
 {
     public string KeysPath { get; init; } = string.Empty;

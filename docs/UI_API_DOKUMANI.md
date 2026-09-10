@@ -78,6 +78,57 @@ Controller'da acik olan pratik alias/canonical route'lar:
 - `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri`, `GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri`
 - `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar`, `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri`, `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` ve `DELETE /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}`
 
+### Legacy E-Irsaliye Koprusu
+
+Eski arayuz kendi login sistemini kullandigi ve FurpaMerkezApi JWT token'i uretemedigi icin, sadece giden depolar arasi sevk e-irsaliye gonderimi icin dar kapsamli legacy kopru endpoint'i vardir. Normal JWT'li endpointler degismez; yeni ekranlar yine `/api/sevk-islemleri/.../e-irsaliye` route'larini kullanmalidir.
+
+Config:
+
+```json
+{
+  "LegacyEDespatchBridge": {
+    "Enabled": false,
+    "AllowedOrigins": [
+      "http://10.0.0.100:5002"
+    ],
+    "AllowedWarehouseNos": []
+  }
+}
+```
+
+Kural:
+
+- `Enabled=false` ise endpoint `404 Not Found` doner.
+- `warehouseNo` query zorunludur; JWT olmadigi icin backend kullanici deposu cozemez.
+- `AllowedOrigins` doluysa browser `Origin`/`Referer` bu listede olmalidir.
+- `AllowedWarehouseNos` doluysa sadece listedeki depolar adina gonderim yapilir.
+- Bu endpoint legacy uyumluluk icin anonim acilir. Canlida mumkunse `AllowedOrigins` ve `AllowedWarehouseNos` bos birakilmamalidir.
+- Iceride mevcut `EDespatchService.SendAsync` calisir; belge no, tekrar gonderim kontrolu, Mikro isaretleme ve document flow kaydi mevcut ana akisla aynidir.
+
+Endpoint:
+
+```text
+POST /api/legacy/e-irsaliye/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
+POST /api/legacy/e-irsaliye/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
+```
+
+Body:
+
+```json
+{
+  "driverId": "25a9f3ea-a55a-4558-bb82-8109c3f14cd4",
+  "plaque": "16BZU759",
+  "driverNameSurname": "SINAN BERKER",
+  "driverTckn": "11111111111"
+}
+```
+
+Not:
+
+- `driverId` verilirse aktif sofor kaydindan plaka/ad soyad/TCKN doldurulur.
+- `driverId` verilmezse `plaque`, `driverNameSurname` ve `driverTckn` zorunludur.
+- Bu route acildiginda login/JWT kontrolu yoktur. E-irsaliye gercek belge urettigi icin canlida origin, CORS ve depo listesi dar tutulmalidir.
+
 ### Tum Depo Yetki Modeli
 
 - Depo kapsamli menu/action setlerinde `all-warehouses` aksiyonu bulunur. Kod formati `{module}.{menu}.all-warehouses` seklindedir.
