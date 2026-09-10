@@ -6880,7 +6880,7 @@ Onemli not:
 - `officialDocumentNo` varsa Mikro `STOK_HAREKETLERI.sth_belge_no` alanina da yazilir. ETTN/UUID bu alana yazilmaz.
 - `IRS19105-1`, `ABC` veya yalniz sayisal metinlerden seri/sira ya da belge no uretilmez.
 - Response'taki `documentNo`, Mikro'ya yazilan resmi belge numarasidir; manuel kayitta bos string doner. Evrak anahtari her zaman response `documentSerie + documentOrderNo` alanlaridir.
-- Ayni depo icinde ayni `documentSerie + documentOrderNo` kombinasyonu tekrar kullanilamaz.
+- Ayni `documentSerie + documentOrderNo` kombinasyonu tum depolar genelinde yalnizca bir firma mal kabul evrakinda kullanilabilir. Baska depoda daha once kullanildiysa API yeni kaydi reddeder.
 - Mobil retry icin backend `clientRequestId` izini `FR` prefixli trace olarak `sth_eticaret_kanal_kodu` alanina tasir; `MikroApi` modunda bu payload ile Mikro'ya gider, tekrar istekte sonuc bu iz uzerinden toparlanabilir.
 - Ayni `clientRequestId` ile ayni payload tekrar gonderilirse backend ayni business response'u dondurmeye calisir.
 - Ayni `clientRequestId` ile farkli payload gonderilirse `409 Conflict` doner.

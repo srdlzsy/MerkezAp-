@@ -158,7 +158,7 @@ integer olmalidir. Bu manuel akista `officialDocumentNo` gonderilmez; Mikro
 
 Tekrar kontrolu:
 
-- Ayni depoda ayni `documentSerie + documentOrderNo` tekrar kullanilamaz.
+- Ayni `documentSerie + documentOrderNo` kombinasyonu tum depolar genelinde yalnizca bir firma mal kabul evrakinda kullanilabilir. Baska depoda olusturulmus olsa bile ayni seri/sira ile yeni firma mal kabul kaydi reddedilir.
 - Resmi belge no varsa ayni depoda ayni `officialDocumentNo` tekrar kullanilamaz.
 
 ## Firma Mal Kabul Icin E-Irsaliye ETTN Cozumleme

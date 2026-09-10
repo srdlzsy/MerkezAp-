@@ -164,7 +164,6 @@ public sealed class CreateCompanyReceivingUseCase(
                         cancellationToken);
                     LogCreatePhase("load-linked-orders", documentSerie, documentOrderNo, 0, 0);
                     await EnsureDocumentIdentityDoesNotExistAsync(
-                        request.WarehouseNo,
                         documentSerie,
                         documentOrderNo,
                         cancellationToken);
@@ -500,7 +499,6 @@ public sealed class CreateCompanyReceivingUseCase(
             trackChanges: false,
             cancellationToken);
         await EnsureDocumentIdentityDoesNotExistAsync(
-            request.WarehouseNo,
             documentSerie,
             documentOrderNo,
             cancellationToken);
@@ -1419,7 +1417,6 @@ public sealed class CreateCompanyReceivingUseCase(
     }
 
     private async Task EnsureDocumentIdentityDoesNotExistAsync(
-        int warehouseNo,
         string documentSerie,
         int documentOrderNo,
         CancellationToken cancellationToken)
@@ -1431,7 +1428,6 @@ public sealed class CreateCompanyReceivingUseCase(
                     movement.sth_evraktip == ReceivingReceiptDocumentType &&
                     movement.sth_tip == IncomingMovementType &&
                     movement.sth_normal_iade == NormalMovement &&
-                    movement.sth_giris_depo_no == warehouseNo &&
                     movement.sth_evrakno_seri == documentSerie &&
                     movement.sth_evrakno_sira == documentOrderNo,
                 cancellationToken);
@@ -1439,7 +1435,7 @@ public sealed class CreateCompanyReceivingUseCase(
         if (exists)
         {
             throw new InvalidOperationException(
-                "Company receiving document identity already exists for the selected warehouse.");
+                "Firma mal kabul belgesi kimligi zaten mevcut. Belge seri ve sira numarasi tum depolar genelinde benzersiz olmalidir.");
         }
     }
 
