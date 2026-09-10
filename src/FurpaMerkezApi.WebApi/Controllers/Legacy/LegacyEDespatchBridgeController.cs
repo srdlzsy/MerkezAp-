@@ -19,10 +19,11 @@ public sealed class LegacyEDespatchBridgeController(
     IOptionsMonitor<LegacyEDespatchBridgeOptions> options,
     ILogger<LegacyEDespatchBridgeController> logger) : ControllerBase
 {
-    [HttpPost("depolar-arasi-sevkler/{documentSerie}/{documentOrderNo:int}/gonder")]
-    [HttpPost("depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo:int}/gonder")]
+    [HttpPost("{documentKind}/{documentSerie}/{documentOrderNo:int}/gonder")]
+    [HttpPost("{documentKind}/giden/{documentSerie}/{documentOrderNo:int}/gonder")]
     [ProducesResponseType(typeof(SendEDespatchResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<SendEDespatchResponse>> SendInterWarehouseEDespatch(
+    public async Task<ActionResult<SendEDespatchResponse>> SendEDespatch(
+        string documentKind,
         string documentSerie,
         int documentOrderNo,
         [FromQuery, Range(1, int.MaxValue)] int warehouseNo,
@@ -41,10 +42,21 @@ public sealed class LegacyEDespatchBridgeController(
             });
         }
 
+        if (!TryResolveDocumentType(documentKind, out var documentType))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Bad Request",
+                Detail = "Document kind is not supported for legacy e-despatch bridge."
+            });
+        }
+
         if (!IsOriginAllowed(bridgeOptions))
         {
             logger.LogWarning(
-                "Legacy e-despatch bridge rejected request due to origin. DocumentSerie={DocumentSerie}; DocumentOrderNo={DocumentOrderNo}; WarehouseNo={WarehouseNo}; Origin={Origin}; Referer={Referer}",
+                "Legacy e-despatch bridge rejected request due to origin. DocumentKind={DocumentKind}; DocumentSerie={DocumentSerie}; DocumentOrderNo={DocumentOrderNo}; WarehouseNo={WarehouseNo}; Origin={Origin}; Referer={Referer}",
+                documentKind,
                 documentSerie,
                 documentOrderNo,
                 warehouseNo,
@@ -72,7 +84,7 @@ public sealed class LegacyEDespatchBridgeController(
 
         return Ok(await eDespatchService.SendAsync(
             new SendEDespatchRequest(
-                EDespatchDocumentType.InterWarehouseShipment,
+                documentType,
                 warehouseNo,
                 documentSerie,
                 documentOrderNo,
@@ -81,6 +93,28 @@ public sealed class LegacyEDespatchBridgeController(
                 request.DriverTckn,
                 request.DriverId),
             cancellationToken));
+    }
+
+    private static bool TryResolveDocumentType(string documentKind, out EDespatchDocumentType documentType)
+    {
+        documentType = documentKind.Trim().ToLowerInvariant() switch
+        {
+            "depolar-arasi-sevkler" => EDespatchDocumentType.InterWarehouseShipment,
+            "depo-sevk" => EDespatchDocumentType.InterWarehouseShipment,
+            "depo-sevki" => EDespatchDocumentType.InterWarehouseShipment,
+            "depo-iadeleri" => EDespatchDocumentType.WarehouseReturn,
+            "depo-iade" => EDespatchDocumentType.WarehouseReturn,
+            "firma-sevkleri" => EDespatchDocumentType.OutgoingCompanyShipment,
+            "firma-sevk" => EDespatchDocumentType.OutgoingCompanyShipment,
+            "firma-iadeleri" => EDespatchDocumentType.CompanyReturn,
+            "firma-iade" => EDespatchDocumentType.CompanyReturn,
+            _ => default
+        };
+
+        return documentType != default || string.Equals(
+            documentKind,
+            "depolar-arasi-sevkler",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsOriginAllowed(LegacyEDespatchBridgeOptions bridgeOptions)

@@ -24,12 +24,13 @@ public sealed class LegacyEDespatchBridgeControllerTests
     }
 
     [Fact]
-    public async Task SendInterWarehouseEDespatch_ReturnsForbidden_WhenOriginIsNotAllowed()
+    public async Task SendEDespatch_ReturnsForbidden_WhenOriginIsNotAllowed()
     {
         var service = new CapturingEDespatchService();
         var controller = CreateController(service, origin: "http://unexpected.local");
 
-        var result = await controller.SendInterWarehouseEDespatch(
+        var result = await controller.SendEDespatch(
+            "depolar-arasi-sevkler",
             "F56",
             86102,
             56,
@@ -45,7 +46,7 @@ public sealed class LegacyEDespatchBridgeControllerTests
     }
 
     [Fact]
-    public async Task SendInterWarehouseEDespatch_ReturnsForbidden_WhenWarehouseIsNotAllowed()
+    public async Task SendEDespatch_ReturnsForbidden_WhenWarehouseIsNotAllowed()
     {
         var service = new CapturingEDespatchService();
         var controller = CreateController(
@@ -56,7 +57,8 @@ public sealed class LegacyEDespatchBridgeControllerTests
                 AllowedWarehouseNos = [56]
             });
 
-        var result = await controller.SendInterWarehouseEDespatch(
+        var result = await controller.SendEDespatch(
+            "depolar-arasi-sevkler",
             "F120",
             10,
             120,
@@ -72,13 +74,42 @@ public sealed class LegacyEDespatchBridgeControllerTests
     }
 
     [Fact]
-    public async Task SendInterWarehouseEDespatch_ForwardsRequest_WhenLegacyGatePasses()
+    public async Task SendEDespatch_ReturnsBadRequest_WhenDocumentKindIsNotSupported()
+    {
+        var service = new CapturingEDespatchService();
+        var controller = CreateController(service, origin: "http://legacy.local");
+
+        var result = await controller.SendEDespatch(
+            "bilinmeyen",
+            "F56",
+            86102,
+            56,
+            new LegacySendEDespatchHttpRequest
+            {
+                DriverId = Guid.NewGuid()
+            },
+            CancellationToken.None);
+
+        var objectResult = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status400BadRequest, objectResult.StatusCode);
+        Assert.Null(service.LastRequest);
+    }
+
+    [Theory]
+    [InlineData("depolar-arasi-sevkler", EDespatchDocumentType.InterWarehouseShipment)]
+    [InlineData("depo-iadeleri", EDespatchDocumentType.WarehouseReturn)]
+    [InlineData("firma-sevkleri", EDespatchDocumentType.OutgoingCompanyShipment)]
+    [InlineData("firma-iadeleri", EDespatchDocumentType.CompanyReturn)]
+    public async Task SendEDespatch_ForwardsRequest_WhenLegacyGatePasses(
+        string documentKind,
+        EDespatchDocumentType expectedDocumentType)
     {
         var service = new CapturingEDespatchService();
         var driverId = Guid.NewGuid();
         var controller = CreateController(service, origin: "http://legacy.local");
 
-        var result = await controller.SendInterWarehouseEDespatch(
+        var result = await controller.SendEDespatch(
+            documentKind,
             "F56",
             86102,
             56,
@@ -91,7 +122,7 @@ public sealed class LegacyEDespatchBridgeControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.IsType<SendEDespatchResponse>(ok.Value);
         Assert.NotNull(service.LastRequest);
-        Assert.Equal(EDespatchDocumentType.InterWarehouseShipment, service.LastRequest.DocumentType);
+        Assert.Equal(expectedDocumentType, service.LastRequest.DocumentType);
         Assert.Equal(56, service.LastRequest.WarehouseNo);
         Assert.Equal("F56", service.LastRequest.DocumentSerie);
         Assert.Equal(86102, service.LastRequest.DocumentOrderNo);
@@ -99,7 +130,7 @@ public sealed class LegacyEDespatchBridgeControllerTests
     }
 
     [Fact]
-    public async Task SendInterWarehouseEDespatch_ReturnsNotFound_WhenBridgeIsDisabled()
+    public async Task SendEDespatch_ReturnsNotFound_WhenBridgeIsDisabled()
     {
         var service = new CapturingEDespatchService();
         var controller = CreateController(
@@ -109,7 +140,8 @@ public sealed class LegacyEDespatchBridgeControllerTests
                 Enabled = false
             });
 
-        var result = await controller.SendInterWarehouseEDespatch(
+        var result = await controller.SendEDespatch(
+            "depolar-arasi-sevkler",
             "F56",
             86102,
             56,

@@ -80,7 +80,7 @@ Controller'da acik olan pratik alias/canonical route'lar:
 
 ### Legacy E-Irsaliye Koprusu
 
-Eski arayuz kendi login sistemini kullandigi ve FurpaMerkezApi JWT token'i uretemedigi icin, sadece giden depolar arasi sevk e-irsaliye gonderimi icin dar kapsamli legacy kopru endpoint'i vardir. Normal JWT'li endpointler degismez; yeni ekranlar yine `/api/sevk-islemleri/.../e-irsaliye` route'larini kullanmalidir.
+Eski arayuz kendi login sistemini kullandigi ve FurpaMerkezApi JWT token'i uretemedigi icin, e-irsaliye gonderimi icin dar kapsamli legacy kopru endpoint'i vardir. Normal JWT'li endpointler degismez; yeni ekranlar yine `/api/sevk-islemleri/.../e-irsaliye` ve `/api/iade-islemleri/.../e-irsaliye` route'larini kullanmalidir.
 
 Config:
 
@@ -108,8 +108,26 @@ Kural:
 Endpoint:
 
 ```text
-POST /api/legacy/e-irsaliye/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
-POST /api/legacy/e-irsaliye/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
+POST /api/legacy/e-irsaliye/{documentKind}/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
+POST /api/legacy/e-irsaliye/{documentKind}/giden/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
+```
+
+`documentKind` degerleri:
+
+```text
+depolar-arasi-sevkler  Depolar arasi giden sevk
+depo-iadeleri          Giden depo iadesi
+firma-sevkleri         Giden firma sevki
+firma-iadeleri         Firma iadesi
+```
+
+Ornek:
+
+```text
+POST /api/legacy/e-irsaliye/depolar-arasi-sevkler/giden/F56/86102/gonder?warehouseNo=56
+POST /api/legacy/e-irsaliye/depo-iadeleri/giden/F56/123/gonder?warehouseNo=56
+POST /api/legacy/e-irsaliye/firma-sevkleri/giden/F56/124/gonder?warehouseNo=56
+POST /api/legacy/e-irsaliye/firma-iadeleri/F56/125/gonder?warehouseNo=56
 ```
 
 Body:
