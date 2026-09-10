@@ -32,6 +32,15 @@ Timeout ve tekrar deneme notu:
 - Manav mal kabul Mikro aktarimi `GreenGrocerGoodsReceipt`, POS muhasebe ERP aktarimi `PosAccountingSlip` routing ayariyla opsiyonel olarak Mikro API uzerinden calisir. Bu secim UI request modelini degistirmez; backend API sonrasi Mikro DB readback yapmadan islemi basarili saymaz.
 - Terminal, mobil ve web istemcileri liste ve create isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Subede internet zayifsa API islemi devam ederken istemci 30-60 saniyede vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
 - POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
+
+E-irsaliye alici alias notu:
+
+- Firma sevki ve firma iadesi e-irsaliye gonderiminde backend, carinin VKN/TCKN bilgisiyle Uyumsoft `GetUserAliasses` servisini cagirir.
+- Yalnizca aktif `DespatchReceiverboxAliases` kayitlari e-irsaliye alici alias'i olarak kabul edilir. E-fatura `ReceiverboxAliases` listesi bu islemde kullanilmaz.
+- Mikro `CARI_HESAP_ADRESLERI.adr_eirsaliye_alias` degeri aktif e-irsaliye listesinde bulunuyorsa korunur; eski, hatali veya e-fatura alias'iysa Uyumsoft'un dondurdugu ilk aktif e-irsaliye alici alias'i kullanilir.
+- Alias sorgusu hata verirse veya aktif e-irsaliye alici alias'i donmezse backend `TargetCustomer` bilgisini gondermez; UBL icindeki alici VKN/TCKN bilgisini koruyarak alias secimini eski akis gibi Uyumsoft'a birakir.
+- Alias fallback'i de Uyumsoft tarafinda reddedilirse API servis hatasini dondurur. UI alias secmeye veya Mikro alias'ini request body'ye yazmaya calismamalidir.
+- Depolar arasi sevk ve depo iadesinde hedef bir cari olmadigi icin bu alias cozumleme adimi calismaz.
 - Mikro API yazma audit kaydi istekten once `Pending` acilir. Kesin basari `Succeeded`, kesin is kurali hatasi `Failed`, timeout/baglanti kopmasi/istemci iptali gibi commit sonucu kanitlanamayan durumlar `Unknown`, Mikro DB readback ile evrak bulundugunda `Recovered` olur.
 - Istemci istegi iptal edilse bile audit kapanisi kullanici request token'ina bagli degildir; Auth DB yazimi kisa ve ayri bir timeout ile tamamlanmaya calisilir.
 - Arka plan uzlastirma islemi varsayilan olarak 5 dakikada bir calisir. 15 dakikadan eski `Pending` kayitlari `Unknown` yapar ve eski parser nedeniyle `Succeeded` yazilmis `MikroAPI - TimeOut` cevaplarini duzeltir. `Recovered` kayitlara dokunmaz.

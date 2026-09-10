@@ -463,6 +463,10 @@ public sealed class EDespatchService(
         EnsureDeliveryAddressPostalCode(
             deliveryCustomer.PostalCode,
             $"customer {deliveryCustomer.CustomerCode} ({deliveryCustomer.DisplayName}) address {document.Metadata.AddressNo}");
+        var resolvedDeliveryAlias = await ResolveTargetCustomerAliasAsync(
+            deliveryCustomer,
+            config,
+            cancellationToken);
         var despatchInfo = BuildDespatchInfo(
             BuildCompanyMovementDespatchAdvice(
                 document.Detail,
@@ -475,9 +479,9 @@ public sealed class EDespatchService(
                 eDespatchUuid,
                 config),
             BuildLocalDocumentId(request),
-            deliveryCustomer.Alias,
-            deliveryCustomer.TaxNumber,
-            deliveryCustomer.DisplayName);
+            resolvedDeliveryAlias,
+            resolvedDeliveryAlias is null ? null : deliveryCustomer.TaxNumber,
+            resolvedDeliveryAlias is null ? null : deliveryCustomer.DisplayName);
         var serviceResult = await SendToUyumsoftAsync(
             despatchInfo,
             config,
@@ -906,6 +910,85 @@ public sealed class EDespatchService(
         }
 
         return despatchInfo;
+    }
+
+    private async Task<string?> ResolveTargetCustomerAliasAsync(
+        EDespatchCustomerInfo customer,
+        EDespatchOptions config,
+        CancellationToken cancellationToken)
+    {
+        var endpointOptions = ToEndpointOptions(config);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(endpointOptions);
+
+        try
+        {
+            var response = await client.GetUserAliassesAsync(
+                    UyumsoftWcfClientHelper.CreateDespatchUserInfo(endpointOptions),
+                    customer.TaxNumber)
+                .WaitAsync(cancellationToken);
+
+            EnsureSucceeded(response, "e-despatch receiver alias lookup");
+
+            var activeAliases = (response.Value?.DespatchReceiverboxAliases ?? [])
+                .Where(alias => alias.Enabled && !string.IsNullOrWhiteSpace(alias.Alias))
+                .Select(alias => alias.Alias)
+                .ToArray();
+            var resolvedAlias = SelectActiveDespatchReceiverAlias(customer.Alias, activeAliases);
+
+            if (!string.Equals(resolvedAlias, customer.Alias, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning(
+                    "Mikro e-despatch alias was replaced with an active Uyumsoft receiver alias. CustomerCode={CustomerCode}, TaxNumber={TaxNumber}, MikroAlias={MikroAlias}, ResolvedAlias={ResolvedAlias}, ActiveAliasCount={ActiveAliasCount}",
+                    customer.CustomerCode,
+                    customer.TaxNumber,
+                    customer.Alias,
+                    resolvedAlias,
+                    activeAliases.Length);
+            }
+
+            return resolvedAlias;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            logger.LogWarning(
+                exception,
+                "Uyumsoft e-despatch receiver alias lookup failed. TargetCustomer will be omitted so Uyumsoft can resolve the receiver from the UBL tax number. CustomerCode={CustomerCode}, TaxNumber={TaxNumber}",
+                customer.CustomerCode,
+                customer.TaxNumber);
+            return null;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
+
+    internal static string SelectActiveDespatchReceiverAlias(
+        string? preferredAlias,
+        IEnumerable<string?> activeAliases)
+    {
+        var aliases = activeAliases
+            .Where(alias => !string.IsNullOrWhiteSpace(alias))
+            .Select(alias => alias!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (aliases.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Uyumsoft did not return an active e-despatch receiver alias for the customer.");
+        }
+
+        var matchingPreferredAlias = aliases.FirstOrDefault(alias =>
+            string.Equals(alias, preferredAlias?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        return matchingPreferredAlias ?? aliases[0];
     }
 
     private static XElement BuildCompanyMovementDespatchAdvice(

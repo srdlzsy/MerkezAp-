@@ -67,4 +67,41 @@ public sealed class EDespatchServiceTests
         Assert.DoesNotContain("sth_HareketGrupKodu2", result.Keys);
         Assert.DoesNotContain(result.Values, value => value is null);
     }
+
+    [Fact]
+    public void SelectActiveDespatchReceiverAlias_PreservesActiveMikroAlias()
+    {
+        var result = EDespatchService.SelectActiveDespatchReceiverAlias(
+            "urn:mail:preferred@example.com",
+            [
+                "urn:mail:first@example.com",
+                "URN:MAIL:PREFERRED@EXAMPLE.COM"
+            ]);
+
+        Assert.Equal("URN:MAIL:PREFERRED@EXAMPLE.COM", result);
+    }
+
+    [Fact]
+    public void SelectActiveDespatchReceiverAlias_ReplacesInactiveMikroAliasWithFirstActiveAlias()
+    {
+        var result = EDespatchService.SelectActiveDespatchReceiverAlias(
+            "urn:mail:old@example.com",
+            [
+                "urn:mail:current@example.com",
+                "urn:mail:alternative@example.com"
+            ]);
+
+        Assert.Equal("urn:mail:current@example.com", result);
+    }
+
+    [Fact]
+    public void SelectActiveDespatchReceiverAlias_RejectsMissingActiveAlias()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            EDespatchService.SelectActiveDespatchReceiverAlias(
+                "urn:mail:old@example.com",
+                [null, " "]));
+
+        Assert.Contains("active e-despatch receiver alias", exception.Message);
+    }
 }
