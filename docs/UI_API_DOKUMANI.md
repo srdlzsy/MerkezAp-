@@ -15892,7 +15892,7 @@ Tried series: FRP26, FRP.
 
 Bu mesaj backend'in hem `FRP26` hem `FRP` serisini denedigini, fakat aramayi `EArsiv` filtresiyle yaptigini gosterir. Secilen satir `EFatura` ise once frontend body'deki `scenario` duzeltilmelidir.
 
-Not: Kayit `EBELGE_EVRAK_HAREKETLERI.ebh_related_uid = iade faturasi cha_Guid` uzerinden update/insert edilir. `send` sirasinda iade referansi halen bos ise backend fallback'i otomatik deneyip kaydeder; fallback bulunamazsa gonderim durdurulur.
+Not: Kayit `EBELGE_EVRAK_HAREKETLERI.ebh_related_uid = iade faturasi cha_Guid` uzerinden update/insert edilir. `send` sirasinda iade referansi halen bos ise backend fallback'i otomatik deneyip kaydeder; fallback bulunamazsa gonderim durdurulur. `MikroWriteRouting:InvoiceReturnReference=Database` dogrudan DB yolunu, `MikroApi` ise `KayitKaydetTopluV2` tablo `597` yolunu kullanir. Mikro API yolunda referans no/tarih DB readback ile dogrulanmadan islem basarili sayilmaz. `DualShadow`, API dry-run destegi olmadigi icin yalniz DB yolunu calistirir.
 
 ### Fatura Gonderimi Detay
 

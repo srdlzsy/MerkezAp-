@@ -704,10 +704,15 @@ Bu fazda update/sil endpointleri de contract olarak hazirlanabilir:
 | `GreenGrocerOperations` | `MikroApi` | MNV artis/azalis duzeltmeleri API ile olusur ve clientRequestId iziyle geri okunur | `DahiliStokHareketKaydetV2` |
 | `ProductDistribution` | `MikroApi` | `STOK_DAGILIM` Furpa DB'de kalir; kesinlestirmede gercek depo siparisleri API ile uretilir ve stok kartindaki siparis durdurma bayragi API ile guncellenir | `DepolarArasiSiparisKaydetV2`; `KayitKaydetTopluV2` (`STOKLAR=13`) |
 | `InvoiceSendingMarkAsSent` | `MikroApi` | Toplu update sonrasi tum hareketler DB readback ile dogrulanir | `KayitKaydetTopluV2` (her kayitta `TabloNo=51`, `KayitTipi=1`, `cha_Guid`, `cha_belge_no`, `cha_uuid`, `cha_kilitli`) |
+| `InvoiceReturnReference` | `MikroApi` | Manuel "iadeye konu fatura" secimi ve send oncesi otomatik fallback ayni route'u kullanir; tablo 597 update/insert sonrasi referans no ve tarih DB readback ile dogrulanir | `KayitKaydetTopluV2` (`EBELGE_EVRAK_HAREKETLERI=597`) |
 | `CompanyOrderSentFlag` | `MikroApi` | AXATA worker/manual dispatch firma siparisi bayragi API ile yazilir; her satirda DB'den okunan eski `sip_lastup_date`/`ssip_lastup_date` gonderilir | `SiparisDuzeltV2`, `DepolarArasiSiparisDuzeltV2` |
 | `EDespatchMarkAsSent` | `MikroApi` | Uyumsoft basarisi sonrasi tum stok hareketlerine belge no, ETTN, kilit ve surucu metadatasi API ile yazilir; her satir eski `sth_lastup_date` ile gonderilir ve sonuc geri okunur | `DahiliStokHareketDuzeltV2` |
 | `GreenGrocerGoodsReceipt` | `MikroApi` | Manav kabzimal faturasi API ile yazilir; ayni seri/sira retry oncesi geri okunur, API basarisi sonrasi cari baslik ile stok satirlarinin miktar/tutar/vergi degerleri dogrulanir | `AlimSatimEvragiKaydetV2` |
 | `PosAccountingSlip` | `MikroApi` | POS staging kayitlari DB'de kalir; ERP muhasebe fisi API ile yazilir ve `fis_ticari_uid`/evrak anahtari ile hesap kodu-tutar satirlari geri okunmadan staging kaydi gonderildi sayilmaz | `MuhasebeFisKaydetV2` |
+
+AXATA C03 legacy firma sevki, ayri bir paralel mapper yerine `CompanyMovement=MikroApi`
+oldugunda mevcut `IrsaliyeKaydetV2` firma sevk hattini kullanir. C4/C04 legacy transferinin
+Mikro evrak tipi normal depolar arasi sevkten farkli oldugu icin bu surumde DB rotasinda kalir.
 
 ### Faz 3 - Yuksek risk ve karma is akislari
 
@@ -719,7 +724,7 @@ Bu fazda update/sil endpointleri de contract olarak hazirlanabilir:
 - POS muhasebe
 - Fatura gonderimi sonrasi Mikro isaretleme
 
-Standart Mikro evrak yazmalari REST'e yonlendirilir. Auth/Furpa/B2B tablolari, `STOK_DAGILIM`, offline retry, audit ve belge akis tablolari Mikro ERP tablosu olmadigi icin DB'de kalir. SQL okuma ve API sonrasi readback da devam eder; `MikroApi` modu SQL baglantisini kaldirmaz.
+Standart Mikro evrak yazmalari REST'e yonlendirilir. Auth/Furpa/B2B tablolari, `STOK_DAGILIM`, offline retry, audit ve belge akis tablolari Mikro ERP tablosu olmadigi icin DB'de kalir. `Summaries`, `BanknoteMovements`, `GiftCheckMovements`, `BanknoteTracks`, `CashRegisterDetails`, `CashRegisterBranches`, `Turnover*`, `ZReport*`, `Invoices` ve `ExpenseNotes` gibi uygulamaya ozel/ara tablolar icin dogrulanmis Mikro Desktop API tablo sozlesmesi olmadigindan bu tablolar da DB rotasinda kalir. SQL okuma ve API sonrasi readback da devam eder; `MikroApi` modu SQL baglantisini kaldirmaz.
 
 Routing blogu disinda kalan ve sonraki mapper paketinde ele alinacak standart Mikro yazmalari:
 

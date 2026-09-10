@@ -677,7 +677,8 @@ Fatura gonderimi icin temel ayarlar:
 | `ConnectionStrings:MikroConnection` | Okuma akislari | Liste, detay, validate, render, PDF belge lookup icin Mikro okuma baglantisi. |
 | `ConnectionStrings:MikroWriteConnection` | Yazma akislari | Send sonrasi `cha_belge_no`/`cha_uuid` yazimi ve iade referansi kaydi. |
 | `MikroWriteRouting:InvoiceSendingMarkAsSent` | Send sonrasi marker yazimi | `Database` ise dogrudan DB update, `MikroApi` ise `KayitKaydetTopluV2` ile her kayitta `TabloNo=51`, `KayitTipi=1` kullanilir. |
-| `MikroApi:*` | Mikro API yazma rotasi | `InvoiceSendingMarkAsSent=MikroApi` secildiginde auth ve endpoint bilgileri buradan okunur. |
+| `MikroWriteRouting:InvoiceReturnReference` | Iadeye konu fatura referansi | `Database` ise dogrudan `EBELGE_EVRAK_HAREKETLERI` update/insert, `MikroApi` ise `KayitKaydetTopluV2` tablo 597 kullanilir ve sonuc DB'den dogrulanir. Manuel secim ve send fallback ayni ayari kullanir. |
+| `MikroApi:*` | Mikro API yazma rotasi | Fatura Mikro API routing anahtarlarindan biri `MikroApi` secildiginde auth ve endpoint bilgileri buradan okunur. |
 | `EInvoice:EndpointUrl` | Uyumsoft e-fatura servisi | `SendInvoiceAsync`, `RetrySendInvoicesAsync`, outbox PDF sorgulari. |
 | `EInvoice:Username` | Uyumsoft user info | E-fatura WCF cagrilarinda kullanilir. |
 | `EInvoice:Password` | Uyumsoft user info | E-fatura WCF cagrilarinda kullanilir. |

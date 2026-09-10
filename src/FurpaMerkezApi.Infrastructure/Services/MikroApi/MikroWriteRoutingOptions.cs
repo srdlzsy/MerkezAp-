@@ -38,6 +38,8 @@ public sealed class MikroWriteRoutingOptions
 
     public MikroWriteMode InvoiceSendingMarkAsSent { get; init; } = MikroWriteMode.Database;
 
+    public MikroWriteMode InvoiceReturnReference { get; init; } = MikroWriteMode.Database;
+
     public MikroWriteMode EDespatchMarkAsSent { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode GreenGrocerGoodsReceipt { get; init; } = MikroWriteMode.Database;

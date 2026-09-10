@@ -3268,6 +3268,16 @@ internal sealed class AxataOutboundDeliveryImportService(
                 analysis.Document.SourceWarehouseNo > 0
                     ? analysis.Document.SourceWarehouseNo.ToString(CultureInfo.InvariantCulture)
                     : string.Empty);
+
+        if (!isC04 && mikroWriteRoutingOptions.CurrentValue.CompanyMovement == MikroWriteMode.MikroApi)
+        {
+            return await ExecuteLegacyC03WithMikroApiAsync(
+                analysis,
+                customerCode,
+                acknowledge,
+                cancellationToken);
+        }
+
         var movementResponse = await mikroWriteDbContext.Database
             .CreateExecutionStrategy()
             .ExecuteAsync(async () =>
@@ -3365,6 +3375,51 @@ internal sealed class AxataOutboundDeliveryImportService(
             acknowledged
                 ? $"Mikro {movementType} legacy hareketi olusturuldu ve AXATA ENT006.S06STAT=1 yapildi."
                 : $"Mikro {movementType} legacy hareketi olusturuldu; AXATA status degistirilmedi.");
+    }
+
+    private async Task<AxataOutboundDeliveryImportResultDto> ExecuteLegacyC03WithMikroApiAsync(
+        LegacyOutboundDeliveryAnalysis analysis,
+        string customerCode,
+        bool acknowledge,
+        CancellationToken cancellationToken)
+    {
+        var movementResponse = await createCompanyShipmentUseCase.ExecuteAsync(
+            new CreateCompanyMovementRequest(
+                LegacyC03WarehouseNo,
+                customerCode,
+                DateTime.Today,
+                analysis.Document.AxataDate?.Date ?? DateTime.Today,
+                analysis.Document.AxataDeliveryNo,
+                analysis.Description,
+                analysis.PositiveLines
+                    .OrderBy(line => line.LineNo)
+                    .Select(line => new CreateCompanyMovementLineRequest(
+                        line.StockCode,
+                        line.Quantity,
+                        Description: analysis.Description))
+                    .ToArray()),
+            cancellationToken);
+
+        var acknowledged = false;
+        if (acknowledge)
+        {
+            await AcknowledgeOutboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+            acknowledged = true;
+        }
+
+        return new AxataOutboundDeliveryImportResultDto(
+            analysis.Document.AxataSequenceNo,
+            analysis.Document.AxataDeliveryNo,
+            analysis.Document.DocumentSerie,
+            analysis.Document.DocumentOrderNo ?? 0,
+            movementResponse.DocumentSerie,
+            movementResponse.DocumentOrderNo,
+            movementResponse.LineCount,
+            movementResponse.TotalQuantity,
+            acknowledged,
+            acknowledged
+                ? "Mikro C03 firma sevki Mikro API ile olusturuldu ve AXATA ENT006.S06STAT=1 yapildi."
+                : "Mikro C03 firma sevki Mikro API ile olusturuldu; AXATA status degistirilmedi.");
     }
 
     private async Task<G02DeliveryAnalysis> GetG02DocumentAnalysisAsync(

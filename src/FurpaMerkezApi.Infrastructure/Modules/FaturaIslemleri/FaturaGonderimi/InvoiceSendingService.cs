@@ -49,6 +49,8 @@ public sealed class InvoiceSendingService(
     private const string KayitKaydetTopluPath = "/Api/apiMethods/KayitKaydetTopluV2";
     private const string CariHesapHareketleriTableNo = "51";
     private const string MikroApiUpdateRecordType = "1";
+    private const int MikroApiReturnReferenceRecoveryAttemptCount = 5;
+    private const int MikroApiReturnReferenceRecoveryDelayMilliseconds = 250;
     private const string MikroApiMarkerVerificationFailureMessage =
         "Mikro API invoice sent marker update returned success, but cha_belge_no/cha_uuid/cha_kilitli could not be verified.";
     private const int MikroApiMarkerRecoveryAttemptCount = 5;
@@ -1615,6 +1617,30 @@ public sealed class InvoiceSendingService(
         ReturnReferenceCandidateRecord reference,
         CancellationToken cancellationToken)
     {
+        switch (mikroWriteRoutingOptions.CurrentValue.InvoiceReturnReference)
+        {
+            case MikroWriteMode.Database:
+                await SaveReturnReferenceDatabaseAsync(returnInvoiceGuid, reference, cancellationToken);
+                break;
+            case MikroWriteMode.MikroApi:
+                await SaveReturnReferenceMikroApiAsync(returnInvoiceGuid, reference, cancellationToken);
+                break;
+            case MikroWriteMode.DualShadow:
+                logger.LogWarning(
+                    "MikroWriteRouting:InvoiceReturnReference is DualShadow. KayitKaydetTopluV2 has no dry-run contract, so only the database write path will run.");
+                await SaveReturnReferenceDatabaseAsync(returnInvoiceGuid, reference, cancellationToken);
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported MikroWriteRouting:InvoiceReturnReference mode '{mikroWriteRoutingOptions.CurrentValue.InvoiceReturnReference}'.");
+        }
+    }
+
+    private async Task SaveReturnReferenceDatabaseAsync(
+        Guid returnInvoiceGuid,
+        ReturnReferenceCandidateRecord reference,
+        CancellationToken cancellationToken)
+    {
         const string sql = """
             UPDATE dbo.EBELGE_EVRAK_HAREKETLERI
             SET
@@ -1740,6 +1766,115 @@ public sealed class InvoiceSendingService(
                 AddParameter(command, "@mikroUserNo", MikroUserNo);
             },
             cancellationToken);
+    }
+
+    private async Task SaveReturnReferenceMikroApiAsync(
+        Guid returnInvoiceGuid,
+        ReturnReferenceCandidateRecord reference,
+        CancellationToken cancellationToken)
+    {
+        var existingRowGuid = await LoadReturnReferenceRowGuidAsync(returnInvoiceGuid, cancellationToken);
+        var payload = InvoiceReturnReferenceMikroApiPayloadFactory.Create(
+            existingRowGuid,
+            returnInvoiceGuid,
+            reference.InvoiceNo,
+            reference.InvoiceDate);
+
+        logger.LogInformation(
+            "Invoice return reference is routed to Mikro API {Path}. ReturnInvoiceGuid={ReturnInvoiceGuid}, ExistingRow={ExistingRow}",
+            KayitKaydetTopluPath,
+            returnInvoiceGuid,
+            existingRowGuid.HasValue);
+
+        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+            KayitKaydetTopluPath,
+            payload,
+            cancellationToken);
+
+        for (var attempt = 1; attempt <= MikroApiReturnReferenceRecoveryAttemptCount; attempt++)
+        {
+            if (await VerifyReturnReferenceAsync(returnInvoiceGuid, reference, cancellationToken))
+            {
+                await mikroApiClient.MarkRecoveredAsync(
+                    result,
+                    reference.InvoiceNo,
+                    existingRowGuid,
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            if (attempt < MikroApiReturnReferenceRecoveryAttemptCount)
+            {
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(MikroApiReturnReferenceRecoveryDelayMilliseconds * attempt),
+                    cancellationToken);
+            }
+        }
+
+        if (result.IsError)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API invoice return reference update failed.");
+        }
+
+        throw new InvalidOperationException(
+            "Mikro API invoice return reference update returned success, but EBELGE_EVRAK_HAREKETLERI readback verification failed.");
+    }
+
+    private async Task<Guid?> LoadReturnReferenceRowGuidAsync(
+        Guid returnInvoiceGuid,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (1) ebh_Guid
+            FROM dbo.EBELGE_EVRAK_HAREKETLERI WITH (NOLOCK)
+            WHERE ebh_related_uid = @returnInvoiceGuid
+              AND ISNULL(ebh_iptal, 0) = 0
+            ORDER BY ebh_create_date DESC;
+            """;
+
+        var rows = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command => AddParameter(command, "@returnInvoiceGuid", returnInvoiceGuid),
+            reader => reader.GetGuid(0),
+            cancellationToken);
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private async Task<bool> VerifyReturnReferenceAsync(
+        Guid returnInvoiceGuid,
+        ReturnReferenceCandidateRecord reference,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                LTRIM(RTRIM(ISNULL(ebh_iade_fat_no1, N''))),
+                LTRIM(RTRIM(ISNULL(ebh_iade_fat_tarihi1, N'')))
+            FROM dbo.EBELGE_EVRAK_HAREKETLERI WITH (NOLOCK)
+            WHERE ebh_related_uid = @returnInvoiceGuid
+              AND ISNULL(ebh_iptal, 0) = 0
+            ORDER BY ebh_create_date DESC;
+            """;
+
+        var rows = await ExecuteReaderAsync(
+            mikroDbContext,
+            sql,
+            command => AddParameter(command, "@returnInvoiceGuid", returnInvoiceGuid),
+            reader => new
+            {
+                InvoiceNo = reader.GetString(0),
+                InvoiceDate = reader.GetString(1)
+            },
+            cancellationToken);
+        if (rows.Count == 0)
+        {
+            return false;
+        }
+
+        var expectedDate = reference.InvoiceDate?.ToString("yyyyMMdd") ?? string.Empty;
+        return string.Equals(rows[0].InvoiceNo, reference.InvoiceNo.Trim(), StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(rows[0].InvoiceDate, expectedDate, StringComparison.Ordinal);
     }
 
     private async Task<IReadOnlyCollection<InvoiceLineSeed>> LoadInvoiceLinesAsync(
