@@ -99,6 +99,18 @@ public sealed class EDespatchServiceTests
     }
 
     [Fact]
+    public void ResolveConsistentSentDespatchMarker_IgnoresNonEDespatchDescriptionValues()
+    {
+        var result = EDespatchService.ResolveConsistentSentDespatchMarker(
+        [
+            (null, "D137.2107"),
+            ("", "D137.2107")
+        ]);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void ResolveConsistentSentDespatchMarker_ReturnsSharedMarkerWhenEveryLineMatches()
     {
         const string documentNo = "FRM2026000000123";

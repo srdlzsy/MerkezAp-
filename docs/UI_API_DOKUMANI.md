@@ -113,6 +113,8 @@ Kural:
 - `AllowedWarehouseNos` doluysa sadece listedeki depolar adina gonderim yapilir.
 - Bu endpoint legacy uyumluluk icin anonim acilir. Canlida mumkunse `AllowedOrigins` ve `AllowedWarehouseNos` bos birakilmamalidir.
 - Iceride mevcut `EDespatchService.SendAsync` calisir; belge no, tekrar gonderim kontrolu, Mikro isaretleme ve document flow kaydi mevcut ana akisla aynidir.
+- Eski arayuzde sevk/iade ayrimi her zaman guvenilir olmadigi icin legacy kopru, gonderimden once Mikro `STOK_HAREKETLERI` satirlarindaki `sth_evraktip`, `sth_tip`, `sth_normal_iade` ve depo bilgisini kontrol eder. Istenen `documentKind` ile Mikro'daki gercek hareket tipi uyusmazsa sadece legacy akista belge tipi otomatik duzeltilir; yeni JWT'li endpointlerde bu otomatik duzeltme yoktur.
+- Ornek: `firma-iadeleri` olarak cagrilan bir belge Mikro'da `sth_normal_iade=0` firma sevki ise backend gonderimi `OutgoingCompanyShipment` olarak calistirir ve belge akis anahtari `CompanyShipment:{warehouseNo}:{documentSerie}:{documentOrderNo}` olur.
 
 Endpoint:
 

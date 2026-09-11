@@ -273,37 +273,52 @@ public sealed class EDespatchService(
     internal static (string DocumentNo, string Uuid)? ResolveConsistentSentDespatchMarker(
         IReadOnlyCollection<(string? DocumentNo, string? Uuid)> movements)
     {
-        var populatedMarkers = movements
-            .Where(movement =>
-                !string.IsNullOrWhiteSpace(movement.DocumentNo) ||
-                !string.IsNullOrWhiteSpace(movement.Uuid))
+        var normalizedMarkers = movements
+            .Select(movement =>
+            {
+                var documentNo = movement.DocumentNo?.Trim();
+                var uuid = movement.Uuid?.Trim();
+                var hasEDespatchDocumentNo =
+                    !string.IsNullOrWhiteSpace(documentNo) &&
+                    documentNo.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase);
+                var hasEDespatchUuid = Guid.TryParse(uuid, out _);
+
+                return new
+                {
+                    DocumentNo = documentNo,
+                    Uuid = uuid,
+                    HasEDespatchMarker = hasEDespatchDocumentNo || hasEDespatchUuid
+                };
+            })
             .ToArray();
 
-        if (populatedMarkers.Length == 0)
+        var eDespatchMarkers = normalizedMarkers
+            .Where(movement => movement.HasEDespatchMarker)
+            .ToArray();
+
+        if (eDespatchMarkers.Length == 0)
         {
             return null;
         }
 
-        if (populatedMarkers.Length != movements.Count)
+        if (eDespatchMarkers.Length != movements.Count)
         {
             throw new InvalidOperationException(
                 "E-despatch metadata is only present on some document lines. Automatic recovery was blocked to prevent unsent lines from being attached to an existing e-despatch.");
         }
 
-        var markers = populatedMarkers
+        var markers = eDespatchMarkers
             .Select(movement =>
             {
-                var documentNo = movement.DocumentNo?.Trim();
-                var uuid = movement.Uuid?.Trim();
-                if (string.IsNullOrWhiteSpace(documentNo) ||
-                    !documentNo.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase) ||
-                    !Guid.TryParse(uuid, out _))
+                if (string.IsNullOrWhiteSpace(movement.DocumentNo) ||
+                    !movement.DocumentNo.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase) ||
+                    !Guid.TryParse(movement.Uuid, out _))
                 {
                     throw new InvalidOperationException(
                         "Document lines contain invalid or incomplete e-despatch metadata. Automatic recovery was blocked.");
                 }
 
-                return (DocumentNo: documentNo, Uuid: uuid!);
+                return (DocumentNo: movement.DocumentNo, Uuid: movement.Uuid!);
             })
             .Distinct()
             .ToArray();

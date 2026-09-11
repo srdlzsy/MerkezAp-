@@ -1,8 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.WebApi.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Legacy;
@@ -16,9 +18,16 @@ namespace FurpaMerkezApi.WebApi.Controllers.Legacy;
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
 public sealed class LegacyEDespatchBridgeController(
     IEDespatchService eDespatchService,
+    MikroDbContext mikroDbContext,
     IOptionsMonitor<LegacyEDespatchBridgeOptions> options,
     ILogger<LegacyEDespatchBridgeController> logger) : ControllerBase
 {
+    private const byte CompanyDispatchDocumentType = 1;
+    private const byte OutgoingMovementType = 1;
+    private const byte NormalMovement = 0;
+    private const byte ReturnMovement = 1;
+    private const byte InterWarehouseShipmentDocumentType = 17;
+
     [HttpPost("{documentKind}/{documentSerie}/{documentOrderNo:int}/gonder")]
     [HttpPost("{documentKind}/giden/{documentSerie}/{documentOrderNo:int}/gonder")]
     [ProducesResponseType(typeof(SendEDespatchResponse), StatusCodes.Status200OK)]
@@ -82,9 +91,28 @@ public sealed class LegacyEDespatchBridgeController(
             });
         }
 
+        var effectiveDocumentType = await ResolveLegacyDocumentTypeAsync(
+            documentType,
+            documentSerie,
+            documentOrderNo,
+            warehouseNo,
+            cancellationToken);
+
+        if (effectiveDocumentType != documentType)
+        {
+            logger.LogInformation(
+                "Legacy e-despatch bridge corrected document type from Mikro movement rows. RequestedDocumentType={RequestedDocumentType}; EffectiveDocumentType={EffectiveDocumentType}; DocumentKind={DocumentKind}; Document={DocumentSerie}/{DocumentOrderNo}; WarehouseNo={WarehouseNo}",
+                documentType,
+                effectiveDocumentType,
+                documentKind,
+                documentSerie,
+                documentOrderNo,
+                warehouseNo);
+        }
+
         return Ok(await eDespatchService.SendAsync(
             new SendEDespatchRequest(
-                documentType,
+                effectiveDocumentType,
                 warehouseNo,
                 documentSerie,
                 documentOrderNo,
@@ -93,6 +121,93 @@ public sealed class LegacyEDespatchBridgeController(
                 request.DriverTckn,
                 request.DriverId),
             cancellationToken));
+    }
+
+    private async Task<EDespatchDocumentType> ResolveLegacyDocumentTypeAsync(
+        EDespatchDocumentType requestedDocumentType,
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var requestedCount = await CountLegacyMovementRowsAsync(
+            requestedDocumentType,
+            documentSerie,
+            documentOrderNo,
+            warehouseNo,
+            cancellationToken);
+        if (requestedCount > 0)
+        {
+            return requestedDocumentType;
+        }
+
+        var fallbackDocumentType = requestedDocumentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => EDespatchDocumentType.CompanyReturn,
+            EDespatchDocumentType.CompanyReturn => EDespatchDocumentType.OutgoingCompanyShipment,
+            EDespatchDocumentType.InterWarehouseShipment => EDespatchDocumentType.WarehouseReturn,
+            EDespatchDocumentType.WarehouseReturn => EDespatchDocumentType.InterWarehouseShipment,
+            _ => requestedDocumentType
+        };
+
+        if (fallbackDocumentType == requestedDocumentType)
+        {
+            return requestedDocumentType;
+        }
+
+        var fallbackCount = await CountLegacyMovementRowsAsync(
+            fallbackDocumentType,
+            documentSerie,
+            documentOrderNo,
+            warehouseNo,
+            cancellationToken);
+
+        return fallbackCount > 0
+            ? fallbackDocumentType
+            : requestedDocumentType;
+    }
+
+    private Task<int> CountLegacyMovementRowsAsync(
+        EDespatchDocumentType documentType,
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var query = mikroDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira == documentOrderNo);
+
+        query = documentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => query.Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cikis_depo_no == warehouseNo),
+
+            EDespatchDocumentType.CompanyReturn => query.Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_cikis_depo_no == warehouseNo),
+
+            EDespatchDocumentType.InterWarehouseShipment => query.Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cikis_depo_no == warehouseNo),
+
+            EDespatchDocumentType.WarehouseReturn => query.Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_cikis_depo_no == warehouseNo),
+
+            _ => query.Where(_ => false)
+        };
+
+        return query.CountAsync(cancellationToken);
     }
 
     private static bool TryResolveDocumentType(string documentKind, out EDespatchDocumentType documentType)
