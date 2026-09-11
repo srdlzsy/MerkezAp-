@@ -194,6 +194,7 @@ public sealed class CashSummaryLookupsUseCase(
             {
                 PaymentName = item.PaymentName ?? string.Empty,
                 item.PaymentTypeNo,
+                item.PaymentGenus,
                 AccountCode = item.AccountCode ?? string.Empty
             })
             .ToArrayAsync(cancellationToken);
@@ -207,6 +208,7 @@ public sealed class CashSummaryLookupsUseCase(
             {
                 paymentType.PaymentName,
                 paymentType.PaymentTypeNo,
+                paymentType.PaymentGenus,
                 paymentType.AccountCode,
                 cashRegister.TerminalId
             }).ToArray();
@@ -218,7 +220,8 @@ public sealed class CashSummaryLookupsUseCase(
                 item.TerminalId,
                 item.AccountCode,
                 0,
-                0d))
+                0d,
+                item.PaymentGenus))
             .ToArray();
     }
 
@@ -227,10 +230,34 @@ public sealed class CashSummaryLookupsUseCase(
         await ListPaymentTypesByGenusAsync(2, cancellationToken);
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListOnlineSalesPaymentTypesAsync(
-        CancellationToken cancellationToken) =>
-        await ListPaymentTypesByPredicateAsync(
-            CashSummaryCategoryMatcher.IsOnlineSalesPaymentType,
-            cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var paymentTypes = await mikroDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item =>
+                item.PaymentGenus == 5 ||
+                (item.PaymentName != null && item.PaymentName.ToLower().Contains("online")))
+            .OrderBy(item => item.PaymentTypeNo)
+            .Select(item => new
+            {
+                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentTypeNo,
+                item.PaymentGenus,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return paymentTypes
+            .Select(item => new PaymentTypeItemDto(
+                item.PaymentName,
+                item.PaymentTypeNo,
+                string.Empty,
+                item.AccountCode,
+                0,
+                0d,
+                item.PaymentGenus))
+            .ToArray();
+    }
 
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListExpenseCompassPaymentTypesAsync(
         CancellationToken cancellationToken)
@@ -302,6 +329,7 @@ public sealed class CashSummaryLookupsUseCase(
             {
                 PaymentName = item.PaymentName ?? string.Empty,
                 item.PaymentTypeNo,
+                item.PaymentGenus,
                 AccountCode = item.AccountCode ?? string.Empty
             })
             .ToArrayAsync(cancellationToken);
@@ -314,7 +342,8 @@ public sealed class CashSummaryLookupsUseCase(
                 string.Empty,
                 item.AccountCode ?? string.Empty,
                 0,
-                0d))
+                0d,
+                item.PaymentGenus))
             .ToArray();
     }
 
@@ -330,6 +359,7 @@ public sealed class CashSummaryLookupsUseCase(
             {
                 PaymentName = item.PaymentName ?? string.Empty,
                 item.PaymentTypeNo,
+                item.PaymentGenus,
                 AccountCode = item.AccountCode ?? string.Empty
             })
             .ToArrayAsync(cancellationToken);
@@ -341,7 +371,8 @@ public sealed class CashSummaryLookupsUseCase(
                 string.Empty,
                 item.AccountCode ?? string.Empty,
                 0,
-                0d))
+                0d,
+                item.PaymentGenus))
             .ToArray();
     }
 
@@ -358,6 +389,7 @@ public sealed class CashSummaryLookupsUseCase(
             {
                 PaymentName = item.PaymentName ?? string.Empty,
                 item.PaymentTypeNo,
+                item.PaymentGenus,
                 AccountCode = item.AccountCode ?? string.Empty
             })
             .ToArrayAsync(cancellationToken);
@@ -369,7 +401,8 @@ public sealed class CashSummaryLookupsUseCase(
                 string.Empty,
                 item.AccountCode ?? string.Empty,
                 0,
-                0d))
+                0d,
+                item.PaymentGenus))
             .ToArray();
     }
 

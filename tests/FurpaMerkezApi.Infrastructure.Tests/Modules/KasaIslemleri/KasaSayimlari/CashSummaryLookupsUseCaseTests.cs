@@ -78,23 +78,31 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
-    public async Task ListOnlineSalesPaymentTypesAsync_ReturnsEmptyAccountCodeWhenDatabaseValueIsNull()
+    public async Task ListOnlineSalesPaymentTypesAsync_ReturnsNamedOnlineAndGenusFivePaymentTypes()
     {
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.Add(
-            CreatePaymentType(70, "Online Satis", accountCode: null, paymentGenus: 5));
+        mikroDbContext.PaymentTypes.AddRange(
+            CreatePaymentType(10, "Online Odeme", "0021", paymentGenus: 1),
+            CreatePaymentType(600, "Trendyol", "0013", paymentGenus: 5),
+            CreatePaymentType(601, "Yemek Sepeti", "0014", paymentGenus: 5),
+            CreatePaymentType(602, "Diger Odeme", "0015", paymentGenus: 1));
 
         await mikroDbContext.SaveChangesAsync();
 
         var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
 
         var result = await useCase.ListOnlineSalesPaymentTypesAsync(CancellationToken.None);
-        var item = Assert.Single(result);
-
-        Assert.Equal("Online Satis", item.PaymentName);
-        Assert.Equal(string.Empty, item.AccountCode);
+        Assert.Equal(
+            new[]
+            {
+                "10:Online Odeme:1:0021",
+                "600:Trendyol:5:0013",
+                "601:Yemek Sepeti:5:0014"
+            },
+            result.Select(item =>
+                $"{item.PaymentTypeNo}:{item.PaymentName}:{item.PaymentGenus}:{item.AccountCode}").ToArray());
     }
 
     [Fact]

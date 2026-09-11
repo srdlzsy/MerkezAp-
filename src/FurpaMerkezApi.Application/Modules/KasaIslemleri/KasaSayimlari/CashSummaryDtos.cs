@@ -111,7 +111,8 @@ public sealed record PaymentTypeItemDto(
     string TerminalId,
     string AccountCode,
     int SlipNumber,
-    double AmountValue)
+    double AmountValue,
+    int PaymentGenus = 0)
 {
     public int PaymentTypeId => PaymentTypeNo;
 

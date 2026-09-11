@@ -13932,6 +13932,40 @@ UI kasa seciminde `GET /api/kasa-islemleri/kasa-sayimlari/kasalar?branchNo=...` 
 
 `odeme-tipleri/yemek-ceki` response'unda yemek ceki tipi adi `paymentName` alanindadir. Backend eski API ile uyumlu olarak `PaymentTypes.PaymentGenus = 2` olan yemek ceki odeme tiplerini listeler ve `accountCode` alanini `PaymentTypes.AccountCode` degeriyle doldurur. UI yemek ceki seciminde gorunen ad olarak `paymentName`, kayit payload'inda odeme tipi olarak `paymentTypeNo` kullanmalidir.
 
+`odeme-tipleri/online`, `PaymentTypes.PaymentGenus = 5` olan kayitlari ve geriye uyumluluk icin `PaymentName` icinde `online` gecen kayitlari birlikte dondurur. Response'taki `paymentGenus` Mikro kaydinin gercek turudur. Canli Mikro tanimiyla beklenen temel satirlar:
+
+```json
+[
+  {
+    "paymentName": "Online Ödeme",
+    "paymentTypeNo": 10,
+    "terminalId": "",
+    "paymentGenus": 1,
+    "accountCode": "0021",
+    "amountValue": 0,
+    "slipNumber": 0
+  },
+  {
+    "paymentName": "Trendyol",
+    "paymentTypeNo": 600,
+    "terminalId": "",
+    "paymentGenus": 5,
+    "accountCode": "0013",
+    "amountValue": 0,
+    "slipNumber": 0
+  },
+  {
+    "paymentName": "Yemek Sepeti",
+    "paymentTypeNo": 601,
+    "terminalId": "",
+    "paymentGenus": 5,
+    "accountCode": "0014",
+    "amountValue": 0,
+    "slipNumber": 0
+  }
+]
+```
+
 Kisa response ornekleri:
 
 ```json
