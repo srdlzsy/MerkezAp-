@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Infrastructure.Services;
+using System.Xml.Linq;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Services;
@@ -18,6 +19,23 @@ public sealed class EDespatchServiceTests
 
         Assert.Equal(expectedFirstName, result.FirstName);
         Assert.Equal(expectedFamilyName, result.FamilyName);
+    }
+
+    [Fact]
+    public void BuildPartyPersonElement_CreatesRequiredPersonForTckn()
+    {
+        var result = EDespatchService.BuildPartyPersonElement("TCKN", "ILKER BUTUNER");
+
+        Assert.NotNull(result);
+        Assert.Equal("Person", result.Name.LocalName);
+        Assert.Equal("ILKER", result.Elements().Single(element => element.Name.LocalName == "FirstName").Value);
+        Assert.Equal("BUTUNER", result.Elements().Single(element => element.Name.LocalName == "FamilyName").Value);
+    }
+
+    [Fact]
+    public void BuildPartyPersonElement_OmitsPersonForVkn()
+    {
+        Assert.Null(EDespatchService.BuildPartyPersonElement("VKN", "FIRMA UNVANI"));
     }
 
     [Theory]

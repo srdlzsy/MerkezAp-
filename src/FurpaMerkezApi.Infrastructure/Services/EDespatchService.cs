@@ -1005,6 +1005,7 @@ public sealed class EDespatchService(
             JoinNonEmpty(customer.cari_unvan1, customer.cari_unvan2),
             taxNumber,
             ResolveTaxSchemeId(taxNumber),
+            NormalizeText(customer.cari_unvan1),
             NormalizeText(customer.cari_vdaire_adi),
             BuildStreet(
                 address?.adr_cadde,
@@ -1439,7 +1440,30 @@ public sealed class EDespatchService(
             partyElements.Add(contactElement!);
         }
 
+        var personElement = BuildPartyPersonElement(partyInfo.TaxSchemeId, partyInfo.PersonName);
+        if (personElement is not null)
+        {
+            partyElements.Add(personElement);
+        }
+
         return new XElement(aggregate + "Party", partyElements);
+    }
+
+    internal static XElement? BuildPartyPersonElement(string taxSchemeId, string personName)
+    {
+        if (!string.Equals(taxSchemeId, "TCKN", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var aggregate = XNamespace.Get(AggregateNamespace);
+        var basic = XNamespace.Get(BasicNamespace);
+        var (firstName, familyName) = SplitPersonName(personName);
+
+        return new XElement(
+            aggregate + "Person",
+            new XElement(basic + "FirstName", firstName),
+            new XElement(basic + "FamilyName", familyName));
     }
 
     private static XElement BuildShipmentElement(
@@ -2473,6 +2497,7 @@ public sealed class EDespatchService(
         string DisplayName,
         string TaxNumber,
         string TaxSchemeId,
+        string PersonName,
         string TaxOffice,
         string Street,
         string District,
