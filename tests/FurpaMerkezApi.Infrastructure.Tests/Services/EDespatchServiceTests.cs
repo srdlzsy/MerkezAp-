@@ -69,6 +69,70 @@ public sealed class EDespatchServiceTests
     }
 
     [Fact]
+    public void ResolveConsistentSentDespatchMarker_ReturnsNullWhenEveryLineIsUnmarked()
+    {
+        var result = EDespatchService.ResolveConsistentSentDespatchMarker(
+        [
+            (null, null),
+            ("", "")
+        ]);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ResolveConsistentSentDespatchMarker_ReturnsSharedMarkerWhenEveryLineMatches()
+    {
+        const string documentNo = "FRM2026000000123";
+        const string uuid = "291b1f58-62b1-4615-8853-c1908e6a1d53";
+
+        var result = EDespatchService.ResolveConsistentSentDespatchMarker(
+        [
+            (documentNo, uuid),
+            (documentNo, uuid)
+        ]);
+
+        Assert.NotNull(result);
+        Assert.Equal(documentNo, result.Value.DocumentNo);
+        Assert.Equal(uuid, result.Value.Uuid);
+    }
+
+    [Fact]
+    public void ResolveConsistentSentDespatchMarker_RejectsPartiallyMarkedDocument()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            EDespatchService.ResolveConsistentSentDespatchMarker(
+            [
+                ("FRM2026000000123", "291b1f58-62b1-4615-8853-c1908e6a1d53"),
+                (null, null)
+            ]));
+
+        Assert.Contains("only present on some document lines", exception.Message);
+    }
+
+    [Fact]
+    public void ResolveConsistentSentDespatchMarker_RejectsMultipleMarkers()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            EDespatchService.ResolveConsistentSentDespatchMarker(
+            [
+                ("FRM2026000000123", "291b1f58-62b1-4615-8853-c1908e6a1d53"),
+                ("FRM2026000000124", "a55de149-3cfa-4e64-9194-da961bdf17c3")
+            ]));
+    }
+
+    [Fact]
+    public void HaveSameMovementGuids_RequiresTheCompleteSet()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        Assert.True(EDespatchService.HaveSameMovementGuids([first, second], [second, first]));
+        Assert.False(EDespatchService.HaveSameMovementGuids([first], [first, second]));
+        Assert.False(EDespatchService.HaveSameMovementGuids([first, second], [first]));
+    }
+
+    [Fact]
     public void SelectActiveDespatchReceiverAlias_PreservesActiveMikroAlias()
     {
         var result = EDespatchService.SelectActiveDespatchReceiverAlias(

@@ -226,8 +226,13 @@ public sealed class EDespatchService(
         EDespatchOptions config,
         CancellationToken cancellationToken)
     {
-        var sentDespatch = TryExtractSentDespatchInfo(trackedMovements)
-                           ?? await GetTrackedSubmittedDespatchAsync(request, cancellationToken);
+        var localMarker = ResolveConsistentSentDespatchMarker(
+            trackedMovements
+                .Select(movement => (movement.sth_belge_no, movement.sth_aciklama))
+                .ToArray());
+        var sentDespatch = localMarker is null
+            ? await GetTrackedSubmittedDespatchAsync(request, cancellationToken)
+            : new SentDespatchInfo(localMarker.Value.DocumentNo, localMarker.Value.Uuid);
         if (sentDespatch is null)
         {
             return null;
@@ -265,19 +270,169 @@ public sealed class EDespatchService(
             BuildLocalMikroMetadataWarning(localMikroMetadataUpdated));
     }
 
-    private static SentDespatchInfo? TryExtractSentDespatchInfo(
+    internal static (string DocumentNo, string Uuid)? ResolveConsistentSentDespatchMarker(
+        IReadOnlyCollection<(string? DocumentNo, string? Uuid)> movements)
+    {
+        var populatedMarkers = movements
+            .Where(movement =>
+                !string.IsNullOrWhiteSpace(movement.DocumentNo) ||
+                !string.IsNullOrWhiteSpace(movement.Uuid))
+            .ToArray();
+
+        if (populatedMarkers.Length == 0)
+        {
+            return null;
+        }
+
+        if (populatedMarkers.Length != movements.Count)
+        {
+            throw new InvalidOperationException(
+                "E-despatch metadata is only present on some document lines. Automatic recovery was blocked to prevent unsent lines from being attached to an existing e-despatch.");
+        }
+
+        var markers = populatedMarkers
+            .Select(movement =>
+            {
+                var documentNo = movement.DocumentNo?.Trim();
+                var uuid = movement.Uuid?.Trim();
+                if (string.IsNullOrWhiteSpace(documentNo) ||
+                    !documentNo.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase) ||
+                    !Guid.TryParse(uuid, out _))
+                {
+                    throw new InvalidOperationException(
+                        "Document lines contain invalid or incomplete e-despatch metadata. Automatic recovery was blocked.");
+                }
+
+                return (DocumentNo: documentNo, Uuid: uuid!);
+            })
+            .Distinct()
+            .ToArray();
+
+        if (markers.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "Document lines reference more than one e-despatch. Automatic recovery was blocked.");
+        }
+
+        return markers[0];
+    }
+
+    private async Task EnsureDocumentMovementSetUnchangedAsync(
+        SendEDespatchRequest request,
+        MikroDbContext context,
+        IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
+        CancellationToken cancellationToken)
+    {
+        if (await DocumentMovementSetMatchesAsync(
+                request,
+                context,
+                trackedMovements,
+                cancellationToken))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Document lines changed while the e-despatch was being prepared. Refresh the document and try again; no e-despatch was sent.");
+    }
+
+    private async Task<bool> DocumentMovementSetMatchesAsync(
+        SendEDespatchRequest request,
+        MikroDbContext context,
+        IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
+        CancellationToken cancellationToken)
+    {
+        var currentMovementGuids = await BuildDocumentMovementQuery(context, request)
+            .AsNoTracking()
+            .Select(movement => movement.sth_Guid)
+            .ToArrayAsync(cancellationToken);
+        var matches = HaveSameMovementGuids(
+            trackedMovements.Select(movement => movement.sth_Guid),
+            currentMovementGuids);
+
+        if (!matches)
+        {
+            logger.LogWarning(
+                "E-despatch document movement set changed. DocumentType={DocumentType}, WarehouseNo={WarehouseNo}, Document={DocumentSerie}/{DocumentOrderNo}, PreparedCount={PreparedCount}, CurrentCount={CurrentCount}",
+                request.DocumentType,
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                trackedMovements.Count,
+                currentMovementGuids.Length);
+        }
+
+        return matches;
+    }
+
+    private async Task<bool> TryDocumentMovementSetMatchesAfterSubmissionAsync(
+        SendEDespatchRequest request,
+        MikroDbContext context,
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements)
     {
-        var sentMovement = trackedMovements.FirstOrDefault(movement =>
-            !string.IsNullOrWhiteSpace(movement.sth_belge_no) &&
-            movement.sth_belge_no.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase) &&
-            Guid.TryParse(movement.sth_aciklama, out _));
+        using var completionCancellation = new CancellationTokenSource(
+            TimeSpan.FromSeconds(PostSubmissionCompletionTimeoutSeconds));
 
-        return sentMovement is null
-            ? null
-            : new SentDespatchInfo(
-                sentMovement.sth_belge_no!.Trim(),
-                sentMovement.sth_aciklama!.Trim());
+        try
+        {
+            return await DocumentMovementSetMatchesAsync(
+                request,
+                context,
+                trackedMovements,
+                completionCancellation.Token);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "E-despatch was sent but the complete Mikro document movement set could not be verified. DocumentType={DocumentType}, WarehouseNo={WarehouseNo}, Document={DocumentSerie}/{DocumentOrderNo}",
+                request.DocumentType,
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo);
+            return false;
+        }
+    }
+
+    private static IQueryable<STOK_HAREKETLERI> BuildDocumentMovementQuery(
+        MikroDbContext context,
+        SendEDespatchRequest request)
+    {
+        var query = context.STOK_HAREKETLERIs.Where(movement =>
+            movement.sth_evrakno_seri == request.DocumentSerie &&
+            movement.sth_evrakno_sira == request.DocumentOrderNo);
+
+        return request.DocumentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => query.Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cikis_depo_no == request.WarehouseNo),
+            EDespatchDocumentType.CompanyReturn => query.Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_cikis_depo_no == request.WarehouseNo),
+            EDespatchDocumentType.InterWarehouseShipment => query.Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cikis_depo_no == request.WarehouseNo),
+            EDespatchDocumentType.WarehouseReturn => query.Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_cikis_depo_no == request.WarehouseNo),
+            _ => throw new ArgumentOutOfRangeException(nameof(request.DocumentType))
+        };
+    }
+
+    internal static bool HaveSameMovementGuids(
+        IEnumerable<Guid> preparedMovementGuids,
+        IEnumerable<Guid> currentMovementGuids)
+    {
+        var prepared = preparedMovementGuids.ToHashSet();
+        var current = currentMovementGuids.ToHashSet();
+        return prepared.Count == current.Count && prepared.SetEquals(current);
     }
 
     private static DocumentFlowType ToDocumentFlowType(EDespatchDocumentType documentType) =>
@@ -482,12 +637,17 @@ public sealed class EDespatchService(
             resolvedDeliveryAlias,
             resolvedDeliveryAlias is null ? null : deliveryCustomer.TaxNumber,
             resolvedDeliveryAlias is null ? null : deliveryCustomer.DisplayName);
+        await EnsureDocumentMovementSetUnchangedAsync(
+            request,
+            document.Context,
+            document.TrackedMovements,
+            cancellationToken);
         var serviceResult = await SendToUyumsoftAsync(
             despatchInfo,
             config,
             cancellationToken);
 
-        var localMikroMetadataUpdated = await TryMarkAsSentAsync(
+        var trackedMetadataUpdated = await TryMarkAsSentAsync(
             document.Context,
             document.TrackedMovements,
             eDespatchDocumentNo,
@@ -497,6 +657,11 @@ public sealed class EDespatchService(
                 null,
                 request.DriverNameSurname,
                 request.DriverTckn));
+        var localMikroMetadataUpdated = trackedMetadataUpdated &&
+            await TryDocumentMovementSetMatchesAfterSubmissionAsync(
+                request,
+                document.Context,
+                document.TrackedMovements);
 
         return new SendEDespatchResponse(
             request.DocumentType,
@@ -574,12 +739,17 @@ public sealed class EDespatchService(
             null,
             null,
             null);
+        await EnsureDocumentMovementSetUnchangedAsync(
+            request,
+            document.Context,
+            document.TrackedMovements,
+            cancellationToken);
         var serviceResult = await SendToUyumsoftAsync(
             despatchInfo,
             config,
             cancellationToken);
 
-        var localMikroMetadataUpdated = await TryMarkAsSentAsync(
+        var trackedMetadataUpdated = await TryMarkAsSentAsync(
             document.Context,
             document.TrackedMovements,
             eDespatchDocumentNo,
@@ -589,6 +759,11 @@ public sealed class EDespatchService(
                 null,
                 request.DriverNameSurname,
                 request.DriverTckn));
+        var localMikroMetadataUpdated = trackedMetadataUpdated &&
+            await TryDocumentMovementSetMatchesAfterSubmissionAsync(
+                request,
+                document.Context,
+                document.TrackedMovements);
 
         return new SendEDespatchResponse(
             request.DocumentType,

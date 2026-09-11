@@ -11478,6 +11478,9 @@ Notlar:
 - Basarili gonderimden sonra cozulmus plaka ve TCKN Mikro hareket satirlarina metadata olarak yazilmaya calisilir.
 - Response icindeki `localMikroMetadataUpdated=false` gelirse Uyumsoft gonderimi basarilidir, fakat Mikro hareket satirlari FRM/ETTN metadata'si ile isaretlenememistir. UI bu durumda tekrar e-irsaliye gondermemeli; `eDespatchDocumentNo` ve `eDespatchUuid` degerleriyle lokal Mikro belge metadata onarimi yapilmalidir.
 - Ayni evrak icin belge akisinda basarili Uyumsoft gonderimi kayitliysa backend ikinci gonderimi `409 Conflict` ile engeller. Bu kural Mikro metadata isaretleme eksik kalmis olsa bile Uyumsoft'ta duplicate zarf olusmasini onlemek icindir.
+- Backend Uyumsoft gonderiminden hemen once seri/sira kapsamindaki guncel hareket GUID listesini hazirlanan belgeyle karsilastirir. Satir eklenmis veya silinmisse e-irsaliye gonderilmeden `409 Conflict` doner; UI belgeyi yenileyip tekrar denemelidir.
+- Uyumsoft gonderimi devam ederken hareket kumesi degisirse sadece gercekten gonderilen snapshot satirlari isaretlenir ve `localMikroMetadataUpdated=false` doner. UI bu durumda otomatik tekrar gonderim yapmamalidir.
+- Ayni Mikro evrakinda hem FRM/ETTN ile isaretli hem de bos satir bulunursa backend otomatik kurtarmayi durdurur ve `409 Conflict` doner. Bu durum manuel olarak Uyumsoft belge icerigiyle uzlastirilmadan bos satirlar mevcut e-irsaliyeye baglanmamalidir.
 
 Response:
 
