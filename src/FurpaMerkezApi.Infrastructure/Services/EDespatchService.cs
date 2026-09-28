@@ -223,6 +223,7 @@ public sealed class EDespatchService(
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
         string documentSerie,
         int documentOrderNo,
+        ResolvedDespatchContacts contacts,
         EDespatchOptions config,
         CancellationToken cancellationToken)
     {
@@ -245,8 +246,8 @@ public sealed class EDespatchService(
             sentDespatch.EDespatchUuid,
             new SentMovementMetadata(
                 request.Plaque,
-                null,
-                request.DriverNameSurname,
+                contacts.Deliverer,
+                contacts.Receiver,
                 request.DriverTckn));
 
         logger.LogInformation(
@@ -596,6 +597,10 @@ public sealed class EDespatchService(
             request.DocumentOrderNo,
             movementKind,
             cancellationToken);
+        var contacts = ResolveDespatchContacts(
+            request,
+            document.Detail.Header.Deliverer,
+            document.Detail.Header.Receiver);
         var config = options.Value;
         var recoveredResponse = await TryRecoverExistingSubmissionAsync(
             request,
@@ -603,6 +608,7 @@ public sealed class EDespatchService(
             document.TrackedMovements,
             document.Detail.Header.DocumentSerie,
             document.Detail.Header.DocumentOrderNo,
+            contacts,
             config,
             cancellationToken);
         if (recoveredResponse is not null)
@@ -644,6 +650,7 @@ public sealed class EDespatchService(
                 supplierCustomer,
                 deliveryCustomer,
                 request,
+                contacts,
                 now,
                 eDespatchDocumentNo,
                 eDespatchUuid,
@@ -669,8 +676,8 @@ public sealed class EDespatchService(
             eDespatchUuid,
             new SentMovementMetadata(
                 request.Plaque,
-                null,
-                request.DriverNameSurname,
+                contacts.Deliverer,
+                contacts.Receiver,
                 request.DriverTckn));
         var localMikroMetadataUpdated = trackedMetadataUpdated &&
             await TryDocumentMovementSetMatchesAfterSubmissionAsync(
@@ -703,6 +710,10 @@ public sealed class EDespatchService(
             request.DocumentOrderNo,
             isReturn,
             cancellationToken);
+        var contacts = ResolveDespatchContacts(
+            request,
+            NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu2).ToArray()),
+            NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu3).ToArray()));
         var config = options.Value;
         var recoveredResponse = await TryRecoverExistingSubmissionAsync(
             request,
@@ -710,6 +721,7 @@ public sealed class EDespatchService(
             document.TrackedMovements,
             document.Detail.Header.DocumentSerie,
             document.Detail.Header.DocumentOrderNo,
+            contacts,
             config,
             cancellationToken);
         if (recoveredResponse is not null)
@@ -746,6 +758,7 @@ public sealed class EDespatchService(
                 sourceWarehouse,
                 targetWarehouse,
                 request,
+                contacts,
                 now,
                 eDespatchDocumentNo,
                 eDespatchUuid,
@@ -771,8 +784,8 @@ public sealed class EDespatchService(
             eDespatchUuid,
             new SentMovementMetadata(
                 request.Plaque,
-                null,
-                request.DriverNameSurname,
+                contacts.Deliverer,
+                contacts.Receiver,
                 request.DriverTckn));
         var localMikroMetadataUpdated = trackedMetadataUpdated &&
             await TryDocumentMovementSetMatchesAfterSubmissionAsync(
@@ -1188,6 +1201,7 @@ public sealed class EDespatchService(
         EDespatchCustomerInfo supplierCustomer,
         EDespatchCustomerInfo deliveryCustomer,
         SendEDespatchRequest request,
+        ResolvedDespatchContacts contacts,
         DateTime issueDateTime,
         string eDespatchDocumentNo,
         string eDespatchUuid,
@@ -1205,11 +1219,11 @@ public sealed class EDespatchService(
             BuildSupplierPartyElement(
                 "DespatchSupplierParty",
                 supplierCustomer,
-                null),
+                contacts.Deliverer),
             BuildCustomerPartyElement(
                 "DeliveryCustomerParty",
                 deliveryCustomer,
-                null),
+                contacts.Receiver),
             BuildCustomerPartyElement(
                 "BuyerCustomerParty",
                 deliveryCustomer,
@@ -1244,6 +1258,7 @@ public sealed class EDespatchService(
         EDespatchWarehouseInfo sourceWarehouse,
         EDespatchWarehouseInfo targetWarehouse,
         SendEDespatchRequest request,
+        ResolvedDespatchContacts contacts,
         DateTime issueDateTime,
         string eDespatchDocumentNo,
         string eDespatchUuid,
@@ -1284,11 +1299,11 @@ public sealed class EDespatchService(
             BuildSupplierPartyElement(
                 "DespatchSupplierParty",
                 sourceParty,
-                null),
+                contacts.Deliverer),
             BuildCustomerPartyElement(
                 "DeliveryCustomerParty",
                 targetParty,
-                null),
+                contacts.Receiver),
             BuildCustomerPartyElement(
                 "BuyerCustomerParty",
                 targetParty,
@@ -1642,7 +1657,7 @@ public sealed class EDespatchService(
         return new XElement(aggregate + elementName, elements);
     }
 
-    private static XElement? BuildContactElement(
+    internal static XElement? BuildContactElement(
         string elementName,
         string? name,
         string? telephone,
@@ -2266,8 +2281,35 @@ public sealed class EDespatchService(
         {
             Plaque = request.Plaque?.Trim() ?? string.Empty,
             DriverNameSurname = request.DriverNameSurname?.Trim() ?? string.Empty,
-            DriverTckn = request.DriverTckn?.Trim() ?? string.Empty
+            DriverTckn = request.DriverTckn?.Trim() ?? string.Empty,
+            Deliverer = NormalizeNullableText(request.Deliverer),
+            Receiver = NormalizeNullableText(request.Receiver)
         };
+
+    internal static (string Deliverer, string Receiver) ResolveDespatchContactNames(
+        string? requestDeliverer,
+        string? requestReceiver,
+        string? storedDeliverer,
+        string? storedReceiver,
+        string? driverNameSurname) =>
+        (
+            NormalizeText(requestDeliverer, storedDeliverer),
+            NormalizeText(requestReceiver, storedReceiver, driverNameSurname));
+
+    private static ResolvedDespatchContacts ResolveDespatchContacts(
+        SendEDespatchRequest request,
+        string? storedDeliverer,
+        string? storedReceiver)
+    {
+        var (deliverer, receiver) = ResolveDespatchContactNames(
+            request.Deliverer,
+            request.Receiver,
+            storedDeliverer,
+            storedReceiver,
+            request.DriverNameSurname);
+
+        return new ResolvedDespatchContacts(deliverer, receiver);
+    }
 
     private static string ResolveDriverField(string? overrideValue, string fallbackValue) =>
         string.IsNullOrWhiteSpace(overrideValue)
@@ -2464,6 +2506,9 @@ public sealed class EDespatchService(
             ?.Trim()
         ?? string.Empty;
 
+    private static string? NormalizeNullableText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];
 
@@ -2579,6 +2624,10 @@ public sealed class EDespatchService(
         string? Deliverer,
         string? Receiver,
         string? DriverTckn);
+
+    private sealed record ResolvedDespatchContacts(
+        string Deliverer,
+        string Receiver);
 
     private sealed class DocumentNumberLockLease(
         DbConnection connection,

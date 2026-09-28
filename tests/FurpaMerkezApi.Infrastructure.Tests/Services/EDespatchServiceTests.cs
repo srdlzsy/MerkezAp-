@@ -38,6 +38,47 @@ public sealed class EDespatchServiceTests
         Assert.Null(EDespatchService.BuildPartyPersonElement("VKN", "FIRMA UNVANI"));
     }
 
+    [Fact]
+    public void BuildContactElement_CreatesNamedDespatchContact()
+    {
+        var result = EDespatchService.BuildContactElement(
+            "DespatchContact",
+            "ZEHRA SAMUK",
+            null,
+            null,
+            null,
+            null);
+
+        Assert.NotNull(result);
+        Assert.Equal("DespatchContact", result.Name.LocalName);
+        Assert.Equal("ZEHRA SAMUK", result.Elements().Single().Value);
+        Assert.Equal("Name", result.Elements().Single().Name.LocalName);
+    }
+
+    [Theory]
+    [InlineData("REQUEST EDEN", "REQUEST ALAN", "MIKRO EDEN", "MIKRO ALAN", "SOFOR ADI", "REQUEST EDEN", "REQUEST ALAN")]
+    [InlineData(null, null, "MIKRO EDEN", "MIKRO ALAN", "SOFOR ADI", "MIKRO EDEN", "MIKRO ALAN")]
+    [InlineData(null, null, null, null, "SOFOR ADI", "", "SOFOR ADI")]
+    public void ResolveDespatchContactNames_UsesRequestThenMikroThenDriverFallback(
+        string? requestDeliverer,
+        string? requestReceiver,
+        string? storedDeliverer,
+        string? storedReceiver,
+        string? driverNameSurname,
+        string expectedDeliverer,
+        string expectedReceiver)
+    {
+        var result = EDespatchService.ResolveDespatchContactNames(
+            requestDeliverer,
+            requestReceiver,
+            storedDeliverer,
+            storedReceiver,
+            driverNameSurname);
+
+        Assert.Equal(expectedDeliverer, result.Deliverer);
+        Assert.Equal(expectedReceiver, result.Receiver);
+    }
+
     [Theory]
     [InlineData(null, 0)]
     [InlineData("FRM2026000000001", 1)]

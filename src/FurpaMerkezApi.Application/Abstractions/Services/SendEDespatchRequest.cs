@@ -8,4 +8,6 @@ public sealed record SendEDespatchRequest(
     string Plaque,
     string DriverNameSurname,
     string DriverTckn,
-    Guid? DriverId = null);
+    Guid? DriverId = null,
+    string? Deliverer = null,
+    string? Receiver = null);

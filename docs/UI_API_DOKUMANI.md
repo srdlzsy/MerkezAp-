@@ -148,7 +148,9 @@ Body:
   "driverId": "25a9f3ea-a55a-4558-bb82-8109c3f14cd4",
   "plaque": "16BZU759",
   "driverNameSurname": "SINAN BERKER",
-  "driverTckn": "11111111111"
+  "driverTckn": "11111111111",
+  "deliverer": "ZEHRA SAMUK",
+  "receiver": "SINAN BERKER"
 }
 ```
 
@@ -156,6 +158,8 @@ Not:
 
 - `driverId` verilirse aktif sofor kaydindan plaka/ad soyad/TCKN doldurulur.
 - `driverId` verilmezse `plaque`, `driverNameSurname` ve `driverTckn` zorunludur.
+- `deliverer` ve `receiver` opsiyoneldir. Verilmezse once Mikro hareketindeki `sth_HareketGrupKodu2` ve `sth_HareketGrupKodu3` kullanilir; teslim alan da bos ise `driverNameSurname` kullanilir.
+- Uyumsoft UBL icinde `deliverer`, `DespatchSupplierParty/DespatchContact/Name`; `receiver`, `DeliveryCustomerParty/DeliveryContact/Name` alanina yazilir. Sofor ayrica `Shipment/ShipmentStage/DriverPerson` altinda gonderilir.
 - Bu route acildiginda login/JWT kontrolu yoktur. E-irsaliye gercek belge urettigi icin canlida origin, CORS ve depo listesi dar tutulmalidir.
 
 ### Tum Depo Yetki Modeli
@@ -11447,13 +11451,23 @@ Sofor bilgisi iki sekilde gonderilebilir:
 
 `driverNameSurname` dolu gonderilirse en az iki kelime olacak sekilde `Ad Soyad` formatinda olmalidir; tek kelime gelirse API 400 doner. `driverTckn` dolu gonderilirse 11 haneli numeric olmalidir. Backend UBL uretiminde `DriverPerson` icinde sirayi `FirstName`, `FamilyName`, `NationalityID` olarak yazar; `NationalityID` soyaddan once gonderilmez.
 
+`deliverer` ve `receiver` opsiyoneldir. Request'te verilirse Mikro'daki degerleri ezer. Verilmezse `sth_HareketGrupKodu2` teslim eden, `sth_HareketGrupKodu3` teslim alan olarak kullanilir. Teslim alan bilgisi hem request'te hem Mikro'da bossa `driverNameSurname` fallback olur. UBL eslemesi:
+
+```text
+deliverer -> cac:DespatchSupplierParty/cac:DespatchContact/cbc:Name
+receiver  -> cac:DeliveryCustomerParty/cac:DeliveryContact/cbc:Name
+sofor     -> cac:Shipment/cac:ShipmentStage/cac:DriverPerson
+```
+
 Request - elle giris:
 
 ```json
 {
   "plaque": "16 ABC 123",
   "driverNameSurname": "Ad Soyad",
-  "driverTckn": "11111111111"
+  "driverTckn": "11111111111",
+  "deliverer": "Teslim Eden Ad Soyad",
+  "receiver": "Teslim Alan Ad Soyad"
 }
 ```
 
@@ -22762,7 +22776,7 @@ Bu bolumde yalnizca endpointlerin dogrudan baglandigi HTTP request modelleri yer
 
 - `HomeWarehousePrioritiesHttpRequest`: `Date`, `WarehouseNo`
 - `WarehouseOrderDateRangeHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`
-- `SendEDespatchHttpRequest`: `DriverId`, `Plaque`, `DriverNameSurname`, `DriverTckn`
+- `SendEDespatchHttpRequest`: `DriverId`, `Plaque`, `DriverNameSurname`, `DriverTckn`, opsiyonel `Deliverer`, opsiyonel `Receiver`
 - `ModuleActionRequest`: `Fields`
 - `CreateFeedbackItemHttpRequest`: `Type`, `Title`, `Message`, `Priority`
 - `FeedbackManagementListHttpRequest`: `Status`, `Type`, `WarehouseNo`, `StartDate`, `EndDate`, `Take`

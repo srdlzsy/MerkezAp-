@@ -286,7 +286,9 @@ public sealed class DepoIadeleriController(
                 request.Plaque,
                 request.DriverNameSurname,
                 request.DriverTckn,
-                request.DriverId),
+                request.DriverId,
+                request.Deliverer,
+                request.Receiver),
             cancellationToken));
     }
 

@@ -15,6 +15,12 @@ public sealed class SendEDespatchHttpRequest : IValidatableObject
     [StringLength(25)]
     public string DriverTckn { get; init; } = string.Empty;
 
+    [StringLength(25)]
+    public string? Deliverer { get; init; }
+
+    [StringLength(25)]
+    public string? Receiver { get; init; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (DriverId == Guid.Empty)

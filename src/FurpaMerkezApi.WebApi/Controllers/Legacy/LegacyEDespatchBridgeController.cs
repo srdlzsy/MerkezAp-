@@ -119,7 +119,9 @@ public sealed class LegacyEDespatchBridgeController(
                 request.Plaque,
                 request.DriverNameSurname,
                 request.DriverTckn,
-                request.DriverId),
+                request.DriverId,
+                request.Deliverer,
+                request.Receiver),
             cancellationToken));
     }
 
@@ -275,6 +277,12 @@ public sealed class LegacySendEDespatchHttpRequest : IValidatableObject
 
     [StringLength(25)]
     public string DriverTckn { get; init; } = string.Empty;
+
+    [StringLength(25)]
+    public string? Deliverer { get; init; }
+
+    [StringLength(25)]
+    public string? Receiver { get; init; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
