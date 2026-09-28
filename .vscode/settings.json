@@ -1,3 +1,4 @@
 {
-  "xml.validation.enabled": false
+  "xml.validation.enabled": false,
+  "dotnet.defaultSolution": "FurpaMerkezApi.sln"
 }

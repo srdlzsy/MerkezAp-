@@ -313,6 +313,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "urun-dagilimlari", "UrunDagilimlari", ProductDistributionActions),
         ..CreateMenuPermissions("duzeltme-islemleri", "DuzeltmeIslemleri", "mikro-evrak-duzenleme", "MikroEvrakDuzenleme", ReadUpdateDeleteActions),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "axata-senkronizasyonu", "AxataSenkronizasyonu"),
+        ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "trendyol-go", "TrendyolGo", PageListDetailUpdateActions),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "pos-muhasebe-aktarimi", "PosMuhasebeAktarimi"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "uyumsoft-e-fatura", "UyumsoftEFatura"),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "uyumsoft-e-irsaliye", "UyumsoftEIrsaliye"),

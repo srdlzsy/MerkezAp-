@@ -226,6 +226,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `operasyon-islemleri` | `urun-dagilimlari` | `operasyon-islemleri.urun-dagilimlari.page` | `operasyon-islemleri.urun-dagilimlari.list`<br>`operasyon-islemleri.urun-dagilimlari.detail`<br>`operasyon-islemleri.urun-dagilimlari.create`<br>`operasyon-islemleri.urun-dagilimlari.update`<br>`operasyon-islemleri.urun-dagilimlari.delete` | `operasyon-islemleri.urun-dagilimlari.all-warehouses` |
 | `duzeltme-islemleri` | `mikro-evrak-duzenleme` | `duzeltme-islemleri.mikro-evrak-duzenleme.page` | `duzeltme-islemleri.mikro-evrak-duzenleme.list`<br>`duzeltme-islemleri.mikro-evrak-duzenleme.detail`<br>`duzeltme-islemleri.mikro-evrak-duzenleme.update`<br>`duzeltme-islemleri.mikro-evrak-duzenleme.delete` | `duzeltme-islemleri.mikro-evrak-duzenleme.all-warehouses` |
 | `entegrasyon-islemleri` | `axata-senkronizasyonu` | `entegrasyon-islemleri.axata-senkronizasyonu.page` | `entegrasyon-islemleri.axata-senkronizasyonu.list`<br>`entegrasyon-islemleri.axata-senkronizasyonu.detail`<br>`entegrasyon-islemleri.axata-senkronizasyonu.create`<br>`entegrasyon-islemleri.axata-senkronizasyonu.update` | `entegrasyon-islemleri.axata-senkronizasyonu.all-warehouses` |
+| `entegrasyon-islemleri` | `trendyol-go` | `entegrasyon-islemleri.trendyol-go.page` | `entegrasyon-islemleri.trendyol-go.list`<br>`entegrasyon-islemleri.trendyol-go.detail`<br>`entegrasyon-islemleri.trendyol-go.update` | `-` |
 | `entegrasyon-islemleri` | `pos-muhasebe-aktarimi` | `entegrasyon-islemleri.pos-muhasebe-aktarimi.page` | `entegrasyon-islemleri.pos-muhasebe-aktarimi.list`<br>`entegrasyon-islemleri.pos-muhasebe-aktarimi.detail`<br>`entegrasyon-islemleri.pos-muhasebe-aktarimi.create`<br>`entegrasyon-islemleri.pos-muhasebe-aktarimi.update` | `entegrasyon-islemleri.pos-muhasebe-aktarimi.all-warehouses` |
 | `entegrasyon-islemleri` | `uyumsoft-e-fatura` | `entegrasyon-islemleri.uyumsoft-e-fatura.page` | `entegrasyon-islemleri.uyumsoft-e-fatura.list`<br>`entegrasyon-islemleri.uyumsoft-e-fatura.detail`<br>`entegrasyon-islemleri.uyumsoft-e-fatura.create`<br>`entegrasyon-islemleri.uyumsoft-e-fatura.update` | `entegrasyon-islemleri.uyumsoft-e-fatura.all-warehouses` |
 | `entegrasyon-islemleri` | `uyumsoft-e-irsaliye` | `entegrasyon-islemleri.uyumsoft-e-irsaliye.page` | `entegrasyon-islemleri.uyumsoft-e-irsaliye.list`<br>`entegrasyon-islemleri.uyumsoft-e-irsaliye.detail`<br>`entegrasyon-islemleri.uyumsoft-e-irsaliye.create`<br>`entegrasyon-islemleri.uyumsoft-e-irsaliye.update` | `entegrasyon-islemleri.uyumsoft-e-irsaliye.all-warehouses` |
@@ -17339,6 +17340,274 @@ Operasyon modulu notlari:
 - `promofile` icin `ConnectionStrings:MaydayConnection` ve `ConnectionStrings:UyumConnection` ayarlari gereklidir
 
 ## Entegrasyon Islemleri
+
+### Trendyol Go Market Entegrasyonu
+
+Trendyol Go Market baglanti katmani `api.tgoapis.com` adresini kullanir. Asagidaki tablo **bizim API'de kodlanmis route'lari** gosterir; TGO'nun tum Market API'sinin desteklendigi veya bu route'larin canlida dogrulandigi anlamina gelmez. Siparis, urun katalogu, sube bazli fiyat-stok, satis acma/kapama, batch sonucu, bazi paket aksiyonlari, fatura linki ve iade/itiraz icin manuel endpointler vardir. Otomatik worker, webhook alicisi ve Mikro satis/fatura evragi olusturma yoktur. Kapsam matrisi, operasyon akislarinin ayrintilari ve resmi kaynaklar: [Trendyol Go Entegrasyonu](TRENDYOL_GO_ENTEGRASYONU.md).
+
+Durum (28.09.2026): Kod ve resmi Market dokumani karsilastirildi; TGO stage/production uzerinde uctan uca istek ve sonuc dogrulamasi yapilmadi. `Enabled=false` varsayilandir. Asagidaki yazma route'lari bu nedenle "canlida hazir" sayilmamalidir.
+
+TGO gelistirici portali Uber Eats gecisiyle siparis modelinde degisiklikler duyuruyor. Bizim `orders` response'u buyuk olcude ham TGO JSON'u oldugu icin UI'nin alanlari ve paket aksiyon sirasi guncel Market stage verisiyle ayrica dogrulanmalidir.
+
+Yetkiler:
+
+```text
+entegrasyon-islemleri.trendyol-go.page
+entegrasyon-islemleri.trendyol-go.list
+entegrasyon-islemleri.trendyol-go.detail
+entegrasyon-islemleri.trendyol-go.update
+```
+
+Config:
+
+```json
+{
+  "TrendyolGo": {
+    "Enabled": false,
+    "Environment": "Production",
+    "BaseUrl": "https://api.tgoapis.com",
+    "SupplierId": 475658,
+    "IntegrationReferenceCode": "27fe35c1-911c-46bc-84b0-cf6737970126",
+    "ApiKey": "",
+    "ApiSecret": "",
+    "AuthorizationToken": "",
+    "AgentName": "FurpaMerkezApi",
+    "ExecutorUser": "",
+    "TimeoutSeconds": 30,
+    "Stores": [
+      {
+        "StoreId": 402535,
+        "WarehouseNo": 110,
+        "StoreName": "Kestel 1"
+      }
+    ]
+  }
+}
+```
+
+Guvenlik:
+
+- `AuthorizationToken` veya `ApiKey`/`ApiSecret` kaynak koda yazilmamalidir. Canlida environment variable veya sunucu secret ayari kullanilmalidir.
+- Hazir Basic token kullanilacaksa environment variable adi `TrendyolGo__AuthorizationToken` olur.
+- Entegrasyonu acmak icin `TrendyolGo__Enabled=true` verilmelidir.
+- Durum guncelleme isteklerinde `x-agentname` ve `x-executor-user` header degerleri config'den gonderilir.
+
+Endpointler:
+
+| Endpoint | Request | Response | Yetki |
+|---|---|---|---|
+| `GET /api/entegrasyon-islemleri/trendyol-go/status` | - | `TrendyolGoConnectionStatusDto` | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go` | - | `status` ile ayni cevap | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/stores` | - | `TrendyolGoStoreMappingDto[]` | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/connection-test?storeId=402535` | query | `TrendyolGoConnectionStatusDto` | `detail` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/orders` | query | TGO siparis JSON response'u | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/orders/by-number/{orderNumber}` | path | TGO siparis JSON response'u | `detail` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/picked` | body yok | TGO response veya `204` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/orders/{orderId}/invoice-amount` | path | TGO min/max tutar response'u | `detail` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/invoiced` | body | TGO response veya `204` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/brands` | query | TGO marka JSON response'u | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/products` | query | TGO urun JSON response'u | `list` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/products/price-and-inventory` | `{ items: [...] }` | batch response veya `204` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535&page=0&size=100` | query | `TrendyolGoPriceStockPreview` | `list` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | `TrendyolGoPriceStockDispatchHttpRequest` | `TrendyolGoPriceStockDispatch` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}` | path | batch sonucu | `detail` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-on` | `{ items: [...] }` | batch response veya `204` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-off` | `{ items: [...] }` | batch response veya `204` | `update` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/products/seller-attributes` | `{ items: [...] }` | batch response veya `204` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/packages/by-ids?id={packageId}` | query | TGO paket JSON response'u | `detail` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/items/unsupplied` | TGO tedarik-edememe body | TGO response veya `204`; upstream path henuz dogrulanmadi | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/mark-alternative` | TGO alternatif urun body | TGO response veya `204` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/manual-shipped` | body yok | TGO response veya `204` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/manual-delivered` | body yok | TGO response veya `204` | `update` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/invoice-links` | `invoiceLink`, `shipmentPackageId` | TGO response veya `204` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/claims` | query | TGO iade JSON response'u | `list` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/accept` | TGO iade kabul body | TGO response veya `204` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/reject` | TGO iade red body | TGO response veya `204` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/items/objectionable` | path | itiraz edilebilir kalemler | `detail` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/items/objections` | TGO itiraz body | TGO response veya `204` | `update` |
+
+Siparis liste query:
+
+```text
+storeId       zorunlu; TGO magazasi id degeri
+startDate     opsiyonel; Unix timestamp milisaniye
+endDate       opsiyonel; Unix timestamp milisaniye
+page          opsiyonel; default 0
+size          opsiyonel; default 50, max 200
+status        opsiyonel; tekrarli query olabilir. Created, Picking, Invoiced, Shipped, Cancelled, Delivered, Returned, UnPacked, UnSupplied
+sortDirection opsiyonel; ASC veya DESC, default DESC
+```
+
+Ornek:
+
+```text
+GET /api/entegrasyon-islemleri/trendyol-go/orders?storeId=402535&status=Created&page=0&size=50
+```
+
+Siparis hazir bildirimi body:
+
+```json
+{
+  "invoiceAmount": 1250.50,
+  "bagCount": 3,
+  "receiptLink": null,
+  "invoiceTaxAmount": 113.68
+}
+```
+
+Sube bazli fiyat ve stok body:
+
+```json
+{
+  "items": [
+    {
+      "barcode": "8690000000000",
+      "sellingPrice": 99.90,
+      "quantity": 25,
+      "storeId": 402535
+    }
+  ]
+}
+```
+
+Mikro'dan barkod girmeden fiyat/stok gonderme:
+
+1. UI `stores` listesinden subeyi secer; `storeId` bu kayittan gelir.
+2. `price-stock/preview` secili subenin TGO urun katalogundan bir sayfa (en fazla 100 urun) alir, barkodlari Mikro'da eslestirir ve Mikro satis fiyati ile sube stokunu gosterir. Veri yazmaz.
+3. UI sadece `status=Ready` satirlarini sectirir. `Skipped` satirinin sebebini gosterir; `Unchanged` satiri tekrar gondermez.
+4. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Backend TGO ve Mikro verisini tekrar okuyup hash'i dogrular; veri degismisse `409 Conflict` doner ve onizleme yenilenir.
+5. Gonderim response'undaki `upstreamResponse.batchRequestId` ile mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
+6. `totalPages` varsa UI sonraki sayfaya gecerek kalan urunleri de isler. Her sayfa ayri onizleme ve gonderimdir.
+
+Onizleme ornegi:
+
+```json
+{
+  "storeId": 402535,
+  "warehouseNo": 110,
+  "storeName": "Kestel 1",
+  "page": 0,
+  "size": 100,
+  "totalPages": 2,
+  "totalElements": 120,
+  "previewHash": "A1B2...",
+  "readyCount": 1,
+  "skippedCount": 0,
+  "items": [
+    {
+      "barcode": "8690000000000",
+      "stockCode": "015550",
+      "productName": "Urun Adi",
+      "trendyolPrice": 89.9,
+      "trendyolQuantity": 10,
+      "mikroPrice": 99.9,
+      "mikroQuantity": 25,
+      "status": "Ready",
+      "reason": null
+    }
+  ]
+}
+```
+
+Gonderim body:
+
+```json
+{
+  "storeId": 402535,
+  "page": 0,
+  "size": 100,
+  "previewHash": "A1B2...",
+  "barcodes": ["8690000000000"]
+}
+```
+
+Bu akis sadece TGO katalogunda bulunan urunleri kapsar. Mikro satis fiyati sifir/bos, barkod eslesmesi yok, urun pasif veya satisa kapali ise satir `Skipped` olur. Negatif stok `0` kabul edilir; kesirli stok tam sayiya asagi yuvarlanir. `storeId` tum subeler yerine sadece secilen TGO magazasina gonderilir. Tekrar gonderimden once batch sonucunu ve guncel onizlemeyi kontrol edin; TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir.
+
+Onizleme TGO katalogunun sadece istenen sayfasini (en fazla 100 urun) okur; Mikro'daki TGO'da henuz olmayan urunleri olusturmaz. Toplu "tum subeleri/tum sayfalari gonder" endpointi ve zamanlanmis otomatik senkronizasyon yoktur. `dispatch` icin barkodlar UI'da tek tek yazilmaz; onizleme satirlarindan secilir. Batch sonucu otomatik izlenmez, UI `batchRequestId` ile ayrica sorgulamalidir.
+
+Urun katalog query:
+
+```text
+storeId    zorunlu; TGO magazasi id degeri
+listType   opsiyonel; TGO urun liste tipi
+barcode    opsiyonel; tekil barkod filtresi
+stockCode  opsiyonel; Mikro stok kodu ile eslesen satici stok kodu filtresi
+startDate  opsiyonel; Unix timestamp milisaniye
+endDate    opsiyonel; Unix timestamp milisaniye
+brandIds   opsiyonel; tekrarli query olabilir, ornek brandIds=12&brandIds=18
+page       opsiyonel; default 0
+size       opsiyonel; default 50, max 100
+```
+
+TGO'nun urun filtreleme V2 servisindeki `categoryIds`, `title`, `orderBy` ve `order` query alanlari bu route'ta henuz yoktur. UI bunlari gonderse bile backend TGO'ya tasimaz. Kategori agaci/getCategoryTree icin ayrica bir route da yoktur.
+
+Marka query:
+
+```text
+page  opsiyonel; default 0
+size  opsiyonel; default 50, max 200
+name  opsiyonel; marka adi filtresi
+```
+
+Iade/claim liste query:
+
+```text
+claimItemStatus  opsiyonel; TGO iade kalem durumu
+startDate        opsiyonel; Unix timestamp milisaniye
+endDate          opsiyonel; Unix timestamp milisaniye
+page             opsiyonel; default 0
+size             opsiyonel; default 50, max 200
+```
+
+TGO iade listelemedeki `claimIds`, `orderNumber`, `acceptedStartDate` ve `acceptedEndDate` filtreleri bu route'ta henuz yoktur.
+
+Tedarik edememe, alternatif urun, iade kabul/red/itiraz ve satici attribute endpointleri JSON body'yi buyuk olcude TGO'ya iletir. Bu, TGO semasinin backend tarafinda tamamen dogrulandigi anlamina gelmez; UI resmi Market body semasini kullanmali ve TGO batch/hata cevabini gostermelidir. Itiraz gorseli icin resmi multipart yukleme destegi bizim API'de yoktur. Fatura linki body ornegi:
+
+```json
+{
+  "invoiceLink": "https://firma.example/faturalar/123.pdf",
+  "shipmentPackageId": 435346443539
+}
+```
+
+Paket durum endpointlerinde `packageId`, claim endpointlerinde `claimId` path parametresidir. Birden fazla paketi tekrar okumak icin query ayni anahtarla tekrar edilir:
+
+```text
+GET /api/entegrasyon-islemleri/trendyol-go/packages/by-ids?id=paket-1&id=paket-2
+```
+
+Kurallar:
+
+- Siparis kabulunde once `picked`, hazir oldugunda `invoiced` cagrilmalidir. Tedarik edilememe ve alternatif urun adimlari varsa bunlar arada yapilir; degisen `packageId` yeniden okunur.
+- `invoiced` oncesi `invoice-amount` ile izin verilen min/max tutar okunmalidir.
+- `bagCount` en fazla `10` olabilir.
+- Urun, fiyat-stok, satis acma/kapama ve attribute isteklerinde `items` 1-1000 satir olmalidir. Donen `batchRequestId` sonucu en gec 4 saat icinde batch endpointinden izlenmelidir.
+- Fiyat-stok satirinda `barcode` zorunludur. `sellingPrice` ve `quantity` negatif olamaz. Ilk aktarimda ikisi birlikte gonderilmelidir.
+- `storeId` yazilirsa sistem bu ID'nin konfigurasyondaki TGO-Mikro depo eslesmesinde oldugunu dogrular. `storeId` bos birakmak TGO tarafinda tum magazalara uygulama anlamina gelebilir; UI bunu sadece merkez yetkili toplu islemde acmalidir.
+- Fiyat veya stok `0` gonderilirse TGO urunu satis disina alabilir. Satisa acma/kapama batch sonucunu UI mutlaka gostermelidir.
+- Tedarik edememe veya alternatif urun bildirimi sonrasinda TGO yeni paket ID uretebilir. UI eski paket yerine `packages/by-ids` veya siparis listeleme ile yeni paketi yeniden okumali, ayni pakete kontrolsuz ikinci islem yapmamalidir.
+- Iade, itiraz, fatura linki ve manuel teslimat gercek dis sistem durumunu degistirir; UI bunlari onayli aksiyon olarak sunmalidir.
+- Config'de 59 TGO magazasi Mikro depo numaralariyla acik olarak eslestirilmistir; runtime'da isimden depo tahmini yapilmaz.
+- Bu endpointler su an Mikro'ya satis/siparis/fatura evragi yazmaz. Bu yazma akisi ayrica idempotency, urun-barkod kontrolu ve hedef Mikro evrak turu kararlastirildiktan sonra acilmalidir.
+
+Resmi Market API'ye gore **bizde olmayan veya eksik** islevler:
+
+| Alan | Bizdeki durum |
+|---|---|
+| Kategori agaci ve kategori/attribute ID aramasi | Yok; urun olusturma body'sindeki `categoryId` disaridan bilinmelidir. |
+| Urun filtreleme V2'nin tum query alanlari | `categoryIds`, `title`, `orderBy`, `order` eksik. |
+| Iade listelemenin tum query alanlari | `claimIds`, `orderNumber`, `acceptedStartDate`, `acceptedEndDate` eksik. |
+| Satici kaynakli iade/claim olusturma | Yok; yalnizca mevcut iade listesi ve aksiyonlari var. |
+| Iade itirazina gorsel ekleme | Yok; yalnizca JSON body var, multipart yok. |
+| Siparis webhook alma ve otomatik siparis senkronizasyonu | Yok; siparisler kullanici istegiyle GET edilir. |
+| Stage test siparisi olusturma | Yok. |
+| Tedarik edememe | Route kodlandi; upstream `items/unsupplied` path'i resmi dokuman ve stage ile henuz dogrulanmadi. |
+| Fiyat/stok icin tam otomasyon | Yalnizca secili sube/sayfa onizleme ve manuel secili satir gonderimi var; tum katalog worker'i, batch takip worker'i ve kalici gonderim gecmisi yok. |
+| Mikro satis/fatura entegrasyonu | Yok; TGO siparisi Mikro evragina donusmez. |
+
+Bu matris resmi **Market/Grocery** dokumanindaki incelenen servisler icindir; Yemek API'si farkli bir urundur. Resmi dokuman ve sinirlar icin [ayrintili entegrasyon rehberine](TRENDYOL_GO_ENTEGRASYONU.md) bakin.
 
 Bu modul, eski `Furpa.WorkerService` akisini yeni API icinde worker + manuel endpoint ayrimi ile yonetmek icin eklendi. UI tarafinda ana ekran `workbench/is-merkezi` mantigiyla, teknik detaylar ise gelismis bolumlerde kurgulanmalidir.
 

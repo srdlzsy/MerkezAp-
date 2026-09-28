@@ -9,6 +9,7 @@ using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchCustomers;
 using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.FaturaIslemleri.FaturaGonderimi;
@@ -116,6 +117,7 @@ using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchCustomers;
 using FurpaMerkezApi.Infrastructure.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
 using FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGonderimi;
 using FurpaMerkezApi.Infrastructure.Modules.FaturaIslemleri.FaturaGoruntuleme;
@@ -357,6 +359,21 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(Math.Clamp(mikroApiOptions.TimeoutSeconds, 1, 600));
         });
         services.Configure<AxataSynchronizationOptions>(configuration.GetSection("AxataSynchronization"));
+        services.Configure<TrendyolGoOptions>(configuration.GetSection(TrendyolGoOptions.SectionName));
+        services.AddHttpClient<TrendyolGoApiClient>((serviceProvider, client) =>
+        {
+            var trendyolGoOptions = serviceProvider
+                .GetRequiredService<IOptionsMonitor<TrendyolGoOptions>>()
+                .CurrentValue;
+
+            if (Uri.TryCreate(trendyolGoOptions.BaseUrl, UriKind.Absolute, out var baseUri) &&
+                baseUri.Scheme == Uri.UriSchemeHttps)
+            {
+                client.BaseAddress = baseUri;
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(trendyolGoOptions.TimeoutSeconds, 1, 300));
+        });
         services.AddSingleton(Options.Create(jwtOptions));
         services.AddSingleton(Options.Create(new MikroWriteOptions(
             mikroWriteConnection,
@@ -676,6 +693,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AxataSynchronizationConnectionProbeService>();
         services.AddScoped<IAxataSynchronizationService, AxataSynchronizationService>();
         services.AddScoped<IPosMuhasebeAktarimiService, PosMuhasebeAktarimiService>();
+        services.AddScoped<ITrendyolGoIntegrationService, TrendyolGoIntegrationService>();
+        services.AddScoped<ITrendyolGoPriceStockWorkbench, TrendyolGoPriceStockWorkbench>();
         services.AddScoped<IAxataSynchronizationTaskHandler, FirmMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, ProductMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, IssuedWarehouseOrderSyncTaskHandler>();
