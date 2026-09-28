@@ -21,6 +21,8 @@ public sealed record CompanyMovementHeaderDto(
     byte DocumentType,
     byte MovementType,
     byte ReturnType,
+    string Deliverer,
+    string Receiver,
     string Description,
     int LineCount,
     double TotalQuantity,

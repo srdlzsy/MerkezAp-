@@ -14,6 +14,14 @@ public sealed class ExceptionHandlingMiddleware(
         {
             await next(httpContext);
         }
+        catch (Exception exception) when (SqlServerExceptionClassifier.IsConnectivityFailure(exception))
+        {
+            logger.LogWarning(exception, "A SQL Server connectivity error occurred.");
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status503ServiceUnavailable,
+                "Veritabani servisine gecici olarak ulasilamiyor. Lutfen kisa bir sure sonra tekrar deneyin.");
+        }
         catch (ArgumentException exception)
         {
             logger.LogWarning(exception, "A validation error occurred.");
@@ -114,6 +122,7 @@ public sealed class ExceptionHandlingMiddleware(
             StatusCodes.Status409Conflict => "Conflict",
             StatusCodes.Status404NotFound => "Not Found",
             StatusCodes.Status502BadGateway => "Bad Gateway",
+            StatusCodes.Status503ServiceUnavailable => "Service Unavailable",
             StatusCodes.Status504GatewayTimeout => "Gateway Timeout",
             _ => "Internal Server Error"
         };

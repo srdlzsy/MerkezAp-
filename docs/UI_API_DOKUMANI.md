@@ -1553,6 +1553,7 @@ Olasi durumlar:
 - `404` kayit bulunamadi
 - `409` conflict/is kurali cakisiyor
 - `501` route acik ama backend henuz implement edilmedi
+- `503` SQL Server/veritabani servisine gecici olarak ulasilamiyor; create retry gerekiyorsa UI ayni payload ve ayni `clientRequestId` ile tekrar denemelidir
 
 ## Kimlik Akisi
 
@@ -11319,6 +11320,7 @@ Not:
 
 - response modeli firma sevk detay response modeliyle aynidir
 - filtre `sth_evraktip = 1`, `sth_tip = 1`, `sth_normal_iade = 1`, `sth_cikis_depo_no = warehouseNo` olarak uygulanir
+- `header.deliverer` teslim eden kisiyi, `header.receiver` teslim alan kisiyi dondurur. Degerler Mikro `sth_HareketGrupKodu2` ve `sth_HareketGrupKodu3` alanlarindan okunur.
 - bu endpoint Mikro veritabaninda sadece SELECT yapar; insert/update/delete yoktur
 
 ### Firma Iadesini E-Irsaliyeye Cevir
@@ -20674,6 +20676,8 @@ public sealed record CompanyMovementListItemDto(
     byte DocumentType,
     byte MovementType,
     byte ReturnType,
+    string Deliverer,
+    string Receiver,
     string Description,
     int LineCount,
     double TotalQuantity,

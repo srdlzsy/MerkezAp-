@@ -92,6 +92,8 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_evraktip,
                 movement.sth_tip,
                 movement.sth_normal_iade,
+                movement.sth_HareketGrupKodu2,
+                movement.sth_HareketGrupKodu3,
                 movement.sth_aciklama,
                 movement.sth_satirno,
                 movement.sth_stok_kod,
@@ -213,6 +215,8 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
             firstRow.sth_evraktip ?? 0,
             firstRow.sth_tip ?? 0,
             firstRow.sth_normal_iade ?? 0,
+            FirstNonEmpty(rows.Select(row => row.sth_HareketGrupKodu2)),
+            FirstNonEmpty(rows.Select(row => row.sth_HareketGrupKodu3)),
             firstRow.sth_aciklama ?? string.Empty,
             items.Length,
             items.Sum(item => item.Quantity),
@@ -283,4 +287,7 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
             values
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value!.Trim()));
+
+    private static string FirstNonEmpty(IEnumerable<string?> values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 }

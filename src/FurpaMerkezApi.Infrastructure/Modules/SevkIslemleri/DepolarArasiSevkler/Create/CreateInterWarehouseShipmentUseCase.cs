@@ -85,27 +85,51 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CreateInterWarehouseShipmentRequest request,
         CancellationToken cancellationToken)
     {
+        var collidedDocumentOrderNos = new HashSet<int>();
+
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                return await ExecuteDatabaseOnceAsync(request, cancellationToken);
+                return await ExecuteDatabaseOnceAsync(
+                    request,
+                    collidedDocumentOrderNos,
+                    cancellationToken);
             }
             catch (Exception exception) when (
                 !cancellationToken.IsCancellationRequested &&
                 attempt < DatabaseWriteRetryAttemptCount &&
-                IsTransientSqlWriteException(exception))
+                (IsTransientSqlWriteException(exception) ||
+                 exception is ShipmentDocumentSequenceCollisionException))
             {
                 mikroWriteDbContext.ChangeTracker.Clear();
 
-                logger.LogWarning(
-                    exception,
-                    "Transient SQL error occurred while creating inter warehouse shipment. Retrying database write. Attempt={Attempt}, MaxAttempt={MaxAttempt}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, LineCount={LineCount}",
-                    attempt,
-                    DatabaseWriteRetryAttemptCount,
-                    request.SourceWarehouseNo,
-                    request.TargetWarehouseNo,
-                    request.Lines.Count);
+                if (exception is ShipmentDocumentSequenceCollisionException collisionException)
+                {
+                    collidedDocumentOrderNos.Add(collisionException.DocumentOrderNo);
+
+                    logger.LogWarning(
+                        exception,
+                        "Inter warehouse shipment document sequence was occupied by another writer. Retrying with a new sequence. Attempt={Attempt}, MaxAttempt={MaxAttempt}, DocumentSerie={DocumentSerie}, CollidedDocumentOrderNo={CollidedDocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, LineCount={LineCount}",
+                        attempt,
+                        DatabaseWriteRetryAttemptCount,
+                        collisionException.DocumentSerie,
+                        collisionException.DocumentOrderNo,
+                        request.SourceWarehouseNo,
+                        request.TargetWarehouseNo,
+                        request.Lines.Count);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Transient SQL error occurred while creating inter warehouse shipment. Retrying database write. Attempt={Attempt}, MaxAttempt={MaxAttempt}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, LineCount={LineCount}",
+                        attempt,
+                        DatabaseWriteRetryAttemptCount,
+                        request.SourceWarehouseNo,
+                        request.TargetWarehouseNo,
+                        request.Lines.Count);
+                }
 
                 await Task.Delay(
                     TimeSpan.FromMilliseconds(DatabaseWriteRetryBaseDelayMilliseconds * attempt),
@@ -116,6 +140,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
     private async Task<CreateInterWarehouseShipmentResponse> ExecuteDatabaseOnceAsync(
         CreateInterWarehouseShipmentRequest request,
+        IReadOnlySet<int> excludedDocumentOrderNos,
         CancellationToken cancellationToken)
     {
         var options = mikroWriteOptions.Value;
@@ -169,6 +194,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 documentDate,
                 now,
                 options.ConnectionStringName,
+                excludedDocumentOrderNos,
                 cancellationToken);
             LogCreatePhase("duplicate-lookup", lines.Length);
 
@@ -188,6 +214,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 var linkedOrderLines = await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
                 LogCreatePhase("linked-order-validation", lines.Length);
                 documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
+                if (excludedDocumentOrderNos.Count > 0)
+                {
+                    documentOrderNo = Math.Max(
+                        documentOrderNo.Value,
+                        checked(excludedDocumentOrderNos.Max() + 1));
+                }
                 LogCreatePhase("next-document-order-no", lines.Length);
                 var automaticOrderLines = await CreateAutomaticWarehouseOrderLinesAsync(
                     request,
@@ -284,7 +316,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     documentSerie,
                     documentOrderNo.Value,
                     request,
-                    lines.Length,
+                    lines,
                     movementDate,
                     documentDate,
                     documentNo,
@@ -320,7 +352,10 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                         options.ConnectionStringName);
                 }
 
-                throw;
+                throw new ShipmentDocumentSequenceCollisionException(
+                    documentSerie,
+                    documentOrderNo.Value,
+                    exception);
             }
             catch
             {
@@ -359,6 +394,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             documentDate,
             now,
             options.ConnectionStringName,
+            new HashSet<int>(),
             cancellationToken);
 
         if (duplicate is not null)
@@ -545,6 +581,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         DateTime documentDate,
         DateTime now,
         string connectionStringName,
+        IReadOnlySet<int> excludedDocumentOrderNos,
         CancellationToken cancellationToken)
     {
         var duplicateThreshold = now.AddMinutes(-RecentDuplicateLookupMinutes);
@@ -583,7 +620,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_lot_no ?? 0,
                 movement.sth_proje_kodu,
                 movement.sth_cari_srm_merkezi,
-                movement.sth_stok_srm_merkezi))
+                movement.sth_stok_srm_merkezi,
+                movement.sth_eticaret_kanal_kodu))
             .ToListAsync(cancellationToken);
 
         foreach (var candidate in candidateRows.GroupBy(row => new
@@ -596,12 +634,21 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                  }))
         {
             var rows = candidate.ToArray();
+            if (candidate.Key.DocumentOrderNo.HasValue &&
+                excludedDocumentOrderNos.Contains(candidate.Key.DocumentOrderNo.Value))
+            {
+                continue;
+            }
+
             if (rows.Length != lines.Count)
             {
                 continue;
             }
 
-            if (!ShipmentLinesMatch(request, lines, rows))
+            if (!InterWarehouseShipmentRecoveryMatcher.Matches(
+                    request,
+                    lines,
+                    rows.Select(row => row.ToRecoveryLine()).ToArray()))
             {
                 continue;
             }
@@ -713,7 +760,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 documentSerie,
                 documentOrderNo,
                 request,
-                lines.Count,
+                lines,
                 movementDate,
                 documentDate,
                 documentNo,
@@ -796,7 +843,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         string documentSerie,
         int documentOrderNo,
         CreateInterWarehouseShipmentRequest request,
-        int expectedLineCount,
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> expectedLines,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
@@ -828,11 +875,35 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_nakliyedeposu,
                 movement.sth_nakliyedurumu,
                 movement.sth_miktar,
-                movement.sth_tutar
+                movement.sth_tutar,
+                movement.sth_stok_kod,
+                movement.sth_birim_pntr,
+                movement.sth_aciklama,
+                movement.sth_parti_kodu,
+                movement.sth_lot_no,
+                movement.sth_proje_kodu,
+                movement.sth_cari_srm_merkezi,
+                movement.sth_stok_srm_merkezi,
+                movement.sth_eticaret_kanal_kodu
             })
             .ToListAsync(cancellationToken);
 
-        if (rows.Count < expectedLineCount)
+        if (!InterWarehouseShipmentRecoveryMatcher.Matches(
+                request,
+                expectedLines,
+                rows.Select(row => new InterWarehouseShipmentRecoveryLine(
+                    row.sth_satirno,
+                    row.sth_stok_kod,
+                    row.sth_miktar ?? 0d,
+                    row.sth_birim_pntr ?? 0,
+                    row.sth_tutar ?? 0d,
+                    row.sth_aciklama,
+                    row.sth_parti_kodu,
+                    row.sth_lot_no ?? 0,
+                    row.sth_proje_kodu,
+                    row.sth_cari_srm_merkezi,
+                    row.sth_stok_srm_merkezi,
+                    row.sth_eticaret_kanal_kodu)).ToArray()))
         {
             return null;
         }
@@ -870,7 +941,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             .Where(row => row.sth_satirno.HasValue)
             .ToDictionary(row => row.sth_satirno!.Value, row => row.sth_Guid);
 
-        for (var rowNo = 0; rowNo < expectedLineCount; rowNo++)
+        for (var rowNo = 0; rowNo < expectedLines.Count; rowNo++)
         {
             if (!movementGuidByRowNo.ContainsKey(rowNo))
             {
@@ -1561,58 +1632,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
     }
 
-    private static bool ShipmentLinesMatch(
-        CreateInterWarehouseShipmentRequest request,
-        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> expectedLines,
-        IReadOnlyCollection<ShipmentDuplicateRow> actualRows)
-    {
-        var rowsByRowNo = actualRows
-            .Where(row => row.RowNo.HasValue)
-            .GroupBy(row => row.RowNo!.Value)
-            .ToDictionary(group => group.Key, group => group.ToArray());
-
-        if (rowsByRowNo.Count != expectedLines.Count ||
-            rowsByRowNo.Values.Any(group => group.Length != 1))
-        {
-            return false;
-        }
-
-        for (var rowNo = 0; rowNo < expectedLines.Count; rowNo++)
-        {
-            if (!rowsByRowNo.TryGetValue(rowNo, out var matchingRows))
-            {
-                return false;
-            }
-
-            var expectedLine = expectedLines[rowNo];
-            var actualRow = matchingRows[0];
-            var expectedAmount = expectedLine.Quantity * expectedLine.UnitPrice;
-            var expectedDescription = expectedLine.Description ?? request.Description;
-
-            if (!TextEquals(actualRow.StockCode, expectedLine.StockCode) ||
-                !NearlyEquals(actualRow.Quantity, expectedLine.Quantity) ||
-                actualRow.UnitPointer != expectedLine.UnitPointer ||
-                !NearlyEquals(actualRow.Amount, expectedAmount) ||
-                !TextEquals(actualRow.Description, expectedDescription) ||
-                !TextEquals(actualRow.PartyCode, expectedLine.PartyCode) ||
-                actualRow.LotNo != expectedLine.LotNo ||
-                !TextEquals(actualRow.ProjectCode, expectedLine.ProjectCode) ||
-                !TextEquals(actualRow.CustomerResponsibilityCenter, expectedLine.CustomerResponsibilityCenter) ||
-                !TextEquals(actualRow.ProductResponsibilityCenter, expectedLine.ProductResponsibilityCenter))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool NearlyEquals(double actual, double expected) =>
-        Math.Abs(actual - expected) <= 0.0001d;
-
-    private static bool TextEquals(string? actual, string? expected) =>
-        string.Equals(NormalizeText(actual), NormalizeText(expected), StringComparison.OrdinalIgnoreCase);
-
     private static void AddParameter(
         DbCommand command,
         string name,
@@ -1739,7 +1758,37 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         int LotNo,
         string? ProjectCode,
         string? CustomerResponsibilityCenter,
-        string? ProductResponsibilityCenter);
+        string? ProductResponsibilityCenter,
+        string? TraceKey)
+    {
+        public InterWarehouseShipmentRecoveryLine ToRecoveryLine() =>
+            new(
+                RowNo,
+                StockCode,
+                Quantity,
+                UnitPointer,
+                Amount,
+                Description,
+                PartyCode,
+                LotNo,
+                ProjectCode,
+                CustomerResponsibilityCenter,
+                ProductResponsibilityCenter,
+                TraceKey);
+    }
+
+    private sealed class ShipmentDocumentSequenceCollisionException(
+        string documentSerie,
+        int documentOrderNo,
+        Exception innerException)
+        : InvalidOperationException(
+            $"Inter warehouse shipment sequence {documentSerie}/{documentOrderNo} was occupied by another writer.",
+            innerException)
+    {
+        public string DocumentSerie { get; } = documentSerie;
+
+        public int DocumentOrderNo { get; } = documentOrderNo;
+    }
 
     private sealed class ShipmentCreateLockLease(
         DbConnection connection,
