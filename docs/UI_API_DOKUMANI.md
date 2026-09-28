@@ -11459,6 +11459,16 @@ receiver  -> cac:DeliveryCustomerParty/cac:DeliveryContact/cbc:Name
 sofor     -> cac:Shipment/cac:ShipmentStage/cac:DriverPerson
 ```
 
+E-irsaliye kalemlerinde backend Mikro `BARKOD_TANIMLARI` tablosundan aktif ana barkodu secer. Uyumsoft UBL eslemesi:
+
+```text
+barkod    -> cac:Item/cbc:Description
+stok kodu -> cac:Item/cac:SellersItemIdentification/cbc:ID
+stok adi  -> cac:Item/cbc:Name
+```
+
+Urunun aktif barkodu yoksa `Description` alaninda geriye uyumlu olarak stok kodu gonderilir. Barkod seciminde once `bar_master=true`, sonra birim pointer ve barkod sirasi kullanilir.
+
 Request - elle giris:
 
 ```json

@@ -601,6 +601,10 @@ public sealed class EDespatchService(
             request,
             document.Detail.Header.Deliverer,
             document.Detail.Header.Receiver);
+        var primaryBarcodes = await LoadPrimaryBarcodesAsync(
+            document.Context,
+            document.Detail.Items.Select(item => item.StockCode),
+            cancellationToken);
         var config = options.Value;
         var recoveredResponse = await TryRecoverExistingSubmissionAsync(
             request,
@@ -651,6 +655,7 @@ public sealed class EDespatchService(
                 deliveryCustomer,
                 request,
                 contacts,
+                primaryBarcodes,
                 now,
                 eDespatchDocumentNo,
                 eDespatchUuid,
@@ -714,6 +719,10 @@ public sealed class EDespatchService(
             request,
             NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu2).ToArray()),
             NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu3).ToArray()));
+        var primaryBarcodes = await LoadPrimaryBarcodesAsync(
+            document.Context,
+            document.Detail.Items.Select(item => item.StockCode),
+            cancellationToken);
         var config = options.Value;
         var recoveredResponse = await TryRecoverExistingSubmissionAsync(
             request,
@@ -759,6 +768,7 @@ public sealed class EDespatchService(
                 targetWarehouse,
                 request,
                 contacts,
+                primaryBarcodes,
                 now,
                 eDespatchDocumentNo,
                 eDespatchUuid,
@@ -1202,6 +1212,7 @@ public sealed class EDespatchService(
         EDespatchCustomerInfo deliveryCustomer,
         SendEDespatchRequest request,
         ResolvedDespatchContacts contacts,
+        IReadOnlyDictionary<string, string> primaryBarcodes,
         DateTime issueDateTime,
         string eDespatchDocumentNo,
         string eDespatchUuid,
@@ -1247,6 +1258,7 @@ public sealed class EDespatchService(
                     item.LineNo + 1,
                     item.StockCode,
                     item.StockName,
+                    primaryBarcodes.GetValueOrDefault(item.StockCode) ?? string.Empty,
                     item.UnitName,
                     item.Quantity))
                 .ToArray());
@@ -1259,6 +1271,7 @@ public sealed class EDespatchService(
         EDespatchWarehouseInfo targetWarehouse,
         SendEDespatchRequest request,
         ResolvedDespatchContacts contacts,
+        IReadOnlyDictionary<string, string> primaryBarcodes,
         DateTime issueDateTime,
         string eDespatchDocumentNo,
         string eDespatchUuid,
@@ -1327,6 +1340,7 @@ public sealed class EDespatchService(
                     item.LineNo + 1,
                     item.StockCode,
                     item.StockName,
+                    primaryBarcodes.GetValueOrDefault(item.StockCode) ?? string.Empty,
                     item.UnitName,
                     item.Quantity))
                 .ToArray());
@@ -1583,10 +1597,11 @@ public sealed class EDespatchService(
         return new XElement(aggregate + "ShipmentStage", elements);
     }
 
-    private static XElement BuildDespatchLineElement(
+    internal static XElement BuildDespatchLineElement(
         int lineNo,
         string stockCode,
         string stockName,
+        string barcode,
         string unitName,
         double quantity)
     {
@@ -1616,8 +1631,13 @@ public sealed class EDespatchService(
                 new XElement(basic + "LineID", lineNo)),
             new XElement(
                 aggregate + "Item",
-                new XElement(basic + "Description", stockCode),
-                new XElement(basic + "Name", stockName)));
+                new XElement(
+                    basic + "Description",
+                    string.IsNullOrWhiteSpace(barcode) ? stockCode : barcode.Trim()),
+                new XElement(basic + "Name", stockName),
+                new XElement(
+                    aggregate + "SellersItemIdentification",
+                    new XElement(basic + "ID", stockCode))));
     }
 
     private static XElement BuildAddressElement(
@@ -2315,6 +2335,48 @@ public sealed class EDespatchService(
         string.IsNullOrWhiteSpace(overrideValue)
             ? fallbackValue.Trim()
             : overrideValue.Trim();
+
+    private static async Task<IReadOnlyDictionary<string, string>> LoadPrimaryBarcodesAsync(
+        MikroDbContext context,
+        IEnumerable<string?> stockCodes,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStockCodes = stockCodes
+            .Where(stockCode => !string.IsNullOrWhiteSpace(stockCode))
+            .Select(stockCode => stockCode!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalizedStockCodes.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var rows = await context.BARKOD_TANIMLARIs
+            .AsNoTracking()
+            .Where(barcode =>
+                barcode.bar_iptal != true &&
+                barcode.bar_stokkodu != null &&
+                normalizedStockCodes.Contains(barcode.bar_stokkodu) &&
+                barcode.bar_kodu != null &&
+                barcode.bar_kodu != string.Empty)
+            .OrderByDescending(barcode => barcode.bar_master == true)
+            .ThenBy(barcode => barcode.bar_birimpntr ?? byte.MaxValue)
+            .ThenBy(barcode => barcode.bar_kodu)
+            .Select(barcode => new
+            {
+                StockCode = barcode.bar_stokkodu!,
+                Barcode = barcode.bar_kodu!
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(row => row.StockCode.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First().Barcode.Trim(),
+                StringComparer.OrdinalIgnoreCase);
+    }
 
     private static void Validate(SendEDespatchRequest request)
     {

@@ -79,6 +79,43 @@ public sealed class EDespatchServiceTests
         Assert.Equal(expectedReceiver, result.Receiver);
     }
 
+    [Fact]
+    public void BuildDespatchLineElement_SendsBarcodeAndStockCodeSeparately()
+    {
+        var result = EDespatchService.BuildDespatchLineElement(
+            1,
+            "015550",
+            "MNV SEFTALI KG",
+            "2700174",
+            "KG",
+            4.11);
+
+        var item = result.Elements().Single(element => element.Name.LocalName == "Item");
+        Assert.Equal(
+            "2700174",
+            item.Elements().Single(element => element.Name.LocalName == "Description").Value);
+        Assert.Equal(
+            "015550",
+            item.Descendants().Single(element => element.Name.LocalName == "ID").Value);
+    }
+
+    [Fact]
+    public void BuildDespatchLineElement_UsesStockCodeWhenBarcodeIsMissing()
+    {
+        var result = EDespatchService.BuildDespatchLineElement(
+            1,
+            "015550",
+            "MNV SEFTALI KG",
+            string.Empty,
+            "KG",
+            1);
+
+        var item = result.Elements().Single(element => element.Name.LocalName == "Item");
+        Assert.Equal(
+            "015550",
+            item.Elements().Single(element => element.Name.LocalName == "Description").Value);
+    }
+
     [Theory]
     [InlineData(null, 0)]
     [InlineData("FRM2026000000001", 1)]
