@@ -17347,9 +17347,9 @@ Trendyol Go Market baglanti katmani `api.tgoapis.com` adresini kullanir. Asagida
 
 Fiyat/stok onizlemesi Mikro'da Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesini kullanir; varsayilan fiyat listesi `3`, odeme plani `0`'dir. Liste `1` veya genel satis fiyati fallback olarak kullanilmaz. `POST /price-stock/dispatch` Trendyol Go'da basarili olduktan sonra, secilen satirlar opsiyonel `TrendyolGo:BranchPosPriceSync` worker'i ile sube POS bilgisayarindaki PostgreSQL `market.stoksatisfiyat` tablosuna kuyruk uzerinden aktarilir. Bu aktarim API cevabini bekletmez; sube kapaliysa kayit yeniden denemek uzere kuyrukta kalir.
 
-POS sync varsayilan olarak kapali gelir. Acmak icin `TrendyolGo__BranchPosPriceSync__Enabled=true` ve parola icin `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni tanimlanmalidir. Merkez API sunucusunun sube PostgreSQL `5432` portuna erisim izni ile PostgreSQL `pg_hba.conf` kullanici/veritabani yetkisi hazir olmadan bu ayar acilmamalidir.
+POS sync varsayilan olarak depoya ait `BranchDetails.BranchIpAddress` adresini kullanir. Merkez veya farkli PostgreSQL sunucusu kullanan istisna depolar `WarehouseHosts` icinde depo no anahtariyla override edilir; depo `50` merkez PostgreSQL hostuna bu sekilde yonlendirilir. Tum depolar icin ortak host gerekirse `TrendyolGo:BranchPosPriceSync:Host` ayari kullanilabilir. `Password`, `AuthorizationToken`, `ApiKey` ve `ApiSecret` kaynak dosyaya yazilmaz; local gelistirmede User Secrets, canlida `TrendyolGo__BranchPosPriceSync__Password` dahil ortam degiskenleri kullanilir. PostgreSQL `pg_hba.conf` kullanici/veritabani yetkisi hazir olmadan POS sync acilmamalidir.
 
-Durum (28.09.2026): Kod ve resmi Market dokumani karsilastirildi; TGO stage/production uzerinde uctan uca istek ve sonuc dogrulamasi yapilmadi. `Enabled=false` varsayilandir. Asagidaki yazma route'lari bu nedenle "canlida hazir" sayilmamalidir.
+Durum (29.09.2026): Fiyat/stok gonderimi, TGO batch sonucu ve merkez POS PostgreSQL upsert akisi canli veriyle dogrulandi. Diger TGO yazma route'lari kendi stage/production senaryolariyla ayri dogrulanmalidir.
 
 TGO gelistirici portali Uber Eats gecisiyle siparis modelinde degisiklikler duyuruyor. Bizim `orders` response'u buyuk olcude ham TGO JSON'u oldugu icin UI'nin alanlari ve paket aksiyon sirasi guncel Market stage verisiyle ayrica dogrulanmalidir.
 
@@ -17414,7 +17414,7 @@ Endpointler:
 | `POST /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/products/price-and-inventory` | `{ items: [...] }` | batch response veya `204` | `update` |
-| `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535&page=0&size=100` | query | `TrendyolGoPriceStockPreview` | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535` | query | `TrendyolGoPriceStockPreview` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | `TrendyolGoPriceStockDispatchHttpRequest` | `TrendyolGoPriceStockDispatch` | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}` | path | batch sonucu | `detail` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-on` | `{ items: [...] }` | batch response veya `204` | `update` |
@@ -17478,12 +17478,12 @@ Sube bazli fiyat ve stok body:
 
 Mikro'dan barkod girmeden fiyat/stok gonderme:
 
-1. UI `stores` listesinden subeyi secer; `storeId` bu kayittan gelir.
-2. `price-stock/preview` secili subenin TGO urun katalogundan bir sayfa (en fazla 100 urun) alir, barkodlari Mikro'da eslestirir ve Mikro satis fiyati ile sube stokunu gosterir. Veri yazmaz.
-3. UI sadece `status=Ready` satirlarini sectirir. `Skipped` satirinin sebebini gosterir; `Unchanged` satiri tekrar gondermez.
-4. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Backend TGO ve Mikro verisini tekrar okuyup hash'i dogrular; veri degismisse `409 Conflict` doner ve onizleme yenilenir.
+1. UI `stores` listesinden subeyi secer; `storeId` bu kayittan gelir. Kullanici sayfa numarasi girmez.
+2. `price-stock/preview?storeId={id}` varsayilan olarak TGO katalogunun tum sayfalarini en fazla 3 paralel TGO istegiyle tarar ve kullaniciya yalnizca `Ready` yani fiyat/stok farki bulunan satirlari gosterir. Mikro okumasi tek akista tutulur; ayni `DbContext` uzerinde paralel sorgu yapilmaz. Veri yazmaz. `readyCount`, `unchangedCount` ve `skippedCount` ust ozetinde gosterilir.
+3. Sorun inceleme ekrani gerekiyorsa ayni istege `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Teknik veya eski ekran uyumu icin tek bir TGO sayfasi `page=0` gibi de istenebilir.
+4. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Onizleme 120 saniye bellekte tutulur; gonderimde tekrar tum katalog okunmaz, yalniz secilen satirlar Mikro'dan tekrar dogrulanir. Secilen urunun fiyat veya stoku degismisse `409 Conflict` doner ve onizleme yenilenir.
 5. Gonderim response'undaki `upstreamResponse.batchRequestId` ile mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
-6. `totalPages` varsa UI sonraki sayfaya gecerek kalan urunleri de isler. Her sayfa ayri onizleme ve gonderimdir.
+6. Bir seferde en fazla 100 barkod gonderilir. `readyCount` 100'u gecerse UI kullanicinin secimini 100'luk paketlere ayirir; katalog sayfalama kullaniciya gosterilmez.
 
 Onizleme ornegi:
 
@@ -17492,13 +17492,16 @@ Onizleme ornegi:
   "storeId": 402535,
   "warehouseNo": 110,
   "storeName": "Kestel 1",
-  "page": 0,
+  "page": -1,
   "size": 100,
   "totalPages": 2,
   "totalElements": 120,
   "previewHash": "A1B2...",
   "readyCount": 1,
+  "unchangedCount": 119,
   "skippedCount": 0,
+  "view": "actionable",
+  "visibleCount": 1,
   "items": [
     {
       "barcode": "8690000000000",
@@ -17520,7 +17523,7 @@ Gonderim body:
 ```json
 {
   "storeId": 402535,
-  "page": 0,
+  "page": -1,
   "size": 100,
   "previewHash": "A1B2...",
   "barcodes": ["8690000000000"]
@@ -17529,7 +17532,14 @@ Gonderim body:
 
 Bu akis sadece TGO katalogunda bulunan urunleri kapsar. Mikro satis fiyati sifir/bos, barkod eslesmesi yok, urun pasif veya satisa kapali ise satir `Skipped` olur. Negatif stok `0` kabul edilir; kesirli stok tam sayiya asagi yuvarlanir. `storeId` tum subeler yerine sadece secilen TGO magazasina gonderilir. Tekrar gonderimden once batch sonucunu ve guncel onizlemeyi kontrol edin; TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir.
 
-Onizleme TGO katalogunun sadece istenen sayfasini (en fazla 100 urun) okur; Mikro'daki TGO'da henuz olmayan urunleri olusturmaz. Toplu "tum subeleri/tum sayfalari gonder" endpointi ve zamanlanmis otomatik senkronizasyon yoktur. `dispatch` icin barkodlar UI'da tek tek yazilmaz; onizleme satirlarindan secilir. Batch sonucu otomatik izlenmez, UI `batchRequestId` ile ayrica sorgulamalidir.
+Onizleme varsayilan akista katalogun tum sayfalarini tarar; `page=0` gibi bir deger verilirse yalniz teknik/geriye uyum amacli tek sayfa okunur. Mikro'daki TGO'da henuz olmayan urunleri olusturmaz. `dispatch` icin barkodlar UI'da tek tek yazilmaz; onizleme satirlarindan secilir. Batch sonucu otomatik izlenmez, UI `batchRequestId` ile ayrica sorgulamalidir.
+
+POS kuyruk guvenligi:
+
+- Trendyol gonderimi basarili olduktan sonra POS aktarimi kalici kuyruga yazilir; uzak PostgreSQL baglantisi HTTP cevabini bekletmez.
+- Kuyruk tekrar denemeleri ayni depo/stok/fiyat-listesi/birim anahtarini PostgreSQL transaction advisory lock ile serilestirir.
+- Merkez POS `stoksatisfiyat` tablosunda `sdp_depo_no + sfiyat_stokkod + sfiyat_listesirano + fiyat_tip_kodu` benzersiz indeksi bulunur. Diger POS veritabanlarinda da ayni indeksin kurulmasi onerilir.
+- Uzak baglanti veya PostgreSQL hatasinda kayit `RetryDelaySeconds` sonunda yeniden denenir; TGO'ya gonderilmis fiyat/stok kaybi veya kullanici ekraninda ag beklemesi olusmaz.
 
 Urun katalog query:
 

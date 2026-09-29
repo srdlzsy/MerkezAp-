@@ -6,6 +6,7 @@ using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
@@ -14,64 +15,27 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     ITrendyolGoIntegrationService trendyol,
     MikroDbContext mikroDbContext,
     TrendyolGoBranchPosPriceSyncService branchPosPriceSync,
+    IMemoryCache memoryCache,
     IOptionsMonitor<TrendyolGoOptions> options) : ITrendyolGoPriceStockWorkbench
 {
+    private readonly SemaphoreSlim mikroReadGate = new(1, 1);
+
     public async Task<TrendyolGoPriceStockPreview> PreviewAsync(
-        long storeId, int page, int size, CancellationToken cancellationToken)
+        long storeId, int page, int size, string view, CancellationToken cancellationToken)
     {
-        if (page < 0 || size is < 1 or > 100)
+        if (page < -1 || size is < 1 or > 100)
         {
-            throw new ArgumentException("page must be non-negative and size must be between 1 and 100.");
+            throw new ArgumentException("page must be -1 or non-negative and size must be between 1 and 100.");
         }
 
-        var config = options.CurrentValue;
-        if (config.PriceListNo < 1 || config.PaymentPlanNo < 0)
-        {
-            throw new InvalidOperationException("Trendyol Go price list configuration is invalid.");
-        }
-
-        var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
-            ?? throw new ArgumentException($"storeId {storeId} is not configured.");
-
-        var catalog = await trendyol.ListProductsAsync(
-            new TrendyolGoProductListRequest(storeId, "ALL_PRODUCT", null, null, null, null, [], page, size),
-            cancellationToken);
-        if (!catalog.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
-        {
-            throw new InvalidOperationException("Trendyol Go product response has no content array.");
-        }
-
-        var products = content.EnumerateArray().Select(ReadProduct).ToArray();
-        var barcodes = products.Select(item => item.Barcode)
-            .Where(item => !string.IsNullOrWhiteSpace(item))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        var mikro = await ReadMikroProductsAsync(
-            store.WarehouseNo,
-            barcodes,
-            config.PriceListNo,
-            config.PaymentPlanNo,
-            cancellationToken);
-        var duplicateBarcodes = products.GroupBy(product => product.Barcode, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToHashSet(StringComparer.Ordinal);
-        var rows = products.Select(product =>
-        {
-            var row = BuildRow(product, mikro.GetValueOrDefault(product.Barcode));
-            return duplicateBarcodes.Contains(product.Barcode)
-                ? row with { Status = "Skipped", Reason = "Trendyol sayfasinda barkod tekrari var." }
-                : row;
-        }).ToArray();
-        var totalPages = ReadInt(catalog, "totalPages") ?? 0;
-        var totalElements = ReadLong(catalog, "totalElements") ?? 0;
-        var hashData = JsonSerializer.SerializeToUtf8Bytes(new { storeId, page, size, totalPages, totalElements, rows });
-        var previewHash = Convert.ToHexString(SHA256.HashData(hashData));
-
+        var normalizedView = NormalizeView(view);
+        var snapshot = await LoadPreviewSnapshotAsync(storeId, page, size, cancellationToken);
+        var visibleRows = FilterRows(snapshot.Rows, normalizedView);
         return new TrendyolGoPriceStockPreview(
-            storeId, store.WarehouseNo, store.StoreName, page, size, totalPages, totalElements,
-            previewHash, rows.Count(row => row.Status == "Ready"),
-            rows.Count(row => row.Status == "Skipped"), rows);
+            snapshot.StoreId, snapshot.WarehouseNo, snapshot.StoreName, snapshot.Page, snapshot.Size,
+            snapshot.TotalPages, snapshot.TotalElements, snapshot.PreviewHash,
+            snapshot.ReadyCount, snapshot.UnchangedCount, snapshot.SkippedCount,
+            normalizedView, visibleRows.Length, visibleRows);
     }
 
     public async Task<TrendyolGoPriceStockDispatch> DispatchAsync(
@@ -85,15 +49,15 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             throw new ArgumentException("A preview hash and 1-100 distinct barcodes are required.");
         }
 
-        var preview = await PreviewAsync(storeId, page, size, cancellationToken);
-        if (!string.Equals(preview.PreviewHash, previewHash, StringComparison.OrdinalIgnoreCase))
+        var snapshot = await LoadPreviewSnapshotAsync(storeId, page, size, cancellationToken);
+        if (!string.Equals(snapshot.PreviewHash, previewHash, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Price, stock or Trendyol product data changed. Refresh the preview before sending.");
         }
 
         var selected = barcodes.Select(barcode =>
         {
-            var matching = preview.Items.Where(item => item.Barcode == barcode).ToArray();
+            var matching = snapshot.Rows.Where(item => item.Barcode == barcode).ToArray();
             if (matching.Length != 1)
             {
                 throw new ArgumentException($"Barcode {barcode} must appear exactly once on the preview page.");
@@ -116,14 +80,15 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                 storeId
             }).ToArray()
         });
-        var upstream = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
         var config = options.CurrentValue;
         var mikro = await ReadMikroProductsAsync(
-            preview.WarehouseNo,
+            snapshot.WarehouseNo,
             selected.Select(item => item.Barcode).ToArray(),
             config.PriceListNo,
             config.PaymentPlanNo,
             cancellationToken);
+        EnsureSelectedValuesAreCurrent(selected, snapshot.Products, mikro);
+        var upstream = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
         var branchPosItems = selected
             .Select(item => mikro.GetValueOrDefault(item.Barcode))
             .Where(item => item is not null)
@@ -134,9 +99,158 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                 item.SalesBlocked, item.OrderBlocked, item.GoodsAcceptanceBlocked,
                 item.PriceUpdatedAtUtc, item.WarehouseUpdatedAtUtc, config.PriceListNo))
             .ToArray();
-        await branchPosPriceSync.EnqueueAsync(storeId, preview.WarehouseNo, branchPosItems, cancellationToken);
-        return new TrendyolGoPriceStockDispatch(storeId, preview.WarehouseNo, selected.Length, upstream);
+        await branchPosPriceSync.EnqueueAsync(storeId, snapshot.WarehouseNo, branchPosItems, cancellationToken);
+        memoryCache.Remove(GetPreviewCacheKey(storeId, page, size));
+        return new TrendyolGoPriceStockDispatch(storeId, snapshot.WarehouseNo, selected.Length, upstream);
     }
+
+    private async Task<PreviewSnapshot> LoadPreviewSnapshotAsync(
+        long storeId, int page, int size, CancellationToken cancellationToken)
+    {
+        var cacheKey = GetPreviewCacheKey(storeId, page, size);
+        if (memoryCache.TryGetValue(cacheKey, out PreviewSnapshot? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        if (page == -1)
+        {
+            return await LoadFullPreviewSnapshotAsync(storeId, size, cancellationToken);
+        }
+
+        var config = options.CurrentValue;
+        if (config.PriceListNo < 1 || config.PaymentPlanNo < 0 || config.PreviewCacheSeconds is < 1 or > 600)
+        {
+            throw new InvalidOperationException("Trendyol Go price-stock configuration is invalid.");
+        }
+
+        var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
+            ?? throw new ArgumentException($"storeId {storeId} is not configured.");
+        var catalog = await trendyol.ListProductsAsync(
+            new TrendyolGoProductListRequest(storeId, "ALL_PRODUCT", null, null, null, null, [], page, size),
+            cancellationToken);
+        if (!catalog.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException("Trendyol Go product response has no content array.");
+        }
+
+        var products = content.EnumerateArray().Select(ReadProduct).ToArray();
+        var barcodes = products.Select(item => item.Barcode)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var mikro = await ReadMikroProductsAsync(
+            store.WarehouseNo, barcodes, config.PriceListNo, config.PaymentPlanNo, cancellationToken);
+        var duplicateBarcodes = products.GroupBy(product => product.Barcode, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var rows = products.Select(product =>
+        {
+            var row = BuildRow(product, mikro.GetValueOrDefault(product.Barcode));
+            return duplicateBarcodes.Contains(product.Barcode)
+                ? row with { Status = "Skipped", Reason = "Trendyol sayfasinda barkod tekrari var." }
+                : row;
+        }).ToArray();
+        var totalPages = ReadInt(catalog, "totalPages") ?? 0;
+        var totalElements = ReadLong(catalog, "totalElements") ?? 0;
+        var hashData = JsonSerializer.SerializeToUtf8Bytes(new { storeId, page, size, totalPages, totalElements, rows });
+        var snapshot = new PreviewSnapshot(
+            storeId, store.WarehouseNo, store.StoreName, page, size, totalPages, totalElements,
+            Convert.ToHexString(SHA256.HashData(hashData)), products, rows);
+        memoryCache.Set(cacheKey, snapshot, TimeSpan.FromSeconds(config.PreviewCacheSeconds));
+        return snapshot;
+    }
+
+    private async Task<PreviewSnapshot> LoadFullPreviewSnapshotAsync(
+        long storeId, int size, CancellationToken cancellationToken)
+    {
+        var firstPage = await LoadPreviewSnapshotAsync(storeId, 0, size, cancellationToken);
+        var pageParallelism = Math.Clamp(options.CurrentValue.PreviewPageParallelism, 1, 5);
+        using var pageGate = new SemaphoreSlim(pageParallelism, pageParallelism);
+        var otherPageTasks = Enumerable.Range(1, Math.Max(firstPage.TotalPages - 1, 0))
+            .Select(async page =>
+            {
+                await pageGate.WaitAsync(cancellationToken);
+                try
+                {
+                    return await LoadPreviewSnapshotAsync(storeId, page, size, cancellationToken);
+                }
+                finally
+                {
+                    pageGate.Release();
+                }
+            })
+            .ToArray();
+        var pages = new List<PreviewSnapshot> { firstPage };
+        if (otherPageTasks.Length > 0)
+        {
+            pages.AddRange(await Task.WhenAll(otherPageTasks));
+        }
+
+        var products = pages.SelectMany(item => item.Products).ToArray();
+        var duplicateBarcodes = products.GroupBy(item => item.Barcode, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var rows = pages.SelectMany(item => item.Rows)
+            .Select(row => duplicateBarcodes.Contains(row.Barcode)
+                ? row with { Status = "Skipped", Reason = "Trendyol katalogunda barkod tekrari var." }
+                : row)
+            .ToArray();
+        var hashData = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            storeId,
+            page = -1,
+            size,
+            firstPage.TotalPages,
+            firstPage.TotalElements,
+            rows
+        });
+        var snapshot = new PreviewSnapshot(
+            storeId, firstPage.WarehouseNo, firstPage.StoreName, -1, size,
+            firstPage.TotalPages, firstPage.TotalElements,
+            Convert.ToHexString(SHA256.HashData(hashData)), products, rows);
+        memoryCache.Set(GetPreviewCacheKey(storeId, -1, size), snapshot,
+            TimeSpan.FromSeconds(options.CurrentValue.PreviewCacheSeconds));
+        return snapshot;
+    }
+
+    private static void EnsureSelectedValuesAreCurrent(
+        IReadOnlyCollection<TrendyolGoPriceStockRow> selected,
+        IReadOnlyCollection<TrendyolProduct> products,
+        IReadOnlyDictionary<string, MikroProduct> mikro)
+    {
+        foreach (var selectedRow in selected)
+        {
+            var product = products.Single(item => item.Barcode == selectedRow.Barcode);
+            var currentRow = BuildRow(product, mikro.GetValueOrDefault(selectedRow.Barcode));
+            if (currentRow.Status != "Ready" || currentRow.MikroPrice != selectedRow.MikroPrice ||
+                currentRow.MikroQuantity != selectedRow.MikroQuantity)
+            {
+                throw new InvalidOperationException(
+                    $"Mikro price or stock changed for barcode {selectedRow.Barcode}. Refresh the preview before sending.");
+            }
+        }
+    }
+
+    private static TrendyolGoPriceStockRow[] FilterRows(
+        IReadOnlyCollection<TrendyolGoPriceStockRow> rows, string view) =>
+        view switch
+        {
+            "all" => rows.ToArray(),
+            "issues" => rows.Where(item => item.Status == "Skipped").ToArray(),
+            _ => rows.Where(item => item.Status == "Ready").ToArray()
+        };
+
+    private static string NormalizeView(string view) => view.Trim().ToLowerInvariant() switch
+    {
+        "actionable" or "all" or "issues" => view.Trim().ToLowerInvariant(),
+        _ => throw new ArgumentException("view must be actionable, all or issues.")
+    };
+
+    private static string GetPreviewCacheKey(long storeId, int page, int size) =>
+        $"trendyol-go:price-stock-preview:{storeId}:{page}:{size}";
 
     private async Task<Dictionary<string, MikroProduct>> ReadMikroProductsAsync(
         int warehouseNo,
@@ -151,6 +265,9 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             return result;
         }
 
+        await mikroReadGate.WaitAsync(cancellationToken);
+        try
+        {
         var connection = mikroDbContext.Database.GetDbConnection();
         var closeConnection = connection.State == ConnectionState.Closed;
         if (closeConnection)
@@ -240,6 +357,11 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         }
 
         return result;
+        }
+        finally
+        {
+            mikroReadGate.Release();
+        }
     }
 
     internal static TrendyolGoPriceStockRow BuildRow(TrendyolProduct product, MikroProduct? mikro)
@@ -305,4 +427,15 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         int UnitPointer = 1, string UnitName = "", int SalesBlocked = 0, int OrderBlocked = 0,
         int GoodsAcceptanceBlocked = 0, DateTime? PriceUpdatedAtUtc = null,
         DateTime? WarehouseUpdatedAtUtc = null);
+
+    private sealed record PreviewSnapshot(
+        long StoreId, int WarehouseNo, string StoreName, int Page, int Size,
+        int TotalPages, long TotalElements, string PreviewHash,
+        IReadOnlyCollection<TrendyolProduct> Products,
+        IReadOnlyCollection<TrendyolGoPriceStockRow> Rows)
+    {
+        public int ReadyCount => Rows.Count(item => item.Status == "Ready");
+        public int UnchangedCount => Rows.Count(item => item.Status == "Unchanged");
+        public int SkippedCount => Rows.Count(item => item.Status == "Skipped");
+    }
 }

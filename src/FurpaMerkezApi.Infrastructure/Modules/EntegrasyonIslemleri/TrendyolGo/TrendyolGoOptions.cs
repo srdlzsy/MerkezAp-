@@ -31,6 +31,12 @@ public sealed class TrendyolGoOptions
 
     public int PaymentPlanNo { get; init; }
 
+    // A short-lived preview avoids a second full catalog read when the user immediately sends it.
+    public int PreviewCacheSeconds { get; init; } = 120;
+
+    // Limits all-catalog preview fan-out so a store scan does not overload Trendyol Go.
+    public int PreviewPageParallelism { get; init; } = 3;
+
     public TrendyolGoBranchPosPriceSyncOptions BranchPosPriceSync { get; init; } = new();
 
     public TrendyolGoStoreMappingOptions[] Stores { get; init; } = [];
@@ -39,6 +45,8 @@ public sealed class TrendyolGoOptions
 public sealed class TrendyolGoBranchPosPriceSyncOptions
 {
     public bool Enabled { get; init; }
+    public string Host { get; init; } = string.Empty;
+    public Dictionary<string, string> WarehouseHosts { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public string Database { get; init; } = "market";
     public string Username { get; init; } = "market";
     public string Password { get; init; } = string.Empty;

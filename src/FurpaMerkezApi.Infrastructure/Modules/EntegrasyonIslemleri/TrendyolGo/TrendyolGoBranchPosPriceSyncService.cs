@@ -75,13 +75,10 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
 
         try
         {
-            var branchIp = await furpaDbContext.BranchDetails
-                .Where(item => item.BranchNo == task.WarehouseNo)
-                .Select(item => item.BranchIpAddress)
-                .SingleOrDefaultAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(branchIp))
+            var host = await ResolveHostAsync(config, task.WarehouseNo, cancellationToken);
+            if (string.IsNullOrWhiteSpace(host))
             {
-                throw new InvalidOperationException($"Warehouse {task.WarehouseNo} has no branch IP address.");
+                throw new InvalidOperationException($"Warehouse {task.WarehouseNo} has no configured PostgreSQL host.");
             }
 
             var items = JsonSerializer.Deserialize<BranchPosPriceItem[]>(task.PayloadJson)
@@ -93,7 +90,7 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
 
             var connectionString = new NpgsqlConnectionStringBuilder
             {
-                Host = branchIp.Trim(),
+                Host = host,
                 Port = Math.Clamp(config.Port, 1, 65535),
                 Database = config.Database.Trim(),
                 Username = config.Username.Trim(),
@@ -107,7 +104,12 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-            foreach (var item in items)
+            foreach (var item in items
+                         .GroupBy(item => new { item.StockCode, item.PriceListNo, item.UnitPointer })
+                         .Select(group => group.Last())
+                         .OrderBy(item => item.StockCode, StringComparer.Ordinal)
+                         .ThenBy(item => item.PriceListNo)
+                         .ThenBy(item => item.UnitPointer))
             {
                 await UpsertAsync(connection, transaction, task.WarehouseNo, item, cancellationToken);
             }
@@ -128,11 +130,36 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         }
     }
 
+    private async Task<string?> ResolveHostAsync(
+        TrendyolGoBranchPosPriceSyncOptions config,
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        if (config.WarehouseHosts.TryGetValue(warehouseNo.ToString(), out var warehouseHost) &&
+            !string.IsNullOrWhiteSpace(warehouseHost))
+        {
+            return warehouseHost.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.Host))
+        {
+            return config.Host.Trim();
+        }
+
+        return await furpaDbContext.BranchDetails
+            .Where(item => item.BranchNo == warehouseNo)
+            .Select(item => item.BranchIpAddress)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     private static async Task UpsertAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int warehouseNo, BranchPosPriceItem item, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
+            SELECT pg_advisory_xact_lock(
+                hashtextextended(CONCAT(@sdp_depo_no, '|', @sfiyat_stokkod, '|', @sfiyat_listesirano, '|', @fiyat_tip_kodu), 0));
+
             WITH upd AS (
                 UPDATE stoksatisfiyat SET
                     fiyati = @fiyati,

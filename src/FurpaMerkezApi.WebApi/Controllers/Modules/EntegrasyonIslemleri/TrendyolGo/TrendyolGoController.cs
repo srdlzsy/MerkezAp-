@@ -102,7 +102,7 @@ public sealed class TrendyolGoController(
     [HttpGet("brands")]
     [Authorize(Policy = ListPolicy)]
     public async Task<ActionResult<JsonElement>> ListBrands(
-        [FromQuery, Range(0, int.MaxValue)] int page = 0,
+        [FromQuery, Range(-1, int.MaxValue)] int page = -1,
         [FromQuery, Range(1, 200)] int size = 50,
         [FromQuery, MaxLength(200)] string? name = null,
         CancellationToken cancellationToken = default) =>
@@ -142,8 +142,9 @@ public sealed class TrendyolGoController(
         [FromQuery, Range(1, long.MaxValue)] long storeId,
         [FromQuery, Range(0, int.MaxValue)] int page = 0,
         [FromQuery, Range(1, 100)] int size = 100,
+        [FromQuery, RegularExpression("^(?i:actionable|all|issues)$")] string view = "actionable",
         CancellationToken cancellationToken = default) =>
-        Ok(await priceStockWorkbench.PreviewAsync(storeId, page, size, cancellationToken));
+        Ok(await priceStockWorkbench.PreviewAsync(storeId, page, size, view, cancellationToken));
 
     [HttpPost("price-stock/dispatch")]
     [Authorize(Policy = UpdatePolicy)]
@@ -279,8 +280,8 @@ public sealed class TrendyolGoOrderListHttpRequest
     [Range(0, long.MaxValue)]
     public long? EndDate { get; init; }
 
-    [Range(0, int.MaxValue)]
-    public int Page { get; init; }
+    [Range(-1, int.MaxValue)]
+    public int Page { get; init; } = -1;
 
     [Range(1, 200)]
     public int Size { get; init; } = 50;

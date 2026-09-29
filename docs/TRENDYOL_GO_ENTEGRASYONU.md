@@ -78,25 +78,26 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 ## Fiyat/stok: barkod elle girilmeden
 
 1. `GET /stores` ile magaza secilir; `storeId` -> `warehouseNo` eslesmesi gorulur.
-2. `GET /price-stock/preview?storeId={id}&page=0&size=100` cagrilir. Backend TGO katalog sayfasini okur ve barkodlari Mikro'da **tam eslesme** ile bulur.
+2. `GET /price-stock/preview?storeId={id}` cagrilir. Backend TGO katalogunun tum sayfalarini en fazla 3 paralel TGO istegiyle tarar, barkodlari Mikro'da **tam eslesme** ile bulur ve kullaniciya sadece gonderilebilir fiyat/stok farklarini getirir. Kullanici sayfa numarasi girmez.
 3. Mikro fiyat, Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesinden (varsayilan `3`) ve `PaymentPlanNo` degerinden (varsayilan `0`) depo ve barkod birimi esleserek okunur. Liste 1 veya genel satis fiyati fallback olarak kullanilmaz. Stok `dbo.fn_DepodakiMiktar(stockCode,warehouseNo,today)` ile gelir. Negatif stok sifira cekilir, kesirli stok tam sayiya asagi yuvarlanir.
 4. `Ready` fiyat/stok farki olan ve gonderilebilir satirdir. `Unchanged` fark yoktur. `Skipped` Mikro barkodu/fiyati eksik, stok karti pasif/satisa kapali veya sayfada duplicate barkod gibi bir neden tasir. UI sebebi gostermelidir.
-5. Kullanici satirlari tiklar; UI barkod listesini otomatik kurar. `previewHash`, `storeId`, `page`, `size`, secilen 1-100 benzersiz barkod `POST /price-stock/dispatch` body'ye konur. Hash degismisse backend `409` dondurur; UI yeni onizleme ister.
+5. Kullanici satirlari tiklar; UI barkod listesini otomatik kurar. `previewHash`, `storeId`, `page=-1`, `size`, secilen 1-100 benzersiz barkod `POST /price-stock/dispatch` body'ye konur. Onizleme 120 saniye bellekte tutulur; gonderimde tum katalog tekrar okunmaz, yalniz secilen barkodlar Mikro'dan yeniden dogrulanir. Fiyat veya stok degismisse backend `409` dondurur; UI yeni onizleme ister.
 
 ### Sube POS fiyat senkronu
 
-`price-stock/dispatch` Trendyol Go tarafinda basarili olduktan sonra secilen satirlar, sube kasalarinin kullandigi yerel PostgreSQL `market.stoksatisfiyat` tablosu icin kalici kuyruga yazilir. Bu islem HTTP cevabini bekletmez; worker, `BranchDetails.BranchIpAddress` ile sube bilgisayarina baglanir ve `sdp_depo_no + sfiyat_stokkod + sfiyat_listesirano + fiyat_tip_kodu` eslesmesiyle upsert uygular.
+`price-stock/dispatch` Trendyol Go tarafinda basarili olduktan sonra secilen satirlar, kasalarin kullandigi PostgreSQL `market.stoksatisfiyat` tablosu icin kalici kuyruga yazilir. Bu islem HTTP cevabini bekletmez; worker varsayilan olarak depo `BranchDetails.BranchIpAddress` adresini kullanir. Merkez veya farkli PostgreSQL sunucusu kullanan istisna depolar `WarehouseHosts` ile override edilir; tum depolarda ortak bir hedef gerekiyorsa `BranchPosPriceSync:Host` kullanilabilir. Aktarim `sdp_depo_no + sfiyat_stokkod + sfiyat_listesirano + fiyat_tip_kodu` eslesmesiyle upsert uygular.
 
 - `TrendyolGo:BranchPosPriceSync:Enabled` varsayilan olarak `false` gelir.
 - Etkinlestirmek icin merkez sunucunun sube PostgreSQL `5432` portuna erisimi ve PostgreSQL `pg_hba.conf` icinde merkez IP'si icin kullanici/DB izni gerekir.
 - Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Trendyol gonderimi ve kullanici ekrani hata almaz veya bu ag beklemesini yasamaz.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
-6. Basarili gonderimde `upstreamResponse.batchRequestId` alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. Sonraki TGO katalog sayfasina gecilir.
+- Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Merkez POS'ta ayni dogal anahtar icin benzersiz indeks kuruludur; diger POS veritabanlarinda da ayni indeks kurulmalidir.
+6. Basarili gonderimde `upstreamResponse.batchRequestId` alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. `readyCount` 100'u gecerse UI barkodlari 100'luk paketler halinde gonderir; TGO katalog sayfalama kullaniciya gosterilmez.
 
 ```json
 {
   "storeId": 402535,
-  "page": 0,
+  "page": -1,
   "size": 100,
   "previewHash": "onizlemeden-gelen-deger",
   "barcodes": ["8690000000000"]

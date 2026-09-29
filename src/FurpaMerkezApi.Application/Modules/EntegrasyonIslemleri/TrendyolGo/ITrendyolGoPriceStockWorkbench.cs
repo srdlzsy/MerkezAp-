@@ -4,7 +4,8 @@ namespace FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
 
 public interface ITrendyolGoPriceStockWorkbench
 {
-    Task<TrendyolGoPriceStockPreview> PreviewAsync(long storeId, int page, int size, CancellationToken cancellationToken);
+    Task<TrendyolGoPriceStockPreview> PreviewAsync(
+        long storeId, int page, int size, string view, CancellationToken cancellationToken);
 
     Task<TrendyolGoPriceStockDispatch> DispatchAsync(
         long storeId, int page, int size, string previewHash,
@@ -14,7 +15,8 @@ public interface ITrendyolGoPriceStockWorkbench
 public sealed record TrendyolGoPriceStockPreview(
     long StoreId, int WarehouseNo, string StoreName, int Page, int Size,
     int TotalPages, long TotalElements, string PreviewHash,
-    int ReadyCount, int SkippedCount, IReadOnlyCollection<TrendyolGoPriceStockRow> Items);
+    int ReadyCount, int UnchangedCount, int SkippedCount,
+    string View, int VisibleCount, IReadOnlyCollection<TrendyolGoPriceStockRow> Items);
 
 public sealed record TrendyolGoPriceStockRow(
     string Barcode, string? StockCode, string ProductName,
