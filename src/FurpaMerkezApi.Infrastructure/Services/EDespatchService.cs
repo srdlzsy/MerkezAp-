@@ -231,13 +231,53 @@ public sealed class EDespatchService(
         EDespatchOptions config,
         CancellationToken cancellationToken)
     {
-        var localMarker = ResolveConsistentSentDespatchMarker(
-            trackedMovements
-                .Select(movement => (movement.sth_belge_no, movement.sth_aciklama))
-                .ToArray());
-        var sentDespatch = localMarker is null
-            ? await GetTrackedSubmittedDespatchAsync(request, cancellationToken)
-            : new SentDespatchInfo(localMarker.Value.DocumentNo, localMarker.Value.Uuid);
+        var movementMarkers = trackedMovements
+            .Select(movement => (movement.sth_belge_no, movement.sth_aciklama))
+            .ToArray();
+        (string DocumentNo, string Uuid)? localMarker = null;
+        InvalidOperationException? localMarkerError = null;
+        try
+        {
+            localMarker = ResolveConsistentSentDespatchMarker(movementMarkers);
+        }
+        catch (InvalidOperationException exception)
+        {
+            localMarkerError = exception;
+        }
+
+        SentDespatchInfo? sentDespatch;
+        if (localMarker is not null)
+        {
+            sentDespatch = new SentDespatchInfo(localMarker.Value.DocumentNo, localMarker.Value.Uuid);
+        }
+        else
+        {
+            sentDespatch = await GetTrackedSubmittedDespatchAsync(request, cancellationToken);
+            if (sentDespatch is null)
+            {
+                if (localMarkerError is not null)
+                {
+                    throw localMarkerError;
+                }
+
+                return null;
+            }
+
+            EnsureMovementMarkersMatchTrackedSubmission(
+                movementMarkers,
+                sentDespatch.EDespatchDocumentNo,
+                sentDespatch.EDespatchUuid);
+
+            if (localMarkerError is not null)
+            {
+                await EnsureTrackedSubmissionContainsCompleteDocumentAsync(
+                    config,
+                    sentDespatch,
+                    trackedMovements.Count,
+                    cancellationToken);
+            }
+        }
+
         if (sentDespatch is null)
         {
             return null;
@@ -337,6 +377,110 @@ public sealed class EDespatchService(
         return markers[0];
     }
 
+    internal static void EnsureMovementMarkersMatchTrackedSubmission(
+        IReadOnlyCollection<(string? DocumentNo, string? Uuid)> movements,
+        string trackedDocumentNo,
+        string trackedUuid)
+    {
+        if (string.IsNullOrWhiteSpace(trackedDocumentNo) ||
+            !trackedDocumentNo.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase) ||
+            !Guid.TryParse(trackedUuid, out var parsedTrackedUuid))
+        {
+            throw new InvalidOperationException(
+                "Tracked e-despatch metadata is invalid. Automatic recovery was blocked.");
+        }
+
+        foreach (var movement in movements)
+        {
+            var documentNo = movement.DocumentNo?.Trim();
+            var uuid = movement.Uuid?.Trim();
+            var hasEDespatchDocumentNo =
+                !string.IsNullOrWhiteSpace(documentNo) &&
+                documentNo.StartsWith(CommonEDespatchDocumentPrefix, StringComparison.OrdinalIgnoreCase);
+            var hasEDespatchUuid = Guid.TryParse(uuid, out var parsedMovementUuid);
+
+            if (!hasEDespatchDocumentNo && !hasEDespatchUuid)
+            {
+                continue;
+            }
+
+            if (!hasEDespatchDocumentNo ||
+                !hasEDespatchUuid ||
+                !string.Equals(documentNo, trackedDocumentNo.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                parsedMovementUuid != parsedTrackedUuid)
+            {
+                throw new InvalidOperationException(
+                    "Mikro document lines conflict with the tracked e-despatch. Automatic recovery was blocked.");
+            }
+        }
+    }
+
+
+    internal static void EnsureTrackedSubmissionMatchesDocument(
+        string? actualDocumentNo,
+        string? actualUuid,
+        int actualLineCount,
+        string trackedDocumentNo,
+        string trackedUuid,
+        int expectedLineCount)
+    {
+        if (!string.Equals(
+                actualDocumentNo?.Trim(),
+                trackedDocumentNo.Trim(),
+                StringComparison.OrdinalIgnoreCase) ||
+            !Guid.TryParse(actualUuid, out var parsedActualUuid) ||
+            !Guid.TryParse(trackedUuid, out var parsedTrackedUuid) ||
+            parsedActualUuid != parsedTrackedUuid ||
+            actualLineCount != expectedLineCount)
+        {
+            throw new InvalidOperationException(
+                $"Tracked Uyumsoft e-despatch does not match the complete Mikro document. " +
+                $"Expected {expectedLineCount} lines, Uyumsoft returned {actualLineCount}. " +
+                "Automatic metadata recovery was blocked.");
+        }
+    }
+
+    private static async Task EnsureTrackedSubmissionContainsCompleteDocumentAsync(
+        EDespatchOptions config,
+        SentDespatchInfo trackedSubmission,
+        int expectedLineCount,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var endpointOptions = ToEndpointOptions(config);
+        var client = UyumsoftWcfClientHelper.CreateDespatchClient(endpointOptions);
+
+        try
+        {
+            var response = await client.GetOutboxDespatchAsync(
+                UyumsoftWcfClientHelper.CreateDespatchUserInfo(endpointOptions),
+                trackedSubmission.EDespatchUuid);
+
+            EnsureSucceeded(response, "e-despatch recovery verification");
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var despatch = response.Value?.DespatchAdvice
+                ?? throw new InvalidOperationException(
+                    "Uyumsoft e-despatch recovery response does not contain a despatch document.");
+
+            EnsureTrackedSubmissionMatchesDocument(
+                despatch.ID?.Value,
+                despatch.UUID?.Value,
+                despatch.DespatchLine?.Length ?? 0,
+                trackedSubmission.EDespatchDocumentNo,
+                trackedSubmission.EDespatchUuid,
+                expectedLineCount);
+        }
+        catch
+        {
+            UyumsoftWcfClientHelper.Abort(client);
+            throw;
+        }
+        finally
+        {
+            await UyumsoftWcfClientHelper.CloseAsync(client);
+        }
+    }
     private async Task EnsureDocumentMovementSetUnchangedAsync(
         SendEDespatchRequest request,
         MikroDbContext context,

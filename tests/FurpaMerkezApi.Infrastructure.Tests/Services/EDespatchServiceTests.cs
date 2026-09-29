@@ -230,6 +230,59 @@ public sealed class EDespatchServiceTests
     }
 
     [Fact]
+    public void EnsureMovementMarkersMatchTrackedSubmission_AllowsMatchingPartialMarkers()
+    {
+        EDespatchService.EnsureMovementMarkersMatchTrackedSubmission(
+        [
+            ("FRM2026600131485", "928d1dc2-f814-48e1-9e62-1cbe980f0096"),
+            (null, null),
+            ("", "")
+        ],
+        "FRM2026600131485",
+        "928d1dc2-f814-48e1-9e62-1cbe980f0096");
+    }
+
+    [Fact]
+    public void EnsureMovementMarkersMatchTrackedSubmission_RejectsConflictingMarker()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            EDespatchService.EnsureMovementMarkersMatchTrackedSubmission(
+            [
+                ("FRM2026600131485", "928d1dc2-f814-48e1-9e62-1cbe980f0096"),
+                ("FRM2026600131486", "a55de149-3cfa-4e64-9194-da961bdf17c3")
+            ],
+            "FRM2026600131485",
+            "928d1dc2-f814-48e1-9e62-1cbe980f0096"));
+    }
+
+
+    [Fact]
+    public void EnsureTrackedSubmissionMatchesDocument_AcceptsCompleteMatchingDocument()
+    {
+        EDespatchService.EnsureTrackedSubmissionMatchesDocument(
+            "FRM2026600131485",
+            "928d1dc2-f814-48e1-9e62-1cbe980f0096",
+            26,
+            "FRM2026600131485",
+            "928d1dc2-f814-48e1-9e62-1cbe980f0096",
+            26);
+    }
+
+    [Fact]
+    public void EnsureTrackedSubmissionMatchesDocument_RejectsPartialUyumsoftDocument()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            EDespatchService.EnsureTrackedSubmissionMatchesDocument(
+                "FRM2026600131485",
+                "928d1dc2-f814-48e1-9e62-1cbe980f0096",
+                21,
+                "FRM2026600131485",
+                "928d1dc2-f814-48e1-9e62-1cbe980f0096",
+                26));
+
+        Assert.Contains("Expected 26 lines, Uyumsoft returned 21", exception.Message);
+    }
+    [Fact]
     public void HaveSameMovementGuids_RequiresTheCompleteSet()
     {
         var first = Guid.NewGuid();
