@@ -386,7 +386,8 @@ public static class ServiceCollectionExtensions
             configuration["EDespatch:ProfileId"] ?? string.Empty,
             configuration["EDespatch:DespatchAdviceTypeCode"] ?? string.Empty,
             configuration["EDespatch:CountryCode"] ?? string.Empty,
-            configuration["EDespatch:CountryName"] ?? string.Empty)));
+            configuration["EDespatch:CountryName"] ?? string.Empty,
+            configuration.GetValue("EDespatch:TimeoutSeconds", 60))));
         var eDespatchUsername = configuration["EDespatch:Username"] ?? string.Empty;
         var eDespatchPassword = configuration["EDespatch:Password"] ?? string.Empty;
         var eDespatchEndpointUrl = configuration["EDespatch:EndpointUrl"] ?? string.Empty;

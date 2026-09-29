@@ -8,4 +8,5 @@ public sealed record EDespatchOptions(
     string ProfileId,
     string DespatchAdviceTypeCode,
     string CountryCode,
-    string CountryName);
+    string CountryName,
+    int TimeoutSeconds);

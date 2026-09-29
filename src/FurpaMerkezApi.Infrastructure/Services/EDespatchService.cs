@@ -6,8 +6,10 @@ using System.Text.Json;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
@@ -51,6 +53,8 @@ public sealed class EDespatchService(
     private const int PostSubmissionCompletionTimeoutSeconds = 120;
     private const int LocalMetadataUpdateAttemptCount = 2;
     private const string StockMovementUpdatePath = "/Api/apiMethods/DahiliStokHareketDuzeltV2";
+    private const string InterWarehouseCreateOperationCode = "sevk-islemleri.giden-depolar-arasi-sevkler.create";
+    private const string WarehouseReturnCreateOperationCode = "iade-islemleri.giden-depo-iadeleri.create";
     private static readonly SemaphoreSlim LocalDocumentNumberLock = new(1, 1);
 
     public async Task<SendEDespatchResponse> SendAsync(
@@ -738,6 +742,8 @@ public sealed class EDespatchService(
             return recoveredResponse;
         }
 
+        await EnsureInterWarehouseDocumentCompleteAsync(request, document, cancellationToken);
+
         var now = DateTime.Now;
         var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
             now.Year,
@@ -782,6 +788,7 @@ public sealed class EDespatchService(
             document.Context,
             document.TrackedMovements,
             cancellationToken);
+        await EnsureInterWarehouseDocumentCompleteAsync(request, document, cancellationToken);
         var serviceResult = await SendToUyumsoftAsync(
             despatchInfo,
             config,
@@ -860,6 +867,145 @@ public sealed class EDespatchService(
                 trackedMovements,
                 mikroWriteDbContext,
                 BuildCompanyMovementMetadata(trackedMovements));
+        }
+    }
+
+    private async Task EnsureInterWarehouseDocumentCompleteAsync(
+        SendEDespatchRequest request,
+        ResolvedInterWarehouseDocument document,
+        CancellationToken cancellationToken)
+    {
+        var itemGuids = document.Detail.Items.Select(item => item.MovementGuid);
+        if (!HaveSameMovementGuids(itemGuids, document.TrackedMovements.Select(movement => movement.sth_Guid)) ||
+            document.Detail.Items.Count != document.TrackedMovements.Count)
+        {
+            throw new InvalidOperationException(
+                "E-despatch detail and Mikro document lines differ. Refresh the document; no e-despatch was sent.");
+        }
+
+        var traceKeys = document.TrackedMovements
+            .Select(movement => movement.sth_eticaret_kanal_kodu)
+            .Where(value => !string.IsNullOrWhiteSpace(value) && value.StartsWith("FR", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (traceKeys.Length == 0)
+        {
+            return;
+        }
+
+        if (traceKeys.Length != 1 ||
+            document.TrackedMovements.Any(movement => movement.sth_eticaret_kanal_kodu != traceKeys[0]) ||
+            !TryParseOfflineTraceKey(traceKeys[0]!, out var clientRequestId))
+        {
+            throw new InvalidOperationException(
+                "E-despatch document lines do not share a valid create request trace; no e-despatch was sent.");
+        }
+
+        var operationCode = request.DocumentType == EDespatchDocumentType.WarehouseReturn
+            ? WarehouseReturnCreateOperationCode
+            : InterWarehouseCreateOperationCode;
+        var create = await authDbContext.MobileOfflineSyncRequests.AsNoTracking()
+            .SingleOrDefaultAsync(record =>
+                record.OperationCode == operationCode &&
+                record.ClientRequestId == clientRequestId.ToString("D") &&
+                record.WarehouseNo == request.WarehouseNo,
+                cancellationToken);
+        if (create?.Status != MobileOfflineSyncRequestStatus.Completed ||
+            string.IsNullOrWhiteSpace(create.ResponsePayload))
+        {
+            throw new InvalidOperationException(
+                "Shipment creation has not completed; wait for the create response before sending the e-despatch.");
+        }
+
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        int? expectedLineCount;
+        bool matches;
+        try
+        {
+            if (request.DocumentType == EDespatchDocumentType.WarehouseReturn)
+            {
+                var response = JsonSerializer.Deserialize<CreateWarehouseReturnResponse>(create.ResponsePayload, jsonOptions);
+                expectedLineCount = response?.LineCount;
+                matches = response is not null && MatchesCompletedDocumentCreate(
+                    response.DocumentSerie, response.DocumentOrderNo, response.SourceWarehouseNo,
+                    response.LineCount, request.DocumentSerie, request.DocumentOrderNo,
+                    request.WarehouseNo, document.Detail.Items.Count);
+            }
+            else
+            {
+                var response = JsonSerializer.Deserialize<CreateInterWarehouseShipmentResponse>(create.ResponsePayload, jsonOptions);
+                expectedLineCount = response?.LineCount;
+                matches = MatchesCompletedShipmentCreate(
+                    response, request.DocumentSerie, request.DocumentOrderNo,
+                    request.WarehouseNo, document.Detail.Items.Count);
+            }
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException(
+                "Shipment create response could not be verified; no e-despatch was sent.", exception);
+        }
+
+        if (!matches)
+        {
+            logger.LogWarning(
+                "E-despatch create/detail line count mismatch. Document={DocumentSerie}/{DocumentOrderNo}, ExpectedCount={ExpectedCount}, ActualCount={ActualCount}",
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                expectedLineCount,
+                document.Detail.Items.Count);
+            throw new InvalidOperationException(
+                "Shipment create response and current document lines differ; no e-despatch was sent.");
+        }
+    }
+
+    internal static bool MatchesCompletedShipmentCreate(
+        CreateInterWarehouseShipmentResponse? response,
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        int lineCount) =>
+        response is not null && MatchesCompletedDocumentCreate(
+            response.DocumentSerie, response.DocumentOrderNo, response.SourceWarehouseNo,
+            response.LineCount, documentSerie, documentOrderNo, warehouseNo, lineCount);
+
+    internal static bool MatchesCompletedDocumentCreate(
+        string createdSerie,
+        int createdOrderNo,
+        int createdWarehouseNo,
+        int createdLineCount,
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo,
+        int lineCount) =>
+        createdSerie == documentSerie &&
+        createdOrderNo == documentOrderNo &&
+        createdWarehouseNo == warehouseNo &&
+        createdLineCount == lineCount;
+
+    internal static bool TryParseOfflineTraceKey(string traceKey, out Guid clientRequestId)
+    {
+        clientRequestId = Guid.Empty;
+        if (traceKey.Length != 24 || !traceKey.StartsWith("FR", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            var encoded = traceKey[2..].Replace('-', '+').Replace('_', '/') + "==";
+            var bytes = Convert.FromBase64String(encoded);
+            if (bytes.Length != 16)
+            {
+                return false;
+            }
+
+            clientRequestId = new Guid(bytes);
+            return clientRequestId != Guid.Empty;
+        }
+        catch (FormatException)
+        {
+            return false;
         }
     }
 
@@ -1903,13 +2049,14 @@ public sealed class EDespatchService(
         }
     }
 
-    private static UyumsoftServiceEndpointOptions ToEndpointOptions(EDespatchOptions config) =>
+    internal static UyumsoftServiceEndpointOptions ToEndpointOptions(EDespatchOptions config) =>
         new(
             config.EndpointUrl,
             string.Empty,
             config.Username,
             config.Password,
-            "IBasicDespatchIntegration");
+            "IBasicDespatchIntegration",
+            config.TimeoutSeconds);
 
     private async Task<bool> TryMarkAsSentAsync(
         MikroDbContext context,
@@ -2469,6 +2616,12 @@ public sealed class EDespatchService(
 
     private static void ValidateConfiguration(EDespatchOptions options)
     {
+        if (options.TimeoutSeconds is < 1 or > 600)
+        {
+            throw new InvalidOperationException(
+                "EDespatch:TimeoutSeconds must be between 1 and 600.");
+        }
+
         if (string.IsNullOrWhiteSpace(options.EndpointUrl))
         {
             throw new InvalidOperationException(

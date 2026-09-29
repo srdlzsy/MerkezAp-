@@ -241,6 +241,49 @@ public sealed class EDespatchServiceTests
     }
 
     [Fact]
+    public void TryParseOfflineTraceKey_RestoresClientRequestId()
+    {
+        var requestId = Guid.NewGuid();
+        var traceKey = "FR" + Convert.ToBase64String(requestId.ToByteArray())
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+        Assert.True(EDespatchService.TryParseOfflineTraceKey(traceKey, out var parsed));
+        Assert.Equal(requestId, parsed);
+        Assert.False(EDespatchService.TryParseOfflineTraceKey("FRinvalid", out _));
+    }
+
+    [Fact]
+    public void MatchesCompletedShipmentCreate_RejectsPartialDocument()
+    {
+        var response = new FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create.CreateInterWarehouseShipmentResponse(
+            "F56", 87879, DateTime.Today, DateTime.Today, "", 56, 113, 60, 25, 0, 0, 0, "MikroWriteConnection");
+
+        Assert.True(EDespatchService.MatchesCompletedShipmentCreate(response, "F56", 87879, 56, 25));
+        Assert.False(EDespatchService.MatchesCompletedShipmentCreate(response, "F56", 87879, 56, 15));
+    }
+
+    [Fact]
+    public void MatchesCompletedDocumentCreate_RejectsPartialWarehouseReturn()
+    {
+        Assert.True(EDespatchService.MatchesCompletedDocumentCreate(
+            "F56", 87880, 56, 25, "F56", 87880, 56, 25));
+        Assert.False(EDespatchService.MatchesCompletedDocumentCreate(
+            "F56", 87880, 56, 25, "F56", 87880, 56, 15));
+    }
+
+    [Fact]
+    public void ToEndpointOptions_UsesConfiguredDespatchTimeout()
+    {
+        var config = new EDespatchOptions(
+            "https://example.test/despatch", "user", "password", "supplier",
+            "profile", "SEVK", "TR", "TURKIYE", 360);
+
+        Assert.Equal(360, EDespatchService.ToEndpointOptions(config).TimeoutSeconds);
+    }
+
+    [Fact]
     public void SelectActiveDespatchReceiverAlias_PreservesActiveMikroAlias()
     {
         var result = EDespatchService.SelectActiveDespatchReceiverAlias(
