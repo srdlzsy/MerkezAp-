@@ -13,6 +13,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
 internal sealed class TrendyolGoPriceStockWorkbench(
     ITrendyolGoIntegrationService trendyol,
     MikroDbContext mikroDbContext,
+    TrendyolGoBranchPosPriceSyncService branchPosPriceSync,
     IOptionsMonitor<TrendyolGoOptions> options) : ITrendyolGoPriceStockWorkbench
 {
     public async Task<TrendyolGoPriceStockPreview> PreviewAsync(
@@ -23,7 +24,13 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             throw new ArgumentException("page must be non-negative and size must be between 1 and 100.");
         }
 
-        var store = options.CurrentValue.Stores.SingleOrDefault(item => item.StoreId == storeId)
+        var config = options.CurrentValue;
+        if (config.PriceListNo < 1 || config.PaymentPlanNo < 0)
+        {
+            throw new InvalidOperationException("Trendyol Go price list configuration is invalid.");
+        }
+
+        var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
             ?? throw new ArgumentException($"storeId {storeId} is not configured.");
 
         var catalog = await trendyol.ListProductsAsync(
@@ -39,7 +46,12 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var mikro = await ReadMikroProductsAsync(store.WarehouseNo, barcodes, cancellationToken);
+        var mikro = await ReadMikroProductsAsync(
+            store.WarehouseNo,
+            barcodes,
+            config.PriceListNo,
+            config.PaymentPlanNo,
+            cancellationToken);
         var duplicateBarcodes = products.GroupBy(product => product.Barcode, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
@@ -105,11 +117,33 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             }).ToArray()
         });
         var upstream = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
+        var config = options.CurrentValue;
+        var mikro = await ReadMikroProductsAsync(
+            preview.WarehouseNo,
+            selected.Select(item => item.Barcode).ToArray(),
+            config.PriceListNo,
+            config.PaymentPlanNo,
+            cancellationToken);
+        var branchPosItems = selected
+            .Select(item => mikro.GetValueOrDefault(item.Barcode))
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .Where(item => item.StockCode is not null && item.Price is not null)
+            .Select(item => new BranchPosPriceItem(
+                item.StockCode!, item.Price!.Value, item.UnitPointer, item.UnitName,
+                item.SalesBlocked, item.OrderBlocked, item.GoodsAcceptanceBlocked,
+                item.PriceUpdatedAtUtc, item.WarehouseUpdatedAtUtc, config.PriceListNo))
+            .ToArray();
+        await branchPosPriceSync.EnqueueAsync(storeId, preview.WarehouseNo, branchPosItems, cancellationToken);
         return new TrendyolGoPriceStockDispatch(storeId, preview.WarehouseNo, selected.Length, upstream);
     }
 
     private async Task<Dictionary<string, MikroProduct>> ReadMikroProductsAsync(
-        int warehouseNo, IReadOnlyCollection<string> barcodes, CancellationToken cancellationToken)
+        int warehouseNo,
+        IReadOnlyCollection<string> barcodes,
+        int priceListNo,
+        int paymentPlanNo,
+        CancellationToken cancellationToken)
     {
         var result = new Dictionary<string, MikroProduct>(StringComparer.Ordinal);
         if (barcodes.Count == 0)
@@ -132,8 +166,12 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             var valueRows = barcodes.Select((_, index) => $"(@barcode{index})");
             command.CommandText = $"""
                 SELECT requested.Barcode, stock.sto_kod AS StockCode, stock.sto_isim AS StockName,
-                       CASE WHEN stock.sto_kod IS NULL THEN NULL
-                            ELSE dbo.fn_StokSatisFiyati(stock.sto_kod, '1', @warehouseNo, '1') END AS Price,
+                       price.Price, COALESCE(price.UnitPointer, barcode.bar_birimpntr, 1) AS UnitPointer,
+                       COALESCE(unitDefinition.sto_birim_ad, '') AS UnitName,
+                       COALESCE(detail.sdp_satisdursun, 0) AS SalesBlocked,
+                       COALESCE(detail.sdp_sipdursun, 0) AS OrderBlocked,
+                       COALESCE(detail.sdp_malkabuldursun, 0) AS GoodsAcceptanceBlocked,
+                       price.PriceUpdatedAt, detail.sdp_lastup_date AS WarehouseUpdatedAt,
                        CASE WHEN stock.sto_kod IS NULL THEN NULL
                             ELSE dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, CONVERT(date, GETDATE())) END AS Quantity,
                        CASE WHEN COALESCE(stock.sto_iptal, 0) = 1
@@ -145,9 +183,29 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                   ON barcode.bar_kodu = requested.Barcode AND COALESCE(barcode.bar_iptal, 0) = 0
                 LEFT JOIN dbo.STOKLAR AS stock ON stock.sto_kod = barcode.bar_stokkodu
                 LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS detail
-                  ON detail.sdp_depo_kod = stock.sto_kod AND detail.sdp_depo_no = @warehouseNo;
+                  ON detail.sdp_depo_kod = stock.sto_kod AND detail.sdp_depo_no = @warehouseNo
+                LEFT JOIN dbo.STOK_BIRIM_TANIMLARI_DIKEY AS unitDefinition
+                  ON unitDefinition.sto_kod = stock.sto_kod
+                 AND unitDefinition.sto_birimID = COALESCE(barcode.bar_birimpntr, 1)
+                OUTER APPLY
+                (
+                    SELECT TOP (1) priceRow.sfiyat_fiyati AS Price,
+                           priceRow.sfiyat_birim_pntr AS UnitPointer,
+                           priceRow.sfiyat_lastup_date AS PriceUpdatedAt
+                    FROM dbo.STOK_SATIS_FIYAT_LISTELERI AS priceRow
+                    WHERE priceRow.sfiyat_stokkod = stock.sto_kod
+                        AND priceRow.sfiyat_deposirano = @warehouseNo
+                        AND priceRow.sfiyat_listesirano = @priceListNo
+                        AND priceRow.sfiyat_odemeplan = @paymentPlanNo
+                        AND priceRow.sfiyat_birim_pntr = COALESCE(barcode.bar_birimpntr, 1)
+                        AND COALESCE(priceRow.sfiyat_iptal, 0) = 0
+                        AND priceRow.sfiyat_fiyati IS NOT NULL
+                    ORDER BY COALESCE(priceRow.sfiyat_lastup_date, priceRow.sfiyat_create_date) DESC
+                ) AS price;
                 """;
             AddParameter(command, "@warehouseNo", warehouseNo);
+            AddParameter(command, "@priceListNo", priceListNo);
+            AddParameter(command, "@paymentPlanNo", paymentPlanNo);
             var index = 0;
             foreach (var barcode in barcodes)
             {
@@ -163,7 +221,14 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                     reader["StockName"] is DBNull ? string.Empty : Convert.ToString(reader["StockName"], CultureInfo.InvariantCulture) ?? string.Empty,
                     reader["Price"] is DBNull ? null : Convert.ToDecimal(reader["Price"], CultureInfo.InvariantCulture),
                     reader["Quantity"] is DBNull ? null : Convert.ToDecimal(reader["Quantity"], CultureInfo.InvariantCulture),
-                    Convert.ToInt32(reader["Blocked"], CultureInfo.InvariantCulture) != 0);
+                    Convert.ToInt32(reader["Blocked"], CultureInfo.InvariantCulture) != 0,
+                    Convert.ToInt32(reader["UnitPointer"], CultureInfo.InvariantCulture),
+                    Convert.ToString(reader["UnitName"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    Convert.ToInt32(reader["SalesBlocked"], CultureInfo.InvariantCulture),
+                    Convert.ToInt32(reader["OrderBlocked"], CultureInfo.InvariantCulture),
+                    Convert.ToInt32(reader["GoodsAcceptanceBlocked"], CultureInfo.InvariantCulture),
+                    reader["PriceUpdatedAt"] is DBNull ? null : Convert.ToDateTime(reader["PriceUpdatedAt"], CultureInfo.InvariantCulture),
+                    reader["WarehouseUpdatedAt"] is DBNull ? null : Convert.ToDateTime(reader["WarehouseUpdatedAt"], CultureInfo.InvariantCulture));
             }
         }
         finally
@@ -235,5 +300,9 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     }
 
     internal sealed record TrendyolProduct(string Barcode, string Title, decimal? Price, int? Quantity);
-    internal sealed record MikroProduct(string? StockCode, string StockName, decimal? Price, decimal? Quantity, bool Blocked);
+    internal sealed record MikroProduct(
+        string? StockCode, string StockName, decimal? Price, decimal? Quantity, bool Blocked,
+        int UnitPointer = 1, string UnitName = "", int SalesBlocked = 0, int OrderBlocked = 0,
+        int GoodsAcceptanceBlocked = 0, DateTime? PriceUpdatedAtUtc = null,
+        DateTime? WarehouseUpdatedAtUtc = null);
 }

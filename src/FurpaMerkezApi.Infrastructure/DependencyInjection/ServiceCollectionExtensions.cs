@@ -695,7 +695,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAxataSynchronizationService, AxataSynchronizationService>();
         services.AddScoped<IPosMuhasebeAktarimiService, PosMuhasebeAktarimiService>();
         services.AddScoped<ITrendyolGoIntegrationService, TrendyolGoIntegrationService>();
+        services.AddScoped<TrendyolGoBranchPosPriceSyncService>();
         services.AddScoped<ITrendyolGoPriceStockWorkbench, TrendyolGoPriceStockWorkbench>();
+        services.AddHostedService<TrendyolGoBranchPosPriceSyncWorker>();
         services.AddScoped<IAxataSynchronizationTaskHandler, FirmMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, ProductMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, IssuedWarehouseOrderSyncTaskHandler>();

@@ -26,7 +26,27 @@ public sealed class TrendyolGoOptions
 
     public int TimeoutSeconds { get; init; } = 30;
 
+    // Trendyol Go prices are maintained separately from the standard retail price list.
+    public int PriceListNo { get; init; } = 3;
+
+    public int PaymentPlanNo { get; init; }
+
+    public TrendyolGoBranchPosPriceSyncOptions BranchPosPriceSync { get; init; } = new();
+
     public TrendyolGoStoreMappingOptions[] Stores { get; init; } = [];
+}
+
+public sealed class TrendyolGoBranchPosPriceSyncOptions
+{
+    public bool Enabled { get; init; }
+    public string Database { get; init; } = "market";
+    public string Username { get; init; } = "market";
+    public string Password { get; init; } = string.Empty;
+    public int Port { get; init; } = 5432;
+    public int ConnectionTimeoutSeconds { get; init; } = 10;
+    public int CommandTimeoutSeconds { get; init; } = 30;
+    public int WorkerIntervalSeconds { get; init; } = 30;
+    public int RetryDelaySeconds { get; init; } = 300;
 }
 
 public sealed class TrendyolGoStoreMappingOptions

@@ -6,6 +6,15 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.Trend
 public sealed class TrendyolGoPriceStockWorkbenchTests
 {
     [Fact]
+    public void Options_DefaultToTheDedicatedTrendyolPriceList()
+    {
+        var options = new TrendyolGoOptions();
+
+        Assert.Equal(3, options.PriceListNo);
+        Assert.Equal(0, options.PaymentPlanNo);
+    }
+
+    [Fact]
     public void BuildRow_UsesMikroPriceAndFlooredWarehouseQuantity()
     {
         var row = TrendyolGoPriceStockWorkbench.BuildRow(

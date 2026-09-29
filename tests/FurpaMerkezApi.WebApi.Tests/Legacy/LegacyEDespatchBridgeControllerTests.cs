@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.WebApi.Configuration;
 using FurpaMerkezApi.WebApi.Controllers.Legacy;
 using Microsoft.AspNetCore.Authorization;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FurpaMerkezApi.WebApi.Tests.Legacy;
@@ -162,6 +164,7 @@ public sealed class LegacyEDespatchBridgeControllerTests
     {
         var controller = new LegacyEDespatchBridgeController(
             service,
+            CreateMikroDbContext(),
             new StaticOptionsMonitor<LegacyEDespatchBridgeOptions>(options ?? new LegacyEDespatchBridgeOptions
             {
                 Enabled = true,
@@ -182,6 +185,15 @@ public sealed class LegacyEDespatchBridgeControllerTests
         }
 
         return controller;
+    }
+
+    private static MikroDbContext CreateMikroDbContext()
+    {
+        var options = new DbContextOptionsBuilder<MikroDbContext>()
+            .UseInMemoryDatabase($"legacy-e-despatch-bridge-{Guid.NewGuid():N}")
+            .Options;
+
+        return new MikroDbContext(options);
     }
 
     private sealed class CapturingEDespatchService : IEDespatchService

@@ -17343,7 +17343,11 @@ Operasyon modulu notlari:
 
 ### Trendyol Go Market Entegrasyonu
 
-Trendyol Go Market baglanti katmani `api.tgoapis.com` adresini kullanir. Asagidaki tablo **bizim API'de kodlanmis route'lari** gosterir; TGO'nun tum Market API'sinin desteklendigi veya bu route'larin canlida dogrulandigi anlamina gelmez. Siparis, urun katalogu, sube bazli fiyat-stok, satis acma/kapama, batch sonucu, bazi paket aksiyonlari, fatura linki ve iade/itiraz icin manuel endpointler vardir. Otomatik worker, webhook alicisi ve Mikro satis/fatura evragi olusturma yoktur. Kapsam matrisi, operasyon akislarinin ayrintilari ve resmi kaynaklar: [Trendyol Go Entegrasyonu](TRENDYOL_GO_ENTEGRASYONU.md).
+Trendyol Go Market baglanti katmani `api.tgoapis.com` adresini kullanir. Asagidaki tablo **bizim API'de kodlanmis route'lari** gosterir; TGO'nun tum Market API'sinin desteklendigi veya bu route'larin canlida dogrulandigi anlamina gelmez. Siparis, urun katalogu, sube bazli fiyat-stok, satis acma/kapama, batch sonucu, bazi paket aksiyonlari, fatura linki ve iade/itiraz icin manuel endpointler vardir. Webhook alicisi ve Mikro satis/fatura evragi olusturma yoktur. Kapsam matrisi, operasyon akislarinin ayrintilari ve resmi kaynaklar: [Trendyol Go Entegrasyonu](TRENDYOL_GO_ENTEGRASYONU.md).
+
+Fiyat/stok onizlemesi Mikro'da Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesini kullanir; varsayilan fiyat listesi `3`, odeme plani `0`'dir. Liste `1` veya genel satis fiyati fallback olarak kullanilmaz. `POST /price-stock/dispatch` Trendyol Go'da basarili olduktan sonra, secilen satirlar opsiyonel `TrendyolGo:BranchPosPriceSync` worker'i ile sube POS bilgisayarindaki PostgreSQL `market.stoksatisfiyat` tablosuna kuyruk uzerinden aktarilir. Bu aktarim API cevabini bekletmez; sube kapaliysa kayit yeniden denemek uzere kuyrukta kalir.
+
+POS sync varsayilan olarak kapali gelir. Acmak icin `TrendyolGo__BranchPosPriceSync__Enabled=true` ve parola icin `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni tanimlanmalidir. Merkez API sunucusunun sube PostgreSQL `5432` portuna erisim izni ile PostgreSQL `pg_hba.conf` kullanici/veritabani yetkisi hazir olmadan bu ayar acilmamalidir.
 
 Durum (28.09.2026): Kod ve resmi Market dokumani karsilastirildi; TGO stage/production uzerinde uctan uca istek ve sonuc dogrulamasi yapilmadi. `Enabled=false` varsayilandir. Asagidaki yazma route'lari bu nedenle "canlida hazir" sayilmamalidir.
 
