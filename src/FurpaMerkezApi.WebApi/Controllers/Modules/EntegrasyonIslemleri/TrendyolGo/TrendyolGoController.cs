@@ -140,11 +140,9 @@ public sealed class TrendyolGoController(
     [Authorize(Policy = ListPolicy)]
     public async Task<ActionResult<TrendyolGoPriceStockPreview>> PreviewPriceStock(
         [FromQuery, Range(1, long.MaxValue)] long storeId,
-        [FromQuery, Range(0, int.MaxValue)] int page = 0,
-        [FromQuery, Range(1, 100)] int size = 100,
         [FromQuery, RegularExpression("^(?i:actionable|all|issues)$")] string view = "actionable",
         CancellationToken cancellationToken = default) =>
-        Ok(await priceStockWorkbench.PreviewAsync(storeId, page, size, view, cancellationToken));
+        Ok(await priceStockWorkbench.PreviewAsync(storeId, view, cancellationToken));
 
     [HttpPost("price-stock/dispatch")]
     [Authorize(Policy = UpdatePolicy)]
@@ -152,7 +150,7 @@ public sealed class TrendyolGoController(
         [FromBody] TrendyolGoPriceStockDispatchHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await priceStockWorkbench.DispatchAsync(
-            request.StoreId, request.Page, request.Size, request.PreviewHash,
+            request.StoreId, request.PreviewHash, request.SendAll,
             request.Barcodes, cancellationToken));
 
     [HttpGet("products/batch-requests/{batchRequestId}")]
@@ -371,15 +369,11 @@ public sealed class TrendyolGoPriceStockDispatchHttpRequest
     [Range(1, long.MaxValue)]
     public long StoreId { get; init; }
 
-    [Range(0, int.MaxValue)]
-    public int Page { get; init; }
-
-    [Range(1, 100)]
-    public int Size { get; init; } = 100;
-
     [Required]
     public string PreviewHash { get; init; } = string.Empty;
 
-    [Required, MinLength(1), MaxLength(100)]
+    public bool SendAll { get; init; }
+
+    [MaxLength(10000)]
     public string[] Barcodes { get; init; } = [];
 }

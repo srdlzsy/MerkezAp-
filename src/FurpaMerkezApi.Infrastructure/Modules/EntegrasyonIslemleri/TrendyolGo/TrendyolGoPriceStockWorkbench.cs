@@ -21,90 +21,80 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     private readonly SemaphoreSlim mikroReadGate = new(1, 1);
 
     public async Task<TrendyolGoPriceStockPreview> PreviewAsync(
-        long storeId, int page, int size, string view, CancellationToken cancellationToken)
+        long storeId, string view, CancellationToken cancellationToken)
     {
-        if (page < -1 || size is < 1 or > 100)
-        {
-            throw new ArgumentException("page must be -1 or non-negative and size must be between 1 and 100.");
-        }
-
         var normalizedView = NormalizeView(view);
-        var snapshot = await LoadPreviewSnapshotAsync(storeId, page, size, cancellationToken);
+        var snapshot = await LoadFullPreviewSnapshotAsync(storeId, cancellationToken);
         var visibleRows = FilterRows(snapshot.Rows, normalizedView);
         return new TrendyolGoPriceStockPreview(
-            snapshot.StoreId, snapshot.WarehouseNo, snapshot.StoreName, snapshot.Page, snapshot.Size,
+            snapshot.StoreId, snapshot.WarehouseNo, snapshot.StoreName,
             snapshot.TotalPages, snapshot.TotalElements, snapshot.PreviewHash,
             snapshot.ReadyCount, snapshot.UnchangedCount, snapshot.SkippedCount,
             normalizedView, visibleRows.Length, visibleRows);
     }
-
     public async Task<TrendyolGoPriceStockDispatch> DispatchAsync(
-        long storeId, int page, int size, string previewHash,
+        long storeId, string previewHash, bool sendAll,
         IReadOnlyCollection<string> barcodes, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(previewHash) || barcodes.Count is < 1 or > 100 ||
+        if (string.IsNullOrWhiteSpace(previewHash) || barcodes.Count > 10000 ||
             barcodes.Any(string.IsNullOrWhiteSpace) ||
-            barcodes.Count != barcodes.Distinct(StringComparer.Ordinal).Count())
+            barcodes.Count != barcodes.Distinct(StringComparer.Ordinal).Count() ||
+            (!sendAll && barcodes.Count == 0))
         {
-            throw new ArgumentException("A preview hash and 1-100 distinct barcodes are required.");
+            throw new ArgumentException("A preview hash and either sendAll or distinct barcodes are required.");
         }
 
-        var snapshot = await LoadPreviewSnapshotAsync(storeId, page, size, cancellationToken);
+        var snapshot = await LoadFullPreviewSnapshotAsync(storeId, cancellationToken);
         if (!string.Equals(snapshot.PreviewHash, previewHash, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Price, stock or Trendyol product data changed. Refresh the preview before sending.");
         }
 
-        var selected = barcodes.Select(barcode =>
+        var selected = sendAll
+            ? snapshot.Rows.Where(item => item.Status == "Ready").ToArray()
+            : ResolveSelectedRows(snapshot.Rows, barcodes);
+        if (selected.Length == 0)
         {
-            var matching = snapshot.Rows.Where(item => item.Barcode == barcode).ToArray();
-            if (matching.Length != 1)
-            {
-                throw new ArgumentException($"Barcode {barcode} must appear exactly once on the preview page.");
-            }
-
-            return matching[0];
-        }).ToArray();
-        if (selected.Any(item => item.Status != "Ready"))
-        {
-            throw new ArgumentException("Only ready preview rows can be sent.");
+            throw new ArgumentException("There are no ready price-stock rows to send.");
         }
 
-        var payload = JsonSerializer.SerializeToElement(new
-        {
-            items = selected.Select(item => new
-            {
-                barcode = item.Barcode,
-                sellingPrice = item.MikroPrice!.Value,
-                quantity = item.MikroQuantity!.Value,
-                storeId
-            }).ToArray()
-        });
         var config = options.CurrentValue;
-        var mikro = await ReadMikroProductsAsync(
-            snapshot.WarehouseNo,
-            selected.Select(item => item.Barcode).ToArray(),
-            config.PriceListNo,
-            config.PaymentPlanNo,
-            cancellationToken);
-        EnsureSelectedValuesAreCurrent(selected, snapshot.Products, mikro);
-        var upstream = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
-        var branchPosItems = selected
-            .Select(item => mikro.GetValueOrDefault(item.Barcode))
-            .Where(item => item is not null)
-            .Select(item => item!)
-            .Where(item => item.StockCode is not null && item.Price is not null)
-            .Select(item => new BranchPosPriceItem(
-                item.StockCode!, item.Price!.Value, item.UnitPointer, item.UnitName,
-                item.SalesBlocked, item.OrderBlocked, item.GoodsAcceptanceBlocked,
-                item.PriceUpdatedAtUtc, item.WarehouseUpdatedAtUtc, config.PriceListNo))
-            .ToArray();
-        await branchPosPriceSync.EnqueueAsync(storeId, snapshot.WarehouseNo, branchPosItems, cancellationToken);
-        memoryCache.Remove(GetPreviewCacheKey(storeId, page, size));
-        return new TrendyolGoPriceStockDispatch(storeId, snapshot.WarehouseNo, selected.Length, upstream);
-    }
+        var responses = new List<JsonElement?>();
+        foreach (var batch in selected.Chunk(1000))
+        {
+            var mikro = await ReadMikroProductsAsync(
+                snapshot.WarehouseNo, batch.Select(item => item.Barcode).ToArray(),
+                config.PriceListNo, config.PaymentPlanNo, cancellationToken);
+            EnsureSelectedValuesAreCurrent(batch, snapshot.Products, mikro);
+            var payload = JsonSerializer.SerializeToElement(new
+            {
+                items = batch.Select(item => new
+                {
+                    barcode = item.Barcode,
+                    sellingPrice = item.MikroPrice!.Value,
+                    quantity = item.MikroQuantity!.Value,
+                    storeId
+                }).ToArray()
+            });
+            responses.Add(await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken));
+            var branchPosItems = batch
+                .Select(item => mikro.GetValueOrDefault(item.Barcode))
+                .Where(item => item is not null)
+                .Select(item => item!)
+                .Where(item => item.StockCode is not null && item.Price is not null)
+                .Select(item => new BranchPosPriceItem(
+                    item.StockCode!, item.Price!.Value, item.UnitPointer, item.UnitName,
+                    item.SalesBlocked, item.OrderBlocked, item.GoodsAcceptanceBlocked,
+                    item.PriceUpdatedAtUtc, item.WarehouseUpdatedAtUtc, config.PriceListNo))
+                .ToArray();
+            await branchPosPriceSync.EnqueueAsync(storeId, snapshot.WarehouseNo, branchPosItems, cancellationToken);
+        }
 
-    private async Task<PreviewSnapshot> LoadPreviewSnapshotAsync(
+        memoryCache.Remove(GetFullPreviewCacheKey(storeId));
+        return new TrendyolGoPriceStockDispatch(
+            storeId, snapshot.WarehouseNo, selected.Length, responses.Count, responses);
+    }
+    private async Task<PreviewSnapshot> LoadPagePreviewSnapshotAsync(
         long storeId, int page, int size, CancellationToken cancellationToken)
     {
         var cacheKey = GetPreviewCacheKey(storeId, page, size);
@@ -113,10 +103,6 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             return cached;
         }
 
-        if (page == -1)
-        {
-            return await LoadFullPreviewSnapshotAsync(storeId, size, cancellationToken);
-        }
 
         var config = options.CurrentValue;
         if (config.PriceListNo < 1 || config.PaymentPlanNo < 0 || config.PreviewCacheSeconds is < 1 or > 600)
@@ -163,9 +149,15 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     }
 
     private async Task<PreviewSnapshot> LoadFullPreviewSnapshotAsync(
-        long storeId, int size, CancellationToken cancellationToken)
+        long storeId, CancellationToken cancellationToken)
     {
-        var firstPage = await LoadPreviewSnapshotAsync(storeId, 0, size, cancellationToken);
+        if (memoryCache.TryGetValue(GetFullPreviewCacheKey(storeId), out PreviewSnapshot? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var fetchPageSize = Math.Clamp(options.CurrentValue.PreviewFetchPageSize, 1, 100);
+        var firstPage = await LoadPagePreviewSnapshotAsync(storeId, 0, fetchPageSize, cancellationToken);
         var pageParallelism = Math.Clamp(options.CurrentValue.PreviewPageParallelism, 1, 5);
         using var pageGate = new SemaphoreSlim(pageParallelism, pageParallelism);
         var otherPageTasks = Enumerable.Range(1, Math.Max(firstPage.TotalPages - 1, 0))
@@ -174,7 +166,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                 await pageGate.WaitAsync(cancellationToken);
                 try
                 {
-                    return await LoadPreviewSnapshotAsync(storeId, page, size, cancellationToken);
+                    return await LoadPagePreviewSnapshotAsync(storeId, page, fetchPageSize, cancellationToken);
                 }
                 finally
                 {
@@ -201,17 +193,16 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         var hashData = JsonSerializer.SerializeToUtf8Bytes(new
         {
             storeId,
-            page = -1,
-            size,
+            fetchPageSize,
             firstPage.TotalPages,
             firstPage.TotalElements,
             rows
         });
         var snapshot = new PreviewSnapshot(
-            storeId, firstPage.WarehouseNo, firstPage.StoreName, -1, size,
+            storeId, firstPage.WarehouseNo, firstPage.StoreName, 0, fetchPageSize,
             firstPage.TotalPages, firstPage.TotalElements,
             Convert.ToHexString(SHA256.HashData(hashData)), products, rows);
-        memoryCache.Set(GetPreviewCacheKey(storeId, -1, size), snapshot,
+        memoryCache.Set(GetFullPreviewCacheKey(storeId), snapshot,
             TimeSpan.FromSeconds(options.CurrentValue.PreviewCacheSeconds));
         return snapshot;
     }
@@ -234,6 +225,19 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         }
     }
 
+    private static TrendyolGoPriceStockRow[] ResolveSelectedRows(
+        IReadOnlyCollection<TrendyolGoPriceStockRow> rows, IReadOnlyCollection<string> barcodes)
+    {
+        var selected = barcodes.Select(barcode => rows.SingleOrDefault(item => item.Barcode == barcode)
+            ?? throw new ArgumentException($"Barcode {barcode} was not found in the preview.")).ToArray();
+        if (selected.Any(item => item.Status != "Ready"))
+        {
+            throw new ArgumentException("Only ready preview rows can be sent.");
+        }
+
+        return selected;
+    }
+
     private static TrendyolGoPriceStockRow[] FilterRows(
         IReadOnlyCollection<TrendyolGoPriceStockRow> rows, string view) =>
         view switch
@@ -248,6 +252,9 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         "actionable" or "all" or "issues" => view.Trim().ToLowerInvariant(),
         _ => throw new ArgumentException("view must be actionable, all or issues.")
     };
+
+    private static string GetFullPreviewCacheKey(long storeId) =>
+        $"trendyol-go:price-stock-preview:{storeId}:full";
 
     private static string GetPreviewCacheKey(long storeId, int page, int size) =>
         $"trendyol-go:price-stock-preview:{storeId}:{page}:{size}";

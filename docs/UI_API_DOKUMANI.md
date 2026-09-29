@@ -2534,7 +2534,7 @@ Ornek:
     "id": 3503,
     "terminalNo": "PAV210010584",
     "cashRegisterNo": "PAV210010584",
-    "bank": "İş Bankası",
+    "bank": "Ä°ÅŸ BankasÄ±",
     "terminalId": "PAV210010584-3",
     "merchantNo": "PAV210010584-3",
     "cashNo": 130
@@ -8865,8 +8865,8 @@ Onemli not:
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir
 - `documentOrderNo` ayni seri ve zayiat fis turu icin write DB'deki mevcut maksimum sira okunarak uretilir
 - Satir tutari eski sistemle uyumlu olacak sekilde create aninda hesaplanir ve `STOK_HAREKETLERI.sth_tutar` alanina yazilir.
-- Birim fiyat icin ilgili stogun `SATINALMA_SARTLARI` tablosundaki en guncel kaydi kullanilir: `sas_net_alis_kdvli - (sas_isk_miktar1..6 toplamı)`.
-- Ilgili stok icin satin alma sarti bulunamazsa satir tutari `0` yazilir ve backend log'a uyarı duser.
+- Birim fiyat icin ilgili stogun `SATINALMA_SARTLARI` tablosundaki en guncel kaydi kullanilir: `sas_net_alis_kdvli - (sas_isk_miktar1..6 toplamÄ±)`.
+- Ilgili stok icin satin alma sarti bulunamazsa satir tutari `0` yazilir ve backend log'a uyarÄ± duser.
 - Response `totalAmount`, yazilan satirlarin `sth_tutar` toplamidir. Liste ve detay ekranlari da kayitli `sth_tutar` alanini okur; detay endpointi sonradan fiyat hesaplamaz.
 
 Request:
@@ -9775,7 +9775,7 @@ UI durum modeli onerisi:
 Kullanici deneyimi notlari:
 
 - Ekran pazaryeri/hal operasyonu gibi hizli veri girisine uygun olmalidir; form alanlari kisa, tablo satirlari yogun ve klavye/barkod okutmaya uygun tasarlanmalidir.
-- Aynı stoktan birden fazla tartim olabilir; UI satirlari sadece stok koduyla birlestirmemeli, satir/kayit bazinda gostermelidir.
+- AynÄ± stoktan birden fazla tartim olabilir; UI satirlari sadece stok koduyla birlestirmemeli, satir/kayit bazinda gostermelidir.
 - `acceptanceRecordId` Mikro aktarim satirina tasinirse aktarimdan sonra ilgili Furpa kaydi otomatik `Mikro_Aktarildi=1` olur.
 - Mikro aktarim request'i pending iken buton kilitlenmelidir. Timeout veya belirsiz durumda UI yeni seri/sira uretip tekrar basmamalidir; once Mikro belge listesi ve karsilastirma yenilenmelidir.
 - UI, `documentSeries/documentOrderNo` degerlerini kullaniciya gosterebilir ama bos birakilirsa backend seri/sira uretir. Manuel seri/sira girilirse duplicate kontrolu devrededir.
@@ -10585,7 +10585,7 @@ UI alan kaynagi:
 | `markAcceptanceRecordsTransferred` | Normal akista `true` | `acceptanceRecordId` gonderilen kayitlari aktarildi isaretler. |
 | `lines[].acceptanceRecordId` | Furpa etiket/kabul kaydi `id` | Etiket kaydiyla bagli aktarimda doldurulur. |
 | `lines[].stockCode` | `matchedStockCode` veya kullanicinin sectigi MNV stok | Zorunlu. |
-| `lines[].quantity` | Tartim/etiket net kg toplamı veya onayli fatura miktari | Manavda pratikte kesin kabul miktari tartim net kg olmalidir. |
+| `lines[].quantity` | Tartim/etiket net kg toplamÄ± veya onayli fatura miktari | Manavda pratikte kesin kabul miktari tartim net kg olmalidir. |
 | `lines[].unitPrice` | Fatura kalemi `unitPrice` veya manuel fiyat | Fiyat bilinmeden aktarim acilmamali. |
 | `lines[].unitPointer` | Stok ana birimi icin genelde `1` | Farkli birim senaryosu yoksa UI `1` gonderir. |
 | `lines[].taxPointer` | Fatura/stok KDV pointer'i | Doluyken tercih edilir. |
@@ -12021,7 +12021,7 @@ Response:
 
 #### Yeni Kasa Saglik Ozeti
 
-Secilen tarih araliginda sube/kasa bazinda fiÃƒâ€¦Ã…Â¸ sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
+Secilen tarih araliginda sube/kasa bazinda fiÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€¦Ã‚Â¸ sagligini tek bakista gosterir. Dashboard ust kartlari veya risk listesi icin kullanilir.
 
 `GET /api/kasa-islemleri/yeni-kasa-analizleri/saglik-ozeti?startDate=2026-07-08&endDate=2026-07-08&warehouseNo=110`
 
@@ -12446,8 +12446,8 @@ filterValue filterType/scope ile eslesen kod veya arama degeri
 Notlar:
 
 - `filterType` icin Turkce aliaslar da kabul edilir: `stok`, `kategori`, `uretici`, `tedarikci`, `satin-almaci`, `satinalmaci`, `model`.
-- Turkce karakterli aliaslar da kabul edilir: `urun`, `ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼n`, `ÃƒÆ’Ã‚Â¼retici`, `tedarikÃƒÆ’Ã‚Â§i`, `satÃƒâ€Ã‚Â±n-almacÃƒâ€Ã‚Â±`.
-- `filterType` ve `filterValue` birlikte kullanÃƒâ€Ã‚Â±lmalÃƒâ€Ã‚Â±dÃƒâ€Ã‚Â±r; sadece biri gÃƒÆ’Ã‚Â¶nderilirse backend 400 dÃƒÆ’Ã‚Â¶ner.
+- Turkce karakterli aliaslar da kabul edilir: `urun`, `ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼n`, `ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼retici`, `tedarikÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§i`, `satÃƒÆ’Ã¢â‚¬ÂÃƒâ€šÃ‚Â±n-almacÃƒÆ’Ã¢â‚¬ÂÃƒâ€šÃ‚Â±`.
+- `filterType` ve `filterValue` birlikte kullanÃƒÆ’Ã¢â‚¬ÂÃƒâ€šÃ‚Â±lmalÃƒÆ’Ã¢â‚¬ÂÃƒâ€šÃ‚Â±dÃƒÆ’Ã¢â‚¬ÂÃƒâ€šÃ‚Â±r; sadece biri gÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¶nderilirse backend 400 dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¶ner.
 - `scope` bos verilirse karlilik raporu `producer` kirilimi ile doner.
 - Sayisal toplamlar backend tarafinda 2 ondaliga yuvarlanir.
 - Barkod alanlari master/birim-1 barkod onceligiyle secilir.
@@ -13238,7 +13238,7 @@ Response ana bolumleri:
 ```text
 movementReport             aktarim raporundaki sube+kasa satiri
 comparison                 aktarim Z raporu ile Mikro icmal toplam farki
-summary                    detay ekraninin ust KPI toplamları
+summary                    detay ekraninin ust KPI toplamlarÄ±
 cashierSummaries           aktarim fislerinden kasiyer bazli ozet
 movementPaymentSummaries   aktarim fislerinin odeme tipi kirilimi
 cashSummaryPayments        Mikro Summaries odeme tipi kirilimi
@@ -13619,7 +13619,7 @@ Response ornekleri:
   {
     "value": 100,
     "giftCheckType": 1,
-    "giftCheckTypeName": "Hediye Çeki 100 TL",
+    "giftCheckTypeName": "Hediye Ã‡eki 100 TL",
     "quantity": 3,
     "total": 300
   }
@@ -13969,7 +13969,7 @@ UI kasa seciminde `GET /api/kasa-islemleri/kasa-sayimlari/kasalar?branchNo=...` 
 ```json
 [
   {
-    "paymentName": "Online Ödeme",
+    "paymentName": "Online Ã–deme",
     "paymentTypeNo": 10,
     "terminalId": "",
     "paymentGenus": 1,
@@ -14053,14 +14053,14 @@ Kisa response ornekleri:
     "quantity": 0,
     "total": 0,
     "giftCheckType": 1,
-    "giftCheckTypeName": "Hediye Çeki 25 TL"
+    "giftCheckTypeName": "Hediye Ã‡eki 25 TL"
   },
   {
     "value": 100,
     "quantity": 0,
     "total": 0,
     "giftCheckType": 2,
-    "giftCheckTypeName": "Hediye Çeki 100 TL"
+    "giftCheckTypeName": "Hediye Ã‡eki 100 TL"
   }
 ]
 ```
@@ -14124,7 +14124,7 @@ Kisa response ornekleri:
 ```json
 [
   {
-    "paymentName": "Gider Pusulası",
+    "paymentName": "Gider PusulasÄ±",
     "paymentTypeId": 100,
     "paymentTypeNo": 100,
     "terminalId": "",
@@ -14140,7 +14140,7 @@ Not:
 
 - `paymentName`, kullaniciya basilacak gercek addir; UI `paymentTypeNo` araligindan isim tahmin etmemelidir
 - `paymentTypeKey`, dropdown secili satirini guvenli bulmak icindir; ayni odeme tipinin farkli terminal/hesap kodu varsa tek secenege dusurulmemelidir
-- `odeme-tipleri/masraf-pusulasi`, Mikro tarafinda tanim yoksa bile fallback olarak `Gider Pusulası / 100` dondurur
+- `odeme-tipleri/masraf-pusulasi`, Mikro tarafinda tanim yoksa bile fallback olarak `Gider PusulasÄ± / 100` dondurur
 
 ### Z Rapor Toplami
 
@@ -14286,7 +14286,7 @@ Not:
 - nakit/500 satiri UI tarafindan normal detay gibi yonetilmez; backend mevcut banknot/nakit toplamindan 500 satirini yeniden uretir
 - banknot update de patch degildir; `banknoteMovements` son durumda kalacak tum banknotlari icermelidir
 - banknot update request'inde `banknoteMovements` bos gonderilirse mevcut banknot satirlari temizlenebilir
-- banknot update eski satirlari silip yeniden yazar, ancak yeni `BanknoteMovements.CreateDate` mevcut icmal belgesinin `Summaries.SummaryDate` gununde kalir; boylece gecmis tarihli icmal duzeltmesi baska ekranlarda bugunun banknot toplamına kaymaz
+- banknot update eski satirlari silip yeniden yazar, ancak yeni `BanknoteMovements.CreateDate` mevcut icmal belgesinin `Summaries.SummaryDate` gununde kalir; boylece gecmis tarihli icmal duzeltmesi baska ekranlarda bugunun banknot toplamÄ±na kaymaz
 - banknot update sonrasi backend `PaymentTypeID = 500` nakit toplam satirini ve ilgili cari hareket toplamlarini yeni belge toplamiyla gunceller
 - hediye ceki update de patch degildir; `giftCheckMovements` son durumda kalacak tum hediye ceki satirlarini icermelidir
 - hediye ceki update request'inde `giftCheckMovements` bos gonderilirse mevcut hediye ceki satirlari temizlenebilir
@@ -14831,7 +14831,7 @@ Kasa Islemleri / Kasa Sayimlari
 Kasa Islemleri / Icmal Kaydi Girisi
   -> UI bu gorevi Kasa Sayimlari'ndan ayri menu/task olarak gostermelidir
   -> lookup alanlari icin kasiyer, kasa, odeme tipi ve banknot tipi endpointlerini paralel cagir
-  -> Z rapor karsilastirmasi icin GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?... 
+  -> Z rapor karsilastirmasi icin GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam?...
   -> kaydetmek icin POST /api/kasa-islemleri/kasa-sayimlari
 
 Kasa Islemleri / Banknot Takipleri
@@ -14927,7 +14927,7 @@ Mevcut API'yi kullanarak ilerleyecekseniz akisi su sekilde okuyun:
 6. Kontrol sonucu uygunsa secilen gonderilmemis faturalari canli Uyumsoft'a gondermek icin `POST /api/fatura-islemleri/fatura-gonderimi/send`
    - `send` endpoint'i hiz icin `/validate` kontrolunu tekrar calistirmaz; UI "Kontrol Et" butonunu ayri aksiyon olarak sunmalidir
    - backend ayni belge icin eszamanli ikinci `send` istegini Uyumsoft'a gitmeden durdurur; UI bu durumda satir bazli hata mesajini gosterip ilk istegin sonucunu beklemelidir
-   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruÃƒâ€Ã…Â¸a alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
+   - daha once Uyumsoft'a gonderilmis fakat yeniden kuyruÃƒÆ’Ã¢â‚¬ÂÃƒâ€¦Ã‚Â¸a alinmasi gereken faturalar icin ayri olarak `POST /api/fatura-islemleri/fatura-gonderimi/retry` kullanilir
 7. Gelen/inbox faturalari icin secilen tarih araligini Uyumsoft'tan cache tabloya almak gerekirse `POST /api/fatura-islemleri/fatura-goruntuleme/senkronize`
 8. Gelen/inbox cache listesini okumak icin `GET /api/fatura-islemleri/fatura-goruntuleme`
 9. Gelen/inbox resmi PDF icin `GET /api/fatura-islemleri/fatura-goruntuleme/{documentId}` veya `/pdf` alias'i kullanilir.
@@ -16163,7 +16163,7 @@ Response `SendInvoiceDocumentsResponse`:
 
 Davranis:
 
-- secimler duplicate ise backend tekilleÃƒâ€¦Ã…Â¸tirir
+- secimler duplicate ise backend tekilleÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€¦Ã‚Â¸tirir
 - gonderim Uyumsoft WCF client ile fatura bazli tek tek yapilir; boylece basarili/hatali kayitlar response icinde ayri ayri gorulur
 - her belge icin UBL invoice uretilir ve Uyumsoft `SendInvoice` operasyonu cagrilir
 - performans icin `/send` agir UBL-TR is kurali ve XSD dogrulamasini otomatik calistirmaz; kullanici kontrol istiyorsa veya toplu gonderim oncesi guvence isteniyorsa UI once `/validate` cagirmalidir
@@ -16484,7 +16484,7 @@ Alan mantigi:
 - `targetWarehouseNo`: depolar arasi sevk ve depo iadesinde mal kabulu beklenen veya tamamlayan karsi depodur. Firma sevki ve firma iadesinde bos gelir.
 - `currentStep = DocumentCreated`: belge API tarafindan olusturuldu.
 - `currentStep = EDespatchSubmission`: e-irsaliye gonderim adimi calisti. `status = Failed` ise hata panelde kaynak depoya yazilir.
-- `currentStep = WarehouseReceivingAccepted`: hedef depo mal kabul islemini tamamladı. Depo Operasyon Paneli bu adimi hedef depoda tamamlanan kabul olarak sayar.
+- `currentStep = WarehouseReceivingAccepted`: hedef depo mal kabul islemini tamamladÄ±. Depo Operasyon Paneli bu adimi hedef depoda tamamlanan kabul olarak sayar.
 - Depolar arasi belgelerde tek belge akis kaydi hem kaynak depo hem hedef depo icin kullanilir; liste filtresinde iki taraftan biri eslesirse kayit gelir.
 
 ### Mikro API Yazma Audit Kayitlari
@@ -17414,7 +17414,7 @@ Endpointler:
 | `POST /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/products/price-and-inventory` | `{ items: [...] }` | batch response veya `204` | `update` |
-| `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535` | query | `TrendyolGoPriceStockPreview` | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535&view=actionable` | query | `TrendyolGoPriceStockPreview` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | `TrendyolGoPriceStockDispatchHttpRequest` | `TrendyolGoPriceStockDispatch` | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}` | path | batch sonucu | `detail` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-on` | `{ items: [...] }` | batch response veya `204` | `update` |
@@ -17480,10 +17480,10 @@ Mikro'dan barkod girmeden fiyat/stok gonderme:
 
 1. UI `stores` listesinden subeyi secer; `storeId` bu kayittan gelir. Kullanici sayfa numarasi girmez.
 2. `price-stock/preview?storeId={id}` varsayilan olarak TGO katalogunun tum sayfalarini en fazla 3 paralel TGO istegiyle tarar ve kullaniciya yalnizca `Ready` yani fiyat/stok farki bulunan satirlari gosterir. Mikro okumasi tek akista tutulur; ayni `DbContext` uzerinde paralel sorgu yapilmaz. Veri yazmaz. `readyCount`, `unchangedCount` ve `skippedCount` ust ozetinde gosterilir.
-3. Sorun inceleme ekrani gerekiyorsa ayni istege `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Teknik veya eski ekran uyumu icin tek bir TGO sayfasi `page=0` gibi de istenebilir.
+3. Sorun inceleme ekrani gerekiyorsa ayni istege `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Onizleme endpointinde kullaniciya acik sayfalama yoktur; katalog sayfalari backend tarafinda yonetilir.
 4. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Onizleme 120 saniye bellekte tutulur; gonderimde tekrar tum katalog okunmaz, yalniz secilen satirlar Mikro'dan tekrar dogrulanir. Secilen urunun fiyat veya stoku degismisse `409 Conflict` doner ve onizleme yenilenir.
-5. Gonderim response'undaki `upstreamResponse.batchRequestId` ile mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
-6. Bir seferde en fazla 100 barkod gonderilir. `readyCount` 100'u gecerse UI kullanicinin secimini 100'luk paketlere ayirir; katalog sayfalama kullaniciya gosterilmez.
+5. Gonderim response'undaki `upstreamResponses[].batchRequestId` degerleriyle mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
+6. Kullanici ister tek tek secim yapar, ister `sendAll=true` ile tum `Ready` farklarini gonderir. Backend Trendyol limitine uygun olarak gonderimi kendi icinde en fazla 1000 satirlik paketlere ayirir; UI paket veya sayfa yonetmez.
 
 Onizleme ornegi:
 
@@ -17492,8 +17492,8 @@ Onizleme ornegi:
   "storeId": 402535,
   "warehouseNo": 110,
   "storeName": "Kestel 1",
-  "page": -1,
-  "size": 100,
+
+
   "totalPages": 2,
   "totalElements": 120,
   "previewHash": "A1B2...",
@@ -17523,16 +17523,17 @@ Gonderim body:
 ```json
 {
   "storeId": 402535,
-  "page": -1,
-  "size": 100,
+
+
   "previewHash": "A1B2...",
-  "barcodes": ["8690000000000"]
+  "sendAll": true,
+  "barcodes": []
 }
 ```
 
 Bu akis sadece TGO katalogunda bulunan urunleri kapsar. Mikro satis fiyati sifir/bos, barkod eslesmesi yok, urun pasif veya satisa kapali ise satir `Skipped` olur. Negatif stok `0` kabul edilir; kesirli stok tam sayiya asagi yuvarlanir. `storeId` tum subeler yerine sadece secilen TGO magazasina gonderilir. Tekrar gonderimden once batch sonucunu ve guncel onizlemeyi kontrol edin; TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir.
 
-Onizleme varsayilan akista katalogun tum sayfalarini tarar; `page=0` gibi bir deger verilirse yalniz teknik/geriye uyum amacli tek sayfa okunur. Mikro'daki TGO'da henuz olmayan urunleri olusturmaz. `dispatch` icin barkodlar UI'da tek tek yazilmaz; onizleme satirlarindan secilir. Batch sonucu otomatik izlenmez, UI `batchRequestId` ile ayrica sorgulamalidir.
+Onizleme katalogun tum sayfalarini backend tarafinda tarar. `page` ve `size` query alanlari bu endpointte kullaniciya acik degildir. Mikro'daki TGO'da henuz olmayan urunleri olusturmaz. `dispatch` icin barkodlar UI'da tek tek yazilmaz; onizleme satirlarindan secilir. Batch sonucu otomatik izlenmez, UI `batchRequestId` ile ayrica sorgulamalidir.
 
 POS kuyruk guvenligi:
 
@@ -18580,7 +18581,7 @@ Import davranisi:
 - Mikro eslesme: `S06TESL` degeri `DocumentSerie.DocumentOrderNo` olarak okunur
 - Satir eslesme: once `S07KALN + S07SKOD` -> `ssip_satirno + ssip_stok_kod`, sonra 1-bazli satir no farki, son olarak tekil stok + kalan miktar kontrolu
 - Mikro yazim: depolar arasi sevk fisi ve bagli satirlarda `sth_subesip_uid` ile Mikro tarafinda siparis linki/teslim etkisi
-- Mikro tarih kuralı: C01 sevk Mikro'ya hangi gun import ediliyorsa `STOK_HAREKETLERI.sth_tarih` ve `sth_belge_tarih` o gun olur. AXATA `ENT006.S06ITAR` siparis/sevk izleme ve filtreleme bilgisidir; Mikro fis tarihi olarak kullanilmaz.
+- Mikro tarih kuralÄ±: C01 sevk Mikro'ya hangi gun import ediliyorsa `STOK_HAREKETLERI.sth_tarih` ve `sth_belge_tarih` o gun olur. AXATA `ENT006.S06ITAR` siparis/sevk izleme ve filtreleme bilgisidir; Mikro fis tarihi olarak kullanilmaz.
 - AXATA ack: Mikro yazim basarili olursa `AxataServicePoolEXT.svc/updIntegrationTableAsync` ile `ENT006.S06STAT=1`, `IDField=S06SIRA`
 - `acknowledge=false` verilirse Mikro yazilir ama AXATA status guncellenmez; bu sadece kontrollu test/kurtarma icin kullanilmalidir
 
@@ -21818,7 +21819,7 @@ public sealed record GiftCheckMovementItemDto(
     int Quantity,
     double Total)
 {
-    public string GiftCheckTypeName => "Hediye Çeki 100 TL";
+    public string GiftCheckTypeName => "Hediye Ã‡eki 100 TL";
 }
 
 public sealed record GiftCheckTypeItemDto(
@@ -21827,7 +21828,7 @@ public sealed record GiftCheckTypeItemDto(
     double Total,
     int GiftCheckType)
 {
-    public string GiftCheckTypeName => "Hediye Çeki 100 TL";
+    public string GiftCheckTypeName => "Hediye Ã‡eki 100 TL";
 }
 
 public sealed record PaymentTypeItemDto(

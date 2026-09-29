@@ -37,6 +37,9 @@ public sealed class TrendyolGoOptions
     // Limits all-catalog preview fan-out so a store scan does not overload Trendyol Go.
     public int PreviewPageParallelism { get; init; } = 3;
 
+    // Internal TGO read-page size. This is not exposed to the UI.
+    public int PreviewFetchPageSize { get; init; } = 100;
+
     public TrendyolGoBranchPosPriceSyncOptions BranchPosPriceSync { get; init; } = new();
 
     public TrendyolGoStoreMappingOptions[] Stores { get; init; } = [];

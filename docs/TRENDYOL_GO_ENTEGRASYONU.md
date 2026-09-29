@@ -69,7 +69,7 @@ Tum route'lar `/api/entegrasyon-islemleri/trendyol-go` kokunun altindadir. Tam q
 | Durum/magaza | `GET /` veya `/status`, `/stores`, `/connection-test?storeId=` | - |
 | Siparis | `GET /orders`, `/orders/by-number/{orderNumber}`, `/orders/{orderId}/invoice-amount`, `/packages/by-ids?id=...` | `PUT /packages/{packageId}/picked`, `/invoiced`, `/items/unsupplied`, `/mark-alternative`, `/manual-shipped`, `/manual-delivered` |
 | Urun | `GET /brands`, `/products`, `/products/batch-requests/{batchRequestId}` | `POST /products`, `PUT /products`, `POST /products/price-and-inventory`, `PUT /products/sale-on`, `/sale-off`, `POST /products/seller-attributes` |
-| Mikro fiyat/stok | `GET /price-stock/preview?storeId=&page=&size=` | `POST /price-stock/dispatch` |
+| Mikro fiyat/stok | `GET /price-stock/preview?storeId=&view=actionable` | `POST /price-stock/dispatch` |
 | Fatura linki | - | `POST /invoice-links` |
 | Iade | `GET /claims`, `/claims/{claimId}/items/objectionable` | `PUT /claims/{claimId}/accept`, `/reject`, `POST /claims/{claimId}/items/objections` |
 
@@ -81,7 +81,7 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 2. `GET /price-stock/preview?storeId={id}` cagrilir. Backend TGO katalogunun tum sayfalarini en fazla 3 paralel TGO istegiyle tarar, barkodlari Mikro'da **tam eslesme** ile bulur ve kullaniciya sadece gonderilebilir fiyat/stok farklarini getirir. Kullanici sayfa numarasi girmez.
 3. Mikro fiyat, Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesinden (varsayilan `3`) ve `PaymentPlanNo` degerinden (varsayilan `0`) depo ve barkod birimi esleserek okunur. Liste 1 veya genel satis fiyati fallback olarak kullanilmaz. Stok `dbo.fn_DepodakiMiktar(stockCode,warehouseNo,today)` ile gelir. Negatif stok sifira cekilir, kesirli stok tam sayiya asagi yuvarlanir.
 4. `Ready` fiyat/stok farki olan ve gonderilebilir satirdir. `Unchanged` fark yoktur. `Skipped` Mikro barkodu/fiyati eksik, stok karti pasif/satisa kapali veya sayfada duplicate barkod gibi bir neden tasir. UI sebebi gostermelidir.
-5. Kullanici satirlari tiklar; UI barkod listesini otomatik kurar. `previewHash`, `storeId`, `page=-1`, `size`, secilen 1-100 benzersiz barkod `POST /price-stock/dispatch` body'ye konur. Onizleme 120 saniye bellekte tutulur; gonderimde tum katalog tekrar okunmaz, yalniz secilen barkodlar Mikro'dan yeniden dogrulanir. Fiyat veya stok degismisse backend `409` dondurur; UI yeni onizleme ister.
+5. Kullanici satirlari tiklar; UI barkod listesini otomatik kurar. `previewHash` ve `storeId` ile `POST /price-stock/dispatch` cagrilir. Tum farklar icin `sendAll=true`; sadece belirli satirlar icin `barcodes` kullanilir. Onizleme 120 saniye bellekte tutulur; gonderimde tum katalog tekrar okunmaz, yalniz secilen barkodlar Mikro'dan yeniden dogrulanir. Fiyat veya stok degismisse backend `409` dondurur; UI yeni onizleme ister.
 
 ### Sube POS fiyat senkronu
 
@@ -92,15 +92,16 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 - Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Trendyol gonderimi ve kullanici ekrani hata almaz veya bu ag beklemesini yasamaz.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
 - Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Merkez POS'ta ayni dogal anahtar icin benzersiz indeks kuruludur; diger POS veritabanlarinda da ayni indeks kurulmalidir.
-6. Basarili gonderimde `upstreamResponse.batchRequestId` alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. `readyCount` 100'u gecerse UI barkodlari 100'luk paketler halinde gonderir; TGO katalog sayfalama kullaniciya gosterilmez.
+6. Basarili gonderimde `upstreamResponses[].batchRequestId` degerleri alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. `sendAll=true` kullanildiginda backend Trendyol limitine uygun paketlemeyi kendisi yapar; UI katalog sayfalama veya paket yonetimi yapmaz.
 
 ```json
 {
   "storeId": 402535,
-  "page": -1,
-  "size": 100,
+
+
   "previewHash": "onizlemeden-gelen-deger",
-  "barcodes": ["8690000000000"]
+  "sendAll": true,
+  "barcodes": []
 }
 ```
 
