@@ -54,6 +54,17 @@ public sealed class EDespatchSubmission
         Status = EDespatchSubmissionStatus.NeedsReview;
         LastError = error[..Math.Min(error.Length, 2000)];
     }
+
+    public void ReopenMetadataReview(DateTime now)
+    {
+        if (Status != EDespatchSubmissionStatus.NeedsReview)
+            throw new InvalidOperationException("Only e-despatch submissions awaiting review can be reopened.");
+
+        Status = EDespatchSubmissionStatus.PendingMetadata;
+        AttemptCount++;
+        NextAttemptAtUtc = now;
+        LastError = null;
+    }
 }
 
 public enum EDespatchSubmissionStatus

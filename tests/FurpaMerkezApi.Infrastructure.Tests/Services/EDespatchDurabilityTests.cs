@@ -88,6 +88,66 @@ public sealed class EDespatchDurabilityTests
     }
 
     [Fact]
+    public void CompanyReturnSnapshot_AllowsMikroTechnicalTargetWarehouseNormalization()
+    {
+        var row = Row();
+        row.sth_giris_depo_no = 0;
+        var snapshot = EDespatchMovementSnapshot.From(row);
+        row.sth_giris_depo_no = 1;
+
+        EDespatchService.EnsureSnapshotMatches([snapshot], [row], EDespatchDocumentType.CompanyReturn);
+    }
+
+    [Fact]
+    public void CompanyReturnSnapshot_RejectsUnexpectedTargetWarehouse()
+    {
+        var row = Row();
+        row.sth_giris_depo_no = 0;
+        var snapshot = EDespatchMovementSnapshot.From(row);
+        row.sth_giris_depo_no = 2;
+
+        Assert.Throws<EDespatchMetadataConflictException>(() =>
+            EDespatchService.EnsureSnapshotMatches([snapshot], [row], EDespatchDocumentType.CompanyReturn));
+    }
+
+    [Fact]
+    public void Snapshot_AllowsEquivalentBinaryDecimalAmount()
+    {
+        var row = Row();
+        row.sth_tutar = 239.4;
+        var snapshot = EDespatchMovementSnapshot.From(row);
+        row.sth_tutar = 239.39999999999998;
+
+        EDespatchService.EnsureSnapshotMatches([snapshot], [row]);
+    }
+
+    [Fact]
+    public void Snapshot_RejectsMeaningfulAmountChange()
+    {
+        var row = Row();
+        row.sth_tutar = 239.4;
+        var snapshot = EDespatchMovementSnapshot.From(row);
+        row.sth_tutar = 239.41;
+
+        Assert.Throws<EDespatchMetadataConflictException>(() =>
+            EDespatchService.EnsureSnapshotMatches([snapshot], [row]));
+    }
+
+    [Fact]
+    public void NeedsReview_CanBeReopenedOnlyOnceForMetadataRecovery()
+    {
+        var submission = Submission();
+        submission.ConfirmSubmission(DateTime.UtcNow);
+        submission.RequireReview("Legacy target warehouse normalization conflict.");
+
+        submission.ReopenMetadataReview(DateTime.UtcNow);
+
+        Assert.Equal(EDespatchSubmissionStatus.PendingMetadata, submission.Status);
+        Assert.Equal(1, submission.AttemptCount);
+        Assert.Null(submission.LastError);
+    }
+
+    [Fact]
     public async Task PdfLookup_WorksBeforeMikroMetadataAndAfterRestart()
     {
         var options = Options();

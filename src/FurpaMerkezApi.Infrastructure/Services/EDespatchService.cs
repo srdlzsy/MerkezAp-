@@ -186,7 +186,7 @@ public sealed class EDespatchService(
                 Deliverer = contacts.Deliverer, Receiver = contacts.Receiver,
                 Plaque = NormalizeText(rows.Select(x => x.sth_HareketGrupKodu1).ToArray()),
                 DriverTckn = NormalizeText(rows.Select(x => x.sth_ismerkezi_kodu).ToArray())
-            }, flow.ExternalDocumentNo!, flow.ExternalUuid!, rows.Select(EDespatchMovementSnapshot.From).ToArray());
+            }, flow.ExternalDocumentNo!, flow.ExternalUuid!, rows.Select(x => EDespatchMovementSnapshot.From(x, type)).ToArray());
         authDbContext.EDespatchSubmissions.Add(new EDespatchSubmission(flow.FlowKey, work.EDespatchDocumentNo,
             work.EDespatchUuid, JsonSerializer.Serialize(work), DateTime.UtcNow));
         await authDbContext.SaveChangesAsync(cancellationToken);
@@ -196,9 +196,11 @@ public sealed class EDespatchService(
         ToDocumentFlowType(request.DocumentType), request.WarehouseNo, request.DocumentSerie.Trim(), request.DocumentOrderNo);
 
     internal static void EnsureSnapshotMatches(
-        IReadOnlyCollection<EDespatchMovementSnapshot> snapshot, IReadOnlyCollection<STOK_HAREKETLERI> current)
+        IReadOnlyCollection<EDespatchMovementSnapshot> snapshot,
+        IReadOnlyCollection<STOK_HAREKETLERI> current,
+        EDespatchDocumentType documentType = EDespatchDocumentType.InterWarehouseShipment)
     {
-        if (snapshot.Count == 0 || !EDespatchMovementSnapshot.Matches(snapshot, current))
+        if (snapshot.Count == 0 || !EDespatchMovementSnapshot.Matches(snapshot, current, documentType))
             throw new EDespatchMetadataConflictException(
                 "Mikro document content differs from the submitted e-despatch. No metadata was overwritten; manual review is required.");
     }
@@ -233,7 +235,7 @@ public sealed class EDespatchService(
             await EnsureDocumentMovementSetUnchangedAsync(request, context, movements, cancellationToken);
             var work = new EDespatchMetadataUpdateWorkItem(
                 request with { Deliverer = contacts.Deliverer, Receiver = contacts.Receiver }, number, uuid,
-                movements.Select(EDespatchMovementSnapshot.From).ToArray());
+                movements.Select(x => EDespatchMovementSnapshot.From(x, request.DocumentType)).ToArray());
             EnsureUyumsoftLinesMatch(despatch.DespatchAdvice.DespatchLine, work.Movements);
             submission = new EDespatchSubmission(SubmissionKey(request), number, uuid,
                 JsonSerializer.Serialize(work), DateTime.UtcNow);
@@ -287,13 +289,22 @@ public sealed class EDespatchService(
             mikroWriteDbContext.Database.GetConnectionString()!, submission.DocumentKey, cancellationToken);
         if (documentLock is null) return;
         await authDbContext.Entry(submission).ReloadAsync(cancellationToken);
-        if (submission.Status is not (EDespatchSubmissionStatus.Unknown or EDespatchSubmissionStatus.PendingMetadata) ||
-            submission.NextAttemptAtUtc > DateTime.UtcNow) return;
+        if (submission.Status is not (EDespatchSubmissionStatus.Unknown or EDespatchSubmissionStatus.PendingMetadata or EDespatchSubmissionStatus.NeedsReview) ||
+            submission.Status != EDespatchSubmissionStatus.NeedsReview && submission.NextAttemptAtUtc > DateTime.UtcNow) return;
         var timer = Stopwatch.StartNew();
         try
         {
             var work = JsonSerializer.Deserialize<EDespatchMetadataUpdateWorkItem>(submission.PayloadJson)
                 ?? throw new EDespatchMetadataConflictException("Stored e-despatch work is invalid.");
+            if (submission.Status == EDespatchSubmissionStatus.NeedsReview)
+            {
+                if (work.Request.DocumentType != EDespatchDocumentType.CompanyReturn || submission.AttemptCount != 0)
+                    return;
+
+                // A prior version treated Mikro's 0 -> 1 technical return warehouse normalization as a content conflict.
+                submission.ReopenMetadataReview(DateTime.UtcNow);
+                await authDbContext.SaveChangesAsync(cancellationToken);
+            }
             if (submission.Status == EDespatchSubmissionStatus.Unknown)
             {
                 await EnsureTrackedSubmissionContainsCompleteDocumentAsync(options.Value,
@@ -342,7 +353,7 @@ public sealed class EDespatchService(
                 NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu2).ToArray()),
                 NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu3).ToArray()));
 
-            EnsureSnapshotMatches(workItem.Movements, document.TrackedMovements);
+            EnsureSnapshotMatches(workItem.Movements, document.TrackedMovements, request.DocumentType);
 
             if (HasMatchingSentMarker(
                     document.TrackedMovements,
@@ -361,7 +372,7 @@ public sealed class EDespatchService(
                     NormalizeText(request.Plaque),
                     contacts.Deliverer,
                     contacts.Receiver,
-                    NormalizeText(request.DriverTckn)), cancellationToken);
+                    NormalizeText(request.DriverTckn)), request.DocumentType, cancellationToken);
 
             return updated && await TryDocumentMovementSetMatchesAfterSubmissionAsync(
                 request,
@@ -388,7 +399,7 @@ public sealed class EDespatchService(
             request,
             companyDocument.Detail.Header.Deliverer,
             companyDocument.Detail.Header.Receiver);
-        EnsureSnapshotMatches(workItem.Movements, companyDocument.TrackedMovements);
+        EnsureSnapshotMatches(workItem.Movements, companyDocument.TrackedMovements, request.DocumentType);
         if (HasMatchingSentMarker(
                 companyDocument.TrackedMovements,
                 workItem.EDespatchDocumentNo,
@@ -406,7 +417,7 @@ public sealed class EDespatchService(
                 NormalizeText(request.Plaque),
                 companyContacts.Deliverer,
                 companyContacts.Receiver,
-                NormalizeText(request.DriverTckn)), cancellationToken);
+                NormalizeText(request.DriverTckn)), request.DocumentType, cancellationToken);
 
         return companyUpdated && await TryDocumentMovementSetMatchesAfterSubmissionAsync(
             request,
@@ -624,7 +635,7 @@ public sealed class EDespatchService(
 
             await EnsureTrackedSubmissionContainsCompleteDocumentAsync(
                 config, sentDespatch, trackedMovements.Count, cancellationToken,
-                trackedMovements.Select(EDespatchMovementSnapshot.From).ToArray());
+                trackedMovements.Select(x => EDespatchMovementSnapshot.From(x, request.DocumentType)).ToArray());
         }
 
         if (sentDespatch is null)
@@ -641,7 +652,7 @@ public sealed class EDespatchService(
         var work = new EDespatchMetadataUpdateWorkItem(
             request with { Deliverer = contacts.Deliverer, Receiver = contacts.Receiver },
             sentDespatch.EDespatchDocumentNo, sentDespatch.EDespatchUuid,
-            trackedMovements.Select(EDespatchMovementSnapshot.From).ToArray());
+            trackedMovements.Select(x => EDespatchMovementSnapshot.From(x, request.DocumentType)).ToArray());
         var submission = new EDespatchSubmission(SubmissionKey(request), work.EDespatchDocumentNo,
             work.EDespatchUuid, JsonSerializer.Serialize(work), DateTime.UtcNow);
         authDbContext.EDespatchSubmissions.Add(submission);
@@ -833,10 +844,16 @@ public sealed class EDespatchService(
         foreach (var expected in expectedMovements)
         {
             var line = lines.SingleOrDefault(x => x.ID?.Value == (expected.RowNo!.Value + 1).ToString(CultureInfo.InvariantCulture));
-            if (line is null || line.Item?.SellersItemIdentification?.ID?.Value != expected.StockCode ||
-                line.DeliveredQuantity is null ||
-                Math.Abs((double)line.DeliveredQuantity.Value - (expected.Quantity ?? 0)) > 0.000001)
-                throw new EDespatchMetadataConflictException("E-despatch stock/quantity differs from Mikro. Submission or metadata recovery was blocked.");
+            var expectedLineNo = expected.RowNo.Value + 1;
+            var actualStockCode = line?.Item?.SellersItemIdentification?.ID?.Value;
+            var actualQuantity = line?.DeliveredQuantity?.Value;
+            var actualQuantityValue = actualQuantity.GetValueOrDefault();
+            if (line is null || actualStockCode != expected.StockCode || actualQuantity is null ||
+                Math.Abs((double)actualQuantityValue - (expected.Quantity ?? 0)) > 0.000001)
+                throw new EDespatchMetadataConflictException(
+                    $"E-despatch line {expectedLineNo} differs from Mikro. Expected stock '{expected.StockCode}' quantity " +
+                    $"{expected.Quantity ?? 0}; Uyumsoft returned stock '{actualStockCode ?? "<missing>"}' quantity " +
+                    $"{(actualQuantity?.ToString(CultureInfo.InvariantCulture) ?? "<missing>")}. Submission or metadata recovery was blocked.");
         }
     }
 
@@ -869,7 +886,7 @@ public sealed class EDespatchService(
             .AsNoTracking()
             .ToArrayAsync(cancellationToken);
         var matches = EDespatchMovementSnapshot.Matches(
-            trackedMovements.Select(EDespatchMovementSnapshot.From), currentMovements);
+            trackedMovements.Select(x => EDespatchMovementSnapshot.From(x, request.DocumentType)), currentMovements, request.DocumentType);
 
         if (!matches)
         {
@@ -2567,6 +2584,7 @@ public sealed class EDespatchService(
         string eDespatchDocumentNo,
         string eDespatchUuid,
         SentMovementMetadata metadata,
+        EDespatchDocumentType documentType,
         CancellationToken stoppingToken)
     {
         using var completionCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -2608,7 +2626,10 @@ public sealed class EDespatchService(
             {
                 var currentRows = await context.STOK_HAREKETLERIs.AsNoTracking()
                     .Where(x => movementGuids.Contains(x.sth_Guid)).ToArrayAsync(cancellationToken);
-                EnsureSnapshotMatches(trackedMovements.Select(EDespatchMovementSnapshot.From).ToArray(), currentRows);
+                EnsureSnapshotMatches(
+                    trackedMovements.Select(x => EDespatchMovementSnapshot.From(x, documentType)).ToArray(),
+                    currentRows,
+                    documentType);
                 if (HasMatchingSentMarker(currentRows, documentNo, uuid)) return true;
                 var pendingRows = currentRows.Where(x => !HasMatchingSentMarker([x], documentNo, uuid)).ToArray();
                 int updatedCount;
