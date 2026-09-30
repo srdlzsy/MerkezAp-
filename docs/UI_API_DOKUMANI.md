@@ -17378,6 +17378,12 @@ Config:
     "AgentName": "FurpaMerkezApi",
     "ExecutorUser": "",
     "TimeoutSeconds": 30,
+    "PriceListNo": 3,
+    "PaymentPlanNo": 0,
+    "PreviewRefreshIntervalSeconds": 300,
+    "PreviewWarmupStoreIds": [486064],
+    "PreviewPageParallelism": 3,
+    "PreviewFetchPageSize": 100,
     "Stores": [
       {
         "StoreId": 402535,
@@ -17415,6 +17421,7 @@ Endpointler:
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/products/price-and-inventory` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535&view=actionable` | query | `TrendyolGoPriceStockPreview` | `list` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh?storeId=402535` | query | `202` + `TrendyolGoPriceStockRefreshStatus` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | `TrendyolGoPriceStockDispatchHttpRequest` | `TrendyolGoPriceStockDispatch` | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}` | path | batch sonucu | `detail` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-on` | `{ items: [...] }` | batch response veya `204` | `update` |
@@ -17479,11 +17486,23 @@ Sube bazli fiyat ve stok body:
 Mikro'dan barkod girmeden fiyat/stok gonderme:
 
 1. UI `stores` listesinden subeyi secer; `storeId` bu kayittan gelir. Kullanici sayfa numarasi girmez.
-2. `price-stock/preview?storeId={id}` varsayilan olarak TGO katalogunun tum sayfalarini en fazla 3 paralel TGO istegiyle tarar ve kullaniciya yalnizca `Ready` yani fiyat/stok farki bulunan satirlari gosterir. Mikro okumasi tek akista tutulur; ayni `DbContext` uzerinde paralel sorgu yapilmaz. Veri yazmaz. `readyCount`, `unchangedCount` ve `skippedCount` ust ozetinde gosterilir.
-3. Sorun inceleme ekrani gerekiyorsa ayni istege `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Onizleme endpointinde kullaniciya acik sayfalama yoktur; katalog sayfalari backend tarafinda yonetilir.
-4. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Onizleme 120 saniye bellekte tutulur; gonderimde tekrar tum katalog okunmaz, yalniz secilen satirlar Mikro'dan tekrar dogrulanir. Secilen urunun fiyat veya stoku degismisse `409 Conflict` doner ve onizleme yenilenir.
-5. Gonderim response'undaki `upstreamResponses[].batchRequestId` degerleriyle mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
-6. Kullanici ister tek tek secim yapar, ister `sendAll=true` ile tum `Ready` farklarini gonderir. Backend Trendyol limitine uygun olarak gonderimi kendi icinde en fazla 1000 satirlik paketlere ayirir; UI paket veya sayfa yonetmez.
+2. `price-stock/preview?storeId={id}` hazir snapshot'i hemen doner. Snapshot yoksa uzun TGO taramasini HTTP isteginde bekletmez; yenilemeyi kuyruga alir ve `snapshotStatus=Preparing`, bos `previewHash/items` ile hizli cevap verir. UI 2-5 saniyede bir ayni GET'i tekrar cagirir.
+3. Hosted worker TGO katalogunun tum sayfalarini en fazla 3 paralel TGO istegiyle tarar. Benzersiz barkodlari Mikro tarafinda en fazla 1000 barkodluk toplu sorgularla okur; her TGO sayfasi icin ayri Mikro sorgusu calistirmaz. Hazir olunca snapshot atomik olarak degisir.
+4. `snapshotStatus=Ready` oldugunda `Ready` fiyat/stok farklari gosterilir. Periyodik yenileme sirasinda durum `Refreshing` olur ve kullanici bos ekran gormesin diye onceki hazir satirlar donmeye devam eder. `Failed` durumunda da varsa son snapshot korunur; `refreshError` bilgi/uyari olarak gosterilir.
+5. Kullanici `Yenile` dediginde `POST price-stock/preview/refresh?storeId={id}` cagrilir. Endpoint `202 Accepted` doner ve ayni magazada zaten kuyrukta/calisan yenileme varsa ikinci is acmaz. UI sonucu GET preview ile poll eder.
+6. Sorun inceleme ekrani gerekiyorsa GET istegine `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Onizleme endpointinde kullaniciya acik sayfalama yoktur; katalog sayfalari backend tarafinda yonetilir.
+7. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Gonderimde tum katalog tekrar okunmaz; secilen satirlar Mikro'dan yeniden dogrulanir. Secilen urunun fiyati/stoku degismisse veya worker yeni snapshot yayinlayip hash'i degistirmisse `409 Conflict` doner ve UI guncel onizlemeyi alir.
+8. Gonderim response'undaki `upstreamResponses[].batchRequestId` degerleriyle mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
+9. Kullanici ister tek tek secim yapar, ister `sendAll=true` ile tum `Ready` farklarini gonderir. Backend Trendyol limitine uygun olarak gonderimi kendi icinde en fazla 1000 satirlik paketlere ayirir; UI paket veya sayfa yonetmez.
+
+Snapshot durumlari:
+
+```text
+Preparing   Ilk snapshot hazirlaniyor; gonder butonu kapali, UI GET ile poll eder.
+Ready       Snapshot hazir; previewHash doluysa Ready satirlar gonderilebilir.
+Refreshing  Eski snapshot ekranda kalir, yenisi arka planda hazirlanir.
+Failed      Son yenileme hata verdi; refreshError gosterilir. Snapshot yoksa gonderim yapilamaz.
+```
 
 Onizleme ornegi:
 
@@ -17502,6 +17521,12 @@ Onizleme ornegi:
   "skippedCount": 0,
   "view": "actionable",
   "visibleCount": 1,
+  "snapshotStatus": "Ready",
+  "isStale": false,
+  "generatedAtUtc": "2026-09-29T12:00:00Z",
+  "refreshStartedAtUtc": "2026-09-29T11:58:20Z",
+  "refreshCompletedAtUtc": "2026-09-29T12:00:00Z",
+  "refreshError": null,
   "items": [
     {
       "barcode": "8690000000000",
@@ -17517,6 +17542,33 @@ Onizleme ornegi:
   ]
 }
 ```
+
+Ilk hazirlik response'u:
+
+```json
+{
+  "storeId": 486064,
+  "warehouseNo": 50,
+  "storeName": "Merkez Test Subesi",
+  "totalPages": 0,
+  "totalElements": 0,
+  "previewHash": "",
+  "readyCount": 0,
+  "unchangedCount": 0,
+  "skippedCount": 0,
+  "view": "actionable",
+  "visibleCount": 0,
+  "items": [],
+  "snapshotStatus": "Preparing",
+  "isStale": true,
+  "generatedAtUtc": null,
+  "refreshStartedAtUtc": null,
+  "refreshCompletedAtUtc": null,
+  "refreshError": null
+}
+```
+
+UI gonder butonunu yalniz `previewHash` dolu, `readyCount > 0` ve secili en az bir `Ready` satir varken acmalidir. `Preparing` durumunda uzun HTTP spinner yerine kisa hazirlaniyor durumu ve polling; `Refreshing` durumunda mevcut tabloyla birlikte kompakt yenileniyor gostergesi kullanilmalidir.
 
 Gonderim body:
 

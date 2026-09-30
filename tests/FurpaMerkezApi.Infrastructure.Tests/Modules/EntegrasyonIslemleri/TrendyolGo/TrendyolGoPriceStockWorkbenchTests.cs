@@ -12,6 +12,42 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
 
         Assert.Equal(3, options.PriceListNo);
         Assert.Equal(0, options.PaymentPlanNo);
+        Assert.Equal(300, options.PreviewRefreshIntervalSeconds);
+    }
+
+    [Fact]
+    public void SnapshotCoordinator_DeduplicatesRefreshRequestsPerStore()
+    {
+        var coordinator = new TrendyolGoPriceStockSnapshotCoordinator();
+
+        Assert.True(coordinator.RequestRefresh(486064));
+        Assert.False(coordinator.RequestRefresh(486064));
+        Assert.True(coordinator.TryDequeue(out var storeId));
+        Assert.Equal(486064, storeId);
+        Assert.Equal(SnapshotRefreshState.Queued, coordinator.GetState(storeId).RefreshState);
+
+        coordinator.Complete(storeId);
+
+        Assert.True(coordinator.RequestRefresh(storeId));
+    }
+
+    [Fact]
+    public void SnapshotCoordinator_KeepsReadySnapshotWhenRefreshFails()
+    {
+        var coordinator = new TrendyolGoPriceStockSnapshotCoordinator();
+        var generatedAtUtc = DateTime.UtcNow;
+        var snapshot = new TrendyolGoPriceStockSnapshot(
+            486064, 50, "Merkez Test Subesi", 1, 1, "HASH", generatedAtUtc,
+            [new TrendyolGoPriceStockWorkbench.TrendyolProduct("8690000000000", "Product", 10m, 1)],
+            [new("8690000000000", "015550", "Product", 10m, 1, 11m, 2, "Ready", null)]);
+
+        coordinator.Publish(snapshot);
+        coordinator.MarkFailed(486064, "Temporary upstream error.");
+
+        var state = coordinator.GetState(486064);
+        Assert.Same(snapshot, state.Snapshot);
+        Assert.Equal(SnapshotRefreshState.Failed, state.RefreshState);
+        Assert.Equal("Temporary upstream error.", state.RefreshError);
     }
 
     [Fact]

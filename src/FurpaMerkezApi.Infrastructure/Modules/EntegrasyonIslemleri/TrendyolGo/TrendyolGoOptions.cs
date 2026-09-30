@@ -31,8 +31,14 @@ public sealed class TrendyolGoOptions
 
     public int PaymentPlanNo { get; init; }
 
-    // A short-lived preview avoids a second full catalog read when the user immediately sends it.
+    // Kept for configuration compatibility; snapshots now refresh in the background.
     public int PreviewCacheSeconds { get; init; } = 120;
+
+    // Ready snapshots stay visible while a newer catalog is prepared in the background.
+    public int PreviewRefreshIntervalSeconds { get; init; } = 300;
+
+    // Only frequently used stores should be warmed at startup to avoid unnecessary TGO traffic.
+    public long[] PreviewWarmupStoreIds { get; init; } = [];
 
     // Limits all-catalog preview fan-out so a store scan does not overload Trendyol Go.
     public int PreviewPageParallelism { get; init; } = 3;

@@ -144,6 +144,12 @@ public sealed class TrendyolGoController(
         CancellationToken cancellationToken = default) =>
         Ok(await priceStockWorkbench.PreviewAsync(storeId, view, cancellationToken));
 
+    [HttpPost("price-stock/preview/refresh")]
+    [Authorize(Policy = ListPolicy)]
+    public ActionResult<TrendyolGoPriceStockRefreshStatus> RefreshPriceStockPreview(
+        [FromQuery, Range(1, long.MaxValue)] long storeId) =>
+        Accepted(priceStockWorkbench.RequestRefresh(storeId));
+
     [HttpPost("price-stock/dispatch")]
     [Authorize(Policy = UpdatePolicy)]
     public async Task<ActionResult<TrendyolGoPriceStockDispatch>> DispatchPriceStock(
