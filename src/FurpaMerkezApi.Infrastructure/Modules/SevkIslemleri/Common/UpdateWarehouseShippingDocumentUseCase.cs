@@ -46,9 +46,7 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
         await using var lease = await EDespatchDocumentLock.TryAcquireAsync(
             mikroWriteDbContext.Database.GetConnectionString()!, key, cancellationToken)
             ?? throw new InvalidOperationException("E-despatch processing is in progress; shipment editing is blocked.");
-        if (await authDbContext.EDespatchSubmissions.AsNoTracking().AnyAsync(x => x.DocumentKey == key, cancellationToken) ||
-            await authDbContext.DocumentFlows.AsNoTracking().AnyAsync(x => x.FlowKey == key && x.ExternalUuid != null, cancellationToken))
-            throw new InvalidOperationException("Shipment has a submitted or unresolved e-despatch and cannot be edited.");
+        await EnsureNoEDespatchSubmissionAsync(key, "edited", cancellationToken);
 
         return mikroWriteRoutingOptions.CurrentValue.WarehouseShippingUpdate switch
         {
@@ -60,9 +58,96 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
         };
     }
 
+    public async Task<DeleteWarehouseShippingDocumentResponse> DeleteAsync(
+        DeleteWarehouseShippingDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateDelete(request);
+
+        var documentSerie = request.DocumentSerie.Trim();
+        var key = DocumentFlowKeys.Create(
+            DocumentFlowType.InterWarehouseShipment,
+            request.SourceWarehouseNo,
+            documentSerie,
+            request.DocumentOrderNo);
+        await using var lease = await EDespatchDocumentLock.TryAcquireAsync(
+            mikroWriteDbContext.Database.GetConnectionString()!, key, cancellationToken)
+            ?? throw new InvalidOperationException("E-despatch processing is in progress; shipment deletion is blocked.");
+        await EnsureNoEDespatchSubmissionAsync(key, "deleted", cancellationToken);
+
+        var movementGuids = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_iptal != true &&
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_tip == MovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira == request.DocumentOrderNo &&
+                movement.sth_cikis_depo_no == request.SourceWarehouseNo)
+            .Select(movement => movement.sth_Guid)
+            .ToArrayAsync(cancellationToken);
+        if (movementGuids.Length == 0)
+        {
+            throw new KeyNotFoundException("Inter warehouse shipment document was not found in Mikro write database.");
+        }
+
+        var deleteRequest = new UpdateWarehouseShippingDocumentRequest(
+            request.SourceWarehouseNo,
+            documentSerie,
+            request.DocumentOrderNo,
+            IsReturn: false,
+            MovementDate: null,
+            DocumentDate: null,
+            DocumentNo: null,
+            TargetWarehouseNo: null,
+            TransitWarehouseNo: null,
+            Description: null,
+            movementGuids
+                .Select(movementGuid => new UpdateWarehouseShippingDocumentLineRequest(
+                    movementGuid,
+                    LineActionDelete))
+                .ToArray(),
+            request.RequestedByUserId);
+
+        var result = mikroWriteRoutingOptions.CurrentValue.WarehouseShippingUpdate switch
+        {
+            MikroWriteMode.Database => await ExecuteDatabaseAsync(deleteRequest, cancellationToken, allowEmptyDocument: true),
+            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(deleteRequest, cancellationToken, allowEmptyDocument: true),
+            MikroWriteMode.DualShadow => await ExecuteDatabaseAsync(deleteRequest, cancellationToken, allowEmptyDocument: true),
+            var mode => throw new InvalidOperationException(
+                $"Unsupported MikroWriteRouting:WarehouseShippingUpdate mode '{mode}'.")
+        };
+
+        return new DeleteWarehouseShippingDocumentResponse(
+            result.DocumentSerie,
+            result.DocumentOrderNo,
+            result.SourceWarehouseNo,
+            result.TargetWarehouseNo,
+            result.DeletedLineCount,
+            result.UpdatedAt,
+            result.UpdateUser,
+            result.WriteConnectionName);
+    }
+
+    private async Task EnsureNoEDespatchSubmissionAsync(
+        string key,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        if (await authDbContext.EDespatchSubmissions.AsNoTracking().AnyAsync(x => x.DocumentKey == key, cancellationToken) ||
+            await authDbContext.DocumentFlows.AsNoTracking().AnyAsync(x => x.FlowKey == key && x.ExternalUuid != null, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Shipment has a submitted or unresolved e-despatch and cannot be {operation}.");
+        }
+    }
+
     private async Task<UpdateWarehouseShippingDocumentResponse> ExecuteDatabaseAsync(
         UpdateWarehouseShippingDocumentRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowEmptyDocument = false)
     {
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
         return await executionStrategy.ExecuteAsync(async () =>
@@ -108,11 +193,10 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
                     .Where(extra =>
                         extra.sthek_iptal != true &&
                         extra.sthek_related_uid.HasValue &&
-                        movementGuids.Contains(extra.sthek_related_uid.Value) &&
-                        extra.sth_subesip_uid.HasValue &&
-                        extra.sth_subesip_uid.Value != Guid.Empty)
+                        movementGuids.Contains(extra.sthek_related_uid.Value))
                     .ToArrayAsync(cancellationToken);
                 var linkedOrderGuids = movementExtras
+                    .Where(extra => extra.sth_subesip_uid.HasValue && extra.sth_subesip_uid.Value != Guid.Empty)
                     .Select(extra => extra.sth_subesip_uid!.Value)
                     .Distinct()
                     .ToArray();
@@ -130,6 +214,7 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
                 EnsureLinkedOrdersMatchDocument(request.IsReturn, request.SourceWarehouseNo, targetWarehouseNo, linkedOrders.Values);
 
                 var orderGuidsByMovementGuid = movementExtras
+                    .Where(extra => extra.sth_subesip_uid.HasValue && extra.sth_subesip_uid.Value != Guid.Empty)
                     .GroupBy(extra => extra.sthek_related_uid!.Value)
                     .ToDictionary(
                         group => group.Key,
@@ -251,7 +336,7 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
                     .Where(row => row.sth_iptal != true && !deletedRows.Contains(row.sth_Guid))
                     .ToArray();
 
-                if (activeRows.Length == 0)
+                if (activeRows.Length == 0 && !allowEmptyDocument)
                 {
                     throw new ArgumentException("Warehouse shipping document must have at least one active line.", nameof(request.Lines));
                 }
@@ -852,6 +937,26 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
         foreach (var line in request.Lines)
         {
             Validate(line);
+        }
+    }
+
+    private static void ValidateDelete(DeleteWarehouseShippingDocumentRequest request)
+    {
+        if (request.SourceWarehouseNo <= 0)
+        {
+            throw new ArgumentException("Source warehouse no must be greater than zero.", nameof(request.SourceWarehouseNo));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.DocumentSerie))
+        {
+            throw new ArgumentException("Document serie is required.", nameof(request.DocumentSerie));
+        }
+
+        _ = NormalizeRequiredText(request.DocumentSerie, 20, nameof(request.DocumentSerie));
+
+        if (request.DocumentOrderNo < 0)
+        {
+            throw new ArgumentException("Document order no can not be negative.", nameof(request.DocumentOrderNo));
         }
     }
 

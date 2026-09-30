@@ -66,7 +66,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             request,
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true);
     }
 
     private Task<CreateInterWarehouseShipmentResponse> ExecuteRoutedAsync(

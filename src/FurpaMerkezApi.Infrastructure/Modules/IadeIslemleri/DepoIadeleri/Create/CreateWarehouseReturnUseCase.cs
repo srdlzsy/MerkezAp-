@@ -56,7 +56,8 @@ public sealed class CreateWarehouseReturnUseCase(
             request,
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true);
     }
 
     private Task<CreateWarehouseReturnResponse> ExecuteRoutedAsync(

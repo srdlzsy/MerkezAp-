@@ -143,7 +143,6 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
         var headerCount = rows
             .Select(row => new
             {
-                row.sth_belge_no,
                 row.sth_belge_tarih,
                 row.sth_tarih,
                 row.sth_evrakno_seri,
@@ -166,6 +165,13 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
         }
 
         var firstRow = rows[0];
+        var documentNo = rows
+            .Select(row => row.sth_belge_no)
+            .FirstOrDefault(value =>
+                !string.IsNullOrWhiteSpace(value) &&
+                value.StartsWith("FRM", StringComparison.OrdinalIgnoreCase))
+            ?? firstRow.sth_belge_no
+            ?? string.Empty;
         var sourceWarehouseNo = firstRow.sth_cikis_depo_no ?? 0;
         var targetWarehouseNo = firstRow.ResolvedTargetWarehouseNo ?? 0;
         var shippingWarehouseNo = firstRow.ResolvedShippingWarehouseNo ?? 0;
@@ -206,7 +212,7 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
         var header = new WarehouseShippingHeaderDto(
             firstRow.sth_belge_tarih,
             firstRow.sth_tarih,
-            firstRow.sth_belge_no ?? string.Empty,
+            documentNo,
             normalizedDocumentSerie,
             normalizedDocumentOrderNo,
             sourceWarehouseNo,

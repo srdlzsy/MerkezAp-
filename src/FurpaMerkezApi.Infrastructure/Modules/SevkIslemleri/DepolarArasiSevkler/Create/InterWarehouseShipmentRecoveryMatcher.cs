@@ -42,7 +42,7 @@ internal static class InterWarehouseShipmentRecoveryMatcher
                 !NearlyEquals(actualRow.Quantity, expectedLine.Quantity) ||
                 actualRow.UnitPointer != expectedLine.UnitPointer ||
                 !NearlyEquals(actualRow.Amount, expectedAmount) ||
-                !TextEquals(actualRow.Description, expectedDescription) ||
+                !DescriptionMatches(actualRow.Description, expectedDescription) ||
                 !TextEquals(actualRow.PartyCode, expectedLine.PartyCode) ||
                 actualRow.LotNo != expectedLine.LotNo ||
                 !TextEquals(actualRow.ProjectCode, expectedLine.ProjectCode) ||
@@ -62,6 +62,20 @@ internal static class InterWarehouseShipmentRecoveryMatcher
 
     private static bool TextEquals(string? actual, string? expected) =>
         string.Equals(NormalizeText(actual), NormalizeText(expected), StringComparison.OrdinalIgnoreCase);
+
+    private static bool DescriptionMatches(string? actual, string? expected)
+    {
+        if (TextEquals(actual, expected))
+        {
+            return true;
+        }
+
+        // Mikro writes the automatically generated warehouse-order line GUID into
+        // sth_aciklama when the request did not provide a line/document description.
+        return string.IsNullOrWhiteSpace(expected) &&
+               Guid.TryParse(NormalizeText(actual), out var generatedOrderLineGuid) &&
+               generatedOrderLineGuid != Guid.Empty;
+    }
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();

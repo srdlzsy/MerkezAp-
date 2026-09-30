@@ -34,6 +34,7 @@ public sealed class DepolarArasiSevklerController(
     private const string OutgoingDetailPolicy = "sevk-islemleri.giden-depolar-arasi-sevkler.detail";
     private const string OutgoingCreatePolicy = "sevk-islemleri.giden-depolar-arasi-sevkler.create";
     private const string OutgoingUpdatePolicy = "sevk-islemleri.giden-depolar-arasi-sevkler.update";
+    private const string OutgoingDeletePolicy = "sevk-islemleri.giden-depolar-arasi-sevkler.delete";
     private const string IncomingListPolicy = "sevk-islemleri.gelen-depolar-arasi-sevkler.list";
     private const string IncomingDetailPolicy = "sevk-islemleri.gelen-depolar-arasi-sevkler.detail";
 
@@ -170,6 +171,61 @@ public sealed class DepolarArasiSevklerController(
                     .ToArray(),
                 RequestedByUserId: User.GetRequiredUserId()),
             cancellationToken));
+    }
+
+    [HttpDelete("{documentSerie}/{documentOrderNo:int}")]
+    [Authorize(Policy = OutgoingDeletePolicy)]
+    [ProducesResponseType(typeof(DeleteWarehouseShippingDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<DeleteWarehouseShippingDocumentResponse>> Delete(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken) =>
+        await DeleteOutgoing(documentSerie, documentOrderNo, warehouseNo, cancellationToken);
+
+    [HttpDelete("giden/{documentSerie}/{documentOrderNo:int}")]
+    [Authorize(Policy = OutgoingDeletePolicy)]
+    [ProducesResponseType(typeof(DeleteWarehouseShippingDocumentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<DeleteWarehouseShippingDocumentResponse>> DeleteOutgoing(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingDeletePolicy);
+        var response = await updateWarehouseShippingDocumentUseCase.DeleteAsync(
+            new DeleteWarehouseShippingDocumentRequest(
+                resolvedWarehouseNo,
+                documentSerie,
+                documentOrderNo,
+                User.GetRequiredUserId()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.InterWarehouseShipment,
+                    response.SourceWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.InterWarehouseShipment,
+                response.SourceWarehouseNo,
+                response.TargetWarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentDeleted,
+                DocumentFlowStatus.Succeeded,
+                "Depolar arasi sevk silindi.",
+                ChangedByUserId: User.GetRequiredUserId()),
+            cancellationToken);
+
+        return Ok(response);
     }
 
     [HttpPost("{documentSerie}/{documentOrderNo:int}/e-irsaliye")]

@@ -23,7 +23,8 @@ public sealed class MobileOfflineSyncService(
         Guid clientRequestId,
         TRequest requestPayload,
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preventReexecutionAfterUncertainOutcome = false)
     {
         var normalizedClientRequestId = NormalizeClientRequestId(clientRequestId);
         var requestJson = JsonSerializer.Serialize(requestPayload, JsonOptions);
@@ -44,7 +45,8 @@ public sealed class MobileOfflineSyncService(
                     requestFingerprint,
                     requestJson,
                     recoverAsync,
-                    cancellationToken);
+                    cancellationToken,
+                    preventReexecutionAfterUncertainOutcome);
             }
 
             var record = new MobileOfflineSyncRequest(
@@ -169,7 +171,8 @@ public sealed class MobileOfflineSyncService(
         string requestFingerprint,
         string requestJson,
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preventReexecutionAfterUncertainOutcome)
     {
         existing.EnsureRequestFingerprintMatches(requestFingerprint);
 
@@ -185,6 +188,13 @@ public sealed class MobileOfflineSyncService(
             return MobileOfflineSyncAcquireResult<TResponse>.Completed(recovered);
         }
 
+        if (preventReexecutionAfterUncertainOutcome &&
+            (existing.Status == MobileOfflineSyncRequestStatus.Processing ||
+             IsUncertainWriteOutcome(existing.ErrorMessage)))
+        {
+            return MobileOfflineSyncAcquireResult<TResponse>.Processing();
+        }
+
         if (existing.Status == MobileOfflineSyncRequestStatus.Failed || IsProcessingLeaseExpired(existing))
         {
             existing.RestartProcessing(requestFingerprint, requestJson, clock.UtcNow);
@@ -193,6 +203,22 @@ public sealed class MobileOfflineSyncService(
         }
 
         return MobileOfflineSyncAcquireResult<TResponse>.Processing();
+    }
+
+    internal static bool IsUncertainWriteOutcome(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return false;
+        }
+
+        var normalized = errorMessage.Trim();
+        return normalized.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("time out", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("canceled", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("cancelled", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("write outcome could not be confirmed", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<TResponse?> TryRecoverAsync<TResponse>(

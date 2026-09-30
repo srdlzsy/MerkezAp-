@@ -17,7 +17,8 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
 
     private async Task<UpdateWarehouseShippingDocumentResponse> ExecuteMikroApiAsync(
         UpdateWarehouseShippingDocumentRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowEmptyDocument = false)
     {
         var documentSerie = request.DocumentSerie.Trim();
         var normalReturn = request.IsReturn ? ReturnMovement : NormalMovement;
@@ -53,11 +54,13 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
             .Where(extra =>
                 extra.sthek_iptal != true &&
                 extra.sthek_related_uid.HasValue &&
-                movementGuids.Contains(extra.sthek_related_uid.Value) &&
-                extra.sth_subesip_uid.HasValue &&
-                extra.sth_subesip_uid.Value != Guid.Empty)
+                movementGuids.Contains(extra.sthek_related_uid.Value))
             .ToArrayAsync(cancellationToken);
-        var linkedOrderGuids = movementExtras.Select(extra => extra.sth_subesip_uid!.Value).Distinct().ToArray();
+        var linkedOrderGuids = movementExtras
+            .Where(extra => extra.sth_subesip_uid.HasValue && extra.sth_subesip_uid.Value != Guid.Empty)
+            .Select(extra => extra.sth_subesip_uid!.Value)
+            .Distinct()
+            .ToArray();
         var linkedOrders = linkedOrderGuids.Length == 0
             ? new Dictionary<Guid, DEPOLAR_ARASI_SIPARISLER>()
             : await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
@@ -72,6 +75,7 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
         EnsureLinkedOrdersMatchDocument(request.IsReturn, request.SourceWarehouseNo, targetWarehouseNo, linkedOrders.Values);
 
         var orderGuidsByMovementGuid = movementExtras
+            .Where(extra => extra.sth_subesip_uid.HasValue && extra.sth_subesip_uid.Value != Guid.Empty)
             .GroupBy(extra => extra.sthek_related_uid!.Value)
             .ToDictionary(group => group.Key, group => group.Select(extra => extra.sth_subesip_uid!.Value).Distinct().ToArray());
         var rowsByGuid = rows.ToDictionary(row => row.sth_Guid);
@@ -131,7 +135,10 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
         }
 
         var activeBeforeWrite = rows.Concat(addedRows).Where(row => !deletedRows.Contains(row.sth_Guid)).ToArray();
-        if (activeBeforeWrite.Length == 0) throw new ArgumentException("Warehouse shipping document must have at least one active line.", nameof(request.Lines));
+        if (activeBeforeWrite.Length == 0 && !allowEmptyDocument)
+        {
+            throw new ArgumentException("Warehouse shipping document must have at least one active line.", nameof(request.Lines));
+        }
 
         var existingUpdates = rows
             .Where(row => touchedRows.Contains(row.sth_Guid) && !deletedRows.Contains(row.sth_Guid))
@@ -169,7 +176,8 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase
         if (verified.Length != activeBeforeWrite.Length) throw new InvalidOperationException("Mikro API warehouse shipping update succeeded, but the final line set could not be verified.");
 
         return new(documentSerie, request.DocumentOrderNo, request.SourceWarehouseNo,
-            verified[0].sth_nakliyedeposu ?? targetWarehouseNo, verified[0].sth_giris_depo_no ?? transitWarehouseNo,
+            verified.FirstOrDefault()?.sth_nakliyedeposu ?? rows[0].sth_nakliyedeposu ?? targetWarehouseNo,
+            verified.FirstOrDefault()?.sth_giris_depo_no ?? rows[0].sth_giris_depo_no ?? transitWarehouseNo,
             request.IsReturn, touchedRows.Count, addedRows.Count, deletedRows.Count, verified.Length,
             verified.Sum(row => row.sth_miktar ?? 0d), verified.Sum(row => row.sth_tutar ?? 0d), updatedAt, updateUser,
             mikroWriteOptions.Value.ConnectionStringName);

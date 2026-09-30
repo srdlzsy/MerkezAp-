@@ -13,6 +13,7 @@ using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -47,6 +48,8 @@ public sealed class EDespatchService(
     private const byte NormalMovement = 0;
     private const byte ReturnMovement = 1;
     private const byte InterWarehouseShipmentDocumentType = 17;
+    private const byte InterWarehouseMovementType = 2;
+    private const byte InterWarehouseMovementGenre = 6;
     private const string CommonEDespatchDocumentPrefix = "FRM";
     private const string DocumentNumberLockResource = "FurpaMerkezApi:EDespatchDocumentNumber";
     private const int DocumentNumberLockTimeoutMilliseconds = 120_000;
@@ -167,16 +170,52 @@ public sealed class EDespatchService(
         IReadOnlyCollection<STOK_HAREKETLERI> rows;
         if (type is EDespatchDocumentType.InterWarehouseShipment or EDespatchDocumentType.WarehouseReturn)
         {
-            var document = await ResolveInterWarehouseDocumentAsync(request.WarehouseNo, request.DocumentSerie,
-                request.DocumentOrderNo, type == EDespatchDocumentType.WarehouseReturn, cancellationToken);
-            rows = document.TrackedMovements;
+            var detailRequest = new WarehouseShippingDetailRequest(
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo);
+            try
+            {
+                rows = await LoadInterWarehouseRowsAsync(
+                    mikroDbContext,
+                    detailRequest,
+                    type == EDespatchDocumentType.WarehouseReturn,
+                    cancellationToken);
+            }
+            catch (KeyNotFoundException)
+            {
+                rows = await LoadInterWarehouseRowsAsync(
+                    mikroWriteDbContext,
+                    detailRequest,
+                    type == EDespatchDocumentType.WarehouseReturn,
+                    cancellationToken);
+            }
         }
         else
         {
-            var document = await ResolveCompanyMovementAsync(request.WarehouseNo, request.DocumentSerie, request.DocumentOrderNo,
-                type == EDespatchDocumentType.CompanyReturn ? CompanyMovementKind.PurchaseReturn : CompanyMovementKind.OutgoingShipment,
-                cancellationToken);
-            rows = document.TrackedMovements;
+            var detailRequest = new CompanyMovementDetailRequest(
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo);
+            var movementKind = type == EDespatchDocumentType.CompanyReturn
+                ? CompanyMovementKind.PurchaseReturn
+                : CompanyMovementKind.OutgoingShipment;
+            try
+            {
+                rows = await LoadCompanyMovementRowsAsync(
+                    mikroDbContext,
+                    detailRequest,
+                    movementKind,
+                    cancellationToken);
+            }
+            catch (KeyNotFoundException)
+            {
+                rows = await LoadCompanyMovementRowsAsync(
+                    mikroWriteDbContext,
+                    detailRequest,
+                    movementKind,
+                    cancellationToken);
+            }
         }
         var contacts = ResolveDespatchContacts(request, NormalizeText(rows.Select(x => x.sth_HareketGrupKodu2).ToArray()),
             NormalizeText(rows.Select(x => x.sth_HareketGrupKodu3).ToArray()));
@@ -844,7 +883,7 @@ public sealed class EDespatchService(
         foreach (var expected in expectedMovements)
         {
             var line = lines.SingleOrDefault(x => x.ID?.Value == (expected.RowNo!.Value + 1).ToString(CultureInfo.InvariantCulture));
-            var expectedLineNo = expected.RowNo.Value + 1;
+            var expectedLineNo = expected.RowNo.GetValueOrDefault() + 1;
             var actualStockCode = line?.Item?.SellersItemIdentification?.ID?.Value;
             var actualQuantity = line?.DeliveredQuantity?.Value;
             var actualQuantityValue = actualQuantity.GetValueOrDefault();
@@ -1401,12 +1440,25 @@ public sealed class EDespatchService(
         var operationCode = request.DocumentType == EDespatchDocumentType.WarehouseReturn
             ? WarehouseReturnCreateOperationCode
             : InterWarehouseCreateOperationCode;
-        var create = await authDbContext.MobileOfflineSyncRequests.AsNoTracking()
+        var create = await authDbContext.MobileOfflineSyncRequests
             .SingleOrDefaultAsync(record =>
                 record.OperationCode == operationCode &&
                 record.ClientRequestId == clientRequestId.ToString("D") &&
                 record.WarehouseNo == request.WarehouseNo,
                 cancellationToken);
+
+        if (request.DocumentType == EDespatchDocumentType.InterWarehouseShipment &&
+            (create?.Status != MobileOfflineSyncRequestStatus.Completed ||
+             string.IsNullOrWhiteSpace(create.ResponsePayload)))
+        {
+            await TryRecoverInterWarehouseCreateAsync(
+                request,
+                document,
+                traceKeys[0]!,
+                create,
+                cancellationToken);
+        }
+
         if (create?.Status != MobileOfflineSyncRequestStatus.Completed ||
             string.IsNullOrWhiteSpace(create.ResponsePayload))
         {
@@ -1462,6 +1514,112 @@ public sealed class EDespatchService(
             throw new InvalidOperationException(
                 "Shipment create response and current document lines differ; no e-despatch was sent.");
         }
+    }
+
+    private async Task TryRecoverInterWarehouseCreateAsync(
+        SendEDespatchRequest request,
+        ResolvedInterWarehouseDocument document,
+        string traceKey,
+        MobileOfflineSyncRequest? create,
+        CancellationToken cancellationToken)
+    {
+        if (create is null || string.IsNullOrWhiteSpace(create.RequestPayload))
+        {
+            return;
+        }
+
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        CreateInterWarehouseShipmentRequest? originalRequest;
+        try
+        {
+            originalRequest = JsonSerializer.Deserialize<CreateInterWarehouseShipmentRequest>(
+                create.RequestPayload,
+                jsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Inter warehouse shipment create request could not be deserialized during e-despatch recovery. Document={DocumentSerie}/{DocumentOrderNo}",
+                request.DocumentSerie,
+                request.DocumentOrderNo);
+            return;
+        }
+
+        if (originalRequest is null ||
+            !InterWarehouseShipmentRecoveryMatcher.Matches(
+                originalRequest,
+                originalRequest.Lines.ToArray(),
+                document.TrackedMovements.Select(movement => new InterWarehouseShipmentRecoveryLine(
+                    movement.sth_satirno,
+                    movement.sth_stok_kod,
+                    movement.sth_miktar ?? 0d,
+                    movement.sth_birim_pntr ?? 0,
+                    movement.sth_tutar ?? 0d,
+                    movement.sth_aciklama,
+                    movement.sth_parti_kodu,
+                    movement.sth_lot_no ?? 0,
+                    movement.sth_proje_kodu,
+                    movement.sth_cari_srm_merkezi,
+                    movement.sth_stok_srm_merkezi,
+                    movement.sth_eticaret_kanal_kodu)).ToArray()))
+        {
+            return;
+        }
+
+        var tracedDocuments = await document.Context.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_tip == InterWarehouseMovementType &&
+                movement.sth_cins == InterWarehouseMovementGenre &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_eticaret_kanal_kodu == traceKey)
+            .Select(movement => new
+            {
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira
+            })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (tracedDocuments.Count != 1 ||
+            tracedDocuments[0].sth_evrakno_seri != request.DocumentSerie ||
+            tracedDocuments[0].sth_evrakno_sira != request.DocumentOrderNo)
+        {
+            var documentNumbers = string.Join(", ", tracedDocuments
+                .OrderBy(item => item.sth_evrakno_sira)
+                .Select(item => $"{item.sth_evrakno_seri}/{item.sth_evrakno_sira}"));
+            throw new InvalidOperationException(
+                $"The same shipment request created multiple Mikro documents ({documentNumbers}); no e-despatch was sent.");
+        }
+
+        var header = document.Detail.Header;
+        var recoveredResponse = new CreateInterWarehouseShipmentResponse(
+            header.DocumentSerie,
+            header.DocumentOrderNo,
+            header.MovementDate?.Date ?? DateTime.Today,
+            header.DocumentDate?.Date ?? header.MovementDate?.Date ?? DateTime.Today,
+            header.DocumentNo,
+            header.SourceWarehouseNo,
+            header.TargetWarehouseNo,
+            header.ShippingWarehouseNo,
+            document.Detail.Items.Count,
+            0,
+            document.Detail.Items.Sum(item => item.Quantity),
+            document.Detail.Items.Sum(item => item.LineAmount),
+            "MikroWriteConnection");
+
+        create.MarkCompleted(JsonSerializer.Serialize(recoveredResponse, jsonOptions), DateTime.UtcNow);
+        await authDbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogWarning(
+            "Recovered completed inter warehouse shipment create while preparing e-despatch. Document={DocumentSerie}/{DocumentOrderNo}, ClientRequestId={ClientRequestId}, LineCount={LineCount}",
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            create.ClientRequestId,
+            document.Detail.Items.Count);
     }
 
     internal static bool MatchesCompletedShipmentCreate(

@@ -66,6 +66,51 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
         Assert.False(matches);
     }
 
+    [Fact]
+    public void Matches_AcceptsGeneratedWarehouseOrderGuidAsEmptyDescription()
+    {
+        var clientRequestId = Guid.Parse("a94669b8-b916-474a-9830-bbf87cc9f408");
+        var request = CreateRequest(clientRequestId) with
+        {
+            Description = null,
+            Lines = CreateRequest(clientRequestId).Lines
+                .Select(line => line with { Description = null })
+                .ToArray()
+        };
+        var rows = CreateMatchingRows(MobileOfflineSyncService.ToTraceKey(clientRequestId));
+        rows[0] = rows[0] with { Description = "bcddffbf-eb56-4701-877c-641eeba08855" };
+        rows[1] = rows[1] with { Description = "9400e969-3098-4cf8-81e5-80817c15dc75" };
+
+        var matches = InterWarehouseShipmentRecoveryMatcher.Matches(
+            request,
+            request.Lines.ToArray(),
+            rows);
+
+        Assert.True(matches);
+    }
+
+    [Fact]
+    public void Matches_RejectsArbitraryGeneratedDescriptionWhenRequestWasEmpty()
+    {
+        var request = CreateRequest(null) with
+        {
+            Description = null,
+            Lines = CreateRequest(null).Lines
+                .Select(line => line with { Description = null })
+                .ToArray()
+        };
+        var rows = CreateMatchingRows(string.Empty);
+        rows[0] = rows[0] with { Description = "unexpected text" };
+        rows[1] = rows[1] with { Description = string.Empty };
+
+        var matches = InterWarehouseShipmentRecoveryMatcher.Matches(
+            request,
+            request.Lines.ToArray(),
+            rows);
+
+        Assert.False(matches);
+    }
+
     private static CreateInterWarehouseShipmentRequest CreateRequest(Guid? clientRequestId) =>
         new(
             56,

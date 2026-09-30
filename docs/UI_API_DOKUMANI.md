@@ -66,8 +66,8 @@ Controller'da acik olan pratik alias/canonical route'lar:
 - `GET /api/siparis-islemleri/verilen-depo-siparisleri/key/{documentKey}`
 - `GET /api/siparis-islemleri/verilen-firma-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/verilen-firma-siparisleri/key/{documentKey}`
-- `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`, `giden` alias'i ile ayni outgoing akisi calistirir.
-- `GET /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
+- `GET`, `PUT` ve `DELETE /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`, `giden` alias'i ile ayni outgoing akisi calistirir.
+- `GET`, `PUT` ve `DELETE /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
 - `GET /api/sevk-islemleri/depolar-arasi-sevkler/gelen/{documentSerie}/{documentOrderNo}`
 - `GET /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`, `giden` alias'i ile ayni outgoing akisi calistirir.
 - `GET /api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}`, `POST /api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` ve `GET /api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf`
@@ -235,7 +235,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `siparis-islemleri` | `verilen-firma-siparisleri` | `siparis-islemleri.verilen-firma-siparisleri.page` | `siparis-islemleri.verilen-firma-siparisleri.list`<br>`siparis-islemleri.verilen-firma-siparisleri.detail`<br>`siparis-islemleri.verilen-firma-siparisleri.create`<br>`siparis-islemleri.verilen-firma-siparisleri.update` | `siparis-islemleri.verilen-firma-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `onerilen-depo-siparisleri` | `siparis-islemleri.onerilen-depo-siparisleri.page` | `siparis-islemleri.onerilen-depo-siparisleri.list`<br>`siparis-islemleri.onerilen-depo-siparisleri.create` | `siparis-islemleri.onerilen-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `onerilen-firma-siparisleri` | `siparis-islemleri.onerilen-firma-siparisleri.page` | `siparis-islemleri.onerilen-firma-siparisleri.list`<br>`siparis-islemleri.onerilen-firma-siparisleri.create` | `siparis-islemleri.onerilen-firma-siparisleri.all-warehouses` |
-| `sevk-islemleri` | `giden-depolar-arasi-sevkler` | `sevk-islemleri.giden-depolar-arasi-sevkler.page` | `sevk-islemleri.giden-depolar-arasi-sevkler.list`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.detail`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.create`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.update` | `sevk-islemleri.giden-depolar-arasi-sevkler.all-warehouses` |
+| `sevk-islemleri` | `giden-depolar-arasi-sevkler` | `sevk-islemleri.giden-depolar-arasi-sevkler.page` | `sevk-islemleri.giden-depolar-arasi-sevkler.list`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.detail`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.create`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.update`<br>`sevk-islemleri.giden-depolar-arasi-sevkler.delete` | `sevk-islemleri.giden-depolar-arasi-sevkler.all-warehouses` |
 | `sevk-islemleri` | `gelen-depolar-arasi-sevkler` | `sevk-islemleri.gelen-depolar-arasi-sevkler.page` | `sevk-islemleri.gelen-depolar-arasi-sevkler.list`<br>`sevk-islemleri.gelen-depolar-arasi-sevkler.detail`<br>`sevk-islemleri.gelen-depolar-arasi-sevkler.create`<br>`sevk-islemleri.gelen-depolar-arasi-sevkler.update` | `sevk-islemleri.gelen-depolar-arasi-sevkler.all-warehouses` |
 | `sevk-islemleri` | `giden-firma-sevkleri` | `sevk-islemleri.giden-firma-sevkleri.page` | `sevk-islemleri.giden-firma-sevkleri.list`<br>`sevk-islemleri.giden-firma-sevkleri.detail`<br>`sevk-islemleri.giden-firma-sevkleri.create`<br>`sevk-islemleri.giden-firma-sevkleri.update` | `sevk-islemleri.giden-firma-sevkleri.all-warehouses` |
 | `sevk-islemleri` | `gelen-firma-sevkleri` | `sevk-islemleri.gelen-firma-sevkleri.page` | `sevk-islemleri.gelen-firma-sevkleri.list`<br>`sevk-islemleri.gelen-firma-sevkleri.detail`<br>`sevk-islemleri.gelen-firma-sevkleri.create`<br>`sevk-islemleri.gelen-firma-sevkleri.update` | `sevk-islemleri.gelen-firma-sevkleri.all-warehouses` |
@@ -1191,6 +1191,8 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - POST cevabi cihaza ulasmadiysa mobil uygulama once ayni `clientRequestId` ile tekrar POST denemelidir.
 - Firma mal kabul ve sayim sonucunda durum hala belirsizse ilgili `offline-sync/{clientRequestId}` endpoint'i ile durum sorgulanabilir.
 - Sevk, iade, zayiat, masraf ve virman create akislarinda ayri durum endpoint'i yoktur; sonuc ayni `clientRequestId` ile tekrar POST edilerek toparlanir.
+- Depolar arasi sevk ve depo iadesi Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa ayni `clientRequestId` ile gelen tekrar POST, Mikro'ya ikinci kez yazma gondermez. Backend sadece trace ile readback yapar; tum satirlar tamamlandiysa mevcut evraki `Completed` olarak toparlar, henuz tamamlanmadiysa `409 Conflict` ile islemin surdugunu bildirir.
+- Bu iki akista belirsiz sonuc sonrasi `409 Conflict` alinmasi yeni `clientRequestId` uretilmesi gerektigi anlamina gelmez. UI ayni payload snapshot'ini ve ayni `clientRequestId` degerini korumali; yeni id ancak kullanici acikca yeni bir islem baslatirsa uretilmelidir.
 - Stok hareketi yazan genisletilmis akislarda backend `clientRequestId` izini `FR` prefixli 24 karakterlik trace olarak Mikro `STOK_HAREKETLERI.sth_eticaret_kanal_kodu` alanina tasir. `MikroApi` rotasinda da ayni iz payload'a eklenir.
 - `FR` prefix'i bu alan ileride dolu goruldugunde kaydin Furpa guvenli retry izinden geldigini ayirt etmek icindir.
 
@@ -1204,7 +1206,7 @@ UI davranis kurali:
 - Timeout veya 500 cevabi sonrasi UI ayni fis icin yeni `clientRequestId` uretirse backend bunu yeni bir create islemi olarak kabul edebilir ve ayni icerikte ikinci evrak olusabilir.
 - Kullanici belirsiz kayit modundayken formu degistirmek isterse UI bunu yeni islem kabul etmeli, eski `clientRequestId` degerini birakip sonraki kaydetmede yeni `clientRequestId` uretmelidir.
 - Ayni `clientRequestId` ile farkli body gonderilip API `409 Conflict` donerse UI bunu teknik hata gibi degil, "Bu kayit denemesinin icerigi degismis; yeni islem olarak tekrar kaydedin." durumu gibi ele almalidir.
-- `409 Conflict` sonrasi kullanici devam edecekse UI yeni `clientRequestId` uretmeli ve guncel body'yi yeni kaydetme denemesi olarak gondermelidir.
+- `409 Conflict` ayni id ile farkli payload kullanildigini soyluyorsa kullanici devam edecekse UI yeni `clientRequestId` uretmeli ve guncel body'yi yeni kaydetme denemesi olarak gondermelidir. `Already being processed`/belirsiz Mikro sonucu 409'unda yeni id uretilmemelidir.
 - En guvenli akista `Normal Edit Mode` alanlari degistirilebilir, `Pending/Retry Mode` alanlari kilitlidir; pending durumundan cikmak icin kullanici acikca `Yeni islem olarak duzenle` veya `Vazgec` aksiyonu secmelidir.
 
 UI state ornegi:
@@ -1261,7 +1263,7 @@ Ortak offline status response modeli:
 
 - `Processing`: istek backend tarafinda rezerve edildi, islem tamamlanmadi veya sonuc henuz toparlanamadi
 - `Completed`: istek basariyla tamamlandi; `result` alaninda asil business response bulunur
-- `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. Ayni payload ile retry yapilabilir, ama payload degistiyse yeni `clientRequestId` kullanilmalidir
+- `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. Ayni payload ile retry yapilabilir, ama payload degistiyse yeni `clientRequestId` kullanilmalidir. Depolar arasi sevk ve depo iadesinde timeout/iptal gibi belirsiz Mikro sonucunda retry yalnizca readback yapar; ayni id ile ikinci yazma baslatmaz.
 
 ## Mobil Urun-Fiyat Katalog Sync
 
@@ -5835,6 +5837,10 @@ Onemli not:
 - UI kaydet butonunu ilk tiklamadan sonra request bitene kadar disable etmeli ve timeout sonrasi ayni body tekrar gonderildiginde ayni evrak numarasinin donebilecegini kabul etmelidir. Timeout gorulse bile kullaniciya liste/detay yenileme secenegi verilmesi onerilir.
 - Depolar arasi sevk create ekraninda `clientRequestId` pratikte zorunlu kabul edilmelidir. UI bu id'yi ilk `Kaydet` aninda uretmeli, ayni body snapshot'i ile birlikte saklamali ve sonuc kesinlesene kadar degistirmemelidir.
 - Timeout, HTTP 0, tarayici iptali, 500 veya kullaniciya sonucu kesin gosterilemeyen durumlarda `Tekrar Dene` aksiyonu ayni `clientRequestId` ve ayni body snapshot'i ile POST etmelidir.
+- `MikroApi` yazma yolunda Mikro `MikroAPI - TimeOut` dondurse bile ERP arka planda satirlari yazmaya devam edebilir. Bu nedenle timeout cevabi "evrak olusmadi" anlamina gelmez.
+- Depolar arasi sevkte timeout/iptal gibi sonucu belirsiz bir create sonrasi ayni `clientRequestId` tekrar gonderildiginde backend Mikro'ya ikinci create POST'u atmaz. Once trace readback yapar; tum satirlar tamamsa mevcut evraki `200 OK` ile dondurur, satirlar henuz tam degilse `409 Conflict` ile islemin devam ettigini bildirir.
+- `409 Conflict` detail mesaji `already being processed` anlamindaysa UI pending state'i korumali, formu ve e-irsaliye butonunu kilitli tutmali, yeni GUID uretmemelidir. Kullanici ayni snapshot ile daha sonra tekrar deneyebilir; otomatik kontrol yapilacaksa sik ve sinirsiz polling yerine 5-10 saniye aralikli sinirli retry kullanilmalidir.
+- Create endpointinden `200 OK` ve `documentSerie/documentOrderNo` alinmadan UI liste satirindan tahmin edilen evrak numarasiyla e-irsaliye endpointini cagirmamalidir.
 - UI ayni sevk icerigini yeni `clientRequestId` ile tekrar gonderirse backend bunu yeni evrak olarak yorumlayabilir. Bu durumda ayni stok/miktar satirlari farkli `documentOrderNo` ile ikinci kez olusur; ornek risk `F120/3496` ve `F120/3497` gibi ayni icerikli iki sevktir.
 - Kullanici pending/retry durumundaki sevk formunu degistirmek isterse UI bunu acikca yeni islem saymali; eski pending state'i kullanmadan yeni `clientRequestId` uretmelidir.
 - Satirda `warehouseOrderLineGuid` verilirse depo siparis satirina baglanir. `MikroWriteRouting:InterWarehouseShipment=Database` modunda backend `STOK_HAREKETLERI_EK.sth_subesip_uid` linkini DB'de kurar; `MikroApi` modunda ayni GUID `DahiliStokHareketKaydetV2` satirina `sth_subesip_uid` olarak gonderilir ve link/teslim etkisi Mikro tarafina birakilir.
@@ -5911,6 +5917,31 @@ Response:
   "writeConnectionName": "testMikroConnection"
 }
 ```
+
+#### Sevk Create Timeout ve UI State Akisi
+
+UI bu akista `clientRequestId + payloadSnapshot` ikilisini request sonucu kesinlesene kadar kalici/persist edilebilir pending state olarak tutmalidir. Sayfa yenilenmesi veya uygulamanin kapanip acilmasi ayni mantiksal sevk icin yeni kimlik uretme sebebi degildir.
+
+| API sonucu | Backend davranisi | UI davranisi |
+|---|---|---|
+| `200 OK` | Sevk kesin olarak olusmus veya trace readback ile toparlanmistir | Pending state'i temizle; response'taki seri/sira ile detayi ac; e-irsaliye butonunu etkinlestir |
+| Timeout, HTTP 0 veya belirsiz `5xx` | Mikro yazmaya devam ediyor olabilir | Ayni body snapshot ve ayni `clientRequestId` korunur; form degistirilmez |
+| `409` ve `already being processed` | Backend ikinci Mikro POST'unu engellemis, yalniz readback sonucu henuz tamamlanmamistir | "Sevk Mikro'da isleniyor" goster; yeni GUID veya yeni evrak olusturma; ayni istekle kontrollu tekrar dene |
+| `409` ve `different request payload` | Ayni id altinda body degistirilmistir | Eski pending islemiyle devam etme; kullanici acikca yeni islem baslatirsa yeni GUID uret |
+| `409` ve `multiple Mikro documents` | Ayni trace ile daha once birden fazla evrak olusmustur | E-irsaliye gonderme; evrak numaralarini operasyonel incelemeye goster |
+
+UI icin zorunlu sira:
+
+```text
+1. Ilk Kaydet: yeni clientRequestId + body snapshot olustur.
+2. POST devam ederken formu, Kaydet'i ve E-Irsaliyeye Donustur'u kilitle.
+3. Belirsiz sonuc: pending state'i silme veya yeni id uretme.
+4. Tekrar Dene: saklanan snapshot'i ayni clientRequestId ile aynen POST et.
+5. Yalniz 200 OK create response'u geldikten sonra response seri/sira degerini ekrana bagla.
+6. Detayi yenile ve ancak bundan sonra E-Irsaliyeye Donustur aksiyonunu ac.
+```
+
+Backend korumasi UI hatali davransa bile ayni `clientRequestId` ile belirsiz Mikro yazimini ikinci kez baslatmaz. Buna ragmen UI yeni `clientRequestId` uretirse bu teknik olarak yeni islem sayilir; bu nedenle pending state yonetimi yine zorunludur.
 
 ### Depolar Arasi Giden Sevk Detay
 
@@ -6008,6 +6039,60 @@ Response:
   "writeConnectionName": "testMikroConnection"
 }
 ```
+
+### Depolar Arasi Giden Sevki Sil
+
+E-irsaliyesi gonderilmemis ve hedef depo tarafindan kabul edilmemis giden depolar arasi sevk evrakinin tamamini siler.
+
+`DELETE /api/sevk-islemleri/depolar-arasi-sevkler/giden/F110/3694?warehouseNo=110`
+
+Geriye uyum icin root route da ayni delete gibi calisir:
+
+`DELETE /api/sevk-islemleri/depolar-arasi-sevkler/F110/3694?warehouseNo=110`
+
+Yetki:
+
+- `sevk-islemleri.giden-depolar-arasi-sevkler.delete`
+
+UI kurali:
+
+- Sil butonu sadece kullanicinin `permissions` listesinde `sevk-islemleri.giden-depolar-arasi-sevkler.delete` varsa gosterilmelidir.
+- `update` yetkisi tek basina tum evragi silme hakki vermez.
+- `*.all-warehouses` yoksa `warehouseNo` gonderilmemeli; backend JWT deposunu kaynak depo kabul eder. Bu yetki varsa secili satirin `sourceWarehouseNo` degeri query'ye yazilabilir.
+- Silme geri alinamaz. UI belge numarasi ve satir sayisini gosteren acik bir onay istemelidir.
+- Basarili response gelmeden satir listeden kaldirilmamalidir. Basaridan sonra liste ve varsa bagli depo siparisi detayi yenilenmelidir.
+- E-irsaliye gonderimi ile silme ayni anda calisamaz. Backend belge kilidi kullanir; gonderim devam ediyorsa `409 Conflict` doner.
+
+Backend guvenlik kurallari:
+
+- Auth DB'de gonderilmis veya sonucu henuz uzlastirilmamis e-irsaliye kaydi varsa silme reddedilir.
+- Mikro satirlarinda e-irsaliye belge no/UUID/gonderim kilidi varsa silme reddedilir.
+- Hedef depo sevki kabul etmisse (`sth_nakliyedurumu = 1`) silme reddedilir.
+- Silme tum `STOK_HAREKETLERI` satirlarini ve bu satirlara bagli `STOK_HAREKETLERI_EK` kayitlarini kapsar.
+- Sevk depo siparisine bagliysa silinen miktarlar siparisin `ssip_teslim_miktar` alanindan geri dusulur; siparis satiri yeniden acik duruma gelebilir.
+- Yazma yolu `MikroWriteRouting:WarehouseShippingUpdate` ayarina uyar. `Database` modunda islem transaction icinde, `MikroApi` modunda GUID bazli Mikro silme endpointleriyle calisir ve sonucun sifir aktif satir oldugu geri okunarak dogrulanir.
+- Islem belge akis takibine `DocumentDeleted / Succeeded` olarak kaydedilir.
+
+Response `200 OK`:
+
+```json
+{
+  "documentSerie": "F110",
+  "documentOrderNo": 3694,
+  "sourceWarehouseNo": 110,
+  "targetWarehouseNo": 50,
+  "deletedLineCount": 8,
+  "deletedAt": "2026-09-30T13:15:00",
+  "updateUser": 110,
+  "writeConnectionName": "MikroWriteConnection"
+}
+```
+
+Hata davranisi:
+
+- `403 Forbidden`: kullanicida `delete` veya secilen kaynak depo icin `all-warehouses` yetkisi yoktur.
+- `404 Not Found`: belge kaynak depo + seri + sira ile bulunamamistir veya daha once silinmistir.
+- `409 Conflict`: e-irsaliye gonderilmis/belirsiz durumdadir, gonderim devam ediyordur, belge kilitlidir ya da hedef depo kabul yapmistir.
 
 ### Depolar Arasi Giden Sevki E-Irsaliyeye Cevir
 
@@ -11547,6 +11632,8 @@ Notlar:
 - Ayni evrak icin Auth DB'de veya Mikro satirlarinda basarili Uyumsoft gonderimi bulunursa backend Uyumsoft'a ikinci kez gondermez; mevcut belge numarasi ve UUID ile `200 OK` doner ve gerekiyorsa Mikro isaretlemeyi tekrar kuyruga alir.
 - IIS/API yeniden baslarsa kalici bekleyen isler yas/toplam adet siniri olmadan devam eder; 25 kayitlik parcalar worker'in isleme boyutudur. Eski bellek kuyrugundan gecis icin son iki gunun FRM/UUID iceren takip kayitlari da kademeli olarak bu tabloya alinir ve Uyumsoft icerigi dogrulanir.
 - Backend gonderimden once GUID, stok kodu, miktar, birim, satir no, depo ve hareket bilgilerini hazirlanan belgeyle karsilastirir. GUID ayni kalsa bile miktar/stok degisikligi yakalanir. Eksik veya degismis belgede `409 Conflict` doner.
+- Create audit kaydi Mikro timeout nedeniyle `Failed`/`Processing` kalmis fakat secili Mikro evraki orijinal request ile birebir tamamsa backend create kaydini `Completed` olarak toparlayip e-irsaliye akisina devam eder. Otomatik depo siparisi baglantisinda Mikro'nun bos aciklama yerine yazdigi siparis satir GUID'i gecerli sistem donusumu olarak kabul edilir; diger satir kontrolleri gevsetilmez.
+- Ayni `clientRequestId` trace'i birden fazla Mikro evrakinda bulunursa backend hangi evrakin asil oldugunu tahmin etmez ve Uyumsoft'a gondermez. `409 Conflict` detail icinde eslesen Mikro evrak numaralari doner. UI bu durumda tekrar e-irsaliye POST'u atmamalidir; operasyonel mukerrer incelemesi istemelidir.
 - Sevk/depo iadesi duzenleme endpointi gonderimle ayni belge kilidini kullanir; Auth DB'de gonderim girisimi veya basari izi varsa Mikro isaretlemesi beklerken de duzenleme engellenir. ERP uzerinden disarida yapilan degisiklikler worker'in sabit satir karsilastirmasinda yakalanir.
 - Worker yalniz gonderilen satir icerigiyle eslesen belgeyi isaretler. Belge degismisse veya baska FRM/UUID varsa `NeedsReview` olur; uyusmayan satirlarin uzerine yazilmaz. Uyumsoft gonderimi basarili kalir, PDF erisimi devam eder.
 - Firma iadesinde Mikro'nun teknik hedef depo normalizasyonu (`sth_giris_depo_no` degerinin `0`dan `1`e gecmesi) tek basina belge degisikligi sayilmaz. Stok, miktar, birim, satir no, kaynak depo, evrak tipi ve diger hareket alanlari yine kontrol edilir; baska hedef depo farki `NeedsReview` olmaya devam eder. Eski bu nedenle takilmis firma iadeleri bir kez yeniden dogrulanir; gercek fark varsa tekrar inceleme durumunda kalir.

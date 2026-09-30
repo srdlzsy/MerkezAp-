@@ -287,7 +287,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "onerilen-depo-siparisleri", "OnerilenDepoSiparisleri", ListCreateActions),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "onerilen-firma-siparisleri", "OnerilenFirmaSiparisleri", ListCreateActions),
 
-        ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "giden-depolar-arasi-sevkler", "GidenDepolarArasiSevkler"),
+        ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "giden-depolar-arasi-sevkler", "GidenDepolarArasiSevkler", ReadCreateUpdateDeleteActions),
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "gelen-depolar-arasi-sevkler", "GelenDepolarArasiSevkler"),
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "giden-firma-sevkleri", "GidenFirmaSevkleri"),
         ..CreateMenuPermissions("sevk-islemleri", "SevkIslemleri", "gelen-firma-sevkleri", "GelenFirmaSevkleri"),
