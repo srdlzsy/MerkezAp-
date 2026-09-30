@@ -3,6 +3,8 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.MasrafFisleri.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.MasrafFisleri.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.MasrafFisleri.List;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -17,7 +19,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.StokIslemleri.MasrafFisleri;
 public sealed class MasrafFisleriController(
     IListExpenseReceiptsUseCase listExpenseReceiptsUseCase,
     IGetExpenseReceiptDetailUseCase getExpenseReceiptDetailUseCase,
-    ICreateExpenseReceiptUseCase createExpenseReceiptUseCase)
+    ICreateExpenseReceiptUseCase createExpenseReceiptUseCase,
+    IDocumentFlowService documentFlowService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "stok-islemleri";
@@ -98,6 +101,25 @@ public sealed class MasrafFisleriController(
                     .ToArray(),
                 request.ClientRequestId,
                 User.GetRequiredUserId()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.ExpenseReceipt,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.ExpenseReceipt,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Masraf fisi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

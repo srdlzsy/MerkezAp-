@@ -5,6 +5,8 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.List;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.Offline;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +22,8 @@ public sealed class SayimSonuclariController(
     IListInventoryCountsUseCase listInventoryCountsUseCase,
     IGetInventoryCountDetailUseCase getInventoryCountDetailUseCase,
     ICreateInventoryCountUseCase createInventoryCountUseCase,
-    IGetInventoryCountOfflineSyncStatusUseCase getInventoryCountOfflineSyncStatusUseCase)
+    IGetInventoryCountOfflineSyncStatusUseCase getInventoryCountOfflineSyncStatusUseCase,
+    IDocumentFlowService documentFlowService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "stok-islemleri";
@@ -96,6 +99,26 @@ public sealed class SayimSonuclariController(
                         line.Barcode,
                         line.UnitPointer))
                     .ToArray()),
+            cancellationToken);
+
+        const string documentSerie = "SAYIM";
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.InventoryCount,
+                    response.WarehouseNo,
+                    documentSerie,
+                    response.DocumentNo),
+                DocumentFlowType.InventoryCount,
+                response.WarehouseNo,
+                null,
+                documentSerie,
+                response.DocumentNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Sayim sonucu olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo.ToString()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

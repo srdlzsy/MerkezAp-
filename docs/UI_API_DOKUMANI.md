@@ -11504,12 +11504,77 @@ Notlar:
 - `driverId` bos veya yoksa eski manuel zorunlu alan mantigi calisir.
 - `driverId` doluysa kayit aktif degilse veya bulunamazsa `404 Not Found` doner.
 - `driverId` ile birlikte gelen dolu manuel alanlar secili sofor kaydinin ustune yazilir; bos manuel alanlar sofor tanimindan doldurulur.
-- Basarili gonderimden sonra cozulmus plaka ve TCKN Mikro hareket satirlarina metadata olarak yazilmaya calisilir.
-- Response icindeki `localMikroMetadataUpdated=false` gelirse Uyumsoft gonderimi basarilidir, fakat Mikro hareket satirlari FRM/ETTN metadata'si ile isaretlenememistir. UI bu durumda tekrar e-irsaliye gondermemeli; `eDespatchDocumentNo` ve `eDespatchUuid` degerleriyle lokal Mikro belge metadata onarimi yapilmalidir.
-- Ayni evrak icin belge akisinda basarili Uyumsoft gonderimi kayitliysa backend ikinci gonderimi `409 Conflict` ile engeller. Bu kural Mikro metadata isaretleme eksik kalmis olsa bile Uyumsoft'ta duplicate zarf olusmasini onlemek icindir.
-- Backend Uyumsoft gonderiminden hemen once seri/sira kapsamindaki guncel hareket GUID listesini hazirlanan belgeyle karsilastirir. Satir eklenmis veya silinmisse e-irsaliye gonderilmeden `409 Conflict` doner; UI belgeyi yenileyip tekrar denemelidir.
-- Uyumsoft gonderimi devam ederken hareket kumesi degisirse sadece gercekten gonderilen snapshot satirlari isaretlenir ve `localMikroMetadataUpdated=false` doner. UI bu durumda otomatik tekrar gonderim yapmamalidir.
-- Ayni Mikro evrakinda hem FRM/ETTN ile isaretli hem de bos satir bulunursa backend otomatik kurtarmayi durdurur ve `409 Conflict` doner. Bu durum manuel olarak Uyumsoft belge icerigiyle uzlastirilmadan bos satirlar mevcut e-irsaliyeye baglanmamalidir.
+- Uyumsoft cagrilmadan once FRM numarasi, UUID, sofor/teslim bilgileri ve gonderilecek Mikro satirlarinin sabit kopyasi Auth DB `edespatch_submissions` tablosuna kaydedilir. Bu kayit yazilamazsa gonderim yapilmaz.
+- Uyumsoft basarili cevap verdikten sonra basari durumu, belge akis olayi ve bekleyen Mikro isaretleme isi ayni Auth DB kaydetme islemiyle kalicilastirilir. HTTP `200` cevabi Mikro API isaretlemesini beklemeden doner. Basari kaydi hatasi yutulmaz.
+- Mikro yazma yolu `MikroWriteRouting:EDespatchMarkAsSent=MikroApi` olarak korunur. Worker `DahiliStokHareketDuzeltV2` kullanir; API hatasinda SQL yazma fallback'i yapilmaz.
+- Mikro hareket satirlarinin kilit, FRM/ETTN, plaka, teslim eden/alani ve sofor TCKN metadata guncellemesi kalici is kaydindan calisir. Gecici hatalar artan bekleme suresiyle (en fazla 15 dakika ara) yeniden denenir; besinci hatada is kaybedilmez. Bir belgenin tekrar deneme beklemesi diger isleri uyutmaz.
+- Normal hizli response'ta `localMikroMetadataUpdated=false` ve `localMikroMetadataUpdateQueued=true` gelir. Bu hata degildir; Uyumsoft gonderimi basarili, Mikro isaretleme kuyruktadir. UI islemi basarili gostermeli ve tekrar gonder butonunu acmamalidir.
+- `localMikroMetadataUpdated=true` gelirse Mikro satirlari zaten FRM/ETTN ile tam isaretlidir. `localMikroMetadataUpdateQueued=false` ve `localMikroMetadataUpdated=false` birlikte gelirse gercek lokal metadata uyarisi olarak ele alinabilir.
+- Ayni evrak icin Auth DB'de veya Mikro satirlarinda basarili Uyumsoft gonderimi bulunursa backend Uyumsoft'a ikinci kez gondermez; mevcut belge numarasi ve UUID ile `200 OK` doner ve gerekiyorsa Mikro isaretlemeyi tekrar kuyruga alir.
+- IIS/API yeniden baslarsa kalici bekleyen isler yas/toplam adet siniri olmadan devam eder; 25 kayitlik parcalar worker'in isleme boyutudur. Eski bellek kuyrugundan gecis icin son iki gunun FRM/UUID iceren takip kayitlari da kademeli olarak bu tabloya alinir ve Uyumsoft icerigi dogrulanir.
+- Backend gonderimden once GUID, stok kodu, miktar, birim, satir no, depo ve hareket bilgilerini hazirlanan belgeyle karsilastirir. GUID ayni kalsa bile miktar/stok degisikligi yakalanir. Eksik veya degismis belgede `409 Conflict` doner.
+- Sevk/depo iadesi duzenleme endpointi gonderimle ayni belge kilidini kullanir; Auth DB'de gonderim girisimi veya basari izi varsa Mikro isaretlemesi beklerken de duzenleme engellenir. ERP uzerinden disarida yapilan degisiklikler worker'in sabit satir karsilastirmasinda yakalanir.
+- Worker yalniz gonderilen satir icerigiyle eslesen belgeyi isaretler. Belge degismisse veya baska FRM/UUID varsa `NeedsReview` olur; uyusmayan satirlarin uzerine yazilmaz. Uyumsoft gonderimi basarili kalir, PDF erisimi devam eder.
+- Ayni gonderime ait kismen isaretli satirlar hata sebebi degildir: satir icerigi ve FRM/UUID dogrulanir, sadece eksik/kilitsiz satirlar Mikro API ile tamamlanir.
+- Uyumsoft cevabi kaybolursa veya basari Auth DB'ye yazilamadan surec kapanirsa kayit `Unknown` kalir. Worker kayitli UUID ile Uyumsoft'tan belge numarasini ve satirlarini sorgular. Dogrulanana kadar yeni e-irsaliye gonderilmez; UI otomatik yeni POST uretmemelidir. Servis belgeyi dogrulayamazsa durum belirsiz kalir ve operasyonel inceleme gerekir.
+- Belge bazli kilit ayni evraga cift tiklamayi engeller. Ortak numara kilidi yalniz FRM ayirma/kalici kayit adimindadir; Uyumsoft gonderimleri farkli belgeler icin ortak kilitte beklemez.
+- Dagitimda `AddDurableEDespatchSubmissions` Auth DB migration'i uygulanmalidir. `StartupTasks:ApplyAuthMigrations=true` ise acilista uygulanir; aksi halde dagitim adiminda uygulanmadan yeni surum baslatilmamalidir.
+- Mevcut Production ayarinda `ApplyAuthMigrations=false` oldugundan yeni surum yayinlanmadan once Auth DB'ye `docs/DEPLOY_EDESPATCH_SUBMISSIONS.sql` uygulanmalidir. Script sadece bu yeni migration'i icerir; Mikro DB'ye uygulanmaz. Eski uygulama durdurulup script uygulandiktan sonra yeni uygulama baslatilmalidir.
+
+#### Sevkten PDF'ye Adim Adim Akis
+
+Bu akista kuyruga alinan is **Uyumsoft'a gonderim degil, gonderimden sonraki Mikro isaretlemesidir**. UI sadece kuyruga alindi diye gonderim basarisi gostermemelidir; gonderim endpointinin onaylanmis `200 OK` cevabini beklemelidir.
+
+1. Kullanici sevk satirlarini hazirlar ve `Kaydet` der. UI ayni kaydetme denemesinde ayni `clientRequestId` ve payload'i korur.
+2. Yazma rotasi `MikroApi` ise sevk Mikro API ile olusturulur. Mikro'da birkac satirin gorunmesi belgenin tamamlandigi anlamina gelmez.
+3. Backend orijinal istekteki satirlarin tamamini Mikro'dan okunan satirlarla dogrular. Stok, miktar, birim, satir no ve islem izi kontrol edilir. Ornegin istek 29 satirsa 27 satir tamamlandi kabul edilmez.
+4. UI sevk create cevabi basarili olmadan `E-Irsaliyeye Donustur` butonunu etkinlestirmez. Timeout olursa yeni evrak acmak yerine mevcut kaydetme denemesinin sonucu toparlanir.
+5. Kullanici e-irsaliye gonderimini baslatir. Backend yetki/depo baglamini, sofor/plaka bilgilerini ve belgenin hareket turunu kontrol eder; ayni belgeye eszamanli islem kilidi alir.
+6. Daha once onaylanmis gonderim varsa yeni belge gonderilmez; mevcut FRM/UUID doner. Sonucu belirsiz bir deneme varsa yeni gonderim engellenir.
+7. Belgenin butun satirlari kontrol edilir. Eski erken tamamlanmis kayitlarda mevcutsa orijinal create istegi esas alinir; gercek eksiklik veya icerik farki varsa `409` doner ve Uyumsoft cagrilmaz.
+8. UBL, taraf/adres/barkod ve teslim bilgileri hazirlanir. FRM ve UUID ayrilir; gonderilecek satirlar tekrar dogrulanir. Kimlik ve satirlarin sabit kopyasi Auth DB'ye yazilir. Bu kayit basarisizsa gonderim yapilmaz.
+9. Uyumsoft'a belge gonderilir. Bu adim HTTP isteginin icindedir; kullanici Uyumsoft sonucunu bekler.
+10. Uyumsoft basarisi Auth DB'ye belge akis olayi ve bekleyen Mikro isaretleme isiyle birlikte kaydedilir. Ancak bundan sonra `200 OK` doner. Bu basari, Uyumsoft'un belgeyi kabul ettigini belirtir; alicinin teslim kabulunu anlatmaz.
+11. UI `Gonderildi` durumunu, FRM/UUID'yi ve PDF butonunu gosterir. `localMikroMetadataUpdateQueued=true` ise ek olarak `Mikro isaretlemesi bekliyor` bilgisi gosterilebilir; kullanici tekrar gonderime yonlendirilmez.
+12. Kullanici PDF isterse backend Auth DB'deki onayli UUID ile Uyumsoft'tan PDF alir. Mikro isaretlemesinin tamamlanmasi beklenmez.
+13. Worker kalici kayitlardan bekleyen isleri okur. Guncel Mikro satirlari gonderilen sabit kopyayla eslesiyorsa eksik/kilitsiz satirlari Mikro API ile isaretler ve SQL'den okuyarak sonucu dogrular.
+14. Dogrulama basariliysa is `Completed` olur. Gecici hata varsa yeniden denenir; farkli icerik veya baska FRM/UUID varsa uzerine yazilmaz ve is `NeedsReview` olur. Bu durum onayli Uyumsoft belgesini veya PDF'yi iptal etmez.
+
+#### UI Durum ve Tekrar Deneme Kurallari
+
+| Durum | UI davranisi | Yapilmamasi gereken |
+|---|---|---|
+| Sevk kaydi devam ediyor | Kaydetme sonucunu bekle, donustur butonunu kilitle | Henuz tamamlanmamis sevki gondermek |
+| E-irsaliye POST devam ediyor | Ayni belge icin gonder butonunu kilitle | Cift tiklama veya paralel POST |
+| POST `200`, updated=false, queued=true | Gonderildi ve PDF butonu; Mikro isaretleme bekliyor bilgisi | Gonderimi basarisiz sanip yeniden belge uretmek |
+| POST `200`, updated=true | Gonderildi; Mikro isaretlemesi de tamam | Yeni gonderim yapmak |
+| POST `200`, updated=false, queued=false | Gonderildi ve PDF; `warning` ile manuel inceleme uyarisi | Mikro uyarisini Uyumsoft hatasi gibi gostermek |
+| POST timeout veya belirsiz sonuc | Sonuc bilinmiyor; mevcut belge durumunu kontrol et | Yeni belge/FRM uretmek veya otomatik POST dongusu |
+| PDF servisi gecici olarak hazir degil | Yalnizca PDF GET istegini aralikli, sinirli tekrar dene | PDF almak icin gonderim POST'unu tekrarlamak |
+
+Tablodaki `updated` ve `queued`, response'taki `localMikroMetadataUpdated` ve `localMikroMetadataUpdateQueued` alanlarinin kisa yazimidir. UI bu alanlari ve `warning` alanini birlikte okumali; tum `409` cevaplarini ayni hata gibi gostermemeli, `detail` mesajini korumalidir. Yetkili kullanici belge akis/timeline ekranindan onayli gonderim kimligini kontrol edebilir. Bu degisiklik ayri bir is-durumu polling endpointi eklemez; mevcut POST bir durum sorgusu gibi periyodik cagrilmamalidir.
+
+#### Kalici Is Kaydi ve Dagitim
+
+`edespatch_submissions.status` operasyonel anlamlari:
+
+| Durum | Anlam |
+|---|---|
+| `Unknown` | Kimlik ayrildi; Uyumsoft sonucu henuz onayli degil. Ilk arka plan dogrulamasi en erken iki dakika sonra yapilir; devam eden gonderimin belge kilidi varsa worker bekleyen isi atlar. |
+| `PendingMetadata` | Uyumsoft gonderimi onayli; Mikro isaretlemesi bekliyor. PDF kullanilabilir. |
+| `Completed` | Uyumsoft gonderimi ve Mikro isaretleme dogrulamasi tamamlandi. |
+| `NeedsReview` | Uyumsoft gonderimi onayli fakat Mikro icerigi/isaretleri uyusmuyor; otomatik uzerine yazma durduruldu. PDF kullanilabilir. |
+
+Worker Uyumsoft'a yeni belge gondermez. `Unknown` durumda sadece kayitli UUID'nin Uyumsoft'taki belge/satir bilgilerini dogrular. Uyumsoft'ta bulunamayan veya acikca reddedilen denemeyi yeni kimlikle otomatik gondermez; bu durum operasyonel inceleme gerektirir. Her hata kendiliginden duzelir garantisi yoktur.
+
+Worker yaklasik bes saniyelik aralarla sorgular, bir turda en fazla 25 isi sirayla isler. Bu nedenle Mikro cagrilari yavas ise isaretleme birikebilir; yeni HTTP/PDF akisinin bu kuyrugu beklememesi bunun icindir. Basarisiz isin tekrar denemesi en fazla 15 dakikalik araliklara kadar geri cekilir. Yeni kalici isler yeniden baslatma sonrasi korunur. Otomatik eski kayit aktariminin son iki gunle sinirli olmasi, yeni islerin iki gun sonra silinecegi anlamina gelmez.
+
+Dagitim kaydi (30.09.2026): `20260930082411_AddDurableEDespatchSubmissions` migration'i mevcut Local/Production ayarlarinin gosterdigi `FurpaMerkezDb` Auth veritabanina uygulanmis, tablo ve indeksler dogrulanmistir. Mikro tablolarina migration uygulanmamistir. Bu islem yeni uygulama kodunu IIS'e yayinlamaz; yeni davranisin canlida aktif olmasi icin guncel backend yayinlanip yeniden baslatilmalidir. Baska ortama kurulumda migration ayrica kontrol edilmelidir.
+
+Gecikme teshisi:
+
+- Loglarda `E-despatch reservation completed` numara kilidi/numara ayirma ve son kontrolu, `Uyumsoft submission completed` dis servis gonderimini, `Mikro metadata completed` arka plan isaretlemesini milisaniye olarak ayri gosterir.
+- Mikro API cagrilarinin gercek sureleri `mikro_api_write_audits.elapsed_milliseconds` alanindadir. `Unknown` ve yaklasik `120000` ms, metadata isleminin zaman asimina ugradigini gosterebilir; bu Uyumsoft gonderiminin basarisiz oldugu anlamina gelmez.
 
 Response:
 
@@ -11523,7 +11588,10 @@ Response:
   "serviceDocumentId": "123456789",
   "serviceDocumentNumber": "IRS2026000000012",
   "sentAt": "2026-04-17T14:25:00+03:00",
-  "endpointUrl": "http://efatura.uyumsoft.com.tr/Services/BasicDespatchIntegration"
+  "endpointUrl": "http://efatura.uyumsoft.com.tr/Services/BasicDespatchIntegration",
+  "localMikroMetadataUpdated": false,
+  "warning": "E-despatch was sent to Uyumsoft. Mikro metadata update was queued and will continue in the background; do not resend.",
+  "localMikroMetadataUpdateQueued": true
 }
 ```
 
@@ -11557,6 +11625,9 @@ Response:
 UI kullanim notu:
 
 - Bu endpointler JSON donmez; response blob/binary olarak ele alinmalidir.
+- Basarili gonderim cevabindan hemen sonra PDF butonu acilabilir. `localMikroMetadataUpdateQueued=true` olmasi PDF'yi engellemez; UI Mikro isaretlemesinin bitmesini beklememelidir.
+- PDF kimligi once kalici onaylanmis gonderim kaydindan, sonra mevcut Auth DB belge akisindaki FRM/UUID'den okunur. Bu kaynaklarda yoksa eski Mikro isaretleri kullanilir. Boylece Mikro satirlari henuz isaretlenmemis olsa bile gonderilmis belge icin yanlis `not been sent yet` hatasi verilmez.
+- PDF dosyasi kayitli UUID ile dogrudan Uyumsoft `GetOutboxDespatchPdf` servisinden alinir; once belge listesi taranmaz. Uyumsoft PDF'yi henuz hazirlamamissa veya servise ulasilamiyorsa UI sadece PDF GET istegini tekrar denemelidir, gonderim POST istegini tekrarlamamali.
 - Browser yeni sekmede acma, iframe icinde gosterme veya custom pdf viewer'a blob URL baglama yaklasimlari kullanilabilir.
 - Evrak henuz e-irsaliye olarak gonderilmemisse `409 Conflict` doner.
 - Evrak bulunamazsa `404 Not Found` doner.
@@ -16476,7 +16547,24 @@ Authorization file ekran akis onerisi:
 
 ### Belge Akis ve Hata Takibi
 
-Bu ekran sevk, iade, mal kabul, siparis ve e-irsaliye adimlarini Auth DB tarafinda izlemek icin eklendi. Mikro semasina yazmaz; kayitlar `document_flows` ve `document_flow_events` tablolarinda tutulur.
+Bu ekran sevk, iade, mal kabul, siparis, e-irsaliye, icmal, zayiat, masraf, virman ve sayim sonucu adimlarini Auth DB tarafinda izlemek icin eklendi. Mikro semasina yazmaz; kayitlar `document_flows` ve `document_flow_events` tablolarinda tutulur.
+
+Belge turleri:
+
+```text
+CompanyShipment          Firma sevki
+InterWarehouseShipment   Depolar arasi sevk
+CompanyReturn            Firma iadesi
+WarehouseReturn          Depo iadesi
+CompanyReceiving         Firma mal kabul
+IssuedCompanyOrder       Verilen firma siparisi
+IssuedWarehouseOrder     Verilen depo siparisi
+CashSummary              Icmal/kasa sayimi
+OutageReceipt            Zayiat fisi
+ExpenseReceipt           Masraf fisi
+Virman                    Virman fisi
+InventoryCount           Stok sayim sonucu
+```
 
 Alan mantigi:
 
@@ -16485,6 +16573,11 @@ Alan mantigi:
 - `currentStep = DocumentCreated`: belge API tarafindan olusturuldu.
 - `currentStep = EDespatchSubmission`: e-irsaliye gonderim adimi calisti. `status = Failed` ise hata panelde kaynak depoya yazilir.
 - `currentStep = WarehouseReceivingAccepted`: hedef depo mal kabul islemini tamamladÄ±. Depo Operasyon Paneli bu adimi hedef depoda tamamlanan kabul olarak sayar.
+- Icmal, zayiat, masraf, virman ve sayim sonucu create islemleri basarili oldugunda `currentStep = DocumentCreated`, `status = Succeeded` kaydi olusur.
+- Sayim sonucunda Mikro response'u ayri bir evrak serisi dondurmedigi icin takip ekraninda belge `SAYIM / {documentNo}` olarak gosterilir; bu deger Mikro'da uretilmis gercek bir seri degildir.
+- Bu ek kayitlar sadece API uzerinden yeni belge olusturuldugunda yazilir; Mikro'da veya baska bir uygulamada manuel olusturulan eski belgeler geriye donuk otomatik aktarilmaz.
+- Belge akis kaydi teknik izleme kaydidir. Kayit yazimi hata verirse asil Mikro create islemi geri alinmaz; backend warning log uretir.
+- E-irsaliye basariliysa akisin mevcut timeline satiri degistirilmez; yeni `EDespatchSubmission/Succeeded` olayi eklenir ve ana kayda Uyumsoft belge numarasi ile UUID yazilir.
 - Depolar arasi belgelerde tek belge akis kaydi hem kaynak depo hem hedef depo icin kullanilir; liste filtresinde iki taraftan biri eslesirse kayit gelir.
 
 ### Mikro API Yazma Audit Kayitlari
@@ -20429,7 +20522,8 @@ public sealed record SendEDespatchResponse(
     DateTime SentAt,
     string EndpointUrl,
     bool LocalMikroMetadataUpdated = true,
-    string? Warning = null);
+    string? Warning = null,
+    bool LocalMikroMetadataUpdateQueued = false);
 
 public enum UyumsoftConnectedServiceKind
 {

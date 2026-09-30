@@ -33,6 +33,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<DocumentFlowEvent> DocumentFlowEvents => Set<DocumentFlowEvent>();
 
+    public DbSet<EDespatchSubmission> EDespatchSubmissions => Set<EDespatchSubmission>();
+
     public DbSet<MikroApiWriteAudit> MikroApiWriteAudits => Set<MikroApiWriteAudit>();
 
     public DbSet<TrendyolGoBranchPosPriceSyncTask> TrendyolGoBranchPosPriceSyncTasks => Set<TrendyolGoBranchPosPriceSyncTask>();

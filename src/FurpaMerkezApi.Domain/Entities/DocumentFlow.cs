@@ -74,7 +74,7 @@ public sealed class DocumentFlow
         UpdatedAtUtc = CreatedAtUtc;
     }
 
-    public void Record(
+    public DocumentFlowEvent Record(
         DocumentFlowStep step,
         DocumentFlowStatus status,
         string message,
@@ -104,7 +104,7 @@ public sealed class DocumentFlow
         LastChangedByUserId = changedByUserId;
         UpdatedAtUtc = occurredAt;
 
-        events.Add(new DocumentFlowEvent(
+        var flowEvent = new DocumentFlowEvent(
             Guid.NewGuid(),
             Id,
             step,
@@ -112,7 +112,10 @@ public sealed class DocumentFlow
             message,
             error,
             changedByUserId,
-            occurredAt));
+            occurredAt);
+        events.Add(flowEvent);
+
+        return flowEvent;
     }
 
     private static int ValidateWarehouseNo(int value, string parameterName)
@@ -161,7 +164,12 @@ public enum DocumentFlowType
     CustomerCard = 10,
     StockSalesPrice = 11,
     StockMovementDocument = 12,
-    CustomerMovementDocument = 13
+    CustomerMovementDocument = 13,
+    CashSummary = 14,
+    OutageReceipt = 15,
+    ExpenseReceipt = 16,
+    Virman = 17,
+    InventoryCount = 18
 }
 
 public enum DocumentFlowStatus

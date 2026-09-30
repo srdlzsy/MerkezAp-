@@ -154,7 +154,6 @@ public sealed class DocumentFlowService(
         CancellationToken cancellationToken)
     {
         var flow = await authDbContext.DocumentFlows
-            .Include(item => item.Events)
             .SingleOrDefaultAsync(item => item.FlowKey == request.FlowKey, cancellationToken);
 
         if (flow is null)
@@ -171,7 +170,7 @@ public sealed class DocumentFlowService(
             authDbContext.DocumentFlows.Add(flow);
         }
 
-        flow.Record(
+        var flowEvent = flow.Record(
             request.Step,
             request.Status,
             request.Message,
@@ -182,6 +181,7 @@ public sealed class DocumentFlowService(
             request.ExternalDocumentNo,
             request.ExternalUuid,
             request.TargetWarehouseNo);
+        authDbContext.DocumentFlowEvents.Add(flowEvent);
 
         await authDbContext.SaveChangesAsync(cancellationToken);
     }

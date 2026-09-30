@@ -3,6 +3,8 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.List;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -17,7 +19,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.StokIslemleri.Virmanlar;
 public sealed class VirmanlarController(
     IListVirmansUseCase listVirmansUseCase,
     IGetVirmanDetailUseCase getVirmanDetailUseCase,
-    ICreateVirmanUseCase createVirmanUseCase)
+    ICreateVirmanUseCase createVirmanUseCase,
+    IDocumentFlowService documentFlowService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "stok-islemleri";
@@ -97,6 +100,25 @@ public sealed class VirmanlarController(
                     .ToArray(),
                 request.ClientRequestId,
                 User.GetRequiredUserId()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.Virman,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.Virman,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Virman fisi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: response.DocumentNo),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

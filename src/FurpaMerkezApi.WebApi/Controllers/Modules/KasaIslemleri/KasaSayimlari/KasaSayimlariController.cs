@@ -4,6 +4,8 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Commands;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Files;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Lookups;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Queries;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -19,7 +21,8 @@ public sealed class KasaSayimlariController(
     ICashSummaryQueriesUseCase cashSummaryQueriesUseCase,
     ICashSummaryLookupsUseCase cashSummaryLookupsUseCase,
     ICashSummaryCommandsUseCase cashSummaryCommandsUseCase,
-    IGetCashSummaryZReportTotalUseCase getCashSummaryZReportTotalUseCase)
+    IGetCashSummaryZReportTotalUseCase getCashSummaryZReportTotalUseCase,
+    IDocumentFlowService documentFlowService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "kasa-islemleri";
@@ -338,6 +341,24 @@ public sealed class KasaSayimlariController(
                         line.Description ?? string.Empty,
                         line.AmountValue))
                     .ToArray()),
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.CashSummary,
+                    response.WarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.CashSummary,
+                response.WarehouseNo,
+                null,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Icmal kaydi olusturuldu.",
+                ChangedByUserId: User.GetRequiredUserId()),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);

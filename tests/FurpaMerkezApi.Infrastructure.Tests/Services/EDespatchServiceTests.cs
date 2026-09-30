@@ -318,6 +318,18 @@ public sealed class EDespatchServiceTests
     }
 
     [Fact]
+    public void MatchesCompletedShipmentCreate_UsesOriginalRequestCountWhenStoredResponseWasPartial()
+    {
+        var response = new FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create.CreateInterWarehouseShipmentResponse(
+            "F56", 88007, DateTime.Today, DateTime.Today, "", 56, 157, 60, 27, 0, 0, 0, "MikroWriteConnection");
+
+        Assert.True(EDespatchService.MatchesCompletedShipmentCreate(
+            response, "F56", 88007, 56, 29, 29));
+        Assert.False(EDespatchService.MatchesCompletedShipmentCreate(
+            response, "F56", 88007, 56, 28, 29));
+    }
+
+    [Fact]
     public void MatchesCompletedDocumentCreate_RejectsPartialWarehouseReturn()
     {
         Assert.True(EDespatchService.MatchesCompletedDocumentCreate(

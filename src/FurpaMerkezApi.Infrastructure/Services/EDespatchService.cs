@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -33,7 +34,7 @@ public sealed class EDespatchService(
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
     ILogger<EDespatchService> logger)
-    : IEDespatchService
+    : IEDespatchService, IEDespatchMetadataUpdateProcessor
 {
     private const string DespatchNamespace = "urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2";
     private const string AggregateNamespace = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
@@ -68,9 +69,20 @@ public sealed class EDespatchService(
         var config = options.Value;
         ValidateConfiguration(config);
 
+        var requestTimer = Stopwatch.StartNew();
         try
         {
-            await using var documentNumberLock = await AcquireDocumentNumberLockAsync(cancellationToken);
+            await using var documentLock = await EDespatchDocumentLock.TryAcquireAsync(
+                mikroWriteDbContext.Database.GetConnectionString()!, SubmissionKey(request), cancellationToken)
+                ?? throw new InvalidOperationException("This e-despatch is already being processed. Refresh its status; do not submit again.");
+            var existing = await authDbContext.EDespatchSubmissions.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DocumentKey == SubmissionKey(request), cancellationToken);
+            if (existing is not null)
+            {
+                if (existing.Status == EDespatchSubmissionStatus.Unknown)
+                    throw new InvalidOperationException("Uyumsoft submission result is being verified. No new e-despatch was sent.");
+                return SubmissionResponse(existing);
+            }
             var response = request.DocumentType switch
             {
                 EDespatchDocumentType.OutgoingCompanyShipment => await SendCompanyMovementAsync(
@@ -99,31 +111,360 @@ public sealed class EDespatchService(
                     "Unsupported e-despatch document type.")
             };
 
-            using var completionCancellation = new CancellationTokenSource(
-                TimeSpan.FromSeconds(PostSubmissionCompletionTimeoutSeconds));
-            await RecordEDespatchFlowAsync(
-                request,
-                DocumentFlowStatus.Succeeded,
-                response.LocalMikroMetadataUpdated
-                    ? "E-irsaliye Uyumsoft'a basariyla gonderildi."
-                    : "E-irsaliye Uyumsoft'a gonderildi ancak Mikro gonderim bilgisi isaretlenemedi.",
-                response.Warning,
-                response,
-                completionCancellation.Token);
-
             return response;
         }
         catch (Exception exception)
         {
-            await RecordEDespatchFlowAsync(
-                request,
-                DocumentFlowStatus.Failed,
-                "E-irsaliye gonderimi basarisiz oldu.",
-                exception.Message,
-                null,
-                CancellationToken.None);
+            logger.LogWarning(exception, "E-despatch request did not complete. Document={Document}", SubmissionKey(request));
+            // A rejected duplicate or uncertain network response must not overwrite a confirmed send.
+            await RecordKnownFailureAsync(request, exception);
             throw;
         }
+        finally
+        {
+            logger.LogInformation("E-despatch HTTP processing finished. Document={Document}, ElapsedMs={ElapsedMs}",
+                SubmissionKey(request), requestTimer.ElapsedMilliseconds);
+        }
+    }
+
+    private async Task RecordKnownFailureAsync(SendEDespatchRequest request, Exception error)
+    {
+        try
+        {
+            authDbContext.ChangeTracker.Clear();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await using var lease = await EDespatchDocumentLock.TryAcquireAsync(
+                mikroWriteDbContext.Database.GetConnectionString()!, SubmissionKey(request), timeout.Token);
+            if (lease is null || await authDbContext.EDespatchSubmissions.AsNoTracking()
+                    .AnyAsync(x => x.DocumentKey == SubmissionKey(request), timeout.Token) ||
+                await GetTrackedSubmittedDespatchAsync(request, timeout.Token) is not null) return;
+            await RecordEDespatchFlowAsync(request, DocumentFlowStatus.Failed,
+                "E-irsaliye gonderimi tamamlanamadi.", error.Message, null, timeout.Token);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "E-despatch failure timeline could not be recorded.");
+        }
+    }
+
+    async Task IEDespatchMetadataUpdateProcessor.ImportLegacyAsync(Guid flowId, CancellationToken cancellationToken)
+    {
+        var flow = await authDbContext.DocumentFlows.AsNoTracking().SingleAsync(x => x.Id == flowId, cancellationToken);
+        var type = flow.DocumentType switch
+        {
+            DocumentFlowType.InterWarehouseShipment => EDespatchDocumentType.InterWarehouseShipment,
+            DocumentFlowType.WarehouseReturn => EDespatchDocumentType.WarehouseReturn,
+            DocumentFlowType.CompanyShipment => EDespatchDocumentType.OutgoingCompanyShipment,
+            DocumentFlowType.CompanyReturn => EDespatchDocumentType.CompanyReturn,
+            _ => throw new InvalidOperationException("Unsupported legacy e-despatch flow.")
+        };
+        var request = new SendEDespatchRequest(type, flow.SourceWarehouseNo, flow.DocumentSerie,
+            flow.DocumentOrderNo, string.Empty, string.Empty, string.Empty);
+        await using var lease = await EDespatchDocumentLock.TryAcquireAsync(
+            mikroWriteDbContext.Database.GetConnectionString()!, SubmissionKey(request), cancellationToken);
+        if (lease is null || await authDbContext.EDespatchSubmissions.AnyAsync(x => x.DocumentKey == flow.FlowKey, cancellationToken)) return;
+
+        IReadOnlyCollection<STOK_HAREKETLERI> rows;
+        if (type is EDespatchDocumentType.InterWarehouseShipment or EDespatchDocumentType.WarehouseReturn)
+        {
+            var document = await ResolveInterWarehouseDocumentAsync(request.WarehouseNo, request.DocumentSerie,
+                request.DocumentOrderNo, type == EDespatchDocumentType.WarehouseReturn, cancellationToken);
+            rows = document.TrackedMovements;
+        }
+        else
+        {
+            var document = await ResolveCompanyMovementAsync(request.WarehouseNo, request.DocumentSerie, request.DocumentOrderNo,
+                type == EDespatchDocumentType.CompanyReturn ? CompanyMovementKind.PurchaseReturn : CompanyMovementKind.OutgoingShipment,
+                cancellationToken);
+            rows = document.TrackedMovements;
+        }
+        var contacts = ResolveDespatchContacts(request, NormalizeText(rows.Select(x => x.sth_HareketGrupKodu2).ToArray()),
+            NormalizeText(rows.Select(x => x.sth_HareketGrupKodu3).ToArray()));
+        var work = new EDespatchMetadataUpdateWorkItem(
+            request with
+            {
+                Deliverer = contacts.Deliverer, Receiver = contacts.Receiver,
+                Plaque = NormalizeText(rows.Select(x => x.sth_HareketGrupKodu1).ToArray()),
+                DriverTckn = NormalizeText(rows.Select(x => x.sth_ismerkezi_kodu).ToArray())
+            }, flow.ExternalDocumentNo!, flow.ExternalUuid!, rows.Select(EDespatchMovementSnapshot.From).ToArray());
+        authDbContext.EDespatchSubmissions.Add(new EDespatchSubmission(flow.FlowKey, work.EDespatchDocumentNo,
+            work.EDespatchUuid, JsonSerializer.Serialize(work), DateTime.UtcNow));
+        await authDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string SubmissionKey(SendEDespatchRequest request) => DocumentFlowKeys.Create(
+        ToDocumentFlowType(request.DocumentType), request.WarehouseNo, request.DocumentSerie.Trim(), request.DocumentOrderNo);
+
+    internal static void EnsureSnapshotMatches(
+        IReadOnlyCollection<EDespatchMovementSnapshot> snapshot, IReadOnlyCollection<STOK_HAREKETLERI> current)
+    {
+        if (snapshot.Count == 0 || !EDespatchMovementSnapshot.Matches(snapshot, current))
+            throw new EDespatchMetadataConflictException(
+                "Mikro document content differs from the submitted e-despatch. No metadata was overwritten; manual review is required.");
+    }
+
+    private SendEDespatchResponse SubmissionResponse(EDespatchSubmission submission)
+    {
+        var work = JsonSerializer.Deserialize<EDespatchMetadataUpdateWorkItem>(submission.PayloadJson)
+            ?? throw new InvalidOperationException("Stored e-despatch work is invalid.");
+        var complete = submission.Status == EDespatchSubmissionStatus.Completed;
+        return new SendEDespatchResponse(work.Request.DocumentType, work.Request.DocumentSerie,
+            work.Request.DocumentOrderNo, submission.DocumentNo, submission.Uuid, string.Empty, submission.DocumentNo,
+            submission.CreatedAtUtc, options.Value.EndpointUrl, complete,
+            complete ? null : submission.Status == EDespatchSubmissionStatus.NeedsReview
+                ? "Uyumsoft submission succeeded; Mikro metadata requires manual review. Do not resend."
+                : BuildQueuedMikroMetadataWarning(),
+            submission.Status == EDespatchSubmissionStatus.PendingMetadata);
+    }
+
+    private async Task<SendEDespatchResponse> SendDurablyAsync(
+        SendEDespatchRequest request, MikroDbContext context, IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        ResolvedDespatchContacts contacts, Func<string, string, UyumsoftDespatch.DespatchInfo> build,
+        CancellationToken cancellationToken)
+    {
+        EDespatchSubmission submission;
+        UyumsoftDespatch.DespatchInfo despatch;
+        var timer = Stopwatch.StartNew();
+        await using (var numberLock = await AcquireDocumentNumberLockAsync(cancellationToken))
+        {
+            var number = await BuildEDespatchDocumentNoAsync(DateTime.Now.Year, options.Value, cancellationToken);
+            var uuid = Guid.NewGuid().ToString();
+            despatch = build(number, uuid);
+            await EnsureDocumentMovementSetUnchangedAsync(request, context, movements, cancellationToken);
+            var work = new EDespatchMetadataUpdateWorkItem(
+                request with { Deliverer = contacts.Deliverer, Receiver = contacts.Receiver }, number, uuid,
+                movements.Select(EDespatchMovementSnapshot.From).ToArray());
+            EnsureUyumsoftLinesMatch(despatch.DespatchAdvice.DespatchLine, work.Movements);
+            submission = new EDespatchSubmission(SubmissionKey(request), number, uuid,
+                JsonSerializer.Serialize(work), DateTime.UtcNow);
+            authDbContext.EDespatchSubmissions.Add(submission);
+            // Persist identity before the network call. An interrupted request can only be reconciled, never blindly resent.
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        logger.LogInformation("E-despatch reservation completed. Document={Document}, ElapsedMs={ElapsedMs}",
+            submission.DocumentKey, timer.ElapsedMilliseconds);
+        timer.Restart();
+        var serviceResult = await SendToUyumsoftAsync(despatch, options.Value, cancellationToken);
+        logger.LogInformation("Uyumsoft submission completed. Document={Document}, ElapsedMs={ElapsedMs}",
+            submission.DocumentKey, timer.ElapsedMilliseconds);
+        using var completion = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await ConfirmSubmissionAsync(submission, completion.Token);
+        return SubmissionResponse(submission) with
+        {
+            ServiceDocumentId = serviceResult.ServiceDocumentId,
+            ServiceDocumentNumber = serviceResult.ServiceDocumentNumber
+        };
+    }
+
+    private async Task ConfirmSubmissionAsync(EDespatchSubmission submission, CancellationToken cancellationToken)
+    {
+        var timer = Stopwatch.StartNew();
+        var work = JsonSerializer.Deserialize<EDespatchMetadataUpdateWorkItem>(submission.PayloadJson)!;
+        var request = work.Request;
+        var target = work.Movements.FirstOrDefault()?.TransitWarehouse;
+        var flow = await authDbContext.DocumentFlows.SingleOrDefaultAsync(x => x.FlowKey == submission.DocumentKey, cancellationToken);
+        if (flow is null)
+        {
+            flow = new DocumentFlow(Guid.NewGuid(), submission.DocumentKey, ToDocumentFlowType(request.DocumentType),
+                request.WarehouseNo, target > 0 ? target : null, request.DocumentSerie, request.DocumentOrderNo, DateTime.UtcNow);
+            authDbContext.DocumentFlows.Add(flow);
+        }
+        var flowEvent = flow.Record(DocumentFlowStep.EDespatchSubmission, DocumentFlowStatus.Succeeded,
+            "E-irsaliye Uyumsoft'a gonderildi; Mikro isaretleme kalici olarak kaydedildi.", null, null, DateTime.UtcNow,
+            externalDocumentNo: submission.DocumentNo, externalUuid: submission.Uuid);
+        authDbContext.DocumentFlowEvents.Add(flowEvent);
+        submission.ConfirmSubmission(DateTime.UtcNow);
+        // One Auth transaction persists both confirmation and the pending metadata work; exceptions are not swallowed.
+        await authDbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("E-despatch confirmation persisted. Document={Document}, ElapsedMs={ElapsedMs}",
+            submission.DocumentKey, timer.ElapsedMilliseconds);
+    }
+
+    async Task IEDespatchMetadataUpdateProcessor.ProcessPendingAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var submission = await authDbContext.EDespatchSubmissions.SingleAsync(x => x.Id == id, cancellationToken);
+        await using var documentLock = await EDespatchDocumentLock.TryAcquireAsync(
+            mikroWriteDbContext.Database.GetConnectionString()!, submission.DocumentKey, cancellationToken);
+        if (documentLock is null) return;
+        await authDbContext.Entry(submission).ReloadAsync(cancellationToken);
+        if (submission.Status is not (EDespatchSubmissionStatus.Unknown or EDespatchSubmissionStatus.PendingMetadata) ||
+            submission.NextAttemptAtUtc > DateTime.UtcNow) return;
+        var timer = Stopwatch.StartNew();
+        try
+        {
+            var work = JsonSerializer.Deserialize<EDespatchMetadataUpdateWorkItem>(submission.PayloadJson)
+                ?? throw new EDespatchMetadataConflictException("Stored e-despatch work is invalid.");
+            if (submission.Status == EDespatchSubmissionStatus.Unknown)
+            {
+                await EnsureTrackedSubmissionContainsCompleteDocumentAsync(options.Value,
+                    new SentDespatchInfo(submission.DocumentNo, submission.Uuid), work.Movements.Length, cancellationToken, work.Movements);
+                await ConfirmSubmissionAsync(submission, cancellationToken);
+            }
+            if (!await UpdateLocalMetadataAsync(work, cancellationToken))
+                throw new InvalidOperationException("Mikro metadata update could not be verified; it will be retried.");
+            submission.Complete(DateTime.UtcNow);
+            await authDbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Mikro metadata completed. Document={Document}, ElapsedMs={ElapsedMs}",
+                submission.DocumentKey, timer.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            // Discard failed timeline changes before persisting the retry in the same scope.
+            authDbContext.ChangeTracker.Clear();
+            submission = await authDbContext.EDespatchSubmissions.SingleAsync(x => x.Id == id, cancellationToken);
+            if (exception is EDespatchMetadataConflictException && submission.Status == EDespatchSubmissionStatus.PendingMetadata)
+                submission.RequireReview(exception.Message);
+            else
+                submission.ScheduleRetry(exception.Message, DateTime.UtcNow);
+            await authDbContext.SaveChangesAsync(cancellationToken);
+            logger.LogWarning(exception, "E-despatch reconciliation deferred. Document={Document}, Status={Status}, Attempt={Attempt}",
+                submission.DocumentKey, submission.Status, submission.AttemptCount);
+        }
+    }
+
+    private async Task<bool> UpdateLocalMetadataAsync(
+        EDespatchMetadataUpdateWorkItem workItem,
+        CancellationToken cancellationToken)
+    {
+        var request = workItem.Request;
+
+        if (request.DocumentType is EDespatchDocumentType.InterWarehouseShipment or EDespatchDocumentType.WarehouseReturn)
+        {
+            var document = await ResolveInterWarehouseDocumentAsync(
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                request.DocumentType == EDespatchDocumentType.WarehouseReturn,
+                cancellationToken);
+            var contacts = ResolveDespatchContacts(
+                request,
+                NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu2).ToArray()),
+                NormalizeText(document.TrackedMovements.Select(movement => movement.sth_HareketGrupKodu3).ToArray()));
+
+            EnsureSnapshotMatches(workItem.Movements, document.TrackedMovements);
+
+            if (HasMatchingSentMarker(
+                    document.TrackedMovements,
+                    workItem.EDespatchDocumentNo,
+                    workItem.EDespatchUuid))
+            {
+                return true;
+            }
+
+            var updated = await TryMarkAsSentAsync(
+                document.Context,
+                document.TrackedMovements,
+                workItem.EDespatchDocumentNo,
+                workItem.EDespatchUuid,
+                new SentMovementMetadata(
+                    NormalizeText(request.Plaque),
+                    contacts.Deliverer,
+                    contacts.Receiver,
+                    NormalizeText(request.DriverTckn)), cancellationToken);
+
+            return updated && await TryDocumentMovementSetMatchesAfterSubmissionAsync(
+                request,
+                document.Context,
+                document.TrackedMovements);
+        }
+
+        var movementKind = request.DocumentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => CompanyMovementKind.OutgoingShipment,
+            EDespatchDocumentType.CompanyReturn => CompanyMovementKind.PurchaseReturn,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(request.DocumentType),
+                request.DocumentType,
+                "Unsupported e-despatch document type.")
+        };
+        var companyDocument = await ResolveCompanyMovementAsync(
+            request.WarehouseNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            movementKind,
+            cancellationToken);
+        var companyContacts = ResolveDespatchContacts(
+            request,
+            companyDocument.Detail.Header.Deliverer,
+            companyDocument.Detail.Header.Receiver);
+        EnsureSnapshotMatches(workItem.Movements, companyDocument.TrackedMovements);
+        if (HasMatchingSentMarker(
+                companyDocument.TrackedMovements,
+                workItem.EDespatchDocumentNo,
+                workItem.EDespatchUuid))
+        {
+            return true;
+        }
+
+        var companyUpdated = await TryMarkAsSentAsync(
+            companyDocument.Context,
+            companyDocument.TrackedMovements,
+            workItem.EDespatchDocumentNo,
+            workItem.EDespatchUuid,
+            new SentMovementMetadata(
+                NormalizeText(request.Plaque),
+                companyContacts.Deliverer,
+                companyContacts.Receiver,
+                NormalizeText(request.DriverTckn)), cancellationToken);
+
+        return companyUpdated && await TryDocumentMovementSetMatchesAfterSubmissionAsync(
+            request,
+            companyDocument.Context,
+            companyDocument.TrackedMovements);
+    }
+
+    private async Task<(string DocumentNo, string Uuid)?> FindCompleteLocalMarkerAsync(
+        SendEDespatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyCollection<STOK_HAREKETLERI> movements;
+        if (request.DocumentType is EDespatchDocumentType.InterWarehouseShipment or EDespatchDocumentType.WarehouseReturn)
+        {
+            var document = await ResolveInterWarehouseDocumentAsync(
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                request.DocumentType == EDespatchDocumentType.WarehouseReturn,
+                cancellationToken);
+            movements = document.TrackedMovements;
+        }
+        else
+        {
+            var movementKind = request.DocumentType switch
+            {
+                EDespatchDocumentType.OutgoingCompanyShipment => CompanyMovementKind.OutgoingShipment,
+                EDespatchDocumentType.CompanyReturn => CompanyMovementKind.PurchaseReturn,
+                _ => throw new ArgumentOutOfRangeException(nameof(request.DocumentType), request.DocumentType, null)
+            };
+            var document = await ResolveCompanyMovementAsync(
+                request.WarehouseNo,
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                movementKind,
+                cancellationToken);
+            movements = document.TrackedMovements;
+        }
+
+        return ResolveConsistentSentDespatchMarker(
+            movements.Select(movement => (movement.sth_belge_no, movement.sth_aciklama)).ToArray());
+    }
+
+    internal static bool HasMatchingSentMarker(
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        string expectedDocumentNo,
+        string expectedUuid)
+    {
+        try
+        {
+            EnsureMovementMarkersMatchTrackedSubmission(
+                movements.Select(x => (x.sth_belge_no, x.sth_aciklama)).ToArray(), expectedDocumentNo, expectedUuid);
+        }
+        catch (InvalidOperationException exception) { throw new EDespatchMetadataConflictException(exception.Message); }
+
+        return movements.Count > 0 && movements.All(x => x.sth_kilitli == true &&
+            string.Equals(x.sth_belge_no?.Trim(), expectedDocumentNo, StringComparison.OrdinalIgnoreCase) &&
+            Guid.TryParse(x.sth_aciklama, out var uuid) && uuid == Guid.Parse(expectedUuid));
     }
 
     private async Task<SendEDespatchRequest> ResolveDriverAsync(
@@ -191,6 +532,19 @@ public sealed class EDespatchService(
         SendEDespatchRequest request,
         CancellationToken cancellationToken)
     {
+        var result = await FindConfirmedSubmissionAsync(authDbContext, request, cancellationToken);
+        return result is null ? null : new SentDespatchInfo(result.Value.DocumentNo, result.Value.Uuid);
+    }
+
+    internal static async Task<(string DocumentNo, string Uuid)?> FindConfirmedSubmissionAsync(
+        AuthDbContext db, SendEDespatchRequest request, CancellationToken cancellationToken)
+    {
+        var key = SubmissionKey(request);
+        var submission = await db.EDespatchSubmissions.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.DocumentKey == key, cancellationToken);
+        if (submission is not null && submission.Status is EDespatchSubmissionStatus.PendingMetadata or
+            EDespatchSubmissionStatus.Completed or EDespatchSubmissionStatus.NeedsReview)
+            return (submission.DocumentNo, submission.Uuid);
         var documentType = ToDocumentFlowType(request.DocumentType);
         var flowKey = DocumentFlowKeys.Create(
             documentType,
@@ -198,7 +552,7 @@ public sealed class EDespatchService(
             request.DocumentSerie,
             request.DocumentOrderNo);
 
-        var sentFlow = await authDbContext.DocumentFlows
+        var sentFlow = await db.DocumentFlows
             .AsNoTracking()
             .Where(flow =>
                 flow.FlowKey == flowKey &&
@@ -216,7 +570,7 @@ public sealed class EDespatchService(
             return null;
         }
 
-        return new SentDespatchInfo(
+        return (
             sentFlow.ExternalDocumentNo!.Trim(),
             sentFlow.ExternalUuid!.Trim());
     }
@@ -268,14 +622,9 @@ public sealed class EDespatchService(
                 sentDespatch.EDespatchDocumentNo,
                 sentDespatch.EDespatchUuid);
 
-            if (localMarkerError is not null)
-            {
-                await EnsureTrackedSubmissionContainsCompleteDocumentAsync(
-                    config,
-                    sentDespatch,
-                    trackedMovements.Count,
-                    cancellationToken);
-            }
+            await EnsureTrackedSubmissionContainsCompleteDocumentAsync(
+                config, sentDespatch, trackedMovements.Count, cancellationToken,
+                trackedMovements.Select(EDespatchMovementSnapshot.From).ToArray());
         }
 
         if (sentDespatch is null)
@@ -283,36 +632,26 @@ public sealed class EDespatchService(
             return null;
         }
 
-        var localMikroMetadataUpdated = await TryMarkAsSentAsync(
-            context,
-            trackedMovements,
-            sentDespatch.EDespatchDocumentNo,
-            sentDespatch.EDespatchUuid,
-            new SentMovementMetadata(
-                request.Plaque,
-                contacts.Deliverer,
-                contacts.Receiver,
-                request.DriverTckn));
-
         logger.LogInformation(
-            "Existing Uyumsoft e-despatch submission was recovered without resending. Document={DocumentSerie}/{DocumentOrderNo}, EDespatchDocumentNo={EDespatchDocumentNo}, LocalMikroMetadataUpdated={LocalMikroMetadataUpdated}",
+            "Existing Uyumsoft e-despatch submission was recovered without resending. Document={DocumentSerie}/{DocumentOrderNo}, EDespatchDocumentNo={EDespatchDocumentNo}",
             documentSerie,
             documentOrderNo,
-            sentDespatch.EDespatchDocumentNo,
-            localMikroMetadataUpdated);
+            sentDespatch.EDespatchDocumentNo);
 
-        return new SendEDespatchResponse(
-            request.DocumentType,
-            documentSerie,
-            documentOrderNo,
-            sentDespatch.EDespatchDocumentNo,
-            sentDespatch.EDespatchUuid,
-            string.Empty,
-            sentDespatch.EDespatchDocumentNo,
-            DateTime.Now,
-            config.EndpointUrl,
-            localMikroMetadataUpdated,
-            BuildLocalMikroMetadataWarning(localMikroMetadataUpdated));
+        var work = new EDespatchMetadataUpdateWorkItem(
+            request with { Deliverer = contacts.Deliverer, Receiver = contacts.Receiver },
+            sentDespatch.EDespatchDocumentNo, sentDespatch.EDespatchUuid,
+            trackedMovements.Select(EDespatchMovementSnapshot.From).ToArray());
+        var submission = new EDespatchSubmission(SubmissionKey(request), work.EDespatchDocumentNo,
+            work.EDespatchUuid, JsonSerializer.Serialize(work), DateTime.UtcNow);
+        authDbContext.EDespatchSubmissions.Add(submission);
+        await ConfirmSubmissionAsync(submission, cancellationToken);
+        if (HasMatchingSentMarker(trackedMovements, work.EDespatchDocumentNo, work.EDespatchUuid))
+        {
+            submission.Complete(DateTime.UtcNow);
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        return SubmissionResponse(submission);
     }
 
     internal static (string DocumentNo, string Uuid)? ResolveConsistentSentDespatchMarker(
@@ -444,7 +783,8 @@ public sealed class EDespatchService(
         EDespatchOptions config,
         SentDespatchInfo trackedSubmission,
         int expectedLineCount,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        EDespatchMovementSnapshot[]? expectedMovements = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var endpointOptions = ToEndpointOptions(config);
@@ -470,6 +810,7 @@ public sealed class EDespatchService(
                 trackedSubmission.EDespatchDocumentNo,
                 trackedSubmission.EDespatchUuid,
                 expectedLineCount);
+            if (expectedMovements is not null) EnsureUyumsoftLinesMatch(despatch.DespatchLine, expectedMovements);
         }
         catch
         {
@@ -481,6 +822,24 @@ public sealed class EDespatchService(
             await UyumsoftWcfClientHelper.CloseAsync(client);
         }
     }
+    internal static void EnsureUyumsoftLinesMatch(
+        UyumsoftDespatch.DespatchLineType[]? lines, EDespatchMovementSnapshot[] expectedMovements)
+    {
+        if (lines is null || lines.Length != expectedMovements.Length ||
+            expectedMovements.Any(x => x.RowNo is null) ||
+            expectedMovements.Select(x => x.RowNo).Distinct().Count() != expectedMovements.Length ||
+            lines.Select(x => x.ID?.Value).Distinct().Count() != lines.Length)
+            throw new EDespatchMetadataConflictException("E-despatch line identities/count do not match Mikro.");
+        foreach (var expected in expectedMovements)
+        {
+            var line = lines.SingleOrDefault(x => x.ID?.Value == (expected.RowNo!.Value + 1).ToString(CultureInfo.InvariantCulture));
+            if (line is null || line.Item?.SellersItemIdentification?.ID?.Value != expected.StockCode ||
+                line.DeliveredQuantity is null ||
+                Math.Abs((double)line.DeliveredQuantity.Value - (expected.Quantity ?? 0)) > 0.000001)
+                throw new EDespatchMetadataConflictException("E-despatch stock/quantity differs from Mikro. Submission or metadata recovery was blocked.");
+        }
+    }
+
     private async Task EnsureDocumentMovementSetUnchangedAsync(
         SendEDespatchRequest request,
         MikroDbContext context,
@@ -506,13 +865,11 @@ public sealed class EDespatchService(
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
         CancellationToken cancellationToken)
     {
-        var currentMovementGuids = await BuildDocumentMovementQuery(context, request)
+        var currentMovements = await BuildDocumentMovementQuery(context, request)
             .AsNoTracking()
-            .Select(movement => movement.sth_Guid)
             .ToArrayAsync(cancellationToken);
-        var matches = HaveSameMovementGuids(
-            trackedMovements.Select(movement => movement.sth_Guid),
-            currentMovementGuids);
+        var matches = EDespatchMovementSnapshot.Matches(
+            trackedMovements.Select(EDespatchMovementSnapshot.From), currentMovements);
 
         if (!matches)
         {
@@ -523,7 +880,7 @@ public sealed class EDespatchService(
                 request.DocumentSerie,
                 request.DocumentOrderNo,
                 trackedMovements.Count,
-                currentMovementGuids.Length);
+                currentMovements.Length);
         }
 
         return matches;
@@ -680,7 +1037,11 @@ public sealed class EDespatchService(
         var config = options.Value;
         ValidateConfiguration(config);
 
-        var sentDespatch = request.DocumentType switch
+        var lookupRequest = new SendEDespatchRequest(request.DocumentType, request.WarehouseNo,
+            request.DocumentSerie, request.DocumentOrderNo, string.Empty, string.Empty, string.Empty);
+        var confirmed = await GetTrackedSubmittedDespatchAsync(lookupRequest, cancellationToken);
+        // Uyumsoft owns the PDF; Mikro metadata can legitimately still be pending.
+        var sentDespatch = confirmed ?? (request.DocumentType switch
         {
             EDespatchDocumentType.OutgoingCompanyShipment => ExtractSentDespatchInfo(
                 (await ResolveCompanyMovementAsync(
@@ -718,16 +1079,15 @@ public sealed class EDespatchService(
                 nameof(request.DocumentType),
                 request.DocumentType,
                 "Unsupported e-despatch document type.")
-        };
+        });
 
-        var serviceDocumentId = await ResolveOutboxDespatchIdAsync(
-            config,
-            sentDespatch.EDespatchDocumentNo,
-            cancellationToken);
+        var pdfTimer = Stopwatch.StartNew();
         var pdfContent = await GetOutboxDespatchPdfAsync(
             config,
-            serviceDocumentId,
+            sentDespatch.EDespatchUuid,
             cancellationToken);
+        logger.LogInformation("Uyumsoft PDF received. DocumentNo={DocumentNo}, ElapsedMs={ElapsedMs}",
+            sentDespatch.EDespatchDocumentNo, pdfTimer.ElapsedMilliseconds);
 
         return new GetEDespatchPdfResponse(
             $"{sentDespatch.EDespatchDocumentNo}.pdf",
@@ -769,11 +1129,6 @@ public sealed class EDespatchService(
         }
 
         var now = DateTime.Now;
-        var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
-            now.Year,
-            config,
-            cancellationToken);
-        var eDespatchUuid = Guid.NewGuid().ToString();
         var sourceWarehouse = await LoadWarehouseAsync(
             document.Context,
             document.Detail.Header.WarehouseNo,
@@ -795,7 +1150,8 @@ public sealed class EDespatchService(
             deliveryCustomer,
             config,
             cancellationToken);
-        var despatchInfo = BuildDespatchInfo(
+        return await SendDurablyAsync(request, document.Context, document.TrackedMovements, contacts,
+            (eDespatchDocumentNo, eDespatchUuid) => BuildDespatchInfo(
             BuildCompanyMovementDespatchAdvice(
                 document.Detail,
                 sourceWarehouse,
@@ -811,45 +1167,7 @@ public sealed class EDespatchService(
             BuildLocalDocumentId(request),
             resolvedDeliveryAlias,
             resolvedDeliveryAlias is null ? null : deliveryCustomer.TaxNumber,
-            resolvedDeliveryAlias is null ? null : deliveryCustomer.DisplayName);
-        await EnsureDocumentMovementSetUnchangedAsync(
-            request,
-            document.Context,
-            document.TrackedMovements,
-            cancellationToken);
-        var serviceResult = await SendToUyumsoftAsync(
-            despatchInfo,
-            config,
-            cancellationToken);
-
-        var trackedMetadataUpdated = await TryMarkAsSentAsync(
-            document.Context,
-            document.TrackedMovements,
-            eDespatchDocumentNo,
-            eDespatchUuid,
-            new SentMovementMetadata(
-                request.Plaque,
-                contacts.Deliverer,
-                contacts.Receiver,
-                request.DriverTckn));
-        var localMikroMetadataUpdated = trackedMetadataUpdated &&
-            await TryDocumentMovementSetMatchesAfterSubmissionAsync(
-                request,
-                document.Context,
-                document.TrackedMovements);
-
-        return new SendEDespatchResponse(
-            request.DocumentType,
-            document.Detail.Header.DocumentSerie,
-            document.Detail.Header.DocumentOrderNo,
-            eDespatchDocumentNo,
-            eDespatchUuid,
-            serviceResult.ServiceDocumentId,
-            serviceResult.ServiceDocumentNumber,
-            now,
-            config.EndpointUrl,
-            localMikroMetadataUpdated,
-            BuildLocalMikroMetadataWarning(localMikroMetadataUpdated));
+            resolvedDeliveryAlias is null ? null : deliveryCustomer.DisplayName), cancellationToken);
     }
 
     private async Task<SendEDespatchResponse> SendInterWarehouseDocumentAsync(
@@ -886,14 +1204,8 @@ public sealed class EDespatchService(
             return recoveredResponse;
         }
 
-        await EnsureInterWarehouseDocumentCompleteAsync(request, document, cancellationToken);
-
         var now = DateTime.Now;
-        var eDespatchDocumentNo = await BuildEDespatchDocumentNoAsync(
-            now.Year,
-            config,
-            cancellationToken);
-        var eDespatchUuid = Guid.NewGuid().ToString();
+        await EnsureInterWarehouseDocumentCompleteAsync(request, document, cancellationToken);
         var supplierCustomer = await LoadCustomerAsync(
             document.Context,
             config.SupplierCustomerCode,
@@ -910,7 +1222,8 @@ public sealed class EDespatchService(
         EnsureDeliveryAddressPostalCode(
             targetWarehouse.PostalCode,
             $"warehouse {targetWarehouse.WarehouseNo} ({targetWarehouse.Name})");
-        var despatchInfo = BuildDespatchInfo(
+        return await SendDurablyAsync(request, document.Context, document.TrackedMovements, contacts,
+            (eDespatchDocumentNo, eDespatchUuid) => BuildDespatchInfo(
             BuildInterWarehouseDespatchAdvice(
                 document.Detail,
                 supplierCustomer,
@@ -926,46 +1239,7 @@ public sealed class EDespatchService(
             BuildLocalDocumentId(request),
             null,
             null,
-            null);
-        await EnsureDocumentMovementSetUnchangedAsync(
-            request,
-            document.Context,
-            document.TrackedMovements,
-            cancellationToken);
-        await EnsureInterWarehouseDocumentCompleteAsync(request, document, cancellationToken);
-        var serviceResult = await SendToUyumsoftAsync(
-            despatchInfo,
-            config,
-            cancellationToken);
-
-        var trackedMetadataUpdated = await TryMarkAsSentAsync(
-            document.Context,
-            document.TrackedMovements,
-            eDespatchDocumentNo,
-            eDespatchUuid,
-            new SentMovementMetadata(
-                request.Plaque,
-                contacts.Deliverer,
-                contacts.Receiver,
-                request.DriverTckn));
-        var localMikroMetadataUpdated = trackedMetadataUpdated &&
-            await TryDocumentMovementSetMatchesAfterSubmissionAsync(
-                request,
-                document.Context,
-                document.TrackedMovements);
-
-        return new SendEDespatchResponse(
-            request.DocumentType,
-            document.Detail.Header.DocumentSerie,
-            document.Detail.Header.DocumentOrderNo,
-            eDespatchDocumentNo,
-            eDespatchUuid,
-            serviceResult.ServiceDocumentId,
-            serviceResult.ServiceDocumentNumber,
-            now,
-            config.EndpointUrl,
-            localMikroMetadataUpdated,
-            BuildLocalMikroMetadataWarning(localMikroMetadataUpdated));
+            null), cancellationToken);
     }
 
     private async Task<ResolvedCompanyMovementDocument> ResolveCompanyMovementAsync(
@@ -1069,19 +1343,27 @@ public sealed class EDespatchService(
             if (request.DocumentType == EDespatchDocumentType.WarehouseReturn)
             {
                 var response = JsonSerializer.Deserialize<CreateWarehouseReturnResponse>(create.ResponsePayload, jsonOptions);
-                expectedLineCount = response?.LineCount;
+                var originalRequest = DeserializeCreateRequest<CreateWarehouseReturnRequest>(
+                    create.RequestPayload,
+                    jsonOptions);
+                expectedLineCount = originalRequest?.Lines.Count ?? response?.LineCount;
                 matches = response is not null && MatchesCompletedDocumentCreate(
                     response.DocumentSerie, response.DocumentOrderNo, response.SourceWarehouseNo,
                     response.LineCount, request.DocumentSerie, request.DocumentOrderNo,
-                    request.WarehouseNo, document.Detail.Items.Count);
+                    request.WarehouseNo, document.Detail.Items.Count,
+                    originalRequest?.Lines.Count);
             }
             else
             {
                 var response = JsonSerializer.Deserialize<CreateInterWarehouseShipmentResponse>(create.ResponsePayload, jsonOptions);
-                expectedLineCount = response?.LineCount;
+                var originalRequest = DeserializeCreateRequest<CreateInterWarehouseShipmentRequest>(
+                    create.RequestPayload,
+                    jsonOptions);
+                expectedLineCount = originalRequest?.Lines.Count ?? response?.LineCount;
                 matches = MatchesCompletedShipmentCreate(
                     response, request.DocumentSerie, request.DocumentOrderNo,
-                    request.WarehouseNo, document.Detail.Items.Count);
+                    request.WarehouseNo, document.Detail.Items.Count,
+                    originalRequest?.Lines.Count);
             }
         }
         catch (JsonException exception)
@@ -1108,10 +1390,12 @@ public sealed class EDespatchService(
         string documentSerie,
         int documentOrderNo,
         int warehouseNo,
-        int lineCount) =>
+        int lineCount,
+        int? originalRequestLineCount = null) =>
         response is not null && MatchesCompletedDocumentCreate(
             response.DocumentSerie, response.DocumentOrderNo, response.SourceWarehouseNo,
-            response.LineCount, documentSerie, documentOrderNo, warehouseNo, lineCount);
+            response.LineCount, documentSerie, documentOrderNo, warehouseNo, lineCount,
+            originalRequestLineCount);
 
     internal static bool MatchesCompletedDocumentCreate(
         string createdSerie,
@@ -1121,11 +1405,24 @@ public sealed class EDespatchService(
         string documentSerie,
         int documentOrderNo,
         int warehouseNo,
-        int lineCount) =>
+        int lineCount,
+        int? originalRequestLineCount = null) =>
         createdSerie == documentSerie &&
         createdOrderNo == documentOrderNo &&
         createdWarehouseNo == warehouseNo &&
-        createdLineCount == lineCount;
+        (originalRequestLineCount ?? createdLineCount) == lineCount;
+
+    private static TRequest? DeserializeCreateRequest<TRequest>(
+        string? requestPayload,
+        JsonSerializerOptions jsonOptions)
+    {
+        if (string.IsNullOrWhiteSpace(requestPayload))
+        {
+            return default;
+        }
+
+        return JsonSerializer.Deserialize<TRequest>(requestPayload, jsonOptions);
+    }
 
     internal static bool TryParseOfflineTraceKey(string traceKey, out Guid clientRequestId)
     {
@@ -2207,10 +2504,11 @@ public sealed class EDespatchService(
         IReadOnlyCollection<STOK_HAREKETLERI> trackedMovements,
         string eDespatchDocumentNo,
         string eDespatchUuid,
-        SentMovementMetadata metadata)
+        SentMovementMetadata metadata,
+        CancellationToken stoppingToken)
     {
-        using var completionCancellation = new CancellationTokenSource(
-            TimeSpan.FromSeconds(PostSubmissionCompletionTimeoutSeconds));
+        using var completionCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        completionCancellation.CancelAfter(TimeSpan.FromSeconds(PostSubmissionCompletionTimeoutSeconds));
         var cancellationToken = completionCancellation.Token;
 
         try
@@ -2246,6 +2544,11 @@ public sealed class EDespatchService(
 
             for (var attempt = 1; attempt <= LocalMetadataUpdateAttemptCount; attempt++)
             {
+                var currentRows = await context.STOK_HAREKETLERIs.AsNoTracking()
+                    .Where(x => movementGuids.Contains(x.sth_Guid)).ToArrayAsync(cancellationToken);
+                EnsureSnapshotMatches(trackedMovements.Select(EDespatchMovementSnapshot.From).ToArray(), currentRows);
+                if (HasMatchingSentMarker(currentRows, documentNo, uuid)) return true;
+                var pendingRows = currentRows.Where(x => !HasMatchingSentMarker([x], documentNo, uuid)).ToArray();
                 int updatedCount;
                 if (mikroWriteRoutingOptions.CurrentValue.EDespatchMarkAsSent == MikroWriteMode.MikroApi)
                 {
@@ -2255,7 +2558,7 @@ public sealed class EDespatchService(
                         {
                             new
                             {
-                                satirlar = trackedMovements.Select(movement =>
+                                satirlar = pendingRows.Select(movement =>
                                     BuildSentMarkerApiRow(
                                         movement.sth_Guid,
                                         documentNo,
@@ -2357,6 +2660,8 @@ public sealed class EDespatchService(
 
             return false;
         }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
+        catch (EDespatchMetadataConflictException) { throw; }
         catch (Exception exception)
         {
             logger.LogWarning(
@@ -2402,10 +2707,8 @@ public sealed class EDespatchService(
         }
     }
 
-    private static string? BuildLocalMikroMetadataWarning(bool localMikroMetadataUpdated) =>
-        localMikroMetadataUpdated
-            ? null
-            : "E-despatch was sent to Uyumsoft, but Mikro STOK_HAREKETLERI metadata could not be updated. Do not resend; use the returned FRM document number and ETTN to repair the local document metadata.";
+    private static string BuildQueuedMikroMetadataWarning() =>
+        "E-despatch was sent to Uyumsoft. Mikro metadata update was queued and will continue in the background; do not resend.";
 
     private async Task<string> BuildEDespatchDocumentNoAsync(
         int year,
@@ -2547,9 +2850,12 @@ public sealed class EDespatchService(
             .Select(flow => flow.ExternalDocumentNo!)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var nextSequence = Math.Max(
+        var latestReservedDocumentNo = await authDbContext.EDespatchSubmissions.AsNoTracking()
+            .Where(x => x.DocumentNo.StartsWith(prefixWithYear))
+            .OrderByDescending(x => x.DocumentNo).Select(x => x.DocumentNo).FirstOrDefaultAsync(cancellationToken);
+        var nextSequence = Math.Max(ParseEDespatchSequence(latestReservedDocumentNo, prefixWithYear), Math.Max(
             ParseEDespatchSequence(latestMikroDocumentNo, prefixWithYear),
-            ParseEDespatchSequence(latestTrackedDocumentNo, prefixWithYear)) + 1;
+            ParseEDespatchSequence(latestTrackedDocumentNo, prefixWithYear))) + 1;
 
         if (nextSequence > 999_999_999)
         {

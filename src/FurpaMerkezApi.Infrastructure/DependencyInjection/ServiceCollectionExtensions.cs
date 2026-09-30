@@ -377,7 +377,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(Options.Create(jwtOptions));
         services.AddSingleton(Options.Create(new MikroWriteOptions(
             mikroWriteConnection,
-            mikroWriteConnectionName)));
+            mikroWriteConnectionName,
+            configuration["MikroWrite:StockReceiptExpenseCode"] ?? "0032")));
         services.AddSingleton(Options.Create(new EDespatchOptions(
             configuration["EDespatch:EndpointUrl"] ?? string.Empty,
             configuration["EDespatch:Username"] ?? string.Empty,
@@ -522,7 +523,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtTokenFactory, JwtTokenFactory>();
         services.AddScoped<IAuthService, AuthService>();
-        services.AddScoped<IEDespatchService, EDespatchService>();
+        services.AddHostedService<EDespatchMetadataUpdateWorker>();
+        services.AddScoped<EDespatchService>();
+        services.AddScoped<IEDespatchService>(serviceProvider =>
+            serviceProvider.GetRequiredService<EDespatchService>());
+        services.AddScoped<IEDespatchMetadataUpdateProcessor>(serviceProvider =>
+            serviceProvider.GetRequiredService<EDespatchService>());
         services.AddScoped<IEInvoiceDocumentRenderer, EInvoiceDocumentRenderer>();
         services.AddScoped<UblTrInvoiceBusinessRuleValidator>();
         services.AddSingleton<UblTrInvoiceXmlValidator>();

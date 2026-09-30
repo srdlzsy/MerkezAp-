@@ -28,7 +28,7 @@ public sealed class StockMovementMikroApiPayloadFactoryTests
             request,
             [line],
             4,
-            "",
+            "0032",
             new DateTime(2026, 8, 21),
             new DateTime(2026, 8, 21),
             "",
@@ -42,5 +42,28 @@ public sealed class StockMovementMikroApiPayloadFactoryTests
         var payloadLine = payload.evraklar.Single().satirlar.Single();
 
         Assert.Equal(70.296d, payloadLine.sth_tutar);
+        Assert.Equal("0032", payloadLine.sth_isemri_gider_kodu);
+    }
+
+    [Theory]
+    [InlineData(StockReceiptKind.OutageReceipt)]
+    [InlineData(StockReceiptKind.ExpenseReceipt)]
+    public void ResolveWorkOrderExpenseCode_UsesConfiguredCodeForBothReceiptKinds(
+        StockReceiptKind kind)
+    {
+        var result = StockReceiptWriteService.ResolveWorkOrderExpenseCode(kind, " 0032 ");
+
+        Assert.Equal("0032", result);
+    }
+
+    [Fact]
+    public void ResolveWorkOrderExpenseCode_RejectsEmptyConfiguration()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            StockReceiptWriteService.ResolveWorkOrderExpenseCode(
+                StockReceiptKind.OutageReceipt,
+                " "));
+
+        Assert.Contains("MikroWrite:StockReceiptExpenseCode", exception.Message);
     }
 }

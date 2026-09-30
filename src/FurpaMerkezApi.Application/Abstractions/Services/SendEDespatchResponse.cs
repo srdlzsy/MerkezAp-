@@ -11,4 +11,5 @@ public sealed record SendEDespatchResponse(
     DateTime SentAt,
     string EndpointUrl,
     bool LocalMikroMetadataUpdated = true,
-    string? Warning = null);
+    string? Warning = null,
+    bool LocalMikroMetadataUpdateQueued = false);

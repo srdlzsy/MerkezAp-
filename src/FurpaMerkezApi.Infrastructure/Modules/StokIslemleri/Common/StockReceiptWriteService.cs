@@ -27,7 +27,6 @@ public sealed class StockReceiptWriteService(
     private const byte OutageMovementGenre = 4;
     private const byte ExpenseMovementGenre = 5;
     private const int FirstDocumentOrderNo = 0;
-    private const string ExpenseWorkOrderCode = "0032";
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string OutageOfflineOperationCode = "stok-islemleri.zayiat-fisleri.create";
     private const string ExpenseOfflineOperationCode = "stok-islemleri.masraf-fisleri.create";
@@ -83,7 +82,9 @@ public sealed class StockReceiptWriteService(
         var description = NormalizeText(request.Description, 50);
         var lines = request.Lines.ToArray();
         var movementGenre = ResolveMovementGenre(kind);
-        var workOrderExpenseCode = ResolveWorkOrderExpenseCode(kind);
+        var workOrderExpenseCode = ResolveWorkOrderExpenseCode(
+            kind,
+            options.StockReceiptExpenseCode);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
@@ -162,7 +163,9 @@ public sealed class StockReceiptWriteService(
         var description = NormalizeText(request.Description, 50);
         var lines = request.Lines.ToArray();
         var movementGenre = ResolveMovementGenre(kind);
-        var workOrderExpenseCode = ResolveWorkOrderExpenseCode(kind);
+        var workOrderExpenseCode = ResolveWorkOrderExpenseCode(
+            kind,
+            options.StockReceiptExpenseCode);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(
             documentSerie,
@@ -765,13 +768,26 @@ public sealed class StockReceiptWriteService(
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported stock receipt kind.")
         };
 
-    private static string ResolveWorkOrderExpenseCode(StockReceiptKind kind) =>
-        kind switch
+    internal static string ResolveWorkOrderExpenseCode(
+        StockReceiptKind kind,
+        string configuredExpenseCode)
+    {
+        _ = kind switch
         {
-            StockReceiptKind.OutageReceipt => string.Empty,
-            StockReceiptKind.ExpenseReceipt => ExpenseWorkOrderCode,
+            StockReceiptKind.OutageReceipt => true,
+            StockReceiptKind.ExpenseReceipt => true,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported stock receipt kind.")
         };
+
+        var expenseCode = NormalizeText(configuredExpenseCode, 25);
+        if (string.IsNullOrWhiteSpace(expenseCode))
+        {
+            throw new InvalidOperationException(
+                "MikroWrite:StockReceiptExpenseCode must be configured for outage and expense receipts.");
+        }
+
+        return expenseCode;
+    }
 
     private static string ResolveOfflineOperationCode(StockReceiptKind kind) =>
         kind switch

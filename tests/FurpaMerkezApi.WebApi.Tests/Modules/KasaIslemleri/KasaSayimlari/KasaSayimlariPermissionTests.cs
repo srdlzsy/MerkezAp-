@@ -4,6 +4,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Commands;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Files;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Lookups;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Queries;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.WebApi.Security;
@@ -303,7 +304,8 @@ public sealed class KasaSayimlariPermissionTests
             queriesUseCase,
             new ThrowingCashSummaryLookupsUseCase(),
             commandsUseCase,
-            new ThrowingGetCashSummaryZReportTotalUseCase())
+            new ThrowingGetCashSummaryZReportTotalUseCase(),
+            new NoOpDocumentFlowService())
         {
             ControllerContext = new ControllerContext
             {
@@ -323,6 +325,7 @@ public sealed class KasaSayimlariPermissionTests
     {
         var claims = new List<Claim>
         {
+            new(ClaimTypes.NameIdentifier, "11111111-1111-1111-1111-111111111111"),
             new("warehouse_no", warehouseNo.ToString())
         };
 
@@ -536,5 +539,24 @@ public sealed class KasaSayimlariPermissionTests
             ZReportValueRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class NoOpDocumentFlowService : IDocumentFlowService
+    {
+        public Task<DocumentFlowListResponse> ListAsync(
+            DocumentFlowListRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<DocumentFlowDetailDto> GetAsync(
+            Guid id,
+            int? allowedWarehouseNo,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RecordAsync(
+            RecordDocumentFlowRequest request,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

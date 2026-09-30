@@ -520,15 +520,41 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_belge_no,
                 movement.sth_evrakno_seri,
                 movement.sth_evrakno_sira,
+                movement.sth_satirno,
                 movement.sth_cikis_depo_no,
                 movement.sth_nakliyedeposu,
                 movement.sth_giris_depo_no,
                 movement.sth_miktar,
-                movement.sth_tutar
+                movement.sth_tutar,
+                movement.sth_stok_kod,
+                movement.sth_birim_pntr,
+                movement.sth_aciklama,
+                movement.sth_parti_kodu,
+                movement.sth_lot_no,
+                movement.sth_proje_kodu,
+                movement.sth_cari_srm_merkezi,
+                movement.sth_stok_srm_merkezi,
+                movement.sth_eticaret_kanal_kodu
             })
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == 0)
+        var expectedLines = request.Lines.ToArray();
+        if (!InterWarehouseShipmentRecoveryMatcher.Matches(
+                request,
+                expectedLines,
+                rows.Select(row => new InterWarehouseShipmentRecoveryLine(
+                    row.sth_satirno,
+                    row.sth_stok_kod,
+                    row.sth_miktar ?? 0d,
+                    row.sth_birim_pntr ?? 0,
+                    row.sth_tutar ?? 0d,
+                    row.sth_aciklama,
+                    row.sth_parti_kodu,
+                    row.sth_lot_no ?? 0,
+                    row.sth_proje_kodu,
+                    row.sth_cari_srm_merkezi,
+                    row.sth_stok_srm_merkezi,
+                    row.sth_eticaret_kanal_kodu)).ToArray()))
         {
             return null;
         }

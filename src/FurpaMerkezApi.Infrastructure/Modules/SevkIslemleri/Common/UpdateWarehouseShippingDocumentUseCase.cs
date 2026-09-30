@@ -1,5 +1,9 @@
 using System.Data;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Persistence;
+using FurpaMerkezApi.Infrastructure.Services;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -9,6 +13,7 @@ using Microsoft.Extensions.Options;
 namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 
 public sealed partial class UpdateWarehouseShippingDocumentUseCase(
+    AuthDbContext authDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
@@ -35,6 +40,15 @@ public sealed partial class UpdateWarehouseShippingDocumentUseCase(
         CancellationToken cancellationToken)
     {
         Validate(request);
+
+        var key = DocumentFlowKeys.Create(request.IsReturn ? DocumentFlowType.WarehouseReturn : DocumentFlowType.InterWarehouseShipment,
+            request.SourceWarehouseNo, request.DocumentSerie.Trim(), request.DocumentOrderNo);
+        await using var lease = await EDespatchDocumentLock.TryAcquireAsync(
+            mikroWriteDbContext.Database.GetConnectionString()!, key, cancellationToken)
+            ?? throw new InvalidOperationException("E-despatch processing is in progress; shipment editing is blocked.");
+        if (await authDbContext.EDespatchSubmissions.AsNoTracking().AnyAsync(x => x.DocumentKey == key, cancellationToken) ||
+            await authDbContext.DocumentFlows.AsNoTracking().AnyAsync(x => x.FlowKey == key && x.ExternalUuid != null, cancellationToken))
+            throw new InvalidOperationException("Shipment has a submitted or unresolved e-despatch and cannot be edited.");
 
         return mikroWriteRoutingOptions.CurrentValue.WarehouseShippingUpdate switch
         {

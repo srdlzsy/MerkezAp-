@@ -320,6 +320,7 @@ public sealed class CreateWarehouseReturnUseCase(
                 movement.sth_belge_no,
                 movement.sth_evrakno_seri,
                 movement.sth_evrakno_sira,
+                movement.sth_satirno,
                 movement.sth_cikis_depo_no,
                 movement.sth_nakliyedeposu,
                 movement.sth_giris_depo_no,
@@ -328,7 +329,11 @@ public sealed class CreateWarehouseReturnUseCase(
             })
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == 0)
+        if (rows.Count != request.Lines.Count ||
+            rows.Any(row => !row.sth_satirno.HasValue) ||
+            rows.Select(row => row.sth_satirno!.Value).Distinct().Count() != request.Lines.Count ||
+            Enumerable.Range(0, request.Lines.Count)
+                .Any(rowNo => rows.All(row => row.sth_satirno != rowNo)))
         {
             return null;
         }
