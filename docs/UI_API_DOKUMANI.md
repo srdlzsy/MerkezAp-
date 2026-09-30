@@ -17596,9 +17596,9 @@ Config:
     "TimeoutSeconds": 30,
     "PriceListNo": 3,
     "PaymentPlanNo": 0,
-    "PreviewRefreshIntervalSeconds": 300,
-    "PreviewWarmupStoreIds": [486064],
-    "PreviewPageParallelism": 3,
+    "PreviewRefreshIntervalSeconds": 1800,
+    "PreviewWarmupStoreIds": [],
+    "PreviewPageParallelism": 1,
     "PreviewFetchPageSize": 100,
     "Stores": [
       {

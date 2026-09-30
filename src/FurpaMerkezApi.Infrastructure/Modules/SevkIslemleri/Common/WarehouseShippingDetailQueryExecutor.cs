@@ -164,14 +164,21 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
                     : "More than one inter warehouse shipment matched the requested serie and order number for the selected warehouse.");
         }
 
-        var firstRow = rows[0];
-        var documentNo = rows
+        var sentDocumentNos = rows
             .Select(row => row.sth_belge_no)
-            .FirstOrDefault(value =>
+            .Where(value =>
                 !string.IsNullOrWhiteSpace(value) &&
                 value.StartsWith("FRM", StringComparison.OrdinalIgnoreCase))
-            ?? firstRow.sth_belge_no
-            ?? string.Empty;
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (sentDocumentNos.Length > 1)
+        {
+            throw new InvalidOperationException("Warehouse shipping lines have different e-despatch document numbers.");
+        }
+
+        var firstRow = rows[0];
+        var documentNo = sentDocumentNos.FirstOrDefault() ?? firstRow.sth_belge_no ?? string.Empty;
         var sourceWarehouseNo = firstRow.sth_cikis_depo_no ?? 0;
         var targetWarehouseNo = firstRow.ResolvedTargetWarehouseNo ?? 0;
         var shippingWarehouseNo = firstRow.ResolvedShippingWarehouseNo ?? 0;
