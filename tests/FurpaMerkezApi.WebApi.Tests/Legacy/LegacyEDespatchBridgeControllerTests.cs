@@ -157,6 +157,37 @@ public sealed class LegacyEDespatchBridgeControllerTests
         Assert.Null(service.LastRequest);
     }
 
+    [Fact]
+    public async Task GetEDespatchStatus_ForwardsLegacyDocumentWhenGatePasses()
+    {
+        var service = new CapturingEDespatchService();
+        var controller = CreateController(service, origin: "http://legacy.local");
+
+        var result = await controller.GetEDespatchStatus(
+            "depolar-arasi-sevkler", "F56", 88015, 56, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<GetEDespatchStatusResponse>(ok.Value);
+        Assert.NotNull(service.LastStatusRequest);
+        Assert.Equal(EDespatchDocumentType.InterWarehouseShipment, service.LastStatusRequest.DocumentType);
+        Assert.Equal(56, service.LastStatusRequest.WarehouseNo);
+    }
+
+    [Fact]
+    public async Task GetEDespatchPdf_ReturnsInlinePdfWhenGatePasses()
+    {
+        var service = new CapturingEDespatchService();
+        var controller = CreateController(service, origin: "http://legacy.local");
+
+        var result = await controller.GetEDespatchPdf(
+            "depolar-arasi-sevkler", "F56", 88015, 56, CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/pdf", file.ContentType);
+        Assert.Equal("inline; filename=\"FRM2026600113344.pdf\"", controller.Response.Headers.ContentDisposition);
+        Assert.NotNull(service.LastPdfRequest);
+    }
+
     private static LegacyEDespatchBridgeController CreateController(
         CapturingEDespatchService service,
         LegacyEDespatchBridgeOptions? options = null,
@@ -199,6 +230,8 @@ public sealed class LegacyEDespatchBridgeControllerTests
     private sealed class CapturingEDespatchService : IEDespatchService
     {
         public SendEDespatchRequest? LastRequest { get; private set; }
+        public GetEDespatchStatusRequest? LastStatusRequest { get; private set; }
+        public GetEDespatchPdfRequest? LastPdfRequest { get; private set; }
 
         public Task<SendEDespatchResponse> SendAsync(
             SendEDespatchRequest request,
@@ -220,8 +253,23 @@ public sealed class LegacyEDespatchBridgeControllerTests
 
         public Task<GetEDespatchPdfResponse> GetPdfAsync(
             GetEDespatchPdfRequest request,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            LastPdfRequest = request;
+            return Task.FromResult(new GetEDespatchPdfResponse(
+                "FRM2026600113344.pdf", [1, 2, 3]));
+        }
+
+        public Task<GetEDespatchStatusResponse> GetStatusAsync(
+            GetEDespatchStatusRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastStatusRequest = request;
+            return Task.FromResult(new GetEDespatchStatusResponse(
+                request.DocumentType, request.DocumentSerie, request.DocumentOrderNo,
+                true, "PendingMetadata", "FRM2026600113344", Guid.NewGuid().ToString(),
+                DateTime.UtcNow, false, true, "Mikro isaretlemesi bekliyor."));
+        }
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

@@ -9,4 +9,8 @@ public interface IEDespatchService
     Task<GetEDespatchPdfResponse> GetPdfAsync(
         GetEDespatchPdfRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<GetEDespatchStatusResponse> GetStatusAsync(
+        GetEDespatchStatusRequest request,
+        CancellationToken cancellationToken = default);
 }

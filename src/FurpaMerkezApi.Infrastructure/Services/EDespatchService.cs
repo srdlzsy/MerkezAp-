@@ -1094,6 +1094,68 @@ public sealed class EDespatchService(
             pdfContent);
     }
 
+    public async Task<GetEDespatchStatusResponse> GetStatusAsync(
+        GetEDespatchStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request);
+        var sendRequest = new SendEDespatchRequest(
+            request.DocumentType,
+            request.WarehouseNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            string.Empty,
+            string.Empty,
+            string.Empty);
+        var key = SubmissionKey(sendRequest);
+        var submission = await authDbContext.EDespatchSubmissions.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.DocumentKey == key, cancellationToken);
+
+        if (submission is not null)
+        {
+            var isSent = submission.Status is EDespatchSubmissionStatus.PendingMetadata or
+                EDespatchSubmissionStatus.Completed or EDespatchSubmissionStatus.NeedsReview;
+            return new GetEDespatchStatusResponse(
+                request.DocumentType,
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                isSent,
+                submission.Status.ToString(),
+                isSent ? submission.DocumentNo : null,
+                isSent ? submission.Uuid : null,
+                isSent ? submission.CreatedAtUtc : null,
+                submission.Status == EDespatchSubmissionStatus.Completed,
+                submission.Status == EDespatchSubmissionStatus.PendingMetadata,
+                submission.Status switch
+                {
+                    EDespatchSubmissionStatus.Unknown => "E-irsaliye sonucu Uyumsoft'ta dogrulaniyor. Yeni gonderim yapmayin.",
+                    EDespatchSubmissionStatus.PendingMetadata => BuildQueuedMikroMetadataWarning(),
+                    EDespatchSubmissionStatus.NeedsReview => "E-irsaliye Uyumsoft'a gonderildi; Mikro isaretleme manuel inceleme bekliyor.",
+                    _ => null
+                });
+        }
+
+        var flow = await authDbContext.DocumentFlows.AsNoTracking()
+            .Where(x => x.FlowKey == key && x.ExternalDocumentNo != null && x.ExternalUuid != null)
+            .Select(x => new { x.ExternalDocumentNo, x.ExternalUuid, x.UpdatedAtUtc })
+            .SingleOrDefaultAsync(cancellationToken);
+        var isLegacySent = flow is not null && Guid.TryParse(flow.ExternalUuid, out _);
+        return new GetEDespatchStatusResponse(
+            request.DocumentType,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            isLegacySent,
+            isLegacySent ? "Sent" : "NotSent",
+            isLegacySent ? flow!.ExternalDocumentNo!.Trim() : null,
+            isLegacySent ? flow!.ExternalUuid!.Trim() : null,
+            isLegacySent ? flow!.UpdatedAtUtc : null,
+            false,
+            false,
+            isLegacySent
+                ? "E-irsaliye Uyumsoft'a gonderilmis. Eski kayitta Mikro isaretleme durumu izlenemiyor."
+                : null);
+    }
+
     private async Task<SendEDespatchResponse> SendCompanyMovementAsync(
         SendEDespatchRequest request,
         CompanyMovementKind movementKind,
@@ -3032,6 +3094,12 @@ public sealed class EDespatchService(
     }
 
     private static void Validate(GetEDespatchPdfRequest request) =>
+        ValidateDocumentIdentity(
+            request.WarehouseNo,
+            request.DocumentSerie,
+            request.DocumentOrderNo);
+
+    private static void Validate(GetEDespatchStatusRequest request) =>
         ValidateDocumentIdentity(
             request.WarehouseNo,
             request.DocumentSerie,

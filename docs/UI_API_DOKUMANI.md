@@ -121,6 +121,10 @@ Endpoint:
 ```text
 POST /api/legacy/e-irsaliye/{documentKind}/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
 POST /api/legacy/e-irsaliye/{documentKind}/giden/{documentSerie}/{documentOrderNo}/gonder?warehouseNo=56
+GET /api/legacy/e-irsaliye/{documentKind}/{documentSerie}/{documentOrderNo}/durum?warehouseNo=56
+GET /api/legacy/e-irsaliye/{documentKind}/giden/{documentSerie}/{documentOrderNo}/durum?warehouseNo=56
+GET /api/legacy/e-irsaliye/{documentKind}/{documentSerie}/{documentOrderNo}/pdf?warehouseNo=56
+GET /api/legacy/e-irsaliye/{documentKind}/giden/{documentSerie}/{documentOrderNo}/pdf?warehouseNo=56
 ```
 
 `documentKind` degerleri:
@@ -139,6 +143,36 @@ POST /api/legacy/e-irsaliye/depolar-arasi-sevkler/giden/F56/86102/gonder?warehou
 POST /api/legacy/e-irsaliye/depo-iadeleri/giden/F56/123/gonder?warehouseNo=56
 POST /api/legacy/e-irsaliye/firma-sevkleri/giden/F56/124/gonder?warehouseNo=56
 POST /api/legacy/e-irsaliye/firma-iadeleri/F56/125/gonder?warehouseNo=56
+```
+
+Legacy durum ve PDF akisi:
+
+- Eski arayuz e-irsaliye POST istegi `200 OK` dondugunde `isSentToUyumsoft=true` kabul etmelidir. `localMikroMetadataUpdateQueued=true` gelmesi Uyumsoft gonderiminin basarisiz oldugu anlamina gelmez.
+- Sayfa yenilendiginde veya liste tekrar acildiginda eski UI Mikro satirindaki FRM/ETTN alanina bakarak tek basina "gonderilmedi" karari vermemelidir. Bunun yerine `GET .../durum` endpointini cagirmalidir.
+- `status=PendingMetadata` ve `isSentToUyumsoft=true`: ekranda `E-Irsaliye Gonderildi - Mikro Isaretlemesi Bekliyor` gosterilir. PDF butonu aktiftir; tekrar gonder butonu kapali kalir.
+- `status=Completed`: Uyumsoft gonderimi ve Mikro isaretlemesi tamamdir.
+- `status=NeedsReview`: Uyumsoft gonderimi basarilidir; Mikro tarafinda icerik/isaret uyusmazligi manuel inceleme bekler. PDF butonu aktiftir ve yeniden gonderim yapilmaz.
+- `status=Unknown`: Uyumsoft sonucu henuz dogrulaniyordur. UI yeni POST uretmez; kisa bir sure sonra yalnizca `GET .../durum` istegini tekrarlar.
+- `status=NotSent`: Auth DB'de onayli bir gonderim bulunamamistir. UI ancak kullanicinin acik aksiyonuyla normal gonderim akisini baslatabilir.
+- PDF icin `GET .../pdf?warehouseNo=56` kullanilir. Endpoint `application/pdf` ve `inline` doner; browser yeni sekmede acabilir. PDF gecici olarak hazir degilse yalnizca PDF GET istegi tekrar edilir, `POST .../gonder` tekrar edilmez.
+- Durum ve PDF route'lari da gonderim route'u gibi `Enabled`, `AllowedOrigins` ve `AllowedWarehouseNos` kontrollerinden gecer. Eski arayuz JWT gondermez.
+
+Durum response ornegi:
+
+```json
+{
+  "documentType": 3,
+  "documentSerie": "F56",
+  "documentOrderNo": 88015,
+  "isSentToUyumsoft": true,
+  "status": "PendingMetadata",
+  "eDespatchDocumentNo": "FRM2026600132160",
+  "eDespatchUuid": "0d594419-f940-4f7f-acaf-36ee7735bc21",
+  "sentAtUtc": "2026-09-30T07:10:00Z",
+  "localMikroMetadataUpdated": false,
+  "localMikroMetadataUpdateQueued": true,
+  "warning": "E-irsaliye Uyumsoft'a gonderildi; Mikro metadata update was queued and will continue in the background; do not resend."
+}
 ```
 
 Body:

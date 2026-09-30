@@ -125,6 +125,104 @@ public sealed class LegacyEDespatchBridgeController(
             cancellationToken));
     }
 
+    [HttpGet("{documentKind}/{documentSerie}/{documentOrderNo:int}/durum")]
+    [HttpGet("{documentKind}/giden/{documentSerie}/{documentOrderNo:int}/durum")]
+    [ProducesResponseType(typeof(GetEDespatchStatusResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEDespatchStatus(
+        string documentKind,
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var bridgeError = ValidateBridgeAccess(options.CurrentValue, documentKind, documentSerie, documentOrderNo, warehouseNo);
+        if (bridgeError is not null) return bridgeError;
+        if (!TryResolveDocumentType(documentKind, out var documentType))
+            return UnsupportedDocumentKind();
+
+        var effectiveDocumentType = await ResolveLegacyDocumentTypeAsync(
+            documentType, documentSerie, documentOrderNo, warehouseNo, cancellationToken);
+        return Ok(await eDespatchService.GetStatusAsync(
+            new GetEDespatchStatusRequest(effectiveDocumentType, warehouseNo, documentSerie, documentOrderNo),
+            cancellationToken));
+    }
+
+    [HttpGet("{documentKind}/{documentSerie}/{documentOrderNo:int}/pdf")]
+    [HttpGet("{documentKind}/giden/{documentSerie}/{documentOrderNo:int}/pdf")]
+    [Produces("application/pdf")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEDespatchPdf(
+        string documentKind,
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var bridgeError = ValidateBridgeAccess(options.CurrentValue, documentKind, documentSerie, documentOrderNo, warehouseNo);
+        if (bridgeError is not null) return bridgeError;
+        if (!TryResolveDocumentType(documentKind, out var documentType))
+            return UnsupportedDocumentKind();
+
+        var effectiveDocumentType = await ResolveLegacyDocumentTypeAsync(
+            documentType, documentSerie, documentOrderNo, warehouseNo, cancellationToken);
+        var response = await eDespatchService.GetPdfAsync(
+            new GetEDespatchPdfRequest(effectiveDocumentType, warehouseNo, documentSerie, documentOrderNo),
+            cancellationToken);
+        Response.Headers.ContentDisposition = $"inline; filename=\"{response.FileName}\"";
+        return File(response.Content, "application/pdf");
+    }
+
+    private IActionResult? ValidateBridgeAccess(
+        LegacyEDespatchBridgeOptions bridgeOptions,
+        string documentKind,
+        string documentSerie,
+        int documentOrderNo,
+        int warehouseNo)
+    {
+        if (!bridgeOptions.Enabled)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Not Found",
+                Detail = "Legacy e-despatch bridge is not enabled."
+            });
+        }
+
+        if (!IsOriginAllowed(bridgeOptions))
+        {
+            logger.LogWarning(
+                "Legacy e-despatch bridge rejected read request due to origin. DocumentKind={DocumentKind}; Document={DocumentSerie}/{DocumentOrderNo}; WarehouseNo={WarehouseNo}",
+                documentKind, documentSerie, documentOrderNo, warehouseNo);
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = "Forbidden",
+                Detail = "Request origin is not allowed for legacy e-despatch bridge."
+            });
+        }
+
+        if (bridgeOptions.AllowedWarehouseNos.Length > 0 &&
+            !bridgeOptions.AllowedWarehouseNos.Contains(warehouseNo))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = "Forbidden",
+                Detail = "Warehouse is not allowed for legacy e-despatch bridge."
+            });
+        }
+
+        return null;
+    }
+
+    private IActionResult UnsupportedDocumentKind() => BadRequest(new ProblemDetails
+    {
+        Status = StatusCodes.Status400BadRequest,
+        Title = "Bad Request",
+        Detail = "Document kind is not supported for legacy e-despatch bridge."
+    });
+
     private async Task<EDespatchDocumentType> ResolveLegacyDocumentTypeAsync(
         EDespatchDocumentType requestedDocumentType,
         string documentSerie,
