@@ -21,6 +21,8 @@ public sealed class AppRole
 
     public List<AppUserRole> UserRoles { get; private set; } = [];
 
+    public List<AppUserClientRole> UserClientRoles { get; private set; } = [];
+
     public List<AppRolePermission> RolePermissions { get; private set; } = [];
 
     public AppRole(Guid id, string name, string? description, bool isActive, DateTime createdAtUtc)

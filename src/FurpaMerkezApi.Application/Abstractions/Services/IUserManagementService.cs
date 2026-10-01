@@ -11,4 +11,13 @@ public interface IUserManagementService
     Task<UserDto> UpdateAsync(Guid userId, UpdateUserRequest request, CancellationToken cancellationToken);
 
     Task<UserDto> AssignRolesAsync(Guid userId, AssignUserRolesRequest request, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<UserClientRoleDto>> GetClientRolesAsync(
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<UserClientRoleDto>> AssignClientRolesAsync(
+        Guid userId,
+        AssignUserClientRolesRequest request,
+        CancellationToken cancellationToken);
 }

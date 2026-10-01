@@ -522,6 +522,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtTokenFactory, JwtTokenFactory>();
+        services.AddScoped<ISessionAccessProfileResolver, SessionAccessProfileResolver>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddHostedService<EDespatchMetadataUpdateWorker>();
         services.AddScoped<EDespatchService>();

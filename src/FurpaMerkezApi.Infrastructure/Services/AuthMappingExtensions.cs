@@ -1,6 +1,7 @@
 using FurpaMerkezApi.Application.Identity.Contracts;
 using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Authentication;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
@@ -32,6 +33,29 @@ internal static class AuthMappingExtensions
             user.WarehouseName,
             user.IsActive,
             roles,
+            permissionDtos.Select(permission => permission.Code).ToArray(),
+            PermissionTreeBuilder.BuildFromPermissions(permissionDtos),
+            user.CreatedAtUtc,
+            user.UpdatedAtUtc);
+    }
+
+    public static UserDto ToDto(this AppUser user, SessionAccessProfile accessProfile)
+    {
+        var permissionDtos = accessProfile.Permissions
+            .OrderBy(permission => permission.Code)
+            .Select(permission => permission.ToDto())
+            .ToArray();
+
+        return new UserDto(
+            user.Id,
+            user.Username,
+            user.Email,
+            user.FirstName,
+            user.LastName,
+            user.WarehouseNo,
+            user.WarehouseName,
+            user.IsActive,
+            accessProfile.RoleNames,
             permissionDtos.Select(permission => permission.Code).ToArray(),
             PermissionTreeBuilder.BuildFromPermissions(permissionDtos),
             user.CreatedAtUtc,

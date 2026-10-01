@@ -5,6 +5,7 @@ using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Services;
@@ -37,7 +38,11 @@ public sealed class UserManagementServiceTests
             Now.AddDays(1)));
         await dbContext.SaveChangesAsync();
 
-        var service = new UserManagementService(dbContext, new FixedClock(Now), new TestPasswordHasher());
+        var service = new UserManagementService(
+            dbContext,
+            new FixedClock(Now),
+            new TestPasswordHasher(),
+            new MemoryCache(new MemoryCacheOptions()));
 
         await service.UpdateAsync(
             userId,

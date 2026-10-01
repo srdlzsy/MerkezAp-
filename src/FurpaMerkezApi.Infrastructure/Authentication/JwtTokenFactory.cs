@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Authentication.Contracts;
 using FurpaMerkezApi.Application.Security;
 using FurpaMerkezApi.Domain.Entities;
 using Microsoft.Extensions.Options;
@@ -13,28 +14,33 @@ public sealed record TokenResult(string AccessToken, DateTime ExpiresAtUtc);
 
 public interface IJwtTokenFactory
 {
-    TokenResult Create(AppUser user);
+    TokenResult Create(
+        AppUser user,
+        SessionAccessProfile accessProfile,
+        string clientType,
+        string? deviceId,
+        Guid sessionId);
 }
 
 public sealed class JwtTokenFactory(IOptions<JwtOptions> options, IClock clock) : IJwtTokenFactory
 {
     private readonly JwtOptions _options = options.Value;
 
-    public TokenResult Create(AppUser user)
+    public TokenResult Create(
+        AppUser user,
+        SessionAccessProfile accessProfile,
+        string clientType,
+        string? deviceId,
+        Guid sessionId)
     {
         ValidateOptions();
 
         var now = clock.UtcNow;
         var expiresAt = now.AddMinutes(_options.ExpiryMinutes);
 
-        var roles = user.UserRoles
-            .Select(userRole => userRole.Role.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var permissions = user.UserRoles
-            .SelectMany(userRole => userRole.Role.RolePermissions)
-            .Select(rolePermission => rolePermission.Permission.Code)
+        var roles = accessProfile.RoleNames;
+        var permissions = accessProfile.Permissions
+            .Select(permission => permission.Code)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -50,8 +56,15 @@ public sealed class JwtTokenFactory(IOptions<JwtOptions> options, IClock clock) 
             new("last_name", user.LastName),
             new("warehouse_no", user.WarehouseNo),
             new("warehouse_name", user.WarehouseName),
+            new("client_type", AuthenticationClientTypes.Normalize(clientType)),
+            new("session_id", sessionId.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        if (!string.IsNullOrWhiteSpace(deviceId))
+        {
+            claims.Add(new Claim("device_id", deviceId.Trim()));
+        }
 
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 

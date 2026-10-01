@@ -10,6 +10,9 @@ internal static class AuthSeedData
     public static readonly DateTime SeededAtUtc = new(2026, 4, 14, 0, 0, 0, DateTimeKind.Utc);
 
     public static readonly Guid AdministratorRoleId = Guid.Parse("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a");
+    public static readonly Guid WarehouseUserRoleId = Guid.Parse("761efe81-309f-4f52-9752-5f184657a1d8");
+    public static readonly Guid MagazaciRoleId = Guid.Parse("2d5f7156-a332-497a-ba63-6194e56df746");
+    public static readonly Guid TerminalRoleId = Guid.Parse("3c1daafe-5922-466e-9f79-6d2ca34ce84d");
     public static readonly Guid AdministratorUserId = Guid.Parse("af8e4919-5d2e-4c3a-981f-bafe1c1988ff");
 
     public const string AdministratorUsername = "admin";
@@ -44,6 +47,9 @@ internal static class AuthSeedData
 
     public static AppRole AdministratorRole { get; } =
         new(AdministratorRoleId, "Administrator", "System administrator role with all permissions.", true, SeededAtUtc);
+
+    public static AppRole WarehouseUserRole { get; } =
+        new(WarehouseUserRoleId, "SubeKullanicisi", "Web ve terminal oturumlarinda kullanilan ortak sube rolu.", true, SeededAtUtc);
 
     public static object AdministratorUser { get; } = new
     {

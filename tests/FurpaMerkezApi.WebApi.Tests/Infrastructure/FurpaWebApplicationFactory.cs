@@ -158,12 +158,16 @@ internal sealed class FakeAuthService : IAuthService
     public Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
-    public Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken) =>
+    public Task<UserDto> GetUserByIdAsync(
+        Guid userId,
+        string? clientType,
+        CancellationToken cancellationToken) =>
         Task.FromResult(CreateUser());
 
     public Task<WarehouseContextResponse> GetWarehouseContextAsync(
         Guid userId,
         string? ipAddress,
+        string? clientType,
         CancellationToken cancellationToken) =>
         Task.FromResult(new WarehouseContextResponse(
             userId,

@@ -13,6 +13,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<AppUserRole> UserRoles => Set<AppUserRole>();
 
+    public DbSet<AppUserClientRole> UserClientRoles => Set<AppUserClientRole>();
+
     public DbSet<AppRolePermission> RolePermissions => Set<AppRolePermission>();
 
     public DbSet<AppRefreshToken> RefreshTokens => Set<AppRefreshToken>();

@@ -20,13 +20,26 @@ internal static class ClaimsPrincipalExtensions
         return warehouseNo;
     }
 
-    public static bool HasPermission(this ClaimsPrincipal user, string permissionCode) =>
-        user.HasClaim(claim =>
-            string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase) &&
-            AuthorizationConstants.IsAdministratorRole(claim.Value)) ||
-        user.HasClaim(claim =>
+    public static bool HasPermission(this ClaimsPrincipal user, string permissionCode)
+    {
+        if (user.HasClaim(claim =>
+                string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase) &&
+                AuthorizationConstants.IsAdministratorRole(claim.Value)))
+        {
+            return true;
+        }
+
+        // Tokens issued before the client-profile split contain the union permission set.
+        // Policy checks resolve these tokens from the database; direct scope checks must fail closed.
+        if (user.IsInRole("SubeKullanicisi"))
+        {
+            return false;
+        }
+
+        return user.HasClaim(claim =>
             string.Equals(claim.Type, AuthorizationConstants.PermissionClaimType, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(claim.Value, permissionCode, StringComparison.OrdinalIgnoreCase));
+    }
 
     public static string ToAllWarehousesPermissionCode(string actionPermissionCode)
     {

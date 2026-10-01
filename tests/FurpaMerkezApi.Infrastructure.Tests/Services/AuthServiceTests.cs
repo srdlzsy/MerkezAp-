@@ -135,6 +135,7 @@ public sealed class AuthServiceTests
             furpaDbContext,
             new TestPasswordHasher(),
             new TestJwtTokenFactory(),
+            new SessionAccessProfileResolver(authDbContext),
             new FixedClock(Now),
             Options.Create(new JwtOptions { RefreshTokenExpiryDays = 14 }),
             CreateConfiguration(sharedNetworkGroups),
@@ -233,7 +234,12 @@ public sealed class AuthServiceTests
 
     private sealed class TestJwtTokenFactory : IJwtTokenFactory
     {
-        public TokenResult Create(AppUser user) =>
+        public TokenResult Create(
+            AppUser user,
+            SessionAccessProfile accessProfile,
+            string clientType,
+            string? deviceId,
+            Guid sessionId) =>
             new($"token-{user.WarehouseNo}", Now.AddHours(1));
     }
 

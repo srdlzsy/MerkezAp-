@@ -43,6 +43,8 @@ public sealed class AppUser
 
     public List<AppUserRole> UserRoles { get; private set; } = [];
 
+    public List<AppUserClientRole> ClientRoles { get; private set; } = [];
+
     public AppUser(
         Guid id,
         string username,

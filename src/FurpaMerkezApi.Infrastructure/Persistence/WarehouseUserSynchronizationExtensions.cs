@@ -1,20 +1,19 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using FurpaMerkezApi.Application.Authentication.Contracts;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using FurpaMerkezApi.Infrastructure.Persistence.SeedData;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Persistence;
 
 public static class WarehouseUserSynchronizationExtensions
 {
-    private const string MagazaciUsernameSuffix = "magazaci";
-    private const string TerminalUsernameSuffix = "terminal";
+    private const string WarehouseUsernameSuffix = "sube";
     private const string LocalEmailDomain = "furpamerkez.local";
-    private static readonly Guid MagazaciRoleId = Guid.Parse("2d5f7156-a332-497a-ba63-6194e56df746");
-    private static readonly Guid TerminalRoleId = Guid.Parse("3c1daafe-5922-466e-9f79-6d2ca34ce84d");
 
     public static async Task SynchronizeWarehouseUsersAsync(
         this AuthDbContext authDbContext,
@@ -36,31 +35,33 @@ public static class WarehouseUserSynchronizationExtensions
         var now = DateTime.UtcNow;
         var roles = await authDbContext.Roles
             .ToListAsync(cancellationToken);
-        var magazaciRole = ResolveRequiredRole(roles, MagazaciRoleId, "Magazaci");
-        var terminalRole = ResolveRequiredRole(roles, TerminalRoleId, "Terminal");
+        var warehouseUserRole = ResolveRequiredRole(
+            roles,
+            AuthSeedData.WarehouseUserRoleId,
+            "SubeKullanicisi");
+        var defaultWebRole = ResolveRequiredRole(
+            roles,
+            AuthSeedData.MagazaciRoleId,
+            "Magazaci");
+        var defaultTerminalRole = ResolveRequiredRole(
+            roles,
+            AuthSeedData.TerminalRoleId,
+            "Terminal");
 
-        if (!magazaciRole.IsActive)
+        if (!warehouseUserRole.IsActive || !defaultWebRole.IsActive || !defaultTerminalRole.IsActive)
         {
-            throw new InvalidOperationException($"Role '{magazaciRole.Name}' is inactive.");
-        }
-
-        if (!terminalRole.IsActive)
-        {
-            throw new InvalidOperationException($"Role '{terminalRole.Name}' is inactive.");
+            throw new InvalidOperationException("A required warehouse session role is inactive.");
         }
 
         var expectedUsernames = warehouses
-            .SelectMany(warehouse => new[]
-            {
-                BuildUsername(warehouse.WarehouseNo, MagazaciUsernameSuffix),
-                BuildUsername(warehouse.WarehouseNo, TerminalUsernameSuffix)
-            })
+            .Select(warehouse => BuildUsername(warehouse.WarehouseNo, WarehouseUsernameSuffix))
             .Select(NormalizeLookup)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         var existingUsers = await authDbContext.Users
             .Include(user => user.UserRoles)
+            .Include(user => user.ClientRoles)
             .Where(user => expectedUsernames.Contains(user.NormalizedUsername))
             .ToListAsync(cancellationToken);
         var userByNormalizedUsername = existingUsers.ToDictionary(user => user.NormalizedUsername, StringComparer.OrdinalIgnoreCase);
@@ -71,16 +72,11 @@ public static class WarehouseUserSynchronizationExtensions
                 authDbContext,
                 userByNormalizedUsername,
                 warehouse,
-                MagazaciUsernameSuffix,
-                magazaciRole,
-                passwordHasher,
-                now);
-            EnsureWarehouseUser(
-                authDbContext,
-                userByNormalizedUsername,
-                warehouse,
-                TerminalUsernameSuffix,
-                terminalRole,
+                WarehouseUsernameSuffix,
+                warehouseUserRole,
+                defaultWebRole,
+                defaultTerminalRole,
+                roles,
                 passwordHasher,
                 now);
         }
@@ -119,6 +115,9 @@ public static class WarehouseUserSynchronizationExtensions
         WarehouseSeedItem warehouse,
         string usernameSuffix,
         AppRole role,
+        AppRole defaultWebRole,
+        AppRole defaultTerminalRole,
+        IReadOnlyCollection<AppRole> availableRoles,
         IPasswordHasher passwordHasher,
         DateTime now)
     {
@@ -140,6 +139,16 @@ public static class WarehouseUserSynchronizationExtensions
                 true,
                 now);
             user.UserRoles.Add(new AppUserRole(user.Id, role.Id, now));
+            user.ClientRoles.Add(new AppUserClientRole(
+                user.Id,
+                AuthenticationClientTypes.Web,
+                defaultWebRole.Id,
+                now));
+            user.ClientRoles.Add(new AppUserClientRole(
+                user.Id,
+                AuthenticationClientTypes.Terminal,
+                defaultTerminalRole.Id,
+                now));
 
             authDbContext.Users.Add(user);
             userByNormalizedUsername[normalizedUsername] = user;
@@ -162,6 +171,57 @@ public static class WarehouseUserSynchronizationExtensions
         if (!user.UserRoles.Any(userRole => userRole.RoleId == role.Id))
         {
             user.UserRoles.Add(new AppUserRole(user.Id, role.Id, now));
+        }
+
+        EnsureClientRoleMappings(
+            user,
+            role,
+            defaultWebRole,
+            defaultTerminalRole,
+            availableRoles,
+            now);
+    }
+
+    private static void EnsureClientRoleMappings(
+        AppUser user,
+        AppRole warehouseUserRole,
+        AppRole defaultWebRole,
+        AppRole defaultTerminalRole,
+        IReadOnlyCollection<AppRole> availableRoles,
+        DateTime now)
+    {
+        if (!user.ClientRoles.Any(mapping =>
+                string.Equals(mapping.ClientType, AuthenticationClientTypes.Web, StringComparison.OrdinalIgnoreCase)))
+        {
+            var preservedWebRoleIds = user.UserRoles
+                .Where(userRole => userRole.RoleId != warehouseUserRole.Id)
+                .Select(userRole => userRole.RoleId)
+                .Where(roleId => availableRoles.Any(role => role.Id == roleId && role.IsActive))
+                .Distinct()
+                .ToArray();
+
+            var webRoleIds = preservedWebRoleIds.Length > 0
+                ? preservedWebRoleIds
+                : [defaultWebRole.Id];
+
+            foreach (var roleId in webRoleIds)
+            {
+                user.ClientRoles.Add(new AppUserClientRole(
+                    user.Id,
+                    AuthenticationClientTypes.Web,
+                    roleId,
+                    now));
+            }
+        }
+
+        if (!user.ClientRoles.Any(mapping =>
+                string.Equals(mapping.ClientType, AuthenticationClientTypes.Terminal, StringComparison.OrdinalIgnoreCase)))
+        {
+            user.ClientRoles.Add(new AppUserClientRole(
+                user.Id,
+                AuthenticationClientTypes.Terminal,
+                defaultTerminalRole.Id,
+                now));
         }
     }
 
@@ -189,10 +249,7 @@ public static class WarehouseUserSynchronizationExtensions
     private static string BuildFirstName(WarehouseSeedItem warehouse) =>
         TrimToMaxLength(warehouse.WarehouseName, 100);
 
-    private static string BuildLastName(string usernameSuffix) =>
-        usernameSuffix.Equals(TerminalUsernameSuffix, StringComparison.OrdinalIgnoreCase)
-            ? "Terminal"
-            : "Magazaci";
+    private static string BuildLastName(string usernameSuffix) => "Sube";
 
     private static string NormalizeWarehouseName(int warehouseNo, string? warehouseName)
     {

@@ -21,6 +21,7 @@ public sealed class AuthService(
     FurpaDbContext furpaDbContext,
     IPasswordHasher passwordHasher,
     IJwtTokenFactory jwtTokenFactory,
+    ISessionAccessProfileResolver sessionAccessProfileResolver,
     IClock clock,
     IOptions<JwtOptions> jwtOptions,
     IConfiguration configuration,
@@ -68,7 +69,12 @@ public sealed class AuthService(
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var createdUser = await LoadUserAsync(user.Id, cancellationToken);
-        return await CreateAuthResponseAsync(createdUser, cancellationToken);
+        return await CreateAuthResponseAsync(
+            createdUser,
+            AuthenticationClientTypes.Web,
+            null,
+            null,
+            cancellationToken);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
@@ -78,6 +84,10 @@ public sealed class AuthService(
         var user = await dbContext.Users
             .Include(currentUser => currentUser.UserRoles)
                 .ThenInclude(userRole => userRole.Role)
+                    .ThenInclude(role => role.RolePermissions)
+                        .ThenInclude(rolePermission => rolePermission.Permission)
+            .Include(currentUser => currentUser.ClientRoles)
+                .ThenInclude(mapping => mapping.Role)
                     .ThenInclude(role => role.RolePermissions)
                         .ThenInclude(rolePermission => rolePermission.Permission)
             .FirstOrDefaultAsync(
@@ -92,13 +102,19 @@ public sealed class AuthService(
         }
 
         var isTerminalUser = user.UserRoles.Any(userRole => userRole.RoleId == TerminalRoleId);
+        var clientType = ResolveClientType(request.ClientType, isTerminalUser);
 
-        if (isTerminalUser)
+        if (clientType == AuthenticationClientTypes.Terminal)
         {
             await ValidateTerminalUserNetworkAsync(user, request.IpAddress, cancellationToken);
         }
 
-        return await CreateAuthResponseAsync(user, cancellationToken);
+        return await CreateAuthResponseAsync(
+            user,
+            clientType,
+            request.DeviceId,
+            request.IpAddress,
+            cancellationToken);
     }
 
     public async Task<AuthResponse> RefreshAsync(RefreshTokenRequest request, CancellationToken cancellationToken)
@@ -116,6 +132,11 @@ public sealed class AuthService(
                     .ThenInclude(userRole => userRole.Role)
                         .ThenInclude(role => role.RolePermissions)
                             .ThenInclude(rolePermission => rolePermission.Permission)
+            .Include(token => token.User)
+                .ThenInclude(user => user.ClientRoles)
+                    .ThenInclude(mapping => mapping.Role)
+                        .ThenInclude(role => role.RolePermissions)
+                            .ThenInclude(rolePermission => rolePermission.Permission)
             .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
 
         if (storedToken is null || !storedToken.IsActive(now) || !storedToken.User.IsActive)
@@ -123,12 +144,22 @@ public sealed class AuthService(
             throw new UnauthorizedAccessException("Refresh token is invalid or expired.");
         }
 
-        var refreshToken = CreateRefreshToken(storedToken.UserId, now);
+        var refreshToken = CreateRefreshToken(
+            storedToken.UserId,
+            storedToken.User.WarehouseNo,
+            storedToken.ClientType,
+            storedToken.DeviceId,
+            storedToken.LoginIpAddress,
+            now);
         storedToken.Revoke(now, refreshToken.Entity.TokenHash);
         dbContext.RefreshTokens.Add(refreshToken.Entity);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return CreateAuthResponse(storedToken.User, refreshToken.Token, refreshToken.Entity.ExpiresAtUtc);
+        return await CreateAuthResponseAsync(
+            storedToken.User,
+            refreshToken.Token,
+            refreshToken.Entity,
+            cancellationToken);
     }
 
     public async Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken)
@@ -151,15 +182,24 @@ public sealed class AuthService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<UserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<UserDto> GetUserByIdAsync(
+        Guid userId,
+        string? clientType,
+        CancellationToken cancellationToken)
     {
         var user = await LoadUserAsync(userId, cancellationToken);
-        return user.ToDto();
+        var effectiveClientType = ResolveClientType(clientType, IsLegacyTerminalUser(user));
+        var accessProfile = await sessionAccessProfileResolver.ResolveAsync(
+            user,
+            effectiveClientType,
+            cancellationToken);
+        return user.ToDto(accessProfile);
     }
 
     public async Task<WarehouseContextResponse> GetWarehouseContextAsync(
         Guid userId,
         string? ipAddress,
+        string? clientType,
         CancellationToken cancellationToken)
     {
         var user = await dbContext.Users
@@ -180,6 +220,9 @@ public sealed class AuthService(
             throw new KeyNotFoundException("User was not found.");
         }
 
+        var isTerminalSession = ResolveClientType(clientType, user.IsTerminalUser) ==
+            AuthenticationClientTypes.Terminal;
+
         if (!user.IsActive)
         {
             return new WarehouseContextResponse(
@@ -189,13 +232,13 @@ public sealed class AuthService(
                 user.WarehouseName,
                 null,
                 null,
-                user.IsTerminalUser,
+                isTerminalSession,
                 true,
                 "UserInactive",
                 clock.UtcNow);
         }
 
-        if (!user.IsTerminalUser)
+        if (!isTerminalSession)
         {
             return new WarehouseContextResponse(
                 user.Id,
@@ -264,24 +307,52 @@ public sealed class AuthService(
             clock.UtcNow);
     }
 
-    private async Task<AuthResponse> CreateAuthResponseAsync(AppUser user, CancellationToken cancellationToken)
+    private async Task<AuthResponse> CreateAuthResponseAsync(
+        AppUser user,
+        string clientType,
+        string? deviceId,
+        string? loginIpAddress,
+        CancellationToken cancellationToken)
     {
-        var refreshToken = CreateRefreshToken(user.Id, clock.UtcNow);
+        var refreshToken = CreateRefreshToken(
+            user.Id,
+            user.WarehouseNo,
+            clientType,
+            deviceId,
+            loginIpAddress,
+            clock.UtcNow);
         dbContext.RefreshTokens.Add(refreshToken.Entity);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return CreateAuthResponse(user, refreshToken.Token, refreshToken.Entity.ExpiresAtUtc);
+        return await CreateAuthResponseAsync(
+            user,
+            refreshToken.Token,
+            refreshToken.Entity,
+            cancellationToken);
     }
 
-    private AuthResponse CreateAuthResponse(AppUser user, string refreshToken, DateTime refreshTokenExpiresAtUtc)
+    private async Task<AuthResponse> CreateAuthResponseAsync(
+        AppUser user,
+        string refreshToken,
+        AppRefreshToken refreshTokenEntity,
+        CancellationToken cancellationToken)
     {
-        var token = jwtTokenFactory.Create(user);
+        var accessProfile = await sessionAccessProfileResolver.ResolveAsync(
+            user,
+            refreshTokenEntity.ClientType,
+            cancellationToken);
+        var token = jwtTokenFactory.Create(
+            user,
+            accessProfile,
+            refreshTokenEntity.ClientType,
+            refreshTokenEntity.DeviceId,
+            refreshTokenEntity.Id);
         return new AuthResponse(
             token.AccessToken,
             token.ExpiresAtUtc,
-            user.ToDto(),
+            user.ToDto(accessProfile),
             refreshToken,
-            refreshTokenExpiresAtUtc);
+            refreshTokenEntity.ExpiresAtUtc);
     }
 
     private async Task<AppUser> LoadUserAsync(Guid userId, CancellationToken cancellationToken)
@@ -290,6 +361,10 @@ public sealed class AuthService(
             .AsNoTracking()
             .Include(currentUser => currentUser.UserRoles)
                 .ThenInclude(userRole => userRole.Role)
+                    .ThenInclude(role => role.RolePermissions)
+                        .ThenInclude(rolePermission => rolePermission.Permission)
+            .Include(currentUser => currentUser.ClientRoles)
+                .ThenInclude(mapping => mapping.Role)
                     .ThenInclude(role => role.RolePermissions)
                         .ThenInclude(rolePermission => rolePermission.Permission)
             .FirstOrDefaultAsync(currentUser => currentUser.Id == userId, cancellationToken);
@@ -443,7 +518,13 @@ public sealed class AuthService(
         return value.Trim().ToUpperInvariant();
     }
 
-    private (string Token, AppRefreshToken Entity) CreateRefreshToken(Guid userId, DateTime nowUtc)
+    private (string Token, AppRefreshToken Entity) CreateRefreshToken(
+        Guid userId,
+        string warehouseNo,
+        string clientType,
+        string? deviceId,
+        string? loginIpAddress,
+        DateTime nowUtc)
     {
         var expiryDays = _jwtOptions.RefreshTokenExpiryDays <= 0
             ? 14
@@ -454,10 +535,37 @@ public sealed class AuthService(
             userId,
             HashRefreshToken(token),
             nowUtc,
-            nowUtc.AddDays(expiryDays));
+            nowUtc.AddDays(expiryDays),
+            clientType,
+            deviceId,
+            loginIpAddress,
+            warehouseNo);
 
         return (token, entity);
     }
+
+    private static string ResolveClientType(string? requestedClientType, bool isLegacyTerminalUser)
+    {
+        if (isLegacyTerminalUser)
+        {
+            return AuthenticationClientTypes.Terminal;
+        }
+
+        if (string.IsNullOrWhiteSpace(requestedClientType))
+        {
+            return AuthenticationClientTypes.Web;
+        }
+
+        if (!AuthenticationClientTypes.IsSupported(requestedClientType))
+        {
+            throw new ArgumentException("Client type must be 'web' or 'terminal'.", nameof(requestedClientType));
+        }
+
+        return AuthenticationClientTypes.Normalize(requestedClientType);
+    }
+
+    private static bool IsLegacyTerminalUser(AppUser user) =>
+        user.UserRoles.Any(userRole => userRole.RoleId == TerminalRoleId);
 
     private static string HashRefreshToken(string refreshToken)
     {

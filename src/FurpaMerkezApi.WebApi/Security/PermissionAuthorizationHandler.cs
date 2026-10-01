@@ -1,14 +1,14 @@
 using System.Security.Claims;
 using FurpaMerkezApi.Application.Security;
-using FurpaMerkezApi.Infrastructure.Persistence;
+using FurpaMerkezApi.Application.Authentication.Contracts;
+using FurpaMerkezApi.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace FurpaMerkezApi.WebApi.Security;
 
 public sealed class PermissionAuthorizationHandler(
-    AuthDbContext dbContext,
+    ISessionAccessProfileResolver sessionAccessProfileResolver,
     IMemoryCache cache) : AuthorizationHandler<PermissionRequirement>
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(2);
@@ -22,7 +22,14 @@ public sealed class PermissionAuthorizationHandler(
             return;
         }
 
-        if (HasAdministratorRole(context.User) || HasPermissionClaim(context.User, requirement.PermissionCode))
+        if (HasAdministratorRole(context.User))
+        {
+            context.Succeed(requirement);
+            return;
+        }
+
+        var isLegacyUnifiedToken = context.User.IsInRole(SessionAccessProfileResolver.UnifiedWarehouseRoleName);
+        if (!isLegacyUnifiedToken && HasPermissionClaim(context.User, requirement.PermissionCode))
         {
             context.Succeed(requirement);
             return;
@@ -35,22 +42,17 @@ public sealed class PermissionAuthorizationHandler(
             return;
         }
 
+        var clientType = AuthenticationClientTypes.Normalize(
+            context.User.FindFirstValue("client_type"));
         var permissionCodes = await cache.GetOrCreateAsync(
-            CreateCacheKey(userId),
+            SessionAccessProfileCacheKeys.Create(userId, clientType),
             async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = CacheDuration;
-
-                return await dbContext.UserRoles
-                    .AsNoTracking()
-                    .Where(userRole =>
-                        userRole.UserId == userId &&
-                        userRole.User.IsActive &&
-                        userRole.Role.IsActive)
-                    .SelectMany(userRole => userRole.Role.RolePermissions
-                        .Select(rolePermission => rolePermission.Permission.Code))
-                    .Distinct()
-                    .ToArrayAsync();
+                return await sessionAccessProfileResolver.ResolvePermissionCodesAsync(
+                    userId,
+                    clientType,
+                    CancellationToken.None);
             }) ?? [];
 
         if (permissionCodes.Contains(requirement.PermissionCode, StringComparer.OrdinalIgnoreCase))
@@ -69,5 +71,4 @@ public sealed class PermissionAuthorizationHandler(
             string.Equals(claim.Type, AuthorizationConstants.PermissionClaimType, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(claim.Value, permissionCode, StringComparison.OrdinalIgnoreCase));
 
-    private static string CreateCacheKey(Guid userId) => $"permissions:user:{userId:N}";
 }

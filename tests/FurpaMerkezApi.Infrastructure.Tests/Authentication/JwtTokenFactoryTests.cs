@@ -20,7 +20,12 @@ public sealed class JwtTokenFactoryTests
             AuthorizationConstants.AdministratorRoleName,
             Enumerable.Range(1, 250).Select(index => $"module.menu-{index}.list"));
 
-        var token = CreateFactory().Create(user).AccessToken;
+        var token = CreateFactory().Create(
+            user,
+            CreateAccessProfile(user),
+            "web",
+            null,
+            Guid.NewGuid()).AccessToken;
         var permissionClaims = ReadPermissionClaims(token);
 
         Assert.Empty(permissionClaims);
@@ -39,7 +44,12 @@ public sealed class JwtTokenFactoryTests
                 "ortak-islemler.sikayet-oneri.list-all"
             ]);
 
-        var token = CreateFactory().Create(user).AccessToken;
+        var token = CreateFactory().Create(
+            user,
+            CreateAccessProfile(user),
+            "web",
+            null,
+            Guid.NewGuid()).AccessToken;
         var permissionClaims = ReadPermissionClaims(token);
 
         Assert.Equal(
@@ -60,6 +70,14 @@ public sealed class JwtTokenFactoryTests
                 ExpiryMinutes = 60
             }),
             new FixedClock(Now));
+
+    private static SessionAccessProfile CreateAccessProfile(AppUser user) =>
+        new(
+            user.UserRoles.Select(userRole => userRole.Role.Name).ToArray(),
+            user.UserRoles
+                .SelectMany(userRole => userRole.Role.RolePermissions)
+                .Select(rolePermission => rolePermission.Permission)
+                .ToArray());
 
     private static string[] ReadPermissionClaims(string token) =>
         new JwtSecurityTokenHandler()

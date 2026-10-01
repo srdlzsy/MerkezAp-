@@ -47,7 +47,14 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
     public Task<AuthResponse> Login([FromBody] LoginUserRequest request, CancellationToken cancellationToken)
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-        return authService.LoginAsync(new LoginRequest(request.UsernameOrEmail, request.Password, ip), cancellationToken);
+        return authService.LoginAsync(
+            new LoginRequest(
+                request.UsernameOrEmail,
+                request.Password,
+                ip,
+                request.ClientType,
+                request.DeviceId),
+            cancellationToken);
     }
 
     [AllowAnonymous]
@@ -79,7 +86,10 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
             return Unauthorized();
         }
 
-        return Ok(await authService.GetUserByIdAsync(userId, cancellationToken));
+        return Ok(await authService.GetUserByIdAsync(
+            userId,
+            User.FindFirstValue("client_type"),
+            cancellationToken));
     }
 
     [Authorize]
@@ -96,7 +106,13 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
         }
 
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-        return Ok(await authService.GetWarehouseContextAsync(userId, ipAddress, cancellationToken));
+        var clientType = User.FindFirstValue("client_type");
+        if (string.IsNullOrWhiteSpace(clientType) && User.IsInRole("Terminal"))
+        {
+            clientType = AuthenticationClientTypes.Terminal;
+        }
+
+        return Ok(await authService.GetWarehouseContextAsync(userId, ipAddress, clientType, cancellationToken));
     }
 
     public sealed class RegisterUserRequest
@@ -140,6 +156,12 @@ public sealed class AuthController(IAuthService authService, IOptions<ApiAuthOpt
         [Required(AllowEmptyStrings = false)]
         [StringLength(200)]
         public required string Password { get; init; }
+
+        [StringLength(20)]
+        public string? ClientType { get; init; }
+
+        [StringLength(100)]
+        public string? DeviceId { get; init; }
     }
 
     public sealed class RefreshTokenBody

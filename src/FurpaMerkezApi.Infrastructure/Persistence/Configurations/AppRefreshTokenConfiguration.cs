@@ -39,6 +39,24 @@ public sealed class AppRefreshTokenConfiguration : IEntityTypeConfiguration<AppR
             .HasColumnName("replaced_by_token_hash")
             .HasMaxLength(128);
 
+        builder.Property(token => token.ClientType)
+            .HasColumnName("client_type")
+            .HasMaxLength(20)
+            .IsRequired();
+
+        builder.Property(token => token.DeviceId)
+            .HasColumnName("device_id")
+            .HasMaxLength(100);
+
+        builder.Property(token => token.LoginIpAddress)
+            .HasColumnName("login_ip_address")
+            .HasMaxLength(64);
+
+        builder.Property(token => token.WarehouseNo)
+            .HasColumnName("warehouse_no")
+            .HasMaxLength(50)
+            .IsRequired();
+
         builder.HasOne(token => token.User)
             .WithMany()
             .HasForeignKey(token => token.UserId)

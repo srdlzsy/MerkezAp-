@@ -5,6 +5,8 @@ public sealed class AppRefreshToken
     private AppRefreshToken()
     {
         TokenHash = string.Empty;
+        ClientType = "web";
+        WarehouseNo = string.Empty;
     }
 
     public Guid Id { get; private set; }
@@ -21,6 +23,14 @@ public sealed class AppRefreshToken
 
     public string? ReplacedByTokenHash { get; private set; }
 
+    public string ClientType { get; private set; }
+
+    public string? DeviceId { get; private set; }
+
+    public string? LoginIpAddress { get; private set; }
+
+    public string WarehouseNo { get; private set; }
+
     public AppUser User { get; private set; } = null!;
 
     public AppRefreshToken(
@@ -28,7 +38,11 @@ public sealed class AppRefreshToken
         Guid userId,
         string tokenHash,
         DateTime createdAtUtc,
-        DateTime expiresAtUtc)
+        DateTime expiresAtUtc,
+        string clientType = "web",
+        string? deviceId = null,
+        string? loginIpAddress = null,
+        string warehouseNo = "0")
     {
         if (id == Guid.Empty)
         {
@@ -45,6 +59,10 @@ public sealed class AppRefreshToken
         TokenHash = NormalizeTokenHash(tokenHash);
         CreatedAtUtc = DateTime.SpecifyKind(createdAtUtc, DateTimeKind.Utc);
         ExpiresAtUtc = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
+        ClientType = NormalizeRequired(clientType, nameof(clientType), 20).ToLowerInvariant();
+        DeviceId = NormalizeOptional(deviceId, 100);
+        LoginIpAddress = NormalizeOptional(loginIpAddress, 64);
+        WarehouseNo = NormalizeRequired(warehouseNo, nameof(warehouseNo), 50);
     }
 
     public bool IsActive(DateTime nowUtc) =>
@@ -75,6 +93,38 @@ public sealed class AppRefreshToken
         if (normalized.Length > 128)
         {
             throw new ArgumentException("Token hash can not exceed 128 characters.", nameof(value));
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeRequired(string value, string parameterName, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"{parameterName} is required.", parameterName);
+        }
+
+        var normalized = value.Trim();
+        if (normalized.Length > maxLength)
+        {
+            throw new ArgumentException($"{parameterName} can not exceed {maxLength} characters.", parameterName);
+        }
+
+        return normalized;
+    }
+
+    private static string? NormalizeOptional(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+        if (normalized.Length > maxLength)
+        {
+            throw new ArgumentException($"Value can not exceed {maxLength} characters.", nameof(value));
         }
 
         return normalized;

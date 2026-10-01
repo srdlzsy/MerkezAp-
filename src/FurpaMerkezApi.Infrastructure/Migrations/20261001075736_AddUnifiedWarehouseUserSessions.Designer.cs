@@ -4,6 +4,7 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FurpaMerkezApi.Infrastructure.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    partial class AuthDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261001075736_AddUnifiedWarehouseUserSessions")]
+    partial class AddUnifiedWarehouseUserSessions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -5212,33 +5215,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppUserClientRole", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("user_id");
-
-                    b.Property<string>("ClientType")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("client_type");
-
-                    b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("role_id");
-
-                    b.Property<DateTime>("AssignedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("assigned_at_utc");
-
-                    b.HasKey("UserId", "ClientType", "RoleId");
-
-                    b.HasIndex("RoleId")
-                        .HasDatabaseName("ix_app_user_client_roles_role_id");
-
-                    b.ToTable("app_user_client_roles", (string)null);
-                });
-
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppUserRole", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -6623,25 +6599,6 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppUserClientRole", b =>
-                {
-                    b.HasOne("FurpaMerkezApi.Domain.Entities.AppRole", "Role")
-                        .WithMany("UserClientRoles")
-                        .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("FurpaMerkezApi.Domain.Entities.AppUser", "User")
-                        .WithMany("ClientRoles")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Role");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppUserRole", b =>
                 {
                     b.HasOne("FurpaMerkezApi.Domain.Entities.AppRole", "Role")
@@ -6764,15 +6721,11 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                 {
                     b.Navigation("RolePermissions");
 
-                    b.Navigation("UserClientRoles");
-
                     b.Navigation("UserRoles");
                 });
 
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AppUser", b =>
                 {
-                    b.Navigation("ClientRoles");
-
                     b.Navigation("UserRoles");
                 });
 

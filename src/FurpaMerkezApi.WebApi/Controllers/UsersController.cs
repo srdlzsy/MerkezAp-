@@ -59,6 +59,28 @@ public sealed class UsersController(IUserManagementService userManagementService
             new AssignUserRolesRequest(request.RoleIds),
             cancellationToken));
 
+    [HttpGet("{id:guid}/client-roles")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<UserClientRoleDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyCollection<UserClientRoleDto>>> GetClientRoles(
+        Guid id,
+        CancellationToken cancellationToken) =>
+        Ok(await userManagementService.GetClientRolesAsync(id, cancellationToken));
+
+    [HttpPut("{id:guid}/client-roles/{clientType}")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<UserClientRoleDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyCollection<UserClientRoleDto>>> AssignClientRoles(
+        Guid id,
+        string clientType,
+        [FromBody] AssignClientRolesBody request,
+        CancellationToken cancellationToken) =>
+        Ok(await userManagementService.AssignClientRolesAsync(
+            id,
+            new AssignUserClientRolesRequest(clientType, request.RoleIds),
+            cancellationToken));
+
     public sealed class UpdateUserBody
     {
         [Required(AllowEmptyStrings = false)]
@@ -93,6 +115,12 @@ public sealed class UsersController(IUserManagementService userManagementService
     }
 
     public sealed class AssignRolesBody
+    {
+        [MinLength(1)]
+        public required IReadOnlyCollection<Guid> RoleIds { get; init; }
+    }
+
+    public sealed class AssignClientRolesBody
     {
         [MinLength(1)]
         public required IReadOnlyCollection<Guid> RoleIds { get; init; }

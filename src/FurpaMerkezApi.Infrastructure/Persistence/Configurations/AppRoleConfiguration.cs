@@ -40,6 +40,6 @@ public sealed class AppRoleConfiguration : IEntityTypeConfiguration<AppRole>
             .IsUnique()
             .HasDatabaseName("ux_app_roles_name");
 
-        builder.HasData(AuthSeedData.AdministratorRole);
+        builder.HasData(AuthSeedData.AdministratorRole, AuthSeedData.WarehouseUserRole);
     }
 }
