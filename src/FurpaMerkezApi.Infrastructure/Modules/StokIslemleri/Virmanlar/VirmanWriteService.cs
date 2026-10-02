@@ -54,7 +54,8 @@ public sealed class VirmanWriteService(
             request,
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true);
     }
 
     private Task<CreateVirmanResponse> ExecuteRoutedAsync(
@@ -216,28 +217,48 @@ public sealed class VirmanWriteService(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API virman create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request,
-            lines,
-            movementDate,
-            documentDate,
-            documentNo,
-            options.ConnectionStringName,
-            result.RawResponse,
-            cancellationToken);
+        CreateVirmanResponse recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                documentNo,
+                options.ConnectionStringName,
+                result.RawResponse,
+                cancellationToken);
+        }
+        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        {
+            throw CreateUnconfirmedWriteException(result, exception);
+        }
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
             recovered.DocumentNo,
             cancellationToken: cancellationToken);
+
+        if (result.IsError)
+        {
+            logger.LogWarning(
+                "Recovered virman after an unknown Mikro API write outcome. Document={DocumentSerie}/{DocumentOrderNo}, AuditId={AuditId}, RequestId={RequestId}",
+                recovered.DocumentSerie,
+                recovered.DocumentOrderNo,
+                result.AuditId,
+                result.RequestId);
+        }
+
         return recovered;
     }
 
@@ -306,6 +327,13 @@ public sealed class VirmanWriteService(
         throw new InvalidOperationException(
             "Mikro API virman create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
     }
+
+    private static InvalidOperationException CreateUnconfirmedWriteException<TResponse>(
+        MikroApiResult<TResponse> result,
+        Exception innerException) =>
+        new(
+            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
+            innerException);
 
     private static bool TryRecoverVirmanResponseFromMikroApiResult(
         string documentSerie,

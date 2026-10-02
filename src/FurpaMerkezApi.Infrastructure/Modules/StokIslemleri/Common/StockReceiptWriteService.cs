@@ -50,7 +50,8 @@ public sealed class StockReceiptWriteService(
             request,
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, kind, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true);
     }
 
     private Task<CreateStockReceiptResponse> ExecuteRoutedAsync(
@@ -202,31 +203,52 @@ public sealed class StockReceiptWriteService(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API stock receipt create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request,
-            pricedLines,
-            movementGenre,
-            movementDate,
-            documentDate,
-            documentNo,
-            creator,
-            acceptor,
-            options.ConnectionStringName,
-            result.RawResponse,
-            cancellationToken);
+        CreateStockReceiptResponse recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                pricedLines,
+                movementGenre,
+                movementDate,
+                documentDate,
+                documentNo,
+                creator,
+                acceptor,
+                options.ConnectionStringName,
+                result.RawResponse,
+                cancellationToken);
+        }
+        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        {
+            throw CreateUnconfirmedWriteException(result, exception);
+        }
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
             recovered.DocumentNo,
             cancellationToken: cancellationToken);
+
+        if (result.IsError)
+        {
+            logger.LogWarning(
+                "Recovered stock receipt after an unknown Mikro API write outcome. Kind={Kind}, Document={DocumentSerie}/{DocumentOrderNo}, AuditId={AuditId}, RequestId={RequestId}",
+                kind,
+                recovered.DocumentSerie,
+                recovered.DocumentOrderNo,
+                result.AuditId,
+                result.RequestId);
+        }
+
         return recovered;
     }
 
@@ -304,6 +326,13 @@ public sealed class StockReceiptWriteService(
         throw new InvalidOperationException(
             "Mikro API stock receipt create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
     }
+
+    private static InvalidOperationException CreateUnconfirmedWriteException<TResponse>(
+        MikroApiResult<TResponse> result,
+        Exception innerException) =>
+        new(
+            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
+            innerException);
 
     private static bool TryRecoverStockReceiptResponseFromMikroApiResult(
         string documentSerie,

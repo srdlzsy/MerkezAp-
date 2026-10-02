@@ -33,7 +33,7 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
         var endDateExclusive = endDate.AddDays(1);
         var movementGenre = ResolveMovementGenre(kind);
 
-        var query =
+        var filteredMovements =
             from movement in mikroDbContext.STOK_HAREKETLERIs.AsNoTracking()
             where movement.sth_belge_tarih.HasValue &&
                   movement.sth_belge_tarih.Value >= startDate &&
@@ -43,49 +43,75 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
                   movement.sth_normal_iade == NormalMovement &&
                   movement.sth_cins == movementGenre &&
                   (!request.WarehouseNo.HasValue || movement.sth_cikis_depo_no == request.WarehouseNo.Value)
-            join outputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
-                on movement.sth_cikis_depo_no equals outputWarehouse.dep_no into outputWarehouseGroup
-            from outputWarehouse in outputWarehouseGroup.DefaultIfEmpty()
+            select movement;
+
+        var documentSummaries =
+            from movement in filteredMovements
             group movement
             by new
             {
                 movement.sth_belge_tarih,
-                movement.sth_create_date,
                 movement.sth_tarih,
                 movement.sth_belge_no,
                 movement.sth_evrakno_seri,
                 movement.sth_evrakno_sira,
                 movement.sth_cikis_depo_no,
-                OutputWarehouseName = outputWarehouse.dep_adi,
                 movement.sth_HareketGrupKodu1,
                 movement.sth_HareketGrupKodu2,
                 movement.sth_isemri_gider_kodu,
                 movement.sth_evraktip,
                 movement.sth_tip,
-                movement.sth_cins,
-                movement.sth_aciklama
+                movement.sth_cins
             }
             into grouped
-            orderby grouped.Key.sth_belge_tarih, grouped.Key.sth_create_date, grouped.Key.sth_evrakno_seri, grouped.Key.sth_evrakno_sira
-            select new StockReceiptListItemDto(
+            select new
+            {
                 grouped.Key.sth_belge_tarih,
-                grouped.Key.sth_create_date,
+                MovementCreateDate = grouped.Min(item => item.sth_create_date),
                 grouped.Key.sth_tarih,
-                grouped.Key.sth_belge_no ?? string.Empty,
-                grouped.Key.sth_evrakno_seri ?? string.Empty,
-                grouped.Key.sth_evrakno_sira ?? 0,
-                grouped.Key.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
-                grouped.Key.OutputWarehouseName ?? string.Empty,
-                grouped.Key.sth_HareketGrupKodu1 ?? string.Empty,
-                grouped.Key.sth_HareketGrupKodu2 ?? string.Empty,
-                grouped.Key.sth_isemri_gider_kodu ?? string.Empty,
-                grouped.Key.sth_evraktip ?? 0,
-                grouped.Key.sth_tip ?? 0,
-                grouped.Key.sth_cins ?? 0,
-                grouped.Key.sth_aciklama ?? string.Empty,
-                grouped.Count(),
-                grouped.Sum(item => item.sth_miktar ?? 0d),
-                grouped.Sum(item => item.sth_tutar ?? 0d));
+                grouped.Key.sth_belge_no,
+                grouped.Key.sth_evrakno_seri,
+                grouped.Key.sth_evrakno_sira,
+                grouped.Key.sth_cikis_depo_no,
+                grouped.Key.sth_HareketGrupKodu1,
+                grouped.Key.sth_HareketGrupKodu2,
+                grouped.Key.sth_isemri_gider_kodu,
+                grouped.Key.sth_evraktip,
+                grouped.Key.sth_tip,
+                grouped.Key.sth_cins,
+                LineCount = grouped.Count(),
+                TotalQuantity = grouped.Sum(item => item.sth_miktar ?? 0d),
+                TotalAmount = grouped.Sum(item => item.sth_tutar ?? 0d)
+            };
+
+        var query =
+            from document in documentSummaries
+            join outputWarehouse in mikroDbContext.DEPOLARs.AsNoTracking()
+                on document.sth_cikis_depo_no equals outputWarehouse.dep_no into outputWarehouseGroup
+            from outputWarehouse in outputWarehouseGroup.DefaultIfEmpty()
+            orderby document.sth_belge_tarih,
+                document.MovementCreateDate,
+                document.sth_evrakno_seri,
+                document.sth_evrakno_sira
+            select new StockReceiptListItemDto(
+                document.sth_belge_tarih,
+                document.MovementCreateDate,
+                document.sth_tarih,
+                document.sth_belge_no ?? string.Empty,
+                document.sth_evrakno_seri ?? string.Empty,
+                document.sth_evrakno_sira ?? 0,
+                document.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
+                outputWarehouse.dep_adi ?? string.Empty,
+                document.sth_HareketGrupKodu1 ?? string.Empty,
+                document.sth_HareketGrupKodu2 ?? string.Empty,
+                document.sth_isemri_gider_kodu ?? string.Empty,
+                document.sth_evraktip ?? 0,
+                document.sth_tip ?? 0,
+                document.sth_cins ?? 0,
+                string.Empty,
+                document.LineCount,
+                document.TotalQuantity,
+                document.TotalAmount);
 
         return await query.ToListAsync(cancellationToken);
     }

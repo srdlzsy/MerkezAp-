@@ -246,22 +246,31 @@ public sealed class CreateWarehouseReturnUseCase(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API warehouse return create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request,
-            lines,
-            movementDate,
-            documentDate,
-            documentNo,
-            result.RawResponse,
-            cancellationToken);
+        RecoveredWarehouseReturnCreate recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                documentNo,
+                result.RawResponse,
+                cancellationToken);
+        }
+        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        {
+            throw CreateUnconfirmedWriteException(result, exception);
+        }
 
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
@@ -269,6 +278,16 @@ public sealed class CreateWarehouseReturnUseCase(
             recovered.DocumentNo,
             recoveredGuid == Guid.Empty ? null : recoveredGuid,
             cancellationToken: cancellationToken);
+
+        if (result.IsError)
+        {
+            logger.LogWarning(
+                "Recovered warehouse return after an unknown Mikro API write outcome. Document={DocumentSerie}/{DocumentOrderNo}, AuditId={AuditId}, RequestId={RequestId}",
+                recovered.DocumentSerie,
+                recovered.DocumentOrderNo,
+                result.AuditId,
+                result.RequestId);
+        }
 
         return new CreateWarehouseReturnResponse(
             recovered.DocumentSerie,
@@ -429,6 +448,13 @@ public sealed class CreateWarehouseReturnUseCase(
         throw new InvalidOperationException(
             "Mikro API warehouse return create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
     }
+
+    private static InvalidOperationException CreateUnconfirmedWriteException<TResponse>(
+        MikroApiResult<TResponse> result,
+        Exception innerException) =>
+        new(
+            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
+            innerException);
 
     private static bool TryRecoverWarehouseReturnResponseFromMikroApiResult(
         string documentSerie,

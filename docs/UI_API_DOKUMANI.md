@@ -43,7 +43,7 @@ E-irsaliye alici alias notu:
 - Depolar arasi sevk ve depo iadesinde hedef bir cari olmadigi icin bu alias cozumleme adimi calismaz.
 - Mikro API yazma audit kaydi istekten once `Pending` acilir. Kesin basari `Succeeded`, kesin is kurali hatasi `Failed`, timeout/baglanti kopmasi/istemci iptali gibi commit sonucu kanitlanamayan durumlar `Unknown`, Mikro DB readback ile evrak bulundugunda `Recovered` olur.
 - Istemci istegi iptal edilse bile audit kapanisi kullanici request token'ina bagli degildir; Auth DB yazimi kisa ve ayri bir timeout ile tamamlanmaya calisilir.
-- Arka plan uzlastirma islemi varsayilan olarak 5 dakikada bir calisir. 15 dakikadan eski `Pending` kayitlari `Unknown` yapar ve eski parser nedeniyle `Succeeded` yazilmis `MikroAPI - TimeOut` cevaplarini duzeltir. `Recovered` kayitlara dokunmaz.
+- Arka plan audit siniflandirma islemi varsayilan olarak 5 dakikada bir calisir. 15 dakikadan eski `Pending` kayitlari `Unknown` yapar ve eski parser nedeniyle `Succeeded` yazilmis `MikroAPI - TimeOut` cevaplarini duzeltir. Bu genel servis Mikro'ya yeniden yazma yapmaz ve tek basina business readback gerceklestirmez; gercek `Recovered` karari ilgili create servisinin belge/satir/trace kontrolleriyle verilir.
 - `Unknown`, evrakin Mikro'da kesinlikle olusmadigi anlamina gelmez. UI veya islem servisi ayni payload ile kontrolsuz yeni kayit acmamalidir; once readback/guvenli retry akisi calistirilmalidir.
 
 Route parametre notu:
@@ -1223,7 +1223,7 @@ Guvenli retry destegi genisletilen diger kritik create akislari:
 Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygulama veya web UI timeout/tekrar basma riskine karsi guvenli calisacaksa su kurallar uygulanmalidir:
 
 - Her yeni create denemesi icin istemci tarafinda bir `clientRequestId` uretilmelidir. Format `GUID` olmali ve ayni mantiksal fis boyunca degismemelidir.
-- `clientRequestId` teknik olarak opsiyoneldir, ama offline guvenli tekrar gonderim icin pratikte zorunludur.
+- `clientRequestId` request modelinde geriye uyumluluk nedeniyle nullable kalabilir; ancak sevk, iade, firma hareketi, zayiat, masraf ve virman create ekranlarinda guvenli tekrar gonderim icin UI tarafinda zorunlu kabul edilmelidir.
 - Kullanici ayni fis taslagini tekrar gonderiyorsa ayni `clientRequestId` kullanilmalidir.
 - Kullanici fis icerigini degistirdiyse yeni bir `clientRequestId` uretilmelidir.
 - Ayni kullanici, ayni islem ve ayni `clientRequestId` kombinasyonu backend tarafinda tekil kabul edilir.
@@ -1233,8 +1233,10 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - POST cevabi cihaza ulasmadiysa mobil uygulama once ayni `clientRequestId` ile tekrar POST denemelidir.
 - Firma mal kabul ve sayim sonucunda durum hala belirsizse ilgili `offline-sync/{clientRequestId}` endpoint'i ile durum sorgulanabilir.
 - Sevk, iade, zayiat, masraf ve virman create akislarinda ayri durum endpoint'i yoktur; sonuc ayni `clientRequestId` ile tekrar POST edilerek toparlanir.
-- Depolar arasi sevk ve depo iadesi Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa ayni `clientRequestId` ile gelen tekrar POST, Mikro'ya ikinci kez yazma gondermez. Backend sadece trace ile readback yapar; tum satirlar tamamlandiysa mevcut evraki `Completed` olarak toparlar, henuz tamamlanmadiysa `409 Conflict` ile islemin surdugunu bildirir.
-- Bu iki akista belirsiz sonuc sonrasi `409 Conflict` alinmasi yeni `clientRequestId` uretilmesi gerektigi anlamina gelmez. UI ayni payload snapshot'ini ve ayni `clientRequestId` degerini korumali; yeni id ancak kullanici acikca yeni bir islem baslatirsa uretilmelidir.
+- Depolar arasi sevk, depo iadesi, firma sevki/iadesi, zayiat, masraf ve virman Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa backend once ayni cagrida Mikro DB readback yapar. Evrak tum satirlariyla bulunursa cevap basarili doner ve Mikro API audit kaydi `Recovered` olur.
+- Ilk readback sirasinda evrak henuz gorunmuyorsa ayni `clientRequestId` ile gelen tekrar POST Mikro'ya ikinci create yazisi gondermez. Backend sadece trace ile readback yapar; tum satirlar tamamlandiysa mevcut evraki toparlar, henuz tamamlanmadiysa `409 Conflict` ile islemin surdugunu bildirir.
+- Mikro API `evrak zaten mevcut`/duplicate document cevabi verirse backend bunu otomatik basari saymaz. Ayni seri/sira veya trace ile Mikro satirlarini okur; stok, miktar, birim ve satir butunlugu beklenen istekle tam eslesirse mevcut evraki dondurur ve audit kaydini `Recovered` yapar. Icerik eslesmezse yeni evrak yazmaz ve manuel inceleme hatasi verir.
+- Bu akislarin hicbirinde belirsiz sonuc sonrasi `409 Conflict` alinmasi yeni `clientRequestId` uretilmesi gerektigi anlamina gelmez. UI ayni payload snapshot'ini ve ayni `clientRequestId` degerini korumali; yeni id ancak kullanici acikca yeni bir islem baslatirsa uretilmelidir.
 - Stok hareketi yazan genisletilmis akislarda backend `clientRequestId` izini `FR` prefixli 24 karakterlik trace olarak Mikro `STOK_HAREKETLERI.sth_eticaret_kanal_kodu` alanina tasir. `MikroApi` rotasinda da ayni iz payload'a eklenir.
 - `FR` prefix'i bu alan ileride dolu goruldugunde kaydin Furpa guvenli retry izinden geldigini ayirt etmek icindir.
 
@@ -1305,7 +1307,7 @@ Ortak offline status response modeli:
 
 - `Processing`: istek backend tarafinda rezerve edildi, islem tamamlanmadi veya sonuc henuz toparlanamadi
 - `Completed`: istek basariyla tamamlandi; `result` alaninda asil business response bulunur
-- `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. Ayni payload ile retry yapilabilir, ama payload degistiyse yeni `clientRequestId` kullanilmalidir. Depolar arasi sevk ve depo iadesinde timeout/iptal gibi belirsiz Mikro sonucunda retry yalnizca readback yapar; ayni id ile ikinci yazma baslatmaz.
+- `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. U17, validasyon veya benzeri kesin is kurali hatasi duzeltilmeden tekrar edilmemelidir. Hata metni timeout/iptal/`write outcome could not be confirmed` ise sonuc belirsizdir; sevk, iade, firma hareketi, zayiat, masraf ve virman akislarinda ayni id ile retry yalnizca readback yapar ve ikinci yazma baslatmaz.
 
 ## Mobil Urun-Fiyat Katalog Sync
 

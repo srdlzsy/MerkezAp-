@@ -53,7 +53,8 @@ public sealed class CompanyMovementWriteService(
             request,
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, kind, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true);
     }
 
     private Task<CreateCompanyMovementResponse> ExecuteRoutedAsync(
@@ -228,31 +229,52 @@ public sealed class CompanyMovementWriteService(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API company movement create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request,
-            lines,
-            customerCode,
-            returnType,
-            movementDate,
-            documentDate,
-            documentNo,
-            options.ConnectionStringName,
-            movementGenre,
-            result.RawResponse,
-            cancellationToken);
+        CreateCompanyMovementResponse recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                customerCode,
+                returnType,
+                movementDate,
+                documentDate,
+                documentNo,
+                options.ConnectionStringName,
+                movementGenre,
+                result.RawResponse,
+                cancellationToken);
+        }
+        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        {
+            throw CreateUnconfirmedWriteException(result, exception);
+        }
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
             recovered.DocumentNo,
             cancellationToken: cancellationToken);
+
+        if (result.IsError)
+        {
+            logger.LogWarning(
+                "Recovered company movement after an unknown Mikro API write outcome. Kind={Kind}, Document={DocumentSerie}/{DocumentOrderNo}, AuditId={AuditId}, RequestId={RequestId}",
+                kind,
+                recovered.DocumentSerie,
+                recovered.DocumentOrderNo,
+                result.AuditId,
+                result.RequestId);
+        }
+
         return recovered;
     }
 
@@ -329,6 +351,13 @@ public sealed class CompanyMovementWriteService(
         throw new InvalidOperationException(
             "Mikro API company movement create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
     }
+
+    private static InvalidOperationException CreateUnconfirmedWriteException<TResponse>(
+        MikroApiResult<TResponse> result,
+        Exception innerException) =>
+        new(
+            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
+            innerException);
 
     private static bool TryRecoverCompanyMovementResponseFromMikroApiResult(
         string documentSerie,

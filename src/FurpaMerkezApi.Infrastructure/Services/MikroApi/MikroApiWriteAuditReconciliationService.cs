@@ -55,7 +55,7 @@ internal sealed class MikroApiWriteAuditReconciliationService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogWarning(
-            "Reclassified {AuditCount} stale or incorrectly successful Mikro API write audits as Unknown.",
+            "Classified {AuditCount} stale or incorrectly successful Mikro API write audits as Unknown. No business write was retried; endpoint-specific readback is still required.",
             audits.Length);
 
         return audits.Length;

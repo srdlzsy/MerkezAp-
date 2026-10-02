@@ -99,10 +99,23 @@ public sealed class MikroApiWriteAuditService(
         return ContainsTimeout(result.ErrorMessage) || ContainsTimeout(result.RawResponse);
     }
 
+    internal static bool IsRecoverableCreateOutcome<TResponse>(MikroApiResult<TResponse> result) =>
+        IsUnknownWriteOutcome(result) ||
+        ContainsDuplicateDocument(result.ErrorMessage) ||
+        ContainsDuplicateDocument(result.RawResponse);
+
     private static bool ContainsTimeout(string? value) =>
         !string.IsNullOrWhiteSpace(value) &&
         (value.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
          value.Contains("timed out", StringComparison.OrdinalIgnoreCase));
+
+    private static bool ContainsDuplicateDocument(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        (value.Contains("zaten mevcut", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("mukerrer", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("mükerrer", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("duplicate document", StringComparison.OrdinalIgnoreCase));
 
     public Task MarkRecoveredAsync(
         Guid? auditId,

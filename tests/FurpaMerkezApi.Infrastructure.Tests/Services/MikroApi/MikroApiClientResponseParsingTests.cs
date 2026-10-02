@@ -158,6 +158,44 @@ public sealed class MikroApiClientResponseParsingTests
         Assert.False(MikroApiWriteAuditService.IsUnknownWriteOutcome(result));
     }
 
+    [Theory]
+    [InlineData("F56-88038 numarali evrak zaten mevcut.")]
+    [InlineData("Duplicate document number.")]
+    public void IsRecoverableCreateOutcome_AllowsVerifiedReadbackForDuplicateDocumentErrors(
+        string errorMessage)
+    {
+        var result = new MikroApiResult<string>(
+            true,
+            400,
+            System.Net.HttpStatusCode.OK,
+            errorMessage,
+            $"{{\"errorText\":\"{errorMessage}\"}}",
+            null,
+            "/Api/apiMethods/DahiliStokHareketKaydetV2",
+            1,
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(MikroApiWriteAuditService.IsRecoverableCreateOutcome(result));
+        Assert.False(MikroApiWriteAuditService.IsUnknownWriteOutcome(result));
+    }
+
+    [Fact]
+    public void IsRecoverableCreateOutcome_DoesNotRetryBusinessRuleFailure()
+    {
+        var result = new MikroApiResult<string>(
+            true,
+            400,
+            System.Net.HttpStatusCode.OK,
+            "Gider muhasebe kodu bos. U17",
+            "{}",
+            null,
+            "/Api/apiMethods/DahiliStokHareketKaydetV2",
+            1,
+            TimeSpan.FromSeconds(1));
+
+        Assert.False(MikroApiWriteAuditService.IsRecoverableCreateOutcome(result));
+    }
+
     [Fact]
     public void CreatedDocumentResultReader_ReadsNestedDataListRows()
     {
