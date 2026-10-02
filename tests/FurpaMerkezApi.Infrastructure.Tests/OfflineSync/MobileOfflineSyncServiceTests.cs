@@ -134,6 +134,109 @@ public sealed class MobileOfflineSyncServiceTests
             CancellationToken.None,
             preventReexecutionAfterUncertainOutcome: true);
 
+    [Fact]
+    public async Task NonRetryableFailure_SurvivesNewContextAndSkipsRecovery()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new AuthDbContext(options);
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+        var payload = new TestRequest(56, 2);
+        var writes = 0;
+        await Assert.ThrowsAsync<OperationConflictException>(() => OfflineCreateGuard.ExecuteAsync<TestRequest, string>(
+            service, "shipment.create", user, 56, id, payload,
+            (_, _) => Task.FromResult<string?>(null),
+            _ => { writes++; throw new OperationConflictException(OperationConflictErrorCodes.MikroDocumentContentMismatch, "Manual review", false); },
+            CancellationToken.None, true));
+        await using var retryDb = new AuthDbContext(options);
+        var retryService = new MobileOfflineSyncService(retryDb, new MutableClock(Now));
+        var recoveryCalled = false;
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() => retryService.AcquireAsync<TestRequest, string>(
+            "shipment.create", user, 56, id, payload,
+            (_, _) => { recoveryCalled = true; return Task.FromResult<string?>("unexpected"); }, CancellationToken.None, true));
+        Assert.False(exception.Retryable);
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(recoveryCalled);
+        Assert.Equal(1, writes);
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.False(record.Retryable);
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, record.ErrorCode);
+    }
+
+    [Fact]
+    public async Task MismatchDuringRecovery_IsPersistedAndNotExecutedAgain()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+        var payload = new TestRequest(56, 2);
+        await AcquireAsync(service, user, id, payload);
+        await service.MarkFailedAsync("shipment.create", user, id, "TimeOut", CancellationToken.None);
+        await Assert.ThrowsAsync<OperationConflictException>(() => service.AcquireAsync<TestRequest, string>(
+            "shipment.create", user, 56, id, payload,
+            (_, _) => throw new OperationConflictException(OperationConflictErrorCodes.MikroDocumentContentMismatch, "Manual review", false),
+            CancellationToken.None, true));
+        await Assert.ThrowsAsync<OperationConflictException>(() => AcquireAsync(service, user, id, payload));
+        Assert.False((await db.MobileOfflineSyncRequests.SingleAsync()).Retryable);
+    }
+
+    [Fact]
+    public async Task ConcurrentFailedRetries_OnlyOneAcquiresExecution()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await VerifyConcurrentRetryAsync(options);
+    }
+
+    internal static async Task VerifyConcurrentRetryAsync(DbContextOptions<AuthDbContext> options)
+    {
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+        var payload = new TestRequest(56, 2);
+        await using (var seed = new AuthDbContext(options))
+        {
+            var service = new MobileOfflineSyncService(seed, new MutableClock(Now));
+            await AcquireAsync(service, user, id, payload);
+            await service.MarkFailedAsync("shipment.create", user, id, "Definite validation rejection", CancellationToken.None);
+        }
+        await using var firstDb = new AuthDbContext(options);
+        await using var secondDb = new AuthDbContext(options);
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var arrived = 0;
+        async Task<string?> Recover(string? _, CancellationToken token)
+        {
+            if (Interlocked.Increment(ref arrived) == 2) barrier.SetResult();
+            await barrier.Task.WaitAsync(TimeSpan.FromSeconds(20), token);
+            return null;
+        }
+        Task<MobileOfflineSyncAcquireResult<string>> Acquire(AuthDbContext context) =>
+            new MobileOfflineSyncService(context, new MutableClock(Now)).AcquireAsync<TestRequest, string>(
+                "shipment.create", user, 56, id, payload, Recover, CancellationToken.None, true);
+        var results = await Task.WhenAll(Acquire(firstDb), Acquire(secondDb));
+        Assert.Single(results, result => result.State == MobileOfflineSyncAcquireState.Proceed);
+        Assert.Single(results, result => result.State == MobileOfflineSyncAcquireState.Processing);
+    }
+
+    [Fact]
+    public async Task StaleFailure_CannotOverwriteCompletedResult()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var firstDb = new AuthDbContext(options);
+        await using var secondDb = new AuthDbContext(options);
+        var first = new MobileOfflineSyncService(firstDb, new MutableClock(Now));
+        var second = new MobileOfflineSyncService(secondDb, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+        await AcquireAsync(first, user, id, new TestRequest(56, 2));
+        await secondDb.MobileOfflineSyncRequests.SingleAsync();
+        await first.CompleteAsync("shipment.create", user, id, "F56/123", CancellationToken.None);
+        await second.MarkFailedAsync("shipment.create", user, id, "stale failure", CancellationToken.None);
+        Assert.Equal(MobileOfflineSyncRequestStatus.Completed, (await secondDb.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()

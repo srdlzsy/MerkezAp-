@@ -8,6 +8,11 @@ internal static class MikroApiCreateConflictFactory
         MikroApiResult<TResponse> result,
         Exception innerException)
     {
+        if (innerException is OperationConflictException conflict)
+        {
+            return conflict;
+        }
+
         if (MikroApiWriteAuditService.IsDuplicateDocumentOutcome(result))
         {
             return new OperationConflictException(

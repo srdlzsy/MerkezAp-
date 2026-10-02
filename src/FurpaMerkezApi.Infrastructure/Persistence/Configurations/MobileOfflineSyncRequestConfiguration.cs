@@ -53,6 +53,17 @@ public sealed class MobileOfflineSyncRequestConfiguration : IEntityTypeConfigura
         builder.Property(item => item.ErrorMessage)
             .HasColumnName("error_message");
 
+        builder.Property(item => item.ErrorCode)
+            .HasColumnName("error_code")
+            .HasMaxLength(100);
+
+        builder.Property(item => item.Retryable)
+            .HasColumnName("retryable");
+
+        builder.Property(item => item.Revision)
+            .HasColumnName("revision")
+            .IsConcurrencyToken();
+
         builder.Property(item => item.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();

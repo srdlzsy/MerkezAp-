@@ -29,6 +29,12 @@ public sealed class MobileOfflineSyncRequest
 
     public string? ErrorMessage { get; private set; }
 
+    public string? ErrorCode { get; private set; }
+
+    public bool? Retryable { get; private set; }
+
+    public Guid Revision { get; private set; }
+
     public DateTime CreatedAtUtc { get; private set; }
 
     public DateTime? UpdatedAtUtc { get; private set; }
@@ -70,6 +76,7 @@ public sealed class MobileOfflineSyncRequest
         Status = MobileOfflineSyncRequestStatus.Processing;
         CreatedAtUtc = NormalizeUtc(createdAtUtc);
         UpdatedAtUtc = CreatedAtUtc;
+        Revision = Guid.NewGuid();
     }
 
     public void EnsureRequestFingerprintMatches(string requestFingerprint)
@@ -85,31 +92,55 @@ public sealed class MobileOfflineSyncRequest
 
     public void RestartProcessing(string requestFingerprint, string? requestPayload, DateTime updatedAtUtc)
     {
+        if (Retryable == false)
+        {
+            throw new InvalidOperationException("Manual review is required before restarting this request.");
+        }
+
         RequestFingerprint = NormalizeRequired(requestFingerprint, nameof(requestFingerprint), 64);
         RequestPayload = NormalizeOptional(requestPayload);
         Status = MobileOfflineSyncRequestStatus.Processing;
         ResponsePayload = null;
         ErrorMessage = null;
+        ErrorCode = null;
+        Retryable = null;
         CompletedAtUtc = null;
         UpdatedAtUtc = NormalizeUtc(updatedAtUtc);
+        Revision = Guid.NewGuid();
     }
 
     public void MarkCompleted(string responsePayload, DateTime completedAtUtc)
     {
+        if (Retryable == false)
+        {
+            throw new InvalidOperationException("A request awaiting manual review cannot be completed automatically.");
+        }
+
         ResponsePayload = NormalizeRequired(responsePayload, nameof(responsePayload), int.MaxValue);
         ErrorMessage = null;
+        ErrorCode = null;
+        Retryable = null;
         Status = MobileOfflineSyncRequestStatus.Completed;
         CompletedAtUtc = NormalizeUtc(completedAtUtc);
         UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
     }
 
-    public void MarkFailed(string errorMessage, DateTime completedAtUtc)
+    public void MarkFailed(string errorMessage, DateTime completedAtUtc, string? errorCode = null, bool? retryable = null)
     {
+        if (Status == MobileOfflineSyncRequestStatus.Completed || Retryable == false)
+        {
+            return;
+        }
+
         ErrorMessage = NormalizeRequired(errorMessage, nameof(errorMessage), 1000);
+        ErrorCode = NormalizeOptional(errorCode);
+        Retryable = retryable;
         ResponsePayload = null;
         Status = MobileOfflineSyncRequestStatus.Failed;
         CompletedAtUtc = NormalizeUtc(completedAtUtc);
         UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
     }
 
     private static DateTime NormalizeUtc(DateTime value) =>

@@ -103,7 +103,9 @@ public sealed class MobileOfflineSyncService(
         Guid requestedByUserId,
         Guid clientRequestId,
         string errorMessage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? errorCode = null,
+        bool? retryable = null)
     {
         var record = await GetTrackedAsync(
             operationCode,
@@ -116,8 +118,16 @@ public sealed class MobileOfflineSyncService(
             return;
         }
 
-        record.MarkFailed(Truncate(errorMessage, 1000), clock.UtcNow);
-        await authDbContext.SaveChangesAsync(cancellationToken);
+        record.MarkFailed(Truncate(errorMessage, 1000), clock.UtcNow, errorCode, retryable);
+        try
+        {
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A stale attempt must not overwrite a newer owner or a completed result.
+            await authDbContext.Entry(record).ReloadAsync(cancellationToken);
+        }
     }
 
     internal async Task<OfflineSyncStatusDto<TResponse>> GetStatusAsync<TResponse>(
@@ -140,7 +150,7 @@ public sealed class MobileOfflineSyncService(
         {
             result = DeserializeResponse<TResponse>(record.ResponsePayload);
         }
-        else
+        else if (record.Retryable != false)
         {
             result = await TryRecoverAsync(record, recoverAsync, cancellationToken);
         }
@@ -194,6 +204,8 @@ public sealed class MobileOfflineSyncService(
                 DeserializeResponse<TResponse>(existing.ResponsePayload));
         }
 
+        ThrowIfReviewRequired(existing);
+
         var recovered = await TryRecoverAsync(existing, recoverAsync, cancellationToken);
         if (recovered is not null)
         {
@@ -202,6 +214,7 @@ public sealed class MobileOfflineSyncService(
 
         if (preventReexecutionAfterUncertainOutcome &&
             (existing.Status == MobileOfflineSyncRequestStatus.Processing ||
+             existing.ErrorCode is OperationConflictErrorCodes.MikroWriteInProgress or OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed ||
              IsUncertainWriteOutcome(existing.ErrorMessage)))
         {
             return MobileOfflineSyncAcquireResult<TResponse>.Processing();
@@ -210,7 +223,18 @@ public sealed class MobileOfflineSyncService(
         if (existing.Status == MobileOfflineSyncRequestStatus.Failed || IsProcessingLeaseExpired(existing))
         {
             existing.RestartProcessing(requestFingerprint, requestJson, clock.UtcNow);
-            await authDbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await authDbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await authDbContext.Entry(existing).ReloadAsync(cancellationToken);
+                ThrowIfReviewRequired(existing);
+                return existing.Status == MobileOfflineSyncRequestStatus.Completed
+                    ? MobileOfflineSyncAcquireResult<TResponse>.Completed(DeserializeResponse<TResponse>(existing.ResponsePayload))
+                    : MobileOfflineSyncAcquireResult<TResponse>.Processing();
+            }
             return MobileOfflineSyncAcquireResult<TResponse>.Proceed();
         }
 
@@ -238,15 +262,50 @@ public sealed class MobileOfflineSyncService(
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
         CancellationToken cancellationToken)
     {
-        var recovered = await recoverAsync(record.RequestPayload, cancellationToken);
+        TResponse? recovered;
+        try
+        {
+            recovered = await recoverAsync(record.RequestPayload, cancellationToken);
+        }
+        catch (OperationConflictException exception)
+        {
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await MarkFailedAsync(record.OperationCode, record.RequestedByUserId,
+                Guid.Parse(record.ClientRequestId), exception.Message, persistenceTimeout.Token,
+                exception.ErrorCode, exception.Retryable);
+            throw;
+        }
         if (recovered is null)
         {
             return default;
         }
 
         record.MarkCompleted(JsonSerializer.Serialize(recovered, JsonOptions), clock.UtcNow);
-        await authDbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await authDbContext.Entry(record).ReloadAsync(cancellationToken);
+            ThrowIfReviewRequired(record);
+            if (record.Status == MobileOfflineSyncRequestStatus.Completed)
+                return DeserializeResponse<TResponse>(record.ResponsePayload);
+
+            throw new OperationConflictException(OperationConflictErrorCodes.MikroWriteInProgress,
+                "The request changed during readback. Retry with the same clientRequestId.", true);
+        }
         return recovered;
+    }
+
+    private static void ThrowIfReviewRequired(MobileOfflineSyncRequest record)
+    {
+        if (record.Retryable == false)
+        {
+            throw new OperationConflictException(
+                record.ErrorCode ?? OperationConflictErrorCodes.MikroDocumentContentMismatch,
+                record.ErrorMessage ?? "Manual review is required; do not submit a new request.", false);
+        }
     }
 
     private Task<MobileOfflineSyncRequest?> GetTrackedAsync(

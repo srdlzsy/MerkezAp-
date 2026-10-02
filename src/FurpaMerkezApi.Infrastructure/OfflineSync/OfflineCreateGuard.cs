@@ -73,7 +73,7 @@ internal static class OfflineCreateGuard
                 operationCode,
                 requestedByUserId.Value,
                 clientRequestId.Value,
-                exception.Message,
+                exception,
                 cancellationToken);
             throw;
         }
@@ -84,17 +84,21 @@ internal static class OfflineCreateGuard
         string operationCode,
         Guid requestedByUserId,
         Guid clientRequestId,
-        string errorMessage,
+        Exception exception,
         CancellationToken cancellationToken)
     {
         try
         {
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var conflict = exception as OperationConflictException;
             await mobileOfflineSyncService.MarkFailedAsync(
                 operationCode,
                 requestedByUserId,
                 clientRequestId,
-                errorMessage,
-                cancellationToken);
+                exception.Message,
+                persistenceTimeout.Token,
+                conflict?.ErrorCode,
+                conflict?.Retryable);
         }
         catch
         {

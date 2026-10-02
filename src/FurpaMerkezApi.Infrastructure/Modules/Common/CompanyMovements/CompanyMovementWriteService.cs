@@ -1,4 +1,5 @@
 using System.Data;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
@@ -254,7 +255,7 @@ public sealed class CompanyMovementWriteService(
                 result.RawResponse,
                 cancellationToken);
         }
-        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        catch (Exception exception)
         {
             throw MikroApiCreateConflictFactory.Create(result, exception);
         }
@@ -332,61 +333,7 @@ public sealed class CompanyMovementWriteService(
             }
         }
 
-        if (TryRecoverCompanyMovementResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                request,
-                lines,
-                customerCode,
-                movementDate,
-                documentDate,
-                documentNo,
-                writeConnectionName,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API company movement create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
-    }
-
-    private static bool TryRecoverCompanyMovementResponseFromMikroApiResult(
-        string documentSerie,
-        int documentOrderNo,
-        CreateCompanyMovementRequest request,
-        IReadOnlyList<CreateCompanyMovementLineRequest> lines,
-        string customerCode,
-        DateTime movementDate,
-        DateTime documentDate,
-        string documentNo,
-        string writeConnectionName,
-        string rawResponse,
-        out CreateCompanyMovementResponse response)
-    {
-        response = default!;
-        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
-        if (responseRows.Count < lines.Count)
-        {
-            return false;
-        }
-
-        var firstRow = responseRows[0];
-        response = new CreateCompanyMovementResponse(
-            firstRow.DocumentSerie ?? documentSerie,
-            firstRow.DocumentOrderNo ?? documentOrderNo,
-            movementDate,
-            documentDate,
-            documentNo,
-            request.WarehouseNo,
-            customerCode,
-            lines.Count,
-            lines.Sum(line => line.Quantity),
-            lines.Sum(line => line.Quantity * line.UnitPrice),
-            writeConnectionName);
-
-        return true;
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateCompanyMovementResponse?> TryRecoverCompanyMovementResponseAsync(
@@ -407,27 +354,18 @@ public sealed class CompanyMovementWriteService(
             .Where(movement =>
                 movement.sth_evraktip == CompanyDispatchDocumentType &&
                 movement.sth_tip == OutgoingMovementType &&
-                movement.sth_cins == movementGenre &&
                 movement.sth_normal_iade == returnType &&
                 movement.sth_evrakno_seri == documentSerie &&
-                movement.sth_evrakno_sira == documentOrderNo &&
-                movement.sth_cikis_depo_no == request.WarehouseNo &&
-                movement.sth_cari_kodu == customerCode)
-            .Select(movement => new
-            {
-                movement.sth_tarih,
-                movement.sth_belge_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_cikis_depo_no,
-                movement.sth_cari_kodu,
-                movement.sth_miktar,
-                movement.sth_tutar
-            })
+                movement.sth_evrakno_sira == documentOrderNo)
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(
+                StockMovementRecoveryMatcher.Company(request, movementGenre, returnType, rows), waitForIncomplete: true))
         {
             return null;
         }
@@ -519,26 +457,18 @@ public sealed class CompanyMovementWriteService(
 
         if (headerCount > 1)
         {
-            throw new InvalidOperationException(
-                "More than one company movement document matched the same clientRequestId trace.");
+            throw StockMovementRecoveryMatcher.ContentMismatch();
         }
 
         var firstRow = rows[0];
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
 
-        return new CreateCompanyMovementResponse(
-            firstRow.sth_evrakno_seri ?? $"F{request.WarehouseNo}",
-            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
-            firstRow.sth_tarih?.Date ?? movementDate,
-            firstRow.sth_belge_tarih?.Date ?? documentDate,
-            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo),
-            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
-            firstRow.sth_cari_kodu ?? request.CustomerCode.Trim(),
-            rows.Count,
-            rows.Sum(row => row.sth_miktar ?? 0d),
-            rows.Sum(row => row.sth_tutar ?? 0d),
-            mikroWriteOptions.Value.ConnectionStringName);
+        return await TryRecoverCompanyMovementResponseAsync(
+            firstRow.sth_evrakno_seri!, firstRow.sth_evrakno_sira!.Value, request,
+            request.CustomerCode.Trim(), returnType, movementDate, documentDate,
+            NormalizeText(request.DocumentNo), mikroWriteOptions.Value.ConnectionStringName,
+            movementGenre, cancellationToken) ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CARI_HESAPLAR> GetCustomerAsync(

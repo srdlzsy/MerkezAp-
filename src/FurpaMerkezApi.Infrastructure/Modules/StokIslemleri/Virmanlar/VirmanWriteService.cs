@@ -1,4 +1,5 @@
 using System.Data;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -239,7 +240,7 @@ public sealed class VirmanWriteService(
                 result.RawResponse,
                 cancellationToken);
         }
-        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        catch (Exception exception)
         {
             throw MikroApiCreateConflictFactory.Create(result, exception);
         }
@@ -309,75 +310,7 @@ public sealed class VirmanWriteService(
             }
         }
 
-        if (TryRecoverVirmanResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                request,
-                lines,
-                movementDate,
-                documentDate,
-                documentNo,
-                writeConnectionName,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API virman create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
-    }
-
-    private static bool TryRecoverVirmanResponseFromMikroApiResult(
-        string documentSerie,
-        int documentOrderNo,
-        CreateVirmanRequest request,
-        IReadOnlyList<CreateVirmanLineRequest> lines,
-        DateTime movementDate,
-        DateTime documentDate,
-        string documentNo,
-        string writeConnectionName,
-        string rawResponse,
-        out CreateVirmanResponse response)
-    {
-        response = default!;
-        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
-        if (responseRows.Count == 0)
-        {
-            return false;
-        }
-
-        var expandedLines = lines
-            .SelectMany(line => ExpandMovementTypes(line.MovementType)
-                .Select(movementType => new
-                {
-                    MovementType = movementType,
-                    line.Quantity
-                }))
-            .ToArray();
-        var firstRow = responseRows[0];
-        response = new CreateVirmanResponse(
-            firstRow.DocumentSerie ?? documentSerie,
-            firstRow.DocumentOrderNo ?? documentOrderNo,
-            movementDate,
-            documentDate,
-            documentNo,
-            request.WarehouseNo,
-            lines
-                .SelectMany(line => ExpandMovementTypes(line.MovementType))
-                .Distinct()
-                .OrderBy(movementType => movementType)
-                .ToArray(),
-            responseRows.Count,
-            expandedLines.Count(line => line.MovementType == IncomingMovementType),
-            expandedLines.Count(line => line.MovementType == OutgoingMovementType),
-            expandedLines.Where(line => line.MovementType == IncomingMovementType).Sum(line => line.Quantity),
-            expandedLines.Where(line => line.MovementType == OutgoingMovementType).Sum(line => line.Quantity),
-            expandedLines.Sum(line => line.Quantity),
-            0d,
-            writeConnectionName);
-
-        return true;
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateVirmanResponse?> TryRecoverVirmanResponseAsync(
@@ -395,25 +328,17 @@ public sealed class VirmanWriteService(
             .Where(movement =>
                 movement.sth_evraktip == VirmanDocumentType &&
                 movement.sth_normal_iade == NormalMovement &&
-                movement.sth_cins == VirmanMovementGenre &&
                 movement.sth_evrakno_seri == documentSerie &&
-                movement.sth_evrakno_sira == documentOrderNo &&
-                movement.sth_cikis_depo_no == request.WarehouseNo)
-            .Select(movement => new
-            {
-                movement.sth_tarih,
-                movement.sth_belge_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_cikis_depo_no,
-                movement.sth_tip,
-                movement.sth_miktar,
-                movement.sth_tutar
-            })
+                movement.sth_evrakno_sira == documentOrderNo)
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(
+                StockMovementRecoveryMatcher.Virman(request, rows), waitForIncomplete: true))
         {
             return null;
         }
@@ -507,34 +432,18 @@ public sealed class VirmanWriteService(
 
         if (headerCount > 1)
         {
-            throw new InvalidOperationException(
-                "More than one virman document matched the same clientRequestId trace.");
+            throw StockMovementRecoveryMatcher.ContentMismatch();
         }
 
         var firstRow = rows[0];
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
 
-        return new CreateVirmanResponse(
-            firstRow.sth_evrakno_seri ?? $"F{request.WarehouseNo}",
-            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
-            firstRow.sth_tarih?.Date ?? movementDate,
-            firstRow.sth_belge_tarih?.Date ?? documentDate,
-            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo, 50),
-            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
-            rows
-                .Select(row => row.sth_tip ?? 0)
-                .Distinct()
-                .OrderBy(movementType => movementType)
-                .ToArray(),
-            rows.Count,
-            rows.Count(row => (row.sth_tip ?? 0) == IncomingMovementType),
-            rows.Count(row => (row.sth_tip ?? 0) == OutgoingMovementType),
-            rows.Where(row => (row.sth_tip ?? 0) == IncomingMovementType).Sum(row => row.sth_miktar ?? 0d),
-            rows.Where(row => (row.sth_tip ?? 0) == OutgoingMovementType).Sum(row => row.sth_miktar ?? 0d),
-            rows.Sum(row => row.sth_miktar ?? 0d),
-            rows.Sum(row => row.sth_tutar ?? 0d),
-            mikroWriteOptions.Value.ConnectionStringName);
+        return await TryRecoverVirmanResponseAsync(
+            firstRow.sth_evrakno_seri!, firstRow.sth_evrakno_sira!.Value, request,
+            movementDate, documentDate, NormalizeText(request.DocumentNo, 50),
+            mikroWriteOptions.Value.ConnectionStringName, cancellationToken)
+            ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(

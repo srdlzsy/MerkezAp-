@@ -96,6 +96,8 @@ Backend su kontrolleri yapar:
 5. Satir sayisi ve satir icerigi degismemisse Uyumsoft'a gonderir.
 6. Eksik, fazla veya degisen satir varsa `409 Conflict` doner; Uyumsoft'a gonderim yapilmaz.
 
+Bizim API'de trace ile olusturulmus firma sevki/iadesinde ek olarak kayitli create istegi kontrol edilir. Create tamamlanmadiysa veya stok/miktar/birim/satirlar orijinal istekle eslesmiyorsa gonderim engellenir. Bu kontrol `expectedLineCount` zorunlulugunu kaldirmaz. `MIKRO_DOCUMENT_CONTENT_MISMATCH` ve `retryable=false` gelirse tekrar gonderim yapilmaz; yetkili incelemesi gerekir. Eski sistemde olusturulan ve local create trace'i olmayan evraklarda local create kaydi aranmaz.
+
 Basarili response, `200 OK`:
 
 ```json
@@ -326,3 +328,5 @@ Guvenli yayin sirasi:
 ```
 
 Canlida `AllowedOrigins` ve `AllowedWarehouseNos` listeleri bos birakilmamalidir. Kopru anonimdir ve gercek e-irsaliye urettigi icin yalniz gereken eski arayuz originleri ile depolar acilmalidir.
+
+Origin/Referer ve CORS kimlik dogrulama degildir; header'lar browser disindan taklit edilebilir. Kopruyu bu listelere guvenerek genel erisime acmayin. Ag/proxy seviyesinde yalniz guvenilir erisimi saglayin; servis kimlik dogrulamasi ayri bir acik gelistirmedir. Yayin kontrolu: [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md).

@@ -1,4 +1,5 @@
 using System.Data;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -228,7 +229,7 @@ public sealed class StockReceiptWriteService(
                 result.RawResponse,
                 cancellationToken);
         }
-        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        catch (Exception exception)
         {
             throw MikroApiCreateConflictFactory.Create(result, exception);
         }
@@ -306,64 +307,7 @@ public sealed class StockReceiptWriteService(
             }
         }
 
-        if (TryRecoverStockReceiptResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                request,
-                lines,
-                movementDate,
-                documentDate,
-                documentNo,
-                creator,
-                acceptor,
-                writeConnectionName,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API stock receipt create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
-    }
-
-    private static bool TryRecoverStockReceiptResponseFromMikroApiResult(
-        string documentSerie,
-        int documentOrderNo,
-        CreateStockReceiptRequest request,
-        IReadOnlyList<StockReceiptLineWithAmount> lines,
-        DateTime movementDate,
-        DateTime documentDate,
-        string documentNo,
-        string creator,
-        string acceptor,
-        string writeConnectionName,
-        string rawResponse,
-        out CreateStockReceiptResponse response)
-    {
-        response = default!;
-        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
-        if (responseRows.Count < lines.Count)
-        {
-            return false;
-        }
-
-        var firstRow = responseRows[0];
-        response = new CreateStockReceiptResponse(
-            firstRow.DocumentSerie ?? documentSerie,
-            firstRow.DocumentOrderNo ?? documentOrderNo,
-            movementDate,
-            documentDate,
-            documentNo,
-            request.WarehouseNo,
-            creator,
-            acceptor,
-            lines.Count,
-            lines.Sum(line => line.Line.Quantity),
-            lines.Sum(line => line.LineAmount),
-            writeConnectionName);
-
-        return true;
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateStockReceiptResponse?> TryRecoverStockReceiptResponseAsync(
@@ -385,26 +329,17 @@ public sealed class StockReceiptWriteService(
                 movement.sth_evraktip == StockReceiptDocumentType &&
                 movement.sth_tip == OutgoingMovementType &&
                 movement.sth_normal_iade == NormalMovement &&
-                movement.sth_cins == movementGenre &&
                 movement.sth_evrakno_seri == documentSerie &&
-                movement.sth_evrakno_sira == documentOrderNo &&
-                movement.sth_cikis_depo_no == request.WarehouseNo)
-            .Select(movement => new
-            {
-                movement.sth_tarih,
-                movement.sth_belge_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_cikis_depo_no,
-                movement.sth_HareketGrupKodu1,
-                movement.sth_HareketGrupKodu2,
-                movement.sth_miktar,
-                movement.sth_tutar
-            })
+                movement.sth_evrakno_sira == documentOrderNo)
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(
+                StockMovementRecoveryMatcher.Receipt(request, movementGenre, rows), waitForIncomplete: true))
         {
             return null;
         }
@@ -495,27 +430,19 @@ public sealed class StockReceiptWriteService(
 
         if (headerCount > 1)
         {
-            throw new InvalidOperationException(
-                "More than one stock receipt document matched the same clientRequestId trace.");
+            throw StockMovementRecoveryMatcher.ContentMismatch();
         }
 
         var firstRow = rows[0];
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
 
-        return new CreateStockReceiptResponse(
-            firstRow.sth_evrakno_seri ?? $"F{request.WarehouseNo}",
-            firstRow.sth_evrakno_sira ?? FirstDocumentOrderNo,
-            firstRow.sth_tarih?.Date ?? movementDate,
-            firstRow.sth_belge_tarih?.Date ?? documentDate,
-            firstRow.sth_belge_no ?? NormalizeText(request.DocumentNo, 50),
-            firstRow.sth_cikis_depo_no ?? request.WarehouseNo,
-            firstRow.sth_HareketGrupKodu1 ?? NormalizeText(request.Creator, 25),
-            firstRow.sth_HareketGrupKodu2 ?? NormalizeText(request.Acceptor, 25),
-            rows.Count,
-            rows.Sum(row => row.sth_miktar ?? 0d),
-            rows.Sum(row => row.sth_tutar ?? 0d),
-            mikroWriteOptions.Value.ConnectionStringName);
+        return await TryRecoverStockReceiptResponseAsync(
+            firstRow.sth_evrakno_seri!, firstRow.sth_evrakno_sira!.Value, request,
+            movementGenre, movementDate, documentDate, NormalizeText(request.DocumentNo, 50),
+            NormalizeText(request.Creator, 25), NormalizeText(request.Acceptor, 25),
+            mikroWriteOptions.Value.ConnectionStringName, cancellationToken)
+            ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<int> GetNextDocumentOrderNoAsync(

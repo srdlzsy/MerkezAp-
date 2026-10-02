@@ -1280,6 +1280,9 @@ public sealed class EDespatchService(
             return recoveredResponse;
         }
 
+        await CompanyEDespatchCreateGuard.EnsureCompleteAsync(
+            authDbContext, request, document.TrackedMovements, cancellationToken);
+
         var now = DateTime.Now;
         var sourceWarehouse = await LoadWarehouseAsync(
             document.Context,
