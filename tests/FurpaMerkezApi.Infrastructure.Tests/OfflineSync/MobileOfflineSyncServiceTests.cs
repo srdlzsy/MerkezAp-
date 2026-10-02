@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
@@ -89,6 +90,23 @@ public sealed class MobileOfflineSyncServiceTests
         Assert.Equal(
             MobileOfflineSyncRequestStatus.Completed,
             (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Acquire_ClassifiesSameClientRequestIdWithDifferentPayloadAsNonRetryable()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+
+        await AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 25));
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 26)));
+
+        Assert.Equal(OperationConflictErrorCodes.ClientRequestPayloadMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
     }
 
     [Theory]

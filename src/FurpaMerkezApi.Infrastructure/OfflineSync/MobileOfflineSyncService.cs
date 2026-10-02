@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
@@ -174,7 +175,18 @@ public sealed class MobileOfflineSyncService(
         CancellationToken cancellationToken,
         bool preventReexecutionAfterUncertainOutcome)
     {
-        existing.EnsureRequestFingerprintMatches(requestFingerprint);
+        try
+        {
+            existing.EnsureRequestFingerprintMatches(requestFingerprint);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.ClientRequestPayloadMismatch,
+                exception.Message,
+                retryable: false,
+                innerException: exception);
+        }
 
         if (existing.Status == MobileOfflineSyncRequestStatus.Completed)
         {

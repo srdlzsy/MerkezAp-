@@ -101,6 +101,9 @@ public sealed class MikroApiWriteAuditService(
 
     internal static bool IsRecoverableCreateOutcome<TResponse>(MikroApiResult<TResponse> result) =>
         IsUnknownWriteOutcome(result) ||
+        IsDuplicateDocumentOutcome(result);
+
+    internal static bool IsDuplicateDocumentOutcome<TResponse>(MikroApiResult<TResponse> result) =>
         ContainsDuplicateDocument(result.ErrorMessage) ||
         ContainsDuplicateDocument(result.RawResponse);
 

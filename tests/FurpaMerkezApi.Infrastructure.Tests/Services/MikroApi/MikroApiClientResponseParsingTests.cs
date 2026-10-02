@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Xunit;
 
@@ -194,6 +195,50 @@ public sealed class MikroApiClientResponseParsingTests
             TimeSpan.FromSeconds(1));
 
         Assert.False(MikroApiWriteAuditService.IsRecoverableCreateOutcome(result));
+    }
+
+    [Fact]
+    public void CreateConflict_ClassifiesDuplicateContentMismatchAsManualReview()
+    {
+        var result = new MikroApiResult<string>(
+            true,
+            400,
+            System.Net.HttpStatusCode.OK,
+            "Evrak zaten mevcut.",
+            "{}",
+            null,
+            "/Api/apiMethods/DahiliStokHareketKaydetV2",
+            1,
+            TimeSpan.FromSeconds(1));
+
+        var exception = MikroApiCreateConflictFactory.Create(
+            result,
+            new InvalidOperationException("Existing rows did not match."));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+    }
+
+    [Fact]
+    public void CreateConflict_ClassifiesTimeoutAsRetryableUnconfirmedOutcome()
+    {
+        var result = new MikroApiResult<string>(
+            true,
+            200,
+            System.Net.HttpStatusCode.OK,
+            "MikroAPI - TimeOut",
+            "{}",
+            null,
+            "/Api/apiMethods/DahiliStokHareketKaydetV2",
+            1,
+            TimeSpan.FromSeconds(130));
+
+        var exception = MikroApiCreateConflictFactory.Create(
+            result,
+            new InvalidOperationException("Rows are not visible yet."));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, exception.ErrorCode);
+        Assert.True(exception.Retryable);
     }
 
     [Fact]

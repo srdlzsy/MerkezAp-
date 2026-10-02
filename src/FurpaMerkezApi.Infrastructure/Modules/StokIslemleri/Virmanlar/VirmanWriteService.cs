@@ -241,7 +241,7 @@ public sealed class VirmanWriteService(
         }
         catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
         {
-            throw CreateUnconfirmedWriteException(result, exception);
+            throw MikroApiCreateConflictFactory.Create(result, exception);
         }
 
         await mikroApiClient.MarkRecoveredAsync(
@@ -327,13 +327,6 @@ public sealed class VirmanWriteService(
         throw new InvalidOperationException(
             "Mikro API virman create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
     }
-
-    private static InvalidOperationException CreateUnconfirmedWriteException<TResponse>(
-        MikroApiResult<TResponse> result,
-        Exception innerException) =>
-        new(
-            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
-            innerException);
 
     private static bool TryRecoverVirmanResponseFromMikroApiResult(
         string documentSerie,

@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Common.Errors;
+
 namespace FurpaMerkezApi.Infrastructure.OfflineSync;
 
 internal static class OfflineCreateGuard
@@ -46,8 +48,10 @@ internal static class OfflineCreateGuard
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Processing)
         {
-            throw new InvalidOperationException(
-                $"A create request with the same clientRequestId is already being processed. OperationCode={operationCode}");
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroWriteInProgress,
+                $"A create request with the same clientRequestId is already being processed. OperationCode={operationCode}",
+                retryable: true);
         }
 
         try

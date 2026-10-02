@@ -466,7 +466,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
         catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
         {
-            throw CreateUnconfirmedWriteException(result, exception);
+            throw MikroApiCreateConflictFactory.Create(result, exception);
         }
         var totalLinkedWarehouseOrderLineCount =
             linkedWarehouseOrderLines.Count + automaticWarehouseOrderLineGuids.Count;
@@ -842,13 +842,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         throw new InvalidOperationException(
             "Mikro API inter warehouse shipment create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
     }
-
-    private static InvalidOperationException CreateUnconfirmedWriteException<TResponse>(
-        MikroApiResult<TResponse> result,
-        Exception innerException) =>
-        new(
-            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
-            innerException);
 
     private static bool TryRecoverInterWarehouseShipmentResponseFromMikroApiResult(
         string documentSerie,

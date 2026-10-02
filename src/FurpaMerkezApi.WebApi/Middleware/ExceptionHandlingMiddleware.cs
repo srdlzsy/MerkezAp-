@@ -1,4 +1,5 @@
 using System.ServiceModel;
+using FurpaMerkezApi.Application.Common.Errors;
 using Microsoft.AspNetCore.Mvc;
 using FurpaMerkezApi.WebApi.Security;
 
@@ -36,6 +37,20 @@ public sealed class ExceptionHandlingMiddleware(
         {
             logger.LogInformation(exception, "An authorization error occurred.");
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status403Forbidden, exception.Message);
+        }
+        catch (OperationConflictException exception)
+        {
+            logger.LogInformation(
+                exception,
+                "A classified operation conflict occurred. ErrorCode={ErrorCode}, Retryable={Retryable}",
+                exception.ErrorCode,
+                exception.Retryable);
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status409Conflict,
+                exception.Message,
+                exception.ErrorCode,
+                exception.Retryable);
         }
         catch (InvalidOperationException exception)
         {
@@ -90,7 +105,12 @@ public sealed class ExceptionHandlingMiddleware(
         }
     }
 
-    private static Task WriteProblemDetailsAsync(HttpContext httpContext, int statusCode, string detail)
+    private static Task WriteProblemDetailsAsync(
+        HttpContext httpContext,
+        int statusCode,
+        string detail,
+        string? errorCode = null,
+        bool? retryable = null)
     {
         httpContext.Response.StatusCode = statusCode;
         httpContext.Response.ContentType = "application/problem+json";
@@ -108,6 +128,16 @@ public sealed class ExceptionHandlingMiddleware(
         if (!string.IsNullOrWhiteSpace(correlationId))
         {
             problemDetails.Extensions["correlationId"] = correlationId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorCode))
+        {
+            problemDetails.Extensions["errorCode"] = errorCode;
+        }
+
+        if (retryable.HasValue)
+        {
+            problemDetails.Extensions["retryable"] = retryable.Value;
         }
 
         return httpContext.Response.WriteAsJsonAsync(problemDetails);
