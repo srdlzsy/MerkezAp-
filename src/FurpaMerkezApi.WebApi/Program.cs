@@ -313,11 +313,6 @@ static void ValidateProductionConfiguration(
             "Production JWT secret is missing or still using the placeholder value. Override Jwt__SecretKey before deployment.");
     }
 
-    if (!hostingOptions.EnforceHttps && !reverseProxyOptions.Enabled)
-    {
-        throw new InvalidOperationException(
-            "Production hosting must enforce HTTPS directly or enable reverse proxy forwarded headers support.");
-    }
 }
 
 static void ValidateRequiredSetting(IConfiguration configuration, string key)
