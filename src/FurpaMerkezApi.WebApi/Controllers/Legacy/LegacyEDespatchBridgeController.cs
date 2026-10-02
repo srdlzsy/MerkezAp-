@@ -140,11 +140,9 @@ public sealed class LegacyEDespatchBridgeController(
         if (!TryResolveDocumentType(documentKind, out var documentType))
             return UnsupportedDocumentKind();
 
-        var effectiveDocumentType = await ResolveLegacyDocumentTypeAsync(
+        var (_, status) = await ResolveTrackedLegacyDocumentTypeAsync(
             documentType, documentSerie, documentOrderNo, warehouseNo, cancellationToken);
-        return Ok(await eDespatchService.GetStatusAsync(
-            new GetEDespatchStatusRequest(effectiveDocumentType, warehouseNo, documentSerie, documentOrderNo),
-            cancellationToken));
+        return Ok(status);
     }
 
     [HttpGet("{documentKind}/{documentSerie}/{documentOrderNo:int}/pdf")]
@@ -163,7 +161,9 @@ public sealed class LegacyEDespatchBridgeController(
         if (!TryResolveDocumentType(documentKind, out var documentType))
             return UnsupportedDocumentKind();
 
-        var effectiveDocumentType = await ResolveLegacyDocumentTypeAsync(
+        var (trackedDocumentType, _) = await ResolveTrackedLegacyDocumentTypeAsync(
+            documentType, documentSerie, documentOrderNo, warehouseNo, cancellationToken);
+        var effectiveDocumentType = trackedDocumentType ?? await ResolveLegacyDocumentTypeAsync(
             documentType, documentSerie, documentOrderNo, warehouseNo, cancellationToken);
         var response = await eDespatchService.GetPdfAsync(
             new GetEDespatchPdfRequest(effectiveDocumentType, warehouseNo, documentSerie, documentOrderNo),
@@ -223,6 +223,45 @@ public sealed class LegacyEDespatchBridgeController(
         Detail = "Document kind is not supported for legacy e-despatch bridge."
     });
 
+    private async Task<(EDespatchDocumentType? DocumentType, GetEDespatchStatusResponse Status)>
+        ResolveTrackedLegacyDocumentTypeAsync(
+            EDespatchDocumentType requestedDocumentType,
+            string documentSerie,
+            int documentOrderNo,
+            int warehouseNo,
+            CancellationToken cancellationToken)
+    {
+        var requestedStatus = await eDespatchService.GetStatusAsync(
+            new GetEDespatchStatusRequest(
+                requestedDocumentType,
+                warehouseNo,
+                documentSerie,
+                documentOrderNo),
+            cancellationToken);
+        if (!string.Equals(requestedStatus.Status, "NotSent", StringComparison.Ordinal))
+        {
+            return (requestedDocumentType, requestedStatus);
+        }
+
+        var fallbackDocumentType = GetFallbackDocumentType(requestedDocumentType);
+        if (fallbackDocumentType == requestedDocumentType)
+        {
+            return (null, requestedStatus);
+        }
+
+        var fallbackStatus = await eDespatchService.GetStatusAsync(
+            new GetEDespatchStatusRequest(
+                fallbackDocumentType,
+                warehouseNo,
+                documentSerie,
+                documentOrderNo),
+            cancellationToken);
+
+        return string.Equals(fallbackStatus.Status, "NotSent", StringComparison.Ordinal)
+            ? (null, requestedStatus)
+            : (fallbackDocumentType, fallbackStatus);
+    }
+
     private async Task<EDespatchDocumentType> ResolveLegacyDocumentTypeAsync(
         EDespatchDocumentType requestedDocumentType,
         string documentSerie,
@@ -241,14 +280,7 @@ public sealed class LegacyEDespatchBridgeController(
             return requestedDocumentType;
         }
 
-        var fallbackDocumentType = requestedDocumentType switch
-        {
-            EDespatchDocumentType.OutgoingCompanyShipment => EDespatchDocumentType.CompanyReturn,
-            EDespatchDocumentType.CompanyReturn => EDespatchDocumentType.OutgoingCompanyShipment,
-            EDespatchDocumentType.InterWarehouseShipment => EDespatchDocumentType.WarehouseReturn,
-            EDespatchDocumentType.WarehouseReturn => EDespatchDocumentType.InterWarehouseShipment,
-            _ => requestedDocumentType
-        };
+        var fallbackDocumentType = GetFallbackDocumentType(requestedDocumentType);
 
         if (fallbackDocumentType == requestedDocumentType)
         {
@@ -266,6 +298,16 @@ public sealed class LegacyEDespatchBridgeController(
             ? fallbackDocumentType
             : requestedDocumentType;
     }
+
+    private static EDespatchDocumentType GetFallbackDocumentType(EDespatchDocumentType documentType) =>
+        documentType switch
+        {
+            EDespatchDocumentType.OutgoingCompanyShipment => EDespatchDocumentType.CompanyReturn,
+            EDespatchDocumentType.CompanyReturn => EDespatchDocumentType.OutgoingCompanyShipment,
+            EDespatchDocumentType.InterWarehouseShipment => EDespatchDocumentType.WarehouseReturn,
+            EDespatchDocumentType.WarehouseReturn => EDespatchDocumentType.InterWarehouseShipment,
+            _ => documentType
+        };
 
     private Task<int> CountLegacyMovementRowsAsync(
         EDespatchDocumentType documentType,

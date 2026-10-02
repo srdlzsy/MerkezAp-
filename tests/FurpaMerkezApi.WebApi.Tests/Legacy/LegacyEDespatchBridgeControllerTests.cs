@@ -174,6 +174,51 @@ public sealed class LegacyEDespatchBridgeControllerTests
     }
 
     [Fact]
+    public async Task GetEDespatchStatus_DoesNotRequireMikro_WhenAuthStatusExists()
+    {
+        var service = new CapturingEDespatchService();
+        var mikroDbContext = CreateMikroDbContext();
+        await mikroDbContext.DisposeAsync();
+        var controller = CreateController(
+            service,
+            origin: "http://legacy.local",
+            mikroDbContext: mikroDbContext);
+
+        var result = await controller.GetEDespatchStatus(
+            "depolar-arasi-sevkler", "F56", 88015, 56, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var status = Assert.IsType<GetEDespatchStatusResponse>(ok.Value);
+        Assert.True(status.IsSentToUyumsoft);
+    }
+
+    [Fact]
+    public async Task GetEDespatchStatus_UsesTrackedFallbackType_WithoutMikroLookup()
+    {
+        var service = new CapturingEDespatchService
+        {
+            StatusFactory = request => request.DocumentType == EDespatchDocumentType.WarehouseReturn
+                ? CreateStatus(request, true, "Completed")
+                : CreateStatus(request, false, "NotSent")
+        };
+        var mikroDbContext = CreateMikroDbContext();
+        await mikroDbContext.DisposeAsync();
+        var controller = CreateController(
+            service,
+            origin: "http://legacy.local",
+            mikroDbContext: mikroDbContext);
+
+        var result = await controller.GetEDespatchStatus(
+            "depolar-arasi-sevkler", "F56", 88015, 56, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var status = Assert.IsType<GetEDespatchStatusResponse>(ok.Value);
+        Assert.Equal(EDespatchDocumentType.WarehouseReturn, status.DocumentType);
+        Assert.True(status.IsSentToUyumsoft);
+        Assert.Equal(2, service.StatusRequests.Count);
+    }
+
+    [Fact]
     public async Task GetEDespatchPdf_ReturnsInlinePdfWhenGatePasses()
     {
         var service = new CapturingEDespatchService();
@@ -188,14 +233,34 @@ public sealed class LegacyEDespatchBridgeControllerTests
         Assert.NotNull(service.LastPdfRequest);
     }
 
+    [Fact]
+    public async Task GetEDespatchPdf_DoesNotRequireMikro_WhenAuthStatusExists()
+    {
+        var service = new CapturingEDespatchService();
+        var mikroDbContext = CreateMikroDbContext();
+        await mikroDbContext.DisposeAsync();
+        var controller = CreateController(
+            service,
+            origin: "http://legacy.local",
+            mikroDbContext: mikroDbContext);
+
+        var result = await controller.GetEDespatchPdf(
+            "depolar-arasi-sevkler", "F56", 88015, 56, CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/pdf", file.ContentType);
+        Assert.Equal(EDespatchDocumentType.InterWarehouseShipment, service.LastPdfRequest?.DocumentType);
+    }
+
     private static LegacyEDespatchBridgeController CreateController(
         CapturingEDespatchService service,
         LegacyEDespatchBridgeOptions? options = null,
-        string? origin = null)
+        string? origin = null,
+        MikroDbContext? mikroDbContext = null)
     {
         var controller = new LegacyEDespatchBridgeController(
             service,
-            CreateMikroDbContext(),
+            mikroDbContext ?? CreateMikroDbContext(),
             new StaticOptionsMonitor<LegacyEDespatchBridgeOptions>(options ?? new LegacyEDespatchBridgeOptions
             {
                 Enabled = true,
@@ -232,6 +297,8 @@ public sealed class LegacyEDespatchBridgeControllerTests
         public SendEDespatchRequest? LastRequest { get; private set; }
         public GetEDespatchStatusRequest? LastStatusRequest { get; private set; }
         public GetEDespatchPdfRequest? LastPdfRequest { get; private set; }
+        public List<GetEDespatchStatusRequest> StatusRequests { get; } = [];
+        public Func<GetEDespatchStatusRequest, GetEDespatchStatusResponse>? StatusFactory { get; init; }
 
         public Task<SendEDespatchResponse> SendAsync(
             SendEDespatchRequest request,
@@ -265,12 +332,28 @@ public sealed class LegacyEDespatchBridgeControllerTests
             CancellationToken cancellationToken = default)
         {
             LastStatusRequest = request;
-            return Task.FromResult(new GetEDespatchStatusResponse(
-                request.DocumentType, request.DocumentSerie, request.DocumentOrderNo,
-                true, "PendingMetadata", "FRM2026600113344", Guid.NewGuid().ToString(),
-                DateTime.UtcNow, false, true, "Mikro isaretlemesi bekliyor."));
+            StatusRequests.Add(request);
+            return Task.FromResult(StatusFactory?.Invoke(request) ??
+                CreateStatus(request, true, "PendingMetadata"));
         }
     }
+
+    private static GetEDespatchStatusResponse CreateStatus(
+        GetEDespatchStatusRequest request,
+        bool isSent,
+        string status) =>
+        new(
+            request.DocumentType,
+            request.DocumentSerie,
+            request.DocumentOrderNo,
+            isSent,
+            status,
+            isSent ? "FRM2026600113344" : null,
+            isSent ? Guid.NewGuid().ToString() : null,
+            isSent ? DateTime.UtcNow : null,
+            status == "Completed",
+            status == "PendingMetadata",
+            status == "PendingMetadata" ? "Mikro isaretlemesi bekliyor." : null);
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

@@ -147,8 +147,13 @@ POST /api/legacy/e-irsaliye/firma-iadeleri/F56/125/gonder?warehouseNo=56
 
 Legacy durum ve PDF akisi:
 
+- `GET .../durum` Mikro DB'ye baglanmadan Auth DB'deki `e_despatch_submissions` ve `document_flows` kayitlarindan cevap verir. Mikro gecici olarak kapali veya yavas olsa bile daha once kaydedilmis gonderim durumu okunabilir.
+- Eski UI belge turunu `sevk` yerine `iade` veya `iade` yerine `sevk` olarak gondermisse durum endpointi ilgili karsi belge turunun Auth DB anahtarini da kontrol eder ve bulunan gercek `documentType` ile cevap verir.
+- `GET .../pdf` de once ayni Auth DB durum cozumlemesini kullanir. Onayli FRM/UUID bulunursa Mikro'ya bakmadan Uyumsoft PDF'ini getirir. Yalniz Auth DB'de izi olmayan cok eski belgelerde geriye uyumluluk icin Mikro satirlarindan belge turu/FRM/UUID fallback'i calisabilir.
+- `POST .../gonder` icin Mikro kontrolu devam eder. Gonderimden once belgenin gercek sevk/iade tipi ve hareket satirlari Mikro'dan dogrulanir; bu kontrol yanlis veya eksik belgeyi Uyumsoft'a gondermemek icin kaldirilmamalidir.
 - Eski arayuz e-irsaliye POST istegi `200 OK` dondugunde `isSentToUyumsoft=true` kabul etmelidir. `localMikroMetadataUpdateQueued=true` gelmesi Uyumsoft gonderiminin basarisiz oldugu anlamina gelmez.
-- Sayfa yenilendiginde veya liste tekrar acildiginda eski UI Mikro satirindaki FRM/ETTN alanina bakarak tek basina "gonderilmedi" karari vermemelidir. Bunun yerine `GET .../durum` endpointini cagirmalidir.
+- Eski listede belgenin tum aktif satirlari ayni gecerli FRM ve ETTN/UUID degerini tasiyorsa UI belgeyi dogrudan "gonderildi" gosterebilir; bu pozitif durumda ayrica `GET .../durum` cagirmak zorunlu degildir. Yalniz bir veya birkac satirda FRM bulunmasi belgenin tamaminin isaretlendigini kanitlamaz.
+- Mikro satirinda FRM/ETTN bos olmasi tek basina "gonderilmedi" kaniti degildir. Uyumsoft gonderimi tamamlanmis, Mikro isaretlemesi kuyrukta veya hatada kalmis olabilir. Yalniz bu belirsiz durumda UI `GET .../durum` ile Auth DB'deki kesin gonderim kaydini kontrol etmelidir.
 - `status=PendingMetadata` ve `isSentToUyumsoft=true`: ekranda `E-Irsaliye Gonderildi - Mikro Isaretlemesi Bekliyor` gosterilir. PDF butonu aktiftir; tekrar gonder butonu kapali kalir.
 - `status=Completed`: Uyumsoft gonderimi ve Mikro isaretlemesi tamamdir.
 - `status=NeedsReview`: Uyumsoft gonderimi basarilidir; Mikro tarafinda icerik/isaret uyusmazligi manuel inceleme bekler. PDF butonu aktiftir ve yeniden gonderim yapilmaz.
@@ -156,6 +161,33 @@ Legacy durum ve PDF akisi:
 - `status=NotSent`: Auth DB'de onayli bir gonderim bulunamamistir. UI ancak kullanicinin acik aksiyonuyla normal gonderim akisini baslatabilir.
 - PDF icin `GET .../pdf?warehouseNo=56` kullanilir. Endpoint `application/pdf` ve `inline` doner; browser yeni sekmede acabilir. PDF gecici olarak hazir degilse yalnizca PDF GET istegi tekrar edilir, `POST .../gonder` tekrar edilmez.
 - Durum ve PDF route'lari da gonderim route'u gibi `Enabled`, `AllowedOrigins` ve `AllowedWarehouseNos` kontrollerinden gecer. Eski arayuz JWT gondermez.
+
+Eski arayuzun uygulamasi gereken istek sirasi:
+
+```text
+1. Belgenin tum aktif satirlarinda ayni gecerli FRM ve ETTN/UUID varsa belgeyi "Gonderildi" goster; GET .../durum cagirma.
+2. Aktif satirlardan herhangi birinde FRM/ETTN bos veya diger satirlardan farkliysa belge belirsizdir; yalniz bu belge icin bir kez GET .../durum cagir.
+3. POST .../gonder daha once bu ekran oturumunda 200 donduyse response'taki FRM/UUID'yi kullan; yeniden durum sorgusu zorunlu degildir.
+4. isSentToUyumsoft=true ise "Gonder" butonunu kapat, FRM numarasini ve "PDF" butonunu goster.
+5. status=Unknown ise POST atma; 5 saniye sonra durum sorgusunu tekrar et.
+6. status=PendingMetadata ise belge gonderilmistir. PDF acilabilir; Mikro isaretlemesi arka planda tamamlanir.
+7. status=Completed ise gonderim ve Mikro isaretlemesi tamamlanmistir.
+8. status=NeedsReview ise yeniden gonderme yapma; PDF'yi acik tut ve manuel inceleme uyarisi goster.
+9. status=NotSent ise sadece kullanici "E-Irsaliye Gonder" dediginde bir kez POST .../gonder cagir.
+10. POST devam ederken butonu kilitle. Ayni belge icin paralel veya cift tik kaynakli ikinci POST olusturma.
+11. POST 200 donerse response'taki FRM/UUID'yi ekranda goster ve PDF butonunu ac.
+12. POST 409 donerse detail mesajini goster, otomatik tekrar POST etme ve GET .../durum ile son durumu yenile.
+13. POST 502/503/504 veya network timeout donerse sonucu belirsiz kabul et; yeni POST atmadan once GET .../durum sorgula.
+14. GET .../durum da 503 donerse veritabani gecici olarak erisilemiyordur. Ayni anda tum satirlari dongude sorgulama; 5, 10, 20, en fazla 30 saniyelik artan bekleme ile tekrar dene.
+15. PDF tiklandiginda GET .../pdf istegini blob/application/pdf olarak ac. PDF hatasi gonderim POST'unu tekrar etme sebebi degildir.
+```
+
+Polling/yuk kurali:
+
+- Liste acilisinda yalniz FRM/ETTN bilgisi eksik olan belirsiz evraklar icin `durum` istenir. Ayni evrak icin birden fazla paralel istek atilmaz; devam eden istek varken yenisi baslatilmaz.
+- Yalniz `Unknown` durumundaki veya onceki sorgusu gecici hata alan belgeler periyodik tekrar sorgulanir. `Completed`, `PendingMetadata` ve `NeedsReview` kayitlari surekli poll edilmez.
+- Gorunmeyen sayfa/grid satirlari icin durum sorgusu atilmamali; sayfalama veya gorunen satir grubu esas alinmalidir.
+- Kullanici sayfadan ayrildiginda timer ve bekleyen durum sorgulari iptal edilmelidir.
 
 Durum response ornegi:
 
