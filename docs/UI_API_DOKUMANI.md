@@ -91,6 +91,8 @@ Controller'da acik olan pratik alias/canonical route'lar:
 
 Eski arayuz kendi login sistemini kullandigi ve FurpaMerkezApi JWT token'i uretemedigi icin, e-irsaliye gonderimi icin dar kapsamli legacy kopru endpoint'i vardir. Normal JWT'li endpointler degismez; yeni ekranlar yine `/api/sevk-islemleri/.../e-irsaliye` ve `/api/iade-islemleri/.../e-irsaliye` route'larini kullanmalidir.
 
+Eski arayuz ekibi icin bagimsiz entegrasyon dokumani: `docs/LEGACY_E_IRSALIYE_API_DOKUMANI.md`
+
 Config:
 
 ```json
@@ -109,6 +111,9 @@ Kural:
 
 - `Enabled=false` ise endpoint `404 Not Found` doner.
 - `warehouseNo` query zorunludur; JWT olmadigi icin backend kullanici deposu cozemez.
+- `expectedLineCount` body alaninda zorunludur. Eski arayuz, kaydetmeye basladigi sevk/iade evrakindaki gercek toplam satir sayisini gondermelidir.
+- Backend Uyumsoft cagrisindan once Mikro'daki aktif belge satir sayisini `expectedLineCount` ile iki asamada karsilastirir. Eksik veya fazla satir varsa `409 Conflict` doner ve Uyumsoft'a hicbir belge gonderilmez.
+- `expectedLineCount`, Mikro'da o anda gorunen satir sayisindan uretilmemelidir. Eski arayuzde kullanicinin kaydettigi orijinal evrak satir listesinin sayisi olmalidir.
 - `AllowedOrigins` doluysa browser `Origin`/`Referer` bu listede olmalidir.
 - `AllowedWarehouseNos` doluysa sadece listedeki depolar adina gonderim yapilir.
 - Bu endpoint legacy uyumluluk icin anonim acilir. Canlida mumkunse `AllowedOrigins` ve `AllowedWarehouseNos` bos birakilmamalidir.
@@ -159,6 +164,8 @@ Legacy durum ve PDF akisi:
 - `status=NeedsReview`: Uyumsoft gonderimi basarilidir; Mikro tarafinda icerik/isaret uyusmazligi manuel inceleme bekler. PDF butonu aktiftir ve yeniden gonderim yapilmaz.
 - `status=Unknown`: Uyumsoft sonucu henuz dogrulaniyordur. UI yeni POST uretmez; kisa bir sure sonra yalnizca `GET .../durum` istegini tekrarlar.
 - `status=NotSent`: Auth DB'de onayli bir gonderim bulunamamistir. UI ancak kullanicinin acik aksiyonuyla normal gonderim akisini baslatabilir.
+- Uyumsoft outbox cevabi bazen UBL'de mevcut olan `SellersItemIdentification` stok kodunu response modelinde bos dondurebilir. Backend bu durumda FRM/UUID, satir sayisi, satir numarasi ve miktari dogrular; stok kodu Uyumsoft tarafindan dolu donerse ayrica birebir eslesme ister.
+- Uyumsoft satir sayisi Mikro snapshot'indan az/fazlaysa veya satir numarasi/miktari uyusmuyorsa otomatik Mikro isaretlemesi kesinlikle yapilmaz. Kayit `NeedsReview` durumuna alinir ve kalici icerik uyusmazligi icin sonsuz retry durdurulur.
 - PDF icin `GET .../pdf?warehouseNo=56` kullanilir. Endpoint `application/pdf` ve `inline` doner; browser yeni sekmede acabilir. PDF gecici olarak hazir degilse yalnizca PDF GET istegi tekrar edilir, `POST .../gonder` tekrar edilmez.
 - Durum ve PDF route'lari da gonderim route'u gibi `Enabled`, `AllowedOrigins` ve `AllowedWarehouseNos` kontrollerinden gecer. Eski arayuz JWT gondermez.
 
@@ -212,6 +219,7 @@ Body:
 ```json
 {
   "driverId": "25a9f3ea-a55a-4558-bb82-8109c3f14cd4",
+  "expectedLineCount": 15,
   "plaque": "16BZU759",
   "driverNameSurname": "SINAN BERKER",
   "driverTckn": "11111111111",
@@ -222,6 +230,8 @@ Body:
 
 Not:
 
+- `expectedLineCount` zorunlu ve `1` veya daha buyuk olmalidir. Alan verilmezse veya gecersizse `400 Bad Request` doner.
+- Mikro'daki belge satir sayisi `expectedLineCount` ile ayni degilse `409 Conflict` doner. Eski UI bu durumda otomatik yeniden POST atmamalidir; sevk kaydinin tamamlanmasini bekleyip kullaniciya tekrar deneme sunmalidir.
 - `driverId` verilirse aktif sofor kaydindan plaka/ad soyad/TCKN doldurulur.
 - `driverId` verilmezse `plaque`, `driverNameSurname` ve `driverTckn` zorunludur.
 - `deliverer` ve `receiver` opsiyoneldir. Verilmezse once Mikro hareketindeki `sth_HareketGrupKodu2` ve `sth_HareketGrupKodu3` kullanilir; teslim alan da bos ise `driverNameSurname` kullanilir.

@@ -121,7 +121,8 @@ public sealed class LegacyEDespatchBridgeController(
                 request.DriverTckn,
                 request.DriverId,
                 request.Deliverer,
-                request.Receiver),
+                request.Receiver,
+                request.ExpectedLineCount),
             cancellationToken));
     }
 
@@ -408,6 +409,10 @@ public sealed class LegacyEDespatchBridgeController(
 public sealed class LegacySendEDespatchHttpRequest : IValidatableObject
 {
     public Guid? DriverId { get; init; }
+
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? ExpectedLineCount { get; init; }
 
     [StringLength(25)]
     public string Plaque { get; init; } = string.Empty;

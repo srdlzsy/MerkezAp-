@@ -263,6 +263,8 @@ public sealed class EDespatchService(
         ResolvedDespatchContacts contacts, Func<string, string, UyumsoftDespatch.DespatchInfo> build,
         CancellationToken cancellationToken)
     {
+        EnsureExpectedLineCountMatches(request, movements.Count);
+
         EDespatchSubmission submission;
         UyumsoftDespatch.DespatchInfo despatch;
         var timer = Stopwatch.StartNew();
@@ -363,14 +365,26 @@ public sealed class EDespatchService(
             // Discard failed timeline changes before persisting the retry in the same scope.
             authDbContext.ChangeTracker.Clear();
             submission = await authDbContext.EDespatchSubmissions.SingleAsync(x => x.Id == id, cancellationToken);
-            if (exception is EDespatchMetadataConflictException && submission.Status == EDespatchSubmissionStatus.PendingMetadata)
-                submission.RequireReview(exception.Message);
-            else
-                submission.ScheduleRetry(exception.Message, DateTime.UtcNow);
+            ApplyMetadataProcessingFailure(submission, exception, DateTime.UtcNow);
             await authDbContext.SaveChangesAsync(cancellationToken);
             logger.LogWarning(exception, "E-despatch reconciliation deferred. Document={Document}, Status={Status}, Attempt={Attempt}",
                 submission.DocumentKey, submission.Status, submission.AttemptCount);
         }
+    }
+
+    internal static void ApplyMetadataProcessingFailure(
+        EDespatchSubmission submission,
+        Exception exception,
+        DateTime now)
+    {
+        if (exception is EDespatchMetadataConflictException &&
+            submission.Status is EDespatchSubmissionStatus.Unknown or EDespatchSubmissionStatus.PendingMetadata)
+        {
+            submission.RequireReview(exception.Message);
+            return;
+        }
+
+        submission.ScheduleRetry(exception.Message, now);
     }
 
     private async Task<bool> UpdateLocalMetadataAsync(
@@ -887,7 +901,11 @@ public sealed class EDespatchService(
             var actualStockCode = line?.Item?.SellersItemIdentification?.ID?.Value;
             var actualQuantity = line?.DeliveredQuantity?.Value;
             var actualQuantityValue = actualQuantity.GetValueOrDefault();
-            if (line is null || actualStockCode != expected.StockCode || actualQuantity is null ||
+            // Uyumsoft's outbox response can omit SellersItemIdentification even though it exists in
+            // the submitted UBL. A stock code returned by Uyumsoft must still match exactly.
+            if (line is null ||
+                !string.IsNullOrWhiteSpace(actualStockCode) && actualStockCode != expected.StockCode ||
+                actualQuantity is null ||
                 Math.Abs((double)actualQuantityValue - (expected.Quantity ?? 0)) > 0.000001)
                 throw new EDespatchMetadataConflictException(
                     $"E-despatch line {expectedLineNo} differs from Mikro. Expected stock '{expected.StockCode}' quantity " +
@@ -924,7 +942,8 @@ public sealed class EDespatchService(
         var currentMovements = await BuildDocumentMovementQuery(context, request)
             .AsNoTracking()
             .ToArrayAsync(cancellationToken);
-        var matches = EDespatchMovementSnapshot.Matches(
+        var matches = MatchesExpectedLineCount(request.ExpectedLineCount, currentMovements.Length) &&
+            EDespatchMovementSnapshot.Matches(
             trackedMovements.Select(x => EDespatchMovementSnapshot.From(x, request.DocumentType)), currentMovements, request.DocumentType);
 
         if (!matches)
@@ -941,6 +960,21 @@ public sealed class EDespatchService(
 
         return matches;
     }
+
+    private static void EnsureExpectedLineCountMatches(SendEDespatchRequest request, int actualLineCount)
+    {
+        if (MatchesExpectedLineCount(request.ExpectedLineCount, actualLineCount))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Document line count does not match the legacy request. Expected {request.ExpectedLineCount}, " +
+            $"but Mikro currently contains {actualLineCount} lines; no e-despatch was sent.");
+    }
+
+    internal static bool MatchesExpectedLineCount(int? expectedLineCount, int actualLineCount) =>
+        !expectedLineCount.HasValue || expectedLineCount.Value == actualLineCount;
 
     private async Task<bool> TryDocumentMovementSetMatchesAfterSubmissionAsync(
         SendEDespatchRequest request,
@@ -3228,6 +3262,13 @@ public sealed class EDespatchService(
             throw new ArgumentException(
                 "Driver id can not be empty.",
                 nameof(request.DriverId));
+        }
+
+        if (request.ExpectedLineCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request.ExpectedLineCount),
+                "Expected line count must be greater than zero when provided.");
         }
 
         var requiresManualDriver = !request.DriverId.HasValue;

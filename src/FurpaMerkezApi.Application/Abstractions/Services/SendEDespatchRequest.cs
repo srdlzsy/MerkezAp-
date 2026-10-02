@@ -10,4 +10,5 @@ public sealed record SendEDespatchRequest(
     string DriverTckn,
     Guid? DriverId = null,
     string? Deliverer = null,
-    string? Receiver = null);
+    string? Receiver = null,
+    int? ExpectedLineCount = null);

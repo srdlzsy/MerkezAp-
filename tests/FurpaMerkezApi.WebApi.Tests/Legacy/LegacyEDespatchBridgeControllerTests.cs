@@ -117,7 +117,8 @@ public sealed class LegacyEDespatchBridgeControllerTests
             56,
             new LegacySendEDespatchHttpRequest
             {
-                DriverId = driverId
+                DriverId = driverId,
+                ExpectedLineCount = 12
             },
             CancellationToken.None);
 
@@ -129,6 +130,26 @@ public sealed class LegacyEDespatchBridgeControllerTests
         Assert.Equal("F56", service.LastRequest.DocumentSerie);
         Assert.Equal(86102, service.LastRequest.DocumentOrderNo);
         Assert.Equal(driverId, service.LastRequest.DriverId);
+        Assert.Equal(12, service.LastRequest.ExpectedLineCount);
+    }
+
+    [Fact]
+    public void LegacyRequest_RequiresExpectedLineCount()
+    {
+        var request = new LegacySendEDespatchHttpRequest
+        {
+            DriverId = Guid.NewGuid()
+        };
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var valid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            request,
+            new System.ComponentModel.DataAnnotations.ValidationContext(request),
+            results,
+            validateAllProperties: true);
+
+        Assert.False(valid);
+        Assert.Contains(results, result => result.MemberNames.Contains(nameof(request.ExpectedLineCount)));
     }
 
     [Fact]

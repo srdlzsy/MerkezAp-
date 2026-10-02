@@ -180,6 +180,48 @@ public sealed class EDespatchDurabilityTests
     }
 
     [Fact]
+    public void OutboxLine_CanMatchWhenUyumsoftOmitsSellerStockCode()
+    {
+        var xml = EDespatchService.BuildDespatchLineElement(1, "008368", "Test stock", "8690000000000", "ADET", 29);
+        var line = UyumsoftWcfClientHelper.DeserializeUbl<UyumsoftDespatch.DespatchLineType>(xml.ToString(),
+            "DespatchLine", "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2");
+        line.Item!.SellersItemIdentification = null;
+
+        EDespatchService.EnsureUyumsoftLinesMatch([line], [EDespatchMovementSnapshot.From(Row())]);
+    }
+
+    [Fact]
+    public void UnknownConflict_RequiresReviewInsteadOfRetryingForever()
+    {
+        var submission = Submission();
+
+        EDespatchService.ApplyMetadataProcessingFailure(
+            submission,
+            new EDespatchMetadataConflictException("Uyumsoft line count differs."),
+            DateTime.UtcNow);
+
+        Assert.Equal(EDespatchSubmissionStatus.NeedsReview, submission.Status);
+        Assert.Equal("Uyumsoft line count differs.", submission.LastError);
+        Assert.Equal(0, submission.AttemptCount);
+    }
+
+    [Fact]
+    public void UnknownTransientFailure_RemainsRetryable()
+    {
+        var submission = Submission();
+        var now = DateTime.UtcNow;
+
+        EDespatchService.ApplyMetadataProcessingFailure(
+            submission,
+            new TimeoutException("Uyumsoft timeout."),
+            now);
+
+        Assert.Equal(EDespatchSubmissionStatus.Unknown, submission.Status);
+        Assert.Equal(1, submission.AttemptCount);
+        Assert.True(submission.NextAttemptAtUtc > now);
+    }
+
+    [Fact]
     public async Task PdfLookup_UsesLegacySuccessWhenMikroIsUnmarked()
     {
         await using var db = new AuthDbContext(Options());

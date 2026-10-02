@@ -7,6 +7,21 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Services;
 public sealed class EDespatchServiceTests
 {
     [Theory]
+    [InlineData(null, 1, true)]
+    [InlineData(15, 15, true)]
+    [InlineData(15, 1, false)]
+    [InlineData(15, 16, false)]
+    public void MatchesExpectedLineCount_RequiresExactCountWhenProvided(
+        int? expectedLineCount,
+        int actualLineCount,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            EDespatchService.MatchesExpectedLineCount(expectedLineCount, actualLineCount));
+    }
+
+    [Theory]
     [InlineData("ORHAN BAYRAM", "ORHAN", "BAYRAM")]
     [InlineData("ORHAN ALI BAYRAM", "ORHAN ALI", "BAYRAM")]
     [InlineData("ORHAN", "ORHAN", "ORHAN")]
