@@ -169,6 +169,11 @@ public sealed class StockReceiptWriteService(
             kind,
             options.StockReceiptExpenseCode);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            $"StockReceipt:{movementGenre}",
+            documentSerie,
+            cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(
             documentSerie,
             movementGenre,

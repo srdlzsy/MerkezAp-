@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
@@ -218,6 +219,11 @@ public sealed class CreateWarehouseReturnUseCase(
             movementDate,
             cancellationToken);
 
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "WarehouseReturn",
+            documentSerie,
+            cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var payload = WarehouseReturnMikroApiPayloadFactory.Create(
             request,

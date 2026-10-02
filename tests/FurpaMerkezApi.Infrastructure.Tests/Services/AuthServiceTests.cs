@@ -103,6 +103,9 @@ public sealed class AuthServiceTests
         Assert.Equal(2, refreshTokens.Length);
         Assert.Single(refreshTokens, token => token.RevokedAtUtc is null);
         Assert.Single(refreshTokens, token => token.RevokedAtUtc is not null);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.RefreshAsync(new RefreshTokenRequest(loginResponse.RefreshToken), CancellationToken.None));
     }
 
     [Fact]

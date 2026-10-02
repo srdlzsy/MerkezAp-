@@ -194,6 +194,11 @@ public sealed class CompanyMovementWriteService(
         var returnType = ResolveReturnType(kind);
         var movementGenre = ResolveMovementGenre(kind);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            $"CompanyMovement:{returnType}",
+            documentSerie,
+            cancellationToken);
         var customer = await GetCustomerAsync(customerCode, cancellationToken);
         var customerAddressNo = ResolveCustomerAddressNo(customer);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);

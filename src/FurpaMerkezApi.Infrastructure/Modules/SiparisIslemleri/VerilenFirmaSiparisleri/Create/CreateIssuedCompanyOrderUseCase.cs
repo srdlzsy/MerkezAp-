@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -114,6 +115,11 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         var documentSerie = $"F{request.WarehouseNo}";
         var lines = request.Lines.ToArray();
         var customer = await GetCustomerInfoAsync(request.CustomerCode, cancellationToken);
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "IssuedCompanyOrder",
+            documentSerie,
+            cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var payload = IssuedCompanyOrderMikroApiPayloadFactory.Create(
             request,

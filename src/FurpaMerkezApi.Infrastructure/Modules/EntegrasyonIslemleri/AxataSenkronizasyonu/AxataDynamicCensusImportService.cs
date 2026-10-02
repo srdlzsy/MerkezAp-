@@ -2,6 +2,7 @@ using System.Globalization;
 using System.ServiceModel;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -121,26 +122,42 @@ internal sealed class AxataDynamicCensusImportService(
         }))
         {
             var groupedAnalyses = group.ToArray();
-            var documentOrderNo = await GetNextDocumentOrderNoAsync(
-                group.Key.MovementType,
-                group.Key.DocumentType,
-                cancellationToken);
             IReadOnlyCollection<AxataDynamicCensusResultDto> groupResults;
             try
             {
-                groupResults = mikroWriteRoutingOptions.CurrentValue.AxataDynamicCensus switch
+                var writeMode = mikroWriteRoutingOptions.CurrentValue.AxataDynamicCensus;
+                if (writeMode == MikroWriteMode.MikroApi)
                 {
-                    MikroWriteMode.MikroApi => await ExecuteGroupWithMikroApiAsync(
+                    await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+                        mikroWriteDbContext,
+                        $"AxataDynamicCensus:{group.Key.MovementType}:{group.Key.DocumentType}",
+                        DynamicDocumentSerie,
+                        cancellationToken);
+                    var documentOrderNo = await GetNextDocumentOrderNoAsync(
+                        group.Key.MovementType,
+                        group.Key.DocumentType,
+                        cancellationToken);
+                    groupResults = await ExecuteGroupWithMikroApiAsync(
                         groupedAnalyses,
                         documentOrderNo,
-                        cancellationToken),
-                    MikroWriteMode.Database or MikroWriteMode.DualShadow => await ExecuteGroupWithDatabaseAsync(
+                        cancellationToken);
+                }
+                else if (writeMode is MikroWriteMode.Database or MikroWriteMode.DualShadow)
+                {
+                    var documentOrderNo = await GetNextDocumentOrderNoAsync(
+                        group.Key.MovementType,
+                        group.Key.DocumentType,
+                        cancellationToken);
+                    groupResults = await ExecuteGroupWithDatabaseAsync(
                         groupedAnalyses,
                         documentOrderNo,
-                        cancellationToken),
-                    var mode => throw new InvalidOperationException(
-                        $"Unsupported MikroWriteRouting:AxataDynamicCensus mode '{mode}'.")
-                };
+                        cancellationToken);
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Unsupported MikroWriteRouting:AxataDynamicCensus mode '{writeMode}'.");
+                }
             }
             catch (Exception exception)
             {

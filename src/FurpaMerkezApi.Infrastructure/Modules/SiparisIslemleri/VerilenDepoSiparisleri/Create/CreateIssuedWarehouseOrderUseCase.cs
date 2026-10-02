@@ -4,6 +4,7 @@ using System.Text.Json;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -179,6 +180,11 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             phaseStartedAt = Stopwatch.GetTimestamp();
         }
 
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "IssuedWarehouseOrder",
+            documentSerie,
+            cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         LogCreatePhase("next-document-order-no", documentOrderNo);
         var payload = IssuedWarehouseOrderMikroApiPayloadFactory.Create(

@@ -193,6 +193,11 @@ public sealed class VirmanWriteService(
         var description = NormalizeText(request.Description, 50);
         var lines = request.Lines.ToArray();
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "Virman",
+            documentSerie,
+            cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var payload = StockMovementMikroApiPayloadFactory.CreateVirman(
             request,

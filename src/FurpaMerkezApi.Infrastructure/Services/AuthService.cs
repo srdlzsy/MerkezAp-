@@ -153,7 +153,15 @@ public sealed class AuthService(
             now);
         storedToken.Revoke(now, refreshToken.Entity.TokenHash);
         dbContext.RefreshTokens.Add(refreshToken.Entity);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request has already consumed this single-use refresh token.
+            throw new UnauthorizedAccessException("Refresh token is invalid or expired.");
+        }
 
         return await CreateAuthResponseAsync(
             storedToken.User,

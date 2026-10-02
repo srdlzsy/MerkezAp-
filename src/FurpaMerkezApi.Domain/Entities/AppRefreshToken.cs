@@ -23,6 +23,8 @@ public sealed class AppRefreshToken
 
     public string? ReplacedByTokenHash { get; private set; }
 
+    public Guid Revision { get; private set; }
+
     public string ClientType { get; private set; }
 
     public string? DeviceId { get; private set; }
@@ -63,6 +65,7 @@ public sealed class AppRefreshToken
         DeviceId = NormalizeOptional(deviceId, 100);
         LoginIpAddress = NormalizeOptional(loginIpAddress, 64);
         WarehouseNo = NormalizeRequired(warehouseNo, nameof(warehouseNo), 50);
+        Revision = Guid.NewGuid();
     }
 
     public bool IsActive(DateTime nowUtc) =>
@@ -79,6 +82,7 @@ public sealed class AppRefreshToken
         ReplacedByTokenHash = string.IsNullOrWhiteSpace(replacedByTokenHash)
             ? null
             : NormalizeTokenHash(replacedByTokenHash);
+        Revision = Guid.NewGuid();
     }
 
     private static string NormalizeTokenHash(string value)

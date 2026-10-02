@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -197,6 +198,11 @@ public sealed class GreenGrocerOperationsUseCase(
         var acceptor = NormalizeText(request.Acceptor, 25);
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId);
         var headerDescription = CreateTraceDescription(request.Description, traceKey);
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            $"GreenGrocerOperations:{normalized.MovementType}:{normalized.DocumentType}",
+            normalized.DocumentSerie,
+            cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(
             normalized.DocumentSerie,
             normalized.MovementType,

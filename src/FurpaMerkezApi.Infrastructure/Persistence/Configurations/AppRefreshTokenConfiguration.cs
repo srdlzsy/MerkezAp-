@@ -39,6 +39,10 @@ public sealed class AppRefreshTokenConfiguration : IEntityTypeConfiguration<AppR
             .HasColumnName("replaced_by_token_hash")
             .HasMaxLength(128);
 
+        builder.Property(token => token.Revision)
+            .HasColumnName("revision")
+            .IsConcurrencyToken();
+
         builder.Property(token => token.ClientType)
             .HasColumnName("client_type")
             .HasMaxLength(20)
