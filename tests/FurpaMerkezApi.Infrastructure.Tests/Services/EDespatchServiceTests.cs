@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Common.Errors;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Services;
 using System.Xml.Linq;
 using Xunit;
@@ -6,6 +8,44 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Services;
 
 public sealed class EDespatchServiceTests
 {
+    [Fact]
+    public void ResolveConcurrentCreateRecovery_AcceptsPersistedCompletedResult()
+    {
+        var request = OfflineRequest();
+        request.MarkCompleted("{}", DateTime.UtcNow);
+
+        var result = EDespatchService.ResolveConcurrentCreateRecovery(request);
+
+        Assert.Same(request, result);
+    }
+
+    [Fact]
+    public void ResolveConcurrentCreateRecovery_ReportsPersistedProcessingAsRetryable()
+    {
+        var exception = Assert.Throws<OperationConflictException>(() =>
+            EDespatchService.ResolveConcurrentCreateRecovery(OfflineRequest()));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteInProgress, exception.ErrorCode);
+        Assert.True(exception.Retryable);
+    }
+
+    [Fact]
+    public void ResolveConcurrentCreateRecovery_PreservesManualReviewDecision()
+    {
+        var request = OfflineRequest();
+        request.MarkFailed(
+            "Existing Mikro document differs.",
+            DateTime.UtcNow,
+            OperationConflictErrorCodes.MikroDocumentContentMismatch,
+            retryable: false);
+
+        var exception = Assert.Throws<OperationConflictException>(() =>
+            EDespatchService.ResolveConcurrentCreateRecovery(request));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+    }
+
     [Theory]
     [InlineData(null, 1, true)]
     [InlineData(15, 15, true)]
@@ -20,6 +60,16 @@ public sealed class EDespatchServiceTests
             expected,
             EDespatchService.MatchesExpectedLineCount(expectedLineCount, actualLineCount));
     }
+
+    private static MobileOfflineSyncRequest OfflineRequest() => new(
+        Guid.NewGuid(),
+        "sevk-islemleri.giden-depolar-arasi-sevkler.create",
+        Guid.NewGuid(),
+        56,
+        Guid.NewGuid().ToString("D"),
+        new string('a', 64),
+        "{}",
+        DateTime.UtcNow);
 
     [Theory]
     [InlineData("ORHAN BAYRAM", "ORHAN", "BAYRAM")]

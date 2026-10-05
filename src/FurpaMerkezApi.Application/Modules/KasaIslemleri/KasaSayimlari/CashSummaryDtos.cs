@@ -93,7 +93,7 @@ public sealed record GiftCheckMovementItemDto(
     int Quantity,
     double Total)
 {
-    public string GiftCheckTypeName => $"Hediye Çeki {CashSummaryDisplayNameFormatter.FormatMoney(Value)}";
+    public string GiftCheckTypeName => CashSummaryDisplayNameFormatter.FormatGiftCheckType(GiftCheckType, Value);
 }
 
 public sealed record GiftCheckTypeItemDto(
@@ -102,7 +102,7 @@ public sealed record GiftCheckTypeItemDto(
     double Total,
     int GiftCheckType)
 {
-    public string GiftCheckTypeName => $"Hediye Çeki {CashSummaryDisplayNameFormatter.FormatMoney(Value)}";
+    public string GiftCheckTypeName => CashSummaryDisplayNameFormatter.FormatGiftCheckType(GiftCheckType, Value);
 }
 
 public sealed record PaymentTypeItemDto(
@@ -159,6 +159,11 @@ public sealed record CashRegisterDetailDto(
 
 internal static class CashSummaryDisplayNameFormatter
 {
+    public static string FormatGiftCheckType(int giftCheckType, double value) =>
+        giftCheckType == 11
+            ? "Birlik Premium Kart"
+            : $"Hediye Çeki {FormatMoney(value)}";
+
     public static string FormatMoney(double value)
     {
         var format = Math.Abs(value % 1) < 0.000001 ? "0" : "0.##";

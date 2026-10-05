@@ -17,7 +17,7 @@ public sealed class ExceptionHandlingMiddleware(
         }
         catch (Exception exception) when (SqlServerExceptionClassifier.IsConnectivityFailure(exception))
         {
-            logger.LogWarning(exception, "A SQL Server connectivity error occurred.");
+            logger.LogError(exception, "A SQL Server connectivity error occurred.");
             await WriteProblemDetailsAsync(
                 httpContext,
                 StatusCodes.Status503ServiceUnavailable,

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
@@ -1488,7 +1489,7 @@ public sealed class EDespatchService(
             (create?.Status != MobileOfflineSyncRequestStatus.Completed ||
              string.IsNullOrWhiteSpace(create.ResponsePayload)))
         {
-            await TryRecoverInterWarehouseCreateAsync(
+            create = await TryRecoverInterWarehouseCreateAsync(
                 request,
                 document,
                 traceKeys[0]!,
@@ -1553,7 +1554,7 @@ public sealed class EDespatchService(
         }
     }
 
-    private async Task TryRecoverInterWarehouseCreateAsync(
+    private async Task<MobileOfflineSyncRequest?> TryRecoverInterWarehouseCreateAsync(
         SendEDespatchRequest request,
         ResolvedInterWarehouseDocument document,
         string traceKey,
@@ -1562,7 +1563,7 @@ public sealed class EDespatchService(
     {
         if (create is null || string.IsNullOrWhiteSpace(create.RequestPayload))
         {
-            return;
+            return create;
         }
 
         var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -1580,7 +1581,7 @@ public sealed class EDespatchService(
                 "Inter warehouse shipment create request could not be deserialized during e-despatch recovery. Document={DocumentSerie}/{DocumentOrderNo}",
                 request.DocumentSerie,
                 request.DocumentOrderNo);
-            return;
+            return create;
         }
 
         if (originalRequest is null ||
@@ -1601,7 +1602,7 @@ public sealed class EDespatchService(
                     movement.sth_stok_srm_merkezi,
                     movement.sth_eticaret_kanal_kodu)).ToArray()))
         {
-            return;
+            return create;
         }
 
         var tracedDocuments = await document.Context.STOK_HAREKETLERIs
@@ -1649,7 +1650,26 @@ public sealed class EDespatchService(
             "MikroWriteConnection");
 
         create.MarkCompleted(JsonSerializer.Serialize(recoveredResponse, jsonOptions), DateTime.UtcNow);
-        await authDbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            logger.LogInformation(
+                exception,
+                "Inter warehouse shipment create recovery changed concurrently; reloading persisted result. Document={DocumentSerie}/{DocumentOrderNo}, ClientRequestId={ClientRequestId}",
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                create.ClientRequestId);
+
+            authDbContext.Entry(create).State = EntityState.Detached;
+            var persisted = await authDbContext.MobileOfflineSyncRequests
+                .AsNoTracking()
+                .SingleOrDefaultAsync(record => record.Id == create.Id, cancellationToken);
+
+            return ResolveConcurrentCreateRecovery(persisted);
+        }
 
         logger.LogWarning(
             "Recovered completed inter warehouse shipment create while preparing e-despatch. Document={DocumentSerie}/{DocumentOrderNo}, ClientRequestId={ClientRequestId}, LineCount={LineCount}",
@@ -1657,6 +1677,31 @@ public sealed class EDespatchService(
             request.DocumentOrderNo,
             create.ClientRequestId,
             document.Detail.Items.Count);
+
+        return create;
+    }
+
+    internal static MobileOfflineSyncRequest ResolveConcurrentCreateRecovery(
+        MobileOfflineSyncRequest? persisted)
+    {
+        if (persisted?.Retryable == false)
+        {
+            throw new OperationConflictException(
+                persisted.ErrorCode ?? OperationConflictErrorCodes.MikroDocumentContentMismatch,
+                persisted.ErrorMessage ?? "Manual review is required; do not submit a new request.",
+                retryable: false);
+        }
+
+        if (persisted?.Status == MobileOfflineSyncRequestStatus.Completed &&
+            !string.IsNullOrWhiteSpace(persisted.ResponsePayload))
+        {
+            return persisted;
+        }
+
+        throw new OperationConflictException(
+            OperationConflictErrorCodes.MikroWriteInProgress,
+            "Shipment creation changed during recovery. Refresh the status and retry with the same clientRequestId.",
+            retryable: true);
     }
 
     internal static bool MatchesCompletedShipmentCreate(

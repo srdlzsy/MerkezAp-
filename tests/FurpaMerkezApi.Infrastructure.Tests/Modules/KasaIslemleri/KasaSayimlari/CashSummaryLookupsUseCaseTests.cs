@@ -40,6 +40,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var furpaDbContext = CreateFurpaDbContext();
 
         mikroDbContext.GiftCheckTypes.AddRange(
+            new GiftCheckTypeEntity { GiftCheckType = 11, Value = 1 },
             new GiftCheckTypeEntity { GiftCheckType = 1, Value = 500 },
             new GiftCheckTypeEntity { GiftCheckType = 2, Value = 1000 });
 
@@ -50,7 +51,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         var result = await useCase.ListGiftCheckTypesAsync(CancellationToken.None);
 
         Assert.Equal(
-            new[] { "Hediye Çeki 500 TL", "Hediye Çeki 1000 TL" },
+            new[] { "Birlik Premium Kart", "Hediye Çeki 500 TL", "Hediye Çeki 1000 TL" },
             result.Select(item => item.GiftCheckTypeName).ToArray());
     }
 

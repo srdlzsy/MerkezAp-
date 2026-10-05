@@ -15,7 +15,7 @@ public class PuanDbContext : DbContext
     {
         modelBuilder.Entity<InterbonusIndirimCek>(entity =>
         {
-            entity.ToTable("INTERBONUS_INDIRIMCEK");
+            entity.ToTable("INTERBONUS_INDIRIMCEK", table => table.UseSqlOutputClause(false));
             entity.HasKey(item => item.Id);
 
             entity.Property(item => item.Id).HasColumnName("ID");
