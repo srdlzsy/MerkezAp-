@@ -14,6 +14,7 @@ public sealed class OperationConflictException(
 public static class OperationConflictErrorCodes
 {
     public const string MikroWriteInProgress = "MIKRO_WRITE_IN_PROGRESS";
+    public const string MikroWriteQueueBusy = "MIKRO_WRITE_QUEUE_BUSY";
     public const string MikroWriteOutcomeUnconfirmed = "MIKRO_WRITE_OUTCOME_UNCONFIRMED";
     public const string MikroDocumentContentMismatch = "MIKRO_DOCUMENT_CONTENT_MISMATCH";
     public const string ClientRequestPayloadMismatch = "CLIENT_REQUEST_PAYLOAD_MISMATCH";

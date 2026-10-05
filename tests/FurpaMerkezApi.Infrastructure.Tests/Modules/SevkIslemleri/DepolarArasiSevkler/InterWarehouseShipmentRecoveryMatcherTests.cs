@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -7,6 +8,17 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.SevkIslemleri.DepolarArasi
 
 public sealed class InterWarehouseShipmentRecoveryMatcherTests
 {
+    [Fact]
+    public void QueueBusyConflict_IsRetryableAndUsesStableErrorCode()
+    {
+        var exception = CreateInterWarehouseShipmentUseCase.CreateShipmentCreateQueueBusyConflict("F56");
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteQueueBusy, exception.ErrorCode);
+        Assert.True(exception.Retryable);
+        Assert.Contains("180 seconds", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("F56", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Matches_ReturnsTrueWhenDocumentLinesAndClientTraceMatch()
     {

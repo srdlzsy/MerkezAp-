@@ -2,10 +2,12 @@
 using System.ServiceModel;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AxataExt = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Ext;
 using AxataMain = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main;
@@ -16,7 +18,8 @@ internal sealed class AxataG01InboundAtfImportService(
     IOptionsMonitor<AxataSynchronizationOptions> options,
     MikroWriteDbContext mikroWriteDbContext,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
-    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions)
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    ILogger<AxataG01InboundAtfImportService> logger)
     : IAxataG01InboundAtfImportService
 {
     private const string MovementType = "G01";
@@ -286,7 +289,10 @@ internal sealed class AxataG01InboundAtfImportService(
                 movement.sth_cins == MovementGenre &&
                 movement.sth_normal_iade == NormalReturn &&
                 movement.sth_evraktip == CompanyReceivingDocumentType)
-            .CountAsync(cancellationToken);
+            .CountMeasuredAsync(
+                logger,
+                "Axata:G01:ExistingOrderLinks",
+                cancellationToken);
     }
 
     private async Task VerifyG01MikroApiOrderLinksAsync(
@@ -310,7 +316,10 @@ internal sealed class AxataG01InboundAtfImportService(
                 movement.sth_evraktip == CompanyReceivingDocumentType)
             .Select(movement => movement.sth_sip_uid!.Value)
             .Distinct()
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Axata:G01:VerifyOrderLinks",
+                cancellationToken);
 
         var missingOrderGuids = orderGuids
             .Where(orderGuid => !linkedOrderGuids.Contains(orderGuid))
@@ -450,7 +459,10 @@ internal sealed class AxataG01InboundAtfImportService(
                     orderNos.Contains(order.sip_evrakno_sira.Value))
                 .ToArrayAsync(cancellationToken);
         var existingMovementCounts = await GetExistingMovementCountsAsync(orderLines, cancellationToken);
-        var existingRowKeys = await GetExistingRowKeysAsync(documents.SelectMany(document => document.Lines).ToArray(), cancellationToken);
+        var existingRowKeys = await GetExistingRowKeysAsync(
+            documents.SelectMany(document => document.Lines).ToArray(),
+            series,
+            cancellationToken);
         var orderLinesByDocument = orderLines
             .GroupBy(order => new MikroDocumentKey(order.sip_evrakno_seri ?? string.Empty, order.sip_evrakno_sira ?? 0))
             .ToDictionary(group => group.Key, group => group.ToArray());
@@ -527,10 +539,11 @@ internal sealed class AxataG01InboundAtfImportService(
 
     private async Task<HashSet<string>> GetExistingRowKeysAsync(
         IReadOnlyCollection<G01InboundAtfLine> lines,
+        IReadOnlyCollection<string> documentSeries,
         CancellationToken cancellationToken)
     {
         var rowKeys = lines.Select(line => BuildMovementGroupCode(line.SequenceNo)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (rowKeys.Length == 0)
+        if (rowKeys.Length == 0 || documentSeries.Count == 0)
         {
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
@@ -538,11 +551,20 @@ internal sealed class AxataG01InboundAtfImportService(
         return (await mikroWriteDbContext.STOK_HAREKETLERIs
                 .AsNoTracking()
                 .Where(movement =>
+                    movement.sth_evraktip == CompanyReceivingDocumentType &&
+                    movement.sth_tip == MovementIn &&
+                    movement.sth_cins == MovementGenre &&
+                    movement.sth_normal_iade == NormalReturn &&
+                    movement.sth_evrakno_seri != null &&
+                    documentSeries.Contains(movement.sth_evrakno_seri) &&
                     movement.sth_HareketGrupKodu1 != null &&
                     rowKeys.Contains(movement.sth_HareketGrupKodu1))
                 .Select(movement => movement.sth_HareketGrupKodu1 ?? string.Empty)
                 .Distinct()
-                .ToArrayAsync(cancellationToken))
+                .ToMeasuredListAsync(
+                    logger,
+                    "Axata:G01:ExistingRowKeys",
+                    cancellationToken))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 

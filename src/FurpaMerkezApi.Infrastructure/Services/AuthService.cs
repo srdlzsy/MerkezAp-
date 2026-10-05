@@ -11,6 +11,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
+using System.Linq.Expressions;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -81,7 +83,8 @@ public sealed class AuthService(
     {
         var normalizedLookup = NormalizeLookup(request.UsernameOrEmail);
 
-        var user = await dbContext.Users
+        var user = await ExecuteMeasuredProfileQueryAsync(
+            dbContext.Users
             .Include(currentUser => currentUser.UserRoles)
                 .ThenInclude(userRole => userRole.Role)
                     .ThenInclude(role => role.RolePermissions)
@@ -90,11 +93,12 @@ public sealed class AuthService(
                 .ThenInclude(mapping => mapping.Role)
                     .ThenInclude(role => role.RolePermissions)
                         .ThenInclude(rolePermission => rolePermission.Permission)
-            .FirstOrDefaultAsync(
-                currentUser =>
+            .AsSplitQuery(),
+            currentUser =>
                     currentUser.NormalizedUsername == normalizedLookup ||
                     currentUser.NormalizedEmail == normalizedLookup,
-                cancellationToken);
+            "Auth:LoginProfile",
+            cancellationToken);
 
         if (user is null || !user.IsActive || !passwordHasher.Verify(request.Password, user.PasswordHash))
         {
@@ -126,7 +130,8 @@ public sealed class AuthService(
 
         var now = clock.UtcNow;
         var tokenHash = HashRefreshToken(request.RefreshToken);
-        var storedToken = await dbContext.RefreshTokens
+        var storedToken = await ExecuteMeasuredProfileQueryAsync(
+            dbContext.RefreshTokens
             .Include(token => token.User)
                 .ThenInclude(user => user.UserRoles)
                     .ThenInclude(userRole => userRole.Role)
@@ -134,10 +139,13 @@ public sealed class AuthService(
                             .ThenInclude(rolePermission => rolePermission.Permission)
             .Include(token => token.User)
                 .ThenInclude(user => user.ClientRoles)
-                    .ThenInclude(mapping => mapping.Role)
-                        .ThenInclude(role => role.RolePermissions)
-                            .ThenInclude(rolePermission => rolePermission.Permission)
-            .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
+                .ThenInclude(mapping => mapping.Role)
+                    .ThenInclude(role => role.RolePermissions)
+                        .ThenInclude(rolePermission => rolePermission.Permission)
+            .AsSplitQuery(),
+            token => token.TokenHash == tokenHash,
+            "Auth:RefreshProfile",
+            cancellationToken);
 
         if (storedToken is null || !storedToken.IsActive(now) || !storedToken.User.IsActive)
         {
@@ -365,19 +373,69 @@ public sealed class AuthService(
 
     private async Task<AppUser> LoadUserAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var user = await dbContext.Users
-            .AsNoTracking()
-            .Include(currentUser => currentUser.UserRoles)
+        var user = await ExecuteMeasuredProfileQueryAsync(
+            dbContext.Users
+                .AsNoTracking()
+                .Include(currentUser => currentUser.UserRoles)
                 .ThenInclude(userRole => userRole.Role)
                     .ThenInclude(role => role.RolePermissions)
                         .ThenInclude(rolePermission => rolePermission.Permission)
-            .Include(currentUser => currentUser.ClientRoles)
+                .Include(currentUser => currentUser.ClientRoles)
                 .ThenInclude(mapping => mapping.Role)
                     .ThenInclude(role => role.RolePermissions)
                         .ThenInclude(rolePermission => rolePermission.Permission)
-            .FirstOrDefaultAsync(currentUser => currentUser.Id == userId, cancellationToken);
+                .AsSplitQuery(),
+            currentUser => currentUser.Id == userId,
+            "Auth:CurrentUserProfile",
+            cancellationToken);
 
         return user ?? throw new KeyNotFoundException("User was not found.");
+    }
+
+    private async Task<T?> ExecuteMeasuredProfileQueryAsync<T>(
+        IQueryable<T> query,
+        Expression<Func<T, bool>> predicate,
+        string queryName,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var result = await query
+                .TagWith($"Furpa:{queryName}")
+                .FirstOrDefaultAsync(predicate, cancellationToken);
+            var elapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+
+            if (elapsedMilliseconds >= 1_000d)
+            {
+                logger.LogWarning(
+                    "Slow Auth profile query {QueryName} completed in {ElapsedMs} ms. Found={Found}.",
+                    queryName,
+                    elapsedMilliseconds,
+                    result is not null);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Auth profile query {QueryName} completed in {ElapsedMs} ms. Found={Found}.",
+                    queryName,
+                    elapsedMilliseconds,
+                    result is not null);
+            }
+
+            return result;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Auth profile query {QueryName} failed after {ElapsedMs} ms.",
+                queryName,
+                stopwatch.Elapsed.TotalMilliseconds);
+            throw;
+        }
     }
 
     private async Task ValidateTerminalUserNetworkAsync(

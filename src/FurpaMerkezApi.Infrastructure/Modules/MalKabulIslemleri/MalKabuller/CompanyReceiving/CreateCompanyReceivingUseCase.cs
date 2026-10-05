@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -969,7 +970,10 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_miktar,
                 movement.sth_tutar
             })
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:CompanyReceiving:Document",
+                cancellationToken);
 
         if (rows.Count < expectedLineCount)
         {
@@ -1204,7 +1208,10 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_miktar,
                 movement.sth_tutar
             })
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:CompanyReceiving:ReturnDocument",
+                cancellationToken);
 
         if (rows.Count < expectedLineCount)
         {
@@ -2259,6 +2266,9 @@ public sealed class CreateCompanyReceivingUseCase(
         CancellationToken cancellationToken)
     {
         var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
+        var request = DeserializeStoredRequest(requestPayload);
+        var movementDate = (request?.MovementDate ?? DateTime.Today).Date;
+        var movementDateExclusive = movementDate.AddDays(1);
         var movements = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
@@ -2266,6 +2276,9 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_tip == IncomingMovementType &&
                 movement.sth_normal_iade == NormalMovement &&
                 movement.sth_giris_depo_no == warehouseNo &&
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= movementDate &&
+                movement.sth_tarih.Value < movementDateExclusive &&
                 movement.sth_eticaret_kanal_kodu == traceKey)
             .OrderBy(movement => movement.sth_satirno)
             .ThenBy(movement => movement.sth_Guid)
@@ -2283,7 +2296,10 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_miktar,
                 movement.sth_tutar,
                 movement.sth_sip_uid))
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:CompanyReceiving:Trace",
+                cancellationToken);
 
         if (movements.Count == 0)
         {
@@ -2308,7 +2324,6 @@ public sealed class CreateCompanyReceivingUseCase(
                 "More than one company receiving document matched the same clientRequestId trace.");
         }
 
-        var request = DeserializeStoredRequest(requestPayload);
         var requestLines = request?.Lines?.ToArray() ?? Array.Empty<CreateCompanyReceivingLineRequest>();
         var orderIndexes = requestLines
             .Select((line, index) => new { line.OrderGuid, index })

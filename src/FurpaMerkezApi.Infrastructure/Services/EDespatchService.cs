@@ -13,6 +13,7 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
@@ -1605,32 +1606,27 @@ public sealed class EDespatchService(
             return create;
         }
 
-        var tracedDocuments = await document.Context.STOK_HAREKETLERIs
+        var documentTraceKeys = await document.Context.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
                 movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_evrakno_seri == request.DocumentSerie &&
+                movement.sth_evrakno_sira == request.DocumentOrderNo &&
                 movement.sth_tip == InterWarehouseMovementType &&
                 movement.sth_cins == InterWarehouseMovementGenre &&
                 movement.sth_normal_iade == NormalMovement &&
-                movement.sth_cikis_depo_no == request.WarehouseNo &&
-                movement.sth_eticaret_kanal_kodu == traceKey)
-            .Select(movement => new
-            {
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira
-            })
-            .Distinct()
-            .ToListAsync(cancellationToken);
+                movement.sth_cikis_depo_no == request.WarehouseNo)
+            .Select(movement => movement.sth_eticaret_kanal_kodu)
+            .ToMeasuredListAsync(
+                logger,
+                "EDespatch:WarehouseCreateTraceByDocument",
+                cancellationToken);
 
-        if (tracedDocuments.Count != 1 ||
-            tracedDocuments[0].sth_evrakno_seri != request.DocumentSerie ||
-            tracedDocuments[0].sth_evrakno_sira != request.DocumentOrderNo)
+        if (documentTraceKeys.Count != document.TrackedMovements.Count ||
+            documentTraceKeys.Any(value => value != traceKey))
         {
-            var documentNumbers = string.Join(", ", tracedDocuments
-                .OrderBy(item => item.sth_evrakno_sira)
-                .Select(item => $"{item.sth_evrakno_seri}/{item.sth_evrakno_sira}"));
             throw new InvalidOperationException(
-                $"The same shipment request created multiple Mikro documents ({documentNumbers}); no e-despatch was sent.");
+                "The shipment document could not be verified with its create request trace; no e-despatch was sent.");
         }
 
         var header = document.Detail.Header;

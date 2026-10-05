@@ -79,6 +79,8 @@ public sealed class SessionAccessProfileResolver(AuthDbContext dbContext) : ISes
                 .ThenInclude(mapping => mapping.Role)
                     .ThenInclude(role => role.RolePermissions)
                         .ThenInclude(rolePermission => rolePermission.Permission)
+            .AsSplitQuery()
+            .TagWith("Furpa:Auth:PermissionCodes")
             .FirstOrDefaultAsync(currentUser => currentUser.Id == userId && currentUser.IsActive, cancellationToken);
 
         if (user is null)

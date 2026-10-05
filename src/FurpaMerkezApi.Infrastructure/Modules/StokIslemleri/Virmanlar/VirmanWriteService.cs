@@ -335,7 +335,10 @@ public sealed class VirmanWriteService(
                 movement.sth_normal_iade == NormalMovement &&
                 movement.sth_evrakno_seri == documentSerie &&
                 movement.sth_evrakno_sira == documentOrderNo)
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:Virman:Document",
+                cancellationToken);
 
         if (rows.Count == 0)
         {
@@ -398,6 +401,8 @@ public sealed class VirmanWriteService(
         }
 
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var movementDateExclusive = movementDate.AddDays(1);
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
@@ -405,6 +410,9 @@ public sealed class VirmanWriteService(
                 movement.sth_normal_iade == NormalMovement &&
                 movement.sth_cins == VirmanMovementGenre &&
                 movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= movementDate &&
+                movement.sth_tarih.Value < movementDateExclusive &&
                 movement.sth_eticaret_kanal_kodu == traceKey)
             .Select(movement => new
             {
@@ -418,7 +426,10 @@ public sealed class VirmanWriteService(
                 movement.sth_miktar,
                 movement.sth_tutar
             })
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:Virman:Trace",
+                cancellationToken);
 
         if (rows.Count == 0)
         {
@@ -441,7 +452,6 @@ public sealed class VirmanWriteService(
         }
 
         var firstRow = rows[0];
-        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
 
         return await TryRecoverVirmanResponseAsync(

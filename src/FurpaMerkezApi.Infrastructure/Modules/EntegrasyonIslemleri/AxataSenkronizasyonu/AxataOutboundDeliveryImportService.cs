@@ -6,11 +6,13 @@ using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyo
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.FirmaSevkleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AxataExt = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Ext;
 using AxataMain = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Main;
@@ -24,6 +26,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     IAcceptWarehouseReceivingUseCase acceptWarehouseReceivingUseCase,
     ICreateCompanyShipmentUseCase createCompanyShipmentUseCase,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    ILogger<AxataOutboundDeliveryImportService> logger,
     AxataDbContext? axataDbContext = null)
     : IAxataOutboundDeliveryImportService,
         IAxataIntegrationAuditService
@@ -2899,8 +2902,8 @@ internal sealed class AxataOutboundDeliveryImportService(
         var hasDocumentNo = !string.IsNullOrWhiteSpace(documentNo);
         var hasDescription = !string.IsNullOrWhiteSpace(description);
         var customerCode = NormalizeCode(analysis.CustomerCode);
-
-        return await mikroWriteDbContext.STOK_HAREKETLERIs
+        var (lookupStartDate, lookupEndDateExclusive) = ResolveMovementLookupRange(analysis.Document.AxataDate);
+        var baseQuery = mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
                 movement.sth_iptal != true &&
@@ -2909,11 +2912,57 @@ internal sealed class AxataOutboundDeliveryImportService(
                 movement.sth_normal_iade == NormalMovement &&
                 movement.sth_evraktip == CompanyShipmentDocumentType &&
                 movement.sth_cikis_depo_no == analysis.WarehouseNo &&
-                movement.sth_cari_kodu == customerCode &&
-                ((movement.sth_sip_uid.HasValue && orderGuids.Contains(movement.sth_sip_uid.Value)) ||
-                 (hasDocumentNo && movement.sth_belge_no == documentNo) ||
-                 (hasDescription && movement.sth_aciklama == description)))
-            .CountAsync(cancellationToken);
+                movement.sth_cari_kodu == customerCode);
+
+        if (orderGuids.Count > 0)
+        {
+            var linkedCount = await baseQuery
+                .Where(movement =>
+                    movement.sth_sip_uid.HasValue &&
+                    orderGuids.Contains(movement.sth_sip_uid.Value))
+                .CountMeasuredAsync(
+                    logger,
+                    "Axata:C02:ExistingByOrderLink",
+                    cancellationToken);
+
+            if (linkedCount > 0)
+            {
+                return linkedCount;
+            }
+        }
+
+        var datedFallbackQuery = baseQuery;
+        if (lookupStartDate.HasValue)
+        {
+            datedFallbackQuery = datedFallbackQuery.Where(movement =>
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= lookupStartDate.Value &&
+                movement.sth_tarih.Value < lookupEndDateExclusive);
+        }
+
+        if (hasDocumentNo)
+        {
+            var documentCount = await datedFallbackQuery
+                .Where(movement => movement.sth_belge_no == documentNo)
+                .CountMeasuredAsync(
+                    logger,
+                    "Axata:C02:ExistingByDocumentNo",
+                    cancellationToken);
+
+            if (documentCount > 0)
+            {
+                return documentCount;
+            }
+        }
+
+        return !hasDescription
+            ? 0
+            : await datedFallbackQuery
+                .Where(movement => movement.sth_aciklama == description)
+                .CountMeasuredAsync(
+                    logger,
+                    "Axata:C02:ExistingByDescription",
+                    cancellationToken);
     }
 
     private async Task VerifyC02MikroApiOrderLinksAsync(
@@ -2933,7 +2982,10 @@ internal sealed class AxataOutboundDeliveryImportService(
                 movement.sth_evraktip == CompanyShipmentDocumentType)
             .Select(movement => movement.sth_sip_uid!.Value)
             .Distinct()
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Axata:C02:VerifyOrderLinks",
+                cancellationToken);
 
         var missingOrderGuids = orderGuids
             .Where(orderGuid => !linkedOrderGuids.Contains(orderGuid))
@@ -3143,21 +3195,59 @@ internal sealed class AxataOutboundDeliveryImportService(
             .Select(document => FormatAxataDocumentNo(document.DocumentSerie, document.DocumentOrderNo!.Value))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var duplicateCounts = documentDescriptions.Length == 0
-            ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            : await mikroWriteDbContext.STOK_HAREKETLERIs
+        var isC04 = movementType.Equals(C04LegacyMovementType, StringComparison.OrdinalIgnoreCase);
+        var movementByte = isC04 ? LegacyTransferMovementType : CompanyShipmentMovementType;
+        var movementGenre = isC04 ? LegacyTransferMovementGenre : NormalMovement;
+        var normalReturn = isC04 ? NormalMovement : ReturnMovement;
+        var documentType = isC04 ? LegacyTransferDocumentType : CompanyShipmentDocumentType;
+        var documentSerie = isC04 ? LegacyC04DocumentSerie : LegacyC03DocumentSerie;
+        var sourceWarehouseNo = isC04 ? LegacyC04SourceWarehouseNo : LegacyC03WarehouseNo;
+        var duplicateCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        if (documentDescriptions.Length > 0)
+        {
+            var duplicateQuery = mikroWriteDbContext.STOK_HAREKETLERIs
                 .AsNoTracking()
                 .Where(movement =>
                     movement.sth_iptal != true &&
+                    movement.sth_evraktip == documentType &&
+                    movement.sth_tip == movementByte &&
+                    movement.sth_cins == movementGenre &&
+                    movement.sth_normal_iade == normalReturn &&
+                    movement.sth_evrakno_seri == documentSerie &&
+                    movement.sth_cikis_depo_no == sourceWarehouseNo &&
                     movement.sth_aciklama != null &&
-                    documentDescriptions.Contains(movement.sth_aciklama))
+                    documentDescriptions.Contains(movement.sth_aciklama));
+
+            var axataDates = documents
+                .Where(document => document.AxataDate.HasValue)
+                .Select(document => document.AxataDate!.Value.Date)
+                .ToArray();
+            if (axataDates.Length == documents.Count)
+            {
+                var lookupStartDate = (axataDates.Min() < DateTime.Today
+                        ? axataDates.Min()
+                        : DateTime.Today)
+                    .AddDays(-1);
+                var lookupEndDateExclusive = DateTime.Today.AddDays(2);
+                duplicateQuery = duplicateQuery.Where(movement =>
+                    movement.sth_tarih.HasValue &&
+                    movement.sth_tarih.Value >= lookupStartDate &&
+                    movement.sth_tarih.Value < lookupEndDateExclusive);
+            }
+
+            var duplicateRows = await duplicateQuery
                 .GroupBy(movement => movement.sth_aciklama!)
                 .Select(group => new { Description = group.Key, Count = group.Count() })
-                .ToDictionaryAsync(
-                    item => item.Description,
-                    item => item.Count,
-                    StringComparer.OrdinalIgnoreCase,
+                .ToMeasuredListAsync(
+                    logger,
+                    "Axata:LegacyOutbound:ExistingDescriptions",
                     cancellationToken);
+            duplicateCounts = duplicateRows.ToDictionary(
+                item => item.Description,
+                item => item.Count,
+                StringComparer.OrdinalIgnoreCase);
+        }
 
         return documents
             .Select(document =>
@@ -3295,8 +3385,14 @@ internal sealed class AxataOutboundDeliveryImportService(
                             movement.sth_aciklama == analysis.Description &&
                             movement.sth_tip == movementByte &&
                             movement.sth_cins == movementGenre &&
-                            movement.sth_evraktip == documentType)
-                        .CountAsync(cancellationToken);
+                            movement.sth_normal_iade == normalReturn &&
+                            movement.sth_evraktip == documentType &&
+                            movement.sth_evrakno_seri == documentSerie &&
+                            movement.sth_cikis_depo_no == sourceWarehouseNo)
+                        .CountMeasuredAsync(
+                            logger,
+                            "Axata:LegacyOutbound:DuplicateBeforeCreate",
+                            cancellationToken);
 
                     if (duplicateCount > 0)
                     {
@@ -5351,6 +5447,21 @@ internal sealed class AxataOutboundDeliveryImportService(
         }
 
         return (normalizedStartDate, normalizedEndDate);
+    }
+
+    private static (DateTime? StartDate, DateTime EndDateExclusive) ResolveMovementLookupRange(
+        DateTime? axataDate)
+    {
+        var today = DateTime.Today;
+        if (!axataDate.HasValue)
+        {
+            return (null, today.AddDays(2));
+        }
+
+        var sourceDate = axataDate.Value.Date < today
+            ? axataDate.Value.Date
+            : today;
+        return (sourceDate.AddDays(-1), today.AddDays(2));
     }
 
     private static int NormalizeTake(int? take) =>

@@ -330,6 +330,8 @@ public sealed class CreateWarehouseReturnUseCase(
         }
 
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var movementDateExclusive = movementDate.AddDays(1);
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
@@ -338,6 +340,9 @@ public sealed class CreateWarehouseReturnUseCase(
                 movement.sth_cins == MovementGenre &&
                 movement.sth_normal_iade == ReturnMovement &&
                 movement.sth_cikis_depo_no == request.SourceWarehouseNo &&
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= movementDate &&
+                movement.sth_tarih.Value < movementDateExclusive &&
                 movement.sth_eticaret_kanal_kodu == traceKey)
             .Select(movement => new
             {
@@ -353,7 +358,10 @@ public sealed class CreateWarehouseReturnUseCase(
                 movement.sth_miktar,
                 movement.sth_tutar
             })
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:WarehouseReturn:Trace",
+                cancellationToken);
 
         if (rows.Count != request.Lines.Count ||
             rows.Any(row => !row.sth_satirno.HasValue) ||
@@ -383,7 +391,6 @@ public sealed class CreateWarehouseReturnUseCase(
         }
 
         var firstRow = rows[0];
-        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
 
         return new CreateWarehouseReturnResponse(

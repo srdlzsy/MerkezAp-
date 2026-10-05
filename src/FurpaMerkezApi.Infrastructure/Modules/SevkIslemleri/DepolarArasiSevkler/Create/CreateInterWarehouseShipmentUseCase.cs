@@ -3,8 +3,10 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
@@ -39,7 +41,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private const byte InterWarehouseShipmentDocumentType = 17;
     private const byte WaitingShippingState = 0;
     private const int FirstDocumentOrderNo = 0;
-    private const int ShipmentCreateLockTimeoutMilliseconds = 120_000;
+    private const int ShipmentCreateLockTimeoutMilliseconds = 180_000;
     private const int RecentDuplicateLookupMinutes = 5;
     private const int DatabaseWriteRetryAttemptCount = 3;
     private const int DatabaseWriteRetryBaseDelayMilliseconds = 750;
@@ -524,6 +526,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
 
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var movementDateExclusive = movementDate.AddDays(1);
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
@@ -532,6 +536,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_cins == MovementGenre &&
                 movement.sth_normal_iade == NormalMovement &&
                 movement.sth_cikis_depo_no == request.SourceWarehouseNo &&
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= movementDate &&
+                movement.sth_tarih.Value < movementDateExclusive &&
                 movement.sth_eticaret_kanal_kodu == traceKey)
             .Select(movement => new
             {
@@ -556,7 +563,10 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_stok_srm_merkezi,
                 movement.sth_eticaret_kanal_kodu
             })
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:InterWarehouseShipment:Trace",
+                cancellationToken);
 
         var expectedLines = request.Lines.ToArray();
         if (!InterWarehouseShipmentRecoveryMatcher.Matches(
@@ -598,7 +608,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
 
         var firstRow = rows[0];
-        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
         var linkedWarehouseOrderLineCount =
             request.Lines.Count(line => line.WarehouseOrderLineGuid.HasValue) +
@@ -737,16 +746,52 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     {
         var lockResource = $"FurpaMerkezApi:InterWarehouseShipmentCreate:{documentSerie}";
         var localLock = LocalShipmentCreateLocks.GetOrAdd(lockResource, _ => new SemaphoreSlim(1, 1));
-        await localLock.WaitAsync(cancellationToken);
+        var localWaitStopwatch = Stopwatch.StartNew();
+        var localLockAcquired = await localLock.WaitAsync(
+            TimeSpan.FromMilliseconds(ShipmentCreateLockTimeoutMilliseconds),
+            cancellationToken);
+
+        if (!localLockAcquired)
+        {
+            logger.LogWarning(
+                "Inter warehouse shipment create queue wait timed out. DocumentSerie={DocumentSerie}, WaitMs={WaitMs}, TimeoutMs={TimeoutMs}",
+                documentSerie,
+                localWaitStopwatch.ElapsedMilliseconds,
+                ShipmentCreateLockTimeoutMilliseconds);
+
+            throw CreateShipmentCreateQueueBusyConflict(documentSerie);
+        }
+
+        if (localWaitStopwatch.ElapsedMilliseconds >= 500)
+        {
+            logger.LogInformation(
+                "Inter warehouse shipment local create lock acquired. DocumentSerie={DocumentSerie}, WaitMs={WaitMs}",
+                documentSerie,
+                localWaitStopwatch.ElapsedMilliseconds);
+        }
 
         var connection = mikroWriteDbContext.Database.GetDbConnection();
         var closeConnection = connection.State != ConnectionState.Open;
 
         try
         {
+            var remainingLockTimeoutMilliseconds =
+                ShipmentCreateLockTimeoutMilliseconds - (int)localWaitStopwatch.ElapsedMilliseconds;
+            if (remainingLockTimeoutMilliseconds <= 0)
+            {
+                throw CreateShipmentCreateQueueBusyConflict(documentSerie);
+            }
+
             if (closeConnection)
             {
                 await connection.OpenAsync(cancellationToken);
+            }
+
+            remainingLockTimeoutMilliseconds =
+                ShipmentCreateLockTimeoutMilliseconds - (int)localWaitStopwatch.ElapsedMilliseconds;
+            if (remainingLockTimeoutMilliseconds <= 0)
+            {
+                throw CreateShipmentCreateQueueBusyConflict(documentSerie);
             }
 
             await using var command = connection.CreateCommand();
@@ -759,15 +804,30 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     @LockTimeout = @lockTimeout;
                 SELECT @result;
                 """;
-            command.CommandTimeout = (ShipmentCreateLockTimeoutMilliseconds / 1000) + 10;
+            command.CommandTimeout = (remainingLockTimeoutMilliseconds / 1000) + 10;
             AddParameter(command, "@resource", DbType.String, lockResource);
-            AddParameter(command, "@lockTimeout", DbType.Int32, ShipmentCreateLockTimeoutMilliseconds);
+            AddParameter(command, "@lockTimeout", DbType.Int32, remainingLockTimeoutMilliseconds);
 
+            var sqlWaitStopwatch = Stopwatch.StartNew();
             var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
             if (result < 0)
             {
-                throw new TimeoutException(
-                    $"Inter warehouse shipment create lock could not be acquired. SQL result: {result}.");
+                logger.LogWarning(
+                    "Inter warehouse shipment SQL create lock wait failed. DocumentSerie={DocumentSerie}, WaitMs={WaitMs}, TimeoutMs={TimeoutMs}, SqlResult={SqlResult}",
+                    documentSerie,
+                    sqlWaitStopwatch.ElapsedMilliseconds,
+                    remainingLockTimeoutMilliseconds,
+                    result);
+
+                throw CreateShipmentCreateQueueBusyConflict(documentSerie);
+            }
+
+            if (sqlWaitStopwatch.ElapsedMilliseconds >= 500)
+            {
+                logger.LogInformation(
+                    "Inter warehouse shipment SQL create lock acquired. DocumentSerie={DocumentSerie}, WaitMs={WaitMs}",
+                    documentSerie,
+                    sqlWaitStopwatch.ElapsedMilliseconds);
             }
 
             return new ShipmentCreateLockLease(
@@ -788,6 +848,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             throw;
         }
     }
+
+    internal static OperationConflictException CreateShipmentCreateQueueBusyConflict(string documentSerie) =>
+        new(
+            OperationConflictErrorCodes.MikroWriteQueueBusy,
+            $"Another inter warehouse shipment for document series {documentSerie} is still being processed. Queue wait exceeded 180 seconds. Keep the same payload and clientRequestId, then retry.",
+            retryable: true);
 
     private async Task<RecoveredInterWarehouseShipmentCreate> RecoverMikroApiCreateResponseAsync(
         string documentSerie,

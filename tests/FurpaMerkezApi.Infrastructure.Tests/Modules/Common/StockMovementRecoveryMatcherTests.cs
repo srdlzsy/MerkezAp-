@@ -18,6 +18,7 @@ public sealed class StockMovementRecoveryMatcherTests
     internal static STOK_HAREKETLERI Row(int index = 0) => new()
     {
         sth_Guid = Guid.NewGuid(), sth_evrakno_seri = "F56", sth_evrakno_sira = 123,
+        sth_tarih = DateTime.Today, sth_belge_tarih = DateTime.Today,
         sth_evraktip = 1, sth_cins = 1, sth_tip = 1, sth_normal_iade = 0,
         sth_cikis_depo_no = 56, sth_giris_depo_no = 0, sth_cari_kodu = "320.01",
         sth_satirno = index, sth_stok_kod = index == 0 ? "A" : "B",

@@ -184,6 +184,65 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     [Fact]
+    public async Task QueueBusyFailure_CanRetrySameRequestWithoutCreatingNewIdentity()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+        var payload = new TestRequest(56, 2);
+        var writes = 0;
+
+        Task<string> Execute(CancellationToken _)
+        {
+            writes++;
+            if (writes == 1)
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroWriteQueueBusy,
+                    "Shipment queue is busy.",
+                    retryable: true);
+            }
+
+            return Task.FromResult("F56/123");
+        }
+
+        var first = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            OfflineCreateGuard.ExecuteAsync<TestRequest, string>(
+                service,
+                "shipment.create",
+                user,
+                56,
+                id,
+                payload,
+                (_, _) => Task.FromResult<string?>(null),
+                Execute,
+                CancellationToken.None,
+                preventReexecutionAfterUncertainOutcome: true));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteQueueBusy, first.ErrorCode);
+        Assert.True(first.Retryable);
+
+        var retry = await OfflineCreateGuard.ExecuteAsync<TestRequest, string>(
+            service,
+            "shipment.create",
+            user,
+            56,
+            id,
+            payload,
+            (_, _) => Task.FromResult<string?>(null),
+            Execute,
+            CancellationToken.None,
+            preventReexecutionAfterUncertainOutcome: true);
+
+        Assert.Equal("F56/123", retry);
+        Assert.Equal(2, writes);
+        Assert.Equal(
+            MobileOfflineSyncRequestStatus.Completed,
+            (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
     public async Task ConcurrentFailedRetries_OnlyOneAcquiresExecution()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()

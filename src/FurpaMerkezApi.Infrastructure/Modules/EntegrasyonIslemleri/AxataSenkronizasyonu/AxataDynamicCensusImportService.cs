@@ -7,6 +7,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AxataExt = FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.ServiceReferences.Ext;
 
@@ -16,7 +17,8 @@ internal sealed class AxataDynamicCensusImportService(
     IOptionsMonitor<AxataSynchronizationOptions> options,
     MikroWriteDbContext mikroWriteDbContext,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
-    MikroApiClient mikroApiClient)
+    MikroApiClient mikroApiClient,
+    ILogger<AxataDynamicCensusImportService> logger)
     : IAxataDynamicCensusImportService
 {
     private const string ViewName = "vw_stok_duzeltme";
@@ -364,15 +366,22 @@ internal sealed class AxataDynamicCensusImportService(
         var movements = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
+                (movement.sth_evraktip == InboundDocumentType ||
+                 movement.sth_evraktip == OutboundDocumentType) &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalReturn &&
                 movement.sth_evrakno_seri == DynamicDocumentSerie &&
                 movement.sth_evrakno_sira == documentOrderNo &&
                 movement.sth_iptal != true &&
                 movement.sth_HareketGrupKodu1 != null &&
                 rowKeys.Contains(movement.sth_HareketGrupKodu1))
             .OrderBy(movement => movement.sth_satirno)
-            .ToArrayAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Axata:DynamicCensus:RecoverDocument",
+                cancellationToken);
 
-        if (movements.Length != analyses.Count)
+        if (movements.Count != analyses.Count)
         {
             return null;
         }
@@ -453,12 +462,19 @@ internal sealed class AxataDynamicCensusImportService(
             : (await mikroWriteDbContext.STOK_HAREKETLERIs
                 .AsNoTracking()
                 .Where(movement =>
+                    (movement.sth_evraktip == InboundDocumentType ||
+                     movement.sth_evraktip == OutboundDocumentType) &&
+                    movement.sth_evrakno_seri == DynamicDocumentSerie &&
                     movement.sth_cins == MovementGenre &&
+                    movement.sth_normal_iade == NormalReturn &&
                     movement.sth_HareketGrupKodu1 != null &&
                     rowKeys.Contains(movement.sth_HareketGrupKodu1))
                 .Select(movement => movement.sth_HareketGrupKodu1 ?? string.Empty)
                 .Distinct()
-                .ToArrayAsync(cancellationToken))
+                .ToMeasuredListAsync(
+                    logger,
+                    "Axata:DynamicCensus:ExistingRowKeys",
+                    cancellationToken))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return lines

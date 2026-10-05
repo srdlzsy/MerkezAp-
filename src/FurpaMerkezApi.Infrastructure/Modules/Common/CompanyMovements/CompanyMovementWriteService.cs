@@ -1,9 +1,9 @@
 using System.Data;
-using FurpaMerkezApi.Infrastructure.Modules.Common;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -362,7 +362,10 @@ public sealed class CompanyMovementWriteService(
                 movement.sth_normal_iade == returnType &&
                 movement.sth_evrakno_seri == documentSerie &&
                 movement.sth_evrakno_sira == documentOrderNo)
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:CompanyMovement:Document",
+                cancellationToken);
 
         if (rows.Count == 0)
         {
@@ -419,6 +422,8 @@ public sealed class CompanyMovementWriteService(
         }
 
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var movementDateExclusive = movementDate.AddDays(1);
         var returnType = ResolveReturnType(kind);
         var movementGenre = ResolveMovementGenre(kind);
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
@@ -429,6 +434,9 @@ public sealed class CompanyMovementWriteService(
                 movement.sth_cins == movementGenre &&
                 movement.sth_normal_iade == returnType &&
                 movement.sth_cikis_depo_no == request.WarehouseNo &&
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= movementDate &&
+                movement.sth_tarih.Value < movementDateExclusive &&
                 movement.sth_eticaret_kanal_kodu == traceKey)
             .Select(movement => new
             {
@@ -442,7 +450,10 @@ public sealed class CompanyMovementWriteService(
                 movement.sth_miktar,
                 movement.sth_tutar
             })
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:CompanyMovement:Trace",
+                cancellationToken);
 
         if (rows.Count == 0)
         {
@@ -466,7 +477,6 @@ public sealed class CompanyMovementWriteService(
         }
 
         var firstRow = rows[0];
-        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var documentDate = (request.DocumentDate ?? movementDate).Date;
 
         return await TryRecoverCompanyMovementResponseAsync(
