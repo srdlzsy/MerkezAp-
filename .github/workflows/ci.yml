@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-audit:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      FURPA_RUN_LOCALDB_TESTS: "true"
+      FURPA_SQLSERVER_TEST_CONNECTION: ${{ secrets.FURPA_SQLSERVER_TEST_CONNECTION }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Start SQL Server LocalDB fallback
+        if: env.FURPA_SQLSERVER_TEST_CONNECTION == ''
+        shell: pwsh
+        run: sqllocaldb start MSSQLLocalDB
+
+      - name: Build, test and audit
+        shell: pwsh
+        run: ./tools/verify.ps1 -Configuration Release

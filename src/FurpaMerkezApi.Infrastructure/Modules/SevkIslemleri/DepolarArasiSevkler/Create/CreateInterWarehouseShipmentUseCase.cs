@@ -640,14 +640,17 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CancellationToken cancellationToken)
     {
         var duplicateThreshold = now.AddMinutes(-RecentDuplicateLookupMinutes);
-        var candidateRows = await mikroWriteDbContext.STOK_HAREKETLERIs
+        var documentSerie = $"F{request.SourceWarehouseNo}";
+        var excludedOrderNos = excludedDocumentOrderNos.ToArray();
+        var candidateDocumentOrderNos = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
+            .TagWith("InterWarehouseShipment:RecentDuplicateCandidateDocuments")
             .Where(movement =>
                 movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
                 movement.sth_tip == MovementType &&
                 movement.sth_cins == MovementGenre &&
                 movement.sth_normal_iade == NormalMovement &&
-                movement.sth_evrakno_seri == $"F{request.SourceWarehouseNo}" &&
+                movement.sth_evrakno_seri == documentSerie &&
                 movement.sth_evrakno_sira.HasValue &&
                 movement.sth_satirno.HasValue &&
                 movement.sth_cikis_depo_no == request.SourceWarehouseNo &&
@@ -655,7 +658,26 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_nakliyedeposu == request.TargetWarehouseNo &&
                 movement.sth_tarih == movementDate &&
                 movement.sth_belge_tarih == documentDate &&
-                movement.sth_create_date >= duplicateThreshold)
+                movement.sth_create_date >= duplicateThreshold &&
+                (excludedOrderNos.Length == 0 ||
+                 !excludedOrderNos.Contains(movement.sth_evrakno_sira.Value)))
+            .Select(movement => movement.sth_evrakno_sira!.Value)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        if (candidateDocumentOrderNos.Length == 0)
+        {
+            return null;
+        }
+
+        var candidateRows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .TagWith("InterWarehouseShipment:RecentDuplicateDocumentRows")
+            .Where(movement =>
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_evrakno_sira.HasValue &&
+                candidateDocumentOrderNos.Contains(movement.sth_evrakno_sira.Value))
             .Select(movement => new ShipmentDuplicateRow(
                 movement.sth_evrakno_seri ?? string.Empty,
                 movement.sth_evrakno_sira,
@@ -689,12 +711,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                  }))
         {
             var rows = candidate.ToArray();
-            if (candidate.Key.DocumentOrderNo.HasValue &&
-                excludedDocumentOrderNos.Contains(candidate.Key.DocumentOrderNo.Value))
-            {
-                continue;
-            }
-
             if (rows.Length != lines.Count)
             {
                 continue;

@@ -10,12 +10,12 @@ namespace FurpaMerkezApi.Infrastructure.Tests.OfflineSync;
 
 public sealed class OfflineSyncSqlServerTests
 {
-    [LocalDbFact]
+    [SqlServerFact]
     public async Task MigrationAndConcurrentRetry_UseSqlServerConcurrencyCheck()
     {
-        // Opt-in, local-only and disposable: never uses application connection strings.
+        // Opt-in and disposable: the configured server is used only to host a unique temporary database.
         var database = "FurpaOfflineTest_" + Guid.NewGuid().ToString("N");
-        var masterConnection = @"Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=true;TrustServerCertificate=true;Pooling=false";
+        var masterConnection = ResolveMasterConnection();
         await using var master = new SqlConnection(masterConnection);
         await master.OpenAsync();
         await using var command = master.CreateCommand();
@@ -65,13 +65,36 @@ public sealed class OfflineSyncSqlServerTests
             await command.ExecuteNonQueryAsync();
         }
     }
+
+    private static string ResolveMasterConnection()
+    {
+        var configuredConnection = Environment.GetEnvironmentVariable("FURPA_SQLSERVER_TEST_CONNECTION");
+
+        if (!string.IsNullOrWhiteSpace(configuredConnection))
+        {
+            return new SqlConnectionStringBuilder(configuredConnection)
+            {
+                InitialCatalog = "master",
+                Pooling = false
+            }.ConnectionString;
+        }
+
+        return @"Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=true;TrustServerCertificate=true;Pooling=false";
+    }
 }
 
-public sealed class LocalDbFactAttribute : FactAttribute
+public sealed class SqlServerFactAttribute : FactAttribute
 {
-    public LocalDbFactAttribute()
+    public SqlServerFactAttribute()
     {
-        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("FURPA_RUN_LOCALDB_TESTS") != "true")
-            Skip = "Set FURPA_RUN_LOCALDB_TESTS=true on Windows with SQL Server LocalDB to run the disposable SQL integration test.";
+        var hasServerConnection = !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable("FURPA_SQLSERVER_TEST_CONNECTION"));
+        var useLocalDb = OperatingSystem.IsWindows() &&
+            Environment.GetEnvironmentVariable("FURPA_RUN_LOCALDB_TESTS") == "true";
+
+        if (!hasServerConnection && !useLocalDb)
+        {
+            Skip = "Set FURPA_SQLSERVER_TEST_CONNECTION for a disposable SQL Server test database, or enable FURPA_RUN_LOCALDB_TESTS on Windows.";
+        }
     }
 }

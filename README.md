@@ -48,8 +48,17 @@ Ilk bakilacak dosyalar:
 
 ```powershell
 git status
-dotnet build FurpaMerkezApi.sln
+./tools/verify.ps1
 ```
 
 `appsettings.Local.json` veya gercek secret iceren herhangi bir dosyanin staged
 olmadigini kontrol et.
+
+`verify.ps1` restore, Release build, tum testler ve gecisli NuGet guvenlik
+taramasini birlikte calistirir. SQL Server concurrency testi varsayilan olarak
+atlanir. Testi SQL Server uzerinde gecici bir veritabaninda calistirmak icin
+yalniz test veritabani olusturma/silme yetkili bir `master` baglantisini
+`FURPA_SQLSERVER_TEST_CONNECTION` ortam degiskeninde verin. Windows LocalDB
+alternatifi icin `FURPA_RUN_LOCALDB_TESTS=true` kullanilabilir. Test benzersiz
+`FurpaOfflineTest_*` veritabani olusturur ve sonunda siler; uygulama
+veritabanlarinda calismaz.
