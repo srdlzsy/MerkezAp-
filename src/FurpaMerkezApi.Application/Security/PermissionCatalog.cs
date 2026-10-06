@@ -310,6 +310,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "operations", "Operasyonlar"),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "belge-akis-takibi", "BelgeAkisTakibi", ReadActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "depo-operasyon-paneli", "DepoOperasyonPaneli", ListActions),
+        ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "firma-evrak-takibi", "FirmaEvrakTakibi", ListActions),
         ..CreateMenuPermissions("operasyon-islemleri", "OperasyonIslemleri", "urun-dagilimlari", "UrunDagilimlari", ProductDistributionActions),
         ..CreateMenuPermissions("duzeltme-islemleri", "DuzeltmeIslemleri", "mikro-evrak-duzenleme", "MikroEvrakDuzenleme", ReadUpdateDeleteActions),
         ..CreateMenuPermissions("entegrasyon-islemleri", "EntegrasyonIslemleri", "axata-senkronizasyonu", "AxataSenkronizasyonu"),

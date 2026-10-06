@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 716. Model sayisi: 646.
+Endpoint sayisi (method + route): 717. Model sayisi: 649.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -540,6 +540,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/belge-akis-takibi/{id}` | JWT + operasyon-islemleri.belge-akis-takibi.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowDetailDto<br>404: ProblemDetails |
 | GET | `/api/operasyon-islemleri/depo-operasyon-paneli` | JWT + operasyon-islemleri.depo-operasyon-paneli.all-warehouses + operasyon-islemleri.depo-operasyon-paneli.list | query: date / string (date) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOperationsDashboardDto |
+| GET | `/api/operasyon-islemleri/firma-evrak-takibi` | JWT + operasyon-islemleri.firma-evrak-takibi.list | query: Date / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyDocumentTrackingDto<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/urun-dagilimlari` | JWT + operasyon-islemleri.urun-dagilimlari.list | query: Status / integer (int32)<br>query: DocumentNo / string<br>query: StockCode / string<br>query: DistributionCenterWarehouseNo / integer (int32)<br>query: CreatedFrom / string (date-time)<br>query: CreatedTo / string (date-time)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductDistributionListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/operasyon-islemleri/urun-dagilimlari` | JWT + operasyon-islemleri.urun-dagilimlari.create | body: request / ProductDistributionSaveHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: ProductDistributionDetailDto<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/urun-dagilimlari/dagitim-merkezleri` | JWT + operasyon-islemleri.urun-dagilimlari.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductDistributionCenterDto&gt; |
@@ -4579,6 +4580,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `priceChangeDate` | string | Hayir | nullable |
 | `productCode` | string | Hayir | nullable |
 | `productName` | string | Hayir | nullable |
+| `promotion` | FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto | Hayir |  |
 | `quantity` | number (double) | Hayir |  |
 | `retailSaleTaxRate` | integer (int32) | Hayir |  |
 | `sectorCode` | string | Hayir | nullable |
@@ -4605,8 +4607,25 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `priceChangeDate` | string | Hayir | nullable |
 | `productCode` | string | Hayir | nullable |
 | `productName` | string | Hayir | nullable |
+| `promotion` | FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto | Hayir |  |
 | `unitName` | string | Hayir | nullable |
 | `unitPriceFactor` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `description` | string | Hayir | nullable |
+| `discountAmount` | number (double) | Hayir |  |
+| `discountRate` | number (double) | Hayir |  |
+| `expirationDate` | string (date-time) | Hayir | nullable |
+| `isActive` | boolean | Hayir |  |
+| `normalPrice` | number (double) | Hayir |  |
+| `promotionCode` | string | Hayir | nullable |
+| `promotionName` | string | Hayir | nullable |
+| `promotionPrice` | number (double) | Hayir |  |
+| `promotionType` | string | Hayir | nullable |
+| `startDate` | string (date-time) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelTagDto
 
@@ -6143,6 +6162,40 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `todayReturnCount` | integer (int32) | Hayir |  |
 | `todayShipmentCount` | integer (int32) | Hayir |  |
 | `warehouseCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `companyReceivingCount` | integer (int32) | Hayir |  |
+| `companyReturnCount` | integer (int32) | Hayir |  |
+| `date` | string (date) | Hayir |  |
+| `documentCount` | integer (int32) | Hayir |  |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `items` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingItemDto[] | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `customerCode` | string | Hayir | nullable |
+| `customerDisplayName` | string | Hayir | nullable |
+| `customerName` | string | Hayir | nullable |
+| `customerTitle` | string | Hayir | nullable |
+| `deliverer` | string | Hayir | nullable |
+| `documentDate` | string (date-time) | Hayir | nullable |
+| `documentKind` | string | Hayir | nullable |
+| `documentKindName` | string | Hayir | nullable |
+| `documentNo` | string | Hayir | nullable |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `lineCount` | integer (int32) | Hayir |  |
+| `movementCreateDate` | string (date-time) | Hayir |  |
+| `receiver` | string | Hayir | nullable |
+| `totalQuantity` | number (double) | Hayir |  |
+| `warehouseName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.Operations.AuthorizationFileDto
 

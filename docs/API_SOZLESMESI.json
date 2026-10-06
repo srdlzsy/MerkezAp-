@@ -32797,6 +32797,124 @@
         ]
       }
     },
+    "/api/operasyon-islemleri/firma-evrak-takibi": {
+      "get": {
+        "tags": [
+          "FirmaEvrakTakibi"
+        ],
+        "parameters": [
+          {
+            "name": "Date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "operasyon-islemleri.firma-evrak-takibi.list"
+        ]
+      }
+    },
     "/api/iade-islemleri/firma-iadeleri": {
       "get": {
         "tags": [
@@ -101412,6 +101530,9 @@
           "categoryCode": {
             "type": "string",
             "nullable": true
+          },
+          "promotion": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto"
           }
         },
         "additionalProperties": false
@@ -101472,6 +101593,60 @@
           },
           "unitName": {
             "type": "string",
+            "nullable": true
+          },
+          "promotion": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "type": "boolean"
+          },
+          "promotionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "promotionType": {
+            "type": "string",
+            "nullable": true
+          },
+          "promotionName": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "normalPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "promotionPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "discountRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "discountAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expirationDate": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         },
@@ -106493,6 +106668,119 @@
           "failedEDespatchCount": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "documentCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "companyReceivingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "companyReturnCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingItemDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingItemDto": {
+        "type": "object",
+        "properties": {
+          "documentKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentKindName": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentSerie": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentOrderNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "documentNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerDisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "movementCreateDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deliverer": {
+            "type": "string",
+            "nullable": true
+          },
+          "receiver": {
+            "type": "string",
+            "nullable": true
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warehouseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalQuantity": {
+            "type": "number",
+            "format": "double"
           }
         },
         "additionalProperties": false

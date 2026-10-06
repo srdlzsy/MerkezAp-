@@ -27,4 +27,6 @@ public sealed record LabelPriceChangedProductDto
     public double UnitPriceFactor { get; init; }
 
     public string UnitName { get; init; } = string.Empty;
+
+    public LabelPromotionDto? Promotion { get; init; }
 }

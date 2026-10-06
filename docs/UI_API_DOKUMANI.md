@@ -305,6 +305,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `operasyon-islemleri` | `operations` (`Operasyonlar`) | `operasyon-islemleri.operations.page` | `operasyon-islemleri.operations.list`<br>`operasyon-islemleri.operations.detail`<br>`operasyon-islemleri.operations.create`<br>`operasyon-islemleri.operations.update` | `operasyon-islemleri.operations.all-warehouses` |
 | `operasyon-islemleri` | `belge-akis-takibi` | `operasyon-islemleri.belge-akis-takibi.page` | `operasyon-islemleri.belge-akis-takibi.list`<br>`operasyon-islemleri.belge-akis-takibi.detail` | `operasyon-islemleri.belge-akis-takibi.all-warehouses` |
 | `operasyon-islemleri` | `depo-operasyon-paneli` | `operasyon-islemleri.depo-operasyon-paneli.page` | `operasyon-islemleri.depo-operasyon-paneli.list` | `operasyon-islemleri.depo-operasyon-paneli.all-warehouses` |
+| `operasyon-islemleri` | `firma-evrak-takibi` | `operasyon-islemleri.firma-evrak-takibi.page` | `operasyon-islemleri.firma-evrak-takibi.list` | `operasyon-islemleri.firma-evrak-takibi.all-warehouses` |
 | `operasyon-islemleri` | `urun-dagilimlari` | `operasyon-islemleri.urun-dagilimlari.page` | `operasyon-islemleri.urun-dagilimlari.list`<br>`operasyon-islemleri.urun-dagilimlari.detail`<br>`operasyon-islemleri.urun-dagilimlari.create`<br>`operasyon-islemleri.urun-dagilimlari.update`<br>`operasyon-islemleri.urun-dagilimlari.delete` | `operasyon-islemleri.urun-dagilimlari.all-warehouses` |
 | `duzeltme-islemleri` | `mikro-evrak-duzenleme` | `duzeltme-islemleri.mikro-evrak-duzenleme.page` | `duzeltme-islemleri.mikro-evrak-duzenleme.list`<br>`duzeltme-islemleri.mikro-evrak-duzenleme.detail`<br>`duzeltme-islemleri.mikro-evrak-duzenleme.update`<br>`duzeltme-islemleri.mikro-evrak-duzenleme.delete` | `duzeltme-islemleri.mikro-evrak-duzenleme.all-warehouses` |
 | `entegrasyon-islemleri` | `axata-senkronizasyonu` | `entegrasyon-islemleri.axata-senkronizasyonu.page` | `entegrasyon-islemleri.axata-senkronizasyonu.list`<br>`entegrasyon-islemleri.axata-senkronizasyonu.detail`<br>`entegrasyon-islemleri.axata-senkronizasyonu.create`<br>`entegrasyon-islemleri.axata-senkronizasyonu.update` | `entegrasyon-islemleri.axata-senkronizasyonu.all-warehouses` |
@@ -9980,6 +9981,8 @@ Not:
 - `warehouseNo` verilmezse JWT icindeki kullanici deposu kullanilir
 - response modeli `LabelDocumentProductDto` doner
 - backend once Furpa tarafinda belge detaylarini okur, sonra her satiri Mikro urun karti ile zenginlestirir
+- `promotion` alani, urunun PLU numarasi icin secili depoda aktif Birlik Premium Kart/Furpara promosyonu varsa dolar; promosyon yoksa `null` gelir
+- Promosyon sorgusu urun basina ayri istekle degil, belgedeki tum PLU numaralari icin tek toplu Mayday sorgusuyla yapilir
 - response satir sirasi Furpa `LabelDocumentDetails.DetailId` sirasi ile gelir; bu sira pratikte create anindaki insert sirasi kabul edilir
 - UI yazdirirken response'u urun adi, stok kodu veya fiyata gore yeniden siralamamali; gelen sirayi korumalidir
 
@@ -9996,7 +9999,20 @@ Response:
     "unitName": "ADET",
     "quantity": 0,
     "documentOrderNo": 0,
-    "categoryCode": "GIDA"
+    "categoryCode": "GIDA",
+    "promotion": {
+      "isActive": true,
+      "promotionCode": "PRM-2026-101",
+      "promotionType": "P2",
+      "promotionName": "Birlik Premium Kart",
+      "description": "Birlik Premium Kart indirimi",
+      "normalPrice": 125.5,
+      "promotionPrice": 112.95,
+      "discountRate": 10,
+      "discountAmount": 0,
+      "startDate": "2026-10-01T00:00:00",
+      "expirationDate": "2026-10-15T23:59:59"
+    }
   }
 ]
 ```
@@ -11155,6 +11171,10 @@ Not:
 - `barcode` UI'in varsayilan basacagi barkoddur. `barcodes` ayni urunun tum aktif barkod seceneklerini oncelik sirasiyla dondurur; UI isterse detay/dropdown olarak gosterebilir ama liste satir sayisini bu diziye gore cogaltmamalidir.
 - `priceChangeDate` kullaniciya gosterilecek son fiyat degisikligi zamanidir ve `dd.MM.yyyy HH:mm` formatindadir.
 - `alternativeUnitName` ve `unitPriceFactor` eski etiket mantigiyla Mikro `sto_birim4_ad` / `sto_birim4_katsayi` uzerinden hesaplanir. Ornek 1440 ml urunde fiyat `199.50`, katsayi `1.44` ise birim fiyat `138.54 TL/LITRE` olur.
+- `promotion`, secili depo ve urun PLU numarasi icin Mayday `PROMOSYON_TANIMLARI` / `PROMOSYON_SUBELER` tablolarinda aktif `P2` ve musteri kodu `2012` olan Birlik Premium Kart/Furpara promosyonu varsa dolar; eslesme yoksa `null` gelir.
+- Promosyonlar response'taki tum gecerli PLU numaralari icin tek toplu SQL sorgusuyla okunur; urun basina ek API veya SQL istegi uretilmez.
+- Ayni urun icin birden fazla aktif promosyon varsa hesaplanan `promotionPrice` en dusuk olan kayit secilir. `discountAmount` sifirdan farkliysa tutar indirimi onceliklidir; degilse `discountRate` yuzdesi uygulanir.
+- Mayday promosyon verisi gecici olarak okunamazsa hata loglanir, ana Mikro urun listesi yine doner ve ilgili satirlarda `promotion: null` olur.
 - UI bu endpointi "son kontrol zamanindan sonra degisen urunler" icin kullanmali; kullanici belgeye eklemeden once gerekirse etiket belgesi detayinda urunu tekrar okutabilir.
 
 Response:
@@ -11178,7 +11198,20 @@ Response:
     "price": 199.5,
     "priceChangeDate": "11.08.2026 16:27",
     "unitPriceFactor": 138.54,
-    "unitName": "ADET"
+    "unitName": "ADET",
+    "promotion": {
+      "isActive": true,
+      "promotionCode": "PRM-2026-101",
+      "promotionType": "P2",
+      "promotionName": "Birlik Premium Kart",
+      "description": "Birlik Premium Kart indirimi",
+      "normalPrice": 199.5,
+      "promotionPrice": 179.55,
+      "discountRate": 10,
+      "discountAmount": 0,
+      "startDate": "2026-10-01T00:00:00",
+      "expirationDate": "2026-10-15T23:59:59"
+    }
   }
 ]
 ```
@@ -17234,6 +17267,85 @@ Response ornegi:
 
 UI ekraninda ustte `summary` sayaclari, altta `warehouses` tablosu gosterilebilir. Depo satirina tiklandiginda ayni depo numarasiyla belge akis liste endpointine gidilerek ilgili belgeler acilabilir.
 
+### Firma Evrak Takibi
+
+Bu endpoint eski sube uygulamasindaki Firma Evrak Takibi ekraninin yeni API karsiligidir. Secilen gundeki firma mal kabul fislerini ve firma iadelerini tek listede dondurur. Endpoint salt okunurdur; Mikro'ya veya Auth DB'ye kayit yazmaz.
+
+```http
+GET /api/operasyon-islemleri/firma-evrak-takibi?date=2026-10-06&warehouseNo=149
+```
+
+Yetki kodlari:
+
+- Menu/route: `operasyon-islemleri.firma-evrak-takibi.page`
+- Liste endpointi: `operasyon-islemleri.firma-evrak-takibi.list`
+- Baska depo veya tum depolar: `operasyon-islemleri.firma-evrak-takibi.all-warehouses`
+
+Query:
+
+```text
+date         zorunlu; yyyy-MM-dd
+warehouseNo  opsiyonel; all-warehouses yoksa backend JWT deposunu uygular
+```
+
+Tarih kurali eski ekranla uyumludur:
+
+- `CompanyReceiving` firma mal kabul kayitlari secilen gundeki Mikro `sth_create_date` degerine gore bulunur. Tedarikci belge tarihi daha eski olsa bile evrak o gun sisteme girildiyse listelenir.
+- `CompanyReturn` firma iade kayitlari secilen gundeki Mikro `sth_belge_tarih` degerine gore bulunur.
+- Iptal edilmis Mikro hareketleri listeye alinmaz.
+- Eski uygulamadaki `sth_create_user = 39` / `>= 100` kontrolleri uygulanmaz. Evrakin hangi Mikro kullanicisi tarafindan acildigi listeye girme kosulu degildir.
+- Cari adresi veya `addressNo = 1` kaydi bulunmasi aranmaz. Bu ekran evrak takibi yaptigi icin eksik cari adresi evraki listeden dusurmez.
+
+Response:
+
+```json
+{
+  "date": "2026-10-06",
+  "generatedAtUtc": "2026-10-06T09:30:00Z",
+  "warehouseNo": 149,
+  "documentCount": 2,
+  "companyReceivingCount": 1,
+  "companyReturnCount": 1,
+  "items": [
+    {
+      "documentKind": "CompanyReceiving",
+      "documentKindName": "Firma Mal Kabul",
+      "documentSerie": "F149",
+      "documentOrderNo": 5375,
+      "documentNo": "F149/5375",
+      "customerCode": "32006414",
+      "customerName": "ENDERER MESRUBAT SATIS DAGITIM",
+      "customerTitle": "SAN.TIC.A.S. EVYAP",
+      "customerDisplayName": "ENDERER MESRUBAT SATIS DAGITIM SAN.TIC.A.S. EVYAP",
+      "documentDate": "2026-10-04T00:00:00",
+      "movementCreateDate": "2026-10-06T08:42:10",
+      "deliverer": "ALI VELI",
+      "receiver": "SUBE SORUMLUSU",
+      "warehouseNo": 149,
+      "warehouseName": "DEPO 149",
+      "lineCount": 8,
+      "totalQuantity": 42.5
+    }
+  ]
+}
+```
+
+Alan notlari:
+
+- `documentKind`: `CompanyReceiving` veya `CompanyReturn` gelir.
+- `documentNo`: Mikro `sth_belge_no` doluysa bu degerdir; bos ise `{documentSerie}/{documentOrderNo}` olarak uretilir.
+- `deliverer` ve `receiver`: Mikro hareketlerindeki `sth_HareketGrupKodu2` ve `sth_HareketGrupKodu3` alanlaridir. Bos olabilir.
+- `movementCreateDate`: evrakin ilk satirinin Mikro olusturma tarihidir.
+- `lineCount` ve `totalQuantity`: evrakin aktif satirlarinin kontrol ozetidir.
+- Liste once `movementCreateDate`, sonra seri ve sira numarasina gore siralanir.
+
+UI kullanim notu:
+
+- Liste ekraninda tarih, evrak turu, seri/sira, cari, belge tarihi, sisteme giris tarihi ve teslim eden/alan kolonlari gosterilebilir.
+- Yazdirma formunda depo, cari, evrak, teslim eden, teslim alan ve imza alanlari kullanilabilir.
+- `all-warehouses` yoksa depo secici gosterilmemeli; kullanici yalniz kendi deposunun evraklarini gorur.
+- Bu endpoint parasal merkez raporu degildir. Firma/depo bazli tutar toplamlari ayri bir rapor endpointi olarak ele alinmalidir.
+
 ### Urun Dagilimlari
 
 Bu ekran `docs/rapor-modulu-envanter.md` icindeki `FrmDagilim` workflow'unun API karsiligidir. Rapor degildir; satis verisine gore dagilim onerisi uretir, `Furpa.dbo.STOK_DAGILIM` kaydi acar, bolge bilgilendirme durumunu yonetir ve kesinlestirmede Mikro `DEPOLAR_ARASI_SIPARISLER` satirlari olusturur.
@@ -21974,6 +22086,7 @@ public sealed record LabelDocumentProductDto
     public double DeliveredQuantity { get; init; }
     public int DocumentOrderNo { get; init; }
     public string CategoryCode { get; init; } = string.Empty;
+    public LabelPromotionDto? Promotion { get; init; }
 }
 
 public sealed record LabelPriceChangedProductDto
@@ -21991,6 +22104,22 @@ public sealed record LabelPriceChangedProductDto
     public string PriceChangeDate { get; init; } = string.Empty;
     public double UnitPriceFactor { get; init; }
     public string UnitName { get; init; } = string.Empty;
+    public LabelPromotionDto? Promotion { get; init; }
+}
+
+public sealed record LabelPromotionDto
+{
+    public bool IsActive { get; init; }
+    public string PromotionCode { get; init; } = string.Empty;
+    public string PromotionType { get; init; } = string.Empty;
+    public string PromotionName { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public double NormalPrice { get; init; }
+    public double PromotionPrice { get; init; }
+    public double DiscountRate { get; init; }
+    public double DiscountAmount { get; init; }
+    public DateTime? StartDate { get; init; }
+    public DateTime? ExpirationDate { get; init; }
 }
 
 public sealed record LabelTagDto

@@ -5,7 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri;
 
-public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
+public sealed class LabelProductQueryExecutor(
+    MikroDbContext mikroDbContext,
+    ILabelPromotionLookup promotionLookup)
 {
     internal async Task<IReadOnlyCollection<LabelPriceChangedProductDto>> ListPriceChangedProductsAsync(
         int warehouseNo,
@@ -80,6 +82,17 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
             .ToArray();
 
         var barcodesByStockCode = await GetActiveBarcodesByStockCodeAsync(stockCodes, cancellationToken);
+        var promotionsByPlu = await promotionLookup.GetActiveCardPromotionsAsync(
+            warehouseNo,
+            rows
+                .Where(row => row.sto_plu_no > 0)
+                .GroupBy(row => row.sto_plu_no)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group
+                        .Select(row => row.CurrentPrice ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d)
+                        .First()),
+            cancellationToken);
 
         return rows
             .Select(row =>
@@ -108,7 +121,8 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                         Price = price,
                         PriceChangeDate = priceChangeDate?.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("tr-TR")) ?? string.Empty,
                         UnitPriceFactor = CalculateUnitPriceFactor(price, row.sto_birim4_katsayi),
-                        UnitName = row.sto_birim1_ad ?? string.Empty
+                        UnitName = row.sto_birim1_ad ?? string.Empty,
+                        Promotion = promotionsByPlu.GetValueOrDefault(row.sto_plu_no)
                     }
                 };
             })
@@ -274,6 +288,18 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 LatestPriceChange = latestPriceChange
             }).ToListAsync(cancellationToken);
 
+        var promotionsByPlu = await promotionLookup.GetActiveCardPromotionsAsync(
+            warehouseNo,
+            rows
+                .Where(row => row.sto_plu_no > 0)
+                .GroupBy(row => row.sto_plu_no)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group
+                        .Select(row => row.CurrentPrice?.sfiyat_fiyati ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d)
+                        .First()),
+            cancellationToken);
+
         var products = new Dictionary<string, LabelDocumentProductDto>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var row in rows)
@@ -321,7 +347,8 @@ public sealed class LabelProductQueryExecutor(MikroDbContext mikroDbContext)
                 Quantity = 0d,
                 DeliveredQuantity = 0d,
                 DocumentOrderNo = documentId,
-                CategoryCode = row.sto_kategori_kodu ?? string.Empty
+                CategoryCode = row.sto_kategori_kodu ?? string.Empty,
+                Promotion = promotionsByPlu.GetValueOrDefault(row.sto_plu_no)
             };
         }
 

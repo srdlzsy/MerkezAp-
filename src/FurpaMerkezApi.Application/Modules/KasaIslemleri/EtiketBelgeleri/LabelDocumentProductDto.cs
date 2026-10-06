@@ -69,4 +69,6 @@ public sealed record LabelDocumentProductDto
     public int DocumentOrderNo { get; init; }
 
     public string CategoryCode { get; init; } = string.Empty;
+
+    public LabelPromotionDto? Promotion { get; init; }
 }
