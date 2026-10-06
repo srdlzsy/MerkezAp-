@@ -4,8 +4,12 @@ namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri;
 
 public interface ILabelPromotionLookup
 {
-    Task<IReadOnlyDictionary<int, LabelPromotionDto>> GetActiveCardPromotionsAsync(
+    Task<IReadOnlyDictionary<string, LabelPromotionDto>> GetActiveProductPromotionsAsync(
         int warehouseNo,
-        IReadOnlyDictionary<int, double> pricesByPlu,
+        IReadOnlyDictionary<string, double> pricesByStockCode,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<string>> GetActiveProductCodesAsync(
+        int warehouseNo,
         CancellationToken cancellationToken);
 }

@@ -82,16 +82,17 @@ public sealed class LabelProductQueryExecutor(
             .ToArray();
 
         var barcodesByStockCode = await GetActiveBarcodesByStockCodeAsync(stockCodes, cancellationToken);
-        var promotionsByPlu = await promotionLookup.GetActiveCardPromotionsAsync(
+        var promotionsByStockCode = await promotionLookup.GetActiveProductPromotionsAsync(
             warehouseNo,
             rows
-                .Where(row => row.sto_plu_no > 0)
-                .GroupBy(row => row.sto_plu_no)
+                .Where(row => !string.IsNullOrWhiteSpace(row.sto_kod))
+                .GroupBy(row => row.sto_kod, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(
                     group => group.Key,
                     group => group
                         .Select(row => row.CurrentPrice ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d)
-                        .First()),
+                        .First(),
+                    StringComparer.OrdinalIgnoreCase),
             cancellationToken);
 
         return rows
@@ -122,12 +123,109 @@ public sealed class LabelProductQueryExecutor(
                         PriceChangeDate = priceChangeDate?.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("tr-TR")) ?? string.Empty,
                         UnitPriceFactor = CalculateUnitPriceFactor(price, row.sto_birim4_katsayi),
                         UnitName = row.sto_birim1_ad ?? string.Empty,
-                        Promotion = promotionsByPlu.GetValueOrDefault(row.sto_plu_no)
+                        Promotion = promotionsByStockCode.GetValueOrDefault(row.sto_kod)
                     }
                 };
             })
             .OrderBy(item => item.SortDate)
             .Select(item => item.Product)
+            .ToArray();
+    }
+
+    internal async Task<IReadOnlyCollection<LabelActivePromotionProductDto>> ListActivePromotionProductsAsync(
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        if (warehouseNo <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(warehouseNo));
+        }
+
+        var activePromotionStockCodes = await promotionLookup.GetActiveProductCodesAsync(
+            warehouseNo,
+            cancellationToken);
+        if (activePromotionStockCodes.Count == 0)
+        {
+            return Array.Empty<LabelActivePromotionProductDto>();
+        }
+
+        var stockCodes = activePromotionStockCodes.ToArray();
+        var rows = await (
+            from stock in mikroDbContext.STOKLARs.AsNoTracking()
+            where stockCodes.Contains(stock.sto_kod) &&
+                  (stock.sto_satis_dursun ?? 0) == 0
+            let currentPrice = mikroDbContext.STOK_SATIS_FIYAT_LISTELERIs
+                .AsNoTracking()
+                .Where(item =>
+                    item.sfiyat_stokkod == stock.sto_kod &&
+                    item.sfiyat_deposirano == warehouseNo &&
+                    item.sfiyat_birim_pntr == 1)
+                .OrderBy(item => item.sfiyat_listesirano ?? int.MaxValue)
+                .ThenByDescending(item => item.sfiyat_lastup_date ?? item.sfiyat_create_date)
+                .Select(item => item.sfiyat_fiyati)
+                .FirstOrDefault()
+            let barcode = mikroDbContext.BARKOD_TANIMLARIs
+                .AsNoTracking()
+                .Where(item =>
+                    item.bar_stokkodu == stock.sto_kod &&
+                    item.bar_iptal != true)
+                .OrderByDescending(item => item.bar_master ?? false)
+                .ThenByDescending(item => item.bar_create_date)
+                .ThenBy(item => item.bar_birimpntr ?? 0)
+                .Select(item => item.bar_kodu)
+                .FirstOrDefault()
+            select new
+            {
+                stock.sto_kod,
+                stock.sto_isim,
+                stock.sto_plu_no,
+                stock.sto_birim1_ad,
+                stock.sto_birim4_ad,
+                stock.sto_birim4_katsayi,
+                Barcode = barcode,
+                CurrentPrice = currentPrice
+            }).ToListAsync(cancellationToken);
+
+        var barcodesByStockCode = await GetActiveBarcodesByStockCodeAsync(stockCodes, cancellationToken);
+        var pricedRows = rows
+            .Where(row => (row.CurrentPrice ?? 0d) > 0d)
+            .ToArray();
+        var activePromotions = await promotionLookup.GetActiveProductPromotionsAsync(
+            warehouseNo,
+            pricedRows
+                .GroupBy(row => row.sto_kod, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.First().CurrentPrice ?? 0d,
+                    StringComparer.OrdinalIgnoreCase),
+            cancellationToken);
+
+        return pricedRows
+            .Where(row => activePromotions.ContainsKey(row.sto_kod))
+            .Select(row =>
+            {
+                var price = row.CurrentPrice ?? 0d;
+                var promotion = activePromotions[row.sto_kod];
+
+                return new LabelActivePromotionProductDto
+                {
+                    ProductCode = row.sto_kod,
+                    ProductName = row.sto_isim ?? string.Empty,
+                    PluNo = row.sto_plu_no,
+                    Barcode = row.Barcode ?? string.Empty,
+                    Barcodes = barcodesByStockCode.GetValueOrDefault(row.sto_kod) ?? Array.Empty<string>(),
+                    Price = price,
+                    UnitName = row.sto_birim1_ad ?? string.Empty,
+                    AlternativeUnitName = row.sto_birim4_ad ?? string.Empty,
+                    UnitPriceFactor = CalculateUnitPriceFactor(price, row.sto_birim4_katsayi),
+                    Promotion = promotion
+                };
+            })
+            .OrderBy(item => item.Promotion.ExpirationDate ?? DateTime.MaxValue)
+            .ThenBy(item => item.ProductName, StringComparer.Create(
+                CultureInfo.GetCultureInfo("tr-TR"),
+                ignoreCase: true))
+            .ThenBy(item => item.ProductCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
@@ -288,16 +386,17 @@ public sealed class LabelProductQueryExecutor(
                 LatestPriceChange = latestPriceChange
             }).ToListAsync(cancellationToken);
 
-        var promotionsByPlu = await promotionLookup.GetActiveCardPromotionsAsync(
+        var promotionsByStockCode = await promotionLookup.GetActiveProductPromotionsAsync(
             warehouseNo,
             rows
-                .Where(row => row.sto_plu_no > 0)
-                .GroupBy(row => row.sto_plu_no)
+                .Where(row => !string.IsNullOrWhiteSpace(row.sto_kod))
+                .GroupBy(row => row.sto_kod, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(
                     group => group.Key,
                     group => group
                         .Select(row => row.CurrentPrice?.sfiyat_fiyati ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d)
-                        .First()),
+                        .First(),
+                    StringComparer.OrdinalIgnoreCase),
             cancellationToken);
 
         var products = new Dictionary<string, LabelDocumentProductDto>(StringComparer.OrdinalIgnoreCase);
@@ -348,7 +447,7 @@ public sealed class LabelProductQueryExecutor(
                 DeliveredQuantity = 0d,
                 DocumentOrderNo = documentId,
                 CategoryCode = row.sto_kategori_kodu ?? string.Empty,
-                Promotion = promotionsByPlu.GetValueOrDefault(row.sto_plu_no)
+                Promotion = promotionsByStockCode.GetValueOrDefault(row.sto_kod)
             };
         }
 

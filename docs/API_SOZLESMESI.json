@@ -30076,6 +30076,124 @@
         ]
       }
     },
+    "/api/kasa-islemleri/etiket-belgeleri/aktif-promosyonlu-urunler": {
+      "get": {
+        "tags": [
+          "EtiketBelgeleri"
+        ],
+        "parameters": [
+          {
+            "name": "warehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelActivePromotionProductDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelActivePromotionProductDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelActivePromotionProductDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "kasa-islemleri.etiket-belgeleri.list"
+        ]
+      }
+    },
     "/api/kasa-islemleri/etiket-belgeleri/{id}": {
       "put": {
         "tags": [
@@ -101375,6 +101493,54 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelActivePromotionProductDto": {
+        "type": "object",
+        "properties": {
+          "productCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string",
+            "nullable": true
+          },
+          "pluNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "barcode": {
+            "type": "string",
+            "nullable": true
+          },
+          "barcodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "format": "double"
+          },
+          "unitName": {
+            "type": "string",
+            "nullable": true
+          },
+          "alternativeUnitName": {
+            "type": "string",
+            "nullable": true
+          },
+          "unitPriceFactor": {
+            "type": "number",
+            "format": "double"
+          },
+          "promotion": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto"
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelDocumentListItemDto": {
         "type": "object",
         "properties": {
@@ -101604,6 +101770,10 @@
       "FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto": {
         "type": "object",
         "properties": {
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
           "isActive": {
             "type": "boolean"
           },
@@ -101623,6 +101793,38 @@
             "type": "string",
             "nullable": true
           },
+          "campaignText": {
+            "type": "string",
+            "nullable": true
+          },
+          "productRole": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiredProductCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiredQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "discountedProductCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "discountedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "discountType": {
+            "type": "string",
+            "nullable": true
+          },
+          "discountValue": {
+            "type": "number",
+            "format": "double"
+          },
           "normalPrice": {
             "type": "number",
             "format": "double"
@@ -101630,6 +101832,11 @@
           "promotionPrice": {
             "type": "number",
             "format": "double"
+          },
+          "effectiveUnitPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
           },
           "discountRate": {
             "type": "number",

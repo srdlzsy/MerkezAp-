@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 717. Model sayisi: 649.
+Endpoint sayisi (method + route): 718. Model sayisi: 650.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -399,6 +399,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/kasa-islemleri/birlik-kart-sorgulama/sorgula` | JWT + kasa-islemleri.birlik-kart-sorgulama.list | body: request / BirlikKartSorgulamaRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BirlikKartSorgulamaResponse<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri` | JWT + kasa-islemleri.etiket-belgeleri.list | query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelDocumentListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/etiket-belgeleri` | JWT + kasa-islemleri.etiket-belgeleri.create | body: request / CreateLabelDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateLabelDocumentResponse<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/etiket-belgeleri/aktif-promosyonlu-urunler` | JWT + kasa-islemleri.etiket-belgeleri.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelActivePromotionProductDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri/etiketler` | JWT + kasa-islemleri.etiket-belgeleri.list | query: WarehouseNo / integer (int32)<br>query: DateToGet / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelTagDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler` | JWT + kasa-islemleri.etiket-belgeleri.list | query: WarehouseNo / integer (int32)<br>query: DateTimeFilter / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelPriceChangedProductDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri/get-by-date-for-label` | JWT + kasa-islemleri.etiket-belgeleri.list | query: WarehouseNo / integer (int32)<br>query: DateTimeFilter / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelPriceChangedProductDto&gt;<br>400: ProblemDetails |
@@ -4544,6 +4545,21 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `lineCount` | integer (int32) | Hayir |  |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelActivePromotionProductDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `alternativeUnitName` | string | Hayir | nullable |
+| `barcode` | string | Hayir | nullable |
+| `barcodes` | string[] | Hayir | nullable |
+| `pluNo` | integer (int32) | Hayir |  |
+| `price` | number (double) | Hayir |  |
+| `productCode` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `promotion` | FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelPromotionDto | Hayir |  |
+| `unitName` | string | Hayir | nullable |
+| `unitPriceFactor` | number (double) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelDocumentListItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -4615,16 +4631,26 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `campaignText` | string | Hayir | nullable |
 | `description` | string | Hayir | nullable |
 | `discountAmount` | number (double) | Hayir |  |
 | `discountRate` | number (double) | Hayir |  |
+| `discountType` | string | Hayir | nullable |
+| `discountValue` | number (double) | Hayir |  |
+| `discountedProductCode` | string | Hayir | nullable |
+| `discountedQuantity` | number (double) | Hayir |  |
+| `effectiveUnitPrice` | number (double) | Hayir | nullable |
 | `expirationDate` | string (date-time) | Hayir | nullable |
 | `isActive` | boolean | Hayir |  |
 | `normalPrice` | number (double) | Hayir |  |
+| `productRole` | string | Hayir | nullable |
 | `promotionCode` | string | Hayir | nullable |
 | `promotionName` | string | Hayir | nullable |
 | `promotionPrice` | number (double) | Hayir |  |
 | `promotionType` | string | Hayir | nullable |
+| `requiredProductCode` | string | Hayir | nullable |
+| `requiredQuantity` | number (double) | Hayir |  |
+| `source` | string | Hayir | nullable |
 | `startDate` | string (date-time) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri.LabelTagDto

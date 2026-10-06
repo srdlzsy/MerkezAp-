@@ -11171,10 +11171,15 @@ Not:
 - `barcode` UI'in varsayilan basacagi barkoddur. `barcodes` ayni urunun tum aktif barkod seceneklerini oncelik sirasiyla dondurur; UI isterse detay/dropdown olarak gosterebilir ama liste satir sayisini bu diziye gore cogaltmamalidir.
 - `priceChangeDate` kullaniciya gosterilecek son fiyat degisikligi zamanidir ve `dd.MM.yyyy HH:mm` formatindadir.
 - `alternativeUnitName` ve `unitPriceFactor` eski etiket mantigiyla Mikro `sto_birim4_ad` / `sto_birim4_katsayi` uzerinden hesaplanir. Ornek 1440 ml urunde fiyat `199.50`, katsayi `1.44` ise birim fiyat `138.54 TL/LITRE` olur.
-- `promotion`, secili depo ve urun PLU numarasi icin Mayday `PROMOSYON_TANIMLARI` / `PROMOSYON_SUBELER` tablolarinda aktif `P2` ve musteri kodu `2012` olan Birlik Premium Kart/Furpara promosyonu varsa dolar; eslesme yoksa `null` gelir.
-- Promosyonlar response'taki tum gecerli PLU numaralari icin tek toplu SQL sorgusuyla okunur; urun basina ek API veya SQL istegi uretilmez.
-- Ayni urun icin birden fazla aktif promosyon varsa hesaplanan `promotionPrice` en dusuk olan kayit secilir. `discountAmount` sifirdan farkliysa tutar indirimi onceliklidir; degilse `discountRate` yuzdesi uygulanir.
-- Mayday promosyon verisi gecici olarak okunamazsa hata loglanir, ana Mikro urun listesi yine doner ve ilgili satirlarda `promotion: null` olur.
+- `promotion`, Shopigo `promotions` kaydinda aktif ve tarih araliginda olan `PUF1` urun kampanyasi stok koduyla eslesirse dolar; eslesme yoksa `null` gelir.
+- Shopigo urun anahtari `inventory_code`, Mikro tarafindaki `STOKLAR.sto_kod` ile eslestirilir. PLU numarasi promosyon eslestirme anahtari degildir.
+- `promotion_branches` kaydi olmayan kampanya tum subelerde gecerlidir. Kayit varsa yalniz `branches.depo_id = warehouseNo` eslesen subede doner.
+- Shopigo `inventory.is_promotable=false`, silinmis urunler ve `promosyon_yapilmayacak_urunler` tablosundaki stoklar response'a promosyon olarak eklenmez.
+- `PTI1` gibi toplam tutar/musteri kampanyalari tek bir urun etiketi kampanyasi sayilmaz ve bu alanda donmez.
+- Promosyonlar tum stok kodlari icin tek toplu SQL sorgusuyla okunur; urun basina ek API veya SQL istegi uretilmez.
+- Ayni urun icin birden fazla aktif promosyon varsa hesaplanabilen en dusuk `effectiveUnitPrice`, sonra en yakin bitis tarihi esas alinir.
+- Ayni urunun `2 adet al, 1 adedi %100 indirimli` kampanyasinda `promotionPrice` ve `effectiveUnitPrice` normal birim fiyatinin yarisi olur. Farkli bir urunun hediye edildigi kampanyalarda yapay bir efektif fiyat uretilmez; `effectiveUnitPrice=null`, `promotionPrice=normalPrice` gelir ve UI kampanya metnini gostermelidir.
+- Shopigo promosyon verisi gecici olarak okunamazsa hata loglanir, ana Mikro urun listesi yine doner ve ilgili satirlarda `promotion: null` olur.
 - UI bu endpointi "son kontrol zamanindan sonra degisen urunler" icin kullanmali; kullanici belgeye eklemeden once gerekirse etiket belgesi detayinda urunu tekrar okutabilir.
 
 Response:
@@ -11182,35 +11187,102 @@ Response:
 ```json
 [
   {
-    "productCode": "046460",
-    "productName": "YUMOS EXTRA 1440ML LILYUM",
-    "pluNo": 0,
-    "alternativeUnitName": "LITRE",
-    "barcode": "08690637712128",
+    "productCode": "016222",
+    "productName": "VILEDA POWER INOX PAD COLORS 2+1",
+    "pluNo": 168037,
+    "alternativeUnitName": "",
+    "barcode": "4023103246638",
     "barcodes": [
-      "08690637712128",
-      "8690637563348",
-      "8690637712111"
+      "4023103246638"
     ],
     "isDomestic": 1,
-    "oldPrice": 229,
+    "oldPrice": 299.5,
     "origin": "TURKIYE",
-    "price": 199.5,
+    "price": 299.5,
     "priceChangeDate": "11.08.2026 16:27",
-    "unitPriceFactor": 138.54,
+    "unitPriceFactor": 0,
     "unitName": "ADET",
     "promotion": {
+      "source": "Shopigo",
       "isActive": true,
-      "promotionCode": "PRM-2026-101",
-      "promotionType": "P2",
-      "promotionName": "Birlik Premium Kart",
-      "description": "Birlik Premium Kart indirimi",
-      "normalPrice": 199.5,
-      "promotionPrice": 179.55,
-      "discountRate": 10,
+      "promotionCode": "68",
+      "promotionType": "PUF1",
+      "promotionName": "VILEDA POWER INOX PAD 1 ALN 1 BDV",
+      "description": "Su urunden su kadar alana su urun su kadar.",
+      "campaignText": "VILEDA POWER INOX PAD 1 ALN 1 BDV",
+      "productRole": "Both",
+      "requiredProductCode": "016222",
+      "requiredQuantity": 2,
+      "discountedProductCode": "016222",
+      "discountedQuantity": 1,
+      "discountType": "PERCENTAGE",
+      "discountValue": 100,
+      "normalPrice": 299.5,
+      "promotionPrice": 149.75,
+      "effectiveUnitPrice": 149.75,
+      "discountRate": 100,
       "discountAmount": 0,
-      "startDate": "2026-10-01T00:00:00",
-      "expirationDate": "2026-10-15T23:59:59"
+      "startDate": "2026-09-24T12:26:50",
+      "expirationDate": "2026-10-08T00:00:00"
+    }
+  }
+]
+```
+
+### Aktif Promosyonlu Etiket Urunleri
+
+Fiyati degismemis olsa bile secili depoda Shopigo urun kampanyasi aktif olan etiket urunlerini getirir.
+
+`GET /api/kasa-islemleri/etiket-belgeleri/aktif-promosyonlu-urunler?warehouseNo=120`
+
+Yetki:
+
+- `kasa-islemleri.etiket-belgeleri.list`
+
+Not:
+
+- Depo kapsam kurali `fiyati-degisen-urunler` ile aynidir. `all-warehouses` yoksa backend JWT deposunu kullanir.
+- Endpoint yalniz urun etiketine uygulanabilen Shopigo `PUF1` kampanyalarini listeler; `PTI1` sepet/musteri kampanyalari listeye girmez.
+- Kampanya urun kodlari Shopigo `inventory_code` ile Mikro `sto_kod` uzerinden eslestirilir. Urun adi, barkodlar, normal satis fiyati ve birim bilgileri Mikro'dan okunur.
+- Fiyat degisikligi tarihi aranmaz. Bu nedenle aktif kampanyasi bulunan ancak son kontrol zamanindan sonra fiyati degismeyen urun de listelenir.
+- UI etiket ekraninda `Fiyati Degisenler` ve `Aktif Promosyonlar` gorunumlarini ayri sunmalidir. Bu endpointin sonucunu fiyat degisikligi listesine otomatik ekleyip tumunu kullanici secmeden yazdirmamalidir.
+- Shopigo okunamazsa endpoint bos dizi doner ve hata loglanir.
+
+Response:
+
+```json
+[
+  {
+    "productCode": "016222",
+    "productName": "VILEDA POWER INOX PAD COLORS 2+1",
+    "pluNo": 168037,
+    "barcode": "4023103246638",
+    "barcodes": ["4023103246638"],
+    "price": 299.5,
+    "unitName": "ADET",
+    "alternativeUnitName": "",
+    "unitPriceFactor": 0,
+    "promotion": {
+      "source": "Shopigo",
+      "isActive": true,
+      "promotionCode": "68",
+      "promotionType": "PUF1",
+      "promotionName": "VILEDA POWER INOX PAD 1 ALN 1 BDV",
+      "campaignText": "VILEDA POWER INOX PAD 1 ALN 1 BDV",
+      "productRole": "Both",
+      "requiredProductCode": "016222",
+      "requiredQuantity": 2,
+      "discountedProductCode": "016222",
+      "discountedQuantity": 1,
+      "discountType": "PERCENTAGE",
+      "discountValue": 100,
+      "normalPrice": 299.5,
+      "promotionPrice": 149.75,
+      "effectiveUnitPrice": 149.75,
+      "discountRate": 100,
+      "discountAmount": 0,
+      "startDate": "2026-09-24T12:26:50",
+      "expirationDate": "2026-10-08T00:00:00"
     }
   }
 ]
@@ -15336,6 +15408,8 @@ Stok Islemleri / Sayim Sonuclari
 Kasa Islemleri / Etiket Belgeleri
   -> son belgeler icin GET /api/kasa-islemleri/etiket-belgeleri veya /son
   -> tum gecmis istenirse GET /api/kasa-islemleri/etiket-belgeleri/tumu
+  -> son kontrolden sonra fiyati degisenler icin GET /api/kasa-islemleri/etiket-belgeleri/fiyati-degisen-urunler?dateTimeFilter=...
+  -> fiyati degismese de Shopigo kampanyasi aktif urunler icin GET /api/kasa-islemleri/etiket-belgeleri/aktif-promosyonlu-urunler
   -> liste satirlarini LabelDocumentListItemDto ile goster
   -> kullanici satira tiklar
   -> GET /api/kasa-islemleri/etiket-belgeleri/{documentId}

@@ -21,6 +21,7 @@ public sealed class EtiketBelgeleriController(
     IGetLabelDocumentProductsUseCase getLabelDocumentProductsUseCase,
     ICreateLabelDocumentUseCase createLabelDocumentUseCase,
     IListLabelPriceChangedProductsUseCase listLabelPriceChangedProductsUseCase,
+    IListLabelActivePromotionProductsUseCase listLabelActivePromotionProductsUseCase,
     IListLabelTagsUseCase listLabelTagsUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -123,6 +124,22 @@ public sealed class EtiketBelgeleriController(
             new LabelPriceChangedProductRequest(
                 warehouseNo,
                 request.ParseDateTimeFilter()),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpGet("aktif-promosyonlu-urunler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<LabelActivePromotionProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<LabelActivePromotionProductDto>>> ListActivePromotionProducts(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, ListPolicy);
+        var response = await listLabelActivePromotionProductsUseCase.ExecuteAsync(
+            new LabelActivePromotionProductRequest(resolvedWarehouseNo),
             cancellationToken);
 
         return Ok(response);

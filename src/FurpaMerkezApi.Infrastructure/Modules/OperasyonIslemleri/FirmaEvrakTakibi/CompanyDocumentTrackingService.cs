@@ -31,23 +31,66 @@ public sealed class CompanyDocumentTrackingService(
         var startDate = request.Date.ToDateTime(TimeOnly.MinValue);
         var endDateExclusive = startDate.AddDays(1);
 
-        var movements = mikroDbContext.STOK_HAREKETLERIs
+        var activeMovements = mikroDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
-            .Where(movement => movement.sth_iptal != true)
+            .Where(movement => movement.sth_iptal != true);
+
+        var receivingMovements = activeMovements
             .Where(movement =>
-                (movement.sth_evraktip == CompanyReceivingDocumentType &&
-                 movement.sth_tip == IncomingMovementType &&
-                 movement.sth_normal_iade == NormalMovement &&
-                 movement.sth_create_date >= startDate &&
-                 movement.sth_create_date < endDateExclusive &&
-                 (!request.WarehouseNo.HasValue || movement.sth_giris_depo_no == request.WarehouseNo.Value)) ||
-                (movement.sth_evraktip == CompanyDispatchDocumentType &&
-                 movement.sth_tip == OutgoingMovementType &&
-                 movement.sth_normal_iade == ReturnMovement &&
-                 movement.sth_belge_tarih.HasValue &&
-                 movement.sth_belge_tarih.Value >= startDate &&
-                 movement.sth_belge_tarih.Value < endDateExclusive &&
-                 (!request.WarehouseNo.HasValue || movement.sth_cikis_depo_no == request.WarehouseNo.Value)));
+                movement.sth_evraktip == CompanyReceivingDocumentType &&
+                movement.sth_tip == IncomingMovementType &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_create_date >= startDate &&
+                movement.sth_create_date < endDateExclusive &&
+                (!request.WarehouseNo.HasValue || movement.sth_giris_depo_no == request.WarehouseNo.Value))
+            .Select(movement => new
+            {
+                movement.sth_evraktip,
+                movement.sth_tip,
+                movement.sth_normal_iade,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_belge_no,
+                movement.sth_belge_tarih,
+                movement.sth_cari_kodu,
+                movement.sth_giris_depo_no,
+                movement.sth_cikis_depo_no,
+                movement.sth_HareketGrupKodu2,
+                movement.sth_HareketGrupKodu3,
+                movement.sth_create_date,
+                movement.sth_miktar
+            });
+
+        var returnMovements = activeMovements
+            .Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_belge_tarih.HasValue &&
+                movement.sth_belge_tarih.Value >= startDate &&
+                movement.sth_belge_tarih.Value < endDateExclusive &&
+                (!request.WarehouseNo.HasValue || movement.sth_cikis_depo_no == request.WarehouseNo.Value))
+            .Select(movement => new
+            {
+                movement.sth_evraktip,
+                movement.sth_tip,
+                movement.sth_normal_iade,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_belge_no,
+                movement.sth_belge_tarih,
+                movement.sth_cari_kodu,
+                movement.sth_giris_depo_no,
+                movement.sth_cikis_depo_no,
+                movement.sth_HareketGrupKodu2,
+                movement.sth_HareketGrupKodu3,
+                movement.sth_create_date,
+                movement.sth_miktar
+            });
+
+        // Keep the two access paths separate so SQL Server can select the filtered
+        // receiving and company-output indexes independently before aggregation.
+        var movements = receivingMovements.Concat(returnMovements);
 
         var documentSummaries =
             from movement in movements

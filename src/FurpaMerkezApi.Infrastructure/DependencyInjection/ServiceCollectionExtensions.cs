@@ -588,7 +588,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VirmanWriteService>();
         services.AddScoped<LabelDocumentQueryExecutor>();
         services.AddScoped<LabelDocumentWriteService>();
-        services.AddScoped<ILabelPromotionLookup, MaydayLabelPromotionLookup>();
+        services.AddScoped<ILabelPromotionLookup, ShopigoLabelPromotionLookup>();
         services.AddScoped<LabelProductQueryExecutor>();
         services.AddScoped<LabelTagQueryExecutor>();
         services.AddScoped<IManavMalKabulVeEtiketService, ManavMalKabulVeEtiketService>();
@@ -682,6 +682,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetLabelDocumentProductsUseCase, GetLabelDocumentProductsUseCase>();
         services.AddScoped<ICreateLabelDocumentUseCase, CreateLabelDocumentUseCase>();
         services.AddScoped<IListLabelPriceChangedProductsUseCase, ListLabelPriceChangedProductsUseCase>();
+        services.AddScoped<IListLabelActivePromotionProductsUseCase, ListLabelActivePromotionProductsUseCase>();
         services.AddScoped<IListLabelTagsUseCase, ListLabelTagsUseCase>();
         services.AddScoped<IListKunyeLabelTagsUseCase, ListKunyeLabelTagsUseCase>();
         services.AddScoped<IListVirmansUseCase, ListVirmansUseCase>();

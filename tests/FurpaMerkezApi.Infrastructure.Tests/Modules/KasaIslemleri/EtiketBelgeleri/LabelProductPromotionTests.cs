@@ -10,7 +10,7 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.KasaIslemleri.EtiketBelgel
 public sealed class LabelProductPromotionTests
 {
     [Fact]
-    public async Task PriceChangedProducts_LoadPromotionsOnceForAllPluNumbers()
+    public async Task PriceChangedProducts_LoadPromotionsOnceForAllStockCodes()
     {
         await using var dbContext = CreateDbContext();
         var now = new DateTime(2026, 10, 6, 10, 0, 0);
@@ -28,8 +28,8 @@ public sealed class LabelProductPromotionTests
 
         Assert.Equal(2, result.Count);
         Assert.Equal(1, promotionLookup.CallCount);
-        Assert.Equal(100d, promotionLookup.LastPricesByPlu[101]);
-        Assert.Equal(50d, promotionLookup.LastPricesByPlu[102]);
+        Assert.Equal(100d, promotionLookup.LastPricesByStockCode["STK001"]);
+        Assert.Equal(50d, promotionLookup.LastPricesByStockCode["STK002"]);
         Assert.All(result, item => Assert.NotNull(item.Promotion));
     }
 
@@ -53,6 +53,28 @@ public sealed class LabelProductPromotionTests
         var product = Assert.Single(result).Value;
         Assert.Equal(1, promotionLookup.CallCount);
         Assert.NotNull(product.Promotion);
+        Assert.Equal(80d, product.Promotion.PromotionPrice);
+    }
+
+    [Fact]
+    public async Task ActivePromotionProducts_IncludeProductWithoutRecentPriceChangeRequirement()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = new DateTime(2026, 10, 6, 10, 0, 0);
+        AddProduct(dbContext, "STK001", 101, 100d, now);
+        await dbContext.SaveChangesAsync();
+
+        var promotionLookup = new RecordingPromotionLookup();
+        var executor = new LabelProductQueryExecutor(dbContext, promotionLookup);
+
+        var result = await executor.ListActivePromotionProductsAsync(
+            149,
+            CancellationToken.None);
+
+        var product = Assert.Single(result);
+        Assert.Equal("STK001", product.ProductCode);
+        Assert.Equal(100d, product.Price);
+        Assert.Equal("Shopigo", product.Promotion.Source);
         Assert.Equal(80d, product.Promotion.PromotionPrice);
     }
 
@@ -109,29 +131,46 @@ public sealed class LabelProductPromotionTests
     {
         public int CallCount { get; private set; }
 
-        public IReadOnlyDictionary<int, double> LastPricesByPlu { get; private set; } =
-            new Dictionary<int, double>();
+        public IReadOnlyDictionary<string, double> LastPricesByStockCode { get; private set; } =
+            new Dictionary<string, double>();
 
-        public Task<IReadOnlyDictionary<int, LabelPromotionDto>> GetActiveCardPromotionsAsync(
+        public Task<IReadOnlyDictionary<string, LabelPromotionDto>> GetActiveProductPromotionsAsync(
             int warehouseNo,
-            IReadOnlyDictionary<int, double> pricesByPlu,
+            IReadOnlyDictionary<string, double> pricesByStockCode,
             CancellationToken cancellationToken)
         {
             CallCount++;
-            LastPricesByPlu = pricesByPlu;
+            LastPricesByStockCode = pricesByStockCode;
 
-            return Task.FromResult<IReadOnlyDictionary<int, LabelPromotionDto>>(
-                pricesByPlu.ToDictionary(
+            return Task.FromResult<IReadOnlyDictionary<string, LabelPromotionDto>>(
+                pricesByStockCode.ToDictionary(
                     item => item.Key,
-                    item => new LabelPromotionDto
-                    {
-                        IsActive = true,
-                        PromotionCode = $"P-{item.Key}",
-                        PromotionType = "P2",
-                        NormalPrice = item.Value,
-                        PromotionPrice = item.Value * 0.8,
-                        DiscountRate = 20
-                    }));
+                    item => CreatePromotion(item.Key, item.Value),
+                    StringComparer.OrdinalIgnoreCase));
         }
+
+        public Task<IReadOnlyCollection<string>> GetActiveProductCodesAsync(
+            int warehouseNo,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<string>>(["STK001"]);
+
+        private static LabelPromotionDto CreatePromotion(string stockCode, double price) =>
+            new()
+            {
+                Source = "Shopigo",
+                IsActive = true,
+                PromotionCode = $"P-{stockCode}",
+                PromotionType = "PUF1",
+                NormalPrice = price,
+                PromotionPrice = price * 0.8,
+                EffectiveUnitPrice = price * 0.8,
+                RequiredProductCode = stockCode,
+                RequiredQuantity = 1,
+                DiscountedProductCode = stockCode,
+                DiscountedQuantity = 1,
+                DiscountType = "PERCENTAGE",
+                DiscountValue = 20,
+                DiscountRate = 20
+            };
     }
 }
