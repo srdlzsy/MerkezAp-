@@ -55,6 +55,14 @@ public interface IMikroDocumentEditingService
         UpdateCustomerCardRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<CustomerAddressDto>> GetCustomerAddressesAsync(
+        string customerCode,
+        CancellationToken cancellationToken);
+
+    Task<CustomerAddressUpdateResponse> UpdateCustomerAddressAsync(
+        UpdateCustomerAddressRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<StockSalesPriceDto>> GetStockSalesPricesAsync(
         string stockCode,
         int? warehouseNo,

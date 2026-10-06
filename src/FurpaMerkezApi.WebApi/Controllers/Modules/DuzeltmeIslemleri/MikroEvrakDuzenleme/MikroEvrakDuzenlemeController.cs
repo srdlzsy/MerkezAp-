@@ -279,6 +279,49 @@ public sealed class MikroEvrakDuzenlemeController(
         return Ok(response);
     }
 
+    [HttpGet("cariler/{customerCode}/adresler")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CustomerAddressDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyCollection<CustomerAddressDto>>> GetCustomerAddresses(
+        string customerCode,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetCustomerAddressesAsync(customerCode, cancellationToken));
+
+    [HttpPut("cariler/{customerCode}/adresler/{addressNo:int}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(CustomerAddressUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CustomerAddressUpdateResponse>> UpdateCustomerAddress(
+        string customerCode,
+        [Range(0, int.MaxValue)] int addressNo,
+        [FromBody] CustomerAddressPatchHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.UpdateCustomerAddressAsync(
+            new UpdateCustomerAddressRequest(
+                customerCode,
+                addressNo,
+                request.ToApplicationRequest(),
+                warehouseNo),
+            cancellationToken);
+
+        await RecordReferenceFlowAsync(
+            DocumentFlowType.CustomerCard,
+            warehouseNo,
+            "CARIADRES",
+            $"{response.Address.CustomerCode}:{response.Address.AddressNo}",
+            DocumentFlowStep.MasterDataUpdated,
+            $"Cari adresi duzenlendi. Cari: {response.Address.CustomerCode}, adres no: {response.Address.AddressNo}.",
+            response.Address.CustomerCode,
+            cancellationToken);
+
+        return Ok(response);
+    }
+
     [HttpGet("stok-kartlari/{stockCode}/satis-fiyatlari")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<StockSalesPriceDto>), StatusCodes.Status200OK)]
@@ -1441,6 +1484,112 @@ public sealed class CustomerCardPatchHttpRequest
             MersisNo,
             TaxOfficeCode,
             RetailCustomer);
+}
+
+public sealed class CustomerAddressPatchHttpRequest
+{
+    public bool? IsPrintEnabled { get; init; }
+
+    [StringLength(50)]
+    public string? Street { get; init; }
+
+    [StringLength(50)]
+    public string? Neighborhood { get; init; }
+
+    [StringLength(50)]
+    public string? Avenue { get; init; }
+
+    [StringLength(25)]
+    public string? Quarter { get; init; }
+
+    [StringLength(10)]
+    public string? ApartmentNo { get; init; }
+
+    [StringLength(10)]
+    public string? ApartmentUnitNo { get; init; }
+
+    [StringLength(8)]
+    public string? PostalCode { get; init; }
+
+    [StringLength(50)]
+    public string? District { get; init; }
+
+    [StringLength(50)]
+    public string? City { get; init; }
+
+    [StringLength(50)]
+    public string? Country { get; init; }
+
+    [StringLength(10)]
+    public string? AddressCode { get; init; }
+
+    [StringLength(5)]
+    public string? PhoneCountryCode { get; init; }
+
+    [StringLength(5)]
+    public string? PhoneAreaCode { get; init; }
+
+    [StringLength(10)]
+    public string? PhoneNo1 { get; init; }
+
+    [StringLength(10)]
+    public string? PhoneNo2 { get; init; }
+
+    [StringLength(10)]
+    public string? FaxNo { get; init; }
+
+    [StringLength(25)]
+    public string? RepresentativeCode { get; init; }
+
+    [StringLength(127)]
+    public string? Note { get; init; }
+
+    [Range(-90d, 90d)]
+    public double? Latitude { get; init; }
+
+    [Range(-180d, 180d)]
+    public double? Longitude { get; init; }
+
+    [StringLength(120)]
+    public string? EInvoiceAlias { get; init; }
+
+    [StringLength(120)]
+    public string? EDespatchAlias { get; init; }
+
+    public bool? IsPassive { get; init; }
+
+    public bool? IsHidden { get; init; }
+
+    public bool? IsLocked { get; init; }
+
+    public CustomerAddressPatchDto ToApplicationRequest() =>
+        new(
+            IsPrintEnabled,
+            Street,
+            Neighborhood,
+            Avenue,
+            Quarter,
+            ApartmentNo,
+            ApartmentUnitNo,
+            PostalCode,
+            District,
+            City,
+            Country,
+            AddressCode,
+            PhoneCountryCode,
+            PhoneAreaCode,
+            PhoneNo1,
+            PhoneNo2,
+            FaxNo,
+            RepresentativeCode,
+            Note,
+            Latitude,
+            Longitude,
+            EInvoiceAlias,
+            EDespatchAlias,
+            IsPassive,
+            IsHidden,
+            IsLocked);
 }
 
 public sealed class StockSalesPriceUpsertHttpRequest

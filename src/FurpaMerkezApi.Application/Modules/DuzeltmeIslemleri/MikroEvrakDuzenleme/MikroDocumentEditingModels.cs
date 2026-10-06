@@ -383,6 +383,73 @@ public sealed record UpdateCustomerCardRequest(
     CustomerCardPatchDto Patch,
     int CurrentUserWarehouseNo);
 
+public sealed record CustomerAddressDto(
+    Guid AddressGuid,
+    string CustomerCode,
+    int AddressNo,
+    bool IsPrintEnabled,
+    string Street,
+    string Neighborhood,
+    string Avenue,
+    string Quarter,
+    string ApartmentNo,
+    string ApartmentUnitNo,
+    string PostalCode,
+    string District,
+    string City,
+    string Country,
+    string AddressCode,
+    string PhoneCountryCode,
+    string PhoneAreaCode,
+    string PhoneNo1,
+    string PhoneNo2,
+    string FaxNo,
+    string RepresentativeCode,
+    string Note,
+    double Latitude,
+    double Longitude,
+    string EInvoiceAlias,
+    string EDespatchAlias,
+    bool IsPassive,
+    bool IsHidden,
+    bool IsLocked,
+    DateTime CreatedAt,
+    DateTime? LastUpdatedAt);
+
+public sealed record CustomerAddressPatchDto(
+    bool? IsPrintEnabled,
+    string? Street,
+    string? Neighborhood,
+    string? Avenue,
+    string? Quarter,
+    string? ApartmentNo,
+    string? ApartmentUnitNo,
+    string? PostalCode,
+    string? District,
+    string? City,
+    string? Country,
+    string? AddressCode,
+    string? PhoneCountryCode,
+    string? PhoneAreaCode,
+    string? PhoneNo1,
+    string? PhoneNo2,
+    string? FaxNo,
+    string? RepresentativeCode,
+    string? Note,
+    double? Latitude,
+    double? Longitude,
+    string? EInvoiceAlias,
+    string? EDespatchAlias,
+    bool? IsPassive,
+    bool? IsHidden,
+    bool? IsLocked);
+
+public sealed record UpdateCustomerAddressRequest(
+    string CustomerCode,
+    int AddressNo,
+    CustomerAddressPatchDto Patch,
+    int CurrentUserWarehouseNo);
+
 public sealed record StockSalesPriceDto(
     Guid PriceGuid,
     string StockCode,
@@ -1111,6 +1178,10 @@ public sealed record WarehouseCardUpdateResponse(
 public sealed record CustomerCardUpdateResponse(
     MikroDocumentUpdateSummary Summary,
     CustomerCardDetailDto CustomerCard);
+
+public sealed record CustomerAddressUpdateResponse(
+    MikroDocumentUpdateSummary Summary,
+    CustomerAddressDto Address);
 
 public sealed record StockMovementDocumentUpdateResponse(
     MikroDocumentUpdateSummary Summary,

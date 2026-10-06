@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 714. Model sayisi: 643.
+Endpoint sayisi (method + route): 716. Model sayisi: 646.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -81,6 +81,8 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list | query: SearchText / string<br>query: IncludePassive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CustomerCardListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: customerCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerCardDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | path: customerCode / string (zorunlu)<br>body: request / CustomerCardPatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerCardUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}/adresler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: customerCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CustomerAddressDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
+| PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}/adresler/{addressNo}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | path: customerCode / string (zorunlu)<br>path: addressNo / integer (int32) (zorunlu)<br>body: request / CustomerAddressPatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerAddressUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: InWarehouseNo / integer (int32)<br>query: OutWarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: InWarehouseNo / integer (int32)<br>query: OutWarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateWarehouseOrderDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -1581,6 +1583,49 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `document` | FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CompanyOrderDocumentDto | Hayir |  |
+| `summary` | FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.MikroDocumentUpdateSummary | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CustomerAddressDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `addressCode` | string | Hayir | nullable |
+| `addressGuid` | string (uuid) | Hayir |  |
+| `addressNo` | integer (int32) | Hayir |  |
+| `apartmentNo` | string | Hayir | nullable |
+| `apartmentUnitNo` | string | Hayir | nullable |
+| `avenue` | string | Hayir | nullable |
+| `city` | string | Hayir | nullable |
+| `country` | string | Hayir | nullable |
+| `createdAt` | string (date-time) | Hayir |  |
+| `customerCode` | string | Hayir | nullable |
+| `district` | string | Hayir | nullable |
+| `eDespatchAlias` | string | Hayir | nullable |
+| `eInvoiceAlias` | string | Hayir | nullable |
+| `faxNo` | string | Hayir | nullable |
+| `isHidden` | boolean | Hayir |  |
+| `isLocked` | boolean | Hayir |  |
+| `isPassive` | boolean | Hayir |  |
+| `isPrintEnabled` | boolean | Hayir |  |
+| `lastUpdatedAt` | string (date-time) | Hayir | nullable |
+| `latitude` | number (double) | Hayir |  |
+| `longitude` | number (double) | Hayir |  |
+| `neighborhood` | string | Hayir | nullable |
+| `note` | string | Hayir | nullable |
+| `phoneAreaCode` | string | Hayir | nullable |
+| `phoneCountryCode` | string | Hayir | nullable |
+| `phoneNo1` | string | Hayir | nullable |
+| `phoneNo2` | string | Hayir | nullable |
+| `postalCode` | string | Hayir | nullable |
+| `quarter` | string | Hayir | nullable |
+| `representativeCode` | string | Hayir | nullable |
+| `street` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CustomerAddressUpdateResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `address` | FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CustomerAddressDto | Hayir |  |
 | `summary` | FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.MikroDocumentUpdateSummary | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CustomerCardDetailDto
@@ -8444,6 +8489,37 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `unitPointer` | integer (int32) | Hayir | min=1; max=4; nullable |
 | `unitPrice` | number (double) | Hayir | min=0; nullable |
 | `validUntil` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CustomerAddressPatchHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `addressCode` | string | Hayir | minLength=0; maxLength=10; nullable |
+| `apartmentNo` | string | Hayir | minLength=0; maxLength=10; nullable |
+| `apartmentUnitNo` | string | Hayir | minLength=0; maxLength=10; nullable |
+| `avenue` | string | Hayir | minLength=0; maxLength=50; nullable |
+| `city` | string | Hayir | minLength=0; maxLength=50; nullable |
+| `country` | string | Hayir | minLength=0; maxLength=50; nullable |
+| `district` | string | Hayir | minLength=0; maxLength=50; nullable |
+| `eDespatchAlias` | string | Hayir | minLength=0; maxLength=120; nullable |
+| `eInvoiceAlias` | string | Hayir | minLength=0; maxLength=120; nullable |
+| `faxNo` | string | Hayir | minLength=0; maxLength=10; nullable |
+| `isHidden` | boolean | Hayir | nullable |
+| `isLocked` | boolean | Hayir | nullable |
+| `isPassive` | boolean | Hayir | nullable |
+| `isPrintEnabled` | boolean | Hayir | nullable |
+| `latitude` | number (double) | Hayir | min=-90; max=90; nullable |
+| `longitude` | number (double) | Hayir | min=-180; max=180; nullable |
+| `neighborhood` | string | Hayir | minLength=0; maxLength=50; nullable |
+| `note` | string | Hayir | minLength=0; maxLength=127; nullable |
+| `phoneAreaCode` | string | Hayir | minLength=0; maxLength=5; nullable |
+| `phoneCountryCode` | string | Hayir | minLength=0; maxLength=5; nullable |
+| `phoneNo1` | string | Hayir | minLength=0; maxLength=10; nullable |
+| `phoneNo2` | string | Hayir | minLength=0; maxLength=10; nullable |
+| `postalCode` | string | Hayir | minLength=0; maxLength=8; nullable |
+| `quarter` | string | Hayir | minLength=0; maxLength=25; nullable |
+| `representativeCode` | string | Hayir | minLength=0; maxLength=25; nullable |
+| `street` | string | Hayir | minLength=0; maxLength=50; nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.CustomerCardPatchHttpRequest
 

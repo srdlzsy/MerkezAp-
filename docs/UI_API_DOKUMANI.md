@@ -7641,6 +7641,7 @@ Bu modul Mikro tarafinda var olan kayitlari kontrollu sekilde duzeltmek icin ekl
 - `STOK_SATIS_FIYAT_LISTELERI` depo bazli stok satis fiyatlari
 - `DEPOLAR` depo kartlari
 - `CARI_HESAPLAR` cari kartlari
+- `CARI_HESAP_ADRESLERI` cari adresleri
 - `SIPARISLER` firma siparis evraklari
 - `DEPOLAR_ARASI_SIPARISLER` depo siparis evraklari
 
@@ -7670,6 +7671,7 @@ Genel kurallar:
 - Siparis satir guncellemeleri `orderGuid` ile yapilir. UI detay response'undaki `lines[].orderGuid` degerini satir modelinde gizli anahtar olarak saklamalidir.
 - Request body'de `null` gelen alanlar degismez. Bos string gonderilirse ilgili metin alani bosaltma istegi olarak islenir.
 - `MikroWriteRouting:MicroDocumentEditing=MikroApi` iken stok/cari/depo karti, stok-depo override ve satis fiyati yazmalari Mikro API uzerinden yapilir. UI endpointleri ve response modelleri degismez.
+- Cari adresi guncelleme Mikro API'de ayri ve dogrulanmis bir adres update metodu olmadigi icin genel `MicroDocumentEditing` routing degerinden bagimsiz olarak `MikroWriteConnection` uzerinden kontrollu DB update yapar. Yalniz mevcut `customerCode + addressNo` satiri guncellenir; yeni adres olusturulmaz.
 - Generic Mikro API tablo eslemeleri `*_fileid` degerleriyle aynidir: `STOK_DEPO_DETAYLARI=10`, `STOKLAR=13`, `CARI_HESAPLAR=31`, `CARI_HESAP_HAREKETLERI=51`, `DEPOLAR=111`, `SUBELER=112`, `STOK_SATIS_FIYAT_LISTELERI=228`.
 - API update/delete cagrilarinda backend DB'den okudugu mevcut `lastup_date` degerini concurrency anahtari olarak kullanir; UI'nin bu alani body'de gondermesi gerekmez.
 - `KayitKaydetTopluV2` atomik olmadigi icin backend kart/override/fiyat yazmalarini tek kayitlik isteklerle yapar ve sonucu Mikro DB'den geri okur.
@@ -7712,6 +7714,8 @@ Endpoint ozeti:
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler` | query | `CustomerCardSearchHttpRequest` | `CustomerCardListItemDto[]` | `list` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | path | `customerCode` | `CustomerCardDetailDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | path + body | `CustomerCardPatchHttpRequest` | `CustomerCardUpdateResponse` | `update` |
+| `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}/adresler` | path | `customerCode` | `CustomerAddressDto[]` | `detail` |
+| `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}/adresler/{addressNo}` | path + body | `CustomerAddressPatchHttpRequest` | `CustomerAddressUpdateResponse` | `update` |
 | `GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `StockMovementDocumentDto` | `detail` |
 | `PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | body | `UpdateStockMovementDocumentHttpRequest` | `StockMovementDocumentUpdateResponse` | `update` |
 | `DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | query | `StockMovementDocumentLookupHttpRequest` | `MikroDocumentDeleteResponse` | `delete` |
@@ -8339,6 +8343,110 @@ Response:
     "customerCode": "120.01.03106",
     "title1": "ORNEK CARI",
     "taxNo": "1234567890"
+  }
+}
+```
+
+### Cari Adreslerini Getir
+
+`GET /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/32006414/adresler`
+
+Cari kartina bagli adresleri `addressNo` sirasiyla dondurur. Cari bulunamazsa `404`, cari mevcut fakat adresi yoksa bos dizi doner.
+
+Response:
+
+```json
+[
+  {
+    "addressGuid": "8dc423d4-4015-4afb-aee5-909e457e2f81",
+    "customerCode": "32006414",
+    "addressNo": 1,
+    "isPrintEnabled": true,
+    "street": "ORNEK CADDE",
+    "neighborhood": "ORNEK MAHALLE",
+    "avenue": "",
+    "quarter": "",
+    "apartmentNo": "10",
+    "apartmentUnitNo": "",
+    "postalCode": "16000",
+    "district": "NILUFER",
+    "city": "BURSA",
+    "country": "TURKIYE",
+    "addressCode": "",
+    "phoneCountryCode": "90",
+    "phoneAreaCode": "224",
+    "phoneNo1": "0000000",
+    "phoneNo2": "",
+    "faxNo": "",
+    "representativeCode": "",
+    "note": "",
+    "latitude": 0,
+    "longitude": 0,
+    "eInvoiceAlias": "",
+    "eDespatchAlias": "",
+    "isPassive": false,
+    "isHidden": false,
+    "isLocked": false,
+    "createdAt": "2026-01-01T09:00:00",
+    "lastUpdatedAt": "2026-10-06T10:30:00"
+  }
+]
+```
+
+### Cari Adresi Guncelle
+
+`PUT /api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/32006414/adresler/1`
+
+Body'de sadece degistirilecek alanlar gonderilir. Firma sevki/iadesi e-irsaliye hatasinda `Target=customer 32006414 address 1` yaziyorsa UI once bu endpoint ile cari `32006414`, adres `1` satirini acmalidir.
+
+Yalniz posta kodu duzeltme ornegi:
+
+```json
+{
+  "postalCode": "16000"
+}
+```
+
+Adres ve iletisim alanlarini birlikte duzeltme ornegi:
+
+```json
+{
+  "street": "ORNEK CADDE",
+  "neighborhood": "ORNEK MAHALLE",
+  "apartmentNo": "10",
+  "postalCode": "16000",
+  "district": "NILUFER",
+  "city": "BURSA",
+  "country": "TURKIYE"
+}
+```
+
+Kurallar:
+
+- `addressNo` sifir veya pozitif olabilir ve Mikro'daki mevcut `adr_adres_no` ile birebir eslesir.
+- Endpoint yeni adres satiri olusturmaz. Cari/adres kombinasyonu yoksa `404 Not Found` doner.
+- Body'de `null` veya hic gonderilmeyen alan degismez; bos string ilgili metin alanini temizler.
+- `postalCode` en fazla 8 karakterdir. Turkiye adreslerinde UI bos degerle e-irsaliye gonderimine devam etmemelidir.
+- GPS icin `latitude` -90..90, `longitude` -180..180 araliginda olmalidir.
+- Guncellenebilir alanlar: `isPrintEnabled`, `street`, `neighborhood`, `avenue`, `quarter`, `apartmentNo`, `apartmentUnitNo`, `postalCode`, `district`, `city`, `country`, `addressCode`, telefon alanlari, `representativeCode`, `note`, GPS alanlari, e-belge alias alanlari ve pasif/gizli/kilitli bayraklari.
+- Guncelleme basarili olduktan sonra daha once posta kodu nedeniyle duran e-irsaliye icin ayni belge gonderim endpoint'i kullanici aksiyonuyla yeniden cagrilabilir. Yeni sevk/iade evragi olusturulmaz.
+
+Response:
+
+```json
+{
+  "summary": {
+    "target": "cariler/32006414/adresler/1",
+    "updatedRowCount": 1,
+    "updatedAt": "2026-10-06T10:30:00",
+    "updateUser": 149
+  },
+  "address": {
+    "customerCode": "32006414",
+    "addressNo": 1,
+    "postalCode": "16000",
+    "district": "NILUFER",
+    "city": "BURSA"
   }
 }
 ```

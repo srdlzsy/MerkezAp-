@@ -640,6 +640,94 @@ public sealed partial class MikroDocumentEditingService(
         });
     }
 
+    public async Task<IReadOnlyCollection<CustomerAddressDto>> GetCustomerAddressesAsync(
+        string customerCode,
+        CancellationToken cancellationToken)
+    {
+        var normalizedCustomerCode = NormalizeRequiredText(customerCode, 25, nameof(customerCode));
+        var addresses = await mikroDbContext.CARI_HESAP_ADRESLERIs
+            .AsNoTracking()
+            .Where(address => address.adr_cari_kod == normalizedCustomerCode)
+            .OrderBy(address => address.adr_adres_no)
+            .ToArrayAsync(cancellationToken);
+
+        if (addresses.Length == 0)
+        {
+            var customerExists = await mikroDbContext.CARI_HESAPLARs
+                .AsNoTracking()
+                .AnyAsync(customer => customer.cari_kod == normalizedCustomerCode, cancellationToken);
+            if (!customerExists)
+            {
+                throw new KeyNotFoundException($"Customer was not found: {normalizedCustomerCode}");
+            }
+        }
+
+        return addresses.Select(MapCustomerAddress).ToArray();
+    }
+
+    public async Task<CustomerAddressUpdateResponse> UpdateCustomerAddressAsync(
+        UpdateCustomerAddressRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var customerCode = NormalizeRequiredText(request.CustomerCode, 25, nameof(request.CustomerCode));
+        var addressNo = ValidateNonNegative(request.AddressNo, nameof(request.AddressNo));
+        var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        if (!HasCustomerAddressPatch(patch))
+        {
+            throw new ArgumentException("At least one customer address field must be provided.", nameof(request.Patch));
+        }
+
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        // Mikro API has no dedicated, verified customer-address update method.
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var address = await mikroWriteDbContext.CARI_HESAP_ADRESLERIs
+                    .FirstOrDefaultAsync(item =>
+                        item.adr_cari_kod == customerCode &&
+                        item.adr_adres_no == addressNo,
+                        cancellationToken)
+                    ?? throw new KeyNotFoundException(
+                        $"Customer address was not found in Mikro write database: {customerCode}/{addressNo}");
+
+                if (!ApplyCustomerAddressPatch(address, patch))
+                {
+                    throw new ArgumentException("At least one customer address field must be provided.", nameof(request.Patch));
+                }
+
+                address.adr_lastup_user = updateUser;
+                address.adr_lastup_date = updatedAt;
+                address.adr_degisti = true;
+
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new CustomerAddressUpdateResponse(
+                    new MikroDocumentUpdateSummary(
+                        $"cariler/{customerCode}/adresler/{addressNo}",
+                        1,
+                        updatedAt,
+                        updateUser),
+                    MapCustomerAddress(address));
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
     public async Task<IReadOnlyCollection<StockSalesPriceDto>> GetStockSalesPricesAsync(
         string stockCode,
         int? warehouseNo,
@@ -2960,6 +3048,40 @@ public sealed partial class MikroDocumentEditingService(
             customer.cari_create_date,
             customer.cari_lastup_date);
 
+    private static CustomerAddressDto MapCustomerAddress(CARI_HESAP_ADRESLERI address) =>
+        new(
+            address.adr_Guid,
+            address.adr_cari_kod ?? string.Empty,
+            address.adr_adres_no ?? 0,
+            address.adr_aprint_fl ?? false,
+            address.adr_cadde ?? string.Empty,
+            address.adr_mahalle ?? string.Empty,
+            address.adr_sokak ?? string.Empty,
+            address.adr_Semt ?? string.Empty,
+            address.adr_Apt_No ?? string.Empty,
+            address.adr_Daire_No ?? string.Empty,
+            address.adr_posta_kodu ?? string.Empty,
+            address.adr_ilce ?? string.Empty,
+            address.adr_il ?? string.Empty,
+            address.adr_ulke ?? string.Empty,
+            address.adr_Adres_kodu ?? string.Empty,
+            address.adr_tel_ulke_kodu ?? string.Empty,
+            address.adr_tel_bolge_kodu ?? string.Empty,
+            address.adr_tel_no1 ?? string.Empty,
+            address.adr_tel_no2 ?? string.Empty,
+            address.adr_tel_faxno ?? string.Empty,
+            address.adr_temsilci_kodu ?? string.Empty,
+            address.adr_ozel_not ?? string.Empty,
+            address.adr_gps_enlem ?? 0d,
+            address.adr_gps_boylam ?? 0d,
+            address.adr_efatura_alias ?? string.Empty,
+            address.adr_eirsaliye_alias ?? string.Empty,
+            address.adr_iptal ?? false,
+            address.adr_hidden ?? false,
+            address.adr_kilitli ?? false,
+            address.adr_create_date,
+            address.adr_lastup_date);
+
     private static StockCardDetailDto MapStockCardDetail(STOKLAR stock) =>
         new(
             stock.sto_kod,
@@ -3275,6 +3397,41 @@ public sealed partial class MikroDocumentEditingService(
         SetIfPresent(patch.MersisNo, value => customer.cari_mersis_no = NormalizeText(value, 25, nameof(patch.MersisNo)), ref changed);
         SetIfPresent(patch.TaxOfficeCode, value => customer.cari_vergidairekodu = NormalizeText(value, 10, nameof(patch.TaxOfficeCode)), ref changed);
         SetIfPresent(patch.RetailCustomer, value => customer.cari_Perakende_fl = value, ref changed);
+
+        return changed;
+    }
+
+    private static bool ApplyCustomerAddressPatch(
+        CARI_HESAP_ADRESLERI address,
+        CustomerAddressPatchDto patch)
+    {
+        var changed = false;
+        SetIfPresent(patch.IsPrintEnabled, value => address.adr_aprint_fl = value, ref changed);
+        SetIfPresent(patch.Street, value => address.adr_cadde = NormalizeText(value, 50, nameof(patch.Street)), ref changed);
+        SetIfPresent(patch.Neighborhood, value => address.adr_mahalle = NormalizeText(value, 50, nameof(patch.Neighborhood)), ref changed);
+        SetIfPresent(patch.Avenue, value => address.adr_sokak = NormalizeText(value, 50, nameof(patch.Avenue)), ref changed);
+        SetIfPresent(patch.Quarter, value => address.adr_Semt = NormalizeText(value, 25, nameof(patch.Quarter)), ref changed);
+        SetIfPresent(patch.ApartmentNo, value => address.adr_Apt_No = NormalizeText(value, 10, nameof(patch.ApartmentNo)), ref changed);
+        SetIfPresent(patch.ApartmentUnitNo, value => address.adr_Daire_No = NormalizeText(value, 10, nameof(patch.ApartmentUnitNo)), ref changed);
+        SetIfPresent(patch.PostalCode, value => address.adr_posta_kodu = NormalizeText(value, 8, nameof(patch.PostalCode)), ref changed);
+        SetIfPresent(patch.District, value => address.adr_ilce = NormalizeText(value, 50, nameof(patch.District)), ref changed);
+        SetIfPresent(patch.City, value => address.adr_il = NormalizeText(value, 50, nameof(patch.City)), ref changed);
+        SetIfPresent(patch.Country, value => address.adr_ulke = NormalizeText(value, 50, nameof(patch.Country)), ref changed);
+        SetIfPresent(patch.AddressCode, value => address.adr_Adres_kodu = NormalizeText(value, 10, nameof(patch.AddressCode)), ref changed);
+        SetIfPresent(patch.PhoneCountryCode, value => address.adr_tel_ulke_kodu = NormalizeText(value, 5, nameof(patch.PhoneCountryCode)), ref changed);
+        SetIfPresent(patch.PhoneAreaCode, value => address.adr_tel_bolge_kodu = NormalizeText(value, 5, nameof(patch.PhoneAreaCode)), ref changed);
+        SetIfPresent(patch.PhoneNo1, value => address.adr_tel_no1 = NormalizeText(value, 10, nameof(patch.PhoneNo1)), ref changed);
+        SetIfPresent(patch.PhoneNo2, value => address.adr_tel_no2 = NormalizeText(value, 10, nameof(patch.PhoneNo2)), ref changed);
+        SetIfPresent(patch.FaxNo, value => address.adr_tel_faxno = NormalizeText(value, 10, nameof(patch.FaxNo)), ref changed);
+        SetIfPresent(patch.RepresentativeCode, value => address.adr_temsilci_kodu = NormalizeText(value, 25, nameof(patch.RepresentativeCode)), ref changed);
+        SetIfPresent(patch.Note, value => address.adr_ozel_not = NormalizeText(value, 127, nameof(patch.Note)), ref changed);
+        SetIfPresent(patch.Latitude, value => address.adr_gps_enlem = ValidateLatitude(value, nameof(patch.Latitude)), ref changed);
+        SetIfPresent(patch.Longitude, value => address.adr_gps_boylam = ValidateLongitude(value, nameof(patch.Longitude)), ref changed);
+        SetIfPresent(patch.EInvoiceAlias, value => address.adr_efatura_alias = NormalizeText(value, 120, nameof(patch.EInvoiceAlias)), ref changed);
+        SetIfPresent(patch.EDespatchAlias, value => address.adr_eirsaliye_alias = NormalizeText(value, 120, nameof(patch.EDespatchAlias)), ref changed);
+        SetIfPresent(patch.IsPassive, value => address.adr_iptal = value, ref changed);
+        SetIfPresent(patch.IsHidden, value => address.adr_hidden = value, ref changed);
+        SetIfPresent(patch.IsLocked, value => address.adr_kilitli = value, ref changed);
 
         return changed;
     }
@@ -4134,6 +4291,34 @@ public sealed partial class MikroDocumentEditingService(
         patch.MersisNo is not null ||
         patch.TaxOfficeCode is not null ||
         patch.RetailCustomer.HasValue;
+
+    private static bool HasCustomerAddressPatch(CustomerAddressPatchDto patch) =>
+        patch.IsPrintEnabled.HasValue ||
+        patch.Street is not null ||
+        patch.Neighborhood is not null ||
+        patch.Avenue is not null ||
+        patch.Quarter is not null ||
+        patch.ApartmentNo is not null ||
+        patch.ApartmentUnitNo is not null ||
+        patch.PostalCode is not null ||
+        patch.District is not null ||
+        patch.City is not null ||
+        patch.Country is not null ||
+        patch.AddressCode is not null ||
+        patch.PhoneCountryCode is not null ||
+        patch.PhoneAreaCode is not null ||
+        patch.PhoneNo1 is not null ||
+        patch.PhoneNo2 is not null ||
+        patch.FaxNo is not null ||
+        patch.RepresentativeCode is not null ||
+        patch.Note is not null ||
+        patch.Latitude.HasValue ||
+        patch.Longitude.HasValue ||
+        patch.EInvoiceAlias is not null ||
+        patch.EDespatchAlias is not null ||
+        patch.IsPassive.HasValue ||
+        patch.IsHidden.HasValue ||
+        patch.IsLocked.HasValue;
 
     private static STOKLAR? ResolveStock(IReadOnlyDictionary<string, STOKLAR> stocks, string? stockCode) =>
         !string.IsNullOrWhiteSpace(stockCode) && stocks.TryGetValue(stockCode, out var stock)
