@@ -39,6 +39,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<MikroApiWriteAudit> MikroApiWriteAudits => Set<MikroApiWriteAudit>();
 
+    public DbSet<DatabaseMonitoringIncident> DatabaseMonitoringIncidents => Set<DatabaseMonitoringIncident>();
+
+    public DbSet<DatabaseSessionTerminationAudit> DatabaseSessionTerminationAudits => Set<DatabaseSessionTerminationAudit>();
+
     public DbSet<TrendyolGoBranchPosPriceSyncTask> TrendyolGoBranchPosPriceSyncTasks => Set<TrendyolGoBranchPosPriceSyncTask>();
 
     public DbSet<StockAnomaly> StockAnomalies => Set<StockAnomaly>();

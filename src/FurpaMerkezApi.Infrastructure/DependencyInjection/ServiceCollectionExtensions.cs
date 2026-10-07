@@ -2,6 +2,7 @@ using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Soforler;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductAvailability;
@@ -112,6 +113,7 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.List;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Soforler;
+using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductAvailability;
@@ -344,6 +346,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(ProductDistributionMailOptions.SectionName));
         services.Configure<GreenGrocerProductCaseOptions>(
             configuration.GetSection(GreenGrocerProductCaseOptions.SectionName));
+        services.Configure<DatabaseMonitoringOptions>(
+            configuration.GetSection(DatabaseMonitoringOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddSingleton<MikroApiWriteAuditService>();
         services.AddScoped<MikroApiWriteAuditReconciliationService>();
@@ -544,6 +548,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IHomeWarehousePrioritiesService, HomeWarehousePrioritiesService>();
         services.AddScoped<IAyarlarService, AyarlarService>();
         services.AddScoped<IDespatchDriverService, DespatchDriverService>();
+        services.AddScoped<DatabaseMonitoringService>();
+        services.AddScoped<IDatabaseMonitoringService>(serviceProvider =>
+            serviceProvider.GetRequiredService<DatabaseMonitoringService>());
         services.AddScoped<IMikroDocumentEditingService, MikroDocumentEditingService>();
         services.AddScoped<MobileOfflineSyncService>();
         services.AddScoped<ISearchProductsUseCase, SearchProductsUseCase>();
@@ -728,6 +735,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<OperationsJobWorker>();
         services.AddHostedService<InvoiceViewingSynchronizationWorker>();
         services.AddHostedService<InvoiceViewingAutomaticSynchronizationScheduler>();
+        services.AddHostedService<DatabaseMonitoringWorker>();
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();

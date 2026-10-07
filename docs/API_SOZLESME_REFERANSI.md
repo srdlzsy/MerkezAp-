@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 718. Model sayisi: 650.
+Endpoint sayisi (method + route): 723. Model sayisi: 660.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -71,6 +71,11 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/sube-ayarlari/{branchNo}` | JWT + ayar-islemleri.sube-ayarlari.detail | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BranchDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/ayar-islemleri/sube-ayarlari/{branchNo}` | JWT + ayar-islemleri.sube-ayarlari.update | path: branchNo / integer (int32) (zorunlu)<br>body: request / UpdateBranchSettingsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BranchDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` | JWT + ayar-islemleri.sube-ayarlari.detail | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegistryDto&gt;<br>400: ProblemDetails |
+| GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
+| GET | `/api/ayar-islemleri/veritabani-izleme/olaylar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseMonitoringIncidentDto&gt; |
+| GET | `/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseSessionTerminationDto&gt; |
+| GET | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu` | JWT + ayar-islemleri.veritabani-izleme.detail | path: sessionId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseRollbackStatusDto |
+| POST | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/sonlandir` | JWT + ayar-islemleri.veritabani-izleme.terminate-session | path: sessionId / integer (int32) (zorunlu)<br>body: request / TerminateDatabaseSessionHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseSessionTerminationDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/alan-haritasi` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentFieldCatalogDto |
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDto<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -1349,6 +1354,162 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `plateNumber` | string | Hayir | nullable |
 | `tckn` | string | Hayir | nullable |
 | `updatedAtUtc` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseActiveRequestDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `blockingSessionId` | integer (int32) | Hayir | nullable |
+| `canTerminate` | boolean | Hayir |  |
+| `clientAddress` | string | Hayir | nullable |
+| `command` | string | Hayir | nullable |
+| `cpuMilliseconds` | integer (int64) | Hayir |  |
+| `databaseName` | string | Hayir | nullable |
+| `elapsedMilliseconds` | integer (int64) | Hayir |  |
+| `hostName` | string | Hayir | nullable |
+| `hostProcessId` | integer (int32) | Hayir | nullable |
+| `logicalReads` | integer (int64) | Hayir |  |
+| `loginName` | string | Hayir | nullable |
+| `loginTime` | string (date-time) | Hayir |  |
+| `openTransactionCount` | integer (int32) | Hayir |  |
+| `percentComplete` | number (double) | Hayir |  |
+| `programName` | string | Hayir | nullable |
+| `reads` | integer (int64) | Hayir |  |
+| `recommendation` | string | Hayir | nullable |
+| `requestId` | integer (int32) | Hayir |  |
+| `sessionId` | integer (int32) | Hayir |  |
+| `severity` | string | Hayir | nullable |
+| `sqlText` | string | Hayir | nullable |
+| `startTime` | string (date-time) | Hayir |  |
+| `status` | string | Hayir | nullable |
+| `waitMilliseconds` | integer (int64) | Hayir |  |
+| `waitResource` | string | Hayir | nullable |
+| `waitType` | string | Hayir | nullable |
+| `writes` | integer (int64) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseBlockingEdgeDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `blockedSessionId` | integer (int32) | Hayir |  |
+| `blockedSqlText` | string | Hayir | nullable |
+| `blockingSessionId` | integer (int32) | Hayir |  |
+| `depth` | integer (int32) | Hayir |  |
+| `rootSessionId` | integer (int32) | Hayir |  |
+| `waitMilliseconds` | integer (int64) | Hayir |  |
+| `waitType` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `blockingSessionId` | integer (int32) | Hayir | nullable |
+| `databaseName` | string | Hayir | nullable |
+| `elapsedMilliseconds` | integer (int64) | Hayir |  |
+| `firstSeenAtUtc` | string (date-time) | Hayir |  |
+| `hostName` | string | Hayir | nullable |
+| `id` | string (uuid) | Hayir |  |
+| `lastSeenAtUtc` | string (date-time) | Hayir |  |
+| `loginName` | string | Hayir | nullable |
+| `occurrenceCount` | integer (int32) | Hayir |  |
+| `programName` | string | Hayir | nullable |
+| `recommendation` | string | Hayir | nullable |
+| `resolvedAtUtc` | string (date-time) | Hayir | nullable |
+| `sessionId` | integer (int32) | Hayir |  |
+| `severity` | string | Hayir | nullable |
+| `sqlText` | string | Hayir | nullable |
+| `type` | string | Hayir | nullable |
+| `waitType` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeRequestCount` | integer (int32) | Hayir |  |
+| `blockedRequestCount` | integer (int32) | Hayir |  |
+| `blocking` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseBlockingEdgeDto[] | Hayir | nullable |
+| `databaseName` | string | Hayir | nullable |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `longRunningRequestCount` | integer (int32) | Hayir |  |
+| `openTransactionCount` | integer (int32) | Hayir |  |
+| `openTransactions` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseOpenTransactionDto[] | Hayir | nullable |
+| `overallStatus` | string | Hayir | nullable |
+| `recommendations` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRecommendationDto[] | Hayir | nullable |
+| `requests` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseActiveRequestDto[] | Hayir | nullable |
+| `rootBlockerCount` | integer (int32) | Hayir |  |
+| `serverName` | string | Hayir | nullable |
+| `thresholds` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringThresholdsDto | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringThresholdsDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `blockingSeconds` | integer (int32) | Hayir |  |
+| `longRunningSeconds` | integer (int32) | Hayir |  |
+| `maxIncidentCount` | integer (int32) | Hayir |  |
+| `openTransactionSeconds` | integer (int32) | Hayir |  |
+| `refreshSeconds` | integer (int32) | Hayir |  |
+| `retentionHours` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseOpenTransactionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `ageMilliseconds` | integer (int64) | Hayir |  |
+| `canTerminate` | boolean | Hayir |  |
+| `clientAddress` | string | Hayir | nullable |
+| `hostName` | string | Hayir | nullable |
+| `hostProcessId` | integer (int32) | Hayir | nullable |
+| `lastSqlText` | string | Hayir | nullable |
+| `loginName` | string | Hayir | nullable |
+| `loginTime` | string (date-time) | Hayir |  |
+| `openTransactionCount` | integer (int32) | Hayir |  |
+| `programName` | string | Hayir | nullable |
+| `recommendation` | string | Hayir | nullable |
+| `sessionId` | integer (int32) | Hayir |  |
+| `severity` | string | Hayir | nullable |
+| `transactionBeginTime` | string (date-time) | Hayir |  |
+| `transactionId` | integer (int64) | Hayir |  |
+| `transactionState` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRecommendationDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `affectedSessionCount` | integer (int32) | Hayir |  |
+| `code` | string | Hayir | nullable |
+| `description` | string | Hayir | nullable |
+| `severity` | string | Hayir | nullable |
+| `title` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRollbackStatusDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `checkedAtUtc` | string (date-time) | Hayir |  |
+| `isRollingBack` | boolean | Hayir |  |
+| `message` | string | Hayir | nullable |
+| `sessionId` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `databaseName` | string | Hayir | nullable |
+| `error` | string | Hayir | nullable |
+| `hostName` | string | Hayir | nullable |
+| `hostProcessId` | integer (int32) | Hayir | nullable |
+| `id` | string (uuid) | Hayir |  |
+| `isSucceeded` | boolean | Hayir |  |
+| `loginName` | string | Hayir | nullable |
+| `loginTime` | string (date-time) | Hayir |  |
+| `programName` | string | Hayir | nullable |
+| `reason` | string | Hayir | nullable |
+| `requestedAtUtc` | string (date-time) | Hayir |  |
+| `requestedByUserId` | string (uuid) | Hayir |  |
+| `sessionId` | integer (int32) | Hayir |  |
+| `sqlText` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.Common.CompanyMovements.CompanyMovementDetailDto
 
@@ -8310,6 +8471,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `posGenelFolderPath` | string | Evet | minLength=0; maxLength=255 |
 | `poskonFolderPath` | string | Evet | minLength=0; maxLength=255 |
 | `scalesType` | integer (int32) | Evet | min=0; max=1 |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzleme.TerminateDatabaseSessionHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `expectedHostProcessId` | integer (int32) | Hayir | nullable |
+| `expectedLoginTime` | string (date-time) | Evet |  |
+| `expectedProgramName` | string | Hayir | minLength=0; maxLength=256; nullable |
+| `reason` | string | Evet | minLength=10; maxLength=500 |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.Common.CreateCompanyMovementHttpRequest
 

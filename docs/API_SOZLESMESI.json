@@ -86416,6 +86416,536 @@
         ]
       }
     },
+    "/api/ayar-islemleri/veritabani-izleme/anlik": {
+      "get": {
+        "tags": [
+          "VeritabaniIzleme"
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "ayar-islemleri.veritabani-izleme.list"
+        ]
+      }
+    },
+    "/api/ayar-islemleri/veritabani-izleme/olaylar": {
+      "get": {
+        "tags": [
+          "VeritabaniIzleme"
+        ],
+        "parameters": [
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "ayar-islemleri.veritabani-izleme.detail"
+        ]
+      }
+    },
+    "/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi": {
+      "get": {
+        "tags": [
+          "VeritabaniIzleme"
+        ],
+        "parameters": [
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "ayar-islemleri.veritabani-izleme.detail"
+        ]
+      }
+    },
+    "/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/sonlandir": {
+      "post": {
+        "tags": [
+          "VeritabaniIzleme"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzleme.TerminateDatabaseSessionHttpRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzleme.TerminateDatabaseSessionHttpRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzleme.TerminateDatabaseSessionHttpRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "ayar-islemleri.veritabani-izleme.terminate-session"
+        ]
+      }
+    },
+    "/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu": {
+      "get": {
+        "tags": [
+          "VeritabaniIzleme"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRollbackStatusDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRollbackStatusDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRollbackStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "ayar-islemleri.veritabani-izleme.detail"
+        ]
+      }
+    },
     "/api/stok-islemleri/virmanlar": {
       "get": {
         "tags": [
@@ -91245,6 +91775,518 @@
           "updatedAtUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseActiveRequestDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requestId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "loginTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hostProcessId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "databaseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "command": {
+            "type": "string",
+            "nullable": true
+          },
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "elapsedMilliseconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "waitType": {
+            "type": "string",
+            "nullable": true
+          },
+          "waitMilliseconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "waitResource": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockingSessionId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cpuMilliseconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reads": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "logicalReads": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "writes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "openTransactionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "percentComplete": {
+            "type": "number",
+            "format": "double"
+          },
+          "loginName": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "nullable": true
+          },
+          "programName": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "sqlText": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "recommendation": {
+            "type": "string",
+            "nullable": true
+          },
+          "canTerminate": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseBlockingEdgeDto": {
+        "type": "object",
+        "properties": {
+          "rootSessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blockingSessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blockedSessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "waitType": {
+            "type": "string",
+            "nullable": true
+          },
+          "waitMilliseconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "blockedSqlText": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blockingSessionId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "databaseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "loginName": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "nullable": true
+          },
+          "programName": {
+            "type": "string",
+            "nullable": true
+          },
+          "waitType": {
+            "type": "string",
+            "nullable": true
+          },
+          "elapsedMilliseconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sqlText": {
+            "type": "string",
+            "nullable": true
+          },
+          "recommendation": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstSeenAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "occurrenceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resolvedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto": {
+        "type": "object",
+        "properties": {
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "serverName": {
+            "type": "string",
+            "nullable": true
+          },
+          "databaseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "overallStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "activeRequestCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blockedRequestCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rootBlockerCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "longRunningRequestCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "openTransactionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringThresholdsDto"
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseActiveRequestDto"
+            },
+            "nullable": true
+          },
+          "blocking": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseBlockingEdgeDto"
+            },
+            "nullable": true
+          },
+          "openTransactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseOpenTransactionDto"
+            },
+            "nullable": true
+          },
+          "recommendations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRecommendationDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringThresholdsDto": {
+        "type": "object",
+        "properties": {
+          "blockingSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "longRunningSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "openTransactionSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "refreshSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retentionHours": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxIncidentCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseOpenTransactionDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "loginTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hostProcessId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "transactionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "transactionBeginTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ageMilliseconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "transactionState": {
+            "type": "string",
+            "nullable": true
+          },
+          "openTransactionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "loginName": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "nullable": true
+          },
+          "programName": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastSqlText": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "recommendation": {
+            "type": "string",
+            "nullable": true
+          },
+          "canTerminate": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRecommendationDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "affectedSessionCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseRollbackStatusDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isRollingBack": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseSessionTerminationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "loginTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hostProcessId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "loginName": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "nullable": true
+          },
+          "programName": {
+            "type": "string",
+            "nullable": true
+          },
+          "databaseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "sqlText": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isSucceeded": {
+            "type": "boolean"
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -113562,6 +114604,36 @@
           "posGenelFolderPath": {
             "maxLength": 255,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzleme.TerminateDatabaseSessionHttpRequest": {
+        "required": [
+          "expectedLoginTime",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedLoginTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedHostProcessId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "expectedProgramName": {
+            "maxLength": 256,
+            "minLength": 0,
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 10,
             "type": "string"
           }
         },

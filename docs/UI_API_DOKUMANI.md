@@ -2,7 +2,7 @@
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
-Son hedefli kontrol: 2026-10-05. Kayitli 714 method/route ve 643 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye ve guvenli retry anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
+Son hedefli kontrol: 2026-10-07. Kayitli 723 method/route ve 660 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
 
@@ -277,6 +277,7 @@ Bu tablo UI icin ana permission referansidir. Kaynak kod tarafi `PermissionCatal
 | `ayar-islemleri` | `kasiyerler` | `ayar-islemleri.kasiyerler.manage` | `ayar-islemleri.kasiyerler.list`<br>`ayar-islemleri.kasiyerler.detail`<br>`ayar-islemleri.kasiyerler.create`<br>`ayar-islemleri.kasiyerler.update` | `ayar-islemleri.kasiyerler.all-warehouses` |
 | `ayar-islemleri` | `soforler` | `ayar-islemleri.soforler.manage` | `ayar-islemleri.soforler.list`<br>`ayar-islemleri.soforler.detail`<br>`ayar-islemleri.soforler.create`<br>`ayar-islemleri.soforler.update`<br>`ayar-islemleri.soforler.delete` | `ayar-islemleri.soforler.all-warehouses` |
 | `ayar-islemleri` | `b2b-ayarlari` | `ayar-islemleri.b2b-ayarlari.manage` | `ayar-islemleri.b2b-ayarlari.list`<br>`ayar-islemleri.b2b-ayarlari.detail`<br>`ayar-islemleri.b2b-ayarlari.create`<br>`ayar-islemleri.b2b-ayarlari.update`<br>`ayar-islemleri.b2b-ayarlari.delete` | `ayar-islemleri.b2b-ayarlari.all-warehouses` |
+| `ayar-islemleri` | `veritabani-izleme` | `ayar-islemleri.veritabani-izleme.manage` | `ayar-islemleri.veritabani-izleme.list`<br>`ayar-islemleri.veritabani-izleme.detail`<br>`ayar-islemleri.veritabani-izleme.terminate-session` | `-` |
 | `siparis-islemleri` | `alinan-depo-siparisleri` | `siparis-islemleri.alinan-depo-siparisleri.page` | `siparis-islemleri.alinan-depo-siparisleri.list`<br>`siparis-islemleri.alinan-depo-siparisleri.detail`<br>`siparis-islemleri.alinan-depo-siparisleri.create`<br>`siparis-islemleri.alinan-depo-siparisleri.update`<br>`siparis-islemleri.alinan-depo-siparisleri.print` | `siparis-islemleri.alinan-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `verilen-depo-siparisleri` | `siparis-islemleri.verilen-depo-siparisleri.page` | `siparis-islemleri.verilen-depo-siparisleri.list`<br>`siparis-islemleri.verilen-depo-siparisleri.detail`<br>`siparis-islemleri.verilen-depo-siparisleri.create`<br>`siparis-islemleri.verilen-depo-siparisleri.update` | `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` |
 | `siparis-islemleri` | `alinan-firma-siparisleri` | `siparis-islemleri.alinan-firma-siparisleri.page` | `siparis-islemleri.alinan-firma-siparisleri.list`<br>`siparis-islemleri.alinan-firma-siparisleri.detail`<br>`siparis-islemleri.alinan-firma-siparisleri.create`<br>`siparis-islemleri.alinan-firma-siparisleri.update` | `siparis-islemleri.alinan-firma-siparisleri.all-warehouses` |
@@ -2383,6 +2384,7 @@ Bu modul eski `SettingsController` islevlerini yeni API mimarisine uygun olarak 
 - `AyarIslemleri > Kasiyerler`
 - `AyarIslemleri > Soforler`
 - `AyarIslemleri > B2BAyarlari`
+- `AyarIslemleri > VeritabaniIzleme`
 
 Veri kaynaklari:
 
@@ -2390,6 +2392,51 @@ Veri kaynaklari:
 - FurpaB2B DB: `Bultens`, `Users`, `UserAccounts`
 - Mikro write DB: `CashRegisterDetails`, `CashRegisterBranches`
 - Auth DB: `despatch_drivers`
+- Auth DB: `database_monitoring_incidents`, `database_session_termination_audits`
+
+### Veritabani Izleme
+
+Bu ekran Mikro SQL Server uzerindeki aktif istekleri, kilit zincirlerini, uzun acik transaction'lari ve temel bekleme nedenlerini canli gosterir. Ekran acilisi `manage`, canli veri `list`, olay/sonlandirma gecmisi `detail`, SQL oturumu sonlandirma ise ayri `terminate-session` yetkisine baglidir.
+
+Endpointler:
+
+```text
+GET  /api/ayar-islemleri/veritabani-izleme/anlik
+GET  /api/ayar-islemleri/veritabani-izleme/olaylar?take=100
+GET  /api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi?take=100
+POST /api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/sonlandir
+GET  /api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu
+```
+
+Calisma kurallari:
+
+- Canli endpoint DMV'leri tek sorguda okur; izleme sorgusunun kendi SPID degeri sonuctan cikarilir.
+- Varsayilan UI yenileme onerisi 10 saniyedir. UI onceki istek bitmeden ayni istegi tekrar baslatmamalidir.
+- Arka plan toplayici varsayilan 30 saniyede bir calisir; yalniz kilit, uzun sorgu veya uzun acik transaction esigi asildiginda olay kaydi tutar.
+- Olay gecmisi varsayilan 72 saat ve en fazla 5000 kayittir. Normal/anlik DMV satirlari Auth DB'ye yazilmaz.
+- SQL metnindeki string literal degerler maskelenir ve metin uzunlugu sinirlanir.
+- Sistem otomatik `KILL`, index olusturma veya SQL ayari degisikligi yapmaz.
+- DMV okumasi icin Mikro SQL login'inde `VIEW SERVER STATE` (SQL Server 2022 ve sonrasi icin `VIEW SERVER PERFORMANCE STATE`) gerekir.
+- Oturum sonlandirma icin SQL login'inde ayrica uygun `KILL` yetkisi gerekir. Bu yetki yalniz API servis hesabina ve kontrollu olarak verilmelidir.
+
+Oturum sonlandirma body ornegi:
+
+```json
+{
+  "expectedLoginTime": "2026-10-07T11:30:54.227",
+  "expectedHostProcessId": 9572,
+  "expectedProgramName": "Mikro API",
+  "reason": "Uzun suredir F56 yazimlarini kilitleyen root blocker kontrol edildi."
+}
+```
+
+Guvenlik:
+
+- UI body alanlarini secili canli satirdan aynen tasir; kullanici yalniz `reason` yazar.
+- Backend sonlandirmadan hemen once session id, login zamani, host process id ve program adini tekrar okur. SPID baska baglantiya verilmisse `409 Conflict` doner.
+- Sistem oturumlari, izleme sorgusunun kendi oturumu ve 50 veya daha kucuk SPID degerleri sonlandirilmaz.
+- Her deneme baslamadan once Auth DB'ye audit edilir; basari veya hata sonucu ayni kayitta tamamlanir.
+- `KILL` basarili donse bile rollback surebilir. UI gerekirse yalniz `rollback-durumu` endpointini sorgular; ayni session icin tekrar `KILL` uretmez.
 
 Onemli alan ayrimi:
 
