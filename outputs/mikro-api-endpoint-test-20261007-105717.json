@@ -1,0 +1,16 @@
+﻿{
+    "Machine":  "SERDAL-OZSOY",
+    "Timestamp":  "2026-10-07 10:58:32.949 +03:00",
+    "Mode":  "Write",
+    "Target":  "Current8084",
+    "RequestUri":  "http://10.0.0.207:8084/Api/apiMethods/DahiliStokHareketKaydetV2",
+    "PayloadSha256":  "B4C2E1BEC3497D047C331E0DBA1AA1B4D648974DA386D4ECF72C5F2914CA9BD7",
+    "TimeoutSeconds":  75,
+    "ElapsedMs":  75154.5,
+    "HttpStatusCode":  null,
+    "MikroSuccess":  null,
+    "MikroErrorText":  null,
+    "TimedOut":  false,
+    "TransportError":  "İşlem zaman aşımına uğradı",
+    "ResponseBody":  ""
+}
