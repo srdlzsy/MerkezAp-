@@ -37,8 +37,10 @@ public sealed class SessionAccessProfileResolver(AuthDbContext dbContext) : ISes
         string clientType,
         CancellationToken cancellationToken)
     {
-        var activeAssignedRoles = user.UserRoles
+        var assignedRoles = user.UserRoles
             .Select(userRole => userRole.Role)
+            .ToArray();
+        var activeAssignedRoles = assignedRoles
             .Where(role => role.IsActive)
             .ToArray();
 
@@ -57,11 +59,12 @@ public sealed class SessionAccessProfileResolver(AuthDbContext dbContext) : ISes
             return Task.FromResult(CreateProfile(effectiveRoles));
         }
 
-        var isUnifiedWarehouseUser = activeAssignedRoles.Any(role =>
+        var isUnifiedWarehouseUser = assignedRoles.Any(role =>
             IsRole(role.Name, UnifiedWarehouseRoleName));
+        var usesClientRoleProfiles = user.ClientRoles.Count > 0;
 
         return Task.FromResult(CreateProfile(
-            isUnifiedWarehouseUser ? [] : activeAssignedRoles));
+            isUnifiedWarehouseUser || usesClientRoleProfiles ? [] : activeAssignedRoles));
     }
 
     public async Task<IReadOnlyCollection<string>> ResolvePermissionCodesAsync(

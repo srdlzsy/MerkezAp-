@@ -32,8 +32,10 @@
 - Kapatmak icin: `MikroApiWriteAudit__Enabled=false`
 - Saklanan response uzunlugu en fazla 8000 karakterdir: `MikroApiWriteAudit__MaxResponseLength=8000`
 - Payload'in kendisi saklanmaz; SHA-256 hash'i kaydedilir
+- Evrak seri/sira, depo, satir sayisi ve sonuc kaynagi ayri kolonlara yazilir
+- Normal DB readback basarisi `Verified`, belirsiz sonuc sonrasi recovery `RecoveredAfterUnknown` olarak ayrilir
 - Audit kaydi basarisiz olursa asil Mikro yazma islemi durdurulmaz, warning log uretilir
-- Ozelligin acilmasindan once `mikro_api_write_audits` migration'i Auth veritabanina uygulanmalidir
+- Ozelligin acilmasindan once audit migration'lari Auth veritabanina uygulanmalidir
 
 ## Acilista acmak istersen
 

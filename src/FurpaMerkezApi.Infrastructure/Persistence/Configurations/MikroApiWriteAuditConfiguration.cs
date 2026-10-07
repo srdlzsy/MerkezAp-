@@ -17,7 +17,12 @@ public sealed class MikroApiWriteAuditConfiguration : IEntityTypeConfiguration<M
         builder.Property(audit => audit.CorrelationId).HasColumnName("correlation_id").HasMaxLength(128).IsRequired();
         builder.Property(audit => audit.Endpoint).HasColumnName("endpoint").HasMaxLength(500).IsRequired();
         builder.Property(audit => audit.PayloadHash).HasColumnName("payload_hash").HasMaxLength(64).IsRequired();
-        builder.Property(audit => audit.Status).HasColumnName("status").HasMaxLength(20).HasConversion<string>().IsRequired();
+        builder.Property(audit => audit.DocumentSerie).HasColumnName("document_serie").HasMaxLength(20);
+        builder.Property(audit => audit.DocumentOrderNo).HasColumnName("document_order_no");
+        builder.Property(audit => audit.WarehouseNo).HasColumnName("warehouse_no");
+        builder.Property(audit => audit.LineCount).HasColumnName("line_count");
+        builder.Property(audit => audit.Status).HasColumnName("status").HasMaxLength(32).HasConversion<string>().IsRequired();
+        builder.Property(audit => audit.ResultSource).HasColumnName("result_source").HasMaxLength(32).HasConversion<string>();
         builder.Property(audit => audit.HttpStatusCode).HasColumnName("http_status_code");
         builder.Property(audit => audit.MikroStatusCode).HasColumnName("mikro_status_code");
         builder.Property(audit => audit.Response).HasColumnName("response").HasMaxLength(8000);
@@ -40,6 +45,10 @@ public sealed class MikroApiWriteAuditConfiguration : IEntityTypeConfiguration<M
             .HasDatabaseName("ix_mikro_api_write_audits_status_created");
         builder.HasIndex(audit => new { audit.DocumentFlowId, audit.CreatedAtUtc })
             .HasDatabaseName("ix_mikro_api_write_audits_flow_created");
+        builder.HasIndex(audit => new { audit.DocumentSerie, audit.DocumentOrderNo, audit.CreatedAtUtc })
+            .HasDatabaseName("ix_mikro_api_write_audits_document_created");
+        builder.HasIndex(audit => new { audit.WarehouseNo, audit.CreatedAtUtc })
+            .HasDatabaseName("ix_mikro_api_write_audits_warehouse_created");
         builder.HasIndex(audit => audit.CorrelationId)
             .HasDatabaseName("ix_mikro_api_write_audits_correlation_id");
     }

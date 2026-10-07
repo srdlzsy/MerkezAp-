@@ -45,7 +45,9 @@ Mikro API yazma audit durumlari:
 - `Succeeded`: Mikro API kesin basari cevabi verdi.
 - `Failed`: kesin servis/is kurali hatasi alindi.
 - `Unknown`: timeout, baglanti kopmasi veya iptal nedeniyle commit sonucu kanitlanamadi.
-- `Recovered`: belge Mikro DB readback ile bulundu.
+- `Verified`: basarili API cevabi sonrasi belge Mikro DB readback ile dogrulandi.
+- `RecoveredAfterUnknown`: timeout, baglanti veya duplicate sonucundan sonra belge Mikro DB readback ile bulundu.
+- `Recovered`: eski surumlerden kalan geriye uyumlu recovery durumudur.
 
 `Unknown` kayitta yeni body veya yeni `clientRequestId` ile kontrolsuz tekrar create yapilmaz.
 

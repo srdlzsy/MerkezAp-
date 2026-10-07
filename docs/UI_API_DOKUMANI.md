@@ -46,9 +46,9 @@ E-irsaliye alici alias notu:
 - Alias sorgusu hata verirse veya aktif e-irsaliye alici alias'i donmezse backend `TargetCustomer` bilgisini gondermez; UBL icindeki alici VKN/TCKN bilgisini koruyarak alias secimini eski akis gibi Uyumsoft'a birakir.
 - Alias fallback'i de Uyumsoft tarafinda reddedilirse API servis hatasini dondurur. UI alias secmeye veya Mikro alias'ini request body'ye yazmaya calismamalidir.
 - Depolar arasi sevk ve depo iadesinde hedef bir cari olmadigi icin bu alias cozumleme adimi calismaz.
-- Mikro API yazma audit kaydi istekten once `Pending` acilir. Kesin basari `Succeeded`, kesin is kurali hatasi `Failed`, timeout/baglanti kopmasi/istemci iptali gibi commit sonucu kanitlanamayan durumlar `Unknown`, Mikro DB readback ile evrak bulundugunda `Recovered` olur.
+- Mikro API yazma audit kaydi istekten once `Pending` acilir. Kesin API basarisi `Succeeded`, kesin is kurali hatasi `Failed`, timeout/baglanti kopmasi/istemci iptali gibi commit sonucu kanitlanamayan durumlar `Unknown` olur. Basarili API cevabi DB readback ile dogrulanirsa `Verified`, sonucu belirsiz veya duplicate cevabi sonrasi evrak DB'de bulunursa `RecoveredAfterUnknown` yazilir. Eski kayitlardaki `Recovered` degeri geriye uyum icin okunmaya devam eder.
 - Istemci istegi iptal edilse bile audit kapanisi kullanici request token'ina bagli degildir; Auth DB yazimi kisa ve ayri bir timeout ile tamamlanmaya calisilir.
-- Arka plan audit siniflandirma islemi varsayilan olarak 5 dakikada bir calisir. 15 dakikadan eski `Pending` kayitlari `Unknown` yapar ve eski parser nedeniyle `Succeeded` yazilmis `MikroAPI - TimeOut` cevaplarini duzeltir. Bu genel servis Mikro'ya yeniden yazma yapmaz ve tek basina business readback gerceklestirmez; gercek `Recovered` karari ilgili create servisinin belge/satir/trace kontrolleriyle verilir.
+- Arka plan audit siniflandirma islemi varsayilan olarak 5 dakikada bir calisir. 15 dakikadan eski `Pending` kayitlari `Unknown` yapar ve eski parser nedeniyle `Succeeded` yazilmis `MikroAPI - TimeOut` cevaplarini duzeltir. Bu genel servis Mikro'ya yeniden yazma yapmaz ve tek basina business readback gerceklestirmez; `Verified` ve `RecoveredAfterUnknown` karari ilgili create servisinin belge/satir/trace kontrolleriyle verilir.
 - `Unknown`, evrakin Mikro'da kesinlikle olusmadigi anlamina gelmez. UI veya islem servisi ayni payload ile kontrolsuz yeni kayit acmamalidir; once readback/guvenli retry akisi calistirilmalidir.
 
 Route parametre notu:
@@ -1737,7 +1737,7 @@ Token ve yetki notu:
 - Client-role eslesmesi bulunan her kullanicida ilgili oturum profili kullanilir; bu model yalniz `{warehouseNo}.sube` hesaplariyla sinirli degildir.
 - Birlesik sube kullanicisinda istenen `clientType` icin eslesme yoksa backend baska rolden tahmin veya fallback yapmaz; bos etkin rol/permission profili doner. Bu fail-closed davranis yanlis istemciye fazla yetki verilmesini engeller.
 - Client-role eslesmesi hic olmayan `50.muhasebe`, `01.icmal`, `Administrator` gibi klasik kullanicilar mevcut `app_user_roles` rolleriyle calismaya devam eder.
-- Bilinen sinir (2026-10-02): Mevcut resolver aktif istemci rolu kalmadiginda yalniz aktif `SubeKullanicisi` teknik rolu varsa bos profil doner. Diger hesaplarda genel rollere fallback olabilir. Bu nedenle rol pasife alma tum hesaplarda yetkiyi kapatir garantisi yoktur; ilgili inceleme bulgusu kapanmadan bu davranisa guvenilmemelidir.
+- Istemci rol eslesmesi bulunan hesaplarda resolver fail-closed calisir. Istenen `clientType` icin aktif rol kalmazsa genel rollere fallback yapilmaz ve bos yetki profili doner. `SubeKullanicisi` teknik rolu pasif olsa bile bu hesaplar genel rollere geri dusmez.
 - Login response ve `GET /api/auth/me` icindeki `roles`, `permissions` ve `modules` alanlari mevcut oturumun etkin profilini doner. UI yalniz bu response'u kullanmali; Auth DB'deki teknik `SubeKullanicisi` rolunu veya baska oturumun menu listesini onbellekten kullanmamalidir.
 - Terminale ozel IP/depo kontrolu sadece `clientType=terminal` oturumunda calisir.
 - Web ve terminal refresh token'lari birbirinden bagimsizdir. Bir cihazdaki logout yalniz o cihazda gonderilen refresh token'i iptal eder.
@@ -17219,7 +17219,11 @@ Kaydedilen temel alanlar:
 | `correlation_id` | Gelen UI/API isteginin `X-Correlation-Id` degeri |
 | `endpoint` | Cagrilan Mikro API path'i |
 | `payload_hash` | Auth/sifre alani icermeyen is payload'inin SHA-256 ozeti; payload'in kendisi saklanmaz |
-| `status` | `Pending`, `Succeeded`, `Failed`, `Unknown` veya `Recovered` |
+| `document_serie` / `document_order_no` | Payload'dan guvenli sekilde cozumlenebiliyorsa evrak seri/sira bilgisi |
+| `warehouse_no` | Payload'dan cozumlenebiliyorsa islem/kaynak depo numarasi |
+| `line_count` | Payload'daki ana satir dizisinin eleman sayisi |
+| `status` | `Pending`, `Succeeded`, `Failed`, `Unknown`, `Verified`, `RecoveredAfterUnknown`; eski kayitlarda `Recovered` bulunabilir |
+| `result_source` | Son durumu belirleyen kaynak: `MikroApiResponse`, `TransportFailure`, `MikroDatabaseReadback` veya `BackgroundReconciliation` |
 | `http_status_code` | HTTP cevap kodu |
 | `mikro_status_code` | Mikro response icindeki uygulama durum kodu |
 | `response` | Config ile sinirlanan ham Mikro cevabi |
@@ -17234,10 +17238,12 @@ Status anlami:
 
 ```text
 Pending    Audit acildi, Mikro cevabi henuz tamamlanmadi
-Succeeded  Mikro API basarili cevap verdi
+Succeeded  Mikro API basarili cevap verdi, DB readback henuz islenmedi
 Failed     HTTP veya Mikro uygulama cevabi hata dondu
 Unknown    Timeout/baglanti hatasi nedeniyle sonuc kesinlestirilemedi
-Recovered  Mikro API cevabindan sonra belge Mikro DB'de bulundu
+Verified   Basarili Mikro API cevabi sonrasi belge Mikro DB'de dogrulandi
+RecoveredAfterUnknown  Belirsiz/duplicate sonuc sonrasi belge Mikro DB'de bulundu
+Recovered  Eski surumlerden kalan geriye uyumlu recovery durumu
 ```
 
 Recovery destegi su Mikro API yazma akislari icin baglidir:

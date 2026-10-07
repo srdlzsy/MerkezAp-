@@ -34,13 +34,18 @@ public sealed class MikroApiWriteAuditService(
         var correlationId = ResolveCorrelationId();
         var payloadHash = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson ?? string.Empty)));
+        var context = MikroApiWriteAuditContextExtractor.Extract(payloadJson);
         var audit = new MikroApiWriteAudit(
             auditId,
             requestId,
             correlationId,
             endpoint,
             payloadHash,
-            clock.UtcNow);
+            clock.UtcNow,
+            documentSerie: context.DocumentSerie,
+            documentOrderNo: context.DocumentOrderNo,
+            warehouseNo: context.WarehouseNo,
+            lineCount: context.LineCount);
 
         try
         {
@@ -129,7 +134,7 @@ public sealed class MikroApiWriteAuditService(
         UpdateAsync(
             auditId,
             audit => audit.MarkRecovered(documentNo, recoveredGuid, documentFlowId, clock.UtcNow),
-            "marked as recovered",
+            "marked as readback verified",
             cancellationToken);
 
     private async Task UpdateAsync(

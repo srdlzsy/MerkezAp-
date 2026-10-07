@@ -60,10 +60,14 @@ public sealed class MikroApiWriteAuditReconciliationServiceTests
 
         Assert.Equal(2, reconciledCount);
         Assert.Equal(MikroApiWriteAuditStatus.Unknown, stalePending.Status);
+        Assert.Equal(MikroApiWriteAuditResultSource.BackgroundReconciliation, stalePending.ResultSource);
         Assert.NotNull(stalePending.CompletedAtUtc);
         Assert.Equal(MikroApiWriteAuditStatus.Pending, recentPending.Status);
         Assert.Equal(MikroApiWriteAuditStatus.Unknown, historicalTimeoutSuccess.Status);
-        Assert.Equal(MikroApiWriteAuditStatus.Recovered, recoveredTimeout.Status);
+        Assert.Equal(
+            MikroApiWriteAuditResultSource.BackgroundReconciliation,
+            historicalTimeoutSuccess.ResultSource);
+        Assert.Equal(MikroApiWriteAuditStatus.RecoveredAfterUnknown, recoveredTimeout.Status);
     }
 
     [Fact]
