@@ -95,7 +95,19 @@ public sealed class ApiDocumentationContractTests(ITestOutputHelper output)
         var root = FindRoot();
         VerifyOrUpdate(Path.Combine(root, "docs/API_SOZLESME_REFERANSI.md"), endpoints.ToString());
         VerifyOrUpdate(Path.Combine(root, "docs/API_SOZLESMESI.json"), jsonText.ToString() + "\n");
-        var narrative = File.ReadAllText(Path.Combine(root, "docs/UI_API_DOKUMANI.md")).Replace("\r\n", "\n");
+        var uiDocumentationPath = Path.Combine(root, "docs/UI_API_DOKUMANI.md");
+        var endpointContractStart = endpoints.ToString().IndexOf("## Endpointler", StringComparison.Ordinal);
+        Assert.True(endpointContractStart >= 0, "Generated endpoint contract section was not found.");
+        var uiResponseContract =
+            "<!-- BEGIN AUTO-GENERATED API RESPONSE CONTRACT -->\n" +
+            "## Tum Endpoint ve Response Sozlesmeleri\n\n" +
+            "Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretilir. " +
+            "Her endpointin tanimli HTTP response tiplerini ve response modellerindeki tum JSON alanlarini icerir. " +
+            "Elle duzenlenmemelidir; `FURPA_UPDATE_API_DOCS=true` ile sozlesme testi tarafindan yenilenir.\n\n" +
+            endpoints.ToString()[endpointContractStart..].TrimEnd() + "\n" +
+            "<!-- END AUTO-GENERATED API RESPONSE CONTRACT -->\n";
+        VerifyOrUpdateGeneratedSection(uiDocumentationPath, uiResponseContract);
+        var narrative = File.ReadAllText(uiDocumentationPath).Replace("\r\n", "\n");
         Assert.Contains("API_SOZLESME_REFERANSI.md", narrative);
         var missing = descriptions.Where(x => !Normalize(narrative).Contains(Normalize("/" + x.RelativePath!.Split('?')[0]), StringComparison.OrdinalIgnoreCase))
             .Select(x => $"{x.HttpMethod} /{x.RelativePath}").ToArray();
@@ -129,5 +141,34 @@ public sealed class ApiDocumentationContractTests(ITestOutputHelper output)
         if (Environment.GetEnvironmentVariable("FURPA_UPDATE_API_DOCS") == "true") File.WriteAllText(path, actual, new UTF8Encoding(false));
         Assert.True(File.Exists(path), $"Missing {Path.GetFileName(path)}. Regenerate with FURPA_UPDATE_API_DOCS=true.");
         Assert.Equal(File.ReadAllText(path).Replace("\r\n", "\n"), actual);
+    }
+
+    private static void VerifyOrUpdateGeneratedSection(string path, string generatedSection)
+    {
+        const string beginMarker = "<!-- BEGIN AUTO-GENERATED API RESPONSE CONTRACT -->";
+        const string endMarker = "<!-- END AUTO-GENERATED API RESPONSE CONTRACT -->";
+
+        generatedSection = generatedSection.Replace("\r\n", "\n");
+        Assert.True(File.Exists(path), $"Missing {Path.GetFileName(path)}.");
+        var current = File.ReadAllText(path).Replace("\r\n", "\n");
+        var beginIndex = current.IndexOf(beginMarker, StringComparison.Ordinal);
+        string expected;
+
+        if (beginIndex < 0)
+        {
+            expected = current.TrimEnd() + "\n\n" + generatedSection;
+        }
+        else
+        {
+            var endIndex = current.IndexOf(endMarker, beginIndex, StringComparison.Ordinal);
+            Assert.True(endIndex >= 0, $"Missing generated section end marker in {Path.GetFileName(path)}.");
+            endIndex += endMarker.Length;
+            expected = current[..beginIndex] + generatedSection.TrimEnd() + current[endIndex..];
+        }
+
+        if (Environment.GetEnvironmentVariable("FURPA_UPDATE_API_DOCS") == "true")
+            File.WriteAllText(path, expected, new UTF8Encoding(false));
+
+        Assert.Equal(File.ReadAllText(path).Replace("\r\n", "\n"), expected);
     }
 }
