@@ -393,7 +393,44 @@ public sealed partial class DatabaseMonitoringService(
 
         var snapshot = await GetSnapshotAsync(cancellationToken);
         var observedAt = clock.UtcNow;
-        var candidates = BuildIncidentCandidates(snapshot, settings).ToArray();
+        var candidates = DeduplicateIncidentCandidates(BuildIncidentCandidates(snapshot, settings));
+
+        try
+        {
+            await ApplyIncidentCandidatesAsync(candidates, observedAt, cancellationToken);
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsUniqueConstraintViolation(exception))
+        {
+            // Another worker may have inserted the same fingerprint after our read.
+            authDbContext.ChangeTracker.Clear();
+            await ApplyIncidentCandidatesAsync(candidates, observedAt, cancellationToken);
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        var retentionStart = observedAt.AddHours(-settings.RetentionHours);
+        await authDbContext.DatabaseMonitoringIncidents
+            .Where(item => item.LastSeenAtUtc < retentionStart)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var excessIds = await authDbContext.DatabaseMonitoringIncidents
+            .OrderByDescending(item => item.LastSeenAtUtc)
+            .Skip(settings.MaxIncidentCount)
+            .Select(item => item.Id)
+            .ToArrayAsync(cancellationToken);
+        if (excessIds.Length > 0)
+        {
+            await authDbContext.DatabaseMonitoringIncidents
+                .Where(item => excessIds.Contains(item.Id))
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+    }
+
+    private async Task ApplyIncidentCandidatesAsync(
+        IReadOnlyCollection<IncidentCandidate> candidates,
+        DateTime observedAt,
+        CancellationToken cancellationToken)
+    {
         var fingerprints = candidates.Select(item => item.Fingerprint).ToArray();
         var existing = fingerprints.Length == 0
             ? new Dictionary<string, DatabaseMonitoringIncident>(StringComparer.Ordinal)
@@ -416,7 +453,7 @@ public sealed partial class DatabaseMonitoringService(
                 continue;
             }
 
-            authDbContext.DatabaseMonitoringIncidents.Add(new DatabaseMonitoringIncident(
+            var newIncident = new DatabaseMonitoringIncident(
                 Guid.NewGuid(),
                 candidate.Fingerprint,
                 candidate.Type,
@@ -431,32 +468,15 @@ public sealed partial class DatabaseMonitoringService(
                 candidate.ElapsedMilliseconds,
                 candidate.SqlText,
                 candidate.Recommendation,
-                observedAt));
+                observedAt);
+            authDbContext.DatabaseMonitoringIncidents.Add(newIncident);
+            existing.Add(candidate.Fingerprint, newIncident);
         }
 
         var active = await authDbContext.DatabaseMonitoringIncidents
             .Where(item => item.ResolvedAtUtc == null && !fingerprints.Contains(item.Fingerprint))
             .ToArrayAsync(cancellationToken);
         foreach (var incident in active) incident.Resolve(observedAt);
-
-        await authDbContext.SaveChangesAsync(cancellationToken);
-
-        var retentionStart = observedAt.AddHours(-settings.RetentionHours);
-        await authDbContext.DatabaseMonitoringIncidents
-            .Where(item => item.LastSeenAtUtc < retentionStart)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        var excessIds = await authDbContext.DatabaseMonitoringIncidents
-            .OrderByDescending(item => item.LastSeenAtUtc)
-            .Skip(settings.MaxIncidentCount)
-            .Select(item => item.Id)
-            .ToArrayAsync(cancellationToken);
-        if (excessIds.Length > 0)
-        {
-            await authDbContext.DatabaseMonitoringIncidents
-                .Where(item => excessIds.Contains(item.Id))
-                .ExecuteDeleteAsync(cancellationToken);
-        }
     }
 
     private DatabaseMonitoringOptions CurrentSettings()
@@ -597,6 +617,34 @@ public sealed partial class DatabaseMonitoringService(
         }
     }
 
+    internal static IReadOnlyCollection<IncidentCandidate> DeduplicateIncidentCandidates(
+        IEnumerable<IncidentCandidate> candidates) =>
+        candidates
+            .GroupBy(item => item.Fingerprint, StringComparer.Ordinal)
+            .Select(group => group
+                .OrderByDescending(item => SeverityRank(item.Severity))
+                .ThenByDescending(item => item.ElapsedMilliseconds)
+                .First())
+            .ToArray();
+
+    private static int SeverityRank(string severity) => severity.ToLowerInvariant() switch
+    {
+        "critical" => 3,
+        "warning" => 2,
+        "info" => 1,
+        _ => 0
+    };
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException { Number: 2601 or 2627 }) return true;
+        }
+
+        return false;
+    }
+
     private static (string Severity, string Recommendation) AssessRequest(
         string? waitType,
         int? blockingSessionId,
@@ -674,7 +722,7 @@ public sealed partial class DatabaseMonitoringService(
         int SessionId, DateTime LoginTime, int? HostProcessId, bool IsUserProcess, string? LoginName,
         string? HostName, string? ProgramName, string? DatabaseName, string? SqlText, int MonitorSessionId);
 
-    private sealed record IncidentCandidate(
+    internal sealed record IncidentCandidate(
         string Fingerprint, string Type, string Severity, int SessionId, int? BlockingSessionId,
         string? DatabaseName, string? LoginName, string? HostName, string? ProgramName, string? WaitType,
         long ElapsedMilliseconds, string? SqlText, string Recommendation);

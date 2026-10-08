@@ -40,4 +40,41 @@ public sealed class DatabaseMonitoringSafetyTests
         Assert.DoesNotContain("F56", sanitized, StringComparison.Ordinal);
         Assert.True(sanitized.Length <= 48);
     }
+
+    [Fact]
+    public void DeduplicateIncidentCandidates_KeepsOneCandidatePerFingerprint()
+    {
+        var candidates = new[]
+        {
+            Candidate("same-fingerprint", "warning", 30_000),
+            Candidate("same-fingerprint", "critical", 20_000),
+            Candidate("other-fingerprint", "warning", 40_000)
+        };
+
+        var result = DatabaseMonitoringService.DeduplicateIncidentCandidates(candidates);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(
+            "critical",
+            Assert.Single(result, item => item.Fingerprint == "same-fingerprint").Severity);
+    }
+
+    private static DatabaseMonitoringService.IncidentCandidate Candidate(
+        string fingerprint,
+        string severity,
+        long elapsedMilliseconds) =>
+        new(
+            fingerprint,
+            "Blocking",
+            severity,
+            42,
+            41,
+            "Mikro",
+            "login",
+            "host",
+            "program",
+            "LCK_M_X",
+            elapsedMilliseconds,
+            "SELECT 1",
+            "Review blocking session.");
 }

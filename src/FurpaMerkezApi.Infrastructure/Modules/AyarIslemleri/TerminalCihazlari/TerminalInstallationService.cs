@@ -101,48 +101,61 @@ public sealed class TerminalInstallationService(
         TerminalInstallationListRequest request,
         CancellationToken cancellationToken)
     {
-        var query = BuildScopeQuery(request.WarehouseNo);
+        var now = clock.UtcNow;
+        var manifest = await manifestProvider.GetAsync(cancellationToken);
+        var installations = await BuildListQuery(dbContext, request, now, manifest?.BuildNumber)
+            .ToListAsync(cancellationToken);
+        var users = await LoadUsersAsync(installations.Select(item => item.UserId), cancellationToken);
+        return installations.Select(item => Map(
+                item,
+                users.GetValueOrDefault(item.UserId),
+                manifest,
+                now))
+            .ToArray();
+    }
+
+    internal static IQueryable<TerminalInstallation> BuildListQuery(
+        AuthDbContext dbContext,
+        TerminalInstallationListRequest request,
+        DateTime now,
+        int? currentBuild)
+    {
+        var query = dbContext.TerminalInstallations.AsNoTracking()
+            .Where(item => !request.WarehouseNo.HasValue || item.WarehouseNo == request.WarehouseNo.Value);
         var search = request.Search?.Trim();
         if (!string.IsNullOrWhiteSpace(search))
         {
             query = query.Where(item =>
-                item.Installation.DeviceId.Contains(search) ||
-                (item.Installation.DeviceModel != null && item.Installation.DeviceModel.Contains(search)) ||
-                (item.Installation.Manufacturer != null && item.Installation.Manufacturer.Contains(search)) ||
-                item.User.Username.Contains(search) ||
-                item.User.FirstName.Contains(search) ||
-                item.User.LastName.Contains(search));
+                item.DeviceId.Contains(search) ||
+                (item.DeviceModel != null && item.DeviceModel.Contains(search)) ||
+                (item.Manufacturer != null && item.Manufacturer.Contains(search)) ||
+                dbContext.Users.Any(user =>
+                    user.Id == item.UserId &&
+                    (user.Username.Contains(search) ||
+                     user.FirstName.Contains(search) ||
+                     user.LastName.Contains(search))));
         }
         if (!string.IsNullOrWhiteSpace(request.AppVersion))
         {
             var version = request.AppVersion.Trim();
-            query = query.Where(item => item.Installation.AppVersion == version);
+            query = query.Where(item => item.AppVersion == version);
         }
         if (request.ActiveWithinDays is > 0)
         {
-            var activeSince = clock.UtcNow.AddDays(-Math.Clamp(request.ActiveWithinDays.Value, 1, 3650));
-            query = query.Where(item => item.Installation.LastSeenAtUtc >= activeSince);
+            var activeSince = now.AddDays(-Math.Clamp(request.ActiveWithinDays.Value, 1, 3650));
+            query = query.Where(item => item.LastSeenAtUtc >= activeSince);
         }
 
-        var manifest = await manifestProvider.GetAsync(cancellationToken);
-        if (request.IsCurrentVersion.HasValue && manifest?.BuildNumber is not null)
+        if (request.IsCurrentVersion.HasValue && currentBuild.HasValue)
         {
             query = request.IsCurrentVersion.Value
-                ? query.Where(item => item.Installation.BuildNumber >= manifest.BuildNumber.Value)
-                : query.Where(item => item.Installation.BuildNumber < manifest.BuildNumber.Value);
+                ? query.Where(item => item.BuildNumber >= currentBuild.Value)
+                : query.Where(item => item.BuildNumber < currentBuild.Value);
         }
 
-        var rows = await query
-            .OrderByDescending(item => item.Installation.LastSeenAtUtc)
-            .Take(Math.Clamp(request.Take, 1, MaxTake))
-            .ToListAsync(cancellationToken);
-        var now = clock.UtcNow;
-        return rows.Select(item => Map(
-                item.Installation,
-                new UserProjection(item.User.Username, item.User.FirstName, item.User.LastName),
-                manifest,
-                now))
-            .ToArray();
+        return query
+            .OrderByDescending(item => item.LastSeenAtUtc)
+            .Take(Math.Clamp(request.Take, 1, MaxTake));
     }
 
     public async Task<TerminalInstallationDto> GetAsync(
@@ -150,12 +163,14 @@ public sealed class TerminalInstallationService(
         int? warehouseNo,
         CancellationToken cancellationToken)
     {
-        var row = await BuildScopeQuery(warehouseNo)
-            .SingleOrDefaultAsync(item => item.Installation.Id == id, cancellationToken)
+        var installation = await dbContext.TerminalInstallations.AsNoTracking()
+            .Where(item => !warehouseNo.HasValue || item.WarehouseNo == warehouseNo.Value)
+            .SingleOrDefaultAsync(item => item.Id == id, cancellationToken)
             ?? throw new KeyNotFoundException("Terminal installation was not found.");
+        var users = await LoadUsersAsync([installation.UserId], cancellationToken);
         return Map(
-            row.Installation,
-            new UserProjection(row.User.Username, row.User.FirstName, row.User.LastName),
+            installation,
+            users.GetValueOrDefault(installation.UserId),
             await manifestProvider.GetAsync(cancellationToken),
             clock.UtcNow);
     }
@@ -207,11 +222,21 @@ public sealed class TerminalInstallationService(
             warehouses);
     }
 
-    private IQueryable<InstallationWithUser> BuildScopeQuery(int? warehouseNo) =>
-        from installation in dbContext.TerminalInstallations.AsNoTracking()
-        join user in dbContext.Users.AsNoTracking() on installation.UserId equals user.Id
-        where !warehouseNo.HasValue || installation.WarehouseNo == warehouseNo.Value
-        select new InstallationWithUser(installation, user);
+    private async Task<IReadOnlyDictionary<Guid, UserProjection>> LoadUsersAsync(
+        IEnumerable<Guid> userIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = userIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<Guid, UserProjection>();
+
+        return await dbContext.Users.AsNoTracking()
+            .Where(item => ids.Contains(item.Id))
+            .Select(item => new { item.Id, item.Username, item.FirstName, item.LastName })
+            .ToDictionaryAsync(
+                item => item.Id,
+                item => new UserProjection(item.Username, item.FirstName, item.LastName),
+                cancellationToken);
+    }
 
     private static TerminalInstallationDto Map(
         TerminalInstallation item,
@@ -262,7 +287,6 @@ public sealed class TerminalInstallationService(
         return normalized;
     }
 
-    private sealed record InstallationWithUser(TerminalInstallation Installation, AppUser User);
     private sealed record UserProjection(string Username, string FirstName, string LastName);
 }
 

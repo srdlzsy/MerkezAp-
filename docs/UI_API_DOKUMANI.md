@@ -34,7 +34,7 @@ Timeout ve tekrar deneme notu:
 - `MikroReadSeconds` liste/detay/rapor okumalari, `MikroWriteSeconds` create/update/delete yazma islemleri icin kullanilir. `AuthSeconds`, `FurpaSeconds`, `AxataSeconds`, `PuanSeconds` ve `ShopigoCiroSeconds` ilgili DB context'leri icindir.
 - Raw SQL ile yazilmis liste/arama/rapor komutlari da genel olarak `300` saniye bekleyecek sekilde ayarlanmistir.
 - `MikroApi:TimeoutSeconds` varsayilan appsettings'te `300` saniyedir. Yazma rotasi `MikroApi` ise UI bu sureyi de dikkate almalidir.
-- Manav mal kabul Mikro aktarimi `GreenGrocerGoodsReceipt`, POS muhasebe ERP aktarimi `PosAccountingSlip` routing ayariyla opsiyonel olarak Mikro API uzerinden calisir. Bu secim UI request modelini degistirmez; backend API sonrasi Mikro DB readback yapmadan islemi basarili saymaz.
+- Yazma yollari `MikroWriteRouting` ile secilir. Mevcut Production ayarinda `GreenGrocerGoodsReceipt`, `PosAccountingSlip` dahil tum yazma rotalari `Database` degerindedir; UI request modeli degismez. Bir rota ileride `MikroApi` yapilirsa backend Mikro DB readback yapmadan islemi basarili saymaz.
 - Terminal, mobil ve web istemcileri liste ve create isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Subede internet zayifsa API islemi devam ederken istemci 30-60 saniyede vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
 - POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
 
@@ -17529,7 +17529,7 @@ Config:
 - Mikro login cagrisi audit kapsaminda degildir.
 - Yalnizca `MikroApiClient` uzerinden yapilan POST yazma cagrilari kaydedilir.
 - `MikroWriteRouting` ilgili islem icin `Database` ise Mikro API cagrisi yapilmayacagindan audit kaydi da olusmaz.
-- Mevcut development ve production config'te standart belge yazma rotalari `MikroApi` secilidir; bu POST cagrilari audit kaydi uretir.
+- Mevcut Production config'te tum standart belge yazma rotalari `Database` secilidir; bu nedenle Production'da bu islemler Mikro API POST audit kaydi uretmez. Bir rota ortam ayariyla `MikroApi` yapilirsa ilgili POST cagrilari audit kaydi uretir.
 - `MikroApi` secimi yalnizca standart Mikro tablo yazma yolunu degistirir. Liste/detay/readback sorgulari ile Auth, Furpa, B2B, audit, offline retry, belge akis ve `STOK_DAGILIM` gibi uygulamaya ozel tablolar SQL/EF uzerinden calismaya devam eder.
 - `MicroDocumentEditing=MikroApi` modunda stok hareketi, cari hareket, firma siparisi, depo siparisi ve sayim update/sil aileleri Mikro API kullanir. Stok/cari/depo karti, depo-stok override ve satis fiyati duzeltmeleri icin dogrulanmis V17 contract bulunmadigindan backend bu islemleri sessizce DB'ye yazmaz; acik desteklenmiyor hatasi dondurur.
 
