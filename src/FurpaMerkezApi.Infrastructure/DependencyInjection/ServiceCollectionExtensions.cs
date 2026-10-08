@@ -2,6 +2,7 @@ using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Soforler;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
@@ -113,6 +114,7 @@ using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.List;
 using FurpaMerkezApi.Infrastructure.Authentication;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Soforler;
+using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.TerminalCihazlari;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ProductLatestTag;
@@ -348,6 +350,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(GreenGrocerProductCaseOptions.SectionName));
         services.Configure<DatabaseMonitoringOptions>(
             configuration.GetSection(DatabaseMonitoringOptions.SectionName));
+        services.Configure<TerminalInstallationOptions>(
+            configuration.GetSection(TerminalInstallationOptions.SectionName));
         services.AddSingleton<MikroApiAuthBlockFactory>();
         services.AddSingleton<MikroApiWriteAuditService>();
         services.AddScoped<MikroApiWriteAuditReconciliationService>();
@@ -551,6 +555,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DatabaseMonitoringService>();
         services.AddScoped<IDatabaseMonitoringService>(serviceProvider =>
             serviceProvider.GetRequiredService<DatabaseMonitoringService>());
+        services.AddSingleton<TerminalVersionManifestProvider>();
+        services.AddScoped<ITerminalInstallationService, TerminalInstallationService>();
         services.AddScoped<IMikroDocumentEditingService, MikroDocumentEditingService>();
         services.AddScoped<MobileOfflineSyncService>();
         services.AddScoped<ISearchProductsUseCase, SearchProductsUseCase>();

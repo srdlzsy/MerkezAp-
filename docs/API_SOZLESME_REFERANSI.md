@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 723. Model sayisi: 660.
+Endpoint sayisi (method + route): 727. Model sayisi: 665.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -71,6 +71,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/sube-ayarlari/{branchNo}` | JWT + ayar-islemleri.sube-ayarlari.detail | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BranchDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/ayar-islemleri/sube-ayarlari/{branchNo}` | JWT + ayar-islemleri.sube-ayarlari.update | path: branchNo / integer (int32) (zorunlu)<br>body: request / UpdateBranchSettingsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BranchDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` | JWT + ayar-islemleri.sube-ayarlari.detail | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegistryDto&gt;<br>400: ProblemDetails |
+| GET | `/api/ayar-islemleri/terminal-cihazlari` | JWT + ayar-islemleri.terminal-cihazlari.list | query: WarehouseNo / integer (int32)<br>query: Search / string<br>query: AppVersion / string<br>query: IsCurrentVersion / boolean<br>query: ActiveWithinDays / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;TerminalInstallationDto&gt; |
+| GET | `/api/ayar-islemleri/terminal-cihazlari/ozet` | JWT + ayar-islemleri.terminal-cihazlari.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationSummaryDto |
+| GET | `/api/ayar-islemleri/terminal-cihazlari/{id}` | JWT + ayar-islemleri.terminal-cihazlari.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationDto<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
 | GET | `/api/ayar-islemleri/veritabani-izleme/olaylar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseMonitoringIncidentDto&gt; |
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseSessionTerminationDto&gt; |
@@ -720,6 +723,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/stok-islemleri/zayiat-fisleri` | JWT + stok-islemleri.zayiat-fisleri.create | body: request / CreateStockReceiptHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateStockReceiptResponse<br>400: ProblemDetails |
 | GET | `/api/stok-islemleri/zayiat-fisleri/{documentSerie}/{documentOrderNo}` | JWT + stok-islemleri.zayiat-fisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockReceiptDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/stok-islemleri/zayiat-fisleri/{id}` | JWT + stok-islemleri.zayiat-fisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
+| POST | `/api/terminal-installations/heartbeat` | JWT | body: request / TerminalHeartbeatHttpRequest (zorunlu) | 200: TerminalInstallationDto<br>400: ProblemDetails<br>401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/users` | JWT + kullanici-islemleri.kullanicilar.manage |  | 200: IReadOnlyCollection&lt;UserDto&gt; |
 | GET | `/api/users/{id}` | JWT + kullanici-islemleri.kullanicilar.manage | path: id / string (uuid) (zorunlu) | 200: UserDto<br>404: ProblemDetails |
 | PUT | `/api/users/{id}` | JWT + kullanici-islemleri.kullanicilar.manage | path: id / string (uuid) (zorunlu)<br>body: request / UpdateUserBody (zorunlu) | 200: UserDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -1354,6 +1358,71 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `plateNumber` | string | Hayir | nullable |
 | `tckn` | string | Hayir | nullable |
 | `updatedAtUtc` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari.TerminalInstallationDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `androidSdk` | integer (int32) | Hayir | nullable |
+| `androidVersion` | string | Hayir | nullable |
+| `appVersion` | string | Hayir | nullable |
+| `buildNumber` | integer (int32) | Hayir |  |
+| `deviceId` | string | Hayir | nullable |
+| `deviceModel` | string | Hayir | nullable |
+| `firstSeenAtUtc` | string (date-time) | Hayir |  |
+| `id` | string (uuid) | Hayir |  |
+| `isActiveLast24Hours` | boolean | Hayir |  |
+| `isActiveLast7Days` | boolean | Hayir |  |
+| `isCurrentVersion` | boolean | Hayir | nullable |
+| `lastIpAddress` | string | Hayir | nullable |
+| `lastSeenAtUtc` | string (date-time) | Hayir |  |
+| `manufacturer` | string | Hayir | nullable |
+| `previousWarehouseNo` | integer (int32) | Hayir | nullable |
+| `supportedAbis` | string[] | Hayir | nullable |
+| `userFullName` | string | Hayir | nullable |
+| `userId` | string (uuid) | Hayir |  |
+| `username` | string | Hayir | nullable |
+| `versionChangedAtUtc` | string (date-time) | Hayir | nullable |
+| `warehouseChangeCount` | integer (int32) | Hayir |  |
+| `warehouseChangedAtUtc` | string (date-time) | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari.TerminalInstallationSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeLast24HoursCount` | integer (int32) | Hayir |  |
+| `activeLast30DaysCount` | integer (int32) | Hayir |  |
+| `activeLast7DaysCount` | integer (int32) | Hayir |  |
+| `currentAppVersion` | string | Hayir | nullable |
+| `currentBuildNumber` | integer (int32) | Hayir | nullable |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `isVersionManifestAvailable` | boolean | Hayir |  |
+| `outdatedInstallationCount` | integer (int32) | Hayir | nullable |
+| `registeredInstallationCount` | integer (int32) | Hayir |  |
+| `versionManifestCheckedAtUtc` | string (date-time) | Hayir | nullable |
+| `versions` | FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari.TerminalVersionDistributionDto[] | Hayir | nullable |
+| `warehouseChangedInstallationCount` | integer (int32) | Hayir |  |
+| `warehouses` | FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari.TerminalWarehouseDistributionDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari.TerminalVersionDistributionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeLast7DaysCount` | integer (int32) | Hayir |  |
+| `appVersion` | string | Hayir | nullable |
+| `buildNumber` | integer (int32) | Hayir |  |
+| `installationCount` | integer (int32) | Hayir |  |
+| `isCurrentVersion` | boolean | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari.TerminalWarehouseDistributionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeLast7DaysCount` | integer (int32) | Hayir |  |
+| `installationCount` | integer (int32) | Hayir |  |
+| `outdatedCount` | integer (int32) | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseActiveRequestDto
 
@@ -10400,6 +10469,18 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `description` | string | Hayir | minLength=0; maxLength=250; nullable |
 | `isActive` | boolean | Evet |  |
 | `name` | string | Evet | minLength=0; maxLength=100 |
+
+### FurpaMerkezApi.WebApi.Controllers.TerminalHeartbeatHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `androidSdk` | integer (int32) | Hayir | min=1; max=1000; nullable |
+| `androidVersion` | string | Hayir | minLength=0; maxLength=40; nullable |
+| `appVersion` | string | Evet | minLength=0; maxLength=40 |
+| `buildNumber` | integer (int32) | Hayir | min=1; max=2147483647 |
+| `deviceModel` | string | Hayir | minLength=0; maxLength=150; nullable |
+| `manufacturer` | string | Hayir | minLength=0; maxLength=100; nullable |
+| `supportedAbis` | string[] | Hayir | nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.UsersController.AssignClientRolesBody
 

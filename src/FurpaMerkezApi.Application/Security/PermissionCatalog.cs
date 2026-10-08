@@ -68,6 +68,14 @@ public static class PermissionCatalog
         new("terminate-session", "Oturum Sonlandir")
     ];
 
+    private static readonly PermissionActionDefinition[] TerminalInstallationActions =
+    [
+        ManageAction,
+        ListAction,
+        DetailAction,
+        AllWarehousesAction
+    ];
+
     private static readonly PermissionActionDefinition[] ReadActions =
     [
         PageAction,
@@ -288,6 +296,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "soforler", "Soforler", ManageCrudDeleteActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "b2b-ayarlari", "B2BAyarlari", ManageCrudDeleteActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "veritabani-izleme", "VeritabaniIzleme", DatabaseMonitoringActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "terminal-cihazlari", "TerminalCihazlari", TerminalInstallationActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri", CrudPrintActions),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),
