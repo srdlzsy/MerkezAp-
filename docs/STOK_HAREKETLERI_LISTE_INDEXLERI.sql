@@ -3,6 +3,7 @@
 
     Amac:
     - Firma mal kabul / firma sevk / firma iade listelerini hizlandirmak.
+    - Firma mal kabul guvenli retry/recovery trace sorgusunu dar bir seek ile calistirmak.
     - Depolar arasi sevk, depo mal kabul bekleyen/gelen ve depo iade listelerini hizlandirmak.
     - Zayiat, masraf fisi ve virman listelerine dar kapsamli destek vermek.
 
@@ -39,6 +40,41 @@ IF EXISTS (
 BEGIN
     DROP INDEX IX_FR_STH_FirmaMalKabul_Liste
     ON dbo.STOK_HAREKETLERI;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.STOK_HAREKETLERI')
+      AND name = N'IX_FR_STH_FirmaMalKabul_Trace'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_FR_STH_FirmaMalKabul_Trace
+    ON dbo.STOK_HAREKETLERI
+    (
+        sth_eticaret_kanal_kodu,
+        sth_satirno
+    )
+    INCLUDE
+    (
+        sth_tarih,
+        sth_belge_tarih,
+        sth_belge_no,
+        sth_evrakno_seri,
+        sth_evrakno_sira,
+        sth_cari_kodu,
+        sth_giris_depo_no,
+        sth_stok_kod,
+        sth_miktar,
+        sth_tutar,
+        sth_sip_uid
+    )
+    WHERE
+        sth_evraktip = 13
+        AND sth_tip = 0
+        AND sth_normal_iade = 0
+        AND sth_eticaret_kanal_kodu IS NOT NULL;
 END;
 GO
 

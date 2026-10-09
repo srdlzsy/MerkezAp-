@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,9 +18,56 @@ internal static class MikroDocumentSequenceLock
         string documentSerie,
         CancellationToken cancellationToken)
     {
+        return await AcquireCoreAsync(
+            dbContext,
+            operationCode,
+            documentSerie,
+            localWaitTimeout: null,
+            LockTimeoutMilliseconds,
+            cancellationToken);
+    }
+
+    public static async Task<IAsyncDisposable> AcquireAsync(
+        MikroWriteDbContext dbContext,
+        string operationCode,
+        string documentSerie,
+        TimeSpan waitTimeout,
+        CancellationToken cancellationToken)
+    {
+        if (waitTimeout <= TimeSpan.Zero || waitTimeout.TotalMilliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(waitTimeout));
+        }
+
+        var timeoutMilliseconds = (int)Math.Ceiling(waitTimeout.TotalMilliseconds);
+        return await AcquireCoreAsync(
+            dbContext,
+            operationCode,
+            documentSerie,
+            waitTimeout,
+            timeoutMilliseconds,
+            cancellationToken);
+    }
+
+    private static async Task<IAsyncDisposable> AcquireCoreAsync(
+        MikroWriteDbContext dbContext,
+        string operationCode,
+        string documentSerie,
+        TimeSpan? localWaitTimeout,
+        int sqlLockTimeoutMilliseconds,
+        CancellationToken cancellationToken)
+    {
         var resource = $"FurpaMerkezApi:DocumentSequence:{operationCode}:{documentSerie}";
         var localLock = LocalLocks.GetOrAdd(resource, _ => new SemaphoreSlim(1, 1));
-        await localLock.WaitAsync(cancellationToken);
+        var waitStopwatch = Stopwatch.StartNew();
+        var localLockAcquired = localWaitTimeout.HasValue
+            ? await localLock.WaitAsync(localWaitTimeout.Value, cancellationToken)
+            : await WaitWithoutTimeoutAsync(localLock, cancellationToken);
+
+        if (!localLockAcquired)
+        {
+            throw new TimeoutException($"Mikro application lock wait timed out for resource '{resource}'.");
+        }
 
         if (!dbContext.Database.IsSqlServer())
         {
@@ -31,9 +79,27 @@ internal static class MikroDocumentSequenceLock
 
         try
         {
+            var effectiveSqlLockTimeoutMilliseconds = localWaitTimeout.HasValue
+                ? sqlLockTimeoutMilliseconds - (int)Math.Min(waitStopwatch.ElapsedMilliseconds, int.MaxValue)
+                : sqlLockTimeoutMilliseconds;
+            if (effectiveSqlLockTimeoutMilliseconds <= 0)
+            {
+                throw new TimeoutException($"Mikro application lock wait timed out for resource '{resource}'.");
+            }
+
             if (closeConnection)
             {
                 await connection.OpenAsync(cancellationToken);
+            }
+
+            if (localWaitTimeout.HasValue)
+            {
+                effectiveSqlLockTimeoutMilliseconds =
+                    sqlLockTimeoutMilliseconds - (int)Math.Min(waitStopwatch.ElapsedMilliseconds, int.MaxValue);
+                if (effectiveSqlLockTimeoutMilliseconds <= 0)
+                {
+                    throw new TimeoutException($"Mikro application lock wait timed out for resource '{resource}'.");
+                }
             }
 
             await using var command = connection.CreateCommand();
@@ -46,9 +112,9 @@ internal static class MikroDocumentSequenceLock
                     @LockTimeout = @lockTimeout;
                 SELECT @result;
                 """;
-            command.CommandTimeout = (LockTimeoutMilliseconds / 1000) + 10;
+            command.CommandTimeout = (effectiveSqlLockTimeoutMilliseconds / 1000) + 10;
             AddParameter(command, "@resource", DbType.String, resource);
-            AddParameter(command, "@lockTimeout", DbType.Int32, LockTimeoutMilliseconds);
+            AddParameter(command, "@lockTimeout", DbType.Int32, effectiveSqlLockTimeoutMilliseconds);
 
             var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
             if (result < 0)
@@ -69,6 +135,14 @@ internal static class MikroDocumentSequenceLock
             localLock.Release();
             throw;
         }
+    }
+
+    private static async Task<bool> WaitWithoutTimeoutAsync(
+        SemaphoreSlim localLock,
+        CancellationToken cancellationToken)
+    {
+        await localLock.WaitAsync(cancellationToken);
+        return true;
     }
 
     private static void AddParameter(DbCommand command, string name, DbType type, object value)

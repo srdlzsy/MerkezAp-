@@ -38,6 +38,7 @@ Bu yaklasim:
 | Index | Hedef |
 |---|---|
 | `IX_FR_STH_FirmaMalKabul_Liste` | Firma mal kabul listesi |
+| `IX_FR_STH_FirmaMalKabul_Trace` | Firma mal kabul guvenli retry/recovery trace aramasi |
 | `IX_FR_STH_FirmaCikis_Liste` | Firma sevk ve firma iade listesi |
 | `IX_FR_STH_DepoSevkCikis_Liste` | Depolar arasi giden sevk listesi |
 | `IX_FR_STH_DepoSevkNakliye_Liste` | Depo mal kabul bekleyen/gelen nakliye deposu filtresi |
@@ -59,6 +60,11 @@ Firma mal kabul listesinde tarih filtresi `sth_tarih` uzerinden calisir. Bu nede
 `IX_FR_STH_FirmaMalKabul_Liste` indexinin ikinci key kolonu `sth_tarih` olmalidir.
 Eski scriptle `sth_belge_tarih` key'li index olustuysa guncel script bu indexi tespit
 eder, sadece bu indexi dusurur ve dogru kolonla yeniden olusturur.
+
+`IX_FR_STH_FirmaMalKabul_Trace`, `clientRequestId` degerinden uretilen `FR...`
+trace anahtarini `sth_eticaret_kanal_kodu` uzerinden arayan recovery sorgusuna
+ozeldir. Yalniz firma mal kabul hareketlerini kapsayan filtered index oldugu icin
+tum `STOK_HAREKETLERI` tablosunu ikinci kez genis bir anahtarla indexlemez.
 
 ## Uygulama Oncesi
 
@@ -98,6 +104,9 @@ Indexler beklenen faydayi vermezse veya yazma tarafinda kabul edilmeyen bir yava
 
 ```sql
 DROP INDEX IF EXISTS IX_FR_STH_FirmaMalKabul_Liste
+ON dbo.STOK_HAREKETLERI;
+
+DROP INDEX IF EXISTS IX_FR_STH_FirmaMalKabul_Trace
 ON dbo.STOK_HAREKETLERI;
 
 DROP INDEX IF EXISTS IX_FR_STH_FirmaCikis_Liste

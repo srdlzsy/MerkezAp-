@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
@@ -18,6 +19,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.Co
 
 public sealed class CreateCompanyReceivingUseCase(
     MikroWriteDbContext mikroWriteDbContext,
+    MikroDbContext mikroDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     MobileOfflineSyncService mobileOfflineSyncService,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
@@ -48,6 +50,7 @@ public sealed class CreateCompanyReceivingUseCase(
     private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
     private const int MikroApiRecoveryAttemptCount = 5;
     private const int MikroApiRecoveryDelayMilliseconds = 250;
+    private static readonly TimeSpan DatabaseCreateQueueTimeout = TimeSpan.FromSeconds(180);
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCompanyReceivingResponse> ExecuteAsync(
@@ -131,6 +134,9 @@ public sealed class CreateCompanyReceivingUseCase(
 
         try
         {
+            await using var createLock = await AcquireDatabaseCreateLockAsync(
+                request.WarehouseNo,
+                cancellationToken);
             var response = await executionStrategy.ExecuteAsync(async () =>
             {
                 mikroWriteDbContext.ChangeTracker.Clear();
@@ -422,11 +428,34 @@ public sealed class CreateCompanyReceivingUseCase(
                 await TryMarkFailedAsync(
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
-                    exception.Message,
+                    exception,
                     cancellationToken);
             }
 
             throw;
+        }
+    }
+
+    private async Task<IAsyncDisposable> AcquireDatabaseCreateLockAsync(
+        int warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await MikroDocumentSequenceLock.AcquireAsync(
+                mikroWriteDbContext,
+                "CompanyReceivingCreate",
+                $"Warehouse:{warehouseNo.ToString(CultureInfo.InvariantCulture)}",
+                DatabaseCreateQueueTimeout,
+                cancellationToken);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroWriteQueueBusy,
+                $"Another company receiving write for warehouse {warehouseNo} is still being processed. Keep the same payload and clientRequestId, then retry.",
+                retryable: true,
+                innerException: exception);
         }
     }
 
@@ -457,7 +486,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 await TryMarkFailedAsync(
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
-                    exception.Message,
+                    exception,
                     cancellationToken);
             }
 
@@ -2265,11 +2294,53 @@ public sealed class CreateCompanyReceivingUseCase(
         string? requestPayload,
         CancellationToken cancellationToken)
     {
+        var executionStrategy = mikroDbContext.Database.CreateExecutionStrategy();
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroDbContext.ChangeTracker.Clear();
+
+            if (!mikroDbContext.Database.IsRelational())
+            {
+                return await TryRecoverOfflineResponseCoreAsync(
+                    warehouseNo,
+                    clientRequestId,
+                    requestPayload,
+                    cancellationToken);
+            }
+
+            await using var transaction = await mikroDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            try
+            {
+                var response = await TryRecoverOfflineResponseCoreAsync(
+                    warehouseNo,
+                    clientRequestId,
+                    requestPayload,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return response;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        });
+    }
+
+    private async Task<CreateCompanyReceivingResponse?> TryRecoverOfflineResponseCoreAsync(
+        int warehouseNo,
+        Guid clientRequestId,
+        string? requestPayload,
+        CancellationToken cancellationToken)
+    {
         var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
         var request = DeserializeStoredRequest(requestPayload);
         var movementDate = (request?.MovementDate ?? DateTime.Today).Date;
         var movementDateExclusive = movementDate.AddDays(1);
-        var movements = await mikroWriteDbContext.STOK_HAREKETLERIs
+        var movements = await mikroDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
                 movement.sth_evraktip == ReceivingReceiptDocumentType &&
@@ -2347,7 +2418,7 @@ public sealed class CreateCompanyReceivingUseCase(
             .ToArray();
         var currentOrders = orderGuids.Length == 0
             ? new Dictionary<Guid, SIPARISLER>()
-            : await mikroWriteDbContext.SIPARISLERs
+            : await mikroDbContext.SIPARISLERs
                 .AsNoTracking()
                 .Where(order => orderGuids.Contains(order.sip_Guid))
                 .ToDictionaryAsync(order => order.sip_Guid, cancellationToken);
@@ -2457,17 +2528,20 @@ public sealed class CreateCompanyReceivingUseCase(
     private async Task TryMarkFailedAsync(
         Guid requestedByUserId,
         Guid clientRequestId,
-        string errorMessage,
+        Exception exception,
         CancellationToken cancellationToken)
     {
         try
         {
+            var conflict = exception as OperationConflictException;
             await mobileOfflineSyncService.MarkFailedAsync(
                 OfflineOperationCode,
                 requestedByUserId,
                 clientRequestId,
-                errorMessage,
-                cancellationToken);
+                exception.Message,
+                cancellationToken,
+                conflict?.ErrorCode,
+                conflict?.Retryable);
         }
         catch
         {
