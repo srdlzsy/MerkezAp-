@@ -87792,6 +87792,144 @@
         ]
       }
     },
+    "/api/stok-islemleri/virmanlar/donusum-onerisi": {
+      "get": {
+        "tags": [
+          "Virmanlar"
+        ],
+        "parameters": [
+          {
+            "name": "SourceStockCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 25,
+              "type": "string"
+            }
+          },
+          {
+            "name": "SourceQuantity",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "number",
+              "format": "double"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion.VirmanConversionSuggestionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion.VirmanConversionSuggestionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion.VirmanConversionSuggestionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "stok-islemleri.virmanlar.create"
+        ]
+      }
+    },
     "/api/stok-islemleri/virmanlar/{id}": {
       "put": {
         "tags": [
@@ -114379,6 +114517,105 @@
           "highCount": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion.VirmanConversionSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "sourceStockCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceStockName": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceUnitName": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "targetStockCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetStockName": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetUnitName": {
+            "type": "string",
+            "nullable": true
+          },
+          "multiplier": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "targetQuantity": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sampleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetMatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "multiplierMatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetConfidencePercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "multiplierConfidencePercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "confidencePercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "isReliable": {
+            "type": "boolean"
+          },
+          "suggestionSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "lookbackStartDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lookbackEndDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "minimumSampleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maximumSampleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minimumConfidencePercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "warning": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

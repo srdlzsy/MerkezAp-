@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
+using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.Detail;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.List;
@@ -19,6 +20,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.StokIslemleri.Virmanlar;
 public sealed class VirmanlarController(
     IListVirmansUseCase listVirmansUseCase,
     IGetVirmanDetailUseCase getVirmanDetailUseCase,
+    IVirmanConversionSuggestionUseCase virmanConversionSuggestionUseCase,
     ICreateVirmanUseCase createVirmanUseCase,
     IDocumentFlowService documentFlowService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
@@ -70,6 +72,20 @@ public sealed class VirmanlarController(
                 documentOrderNo),
             cancellationToken));
     }
+
+    [HttpGet("donusum-onerisi")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(VirmanConversionSuggestionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<VirmanConversionSuggestionDto>> ConversionSuggestion(
+        [FromQuery] VirmanConversionSuggestionHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await virmanConversionSuggestionUseCase.ExecuteAsync(
+            new VirmanConversionSuggestionRequest(
+                request.SourceStockCode!,
+                request.SourceQuantity!.Value),
+            cancellationToken));
 
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]
@@ -129,4 +145,13 @@ public sealed class VirmanlarController(
     [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
     public ActionResult<ModuleActionScaffoldResponse> Update(string id, [FromBody] ModuleActionRequest request) =>
         UpdateNotImplemented(UpdatePolicy, id);
+}
+
+public sealed class VirmanConversionSuggestionHttpRequest
+{
+    [Required, MaxLength(25)]
+    public string? SourceStockCode { get; init; }
+
+    [Required, Range(typeof(double), "0.000001", "1.7976931348623157E+308")]
+    public double? SourceQuantity { get; init; }
 }

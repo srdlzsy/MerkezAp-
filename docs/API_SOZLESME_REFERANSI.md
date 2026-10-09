@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 727. Model sayisi: 665.
+Endpoint sayisi (method + route): 728. Model sayisi: 666.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -717,6 +717,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/stok-islemleri/stok-anomali-merkezi/{id}/durum` | JWT + stok-islemleri.stok-anomali-merkezi.update | path: id / string (uuid) (zorunlu)<br>body: request / ChangeStockAnomalyStatusHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockAnomalyDetailDto<br>404: ProblemDetails<br>400: ProblemDetails |
 | GET | `/api/stok-islemleri/virmanlar` | JWT + stok-islemleri.virmanlar.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;VirmanListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/stok-islemleri/virmanlar` | JWT + stok-islemleri.virmanlar.create | body: request / CreateVirmanHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateVirmanResponse<br>400: ProblemDetails |
+| GET | `/api/stok-islemleri/virmanlar/donusum-onerisi` | JWT + stok-islemleri.virmanlar.create | query: SourceStockCode / string (zorunlu)<br>query: SourceQuantity / number (double) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: VirmanConversionSuggestionDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/stok-islemleri/virmanlar/{documentSerie}/{documentOrderNo}` | JWT + stok-islemleri.virmanlar.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: VirmanDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/stok-islemleri/virmanlar/{id}` | JWT + stok-islemleri.virmanlar.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/stok-islemleri/zayiat-fisleri` | JWT + stok-islemleri.zayiat-fisleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockReceiptListItemDto&gt;<br>400: ProblemDetails |
@@ -8272,6 +8273,34 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `ignoredCount` | integer (int32) | Hayir |  |
 | `openCount` | integer (int32) | Hayir |  |
 | `resolvedCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion.VirmanConversionSuggestionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `confidencePercent` | number (double) | Hayir |  |
+| `isReliable` | boolean | Hayir |  |
+| `lookbackEndDate` | string (date-time) | Hayir |  |
+| `lookbackStartDate` | string (date-time) | Hayir |  |
+| `maximumSampleCount` | integer (int32) | Hayir |  |
+| `minimumConfidencePercent` | number (double) | Hayir |  |
+| `minimumSampleCount` | integer (int32) | Hayir |  |
+| `multiplier` | number (double) | Hayir | nullable |
+| `multiplierConfidencePercent` | number (double) | Hayir |  |
+| `multiplierMatchCount` | integer (int32) | Hayir |  |
+| `sampleCount` | integer (int32) | Hayir |  |
+| `sourceQuantity` | number (double) | Hayir |  |
+| `sourceStockCode` | string | Hayir | nullable |
+| `sourceStockName` | string | Hayir | nullable |
+| `sourceUnitName` | string | Hayir | nullable |
+| `suggestionSource` | string | Hayir | nullable |
+| `targetConfidencePercent` | number (double) | Hayir |  |
+| `targetMatchCount` | integer (int32) | Hayir |  |
+| `targetQuantity` | number (double) | Hayir | nullable |
+| `targetStockCode` | string | Hayir | nullable |
+| `targetStockName` | string | Hayir | nullable |
+| `targetUnitName` | string | Hayir | nullable |
+| `warning` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.CreateVirmanResponse
 
