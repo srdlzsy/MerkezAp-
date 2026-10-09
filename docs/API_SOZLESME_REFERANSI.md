@@ -6251,6 +6251,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `isPassive` | boolean | Hayir |  |
 | `isSalesBlocked` | boolean | Hayir |  |
 | `lookupSource` | string | Hayir | nullable |
+| `matchedUnitMultiplier` | number (double) | Hayir |  |
 | `orderBlockCode` | integer (int32) | Hayir | nullable |
 | `price` | number (double) | Hayir |  |
 | `priceTypeCode` | integer (int32) | Hayir |  |

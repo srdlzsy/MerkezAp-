@@ -1,5 +1,6 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -414,7 +415,10 @@ public sealed class LabelProductQueryExecutor(
             products[row.sto_kod] = new LabelDocumentProductDto
             {
                 Package = row.sto_paket_kodu ?? string.Empty,
-                PackageFactor = FormatNumber(row.sto_birim2_katsayi ?? row.sto_birim1_katsayi),
+                PackageFactor = FormatNumber(UnitMultiplierNormalizer.ResolvePackageMultiplier(
+                    row.sto_birim1_katsayi,
+                    row.sto_birim2_ad,
+                    row.sto_birim2_katsayi)),
                 LastUpdateDate = lastUpdateDate,
                 BarcodeContent = row.Barcode ?? string.Empty,
                 BulkSaleTaxRate = Convert.ToByte(row.sto_toptan_vergi ?? 0),

@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Text;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.MobileSync.ProductPriceCatalog;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -51,13 +52,13 @@ public sealed class GetMobileProductPriceCatalogUseCase(MikroDbContext mikroDbCo
                         COALESCE(s.sto_isim, '') AS StockName,
                         NULLIF(LTRIM(RTRIM(s.sto_kuresel_urun_numarasi)), '') AS GlobalTradeItemNo,
                         COALESCE(s.sto_birim1_ad, '') AS Unit1Name,
-                        CASE WHEN COALESCE(s.sto_birim1_katsayi, 0) <= 0 THEN 1 ELSE s.sto_birim1_katsayi END AS Unit1Multiplier,
+                        COALESCE(s.sto_birim1_katsayi, 0) AS Unit1Multiplier,
                         COALESCE(s.sto_birim2_ad, '') AS Unit2Name,
-                        CASE WHEN COALESCE(s.sto_birim2_katsayi, 0) <= 0 THEN 1 ELSE s.sto_birim2_katsayi END AS Unit2Multiplier,
+                        COALESCE(s.sto_birim2_katsayi, 0) AS Unit2Multiplier,
                         COALESCE(s.sto_birim3_ad, '') AS Unit3Name,
-                        CASE WHEN COALESCE(s.sto_birim3_katsayi, 0) <= 0 THEN 1 ELSE s.sto_birim3_katsayi END AS Unit3Multiplier,
+                        COALESCE(s.sto_birim3_katsayi, 0) AS Unit3Multiplier,
                         COALESCE(s.sto_birim4_ad, '') AS Unit4Name,
-                        CASE WHEN COALESCE(s.sto_birim4_katsayi, 0) <= 0 THEN 1 ELSE s.sto_birim4_katsayi END AS Unit4Multiplier,
+                        COALESCE(s.sto_birim4_katsayi, 0) AS Unit4Multiplier,
                         s.sto_satis_dursun AS StockSalesBlockCode,
                         s.sto_siparis_dursun AS StockOrderBlockCode,
                         s.sto_malkabul_dursun AS StockGoodsAcceptanceBlockCode,
@@ -142,7 +143,8 @@ public sealed class GetMobileProductPriceCatalogUseCase(MikroDbContext mikroDbCo
                             WHEN 3 THEN lr.Unit3Multiplier
                             WHEN 4 THEN lr.Unit4Multiplier
                             ELSE lr.Unit1Multiplier
-                        END AS UnitMultiplier,
+                        END AS MatchedUnitMultiplier,
+                        lr.Unit1Multiplier AS PrimaryUnitMultiplier,
                         lr.Unit2Name AS SecondaryUnitName,
                         lr.Unit2Multiplier AS SecondaryUnitMultiplier,
                         COALESCE(warehouseDetail.sdp_satisdursun, lr.StockSalesBlockCode) AS SalesBlockCode,
@@ -204,7 +206,8 @@ public sealed class GetMobileProductPriceCatalogUseCase(MikroDbContext mikroDbCo
                     PriceTypeCode,
                     UnitPointer,
                     UnitName,
-                    UnitMultiplier,
+                    MatchedUnitMultiplier,
+                    PrimaryUnitMultiplier,
                     SecondaryUnitName,
                     SecondaryUnitMultiplier,
                     SalesBlockCode,
@@ -293,12 +296,23 @@ public sealed class GetMobileProductPriceCatalogUseCase(MikroDbContext mikroDbCo
     private static int NormalizePageSize(int pageSize) =>
         pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-    private static MobileProductPriceCatalogItemDto ReadItem(DbDataReader reader)
+    internal static MobileProductPriceCatalogItemDto ReadItem(DbDataReader reader)
     {
         var salesBlockCode = ReadNullableInt(reader, "SalesBlockCode");
         var orderBlockCode = ReadNullableInt(reader, "OrderBlockCode");
         var goodsAcceptanceBlockCode = ReadNullableInt(reader, "GoodsAcceptanceBlockCode");
         var isDeleted = ReadBool(reader, "IsDeleted");
+        var secondaryUnitName = ReadString(reader, "SecondaryUnitName");
+        var secondaryUnitMultiplier = UnitMultiplierNormalizer.Normalize(
+            ReadDouble(reader, "SecondaryUnitMultiplier"),
+            1d);
+        var matchedUnitMultiplier = UnitMultiplierNormalizer.Normalize(
+            ReadDouble(reader, "MatchedUnitMultiplier"),
+            1d);
+        var unitMultiplier = UnitMultiplierNormalizer.ResolvePackageMultiplier(
+            ReadDouble(reader, "PrimaryUnitMultiplier"),
+            secondaryUnitName,
+            secondaryUnitMultiplier);
 
         return new MobileProductPriceCatalogItemDto(
             ReadInt(reader, "WarehouseNo"),
@@ -310,9 +324,10 @@ public sealed class GetMobileProductPriceCatalogUseCase(MikroDbContext mikroDbCo
             ReadInt(reader, "PriceTypeCode"),
             ReadInt(reader, "UnitPointer"),
             ReadString(reader, "UnitName"),
-            ReadDouble(reader, "UnitMultiplier"),
-            ReadString(reader, "SecondaryUnitName"),
-            ReadDouble(reader, "SecondaryUnitMultiplier"),
+            unitMultiplier,
+            matchedUnitMultiplier,
+            secondaryUnitName,
+            secondaryUnitMultiplier,
             salesBlockCode,
             orderBlockCode,
             goodsAcceptanceBlockCode,

@@ -11,6 +11,7 @@ public sealed record MobileProductPriceCatalogItemDto(
     int UnitPointer,
     string UnitName,
     double UnitMultiplier,
+    double MatchedUnitMultiplier,
     string SecondaryUnitName,
     double SecondaryUnitMultiplier,
     int? SalesBlockCode,

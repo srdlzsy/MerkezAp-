@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -1850,9 +1851,9 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             ReadString(reader, "StockName"),
             ReadString(reader, "Barcode"),
             ReadString(reader, "Unit1Name"),
-            Round(ReadDouble(reader, "Unit1Multiplier")),
+            Round(UnitMultiplierNormalizer.Normalize(ReadDouble(reader, "Unit1Multiplier"), 1d)),
             ReadString(reader, "Unit2Name"),
-            Round(ReadDouble(reader, "Unit2Multiplier")),
+            Round(UnitMultiplierNormalizer.Normalize(ReadDouble(reader, "Unit2Multiplier"), 1d)),
             ReadString(reader, "SupplierCode"),
             ReadString(reader, "SupplierName"),
             ReadString(reader, "ProductManagerCode"),

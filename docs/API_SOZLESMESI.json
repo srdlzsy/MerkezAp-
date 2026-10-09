@@ -108191,6 +108191,10 @@
             "type": "number",
             "format": "double"
           },
+          "matchedUnitMultiplier": {
+            "type": "number",
+            "format": "double"
+          },
           "secondaryUnitName": {
             "type": "string",
             "nullable": true

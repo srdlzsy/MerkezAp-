@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -218,15 +219,26 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             ?? stock.GlobalTradeItemNo;
 
         var caseBarcodeRow = productBarcodes
+            .Where(row => UnitMultiplierNormalizer.IsPackageUnit(
+                row.UnitPointer,
+                GetUnitName(stock, row.UnitPointer),
+                GetUnitMultiplier(stock, row.UnitPointer)))
             .OrderByDescending(row => row.IsMaster)
             .ThenByDescending(row => GetUnitMultiplier(stock, row.UnitPointer))
-            .FirstOrDefault(row => row.IsMaster || GetUnitMultiplier(stock, row.UnitPointer) > 1d);
+            .FirstOrDefault();
         var caseBarcode = caseBarcodeRow?.Barcode;
         var unitsPerCase = caseBarcodeRow is null ? null : GetUnitMultiplier(stock, caseBarcodeRow.UnitPointer);
         var matchedUnitName = GetUnitName(stock, matchedUnitPointer);
         var matchedUnitMultiplier = GetUnitMultiplier(stock, matchedUnitPointer);
         var isCaseBarcode = barcodeMatch is not null &&
-                            (barcodeMatch.IsMaster || matchedUnitMultiplier.GetValueOrDefault(1d) > 1d);
+                            UnitMultiplierNormalizer.IsPackageUnit(
+                                matchedUnitPointer,
+                                matchedUnitName,
+                                matchedUnitMultiplier);
+        var unitMultiplier = UnitMultiplierNormalizer.ResolvePackageMultiplier(
+            stock.Unit1Multiplier,
+            stock.Unit2Name,
+            stock.Unit2Multiplier);
         var isPrimaryBarcode = barcodeMatch is not null &&
                                !isCaseBarcode &&
                                string.Equals(barcodeMatch.Barcode, primaryBarcode, StringComparison.Ordinal);
@@ -339,6 +351,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             matchedUnitPointer,
             matchedUnitName,
             matchedUnitMultiplier,
+            unitMultiplier,
             barcodeKind,
             isBlocked,
             isSalesBlocked,
@@ -670,6 +683,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             matchedUnitPointer: matchedUnitPointer,
             matchedUnitName: null,
             matchedUnitMultiplier: null,
+            unitMultiplier: null,
             barcodeKind: resolutionSource,
             isBlocked: false,
             isSalesBlocked: false,
@@ -719,6 +733,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         int? matchedUnitPointer,
         string? matchedUnitName,
         double? matchedUnitMultiplier,
+        double? unitMultiplier,
         string? barcodeKind,
         bool isBlocked,
         bool isSalesBlocked,
@@ -798,7 +813,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             operationDecision,
             warnings,
             errors,
-            ResolveUnitMultiplier(unitsPerCase, matchedUnitsPerCase, matchedUnitMultiplier),
+            ResolveUnitMultiplier(unitMultiplier, unitsPerCase, matchedUnitsPerCase, matchedUnitMultiplier),
             purchasePrice,
             purchaseGrossPrice,
             purchasePriceSource,
@@ -986,9 +1001,13 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             _ => NormalizeMultiplier(stock.Unit1Multiplier)
         };
 
-    private static double? ResolveUnitMultiplier(double? unitsPerCase, double? matchedUnitsPerCase, double? matchedUnitMultiplier)
+    private static double? ResolveUnitMultiplier(
+        double? unitMultiplier,
+        double? unitsPerCase,
+        double? matchedUnitsPerCase,
+        double? matchedUnitMultiplier)
     {
-        var value = matchedUnitsPerCase ?? unitsPerCase ?? matchedUnitMultiplier;
+        var value = unitMultiplier ?? matchedUnitsPerCase ?? unitsPerCase ?? matchedUnitMultiplier;
         return NormalizeMultiplier(value);
     }
 

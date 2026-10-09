@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
@@ -353,7 +354,7 @@ public sealed class GreenGrocerProductCaseService(
 
         if (IsUnit(stockInfo.Unit1, "ADET"))
         {
-            var unitFactor = Math.Abs(stockInfo.Unit2Factor);
+            var unitFactor = GetSecondaryUnitMultiplier(stockInfo);
 
             if (unitFactor > 1)
             {
@@ -584,7 +585,7 @@ public sealed class GreenGrocerProductCaseService(
         List<string> warnings,
         List<string> errors)
     {
-        var unitsPerCase = profile.ManualUnitsPerCase ?? Math.Abs(stockInfo.Unit2Factor);
+        var unitsPerCase = profile.ManualUnitsPerCase ?? GetSecondaryUnitMultiplier(stockInfo);
 
         if (unitsPerCase <= 1)
         {
@@ -702,7 +703,7 @@ public sealed class GreenGrocerProductCaseService(
             GetModelName(stockInfo.ModelCode),
             stockInfo.Unit1,
             stockInfo.Unit2,
-            Round(stockInfo.Unit2Factor),
+            Round(GetSecondaryUnitMultiplier(stockInfo)),
             Round(inputQuantity),
             inputMode,
             conversionMode,
@@ -885,7 +886,7 @@ public sealed class GreenGrocerProductCaseService(
             GetModelName(stockInfo.ModelCode),
             stockInfo.Unit1,
             stockInfo.Unit2,
-            Round(stockInfo.Unit2Factor),
+            Round(GetSecondaryUnitMultiplier(stockInfo)),
             profile.IsActive,
             profile.InputMode,
             profile.ConversionMode,
@@ -1010,6 +1011,11 @@ public sealed class GreenGrocerProductCaseService(
     private static double Round(double value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);
 
     private static double? RoundOrNull(double? value) => value.HasValue ? Round(value.Value) : null;
+
+    private static double GetSecondaryUnitMultiplier(StockInfo stockInfo) =>
+        string.IsNullOrWhiteSpace(stockInfo.Unit2)
+            ? 0d
+            : UnitMultiplierNormalizer.Normalize(stockInfo.Unit2Factor);
 
     private sealed record StockInfo(
         string StockCode,

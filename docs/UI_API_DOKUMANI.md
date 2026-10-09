@@ -1410,7 +1410,8 @@ Response:
       "priceTypeCode": 1,
       "unitPointer": 1,
       "unitName": "AD",
-      "unitMultiplier": 1,
+      "unitMultiplier": 12,
+      "matchedUnitMultiplier": 1,
       "secondaryUnitName": "KOLI",
       "secondaryUnitMultiplier": 12,
       "salesBlockCode": 0,
@@ -1439,6 +1440,10 @@ Paging ve sync token kurali:
 - `deletedBarcodes` icindeki barkodlar local DB'den silinmeli veya pasif isaretlenmelidir.
 - Offline okutma sirasinda bulunan fiyat son basarili sync anindaki fiyattir; UI'da "son guncelleme" bilgisi gosterilmelidir.
 - Sync tekrarinda ayni barkodlar tekrar gelebilir; mobil upsert islemi idempotent olmalidir.
+- `unitMultiplier`, urunun standart koli/ikinci birim katsayisidir ve yeni UI'da koli ici gosterim icin kullanilir. Mikro'daki negatif katsayi isaretleri API tarafinda pozitiflestirilir; ornek `-4` degeri `4` doner.
+- `matchedUnitMultiplier`, bu katalog satirindaki `barcode` hangi birime bagliysa o birimin katsayisidir. Tekli barkodda `1`, koli barkodunda ornegin `12` olabilir. Barkoddan miktar hesabi yapilacaksa bu alan; genel `Koli ici` etiketi icin `unitMultiplier` kullanilmalidir.
+- `secondaryUnitMultiplier` geriye uyumluluk icin ikinci birim katsayisini pozitif olarak tasir ve normal durumda `unitMultiplier` ile aynidir.
+- Bu duzeltmenin yayinlandigi ilk terminal surumunde mevcut local urun katalogu bir kez tam senkronize edilmelidir. Eski `syncToken` ile yalniz delta istenirse, Mikro'da son guncelleme tarihi degismeyen eski local satirlar yeni katsayi alanlarini hemen alamayabilir.
 
 Mobil offline okuma akisi:
 
@@ -5006,6 +5011,7 @@ Onemli not:
 - `caseBarcode`, `unitsPerCase` ve `matchedUnitsPerCase` alanlari koli/master barkod tespitinde kullanilir.
 - `unitMultiplier`, UI'in koli ici miktar icin kullanacagi standart alandir. Koli barkodu okutulmasa bile stok kartinda koli/ikinci birim katsayisi varsa dolu gelir.
 - `matchedUnitsPerCase`, sadece okutulan barkod koli barkoduysa doludur; miktar panelinde genel koli ici gosterimi icin `unitMultiplier` tercih edilmelidir.
+- Barkodun Mikro'da `bar_birimpntr > 1` olmasi tek basina koli barkodu kaniti degildir. Backend ancak ilgili birim katsayisi `1`den buyukse `isCaseBarcode=true` ve `matchedUnitsPerCase` dondurur; hatali/eksik ikinci birim tanimi tekli barkodu koliye cevirmemelidir.
 - `isSalesBlocked`, `isOrderBlocked`, `isGoodsAcceptanceBlocked` ve `isPassive` depo detay degerleri varsa depo ozelinden, yoksa stok kartindan hesaplanir.
 - `isAllowedForTargetWarehouse` hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kod listesine gore hesaplanir.
 - `operationType=shipment` icin hedef depo model kod sonucu bilgi olarak donebilir; fakat hedef depo model kodu sevkte `isUsableInOperation=false` yapmaz.
@@ -30886,6 +30892,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `isPassive` | boolean | Hayir |  |
 | `isSalesBlocked` | boolean | Hayir |  |
 | `lookupSource` | string | Hayir | nullable |
+| `matchedUnitMultiplier` | number (double) | Hayir |  |
 | `orderBlockCode` | integer (int32) | Hayir | nullable |
 | `price` | number (double) | Hayir |  |
 | `priceTypeCode` | integer (int32) | Hayir |  |
