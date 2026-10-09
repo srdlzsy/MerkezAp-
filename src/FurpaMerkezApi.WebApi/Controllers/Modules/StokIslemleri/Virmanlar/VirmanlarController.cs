@@ -152,6 +152,6 @@ public sealed class VirmanConversionSuggestionHttpRequest
     [Required, MaxLength(25)]
     public string? SourceStockCode { get; init; }
 
-    [Required, Range(typeof(double), "0.000001", "1.7976931348623157E+308")]
+    [Required, Range(0.000001d, double.MaxValue)]
     public double? SourceQuantity { get; init; }
 }
