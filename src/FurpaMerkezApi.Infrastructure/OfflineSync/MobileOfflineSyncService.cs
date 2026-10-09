@@ -83,10 +83,12 @@ public sealed class MobileOfflineSyncService(
         TResponse response,
         CancellationToken cancellationToken)
     {
+        var normalizedClientRequestId = NormalizeClientRequestId(clientRequestId);
+        var responsePayload = JsonSerializer.Serialize(response, JsonOptions);
         var record = await GetTrackedAsync(
             operationCode,
             requestedByUserId,
-            NormalizeClientRequestId(clientRequestId),
+            normalizedClientRequestId,
             cancellationToken);
 
         if (record is null)
@@ -94,8 +96,47 @@ public sealed class MobileOfflineSyncService(
             throw new KeyNotFoundException("Offline sync request was not found.");
         }
 
-        record.MarkCompleted(JsonSerializer.Serialize(response, JsonOptions), clock.UtcNow);
-        await authDbContext.SaveChangesAsync(cancellationToken);
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (record.Status == MobileOfflineSyncRequestStatus.Completed)
+            {
+                return;
+            }
+
+            ThrowIfReviewRequired(record);
+            record.MarkCompleted(responsePayload, clock.UtcNow);
+
+            try
+            {
+                await authDbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException exception)
+            {
+                authDbContext.ChangeTracker.Clear();
+                record = await GetTrackedAsync(
+                    operationCode,
+                    requestedByUserId,
+                    normalizedClientRequestId,
+                    cancellationToken)
+                    ?? throw new KeyNotFoundException("Offline sync request was not found.");
+
+                if (record.Status == MobileOfflineSyncRequestStatus.Completed)
+                {
+                    return;
+                }
+
+                ThrowIfReviewRequired(record);
+                if (attempt == 2)
+                {
+                    throw new OperationConflictException(
+                        OperationConflictErrorCodes.MikroWriteInProgress,
+                        "The request completion state changed concurrently. Retry with the same clientRequestId.",
+                        retryable: true,
+                        innerException: exception);
+                }
+            }
+        }
     }
 
     internal async Task MarkFailedAsync(

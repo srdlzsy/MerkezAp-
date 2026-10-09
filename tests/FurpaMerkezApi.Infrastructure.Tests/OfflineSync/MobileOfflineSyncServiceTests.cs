@@ -296,6 +296,95 @@ public sealed class MobileOfflineSyncServiceTests
         Assert.Equal(MobileOfflineSyncRequestStatus.Completed, (await secondDb.MobileOfflineSyncRequests.SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task ConcurrentCompletion_IsIdempotentWhenAnotherRequestCompletesFirst()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var firstDb = new AuthDbContext(options);
+        await using var secondDb = new AuthDbContext(options);
+        var first = new MobileOfflineSyncService(firstDb, new MutableClock(Now));
+        var second = new MobileOfflineSyncService(secondDb, new MutableClock(Now.AddSeconds(1)));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+
+        await AcquireAsync(first, user, id, new TestRequest(56, 2));
+        await secondDb.MobileOfflineSyncRequests.SingleAsync();
+
+        await first.CompleteAsync("shipment.create", user, id, "F56/123", CancellationToken.None);
+        await second.CompleteAsync("shipment.create", user, id, "F56/123", CancellationToken.None);
+
+        secondDb.ChangeTracker.Clear();
+        var record = await secondDb.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Completed, record.Status);
+        Assert.Equal("\"F56/123\"", record.ResponsePayload);
+        Assert.Equal(Now, record.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task DefinitiveCompletion_RecoversFromConcurrentRetryableFailure()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var completingDb = new AuthDbContext(options);
+        await using var failingDb = new AuthDbContext(options);
+        var completing = new MobileOfflineSyncService(completingDb, new MutableClock(Now.AddSeconds(1)));
+        var failing = new MobileOfflineSyncService(failingDb, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+
+        await AcquireAsync(completing, user, id, new TestRequest(56, 2));
+        await failingDb.MobileOfflineSyncRequests.SingleAsync();
+        await failing.MarkFailedAsync(
+            "shipment.create",
+            user,
+            id,
+            "Temporary failure",
+            CancellationToken.None,
+            OperationConflictErrorCodes.MikroWriteInProgress,
+            retryable: true);
+
+        await completing.CompleteAsync("shipment.create", user, id, "F56/123", CancellationToken.None);
+
+        completingDb.ChangeTracker.Clear();
+        var record = await completingDb.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Completed, record.Status);
+        Assert.Equal("\"F56/123\"", record.ResponsePayload);
+        Assert.Null(record.ErrorCode);
+        Assert.Null(record.Retryable);
+    }
+
+    [Fact]
+    public async Task DefinitiveCompletion_DoesNotOverwriteConcurrentManualReviewDecision()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var completingDb = new AuthDbContext(options);
+        await using var reviewDb = new AuthDbContext(options);
+        var completing = new MobileOfflineSyncService(completingDb, new MutableClock(Now.AddSeconds(1)));
+        var review = new MobileOfflineSyncService(reviewDb, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var id = Guid.NewGuid();
+
+        await AcquireAsync(completing, user, id, new TestRequest(56, 2));
+        await reviewDb.MobileOfflineSyncRequests.SingleAsync();
+        await review.MarkFailedAsync(
+            "shipment.create",
+            user,
+            id,
+            "Manual review required",
+            CancellationToken.None,
+            OperationConflictErrorCodes.MikroDocumentContentMismatch,
+            retryable: false);
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            completing.CompleteAsync("shipment.create", user, id, "F56/123", CancellationToken.None));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+        completingDb.ChangeTracker.Clear();
+        var record = await completingDb.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
+        Assert.False(record.Retryable);
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()
