@@ -4,6 +4,7 @@ using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Virmanlar;
@@ -45,7 +46,14 @@ public sealed class StockMovementReadbackTests
             var isReturn = operation == "return";
             foreach (var row in rows) { row.sth_cins = isReturn ? (byte)0 : (byte)1; row.sth_normal_iade = isReturn ? (byte)1 : (byte)0; }
             await Reserve(sync, isReturn ? "iade-islemleri.firma-iadeleri.create" : "sevk-islemleri.giden-firma-sevkleri.create", user, id, request);
-            var service = new CompanyMovementWriteService(mikro, writeOptions, null!, null!, sync, NullLogger<CompanyMovementWriteService>.Instance);
+            var service = new CompanyMovementWriteService(
+                mikro,
+                writeOptions,
+                null!,
+                new StaticOptionsMonitor<MikroWriteBatchingOptions>(new MikroWriteBatchingOptions()),
+                null!,
+                sync,
+                NullLogger<CompanyMovementWriteService>.Instance);
             run = async () => { await service.ExecuteAsync(request, isReturn ? CompanyMovementKind.PurchaseReturn : CompanyMovementKind.OutgoingShipment, CancellationToken.None); };
         }
         else if (operation == "virman")
@@ -99,6 +107,15 @@ public sealed class StockMovementReadbackTests
     private static Task<MobileOfflineSyncAcquireResult<string>> Reserve<T>(MobileOfflineSyncService service,
         string operation, Guid user, Guid id, T request) => service.AcquireAsync<T, string>(
             operation, user, 56, id, request, (_, _) => Task.FromResult<string?>(null), CancellationToken.None, true);
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+
+        public T Get(string? name) => value;
+
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
 
     private sealed class TestClock : IClock { public DateTime UtcNow => DateTime.UtcNow; }
 }

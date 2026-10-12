@@ -23,6 +23,7 @@ public sealed class CreateCompanyReceivingUseCase(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     MobileOfflineSyncService mobileOfflineSyncService,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
     ILogger<CreateCompanyReceivingUseCase> logger)
     : ICreateCompanyReceivingUseCase
@@ -364,15 +365,60 @@ public sealed class CreateCompanyReceivingUseCase(
                     }
                     LogCreatePhase("build-movement-rows", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
-                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
-                    if (returnMovements.Count > 0)
+                    var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                    var useBulkMovementWrite = batchingOptions.CompanyReceivingEnabled;
+
+                    if (useBulkMovementWrite)
                     {
-                        await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(returnMovements, cancellationToken);
+                        await MikroStockMovementBulkWriter.WriteAsync(
+                            mikroWriteDbContext,
+                            movements,
+                            batchingOptions.BulkCopyTimeoutSeconds,
+                            cancellationToken);
+                        LogCreatePhase(
+                            "bulk-insert-receiving-movements",
+                            documentSerie,
+                            documentOrderNo,
+                            movements.Count,
+                            returnMovements.Count);
+
+                        if (returnMovements.Count > 0)
+                        {
+                            await MikroStockMovementBulkWriter.WriteAsync(
+                                mikroWriteDbContext,
+                                returnMovements,
+                                batchingOptions.BulkCopyTimeoutSeconds,
+                                cancellationToken);
+                            LogCreatePhase(
+                                "bulk-insert-return-movements",
+                                documentSerie,
+                                documentOrderNo,
+                                movements.Count,
+                                returnMovements.Count);
+                        }
                     }
-                    LogCreatePhase("track-entities", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
+                    else
+                    {
+                        await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                        if (returnMovements.Count > 0)
+                        {
+                            await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(returnMovements, cancellationToken);
+                        }
+                    }
+                    LogCreatePhase(
+                        useBulkMovementWrite ? "track-related-entities" : "track-entities",
+                        documentSerie,
+                        documentOrderNo,
+                        movements.Count,
+                        returnMovements.Count);
 
                     await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                    LogCreatePhase("save-changes", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
+                    LogCreatePhase(
+                        useBulkMovementWrite ? "save-related-entities" : "save-changes",
+                        documentSerie,
+                        documentOrderNo,
+                        movements.Count,
+                        returnMovements.Count);
                     await transaction.CommitAsync(cancellationToken);
                     LogCreatePhase("commit", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
@@ -404,7 +450,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 }
                 catch
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await transaction.RollbackAsync(CancellationToken.None);
                     throw;
                 }
             });

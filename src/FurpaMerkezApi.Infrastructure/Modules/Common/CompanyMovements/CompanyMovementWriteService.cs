@@ -18,6 +18,7 @@ public sealed class CompanyMovementWriteService(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<CompanyMovementWriteService> logger)
@@ -150,10 +151,26 @@ public sealed class CompanyMovementWriteService(
                     .ToArray();
                 LogCreatePhase("build-movement-rows", movements.Length);
 
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
-                LogCreatePhase("track-entities", movements.Length);
+                var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                var useBulkMovementWrite = kind == CompanyMovementKind.PurchaseReturn &&
+                    batchingOptions.CompanyReturnEnabled;
+
+                if (useBulkMovementWrite)
+                {
+                    await MikroStockMovementBulkWriter.WriteAsync(
+                        mikroWriteDbContext,
+                        movements,
+                        batchingOptions.BulkCopyTimeoutSeconds,
+                        cancellationToken);
+                    LogCreatePhase("bulk-insert-stock-movements", movements.Length);
+                }
+                else
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                }
+                LogCreatePhase(useBulkMovementWrite ? "track-related-entities" : "track-entities", movements.Length);
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                LogCreatePhase("save-changes", movements.Length);
+                LogCreatePhase(useBulkMovementWrite ? "save-related-entities" : "save-changes", movements.Length);
                 await transaction.CommitAsync(cancellationToken);
                 LogCreatePhase("commit", movements.Length);
 
@@ -172,7 +189,7 @@ public sealed class CompanyMovementWriteService(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });

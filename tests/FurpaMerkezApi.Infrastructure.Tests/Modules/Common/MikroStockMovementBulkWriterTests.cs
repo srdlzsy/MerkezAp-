@@ -38,6 +38,43 @@ public sealed class MikroStockMovementBulkWriterTests
         }
     }
 
+    [Theory]
+    [InlineData(17, 2, 6, 0, "F110")]
+    [InlineData(13, 0, 0, 0, "A110")]
+    [InlineData(1, 1, 0, 1, "F110")]
+    public void BuildDataTable_PreservesFlowSpecificMovementFields(
+        byte documentType,
+        byte movementType,
+        byte movementGenre,
+        byte returnType,
+        string documentSerie)
+    {
+        using var dbContext = CreateDbContext();
+        var movements = Enumerable.Range(0, 3)
+            .Select(rowNo => CreateMovementForFlow(
+                rowNo,
+                documentType,
+                movementType,
+                movementGenre,
+                returnType,
+                documentSerie))
+            .ToArray();
+
+        using var table = MikroStockMovementBulkWriter.BuildDataTable(dbContext, movements);
+
+        Assert.Equal(3, table.Rows.Count);
+        for (var rowNo = 0; rowNo < movements.Length; rowNo++)
+        {
+            var row = table.Rows[rowNo];
+            Assert.Equal(documentType, row[nameof(STOK_HAREKETLERI.sth_evraktip)]);
+            Assert.Equal(movementType, row[nameof(STOK_HAREKETLERI.sth_tip)]);
+            Assert.Equal(movementGenre, row[nameof(STOK_HAREKETLERI.sth_cins)]);
+            Assert.Equal(returnType, row[nameof(STOK_HAREKETLERI.sth_normal_iade)]);
+            Assert.Equal(documentSerie, row[nameof(STOK_HAREKETLERI.sth_evrakno_seri)]);
+            Assert.Equal(rowNo, row[nameof(STOK_HAREKETLERI.sth_satirno)]);
+        }
+    }
+
     [Fact]
     public void RequiredOptions_PreserveMikroTriggerAndConstraintsWithoutTableLock()
     {
@@ -152,6 +189,23 @@ public sealed class MikroStockMovementBulkWriterTests
             sth_nakliyedeposu = 116,
             sth_eticaret_kanal_kodu = "FR-BULK-TEST"
         };
+
+    private static STOK_HAREKETLERI CreateMovementForFlow(
+        int rowNo,
+        byte documentType,
+        byte movementType,
+        byte movementGenre,
+        byte returnType,
+        string documentSerie)
+    {
+        var movement = CreateMovement(rowNo);
+        movement.sth_evraktip = documentType;
+        movement.sth_tip = movementType;
+        movement.sth_cins = movementGenre;
+        movement.sth_normal_iade = returnType;
+        movement.sth_evrakno_seri = documentSerie;
+        return movement;
+    }
 
     private static STOK_HAREKETLERI CloneForTest(
         STOK_HAREKETLERI template,

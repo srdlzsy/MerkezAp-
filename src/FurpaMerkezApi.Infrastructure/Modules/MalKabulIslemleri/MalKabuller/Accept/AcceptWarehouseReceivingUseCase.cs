@@ -106,7 +106,7 @@ public sealed class AcceptWarehouseReceivingUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
