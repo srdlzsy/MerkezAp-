@@ -14,6 +14,10 @@ public interface ICashSummaryQueriesUseCase
         CashSummaryDocumentRequest request,
         CancellationToken cancellationToken);
 
+    Task<CashSummaryZReportTotalDto?> GetZReportTotalAsync(
+        CashSummaryDocumentRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<BanknoteMovementItemDto>> GetBanknoteMovementsAsync(
         CashSummaryDocumentRequest request,
         CancellationToken cancellationToken);

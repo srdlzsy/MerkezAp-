@@ -236,6 +236,59 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
             cancellationToken);
     }
 
+    public async Task<CashSummaryZReportTotalDto?> GetZReportTotalAsync(
+        CashSummaryDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateDocumentRequest(request);
+
+        const string sql = """
+            WITH Document AS (
+                SELECT TOP (1)
+                    s.BranchNo,
+                    s.DocumentSerie,
+                    s.DocumentOrderNo
+                FROM Summaries s
+                WHERE s.BranchNo = @warehouseNo
+                  AND s.DocumentSerie = @documentSerie
+                  AND s.DocumentOrderNo = @documentOrderNo
+            )
+            SELECT
+                z.ZTotalValue
+            FROM Document d
+            OUTER APPLY (
+                SELECT TOP (1)
+                    c.cha_meblag AS ZTotalValue
+                FROM CARI_HESAP_HAREKETLERI c
+                WHERE c.cha_aciklama = @legacyDescription
+                  AND c.cha_evrak_tip = 60
+                  AND c.cha_tip = 1
+                  AND c.cha_cari_cins = 4
+                  AND LTRIM(RTRIM(c.cha_kod)) = CONVERT(varchar(20), d.BranchNo)
+                ORDER BY
+                    c.cha_create_date DESC,
+                    c.cha_satir_no DESC
+            ) z;
+            """;
+
+        var result = await ExecuteReaderAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@warehouseNo", request.WarehouseNo);
+                AddParameter(command, "@documentSerie", request.DocumentSerie);
+                AddParameter(command, "@documentOrderNo", request.DocumentOrderNo);
+                AddParameter(command, "@legacyDescription", $"{request.DocumentSerie}.{request.DocumentOrderNo}");
+            },
+            reader => new CashSummaryZReportTotalDto(
+                ReadNullableDouble(reader, "ZTotalValue") is { } value
+                    ? Round(value)
+                    : null),
+            cancellationToken);
+
+        return result.FirstOrDefault();
+    }
+
     public async Task<IReadOnlyCollection<BanknoteMovementItemDto>> GetBanknoteMovementsAsync(
         CashSummaryDocumentRequest request,
         CancellationToken cancellationToken)
@@ -400,6 +453,9 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
 
     private static double ReadDouble(DbDataReader reader, string name) =>
         reader[name] is DBNull ? 0d : Convert.ToDouble(reader[name]);
+
+    private static double? ReadNullableDouble(DbDataReader reader, string name) =>
+        reader[name] is DBNull ? null : Convert.ToDouble(reader[name]);
 
     private static DateTime ReadDateTime(DbDataReader reader, string name) =>
         reader[name] is DBNull ? DateTime.MinValue : Convert.ToDateTime(reader[name]);

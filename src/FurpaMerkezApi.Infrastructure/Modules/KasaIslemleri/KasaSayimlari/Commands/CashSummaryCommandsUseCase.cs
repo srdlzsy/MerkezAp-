@@ -2,6 +2,7 @@ using System.Data;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Commands;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Files;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -24,6 +25,7 @@ public sealed class CashSummaryCommandsUseCase(
     private const int StoreExpensePaymentTypeEnd = 113;
     private const string CashTotalTypeName = "Nakit";
     private const string CashTotalDescription = "Nakit Toplam";
+    private static readonly TimeSpan WriteQueueTimeout = TimeSpan.FromMinutes(3);
 
     public async Task<CreateCashSummaryResponse> CreateAsync(
         CreateCashSummaryRequest request,
@@ -59,6 +61,7 @@ public sealed class CashSummaryCommandsUseCase(
         var giftCheckLines = request.GiftCheckMovements
             .Where(ShouldWriteGiftCheckLine)
             .ToArray();
+        await using var writeLock = await AcquireWriteLockAsync(cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -113,7 +116,7 @@ public sealed class CashSummaryCommandsUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
@@ -125,6 +128,7 @@ public sealed class CashSummaryCommandsUseCase(
     {
         Validate(request);
 
+        await using var writeLock = await AcquireWriteLockAsync(cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -214,7 +218,7 @@ public sealed class CashSummaryCommandsUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
@@ -226,6 +230,7 @@ public sealed class CashSummaryCommandsUseCase(
     {
         Validate(request);
 
+        await using var writeLock = await AcquireWriteLockAsync(cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -306,7 +311,7 @@ public sealed class CashSummaryCommandsUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
@@ -318,6 +323,7 @@ public sealed class CashSummaryCommandsUseCase(
     {
         Validate(request);
 
+        await using var writeLock = await AcquireWriteLockAsync(cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -369,7 +375,7 @@ public sealed class CashSummaryCommandsUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
@@ -381,6 +387,7 @@ public sealed class CashSummaryCommandsUseCase(
     {
         Validate(request);
 
+        await using var writeLock = await AcquireWriteLockAsync(cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         return await executionStrategy.ExecuteAsync(async () =>
@@ -432,11 +439,19 @@ public sealed class CashSummaryCommandsUseCase(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
     }
+
+    private Task<IAsyncDisposable> AcquireWriteLockAsync(CancellationToken cancellationToken) =>
+        MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "CashSummaryWrite",
+            "Global",
+            WriteQueueTimeout,
+            cancellationToken);
 
     private async Task<int> GetNextDocumentOrderNoAsync(
         string documentSerie,

@@ -2,7 +2,7 @@
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
-Son hedefli kontrol: 2026-10-09. Kayitli 728 method/route ve 666 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
+Son hedefli kontrol: 2026-10-12. Kayitli 729 method/route ve 667 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
 
@@ -15249,6 +15249,55 @@ Not:
 - dosya bulunamazsa, config bos ise veya `NET CIRO` parse edilemezse `-1` doner
 - backend sube IP ve POS klasor bilgisini `BranchDetails` kaydindan okur
 
+### Kayitli Icmal Z Rapor Toplami
+
+Kasa sayimi/icmal detay ekraninda, belge kaydedilirken Mikro `CARI_HESAP_HAREKETLERI`
+tablosuna yazilan Z toplamini getirir. Bu endpoint fiziksel `ZRAP` dosyasini yeniden
+okumaz; create ekranindaki dosya okuma akisi yukaridaki endpoint ile aynen devam eder.
+
+`GET /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/z-rapor-toplam?warehouseNo=116`
+
+Yetki:
+
+- `kasa-islemleri.kasa-sayimlari.detail`
+
+Ornek:
+
+`GET /api/kasa-islemleri/kasa-sayimlari/F116.238/256/z-rapor-toplam?warehouseNo=116`
+
+Response:
+
+```json
+{
+  "zTotalValue": 10000
+}
+```
+
+Kayitli Z hareketi bulunamazsa `200 OK`:
+
+```json
+{
+  "zTotalValue": null
+}
+```
+
+HTTP response'lari:
+
+| Status | Response | UI davranisi |
+|---|---|---|
+| `200 OK` | `CashSummaryZReportTotalDto` | `zTotalValue` doluysa detay ekraninda kayitli Z toplami olarak gosterilir. |
+| `400 Bad Request` | `ProblemDetails` | Gecersiz depo/belge parametresi mesaji gosterilir; ayni istek otomatik tekrarlanmaz. |
+| `401 Unauthorized` | `ProblemDetails` | Oturum yenileme/login akisi uygulanir. |
+| `403 Forbidden` | `ProblemDetails` | Kullanici belge deposuna veya detay yetkisine sahip degildir. |
+| `404 Not Found` | `ProblemDetails` | Belge bulunamadi mesaji gosterilir. |
+
+Not:
+
+- Deger, ilgili belgenin `CARI_HESAP_HAREKETLERI` kaydindan okunur.
+- Belge varsa ancak eski/eksik kayit nedeniyle Z hareketi bulunamazsa `zTotalValue: null` doner.
+- Belge bulunamazsa `404 Not Found` doner.
+- UI detay ekraninda query bazli `/z-rapor-toplam?zReportNo=...` endpointini degil bu belge bazli endpointi kullanmalidir.
+
 ### Icmal Kaydi Girisi / Olustur
 
 Secili sube icin yeni kasa sayimi yazar.
@@ -25113,6 +25162,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryDetailsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryDetailsResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;GiftCheckMovementItemDto&gt;<br>400: ProblemDetails |
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryGiftChecksHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryGiftChecksResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/z-rapor-toplam` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashSummaryZReportTotalDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kunye-etiket-yazdirma` | JWT + kasa-islemleri.kunye-etiket-yazdirma.list | query: DateToGet / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelTagDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler` | Anonim | query: WarehouseNo / integer (int32) (zorunlu)<br>query: DateToGet / string (date-time) | 200: IReadOnlyCollection&lt;KunyeLabelTagDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records` | JWT + kasa-islemleri.manav-mal-kabul-etiket.list | query: Date / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ManavMalKabulVeEtiketAcceptanceRecordDto&gt;<br>400: ProblemDetails |
@@ -30055,6 +30105,12 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `yapiKrediQuantity` | integer (int32) | Hayir |  |
 | `ziraatBankasi` | number (double) | Hayir |  |
 | `ziraatBankasiQuantity` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.CashSummaryZReportTotalDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `zTotalValue` | number (double) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.CashierItemDto
 

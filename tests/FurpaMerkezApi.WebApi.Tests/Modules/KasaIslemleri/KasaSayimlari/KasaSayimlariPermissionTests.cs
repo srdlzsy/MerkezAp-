@@ -127,6 +127,7 @@ public sealed class KasaSayimlariPermissionTests
     [InlineData(nameof(KasaSayimlariController.Report), "kasa-islemleri.kasa-sayimlari.list")]
     [InlineData(nameof(KasaSayimlariController.Detail), "kasa-islemleri.kasa-sayimlari.detail")]
     [InlineData(nameof(KasaSayimlariController.DetailLines), "kasa-islemleri.kasa-sayimlari.detail")]
+    [InlineData(nameof(KasaSayimlariController.DocumentZReportTotal), "kasa-islemleri.kasa-sayimlari.detail")]
     public void ViewingActions_KeepCashSummaryViewingPolicies(string methodName, string expectedPolicy)
     {
         var authorizeAttribute = typeof(KasaSayimlariController)
@@ -149,10 +150,12 @@ public sealed class KasaSayimlariPermissionTests
         ]);
 
         await controller.DetailLines("F116.54", 2490, warehouseNo: null, CancellationToken.None);
+        await controller.DocumentZReportTotal("F116.54", 2490, warehouseNo: null, CancellationToken.None);
         await controller.BanknoteMovements("F116.54", 2490, warehouseNo: null, CancellationToken.None);
         await controller.GiftCheckMovements("F116.54", 2490, warehouseNo: null, CancellationToken.None);
 
         Assert.Equal(116, queriesUseCase.LastDetailsRequest?.WarehouseNo);
+        Assert.Equal(116, queriesUseCase.LastZReportTotalRequest?.WarehouseNo);
         Assert.Equal(116, queriesUseCase.LastBanknoteMovementsRequest?.WarehouseNo);
         Assert.Equal(116, queriesUseCase.LastGiftCheckMovementsRequest?.WarehouseNo);
     }
@@ -342,6 +345,8 @@ public sealed class KasaSayimlariPermissionTests
 
         public CashSummaryDocumentRequest? LastGiftCheckMovementsRequest { get; private set; }
 
+        public CashSummaryDocumentRequest? LastZReportTotalRequest { get; private set; }
+
         public Task<IReadOnlyCollection<CashSummaryReportItemDto>> GetReportAsync(
             CashSummaryDateRequest request,
             CancellationToken cancellationToken) =>
@@ -382,6 +387,15 @@ public sealed class KasaSayimlariPermissionTests
             LastBanknoteMovementsRequest = request;
 
             return Task.FromResult<IReadOnlyCollection<BanknoteMovementItemDto>>([]);
+        }
+
+        public Task<CashSummaryZReportTotalDto?> GetZReportTotalAsync(
+            CashSummaryDocumentRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastZReportTotalRequest = request;
+
+            return Task.FromResult<CashSummaryZReportTotalDto?>(new CashSummaryZReportTotalDto(10_000));
         }
 
         public Task<IReadOnlyCollection<GiftCheckMovementItemDto>> GetGiftCheckMovementsAsync(

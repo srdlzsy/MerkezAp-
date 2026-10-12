@@ -57,12 +57,13 @@ internal static class OfflineCreateGuard
         try
         {
             var response = await executeAsync(cancellationToken);
+            using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await mobileOfflineSyncService.CompleteAsync(
                 operationCode,
                 requestedByUserId.Value,
                 clientRequestId.Value,
                 response,
-                cancellationToken);
+                completionTimeout.Token);
 
             return response;
         }

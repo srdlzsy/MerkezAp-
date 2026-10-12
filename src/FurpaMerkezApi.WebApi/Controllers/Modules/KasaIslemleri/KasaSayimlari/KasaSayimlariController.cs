@@ -96,6 +96,30 @@ public sealed class KasaSayimlariController(
         CancellationToken cancellationToken) =>
         await DetailInternal(documentSerie, documentOrderNo, warehouseNo, cancellationToken);
 
+    [HttpGet("{documentSerie}/{documentOrderNo:int}/z-rapor-toplam")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(CashSummaryZReportTotalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CashSummaryZReportTotalDto>> DocumentZReportTotal(
+        string documentSerie,
+        int documentOrderNo,
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = ResolveDocumentWarehouseNo(warehouseNo, documentSerie, DetailPolicy);
+        var response = await cashSummaryQueriesUseCase.GetZReportTotalAsync(
+            new CashSummaryDocumentRequest(
+                resolvedWarehouseNo,
+                documentSerie,
+                documentOrderNo),
+            cancellationToken);
+
+        return response is null
+            ? NotFound()
+            : Ok(response);
+    }
+
     [HttpGet("{documentSerie}/{documentOrderNo:int}/banknot-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<BanknoteMovementItemDto>), StatusCodes.Status200OK)]

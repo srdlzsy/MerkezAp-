@@ -6,6 +6,7 @@ using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -20,6 +21,8 @@ public sealed class StockReceiptWriteService(
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<StockReceiptWriteService> logger)
 {
+    private const int DatabaseDocumentSequenceRetryAttemptCount = 3;
+    private const int DatabaseDocumentSequenceRetryDelayMilliseconds = 250;
     private const short MovementFileId = 16;
     private const short MikroUserNo = 39;
     private const byte StockReceiptDocumentType = 0;
@@ -88,66 +91,97 @@ public sealed class StockReceiptWriteService(
             kind,
             options.StockReceiptExpenseCode);
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            $"StockReceipt:{movementGenre}",
+            documentSerie,
+            cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        for (var attempt = 1; attempt <= DatabaseDocumentSequenceRetryAttemptCount; attempt++)
         {
-            mikroWriteDbContext.ChangeTracker.Clear();
-            var pricedLines = await BuildPricedLinesAsync(lines, kind, cancellationToken);
-            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
-                cancellationToken);
-
             try
             {
-                var documentOrderNo = await GetNextDocumentOrderNoAsync(
-                    documentSerie,
-                    movementGenre,
-                    cancellationToken);
-                var movements = pricedLines
-                    .Select((pricedLine, rowNo) => CreateMovement(
-                        request,
-                        pricedLine.Line,
-                        pricedLine.LineAmount,
-                        creator,
-                        acceptor,
-                        description,
-                        movementGenre,
-                        workOrderExpenseCode,
-                        rowNo,
-                        now,
-                        movementDate,
-                        documentDate,
-                        documentNo,
-                        documentSerie,
-                        documentOrderNo,
-                        offlineTraceKey))
-                    .ToArray();
+                return await executionStrategy.ExecuteAsync(async () =>
+                {
+                    mikroWriteDbContext.ChangeTracker.Clear();
+                    var pricedLines = await BuildPricedLinesAsync(lines, kind, cancellationToken);
+                    await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken);
 
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
-                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
+                    try
+                    {
+                        var documentOrderNo = await GetNextDocumentOrderNoAsync(
+                            documentSerie,
+                            movementGenre,
+                            cancellationToken);
+                        var movements = pricedLines
+                            .Select((pricedLine, rowNo) => CreateMovement(
+                                request,
+                                pricedLine.Line,
+                                pricedLine.LineAmount,
+                                creator,
+                                acceptor,
+                                description,
+                                movementGenre,
+                                workOrderExpenseCode,
+                                rowNo,
+                                now,
+                                movementDate,
+                                documentDate,
+                                documentNo,
+                                documentSerie,
+                                documentOrderNo,
+                                offlineTraceKey))
+                            .ToArray();
 
-                return new CreateStockReceiptResponse(
-                    documentSerie,
-                    documentOrderNo,
-                    movementDate,
-                    documentDate,
-                    documentNo,
-                    request.WarehouseNo,
-                    creator,
-                    acceptor,
-                    movements.Length,
-                    movements.Sum(movement => movement.sth_miktar ?? 0d),
-                    movements.Sum(movement => movement.sth_tutar ?? 0d),
-                    options.ConnectionStringName);
+                        await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                        await transaction.CommitAsync(cancellationToken);
+
+                        return new CreateStockReceiptResponse(
+                            documentSerie,
+                            documentOrderNo,
+                            movementDate,
+                            documentDate,
+                            documentNo,
+                            request.WarehouseNo,
+                            creator,
+                            acceptor,
+                            movements.Length,
+                            movements.Sum(movement => movement.sth_miktar ?? 0d),
+                            movements.Sum(movement => movement.sth_tutar ?? 0d),
+                            options.ConnectionStringName);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(CancellationToken.None);
+                        throw;
+                    }
+                });
             }
-            catch
+            catch (DbUpdateException exception) when (
+                attempt < DatabaseDocumentSequenceRetryAttemptCount &&
+                IsStockMovementDuplicateDocumentLineException(exception))
             {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
+                mikroWriteDbContext.ChangeTracker.Clear();
+                logger.LogWarning(
+                    exception,
+                    "Stock receipt document sequence was occupied by another writer. Retrying attempt {Attempt}/{AttemptCount}. Kind={Kind}, DocumentSerie={DocumentSerie}, WarehouseNo={WarehouseNo}",
+                    attempt + 1,
+                    DatabaseDocumentSequenceRetryAttemptCount,
+                    kind,
+                    documentSerie,
+                    request.WarehouseNo);
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(DatabaseDocumentSequenceRetryDelayMilliseconds * attempt),
+                    cancellationToken);
             }
-        });
+        }
+
+        throw new InvalidOperationException("Stock receipt database write retry loop completed unexpectedly.");
     }
 
     private async Task<CreateStockReceiptResponse> ExecuteMikroApiAsync(
@@ -763,6 +797,22 @@ public sealed class StockReceiptWriteService(
 
     private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
         clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
+
+    internal static bool IsStockMovementDuplicateDocumentLineException(DbUpdateException exception)
+    {
+        var sqlException = exception.GetBaseException() as SqlException;
+        if (sqlException is null)
+        {
+            return false;
+        }
+
+        return sqlException.Errors
+            .Cast<SqlError>()
+            .Any(error =>
+                error.Number is 2601 or 2627 &&
+                error.Message.Contains("STOK_HAREKETLERI", StringComparison.OrdinalIgnoreCase) &&
+                error.Message.Contains("NDX_STOK_HAREKETLERI_05", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static void Validate(CreateStockReceiptRequest request)
     {

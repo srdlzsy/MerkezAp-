@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 728. Model sayisi: 666.
+Endpoint sayisi (method + route): 729. Model sayisi: 667.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -472,6 +472,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryDetailsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryDetailsResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;GiftCheckMovementItemDto&gt;<br>400: ProblemDetails |
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryGiftChecksHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryGiftChecksResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/z-rapor-toplam` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashSummaryZReportTotalDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kunye-etiket-yazdirma` | JWT + kasa-islemleri.kunye-etiket-yazdirma.list | query: DateToGet / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelTagDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler` | Anonim | query: WarehouseNo / integer (int32) (zorunlu)<br>query: DateToGet / string (date-time) | 200: IReadOnlyCollection&lt;KunyeLabelTagDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records` | JWT + kasa-islemleri.manav-mal-kabul-etiket.list | query: Date / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ManavMalKabulVeEtiketAcceptanceRecordDto&gt;<br>400: ProblemDetails |
@@ -5414,6 +5415,12 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `yapiKrediQuantity` | integer (int32) | Hayir |  |
 | `ziraatBankasi` | number (double) | Hayir |  |
 | `ziraatBankasiQuantity` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.CashSummaryZReportTotalDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `zTotalValue` | number (double) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.CashierItemDto
 

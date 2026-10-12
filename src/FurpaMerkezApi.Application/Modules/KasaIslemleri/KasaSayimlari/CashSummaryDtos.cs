@@ -69,6 +69,9 @@ public sealed record CashSummaryDetailItemDto(
         TerminalId);
 }
 
+public sealed record CashSummaryZReportTotalDto(
+    double? ZTotalValue);
+
 public sealed record BanknoteMovementItemDto(
     double Value,
     int BanknoteType,

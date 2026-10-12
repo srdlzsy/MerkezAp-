@@ -16,6 +16,7 @@ public sealed class MobileOfflineSyncService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan ProcessingLeaseTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(30);
 
     internal async Task<MobileOfflineSyncAcquireResult<TResponse>> AcquireAsync<TRequest, TResponse>(
         string operationCode,
@@ -303,10 +304,13 @@ public sealed class MobileOfflineSyncService(
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var recoveryTimeout = new CancellationTokenSource(RecoveryTimeout);
+        var recoveryCancellationToken = recoveryTimeout.Token;
         TResponse? recovered;
         try
         {
-            recovered = await recoverAsync(record.RequestPayload, cancellationToken);
+            recovered = await recoverAsync(record.RequestPayload, recoveryCancellationToken);
         }
         catch (OperationConflictException exception)
         {
@@ -324,11 +328,11 @@ public sealed class MobileOfflineSyncService(
         record.MarkCompleted(JsonSerializer.Serialize(recovered, JsonOptions), clock.UtcNow);
         try
         {
-            await authDbContext.SaveChangesAsync(cancellationToken);
+            await authDbContext.SaveChangesAsync(recoveryCancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
-            await authDbContext.Entry(record).ReloadAsync(cancellationToken);
+            await authDbContext.Entry(record).ReloadAsync(recoveryCancellationToken);
             ThrowIfReviewRequired(record);
             if (record.Status == MobileOfflineSyncRequestStatus.Completed)
                 return DeserializeResponse<TResponse>(record.ResponsePayload);

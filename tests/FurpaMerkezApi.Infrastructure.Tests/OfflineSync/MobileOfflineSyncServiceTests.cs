@@ -93,6 +93,87 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     [Fact]
+    public async Task Acquire_RecoveryAlreadyStartedSurvivesCallerCancellation()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+
+        await AcquireAsync(service, userId, clientRequestId, request);
+        await service.MarkFailedAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "MikroAPI - TimeOut",
+            CancellationToken.None);
+
+        using var callerCancellation = new CancellationTokenSource();
+        var recoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovery = service.AcquireAsync<TestRequest, string>(
+            "shipment.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            async (_, recoveryCancellationToken) =>
+            {
+                recoveryStarted.SetResult();
+                await releaseRecovery.Task.WaitAsync(recoveryCancellationToken);
+                return "F56/88049";
+            },
+            callerCancellation.Token,
+            preventReexecutionAfterUncertainOutcome: true);
+
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        callerCancellation.Cancel();
+        await Task.Delay(25);
+        releaseRecovery.SetResult();
+
+        var result = await recovery;
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Completed, result.State);
+        Assert.Equal("F56/88049", result.Response);
+        Assert.Equal(
+            MobileOfflineSyncRequestStatus.Completed,
+            (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task OfflineCreateGuard_CompletionSurvivesCallerCancellationAfterWrite()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+        using var callerCancellation = new CancellationTokenSource();
+
+        var result = await OfflineCreateGuard.ExecuteAsync<TestRequest, string>(
+            service,
+            "shipment.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) => Task.FromResult<string?>(null),
+            _ =>
+            {
+                callerCancellation.Cancel();
+                return Task.FromResult("F56/88049");
+            },
+            callerCancellation.Token,
+            preventReexecutionAfterUncertainOutcome: true);
+
+        Assert.Equal("F56/88049", result);
+        Assert.Equal(
+            MobileOfflineSyncRequestStatus.Completed,
+            (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
     public async Task Acquire_ClassifiesSameClientRequestIdWithDifferentPayloadAsNonRetryable()
     {
         await using var db = CreateDbContext();
