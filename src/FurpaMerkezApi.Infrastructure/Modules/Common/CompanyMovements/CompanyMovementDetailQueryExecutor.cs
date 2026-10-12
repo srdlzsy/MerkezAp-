@@ -134,7 +134,6 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
             .Select(row => new
             {
                 row.sth_belge_tarih,
-                row.sth_belge_no,
                 row.sth_evrakno_seri,
                 row.sth_evrakno_sira,
                 row.sth_cari_kodu,

@@ -1312,6 +1312,17 @@ Kaydetme akisi:
 8. retryable=false ve MIKRO_DOCUMENT_CONTENT_MISMATCH gelirse needsReview durumuna gec; snapshot/id korunur, tekrar gonderim kapatilir. Belirsiz veya incelemedeki fis yeni id ile yeniden kaydedilmez.
 ```
 
+Kalici pending state ve uygulama acilisi:
+
+- Pending kayit yalniz bellek/canli ekran state'inde degil, uygulama kapanip acilsa da ayni `clientRequestId` ve body snapshot'i korunacak sekilde yerel depoda tutulabilir. Yerel anahtar en az `userId + clientType + warehouseNo + operationCode` kapsaminda olmalidir; baska kullanici, depo veya create ekraninin kaydi `Yeni Ekle` butonunu kilitlememelidir.
+- Create istegi `200 OK` donup `documentSerie/documentOrderNo` gibi kesin business sonucunu verdiginde UI once kalici pending kaydi atomik olarak silmeli, sonra listeye yonelmeli veya formu sifirlamalidir. Yalniz ekran state'ini `completed` yapmak yeterli degildir.
+- Terminal yeniden acildiginda yerelde pending kayit varsa UI bunu sonsuza kadar dogrudan `isleniyor` kabul etmemelidir. Saklanan ayni payload ve ayni `clientRequestId` ile bir kez guvenli recovery POST'u yaparak backend sonucunu uzlastirmalidir; yeni GUID veya yeniden olusturulmus body kullanilmamalidir.
+- Recovery POST'u `200 OK` donerse yerel pending kayit silinir, form kilidi kaldirilir ve `Yeni Ekle` yeniden acilir. Response mevcut Mikro evrakini recovery ile bulmus olsa da UI acisindan normal basarili create response'udur.
+- `409` ve `retryable=true` (`MIKRO_WRITE_IN_PROGRESS`, `MIKRO_WRITE_QUEUE_BUSY`, `MIKRO_WRITE_OUTCOME_UNCONFIRMED`) donerse pending kayit korunur; kullaniciya `Tekrar Dene` sunulur ve `Yeni Ekle` kilitli kalir.
+- `retryable=false` donerse kayit sessizce silinmez. UI `needsReview` veya duzeltilebilir hata durumuna gecer, hata kodunu gosterir ve ilgili kurala gore kullanici aksiyonu bekler.
+- HTTP timeout, HTTP `0`, `502`, `503`, `504` veya sonucu belirsiz `500` durumunda yerel pending kayit silinmez. Onbellegi/uygulama verisini elle temizlemek normal is akisi olarak kullanilmamalidir; bu islem guvenli retry kimligini ve body snapshot'ini kaybettirebilir.
+- Uygulama basarili create response'u aldigi halde yerel pending kaydi silinemezse bunu loglamali ve sonraki acilista ayni recovery uzlastirmasini tekrar yapmalidir. Eski bir local kayit tum create ekranlarini global olarak kilitlememelidir.
+
 Yanlis retry ornegi:
 
 ```text
@@ -6428,6 +6439,8 @@ Onemli not:
 - `MikroApi` yazma yolunda Mikro `MikroAPI - TimeOut` dondurse bile ERP arka planda satirlari yazmaya devam edebilir. Bu nedenle timeout cevabi "evrak olusmadi" anlamina gelmez.
 - Depolar arasi sevkte timeout/iptal gibi sonucu belirsiz bir create sonrasi ayni `clientRequestId` tekrar gonderildiginde backend Mikro'ya ikinci create POST'u atmaz. Once trace readback yapar; tum satirlar tamamsa mevcut evraki `200 OK` ile dondurur, satirlar henuz tam degilse `409 Conflict` ile islemin devam ettigini bildirir.
 - `409 Conflict` detail mesaji `already being processed` anlamindaysa UI pending state'i korumali, formu ve e-irsaliye butonunu kilitli tutmali, yeni GUID uretmemelidir. Kullanici ayni snapshot ile daha sonra tekrar deneyebilir; otomatik kontrol yapilacaksa sik ve sinirsiz polling yerine 5-10 saniye aralikli sinirli retry kullanilmalidir.
+- Depolar arasi sevk terminalinde `Yeni Ekle` kilidi yalniz bu kullanici/depo ve bu create akisi icin cozulmemis yerel pending kayit varken uygulanmalidir. Ayni payload ve `clientRequestId` ile yapilan recovery POST'u `200 OK` dondugunda kalici pending kayit hemen silinmeli ve buton uygulama onbellegi elle temizlenmeden acilmalidir.
+- Terminal uygulamasi yeniden baslatildiginda eski pending kaydi bulursa once yukaridaki guvenli recovery POST'unu yapmalidir. Liste ekraninda evrakin gorunmesi tek basina yerel pending state'i temizlemek icin kullanilmaz; kesin temizleme kaniti create/recovery POST'unun basarili response'udur.
 - Create endpointinden `200 OK` ve `documentSerie/documentOrderNo` alinmadan UI liste satirindan tahmin edilen evrak numarasiyla e-irsaliye endpointini cagirmamalidir.
 - UI ayni sevk icerigini yeni `clientRequestId` ile tekrar gonderirse backend bunu yeni evrak olarak yorumlayabilir. Bu durumda ayni stok/miktar satirlari farkli `documentOrderNo` ile ikinci kez olusur; ornek risk `F120/3496` ve `F120/3497` gibi ayni icerikli iki sevktir.
 - Kullanici pending/retry durumundaki sevk formunu degistirmek isterse UI bunu acikca yeni islem saymali; eski pending state'i kullanmadan yeni `clientRequestId` uretmelidir.

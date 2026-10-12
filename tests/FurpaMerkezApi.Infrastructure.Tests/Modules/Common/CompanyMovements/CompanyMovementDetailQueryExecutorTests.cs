@@ -32,6 +32,34 @@ public sealed class CompanyMovementDetailQueryExecutorTests
         Assert.Equal("Teslim Alan Kisi", result.Header.Receiver);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_TreatsPartiallyMarkedEDespatchRowsAsOneDocument()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        var documentDate = new DateTime(2026, 10, 10);
+        var documentNo = "FRM2026600137723";
+        var uuid = "acf2cfbb-1395-4d4a-b54b-9e8459c15873";
+        var markedRow = CreateMovement(0, documentDate, "Teslim Eden Kisi", "Teslim Alan Kisi");
+        markedRow.sth_kilitli = true;
+        markedRow.sth_belge_no = documentNo;
+        markedRow.sth_aciklama = uuid;
+
+        mikroDbContext.STOK_HAREKETLERIs.AddRange(
+            markedRow,
+            CreateMovement(1, documentDate, "Teslim Eden Kisi", "Teslim Alan Kisi"));
+        await mikroDbContext.SaveChangesAsync();
+
+        var executor = new CompanyMovementDetailQueryExecutor(mikroDbContext);
+        var result = await executor.ExecuteAsync(
+            new CompanyMovementDetailRequest(155, "F155", 4502),
+            CompanyMovementKind.PurchaseReturn,
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Header.LineCount);
+        Assert.Equal(documentNo, result.Header.DocumentNo);
+        Assert.Equal(uuid, result.Header.Description);
+    }
+
     private static STOK_HAREKETLERI CreateMovement(
         int lineNo,
         DateTime documentDate,
