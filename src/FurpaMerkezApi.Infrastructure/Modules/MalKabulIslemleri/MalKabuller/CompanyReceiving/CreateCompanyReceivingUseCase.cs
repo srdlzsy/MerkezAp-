@@ -411,12 +411,13 @@ public sealed class CreateCompanyReceivingUseCase(
 
             if (request.ClientRequestId.HasValue)
             {
+                using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 await mobileOfflineSyncService.CompleteAsync(
                     OfflineOperationCode,
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
                     response,
-                    cancellationToken);
+                    completionTimeout.Token);
             }
 
             return response;
@@ -428,8 +429,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 await TryMarkFailedAsync(
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
-                    exception,
-                    cancellationToken);
+                    exception);
             }
 
             throw;
@@ -469,12 +469,13 @@ public sealed class CreateCompanyReceivingUseCase(
 
             if (request.ClientRequestId.HasValue)
             {
+                using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 await mobileOfflineSyncService.CompleteAsync(
                     OfflineOperationCode,
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
                     response,
-                    cancellationToken);
+                    completionTimeout.Token);
             }
 
             return response;
@@ -486,8 +487,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 await TryMarkFailedAsync(
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
-                    exception,
-                    cancellationToken);
+                    exception);
             }
 
             throw;
@@ -2528,18 +2528,18 @@ public sealed class CreateCompanyReceivingUseCase(
     private async Task TryMarkFailedAsync(
         Guid requestedByUserId,
         Guid clientRequestId,
-        Exception exception,
-        CancellationToken cancellationToken)
+        Exception exception)
     {
         try
         {
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var conflict = exception as OperationConflictException;
             await mobileOfflineSyncService.MarkFailedAsync(
                 OfflineOperationCode,
                 requestedByUserId,
                 clientRequestId,
                 exception.Message,
-                cancellationToken,
+                persistenceTimeout.Token,
                 conflict?.ErrorCode,
                 conflict?.Retryable);
         }

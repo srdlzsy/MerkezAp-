@@ -27,6 +27,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptions<AxataSynchronizationOptions> axataOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     IOptionsMonitor<GreenGrocerProductCaseOptions> greenGrocerProductCaseOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
@@ -268,14 +269,44 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 }
                 LogCreatePhase("build-movement-rows", movements.Count);
 
+                var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                var useBulkMovementWrite = batchingOptions.InterWarehouseShipmentEnabled;
+
                 if (automaticOrderLines.Count > 0)
                 {
                     await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(
                         automaticOrderLines.Values,
                         cancellationToken);
+
+                    if (useBulkMovementWrite)
+                    {
+                        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                        LogCreatePhase("save-automatic-warehouse-order-lines", movements.Count);
+                    }
                 }
 
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                if (useBulkMovementWrite)
+                {
+                    var bulkStopwatch = Stopwatch.StartNew();
+                    await MikroStockMovementBulkWriter.WriteAsync(
+                        mikroWriteDbContext,
+                        movements,
+                        batchingOptions.BulkCopyTimeoutSeconds,
+                        cancellationToken);
+                    logger.LogInformation(
+                        "Inter warehouse shipment stock movements were inserted as one SQL bulk batch. ElapsedMs={ElapsedMs}, BatchCount=1, LineCount={LineCount}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
+                        bulkStopwatch.Elapsed.TotalMilliseconds,
+                        movements.Count,
+                        documentSerie,
+                        documentOrderNo.Value,
+                        request.SourceWarehouseNo,
+                        request.TargetWarehouseNo);
+                    LogCreatePhase("bulk-insert-stock-movements", movements.Count);
+                }
+                else
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                }
 
                 if (movementExtras.Count > 0)
                 {
@@ -286,10 +317,14 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 {
                     ApplyLinkedOrderDeliveredQuantities(lines, linkedOrderLines, now);
                 }
-                LogCreatePhase("track-entities", movements.Count);
+                LogCreatePhase(
+                    useBulkMovementWrite ? "track-related-entities" : "track-entities",
+                    movements.Count);
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                LogCreatePhase("save-changes", movements.Count);
+                LogCreatePhase(
+                    useBulkMovementWrite ? "save-related-entities" : "save-changes",
+                    movements.Count);
                 await transaction.CommitAsync(cancellationToken);
                 LogCreatePhase("commit", movements.Count);
 
@@ -308,7 +343,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     movements.Sum(movement => movement.sth_tutar ?? 0d),
                     options.ConnectionStringName);
             }
-            catch (DbUpdateException exception) when (
+            catch (Exception exception) when (
                 documentOrderNo.HasValue &&
                 IsStockMovementDuplicateDocumentLineException(exception))
             {
@@ -528,9 +563,32 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value);
         var movementDate = (request.MovementDate ?? DateTime.Today).Date;
         var movementDateExclusive = movementDate.AddDays(1);
-        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .Where(movement =>
+        var recoveryQuery = mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking();
+
+        if (mikroWriteDbContext.Database.IsSqlServer())
+        {
+            // The trace column is not part of the large shipment list index. Force the
+            // selective warehouse/date seek first so recovery never scans all shipments.
+            recoveryQuery = mikroWriteDbContext.STOK_HAREKETLERIs
+                .FromSqlInterpolated($@"
+                    SELECT movements.*
+                    FROM dbo.STOK_HAREKETLERI AS movements WITH
+                        (INDEX(IX_FR_STH_DepoSevkCikis_Liste), FORCESEEK)
+                    WHERE movements.sth_evraktip = 17
+                      AND movements.sth_tip = 2
+                      AND movements.sth_cins = 6
+                      AND movements.sth_normal_iade = 0
+                      AND movements.sth_cikis_depo_no = {request.SourceWarehouseNo}
+                      AND movements.sth_tarih IS NOT NULL
+                      AND movements.sth_tarih >= {movementDate}
+                      AND movements.sth_tarih < {movementDateExclusive}
+                      AND movements.sth_eticaret_kanal_kodu = {traceKey}")
+                .AsNoTracking();
+        }
+        else
+        {
+            recoveryQuery = recoveryQuery.Where(movement =>
                 movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
                 movement.sth_tip == MovementType &&
                 movement.sth_cins == MovementGenre &&
@@ -539,7 +597,10 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_tarih.HasValue &&
                 movement.sth_tarih.Value >= movementDate &&
                 movement.sth_tarih.Value < movementDateExclusive &&
-                movement.sth_eticaret_kanal_kodu == traceKey)
+                movement.sth_eticaret_kanal_kodu == traceKey);
+        }
+
+        var rows = await recoveryQuery
             .Select(movement => new
             {
                 movement.sth_tarih,
@@ -1779,7 +1840,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
         clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
-    private static bool IsStockMovementDuplicateDocumentLineException(DbUpdateException exception)
+    private static bool IsStockMovementDuplicateDocumentLineException(Exception exception)
     {
         var sqlException = exception.GetBaseException() as SqlException;
 

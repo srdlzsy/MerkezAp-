@@ -6409,6 +6409,9 @@ Onemli not:
 
 - Yazma yolu `MikroWriteRouting:InterWarehouseShipment` ile secilir; mevcut config'te varsayilan deger `Database`tir.
 - `Database` modunda EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar. Write hedefi canli `MikroConnection` degil; `MikroWriteConnection` yoksa `testMikroConnection` kullanilir.
+- `MikroWriteBatching:InterWarehouseShipmentEnabled=true` iken `Database` modundaki `STOK_HAREKETLERI` satirlari ayni mevcut transaction icinde tek SQL bulk batch olarak yazilir. Mikro trigger ve constraint kontrolleri acik kalir; hedef, cok satirli evrakta trigger'i satir basina degil belge batch'i basina bir kez calistirmaktir. `clientRequestId`, trace, duplicate kontrolu, rollback ve recovery davranisi degismez.
+- Bulk yolunun timeout degeri `MikroWriteBatching:BulkCopyTimeoutSeconds` ile belirlenir; varsayilan `300` saniyedir. Ozellik kapatilirsa ayni endpoint ve response korunarak eski EF insert yoluna donulur.
+- Mevcut ayarda `InterWarehouseShipmentEnabled=true` ve bulk yol aktiftir. Sorun halinde `MikroWriteBatching__InterWarehouseShipmentEnabled=false` ortam degiskeni veya ayni appsettings alani kullanilarak eski EF insert yoluna donulur; ayar degisikliginden sonra API yeniden baslatilmalidir.
 - `MikroApi` modunda `POST /Api/apiMethods/DahiliStokHareketKaydetV2` kullanilir ve olusan hareketler response/geri okuma ile mevcut response modeline cevrilir.
 - `MikroApi` modunda otomatik depo siparisi gerekiyorsa once `POST /Api/apiMethods/DepolarArasiSiparisKaydetV2` ile siparis olusturulur, olusan `ssip_Guid` degerleri geri okunur ve sevk satirlarina `sth_subesip_uid` olarak eklenir. Bu yolun API-only kalmasi icin `MikroWriteRouting:IssuedWarehouseOrder` de `MikroApi` olmalidir; aksi halde backend hata dondurur.
 - `STOK_HAREKETLERI` icin `sth_evraktip = 17`, `sth_tip = 2`, `sth_cins = 6` kullanilir.

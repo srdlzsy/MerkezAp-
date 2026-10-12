@@ -62,6 +62,7 @@ using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.FirmaEvrakTakibi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimlari;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCiroAktarimi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
@@ -337,6 +338,7 @@ public static class ServiceCollectionExtensions
         services.Configure<MikroApiOptions>(configuration.GetSection(MikroApiOptions.SectionName));
         services.Configure<MikroApiWriteAuditOptions>(configuration.GetSection(MikroApiWriteAuditOptions.SectionName));
         services.Configure<MikroWriteRoutingOptions>(configuration.GetSection(MikroWriteRoutingOptions.SectionName));
+        services.Configure<MikroWriteBatchingOptions>(configuration.GetSection(MikroWriteBatchingOptions.SectionName));
         services.Configure<DocumentFlowTrackingOptions>(configuration.GetSection(DocumentFlowTrackingOptions.SectionName));
         services.Configure<SuggestedWarehouseOrderOptions>(
             configuration.GetSection(SuggestedWarehouseOrderOptions.SectionName));
