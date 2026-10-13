@@ -110,6 +110,132 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     [Fact]
+    public async Task Acquire_CompletedResultCanBeVerifiedBeforeReplay()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+        var recoveryCalls = 0;
+
+        await AcquireAsync(service, userId, clientRequestId, request);
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "stale-response",
+            CancellationToken.None);
+
+        var result = await service.AcquireAsync<TestRequest, string>(
+            "shipment.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) =>
+            {
+                recoveryCalls++;
+                return Task.FromResult<string?>("F56/88049");
+            },
+            CancellationToken.None,
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Completed, result.State);
+        Assert.Equal("F56/88049", result.Response);
+        Assert.Equal(1, recoveryCalls);
+        Assert.Equal(
+            MobileOfflineSyncRequestStatus.Completed,
+            (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Acquire_UnverifiableCompletedResultIsInvalidatedAndNotReplayed()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+
+        await AcquireAsync(service, userId, clientRequestId, request);
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "F56/4313",
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            service.AcquireAsync<TestRequest, string>(
+                "shipment.create",
+                userId,
+                56,
+                clientRequestId,
+                request,
+                (_, _) => Task.FromResult<string?>(null),
+                CancellationToken.None,
+                preventReexecutionAfterUncertainOutcome: true,
+                verifyCompletedWithRecovery: true));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, record.ErrorCode);
+        Assert.False(record.Retryable);
+        Assert.Null(record.ResponsePayload);
+
+        await Assert.ThrowsAsync<OperationConflictException>(() =>
+            service.AcquireAsync<TestRequest, string>(
+                "shipment.create",
+                userId,
+                56,
+                clientRequestId,
+                request,
+                (_, _) => Task.FromResult<string?>("must-not-be-used"),
+                CancellationToken.None,
+                preventReexecutionAfterUncertainOutcome: true,
+                verifyCompletedWithRecovery: true));
+    }
+
+    [Fact]
+    public async Task GetStatus_UnverifiableCompletedResultIsInvalidated()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+
+        await AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 25));
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "F56/4313",
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            service.GetStatusAsync<string>(
+                "shipment.create",
+                userId,
+                clientRequestId,
+                (_, _) => Task.FromResult<string?>(null),
+                CancellationToken.None,
+                verifyCompletedWithRecovery: true));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
+        Assert.False(record.Retryable);
+        Assert.Null(record.ResponsePayload);
+    }
+
+    [Fact]
     public async Task Acquire_DoesNotReexecuteUncertainFailedWrite()
     {
         await using var db = CreateDbContext();

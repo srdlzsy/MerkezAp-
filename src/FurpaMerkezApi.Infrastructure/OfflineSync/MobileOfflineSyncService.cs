@@ -29,7 +29,8 @@ public sealed class MobileOfflineSyncService(
         TRequest requestPayload,
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
         CancellationToken cancellationToken,
-        bool preventReexecutionAfterUncertainOutcome = false)
+        bool preventReexecutionAfterUncertainOutcome = false,
+        bool verifyCompletedWithRecovery = false)
     {
         var normalizedClientRequestId = NormalizeClientRequestId(clientRequestId);
         var requestJson = JsonSerializer.Serialize(requestPayload, JsonOptions);
@@ -51,7 +52,8 @@ public sealed class MobileOfflineSyncService(
                     requestJson,
                     recoverAsync,
                     cancellationToken,
-                    preventReexecutionAfterUncertainOutcome);
+                    preventReexecutionAfterUncertainOutcome,
+                    verifyCompletedWithRecovery);
             }
 
             var record = new MobileOfflineSyncRequest(
@@ -180,7 +182,8 @@ public sealed class MobileOfflineSyncService(
         Guid requestedByUserId,
         Guid clientRequestId,
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool verifyCompletedWithRecovery = false)
     {
         var record = await GetTrackedAsync(
             operationCode,
@@ -193,7 +196,9 @@ public sealed class MobileOfflineSyncService(
 
         if (record.Status == MobileOfflineSyncRequestStatus.Completed)
         {
-            result = DeserializeResponse<TResponse>(record.ResponsePayload);
+            result = verifyCompletedWithRecovery
+                ? await VerifyCompletedAsync(record, recoverAsync, cancellationToken)
+                : DeserializeResponse<TResponse>(record.ResponsePayload);
         }
         else if (record.Retryable != false)
         {
@@ -250,7 +255,8 @@ public sealed class MobileOfflineSyncService(
         string requestJson,
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
         CancellationToken cancellationToken,
-        bool preventReexecutionAfterUncertainOutcome)
+        bool preventReexecutionAfterUncertainOutcome,
+        bool verifyCompletedWithRecovery)
     {
         try
         {
@@ -267,8 +273,11 @@ public sealed class MobileOfflineSyncService(
 
         if (existing.Status == MobileOfflineSyncRequestStatus.Completed)
         {
-            return MobileOfflineSyncAcquireResult<TResponse>.Completed(
-                DeserializeResponse<TResponse>(existing.ResponsePayload));
+            return await ResolveCompletedAcquireAsync(
+                existing,
+                recoverAsync,
+                cancellationToken,
+                verifyCompletedWithRecovery);
         }
 
         ThrowIfReviewRequired(existing);
@@ -301,14 +310,114 @@ public sealed class MobileOfflineSyncService(
             {
                 await authDbContext.Entry(existing).ReloadAsync(cancellationToken);
                 ThrowIfReviewRequired(existing);
-                return existing.Status == MobileOfflineSyncRequestStatus.Completed
-                    ? MobileOfflineSyncAcquireResult<TResponse>.Completed(DeserializeResponse<TResponse>(existing.ResponsePayload))
-                    : MobileOfflineSyncAcquireResult<TResponse>.Processing();
+                if (existing.Status == MobileOfflineSyncRequestStatus.Completed)
+                {
+                    return await ResolveCompletedAcquireAsync(
+                        existing,
+                        recoverAsync,
+                        cancellationToken,
+                        verifyCompletedWithRecovery);
+                }
+
+                return MobileOfflineSyncAcquireResult<TResponse>.Processing();
             }
             return MobileOfflineSyncAcquireResult<TResponse>.Proceed();
         }
 
         return MobileOfflineSyncAcquireResult<TResponse>.Processing();
+    }
+
+    private async Task<MobileOfflineSyncAcquireResult<TResponse>> ResolveCompletedAcquireAsync<TResponse>(
+        MobileOfflineSyncRequest record,
+        Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
+        CancellationToken cancellationToken,
+        bool verifyCompletedWithRecovery)
+    {
+        var response = verifyCompletedWithRecovery
+            ? await VerifyCompletedAsync(record, recoverAsync, cancellationToken)
+            : DeserializeResponse<TResponse>(record.ResponsePayload);
+
+        return MobileOfflineSyncAcquireResult<TResponse>.Completed(response);
+    }
+
+    private async Task<TResponse> VerifyCompletedAsync<TResponse>(
+        MobileOfflineSyncRequest record,
+        Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var recoveryTimeout = new CancellationTokenSource(RecoveryTimeout);
+
+        try
+        {
+            var recovered = await recoverAsync(record.RequestPayload, recoveryTimeout.Token);
+            if (recovered is null)
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroDocumentContentMismatch,
+                    "The stored completed result could not be verified in Mikro. Manual review is required; do not reuse this clientRequestId.",
+                    retryable: false);
+            }
+
+            return recovered;
+        }
+        catch (OperationConflictException exception)
+        {
+            await MarkCompletedVerificationFailedAsync(
+                record,
+                exception.Message,
+                exception.ErrorCode,
+                exception.Retryable);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            var rootCause = exception.GetBaseException();
+            var errorMessage = string.IsNullOrWhiteSpace(rootCause.Message)
+                ? "Completed result verification failed; the Mikro document could not be confirmed."
+                : $"Completed result verification failed; the Mikro document could not be confirmed. {rootCause.Message}";
+
+            await MarkCompletedVerificationFailedAsync(
+                record,
+                errorMessage,
+                OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+                retryable: true);
+
+            logger?.LogWarning(
+                exception,
+                "Completed offline write verification failed. OperationCode={OperationCode}, ClientRequestId={ClientRequestId}; the stored success response will not be replayed.",
+                record.OperationCode,
+                record.ClientRequestId);
+
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+                errorMessage,
+                retryable: true,
+                innerException: exception);
+        }
+    }
+
+    private async Task MarkCompletedVerificationFailedAsync(
+        MobileOfflineSyncRequest record,
+        string errorMessage,
+        string errorCode,
+        bool retryable)
+    {
+        record.MarkCompletedVerificationFailed(
+            Truncate(errorMessage, 1000),
+            clock.UtcNow,
+            errorCode,
+            retryable);
+
+        try
+        {
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await authDbContext.SaveChangesAsync(persistenceTimeout.Token);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await authDbContext.Entry(record).ReloadAsync(CancellationToken.None);
+        }
     }
 
     internal static bool IsUncertainWriteOutcome(string? errorMessage)

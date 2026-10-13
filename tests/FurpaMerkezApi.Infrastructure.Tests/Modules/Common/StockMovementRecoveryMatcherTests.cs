@@ -3,6 +3,7 @@ using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Xunit;
@@ -78,6 +79,22 @@ public sealed class StockMovementRecoveryMatcherTests
             case "order": rows[0].sth_sip_uid = Guid.NewGuid(); break;
         }
         Assert.Equal(StockMovementMatch.Mismatch, StockMovementRecoveryMatcher.Company(CompanyRequest, 1, 0, rows));
+    }
+
+    [Fact]
+    public void CompanyDatabaseReadback_RequiresTheCreatedMovementGuids()
+    {
+        var rows = new[] { Row(), Row(1) };
+        var expected = rows.Select(row => row.sth_Guid).ToArray();
+
+        CompanyMovementWriteService.EnsureExpectedMovementGuids(rows, expected);
+
+        rows[1].sth_Guid = Guid.NewGuid();
+        var exception = Assert.Throws<OperationConflictException>(() =>
+            CompanyMovementWriteService.EnsureExpectedMovementGuids(rows, expected));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, exception.ErrorCode);
+        Assert.False(exception.Retryable);
     }
 
     [Theory]

@@ -1255,6 +1255,8 @@ Guvenli create `409 Conflict` response sozlesmesi:
 - `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false`: Mikro'da ayni evrak anahtariyla kayit vardir fakat satir icerigi istekle tam eslesmemistir. UI `Tekrar Dene` aksiyonunu kapatip `Yetkili incelemesi gerekli` gostermelidir; otomatik veya yeni id ile POST yapmamalidir.
 - Bu manuel inceleme karari backend'de kalici saklanir. Ayni id tekrar gonderilse bile yeniden create veya otomatik recovery yapilmaz. Bu surum manuel incelemeyi kaldiran bir endpoint sunmaz; yetkili incelemesi ve kontrollu duzeltme gerekir.
 - Firma sevki/iadesi, zayiat/masraf ve virman readback'inde eksik satir seti basari sayilmaz. Eslesen fakat henuz tamamlanmamis set `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, farkli stok/miktar/birim/trace veya fazla satir `MIKRO_DOCUMENT_CONTENT_MISMATCH` doner. Ham Mikro API cevabi tek basina basari kaniti degildir.
+- Firma sevki/iadesi `Database` yazma yolunda da transaction commit sonrasi Mikro satirlari belge anahtari ve olusturulan hareket GUID'leriyle geri okunur. Tum satirlar istek snapshot'iyla dogrulanmadan offline kayit `Completed` olmaz ve `Belge Olustu` akis kaydi yazilmaz.
+- Firma sevki/iadesine ait eski bir `Completed` kayit ayni `clientRequestId` ile POST veya durum sorgusunda tekrar kullanildiginda Mikro readback yeniden dogrulanir. Belge artik Mikro'da yoksa eski basari response'u oynatilmaz; kayit `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false` ile manuel incelemeye alinir.
 - Bizim API'de trace ile olusturulan firma sevki/iadesinin e-irsaliyesi, create kaydi tamamlanmadan ve orijinal istek mevcut Mikro satirlariyla eslesmeden gonderilmez. JWT endpointlerinde yeni zorunlu request alani yoktur; legacy `expectedLineCount` zorunlulugu devam eder.
 - `CLIENT_REQUEST_PAYLOAD_MISMATCH`, `retryable=false`: ayni `clientRequestId` daha once farkli body ile kullanilmistir. Pending kayit degistirilmeden korunmali; kullanici gercekten yeni bir islem baslatacaksa yeni id ancak acik bir `Yeni islem` aksiyonuyla uretilmelidir.
 - `errorCode` bulunmayan eski/genel `409` cevaplari otomatik retry edilmemelidir; `detail` kullaniciya gosterilir.
@@ -1372,7 +1374,7 @@ Ortak offline status response modeli:
 - `Completed`: istek basariyla tamamlandi; `result` alaninda asil business response bulunur
 - `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. U17, validasyon veya benzeri kesin is kurali hatasi duzeltilmeden tekrar edilmemelidir. Hata metni timeout/iptal/`write outcome could not be confirmed` ise sonuc belirsizdir; sevk, iade, firma hareketi, zayiat, masraf ve virman akislarinda ayni id ile retry once readback yapar. Firma mal kabul `Database` rotasinda readback belge bulamaz ve onceki transaction'in geri alindigi kesinlesmisse ayni id ile yazma yeniden baslatilabilir; `MikroApi` rotasinda ikinci create yazisi baslatilmaz.
 - `errorCode` ve `retryable`, siniflandirilmis hata kararini ProblemDetails ile ayni makine-okunur alanlarla tasir. `retryable=true` ise `retryAfterSeconds` su an `5` doner; UI bu sure dolmadan ayni durumu veya ayni payload POST'unu tekrar etmemelidir.
-- `Completed` durumda `errorCode`, `retryable` ve `retryAfterSeconds` null; `result` asil create response'udur.
+- `Completed` durumda `errorCode`, `retryable` ve `retryAfterSeconds` null; `result` asil create response'udur. Firma sevki/iadesi durum endpointleri bu kaydi donmeden once Mikro belgesini tekrar dogrular; dogrulama basarisizsa durum artik `Completed` olarak sunulmaz.
 
 ## Mobil Urun-Fiyat Katalog Sync
 
@@ -6999,7 +7001,7 @@ Yetki:
 Onemli not:
 
 - Yazma yolu `MikroWriteRouting:CompanyMovement` ile belirlenir; mevcut config'te varsayilan deger `Database`tir.
-- `Database` modunda EF Core uzerinden ayri `MikroWriteDbContext` ile `STOK_HAREKETLERI` yazilir.
+- `Database` modunda EF Core uzerinden ayri `MikroWriteDbContext` ile `STOK_HAREKETLERI` yazilir. Commit sonrasinda ayni write DB'den tum belge satirlari geri okunur; satir icerigi ve olusturulan `sth_Guid` kumesi dogrulanmadan create basarili sayilmaz.
 - `MikroApi` modunda `POST /Api/apiMethods/IrsaliyeKaydetV2` kullanilir ve olusan hareketler response/geri okuma ile mevcut response modeline cevrilir.
 - Firma giden sevki hareketi `sth_evraktip = 1`, `sth_tip = 1`, `sth_cins = 0`, `sth_normal_iade = 0` olarak olusur.
 - `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili sevk menusunde `all-warehouses` yetkisi olan kullanici baska depo adina sevk olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.

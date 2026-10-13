@@ -143,6 +143,27 @@ public sealed class MobileOfflineSyncRequest
         Revision = Guid.NewGuid();
     }
 
+    public void MarkCompletedVerificationFailed(
+        string errorMessage,
+        DateTime completedAtUtc,
+        string errorCode,
+        bool retryable)
+    {
+        if (Status != MobileOfflineSyncRequestStatus.Completed)
+        {
+            return;
+        }
+
+        ErrorMessage = NormalizeRequired(errorMessage, nameof(errorMessage), 1000);
+        ErrorCode = NormalizeRequired(errorCode, nameof(errorCode), 100);
+        Retryable = retryable;
+        ResponsePayload = null;
+        Status = MobileOfflineSyncRequestStatus.Failed;
+        CompletedAtUtc = NormalizeUtc(completedAtUtc);
+        UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
+    }
+
     private static DateTime NormalizeUtc(DateTime value) =>
         DateTime.SpecifyKind(value, DateTimeKind.Utc);
 

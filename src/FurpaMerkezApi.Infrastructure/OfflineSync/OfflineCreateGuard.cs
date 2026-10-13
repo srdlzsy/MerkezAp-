@@ -14,7 +14,8 @@ internal static class OfflineCreateGuard
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
         Func<CancellationToken, Task<TResponse>> executeAsync,
         CancellationToken cancellationToken,
-        bool preventReexecutionAfterUncertainOutcome = false)
+        bool preventReexecutionAfterUncertainOutcome = false,
+        bool verifyCompletedWithRecovery = false)
     {
         if (!clientRequestId.HasValue)
         {
@@ -39,7 +40,8 @@ internal static class OfflineCreateGuard
             requestPayload,
             recoverAsync,
             cancellationToken,
-            preventReexecutionAfterUncertainOutcome);
+            preventReexecutionAfterUncertainOutcome,
+            verifyCompletedWithRecovery);
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
         {

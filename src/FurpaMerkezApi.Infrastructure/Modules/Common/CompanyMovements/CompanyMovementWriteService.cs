@@ -57,7 +57,8 @@ public sealed class CompanyMovementWriteService(
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, kind, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
             cancellationToken,
-            preventReexecutionAfterUncertainOutcome: true);
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
     }
 
     public Task<OfflineSyncStatusDto<CreateCompanyMovementResponse>> GetOfflineSyncStatusAsync(
@@ -73,7 +74,8 @@ public sealed class CompanyMovementWriteService(
                 MobileOfflineSyncService.DeserializeRequest<CreateCompanyMovementRequest>(storedRequestPayload),
                 kind,
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private Task<CreateCompanyMovementResponse> ExecuteRoutedAsync(
         CreateCompanyMovementRequest request,
@@ -130,7 +132,7 @@ public sealed class CompanyMovementWriteService(
 
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             var lineTaxInfos = await LoadLineTaxInfosAsync(lines, kind, cancellationToken);
@@ -190,18 +192,20 @@ public sealed class CompanyMovementWriteService(
                 await transaction.CommitAsync(cancellationToken);
                 LogCreatePhase("commit", movements.Length);
 
-                return new CreateCompanyMovementResponse(
-                    documentSerie,
-                    documentOrderNo,
-                    movementDate,
-                    documentDate,
-                    documentNo,
-                    request.WarehouseNo,
-                    customerCode,
-                    movements.Length,
-                    movements.Sum(movement => movement.sth_miktar ?? 0d),
-                    movements.Sum(movement => movement.sth_tutar ?? 0d),
-                    options.ConnectionStringName);
+                return new DatabaseCreateResult(
+                    new CreateCompanyMovementResponse(
+                        documentSerie,
+                        documentOrderNo,
+                        movementDate,
+                        documentDate,
+                        documentNo,
+                        request.WarehouseNo,
+                        customerCode,
+                        movements.Length,
+                        movements.Sum(movement => movement.sth_miktar ?? 0d),
+                        movements.Sum(movement => movement.sth_tutar ?? 0d),
+                        options.ConnectionStringName),
+                    movements.Select(movement => movement.sth_Guid).ToArray());
             }
             catch
             {
@@ -209,6 +213,23 @@ public sealed class CompanyMovementWriteService(
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        var verified = await TryRecoverCompanyMovementResponseAsync(
+            writeResult.Response.DocumentSerie,
+            writeResult.Response.DocumentOrderNo,
+            request,
+            customerCode,
+            returnType,
+            movementDate,
+            documentDate,
+            documentNo,
+            options.ConnectionStringName,
+            movementGenre,
+            CancellationToken.None,
+            writeResult.MovementGuids);
+
+        return verified ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateCompanyMovementResponse> ExecuteMikroApiAsync(
@@ -385,7 +406,8 @@ public sealed class CompanyMovementWriteService(
         string documentNo,
         string writeConnectionName,
         byte movementGenre,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<Guid>? expectedMovementGuids = null)
     {
         var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
@@ -403,6 +425,11 @@ public sealed class CompanyMovementWriteService(
         if (rows.Count == 0)
         {
             return null;
+        }
+
+        if (expectedMovementGuids is not null)
+        {
+            EnsureExpectedMovementGuids(rows, expectedMovementGuids);
         }
 
         if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(
@@ -518,6 +545,24 @@ public sealed class CompanyMovementWriteService(
             NormalizeText(request.DocumentNo), mikroWriteOptions.Value.ConnectionStringName,
             movementGenre, cancellationToken) ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
+
+    internal static void EnsureExpectedMovementGuids(
+        IReadOnlyCollection<STOK_HAREKETLERI> rows,
+        IReadOnlyCollection<Guid> expectedMovementGuids)
+    {
+        var expectedGuidSet = expectedMovementGuids.ToHashSet();
+        if (expectedGuidSet.Count != expectedMovementGuids.Count ||
+            rows.Any(row => !expectedGuidSet.Contains(row.sth_Guid)) ||
+            (rows.Count == expectedGuidSet.Count &&
+             !rows.Select(row => row.sth_Guid).ToHashSet().SetEquals(expectedGuidSet)))
+        {
+            throw StockMovementRecoveryMatcher.ContentMismatch();
+        }
+    }
+
+    private sealed record DatabaseCreateResult(
+        CreateCompanyMovementResponse Response,
+        IReadOnlyCollection<Guid> MovementGuids);
 
     private async Task<CARI_HESAPLAR> GetCustomerAsync(
         string customerCode,
