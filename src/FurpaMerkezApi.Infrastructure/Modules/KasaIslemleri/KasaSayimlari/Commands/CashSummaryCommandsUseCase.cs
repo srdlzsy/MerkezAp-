@@ -213,7 +213,7 @@ public sealed class CashSummaryCommandsUseCase(
                 return new UpdateCashSummaryDetailsResponse(
                     request.DocumentSerie,
                     request.DocumentOrderNo,
-                    updatedSummaries.Length,
+                    detailLines.Length,
                     totalAmount);
             }
             catch
@@ -809,9 +809,9 @@ public sealed class CashSummaryCommandsUseCase(
     private static bool ShouldWriteGiftCheckLine(CreateCashSummaryGiftCheckLineRequest line) =>
         line.Quantity > 0 || !IsZero(line.Total);
 
-    private static bool IsCashDetailLine(UpdateCashSummaryDetailLineRequest line) =>
+    internal static bool IsCashDetailLine(UpdateCashSummaryDetailLineRequest line) =>
         line.PaymentTypeId == CashTotalPaymentTypeId ||
-        CashSummaryCategoryMatcher.IsCashPaymentType(line.TypeName);
+        (line.PaymentTypeId == 0 && CashSummaryCategoryMatcher.IsCashPaymentType(line.TypeName));
 
     private static bool IsCashSummary(SummaryEntity item) =>
         item.PaymentTypeId == CashTotalPaymentTypeId;

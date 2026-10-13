@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari.Commands;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Xunit;
@@ -6,6 +7,51 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.KasaIslemleri.KasaSayimlar
 
 public sealed class CashSummaryCommandsUseCaseCustomerMovementTests
 {
+    [Fact]
+    public void IsCashDetailLine_DoesNotTreatCashNamedStoreExpenseAsCashTotal()
+    {
+        var line = new UpdateCashSummaryDetailLineRequest(
+            "Kasadan Nakit Cikis",
+            110,
+            string.Empty,
+            1,
+            100,
+            string.Empty,
+            string.Empty);
+
+        Assert.False(CashSummaryCommandsUseCase.IsCashDetailLine(line));
+    }
+
+    [Fact]
+    public void IsCashDetailLine_RecognizesCanonicalCashPaymentType()
+    {
+        var line = new UpdateCashSummaryDetailLineRequest(
+            "Nakit",
+            500,
+            string.Empty,
+            1,
+            100,
+            string.Empty,
+            string.Empty);
+
+        Assert.True(CashSummaryCommandsUseCase.IsCashDetailLine(line));
+    }
+
+    [Fact]
+    public void IsCashDetailLine_PreservesLegacyZeroIdCashNameFallback()
+    {
+        var line = new UpdateCashSummaryDetailLineRequest(
+            "Nakit",
+            0,
+            string.Empty,
+            1,
+            100,
+            string.Empty,
+            string.Empty);
+
+        Assert.True(CashSummaryCommandsUseCase.IsCashDetailLine(line));
+    }
+
     [Fact]
     public void CreateMovements_WritesLiveCompatiblePaymentBasedZReportMovements()
     {

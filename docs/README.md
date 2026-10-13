@@ -38,7 +38,7 @@ Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 
 | Dokuman | Icerik |
 | --- | --- |
-| [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md) | Projenin genel mimarisi, katmanlari, modul mantigi ve gelistirme standartlari. |
+| [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md) | Projenin genel mimarisi, katmanlari, istek akisi, veri sahipligi, kalici guvenli create/recovery yapisi ve gelistirme standartlari. |
 | [GELISTIRICI_DEVAM_REHBERI.md](GELISTIRICI_DEVAM_REHBERI.md) | Projeyi devralip gelistirmeye devam etmek icin gunluk komutlar, yeni modul akisi, migration, test ve commit rehberi. |
 | [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md) | Frontend/UI entegrasyonu icin API endpointleri ve response modelleri. |
 | [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md) | Yeni menu/API eklerken yetki katalogu, migration ve policy adimlari. |

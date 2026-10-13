@@ -247,7 +247,8 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
                 SELECT TOP (1)
                     s.BranchNo,
                     s.DocumentSerie,
-                    s.DocumentOrderNo
+                    s.DocumentOrderNo,
+                    s.SummaryDate
                 FROM Summaries s
                 WHERE s.BranchNo = @warehouseNo
                   AND s.DocumentSerie = @documentSerie
@@ -264,7 +265,9 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
                   AND c.cha_evrak_tip = 60
                   AND c.cha_tip = 1
                   AND c.cha_cari_cins = 4
-                  AND LTRIM(RTRIM(c.cha_kod)) = CONVERT(varchar(20), d.BranchNo)
+                  AND c.cha_kod = CONVERT(varchar(20), d.BranchNo)
+                  AND c.cha_tarihi >= CONVERT(date, d.SummaryDate)
+                  AND c.cha_tarihi < DATEADD(day, 1, CONVERT(date, d.SummaryDate))
                 ORDER BY
                     c.cha_create_date DESC,
                     c.cha_satir_no DESC

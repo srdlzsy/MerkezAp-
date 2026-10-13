@@ -15563,6 +15563,9 @@ Detay update response:
 }
 ```
 
+- Detay guncellemede pozitif `paymentTypeId` degeri satir turu icin belirleyicidir; canonical nakit toplam satiri `paymentTypeId = 500` degeridir. Ornegin `paymentTypeId = 110`, `typeName = "Kasadan Nakit Cikis"` satiri adinda `Nakit` gecse de magaza gideridir ve elenmez. Yalniz eski istemcilerin `paymentTypeId = 0`, `typeName = "Nakit"` gonderimi geriye uyum icin nakit toplam kabul edilir.
+- `updatedLineCount`, request'ten yazilan detay satiri sayisidir; backend'in ayrica korudugu `paymentTypeId = 500` nakit toplam satiri bu sayiya dahil edilmez.
+
 Banknot update request:
 
 ```json

@@ -2,6 +2,8 @@
 
 Bu dokuman FurpaMerkezApi projesine yeni giren birinin sistemi hizli ve saglam anlamasi icin hazirlandi.
 
+Son hedefli kontrol: 2026-10-13. Katmanlar, veri kaynaklari, auth/yetki zinciri, HTTP hata sozlesmesi ve `clientRequestId` kullanan kalici guvenli create/recovery altyapisi guncel kaynak kodla karsilastirildi.
+
 Kisa indeks:
 
 ```text
@@ -245,10 +247,13 @@ Terminal/mobil/web istemciler de HTTP client timeout degerini buna uygun tutmali
 Pratik UI kural:
 
 ```text
-create istegi timeout olduysa hemen tekrar yeni evrak basma
-once liste/detaydan evrak olustu mu kontrol et
-mumkunse clientRequestId/idempotency destekli akis kullan
+desteklenen kritik create islemlerinde ilk Kaydet aninda clientRequestId uret
+ayni mantiksal islem icin body snapshot'ini ve clientRequestId degerini koru
+timeout veya baglanti kopmasinda yeni kimlik uretme
+offline-sync durum endpointi veya ayni payload ile guvenli retry kullan
 ```
+
+Kalici guvenli retry desteklemeyen bir create endpointinde timeout gorulurse yeni istek basmadan once ilgili liste/detay endpointinden evrakin olusup olusmadigi kontrol edilmelidir.
 
 ## AuthDbContext
 
@@ -308,6 +313,220 @@ API'ye ozel yardimci  -> AuthDbContext veya FurpaDbContext
 ```
 
 Mikro harici sistemdir. Mikro tablo semasi bu API migration'lariyla yonetilmez.
+
+## Kalici Guvenli Create ve Recovery
+
+Kritik create/yazma islemlerinde istemci timeout olsa bile Mikro yazimi tamamlanmis olabilir. Ayni fisin yeni kimlikle tekrar gonderilmesi duplicate evrak uretebilecegi icin bu akislar `clientRequestId`, Auth DB rezervasyonu, Mikro trace ve readback ile korunur.
+
+Ana bilesenler:
+
+```text
+OfflineCreateGuard
+MobileOfflineSyncService
+MobileOfflineSyncRequest
+mobile_offline_sync_requests
+OfflineSyncStatusDto
+OperationConflictException
+```
+
+Kod yerleri:
+
+```text
+src/FurpaMerkezApi.Infrastructure/OfflineSync/OfflineCreateGuard.cs
+src/FurpaMerkezApi.Infrastructure/OfflineSync/MobileOfflineSyncService.cs
+src/FurpaMerkezApi.Domain/Entities/MobileOfflineSyncRequest.cs
+src/FurpaMerkezApi.Application/Modules/Common/OfflineSync/OfflineSyncStatusDto.cs
+src/FurpaMerkezApi.Application/Common/Errors/OperationConflictException.cs
+```
+
+Kalici guvenli create ve durum sorgusu bulunan akislar:
+
+```text
+POST /api/mal-kabul-islemleri/firma-mal-kabulleri
+POST /api/stok-islemleri/sayim-sonuclari
+POST /api/sevk-islemleri/depolar-arasi-sevkler/giden
+POST /api/sevk-islemleri/firma-sevkleri/giden
+POST /api/iade-islemleri/depo-iadeleri/giden
+POST /api/iade-islemleri/firma-iadeleri
+POST /api/stok-islemleri/zayiat-fisleri
+POST /api/stok-islemleri/masraf-fisleri
+POST /api/stok-islemleri/virmanlar
+POST /api/green-grocer/operations/adjustments
+```
+
+Canonical ve alias route listesi ile tam request/response modelleri `UI_API_DOKUMANI.md` icindeki `Mobil Offline ve Guvenli Retry Kurallari` bolumundedir.
+
+### Ilk Create Istegi
+
+Uctan uca akis:
+
+```text
+1. UI ilk Kaydet aninda yeni GUID clientRequestId uretir.
+2. UI gonderilecek body'nin degismez snapshot'ini yerel depoda saklar.
+3. Controller JWT, permission ve depo kapsamindan gecen request'i use case'e aktarir.
+4. OfflineCreateGuard, Auth DB'de islemi rezerve eder.
+5. Isleme ait write service Mikro DB veya Mikro API yazimini calistirir.
+6. Akis kendi is kurallarina gore Mikro readback ile evrak/satir butunlugunu dogrular.
+7. Kesin sonuc Auth DB kaydina Completed ve responsePayload olarak yazilir.
+8. Ayni business response UI'ye 200/201 olarak doner.
+```
+
+Mikro yazimindan sonra istemci baglantisi kopsa veya request token iptal edilse bile `Completed`/`Failed` kapanisi kullanici request token'ina birakilmaz. `OfflineCreateGuard` Auth DB sonucunu ayri ve kisa bir persistence token'i ile kaydetmeye calisir. Boylece yazim tamamlandigi halde kaydin gereksiz yere sahipsiz `Processing` kalma riski azaltilir.
+
+`clientRequestId` request modelinde geriye uyumluluk nedeniyle nullable olabilir. Bos gelirse `OfflineCreateGuard` legacy davranisla islemi dogrudan calistirir; kalici retry, payload eslestirme ve offline durum sorgusu korumasi olusmaz. Yeni UI'lar desteklenen kritik create ekranlarinda bu alani zorunlu kabul etmelidir.
+
+### Auth DB Rezervasyonu
+
+`mobile_offline_sync_requests` gercek Mikro evrakini degil, guvenli istek kimligini ve uzlastirma durumunu tutar.
+
+Bu tablo `mikro_api_write_audits` ile ayni sey degildir. Offline sync kaydi istemci isteginin idempotency/recovery durumunu tutar; Mikro API audit kaydi ise secili yazma rotasi `MikroApi` oldugunda dis API cagrisi, cevabi ve `Pending/Unknown/Verified/RecoveredAfterUnknown` gibi entegrasyon sonucunu izler. Bir business create akisinda ihtiyaca gore ikisi birlikte bulunabilir.
+
+Tekillik kapsami:
+
+```text
+operationCode + requestedByUserId + clientRequestId
+```
+
+`warehouseNo` kayitta ayrica saklanir ve izleme/operasyon kapsaminda kullanilir. Ayni GUID'yi baska kullanicinin kullanmasi onun kaydini acmaz.
+
+Saklanan temel alanlar:
+
+```text
+operationCode
+requestedByUserId
+warehouseNo
+clientRequestId
+requestPayload
+requestFingerprint
+status
+responsePayload
+errorMessage / errorCode / retryable
+createdAtUtc / updatedAtUtc / completedAtUtc
+revision
+```
+
+Request JSON'i SHA-256 ile fingerprint edilir. Ayni `clientRequestId` farkli payload ile gelirse Mikro yazimi baslamadan `CLIENT_REQUEST_PAYLOAD_MISMATCH` doner. `revision` iyimser concurrency kontroludur; paralel iki istegin ayni kaydi birbirinin ustune yazmasini engeller.
+
+### Mikro Trace ve Readback
+
+Stok hareketi yazan genisletilmis akislar `clientRequestId` degerini `FR` prefixli 24 karakterlik trace anahtarina cevirir ve Mikro `STOK_HAREKETLERI.sth_eticaret_kanal_kodu` alanina tasir. Database ve MikroApi rotalarinda ayni iz korunur.
+
+Readback yalniz evrak seri/sirasinin varligina bakmaz. Akisa gore su alanlar dogrulanir:
+
+```text
+trace
+aktif satir sayisi
+stok kodu
+miktar
+birim pointer/katsayi
+kaynak ve hedef depo
+evrak tipi ve hareket tipi
+```
+
+Beklenen satirlarin tamami eslesirse mevcut evrak toparlanarak `Completed` yapilir. Eksik fakat henuz tamamlanabilecek set sonucu belirsiz kabul edilir. Fazla satir veya farkli stok/miktar/birim kalici icerik uyusmazligi sayilir ve otomatik retry durdurulur.
+
+### Ayni Kimlikle Tekrar POST
+
+Mevcut kayit bulundugunda karar sirasi:
+
+| Mevcut durum | Backend davranisi |
+|---|---|
+| `Completed` | Mikro'ya yazmadan saklanan business response'u doner |
+| Ayni ID, farkli payload | `409 CLIENT_REQUEST_PAYLOAD_MISMATCH`, `retryable=false` |
+| `Processing` | Once saklanan request ile readback yapar; sonuc yoksa `MIKRO_WRITE_IN_PROGRESS` |
+| Belirsiz yazma sonucu | Yalniz readback yapar; ikinci create yazisi baslatmaz |
+| `retryable=false` | Kaydi korur, manuel inceleme conflict'ini tekrar doner |
+
+Desteklenen kritik akislar `preventReexecutionAfterUncertainOutcome=true` kullanir. Bu nedenle onceki timeout/iptal/belirsiz sonuc sonrasinda ayni kimlikle retry Mikro'ya ikinci create gondermez; once trace ve request snapshot'i ile mevcut sonucu arar.
+
+### Offline Durum Sorgusu
+
+Her desteklenen akis ilgili route altinda su kalibi sunar:
+
+```text
+GET {create-root}/offline-sync/{clientRequestId}
+```
+
+Bu GET yeni business yazisi baslatmaz. Auth DB kaydini `operationCode + requestedByUserId + clientRequestId` ile bulur, gerekiyorsa saklanan request snapshot'i ile Mikro readback yapar ve kesin sonucu kayda isler.
+
+Ortak response:
+
+```json
+{
+  "clientRequestId": "7c9b31f6-1ab4-4ed1-b02b-2a90e5e7d3fd",
+  "operationCode": "sevk-islemleri.giden-depolar-arasi-sevkler.create",
+  "status": "Completed",
+  "createdAtUtc": "2026-10-13T08:10:00Z",
+  "completedAtUtc": "2026-10-13T08:10:03Z",
+  "errorMessage": null,
+  "errorCode": null,
+  "retryable": null,
+  "retryAfterSeconds": null,
+  "result": {}
+}
+```
+
+Durumlar:
+
+| Status | Anlam | UI karari |
+|---|---|---|
+| `Processing` | Islem rezerve edildi; yazim veya readback henuz kesinlesmedi | Ayni snapshot/id korunur, `retryAfterSeconds` kadar beklenir |
+| `Completed` | Kesin business sonucu var | `result` kullanilir ve yerel pending kayit atomik silinir |
+| `Failed`, `retryable=true` | Gecici hata veya sonucu kanitlanamayan yazim | Yeni ID uretilmez; ayni kimlikle durum/retry devam eder |
+| `Failed`, `retryable=false` | Kalici icerik/payload uyusmazligi | Otomatik retry kapatilir, manuel inceleme gosterilir |
+| `Failed`, siniflandirma yok | Eski veya genel hata | Otomatik retry yapilmaz; hata ve correlationId gosterilir |
+
+Durum `Processing` veya `retryable=true` ise su an `retryAfterSeconds=5` doner. Recovery readback icin 300 saniyelik ayri timeout kullanilir. Recovery teknik hata, SQL baglanti hatasi veya timeout ile tamamlanamazsa kayit sahipsiz `Processing` birakilmaz; `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olarak kapanir.
+
+`Processing` kaydi 5 dakikalik lease suresini asar ve readback tamamlanmis belge bulamazsa ayni siniflandirmaya gecirilir. Bu islem yeni Mikro yazimi baslatmaz.
+
+### Siniflandirilmis Conflict Kodlari
+
+| Error code | Retryable | Karar |
+|---|---:|---|
+| `MIKRO_WRITE_IN_PROGRESS` | `true` | Ayni kimligi koru ve bekle |
+| `MIKRO_WRITE_QUEUE_BUSY` | `true` | Yazim baslamadi; ayni snapshot/id ile sonra dene |
+| `MIKRO_WRITE_OUTCOME_UNCONFIRMED` | `true` | Sonuc kanitlanamadi; ayni kimlikle readback/retry yap |
+| `MIKRO_DOCUMENT_CONTENT_MISMATCH` | `false` | Yeni POST yapma; yetkili incelemesi gerekli |
+| `CLIENT_REQUEST_PAYLOAD_MISMATCH` | `false` | Ayni ID ile body degismis; teknik retry yapma |
+
+`errorCode` bulunmayan genel `409` otomatik retry edilmemelidir. UI hata metni eslestirmek yerine `errorCode` ve `retryable` alanlarini kullanmalidir.
+
+### UI Kalici Pending Kurali
+
+UI en az su bilgileri yerelde birlikte tutar:
+
+```text
+userId
+clientType
+warehouseNo
+operationCode
+clientRequestId
+payloadSnapshot
+yerel durum
+```
+
+Request surerken yalniz ilgili form ve Kaydet aksiyonu kilitlenir. Uygulama kapanip acildiginda ayni snapshot ve kimlikle once durum sorgusu veya bir kez recovery POST yapilir. `Completed` sonucu alindiginda yerel kayit silinir.
+
+Eski bir pending kayit ayni moduldeki butun yeni islemleri global olarak kilitlememelidir. Dogru ayrim:
+
+```text
+ayni mantiksal fis       -> ayni clientRequestId ve ayni payload
+gercekten bagimsiz fis   -> yeni clientRequestId
+eski pending fis         -> Bekleyen Islemler alaninda ayrica izlenir
+```
+
+Ekrani kapatmak veya Vazgec demek backend islemini iptal etmez ve pending kaydi sessizce silmemelidir. Onbellek temizlemeyi normal recovery yontemi olarak kullanmak kimlik ve snapshot'i kaybettirir.
+
+### Operasyonel Izleme
+
+Yetkili yonetim ekrani Auth DB'deki guvenli yazma kayitlarini su endpointten okuyabilir:
+
+```text
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar
+```
+
+Bu endpoint payload dondurmez, recovery veya Mikro yazimi tetiklemez. Tek bir istegin kesin sonucunu uzlastirmak icin ilgili operasyonun `offline-sync/{clientRequestId}` endpoint'i kullanilir.
 
 ## FurpaDbContext
 
@@ -621,16 +840,23 @@ Merkezi exception middleware hata cevaplarini `ProblemDetails` olarak doner.
 Genel eslesmeler:
 
 ```text
-ArgumentException           -> 400 Bad Request
-UnauthorizedAccessException -> 401 Unauthorized
-ForbiddenAccessException    -> 403 Forbidden
-KeyNotFoundException        -> 404 Not Found
-InvalidOperationException   -> 409 Conflict
-TimeoutException            -> 504 Gateway Timeout
-Diger hatalar               -> 500 Internal Server Error
+ArgumentException             -> 400 Bad Request
+UnauthorizedAccessException   -> 401 Unauthorized
+ForbiddenAccessException      -> 403 Forbidden
+KeyNotFoundException          -> 404 Not Found
+OperationConflictException    -> 409 + errorCode + retryable
+InvalidOperationException     -> 409 Conflict
+CommunicationException        -> 502 Bad Gateway
+HttpRequestException          -> 502 Bad Gateway
+SQL connectivity failure      -> 503 Service Unavailable
+TimeoutException              -> 504 Gateway Timeout
+Upstream TaskCanceledException-> 504 Gateway Timeout
+Diger hatalar                 -> 500 Internal Server Error
 ```
 
-Controller icinde gereksiz `try/catch` yazmak yerine anlamli exception firlatmak tercih edilir.
+Tum yazilan ProblemDetails cevaplarinda request path ve varsa `correlationId` bulunur. Siniflandirilmis conflict cevaplarinda `errorCode` ve `retryable` extension alanlari da vardir. Istemci request'i kendi iptal etmisse middleware yeni bir hata body yazmaya calismaz.
+
+Controller icinde gereksiz `try/catch` yazmak yerine anlamli exception firlatmak tercih edilir. Create islemlerinde `500/502/503/504` cevabi Mikro'da evrakin kesinlikle olusmadigi anlamina gelmez; desteklenen akislar ayni `clientRequestId` ile durum/readback uzlastirmasi yapmalidir.
 
 ## E-Irsaliye Akisi
 
@@ -822,7 +1048,7 @@ InvoiceViewingAutomaticSynchronizationScheduler
 InvoiceViewingSynchronizationJobQueue
 ```
 
-AmaÃ§:
+Amac:
 
 ```text
 HTTP request'i uzun is boyunca bloklamamak
@@ -869,9 +1095,11 @@ Genel yol:
 6. DbContext/QueryExecutor/WriteService gerekiyorsa ekle.
 7. DI kaydini yap.
 8. Auth entity veya permission seed varsa migration olustur.
-9. UI_API_DOKUMANI.md guncelle.
-10. Frontend menu/route/buton gorunurlugunu permission'a bagla.
-11. Build/test ve pending migration kontrolu yap.
+9. Kritik create ise clientRequestId, request fingerprint, trace ve readback destegini degerlendir.
+10. Kritik create destekleniyorsa offline-sync durum endpointini ve siniflandirilmis conflict'leri ekle.
+11. UI_API_DOKUMANI.md guncelle.
+12. Frontend menu/route/buton gorunurlugunu permission'a bagla.
+13. Build/test ve pending migration kontrolu yap.
 ```
 
 Detay:
@@ -1031,7 +1259,15 @@ Controller use case/service cagirir. DB ve entegrasyon detayi Infrastructure ici
 
 ### Timeout Sonrasi Tekrar Tekrar Create Basmak
 
-Internet zayifsa istemci timeout olabilir ama API yazma islemi DB'de tamamlanmis olabilir. UI once evrak olustu mu kontrol etmelidir.
+Internet zayifsa istemci timeout olabilir ama API yazma islemi Mikro'da tamamlanmis olabilir. Desteklenen kritik create akislarinda UI yeni GUID veya yeni body uretmemeli; saklanan ayni payload ve `clientRequestId` ile `offline-sync`/guvenli retry kullanmalidir. Belirsiz fis yeni kimlikle tekrar gonderilirse backend bunu bagimsiz create kabul edebilir.
+
+### Pending Kayit Varken Tum Yeni Islemleri Kilitlemek
+
+Pending kayit yalniz ait oldugu mantiksal fisi ve snapshot'i kilitler. Baska `clientRequestId` tasiyan gercekten bagimsiz bir islem API tarafinda global olarak engellenmez. UI eski pending kaydi ayri izlemeli; `Yeni Ekle` butonunu sonsuza kadar kapatmamalidir.
+
+### Ayni ClientRequestId ile Formun Guncel Halini Gondermek
+
+Retry request'i ekrandaki yeniden uretilmis body'den degil, ilk Kaydet aninda saklanan snapshot'tan cikmalidir. Ayni ID ile farkli body `CLIENT_REQUEST_PAYLOAD_MISMATCH` ve `retryable=false` doner.
 
 ### Mikro REST API'ye Toplu ve Kontrolsuz Gecmek
 
@@ -1066,6 +1302,27 @@ Endpoint:
 
 ```text
 Controller -> UseCase/Service -> QueryExecutor/WriteService -> DB/Integration -> DTO
+```
+
+Guvenli create:
+
+```text
+UI snapshot + clientRequestId
+  -> Controller / permission / depo kontrolu
+  -> OfflineCreateGuard
+  -> Auth DB Processing rezervasyonu
+  -> Mikro DB veya Mikro API yazimi
+  -> trace + readback dogrulamasi
+  -> Auth DB Completed/Failed
+  -> HTTP response veya offline-sync uzlastirmasi
+```
+
+Veri sahipligi:
+
+```text
+UI local storage              -> sonucu kesinlesmemis request snapshot'i
+Auth DB                       -> guvenli istek kimligi, durum, audit ve sonuc
+Mikro DB                      -> gercek ticari evrak ve hareket satirlari
 ```
 
 Migration:
