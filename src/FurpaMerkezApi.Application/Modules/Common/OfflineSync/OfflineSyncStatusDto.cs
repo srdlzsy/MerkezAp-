@@ -7,4 +7,7 @@ public sealed record OfflineSyncStatusDto<TResponse>(
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
     string? ErrorMessage,
+    string? ErrorCode,
+    bool? Retryable,
+    int? RetryAfterSeconds,
     TResponse? Result);

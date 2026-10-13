@@ -1,6 +1,7 @@
 using System.Data;
 using System.Diagnostics;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
@@ -60,6 +61,19 @@ public sealed class CreateWarehouseReturnUseCase(
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true);
     }
+
+    public Task<OfflineSyncStatusDto<CreateWarehouseReturnResponse>> GetOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<CreateWarehouseReturnResponse>(
+            OfflineOperationCode,
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateWarehouseReturnRequest>(storedRequestPayload),
+                innerCancellationToken),
+            cancellationToken);
 
     private Task<CreateWarehouseReturnResponse> ExecuteRoutedAsync(
         CreateWarehouseReturnRequest request,

@@ -36,6 +36,23 @@ public sealed class VeritabaniIzlemeController(IDatabaseMonitoringService servic
         CancellationToken cancellationToken = default) =>
         Ok(await service.GetIncidentsAsync(take, cancellationToken));
 
+    [HttpGet("guvenli-yazmalar")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<SafeWriteMonitoringItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<SafeWriteMonitoringItemDto>>> SafeWrites(
+        [FromQuery] SafeWriteMonitoringHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest(
+                request.Status,
+                request.OperationCode,
+                request.WarehouseNo,
+                request.Retryable,
+                request.IncludeCompleted,
+                request.Take),
+            cancellationToken));
+
     [HttpGet("oturum-sonlandirma-gecmisi")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<DatabaseSessionTerminationDto>), StatusCodes.Status200OK)]
@@ -86,4 +103,23 @@ public sealed class TerminateDatabaseSessionHttpRequest
     [Required(AllowEmptyStrings = false)]
     [StringLength(500, MinimumLength = 10)]
     public string? Reason { get; init; }
+}
+
+public sealed class SafeWriteMonitoringHttpRequest
+{
+    [StringLength(20)]
+    public string? Status { get; init; }
+
+    [StringLength(100)]
+    public string? OperationCode { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public bool? Retryable { get; init; }
+
+    public bool IncludeCompleted { get; init; }
+
+    [Range(1, 500)]
+    public int Take { get; init; } = 100;
 }

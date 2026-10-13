@@ -128,6 +128,7 @@ public sealed class SayimSonuclariController(
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateInventoryCountResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<OfflineSyncStatusDto<CreateInventoryCountResponse>>> GetOfflineSyncStatus(
         Guid clientRequestId,
         CancellationToken cancellationToken)

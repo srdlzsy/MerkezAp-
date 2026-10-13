@@ -1,6 +1,7 @@
 using System.Data;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -57,6 +58,21 @@ public sealed class StockReceiptWriteService(
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true);
     }
+
+    public Task<OfflineSyncStatusDto<CreateStockReceiptResponse>> GetOfflineSyncStatusAsync(
+        StockReceiptKind kind,
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<CreateStockReceiptResponse>(
+            ResolveOfflineOperationCode(kind),
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateStockReceiptRequest>(storedRequestPayload),
+                kind,
+                innerCancellationToken),
+            cancellationToken);
 
     private Task<CreateStockReceiptResponse> ExecuteRoutedAsync(
         CreateStockReceiptRequest request,

@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
 
@@ -11,4 +12,14 @@ public sealed class CreateCompanyReturnUseCase(CompanyMovementWriteService compa
         CreateCompanyMovementRequest request,
         CancellationToken cancellationToken) =>
         companyMovementWriteService.ExecuteAsync(request, CompanyMovementKind.PurchaseReturn, cancellationToken);
+
+    public Task<OfflineSyncStatusDto<CreateCompanyMovementResponse>> GetOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        companyMovementWriteService.GetOfflineSyncStatusAsync(
+            CompanyMovementKind.PurchaseReturn,
+            requestedByUserId,
+            clientRequestId,
+            cancellationToken);
 }

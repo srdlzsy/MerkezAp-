@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Common.Errors;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
@@ -72,6 +73,19 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true);
     }
+
+    public Task<OfflineSyncStatusDto<CreateInterWarehouseShipmentResponse>> GetOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<CreateInterWarehouseShipmentResponse>(
+            OfflineOperationCode,
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateInterWarehouseShipmentRequest>(storedRequestPayload),
+                innerCancellationToken),
+            cancellationToken);
 
     private Task<CreateInterWarehouseShipmentResponse> ExecuteRoutedAsync(
         CreateInterWarehouseShipmentRequest request,

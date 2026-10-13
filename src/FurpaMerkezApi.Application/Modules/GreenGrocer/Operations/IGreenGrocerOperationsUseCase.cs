@@ -12,4 +12,9 @@ public interface IGreenGrocerOperationsUseCase
     Task<GreenGrocerOperationsAdjustmentApplyResponse> ApplyAdjustmentAsync(
         GreenGrocerOperationsAdjustmentApplyRequest request,
         CancellationToken cancellationToken);
+
+    Task<global::FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto<GreenGrocerOperationsAdjustmentApplyResponse>> GetAdjustmentOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken);
 }

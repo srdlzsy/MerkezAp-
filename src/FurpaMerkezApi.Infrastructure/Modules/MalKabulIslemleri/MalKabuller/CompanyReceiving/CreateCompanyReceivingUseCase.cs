@@ -73,7 +73,8 @@ public sealed class CreateCompanyReceivingUseCase(
                     request.ClientRequestId.Value,
                     storedRequestPayload,
                     innerCancellationToken),
-                cancellationToken);
+                cancellationToken,
+                preventReexecutionAfterUncertainOutcome: true);
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {
@@ -82,8 +83,10 @@ public sealed class CreateCompanyReceivingUseCase(
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Processing)
             {
-                throw new InvalidOperationException(
-                    "An offline company receiving sync request with the same clientRequestId is already being processed.");
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroWriteInProgress,
+                    "An offline company receiving sync request with the same clientRequestId is already being processed.",
+                    retryable: true);
             }
         }
 

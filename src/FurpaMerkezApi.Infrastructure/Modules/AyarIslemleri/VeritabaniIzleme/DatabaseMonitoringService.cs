@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.Data.SqlClient;
@@ -262,6 +263,74 @@ public sealed partial class DatabaseMonitoringService(
                 item.OccurrenceCount,
                 item.ResolvedAtUtc))
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<SafeWriteMonitoringItemDto>> GetSafeWritesAsync(
+        SafeWriteMonitoringRequest request,
+        CancellationToken cancellationToken)
+    {
+        var query = authDbContext.MobileOfflineSyncRequests.AsNoTracking();
+        MobileOfflineSyncRequestStatus? requestedStatus = null;
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            if (!Enum.TryParse<MobileOfflineSyncRequestStatus>(request.Status.Trim(), true, out var status))
+            {
+                throw new ArgumentException(
+                    "Safe write status must be Processing, Completed or Failed.",
+                    nameof(request));
+            }
+
+            requestedStatus = status;
+        }
+
+        if (requestedStatus.HasValue)
+        {
+            query = query.Where(item => item.Status == requestedStatus.Value);
+        }
+        else if (!request.IncludeCompleted)
+        {
+            query = query.Where(item => item.Status != MobileOfflineSyncRequestStatus.Completed);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OperationCode))
+        {
+            var operationCode = request.OperationCode.Trim();
+            query = query.Where(item => item.OperationCode == operationCode);
+        }
+
+        if (request.WarehouseNo.HasValue)
+        {
+            query = query.Where(item => item.WarehouseNo == request.WarehouseNo.Value);
+        }
+
+        if (request.Retryable.HasValue)
+        {
+            query = query.Where(item => item.Retryable == request.Retryable.Value);
+        }
+
+        var now = clock.UtcNow;
+        var items = await query
+            .OrderBy(item => item.Status == MobileOfflineSyncRequestStatus.Processing ? 0 : 1)
+            .ThenByDescending(item => item.UpdatedAtUtc ?? item.CreatedAtUtc)
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .ToArrayAsync(cancellationToken);
+
+        return items.Select(item => new SafeWriteMonitoringItemDto(
+            item.Id,
+            item.OperationCode,
+            item.RequestedByUserId,
+            item.WarehouseNo,
+            Guid.Parse(item.ClientRequestId),
+            item.Status.ToExternalValue(),
+            item.ErrorCode,
+            item.Retryable,
+            item.ErrorMessage,
+            item.CreatedAtUtc,
+            item.UpdatedAtUtc,
+            item.CompletedAtUtc,
+            Math.Max(0L, (long)(now - (item.UpdatedAtUtc ?? item.CreatedAtUtc)).TotalSeconds)))
+            .ToArray();
+    }
 
     public async Task<IReadOnlyCollection<DatabaseSessionTerminationDto>> GetTerminationHistoryAsync(
         int take,

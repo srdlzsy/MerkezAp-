@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
@@ -110,6 +111,20 @@ public sealed class DepolarArasiSevklerController(
         [FromBody] CreateInterWarehouseShipmentHttpRequest request,
         CancellationToken cancellationToken) =>
         await CreateOutgoing(request, cancellationToken);
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [HttpGet("giden/offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = OutgoingCreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateInterWarehouseShipmentResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateInterWarehouseShipmentResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createInterWarehouseShipmentUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPut("{documentSerie}/{documentOrderNo:int}")]
     [Authorize(Policy = OutgoingUpdatePolicy)]

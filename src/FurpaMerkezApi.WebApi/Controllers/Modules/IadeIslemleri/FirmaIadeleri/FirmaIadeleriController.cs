@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.Detail;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.FirmaIadeleri.List;
@@ -132,6 +133,19 @@ public sealed class FirmaIadeleriController(
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateCompanyMovementResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateCompanyMovementResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createCompanyReturnUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPost("{documentSerie}/{documentOrderNo:int}/e-irsaliye")]
     [Authorize(Policy = DetailPolicy)]

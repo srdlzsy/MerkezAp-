@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 729. Model sayisi: 667.
+Endpoint sayisi (method + route): 742. Model sayisi: 674.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies ve operations_export_path kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -75,6 +75,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/terminal-cihazlari/ozet` | JWT + ayar-islemleri.terminal-cihazlari.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationSummaryDto |
 | GET | `/api/ayar-islemleri/terminal-cihazlari/{id}` | JWT + ayar-islemleri.terminal-cihazlari.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationDto<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
+| GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/olaylar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseMonitoringIncidentDto&gt; |
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseSessionTerminationDto&gt; |
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu` | JWT + ayar-islemleri.veritabani-izleme.detail | path: sessionId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseRollbackStatusDto |
@@ -225,8 +226,10 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | PATCH | `/api/fatura-islemleri/fatura-goruntuleme/{documentId}/printed` | JWT + fatura-islemleri.fatura-goruntuleme.update | path: documentId / string (zorunlu)<br>body: request / InvoiceViewingPrintedStateHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: InvoiceViewingPrintedStateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/fatura-islemleri/fatura-goruntuleme/{documentId}/render` | JWT + fatura-islemleri.fatura-goruntuleme.detail | path: documentId / string (zorunlu)<br>body: request / InvoiceViewingRenderHttpRequest | 401: ProblemDetails<br>403: ProblemDetails<br>200: InvoiceViewingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/green-grocer/operations/adjustments` | JWT + green-grocer.operations.create | body: request / GreenGrocerOperationsAdjustmentApplyHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: GreenGrocerOperationsAdjustmentApplyResponse<br>200: GreenGrocerOperationsAdjustmentApplyResponse<br>400: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/green-grocer/operations/adjustments/offline-sync/{clientRequestId}` | JWT + green-grocer.operations.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;GreenGrocerOperationsAdjustmentApplyResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/green-grocer/operations/adjustments/preview` | JWT + green-grocer.operations.list | body: request / GreenGrocerOperationsAdjustmentPreviewHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: GreenGrocerOperationsAdjustmentPreviewDto<br>400: ProblemDetails |
 | POST | `/api/green-grocer/operations/duzeltmeler` | JWT + green-grocer.operations.create | body: request / GreenGrocerOperationsAdjustmentApplyHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: GreenGrocerOperationsAdjustmentApplyResponse<br>200: GreenGrocerOperationsAdjustmentApplyResponse<br>400: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/green-grocer/operations/duzeltmeler/offline-sync/{clientRequestId}` | JWT + green-grocer.operations.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;GreenGrocerOperationsAdjustmentApplyResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/green-grocer/operations/duzeltmeler/onizleme` | JWT + green-grocer.operations.list | body: request / GreenGrocerOperationsAdjustmentPreviewHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: GreenGrocerOperationsAdjustmentPreviewDto<br>400: ProblemDetails |
 | GET | `/api/green-grocer/operations/overview` | JWT + green-grocer.operations.list | query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: WarehouseNo / integer (int32)<br>query: TypeCode / string<br>query: Search / string<br>query: OnlyWithActivity / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: GreenGrocerOperationsOverviewDto<br>400: ProblemDetails |
 | GET | `/api/green-grocer/operations/ozet` | JWT + green-grocer.operations.list | query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: WarehouseNo / integer (int32)<br>query: TypeCode / string<br>query: Search / string<br>query: OnlyWithActivity / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: GreenGrocerOperationsOverviewDto<br>400: ProblemDetails |
@@ -262,11 +265,13 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/iade-islemleri/depo-iadeleri/gelen/{documentSerie}/{documentOrderNo}` | JWT + iade-islemleri.gelen-depo-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseShippingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/iade-islemleri/depo-iadeleri/giden` | JWT + iade-islemleri.giden-depo-iadeleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseShippingListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/iade-islemleri/depo-iadeleri/giden` | JWT + iade-islemleri.giden-depo-iadeleri.create | body: request / CreateWarehouseReturnHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateWarehouseReturnResponse<br>400: ProblemDetails |
+| GET | `/api/iade-islemleri/depo-iadeleri/giden/offline-sync/{clientRequestId}` | JWT + iade-islemleri.giden-depo-iadeleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateWarehouseReturnResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}` | JWT + iade-islemleri.giden-depo-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseShippingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}` | JWT + iade-islemleri.giden-depo-iadeleri.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / UpdateWarehouseShippingDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateWarehouseShippingDocumentResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` | JWT + iade-islemleri.giden-depo-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / SendEDespatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SendEDespatchResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/iade-islemleri/depo-iadeleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf` | JWT + iade-islemleri.giden-depo-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/iade-islemleri/depo-iadeleri/iade-edilebilir-urunler` | JWT + iade-islemleri.giden-depo-iadeleri.create | query: WarehouseNo / integer (int32)<br>query: TargetWarehouseNo / integer (int32)<br>query: Search / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseReturnEligibleProductsDto<br>400: ProblemDetails |
+| GET | `/api/iade-islemleri/depo-iadeleri/offline-sync/{clientRequestId}` | JWT + iade-islemleri.giden-depo-iadeleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateWarehouseReturnResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}` | JWT + iade-islemleri.giden-depo-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseShippingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}` | JWT + iade-islemleri.giden-depo-iadeleri.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / UpdateWarehouseShippingDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateWarehouseShippingDocumentResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/iade-islemleri/depo-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye` | JWT + iade-islemleri.giden-depo-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / SendEDespatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SendEDespatchResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -274,6 +279,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | PUT | `/api/iade-islemleri/depo-iadeleri/{id}` | JWT + iade-islemleri.giden-depo-iadeleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/iade-islemleri/firma-iadeleri` | JWT + iade-islemleri.firma-iadeleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyMovementListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/iade-islemleri/firma-iadeleri` | JWT + iade-islemleri.firma-iadeleri.create | body: request / CreateCompanyMovementHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateCompanyMovementResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/iade-islemleri/firma-iadeleri/offline-sync/{clientRequestId}` | JWT + iade-islemleri.firma-iadeleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateCompanyMovementResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/iade-islemleri/firma-iadeleri/{documentSerie}/{documentOrderNo}` | JWT + iade-islemleri.firma-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyMovementDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/iade-islemleri/firma-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye` | JWT + iade-islemleri.firma-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / SendEDespatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SendEDespatchResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/iade-islemleri/firma-iadeleri/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf` | JWT + iade-islemleri.firma-iadeleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -532,7 +538,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/mal-kabul-islemleri/firma-mal-kabulleri` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyMovementListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/mal-kabul-islemleri/firma-mal-kabulleri` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.create | body: request / CreateCompanyReceivingHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateCompanyReceivingResponse<br>200: CreateCompanyReceivingResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mal-kabul-islemleri/firma-mal-kabulleri/e-irsaliye/ettn/{ettn}` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.create | path: ettn / string (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: InboundDespatchLookupResponse<br>400: ProblemDetails |
-| GET | `/api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateCompanyReceivingResponse&gt;<br>404: ProblemDetails |
+| GET | `/api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateCompanyReceivingResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mal-kabul-islemleri/firma-mal-kabulleri/resmi-belge/ettn/{ettn}` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.create | path: ettn / string (zorunlu)<br>query: warehouseNo / integer (int32)<br>query: documentKind / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: InboundDespatchLookupResponse<br>400: ProblemDetails |
 | GET | `/api/mal-kabul-islemleri/firma-mal-kabulleri/{documentSerie}/{documentOrderNo}` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyMovementDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/mal-kabul-islemleri/firma-mal-kabulleri/{id}` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
@@ -650,11 +656,13 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/sevk-islemleri/depolar-arasi-sevkler/gelen/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.gelen-depolar-arasi-sevkler.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseShippingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/sevk-islemleri/depolar-arasi-sevkler/giden` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseShippingListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/sevk-islemleri/depolar-arasi-sevkler/giden` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.create | body: request / CreateInterWarehouseShipmentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateInterWarehouseShipmentResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/sevk-islemleri/depolar-arasi-sevkler/giden/offline-sync/{clientRequestId}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateInterWarehouseShipmentResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | DELETE | `/api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.delete | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DeleteWarehouseShippingDocumentResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseShippingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / UpdateWarehouseShippingDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateWarehouseShippingDocumentResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / SendEDespatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SendEDespatchResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/depolar-arasi-sevkler/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/sevk-islemleri/depolar-arasi-sevkler/offline-sync/{clientRequestId}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateInterWarehouseShipmentResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | DELETE | `/api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.delete | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DeleteWarehouseShippingDocumentResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseShippingDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/sevk-islemleri/depolar-arasi-sevkler/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-depolar-arasi-sevkler.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / UpdateWarehouseShippingDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateWarehouseShippingDocumentResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -667,9 +675,11 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/sevk-islemleri/firma-sevkleri/gelen/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.gelen-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyMovementDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/sevk-islemleri/firma-sevkleri/giden` | JWT + sevk-islemleri.giden-firma-sevkleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyMovementListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/sevk-islemleri/firma-sevkleri/giden` | JWT + sevk-islemleri.giden-firma-sevkleri.create | body: request / CreateCompanyMovementHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateCompanyMovementResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/sevk-islemleri/firma-sevkleri/giden/offline-sync/{clientRequestId}` | JWT + sevk-islemleri.giden-firma-sevkleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateCompanyMovementResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyMovementDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye` | JWT + sevk-islemleri.giden-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / SendEDespatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SendEDespatchResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/firma-sevkleri/giden/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf` | JWT + sevk-islemleri.giden-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/sevk-islemleri/firma-sevkleri/offline-sync/{clientRequestId}` | JWT + sevk-islemleri.giden-firma-sevkleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateCompanyMovementResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}` | JWT + sevk-islemleri.giden-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyMovementDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye` | JWT + sevk-islemleri.giden-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32)<br>body: request / SendEDespatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SendEDespatchResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/sevk-islemleri/firma-sevkleri/{documentSerie}/{documentOrderNo}/e-irsaliye/pdf` | JWT + sevk-islemleri.giden-firma-sevkleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -704,11 +714,12 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | PUT | `/api/siparis-islemleri/verilen-firma-siparisleri/{id}` | JWT + siparis-islemleri.verilen-firma-siparisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/stok-islemleri/masraf-fisleri` | JWT + stok-islemleri.masraf-fisleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockReceiptListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/stok-islemleri/masraf-fisleri` | JWT + stok-islemleri.masraf-fisleri.create | body: request / CreateStockReceiptHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateStockReceiptResponse<br>400: ProblemDetails |
+| GET | `/api/stok-islemleri/masraf-fisleri/offline-sync/{clientRequestId}` | JWT + stok-islemleri.masraf-fisleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateStockReceiptResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/stok-islemleri/masraf-fisleri/{documentSerie}/{documentOrderNo}` | JWT + stok-islemleri.masraf-fisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockReceiptDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/stok-islemleri/masraf-fisleri/{id}` | JWT + stok-islemleri.masraf-fisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/stok-islemleri/sayim-sonuclari` | JWT + stok-islemleri.sayim-sonuclari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;InventoryCountListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/stok-islemleri/sayim-sonuclari` | JWT + stok-islemleri.sayim-sonuclari.create | body: request / CreateInventoryCountHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateInventoryCountResponse<br>200: CreateInventoryCountResponse<br>400: ProblemDetails<br>409: ProblemDetails |
-| GET | `/api/stok-islemleri/sayim-sonuclari/offline-sync/{clientRequestId}` | JWT + stok-islemleri.sayim-sonuclari.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateInventoryCountResponse&gt;<br>404: ProblemDetails |
+| GET | `/api/stok-islemleri/sayim-sonuclari/offline-sync/{clientRequestId}` | JWT + stok-islemleri.sayim-sonuclari.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateInventoryCountResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/stok-islemleri/sayim-sonuclari/{documentNo}` | JWT + stok-islemleri.sayim-sonuclari.detail | path: documentNo / integer (int32) (zorunlu)<br>query: documentDate / string (date-time) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: InventoryCountDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/stok-islemleri/sayim-sonuclari/{id}` | JWT + stok-islemleri.sayim-sonuclari.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/stok-islemleri/stok-anomali-merkezi` | JWT + stok-islemleri.stok-anomali-merkezi.list | query: WarehouseNo / integer (int32)<br>query: Type / FurpaMerkezApi.Domain.Entities.StockAnomalyType<br>query: Status / FurpaMerkezApi.Domain.Entities.StockAnomalyStatus<br>query: Severity / FurpaMerkezApi.Domain.Entities.StockAnomalySeverity<br>query: ProductManagerCode / string<br>query: HasProductManager / boolean<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockAnomalyListResponse<br>400: ProblemDetails |
@@ -719,10 +730,12 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/stok-islemleri/virmanlar` | JWT + stok-islemleri.virmanlar.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;VirmanListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/stok-islemleri/virmanlar` | JWT + stok-islemleri.virmanlar.create | body: request / CreateVirmanHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateVirmanResponse<br>400: ProblemDetails |
 | GET | `/api/stok-islemleri/virmanlar/donusum-onerisi` | JWT + stok-islemleri.virmanlar.create | query: SourceStockCode / string (zorunlu)<br>query: SourceQuantity / number (double) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: VirmanConversionSuggestionDto<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/stok-islemleri/virmanlar/offline-sync/{clientRequestId}` | JWT + stok-islemleri.virmanlar.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateVirmanResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/stok-islemleri/virmanlar/{documentSerie}/{documentOrderNo}` | JWT + stok-islemleri.virmanlar.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: VirmanDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/stok-islemleri/virmanlar/{id}` | JWT + stok-islemleri.virmanlar.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/stok-islemleri/zayiat-fisleri` | JWT + stok-islemleri.zayiat-fisleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockReceiptListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/stok-islemleri/zayiat-fisleri` | JWT + stok-islemleri.zayiat-fisleri.create | body: request / CreateStockReceiptHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateStockReceiptResponse<br>400: ProblemDetails |
+| GET | `/api/stok-islemleri/zayiat-fisleri/offline-sync/{clientRequestId}` | JWT + stok-islemleri.zayiat-fisleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateStockReceiptResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/stok-islemleri/zayiat-fisleri/{documentSerie}/{documentOrderNo}` | JWT + stok-islemleri.zayiat-fisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockReceiptDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/stok-islemleri/zayiat-fisleri/{id}` | JWT + stok-islemleri.zayiat-fisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | POST | `/api/terminal-installations/heartbeat` | JWT | body: request / TerminalHeartbeatHttpRequest (zorunlu) | 200: TerminalInstallationDto<br>400: ProblemDetails<br>401: ProblemDetails<br>403: ProblemDetails |
@@ -1582,6 +1595,24 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `sessionId` | integer (int32) | Hayir |  |
 | `sqlText` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `ageSeconds` | integer (int64) | Hayir |  |
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `id` | string (uuid) | Hayir |  |
+| `operationCode` | string | Hayir | nullable |
+| `requestedByUserId` | string (uuid) | Hayir |  |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `updatedAtUtc` | string (date-time) | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.Common.CompanyMovements.CompanyMovementDetailDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -1688,6 +1719,51 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `warehouseNo` | integer (int32) | Hayir |  |
 | `writeConnectionName` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.Common.CompanyMovements.CreateCompanyMovementResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `operationCode` | string | Hayir | nullable |
+| `result` | FurpaMerkezApi.Application.Modules.Common.CompanyMovements.CreateCompanyMovementResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.GreenGrocer.Operations.GreenGrocerOperationsAdjustmentApplyResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `operationCode` | string | Hayir | nullable |
+| `result` | FurpaMerkezApi.Application.Modules.GreenGrocer.Operations.GreenGrocerOperationsAdjustmentApplyResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create.CreateWarehouseReturnResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `operationCode` | string | Hayir | nullable |
+| `result` | FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create.CreateWarehouseReturnResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.CreateCompanyReceivingResponse
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -1695,9 +1771,42 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `clientRequestId` | string (uuid) | Hayir |  |
 | `completedAtUtc` | string (date-time) | Hayir | nullable |
 | `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
 | `errorMessage` | string | Hayir | nullable |
 | `operationCode` | string | Hayir | nullable |
 | `result` | FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving.CreateCompanyReceivingResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create.CreateInterWarehouseShipmentResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `operationCode` | string | Hayir | nullable |
+| `result` | FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create.CreateInterWarehouseShipmentResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.StokIslemleri.Common.CreateStockReceiptResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `operationCode` | string | Hayir | nullable |
+| `result` | FurpaMerkezApi.Application.Modules.StokIslemleri.Common.CreateStockReceiptResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
 | `status` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.CreateInventoryCountResponse
@@ -1707,9 +1816,27 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `clientRequestId` | string (uuid) | Hayir |  |
 | `completedAtUtc` | string (date-time) | Hayir | nullable |
 | `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
 | `errorMessage` | string | Hayir | nullable |
 | `operationCode` | string | Hayir | nullable |
 | `result` | FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari.CreateInventoryCountResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.Common.OfflineSync.OfflineSyncStatusDto.Of.FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.CreateVirmanResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `clientRequestId` | string (uuid) | Hayir |  |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `errorCode` | string | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `operationCode` | string | Hayir | nullable |
+| `result` | FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.CreateVirmanResponse | Hayir |  |
+| `retryAfterSeconds` | integer (int32) | Hayir | nullable |
+| `retryable` | boolean | Hayir | nullable |
 | `status` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.BanknoteTrackUpdateResponse

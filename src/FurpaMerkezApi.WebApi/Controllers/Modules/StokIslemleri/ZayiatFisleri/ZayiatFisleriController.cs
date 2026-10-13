@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.Create;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.Detail;
@@ -124,6 +125,19 @@ public sealed class ZayiatFisleriController(
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateStockReceiptResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateStockReceiptResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createOutageReceiptUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPut("{id}")]
     [Authorize(Policy = UpdatePolicy)]

@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -58,6 +59,21 @@ public sealed class CompanyMovementWriteService(
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true);
     }
+
+    public Task<OfflineSyncStatusDto<CreateCompanyMovementResponse>> GetOfflineSyncStatusAsync(
+        CompanyMovementKind kind,
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<CreateCompanyMovementResponse>(
+            ResolveOfflineOperationCode(kind),
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateCompanyMovementRequest>(storedRequestPayload),
+                kind,
+                innerCancellationToken),
+            cancellationToken);
 
     private Task<CreateCompanyMovementResponse> ExecuteRoutedAsync(
         CreateCompanyMovementRequest request,

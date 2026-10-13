@@ -1,6 +1,7 @@
 using System.Data;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
@@ -58,6 +59,19 @@ public sealed class VirmanWriteService(
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true);
     }
+
+    public Task<OfflineSyncStatusDto<CreateVirmanResponse>> GetOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<CreateVirmanResponse>(
+            OfflineOperationCode,
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateVirmanRequest>(storedRequestPayload),
+                innerCancellationToken),
+            cancellationToken);
 
     private Task<CreateVirmanResponse> ExecuteRoutedAsync(
         CreateVirmanRequest request,

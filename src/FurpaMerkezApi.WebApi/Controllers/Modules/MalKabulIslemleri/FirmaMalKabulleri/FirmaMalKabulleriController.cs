@@ -340,6 +340,7 @@ public sealed class FirmaMalKabulleriController(
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateCompanyReceivingResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<OfflineSyncStatusDto<CreateCompanyReceivingResponse>>> GetOfflineSyncStatus(
         Guid clientRequestId,
         CancellationToken cancellationToken)

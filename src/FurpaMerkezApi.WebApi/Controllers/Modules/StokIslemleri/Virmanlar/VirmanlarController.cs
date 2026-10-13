@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.ConversionSuggestion;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar.Create;
@@ -139,6 +140,19 @@ public sealed class VirmanlarController(
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateVirmanResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateVirmanResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createVirmanUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPut("{id}")]
     [Authorize(Policy = UpdatePolicy)]

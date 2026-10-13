@@ -7,16 +7,19 @@ using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.OfflineSync;
 
 public sealed class MobileOfflineSyncService(
     AuthDbContext authDbContext,
-    IClock clock)
+    IClock clock,
+    ILogger<MobileOfflineSyncService>? logger = null)
 {
+    private const int StatusRetryAfterSeconds = 5;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan ProcessingLeaseTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(300);
 
     internal async Task<MobileOfflineSyncAcquireResult<TResponse>> AcquireAsync<TRequest, TResponse>(
         string operationCode,
@@ -195,6 +198,10 @@ public sealed class MobileOfflineSyncService(
         else if (record.Retryable != false)
         {
             result = await TryRecoverAsync(record, recoverAsync, cancellationToken);
+            if (result is null)
+            {
+                await MarkExpiredProcessingAsUnconfirmedAsync(record);
+            }
         }
 
         return new OfflineSyncStatusDto<TResponse>(
@@ -204,6 +211,11 @@ public sealed class MobileOfflineSyncService(
             record.CreatedAtUtc,
             record.CompletedAtUtc,
             record.ErrorMessage,
+            record.ErrorCode,
+            record.Retryable,
+            record.Status == MobileOfflineSyncRequestStatus.Processing || record.Retryable == true
+                ? StatusRetryAfterSeconds
+                : null,
             result);
     }
 
@@ -217,6 +229,18 @@ public sealed class MobileOfflineSyncService(
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+    }
+
+    internal static TRequest DeserializeRequest<TRequest>(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            throw new InvalidOperationException("Offline sync request payload was not stored.");
+        }
+
+        var request = JsonSerializer.Deserialize<TRequest>(payload, JsonOptions);
+        return request ?? throw new InvalidOperationException(
+            "Offline sync request payload could not be deserialized.");
     }
 
     private async Task<MobileOfflineSyncAcquireResult<TResponse>> ResolveAcquireAsync<TResponse>(
@@ -253,6 +277,8 @@ public sealed class MobileOfflineSyncService(
         {
             return MobileOfflineSyncAcquireResult<TResponse>.Completed(recovered);
         }
+
+        await MarkExpiredProcessingAsUnconfirmedAsync(existing);
 
         if (preventReexecutionAfterUncertainOutcome &&
             (existing.Status == MobileOfflineSyncRequestStatus.Processing ||
@@ -320,6 +346,31 @@ public sealed class MobileOfflineSyncService(
                 exception.ErrorCode, exception.Retryable);
             throw;
         }
+        catch (Exception exception)
+        {
+            var rootCause = exception.GetBaseException();
+            var errorMessage = string.IsNullOrWhiteSpace(rootCause.Message)
+                ? "Recovery readback failed; the write outcome could not be confirmed."
+                : $"Recovery readback failed; the write outcome could not be confirmed. {rootCause.Message}";
+
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await MarkFailedAsync(
+                record.OperationCode,
+                record.RequestedByUserId,
+                Guid.Parse(record.ClientRequestId),
+                errorMessage,
+                persistenceTimeout.Token,
+                OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+                retryable: true);
+
+            logger?.LogWarning(
+                exception,
+                "Offline write recovery readback failed. OperationCode={OperationCode}, ClientRequestId={ClientRequestId}; the request was marked retryable instead of remaining Processing.",
+                record.OperationCode,
+                record.ClientRequestId);
+
+            return default;
+        }
         if (recovered is null)
         {
             return default;
@@ -375,6 +426,24 @@ public sealed class MobileOfflineSyncService(
 
         var referenceTime = record.UpdatedAtUtc ?? record.CreatedAtUtc;
         return DateTime.SpecifyKind(referenceTime, DateTimeKind.Utc) + ProcessingLeaseTimeout <= clock.UtcNow;
+    }
+
+    private async Task MarkExpiredProcessingAsUnconfirmedAsync(MobileOfflineSyncRequest record)
+    {
+        if (!IsProcessingLeaseExpired(record))
+        {
+            return;
+        }
+
+        using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await MarkFailedAsync(
+            record.OperationCode,
+            record.RequestedByUserId,
+            Guid.Parse(record.ClientRequestId),
+            "The processing lease expired and recovery readback did not find a completed document. The write outcome remains unconfirmed.",
+            persistenceTimeout.Token,
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            retryable: true);
     }
 
     private static TResponse DeserializeResponse<TResponse>(string? payload)

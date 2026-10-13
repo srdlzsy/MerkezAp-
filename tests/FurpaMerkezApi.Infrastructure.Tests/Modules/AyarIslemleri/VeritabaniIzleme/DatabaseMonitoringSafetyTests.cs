@@ -1,5 +1,11 @@
+using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.VeritabaniIzleme;
+using FurpaMerkezApi.Infrastructure.Persistence;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.AyarIslemleri.VeritabaniIzleme;
@@ -59,6 +65,49 @@ public sealed class DatabaseMonitoringSafetyTests
             Assert.Single(result, item => item.Fingerprint == "same-fingerprint").Severity);
     }
 
+    [Fact]
+    public async Task GetSafeWrites_DefaultsToUncompletedButExplicitCompletedStatusWins()
+    {
+        var now = new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc);
+        await using var authDb = new AuthDbContext(
+            new DbContextOptionsBuilder<AuthDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options);
+        await using var mikroDb = new MikroDbContext(
+            new DbContextOptionsBuilder<MikroDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options);
+        var processing = Request("shipment.create", now.AddMinutes(-5));
+        var failed = Request("return.create", now.AddMinutes(-4));
+        failed.MarkFailed(
+            "Manual review required.",
+            now.AddMinutes(-2),
+            "MIKRO_DOCUMENT_CONTENT_MISMATCH",
+            retryable: false);
+        var completed = Request("count.create", now.AddMinutes(-3));
+        completed.MarkCompleted("{}", now.AddMinutes(-1));
+        authDb.MobileOfflineSyncRequests.AddRange(processing, failed, completed);
+        await authDb.SaveChangesAsync();
+        var service = new DatabaseMonitoringService(
+            mikroDb,
+            authDb,
+            new FixedClock(now),
+            new StaticOptionsMonitor<DatabaseMonitoringOptions>(new DatabaseMonitoringOptions()));
+
+        var active = await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest(null, null, null, null, IncludeCompleted: false, Take: 100),
+            CancellationToken.None);
+        var completedOnly = await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest("Completed", null, null, null, IncludeCompleted: false, Take: 100),
+            CancellationToken.None);
+
+        Assert.Equal(2, active.Count);
+        Assert.Equal("Processing", active.First().Status);
+        Assert.DoesNotContain(active, item => item.Status == "Completed");
+        Assert.False(Assert.Single(active, item => item.Status == "Failed").Retryable);
+        Assert.Equal("Completed", Assert.Single(completedOnly).Status);
+    }
+
     private static DatabaseMonitoringService.IncidentCandidate Candidate(
         string fingerprint,
         string severity,
@@ -77,4 +126,27 @@ public sealed class DatabaseMonitoringSafetyTests
             elapsedMilliseconds,
             "SELECT 1",
             "Review blocking session.");
+
+    private static MobileOfflineSyncRequest Request(string operationCode, DateTime createdAtUtc) =>
+        new(
+            Guid.NewGuid(),
+            operationCode,
+            Guid.NewGuid(),
+            56,
+            Guid.NewGuid().ToString("D"),
+            new string('a', 64),
+            "{}",
+            createdAtUtc);
+
+    private sealed class FixedClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; } = utcNow;
+    }
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
 }

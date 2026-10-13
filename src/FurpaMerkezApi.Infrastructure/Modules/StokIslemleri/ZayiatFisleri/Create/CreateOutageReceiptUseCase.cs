@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.ZayiatFisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
@@ -11,4 +12,14 @@ public sealed class CreateOutageReceiptUseCase(StockReceiptWriteService stockRec
         CreateStockReceiptRequest request,
         CancellationToken cancellationToken) =>
         stockReceiptWriteService.ExecuteAsync(request, StockReceiptKind.OutageReceipt, cancellationToken);
+
+    public Task<OfflineSyncStatusDto<CreateStockReceiptResponse>> GetOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        stockReceiptWriteService.GetOfflineSyncStatusAsync(
+            StockReceiptKind.OutageReceipt,
+            requestedByUserId,
+            clientRequestId,
+            cancellationToken);
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
@@ -99,6 +100,20 @@ public sealed class GreenGrocerOperationsController(
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("adjustments/offline-sync/{clientRequestId:guid}")]
+    [HttpGet("duzeltmeler/offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<GreenGrocerOperationsAdjustmentApplyResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<GreenGrocerOperationsAdjustmentApplyResponse>>> GetAdjustmentOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await greenGrocerOperationsUseCase.GetAdjustmentOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     private static GreenGrocerOperationsAdjustmentLineRequest MapLine(
         GreenGrocerOperationsAdjustmentLineHttpRequest line) =>

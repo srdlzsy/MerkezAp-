@@ -8,6 +8,10 @@ public interface IDatabaseMonitoringService
         int take,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<SafeWriteMonitoringItemDto>> GetSafeWritesAsync(
+        SafeWriteMonitoringRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<DatabaseSessionTerminationDto>> GetTerminationHistoryAsync(
         int take,
         CancellationToken cancellationToken);
@@ -128,6 +132,29 @@ public sealed record DatabaseMonitoringIncidentDto(
     DateTime LastSeenAtUtc,
     int OccurrenceCount,
     DateTime? ResolvedAtUtc);
+
+public sealed record SafeWriteMonitoringRequest(
+    string? Status,
+    string? OperationCode,
+    int? WarehouseNo,
+    bool? Retryable,
+    bool IncludeCompleted,
+    int Take);
+
+public sealed record SafeWriteMonitoringItemDto(
+    Guid Id,
+    string OperationCode,
+    Guid RequestedByUserId,
+    int WarehouseNo,
+    Guid ClientRequestId,
+    string Status,
+    string? ErrorCode,
+    bool? Retryable,
+    string? ErrorMessage,
+    DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc,
+    DateTime? CompletedAtUtc,
+    long AgeSeconds);
 
 public sealed record TerminateDatabaseSessionRequest(
     DateTime ExpectedLoginTime,

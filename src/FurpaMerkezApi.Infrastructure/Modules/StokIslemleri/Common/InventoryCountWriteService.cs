@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -45,7 +46,8 @@ public sealed class InventoryCountWriteService(
                     request.WarehouseNo,
                     request.ClientRequestId.Value,
                     innerCancellationToken),
-                cancellationToken);
+                cancellationToken,
+                preventReexecutionAfterUncertainOutcome: true);
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {
@@ -54,8 +56,10 @@ public sealed class InventoryCountWriteService(
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Processing)
             {
-                throw new InvalidOperationException(
-                    "An offline inventory count sync request with the same clientRequestId is already being processed.");
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroWriteInProgress,
+                    "An offline inventory count sync request with the same clientRequestId is already being processed.",
+                    retryable: true);
             }
         }
 
@@ -89,8 +93,7 @@ public sealed class InventoryCountWriteService(
                 await TryMarkFailedAsync(
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
-                    exception.Message,
-                    cancellationToken);
+                    exception);
             }
 
             throw;
@@ -570,17 +573,20 @@ public sealed class InventoryCountWriteService(
     private async Task TryMarkFailedAsync(
         Guid requestedByUserId,
         Guid clientRequestId,
-        string errorMessage,
-        CancellationToken cancellationToken)
+        Exception exception)
     {
         try
         {
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var conflict = exception as OperationConflictException;
             await mobileOfflineSyncService.MarkFailedAsync(
                 OfflineOperationCode,
                 requestedByUserId,
                 clientRequestId,
-                errorMessage,
-                cancellationToken);
+                exception.Message,
+                persistenceTimeout.Token,
+                conflict?.ErrorCode,
+                conflict?.Retryable);
         }
         catch
         {

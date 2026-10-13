@@ -13,6 +13,68 @@ public sealed class MobileOfflineSyncServiceTests
     private static readonly DateTime Now = new(2026, 9, 30, 9, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public async Task GetStatus_ExposesClassifiedRetryMetadata()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+
+        await AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 25));
+        await service.MarkFailedAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "Write outcome is still being verified.",
+            CancellationToken.None,
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            retryable: true);
+
+        var status = await service.GetStatusAsync<string>(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None);
+
+        Assert.Equal("Failed", status.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, status.ErrorCode);
+        Assert.True(status.Retryable);
+        Assert.Equal(5, status.RetryAfterSeconds);
+        Assert.Null(status.Result);
+    }
+
+    [Fact]
+    public async Task GetStatus_CompletedResultHasNoRetryMetadata()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+
+        await AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 25));
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "F56/88049",
+            CancellationToken.None);
+
+        var status = await service.GetStatusAsync<string>(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None);
+
+        Assert.Equal("Completed", status.Status);
+        Assert.Equal("F56/88049", status.Result);
+        Assert.Null(status.ErrorCode);
+        Assert.Null(status.Retryable);
+        Assert.Null(status.RetryAfterSeconds);
+    }
+
+    [Fact]
     public async Task Acquire_DoesNotReexecuteUncertainFailedWrite()
     {
         await using var db = CreateDbContext();
@@ -56,6 +118,69 @@ public sealed class MobileOfflineSyncServiceTests
         var retry = await AcquireAsync(service, userId, clientRequestId, request);
 
         Assert.Equal(MobileOfflineSyncAcquireState.Processing, retry.State);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, record.ErrorCode);
+        Assert.True(record.Retryable);
+    }
+
+    [Fact]
+    public async Task GetStatus_RecoveryFailureMarksRequestRetryableInsteadOfLeavingItProcessing()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+
+        await AcquireAsync(service, userId, clientRequestId, request);
+
+        var status = await service.GetStatusAsync<string>(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            (_, _) => throw new TimeoutException("Recovery query timed out."),
+            CancellationToken.None);
+
+        Assert.Equal("Failed", status.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, status.ErrorCode);
+        Assert.True(status.Retryable);
+        Assert.Equal(5, status.RetryAfterSeconds);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, record.ErrorCode);
+        Assert.True(record.Retryable);
+    }
+
+    [Fact]
+    public async Task Acquire_RecoveryFailureReturnsProcessingWithoutStartingASecondWrite()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+
+        await AcquireAsync(service, userId, clientRequestId, request);
+
+        var retry = await service.AcquireAsync<TestRequest, string>(
+            "shipment.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) => throw new TimeoutException("Recovery query timed out."),
+            CancellationToken.None,
+            preventReexecutionAfterUncertainOutcome: true);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Processing, retry.State);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, record.ErrorCode);
+        Assert.True(record.Retryable);
     }
 
     [Fact]

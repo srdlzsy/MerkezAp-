@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Detail;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.EligibleProducts;
@@ -128,6 +129,20 @@ public sealed class DepoIadeleriController(
         [FromBody] CreateWarehouseReturnHttpRequest request,
         CancellationToken cancellationToken) =>
         await CreateOutgoing(request, cancellationToken);
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [HttpGet("giden/offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = OutgoingCreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateWarehouseReturnResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateWarehouseReturnResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createWarehouseReturnUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPut("{documentSerie}/{documentOrderNo:int}")]
     [Authorize(Policy = OutgoingUpdatePolicy)]

@@ -2,6 +2,8 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Common.Errors;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -136,7 +138,8 @@ public sealed class GreenGrocerOperationsUseCase(
                 (_, innerCancellationToken) => TryRecoverAdjustmentResponseAsync(
                     request,
                     innerCancellationToken),
-                cancellationToken);
+                cancellationToken,
+                preventReexecutionAfterUncertainOutcome: true);
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
         {
@@ -145,8 +148,10 @@ public sealed class GreenGrocerOperationsUseCase(
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Processing)
         {
-            throw new InvalidOperationException(
-                "A green grocer adjustment request with the same clientRequestId is already being processed.");
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroWriteInProgress,
+                "A green grocer adjustment request with the same clientRequestId is already being processed.",
+                retryable: true);
         }
 
         try
@@ -166,11 +171,23 @@ public sealed class GreenGrocerOperationsUseCase(
             await TryMarkFailedAsync(
                 request.RequestedByUserId,
                 request.ClientRequestId,
-                exception.Message,
-                cancellationToken);
+                exception);
             throw;
         }
     }
+
+    public Task<OfflineSyncStatusDto<GreenGrocerOperationsAdjustmentApplyResponse>> GetAdjustmentOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<GreenGrocerOperationsAdjustmentApplyResponse>(
+            OfflineOperationCode,
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverAdjustmentResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<GreenGrocerOperationsAdjustmentApplyRequest>(storedRequestPayload),
+                innerCancellationToken),
+            cancellationToken);
 
     private Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentRoutedAsync(
         GreenGrocerOperationsAdjustmentApplyRequest request,
@@ -940,17 +957,20 @@ public sealed class GreenGrocerOperationsUseCase(
     private async Task TryMarkFailedAsync(
         Guid requestedByUserId,
         Guid clientRequestId,
-        string errorMessage,
-        CancellationToken cancellationToken)
+        Exception exception)
     {
         try
         {
+            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var conflict = exception as OperationConflictException;
             await mobileOfflineSyncService.MarkFailedAsync(
                 OfflineOperationCode,
                 requestedByUserId,
                 clientRequestId,
-                errorMessage,
-                cancellationToken);
+                exception.Message,
+                persistenceTimeout.Token,
+                conflict?.ErrorCode,
+                conflict?.Retryable);
         }
         catch
         {

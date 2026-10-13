@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Abstractions.Services;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.FirmaSevkleri.Create;
 using FurpaMerkezApi.Domain.Entities;
@@ -108,6 +109,20 @@ public sealed class FirmaSevkleriController(
         [FromBody] CreateCompanyMovementHttpRequest request,
         CancellationToken cancellationToken) =>
         await CreateOutgoing(request, cancellationToken);
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [HttpGet("giden/offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = OutgoingCreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateCompanyMovementResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateCompanyMovementResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createCompanyShipmentUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPost("{documentSerie}/{documentOrderNo:int}/e-irsaliye")]
     [Authorize(Policy = OutgoingDetailPolicy)]
