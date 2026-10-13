@@ -59,6 +59,7 @@ public sealed class CreateCompanyReceivingUseCase(
         CancellationToken cancellationToken)
     {
         Validate(request);
+        var writeMode = mikroWriteRoutingOptions.CurrentValue.CompanyReceiving;
 
         if (request.ClientRequestId.HasValue)
         {
@@ -74,7 +75,7 @@ public sealed class CreateCompanyReceivingUseCase(
                     storedRequestPayload,
                     innerCancellationToken),
                 cancellationToken,
-                preventReexecutionAfterUncertainOutcome: true);
+                preventReexecutionAfterUncertainOutcome: writeMode == MikroWriteMode.MikroApi);
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {
@@ -88,14 +89,18 @@ public sealed class CreateCompanyReceivingUseCase(
                     "An offline company receiving sync request with the same clientRequestId is already being processed.",
                     retryable: true);
             }
+
+            // The durable request record is now the owner of this write. A terminal or
+            // network disconnect must not abort the transaction mid-flight.
+            cancellationToken = CancellationToken.None;
         }
 
-        if (mikroWriteRoutingOptions.CurrentValue.CompanyReceiving == MikroWriteMode.MikroApi)
+        if (writeMode == MikroWriteMode.MikroApi)
         {
             return await ExecuteMikroApiWithOfflineStateAsync(request, cancellationToken);
         }
 
-        if (mikroWriteRoutingOptions.CurrentValue.CompanyReceiving == MikroWriteMode.DualShadow)
+        if (writeMode == MikroWriteMode.DualShadow)
         {
             logger.LogWarning(
                 "MikroWriteRouting:CompanyReceiving is DualShadow. IrsaliyeKaydetV2 has no dry-run contract, so only the database write path will run.");
@@ -2582,15 +2587,15 @@ public sealed class CreateCompanyReceivingUseCase(
         try
         {
             using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var conflict = exception as OperationConflictException;
+            var failure = OfflineWriteFailureClassifier.Classify(exception);
             await mobileOfflineSyncService.MarkFailedAsync(
                 OfflineOperationCode,
                 requestedByUserId,
                 clientRequestId,
-                exception.Message,
+                failure.Message,
                 persistenceTimeout.Token,
-                conflict?.ErrorCode,
-                conflict?.Retryable);
+                failure.ErrorCode,
+                failure.Retryable);
         }
         catch
         {

@@ -56,7 +56,10 @@ internal static class OfflineCreateGuard
 
         try
         {
-            var response = await executeAsync(cancellationToken);
+            // Once a durable idempotency record exists, a dropped HTTP connection must
+            // not cancel the business write. Database and upstream command timeouts still
+            // bound the operation, and the stored result can be recovered by the client.
+            var response = await executeAsync(CancellationToken.None);
             using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await mobileOfflineSyncService.CompleteAsync(
                 operationCode,
@@ -74,8 +77,7 @@ internal static class OfflineCreateGuard
                 operationCode,
                 requestedByUserId.Value,
                 clientRequestId.Value,
-                exception,
-                cancellationToken);
+                exception);
             throw;
         }
     }
@@ -85,21 +87,20 @@ internal static class OfflineCreateGuard
         string operationCode,
         Guid requestedByUserId,
         Guid clientRequestId,
-        Exception exception,
-        CancellationToken cancellationToken)
+        Exception exception)
     {
         try
         {
             using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var conflict = exception as OperationConflictException;
+            var failure = OfflineWriteFailureClassifier.Classify(exception);
             await mobileOfflineSyncService.MarkFailedAsync(
                 operationCode,
                 requestedByUserId,
                 clientRequestId,
-                exception.Message,
+                failure.Message,
                 persistenceTimeout.Token,
-                conflict?.ErrorCode,
-                conflict?.Retryable);
+                failure.ErrorCode,
+                failure.Retryable);
         }
         catch
         {

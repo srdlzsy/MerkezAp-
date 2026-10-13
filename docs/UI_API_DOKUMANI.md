@@ -1317,7 +1317,7 @@ Kalici pending state ve uygulama acilisi:
 - Recovery POST'u `200 OK` donerse yerel pending kayit silinir, form kilidi kaldirilir ve `Yeni Ekle` yeniden acilir. Response mevcut Mikro evrakini recovery ile bulmus olsa da UI acisindan normal basarili create response'udur.
 - `409` ve `retryable=true` (`MIKRO_WRITE_IN_PROGRESS`, `MIKRO_WRITE_QUEUE_BUSY`, `MIKRO_WRITE_OUTCOME_UNCONFIRMED`) donerse ilgili pending kayit korunur ve o kaydin formu/snapshot'i icin `Tekrar Dene` sunulur. Bu durum ayni mantiksal fisin yeni kimlikle gonderilmesini engeller; API farkli `clientRequestId` tasiyan gercekten bagimsiz yeni bir islemi global olarak engellemez. UI pending kaydi ayri bir bekleyen islemler listesinde gosterebilir ve `Yeni Ekle` butonunu sonsuza kadar kapatmamalidir.
 - Recovery readback sorgusu timeout, SQL baglanti hatasi veya gecici iptal nedeniyle tamamlanamazsa backend kaydi `Processing` durumunda sahipsiz birakmaz; `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olarak saklar. Durum endpointi `retryAfterSeconds` ile tekrar kontrol zamanini bildirir. Bu siniflandirma ikinci yazmayi otomatik baslatmaz.
-- `Processing` kaydi 5 dakikalik islem suresini astigi halde recovery readback tamamlanmis belge bulamazsa da kayit ayni sekilde `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olur. UI bu kaydi sonsuza kadar `isleniyor` gostermemeli; bekleyen islem olarak saklayip ayni kimlikle tekrar kontrol etmelidir.
+- `Processing` kaydi 5 dakikalik islem suresini astigi halde ilgili `offline-sync/{clientRequestId}` durum/recovery akisi calistirilir ve readback tamamlanmis belge bulamazsa kayit `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olur. Genel `guvenli-yazmalar` izleme endpointi recovery tetiklemez; eski ve tekrar sorgulanmamis kayitlar bu nedenle `Processing` gorunmeye devam edebilir. UI bu kaydi sonsuza kadar aktif istek gibi gostermemeli; ayni kimlikle ilgili operasyonun durum endpointinden uzlastirmalidir.
 - `retryable=false` donerse kayit sessizce silinmez. UI `needsReview` veya duzeltilebilir hata durumuna gecer, hata kodunu gosterir ve ilgili kurala gore kullanici aksiyonu bekler.
 - HTTP timeout, HTTP `0`, `502`, `503`, `504` veya sonucu belirsiz `500` durumunda yerel pending kayit silinmez. Onbellegi/uygulama verisini elle temizlemek normal is akisi olarak kullanilmamalidir; bu islem guvenli retry kimligini ve body snapshot'ini kaybettirebilir.
 - Uygulama basarili create response'u aldigi halde yerel pending kaydi silinemezse bunu loglamali ve sonraki acilista ayni recovery uzlastirmasini tekrar yapmalidir. Eski bir local kayit tum create ekranlarini global olarak kilitlememelidir.
@@ -1370,7 +1370,7 @@ Ortak offline status response modeli:
 
 - `Processing`: istek backend tarafinda rezerve edildi, islem tamamlanmadi veya sonuc henuz toparlanamadi
 - `Completed`: istek basariyla tamamlandi; `result` alaninda asil business response bulunur
-- `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. U17, validasyon veya benzeri kesin is kurali hatasi duzeltilmeden tekrar edilmemelidir. Hata metni timeout/iptal/`write outcome could not be confirmed` ise sonuc belirsizdir; sevk, iade, firma hareketi, zayiat, masraf ve virman akislarinda ayni id ile retry yalnizca readback yapar ve ikinci yazma baslatmaz.
+- `Failed`: son deneme hata ile kapandi; `errorMessage` dolu olabilir. U17, validasyon veya benzeri kesin is kurali hatasi duzeltilmeden tekrar edilmemelidir. Hata metni timeout/iptal/`write outcome could not be confirmed` ise sonuc belirsizdir; sevk, iade, firma hareketi, zayiat, masraf ve virman akislarinda ayni id ile retry once readback yapar. Firma mal kabul `Database` rotasinda readback belge bulamaz ve onceki transaction'in geri alindigi kesinlesmisse ayni id ile yazma yeniden baslatilabilir; `MikroApi` rotasinda ikinci create yazisi baslatilmaz.
 - `errorCode` ve `retryable`, siniflandirilmis hata kararini ProblemDetails ile ayni makine-okunur alanlarla tasir. `retryable=true` ise `retryAfterSeconds` su an `5` doner; UI bu sure dolmadan ayni durumu veya ayni payload POST'unu tekrar etmemelidir.
 - `Completed` durumda `errorCode`, `retryable` ve `retryAfterSeconds` null; `result` asil create response'udur.
 
@@ -2579,21 +2579,69 @@ Response item:
   "requestedByUserId": "58ac6266-8c7a-4ff5-a16e-2229ef31a111",
   "warehouseNo": 110,
   "clientRequestId": "7c9b31f6-1ab4-4ed1-b02b-2a90e5e7d3fd",
-  "status": "Processing",
+  "status": "Failed",
   "errorCode": "MIKRO_WRITE_OUTCOME_UNCONFIRMED",
   "retryable": true,
   "errorMessage": "Mikro write outcome could not be confirmed.",
   "createdAtUtc": "2026-10-13T08:10:00Z",
   "updatedAtUtc": "2026-10-13T08:11:00Z",
-  "completedAtUtc": null,
+  "completedAtUtc": "2026-10-13T08:11:00Z",
   "ageSeconds": 120
 }
 ```
 
-- Varsayilan `includeCompleted=false` aktif, basarisiz veya sonucu belirsiz yazmalari one cikarir.
-- Siralama once `Processing`, sonra son guncelleme tarihi azalan bicimdedir.
-- Endpoint request/response payload snapshot'larini dondurmez ve Mikro readback/recovery tetiklemez; yalniz Auth DB izleme kayitlarini okur.
-- Tek bir istegin kesin sonucunu uzlastirmak icin ilgili operasyonun `offline-sync/{clientRequestId}` endpoint'i kullanilir.
+Durum matrisi:
+
+| `status` | `retryable` | Anlam | UI / operasyon karari |
+|---|---:|---|---|
+| `Processing` | `null` | Istek rezerve edilmis fakat kesin sonuc kayda gecmemistir. Eski kayitlarda uzun sure bu durumda kalmis sahipsiz izler bulunabilir. | Aktif SQL islemi veya halen Mikro'ya yaziliyor kaniti sayilmaz. Ayni `clientRequestId` icin ilgili `offline-sync` endpointiyle durum uzlastirilir; yeni id ile create yapilmaz. |
+| `Completed` | `null` | Business create sonucu kesinlesmis ve response snapshot'i kaydedilmistir. | Basarili kabul edilir; tekrar POST veya recovery gerekmez. |
+| `Failed` | `true` | Son deneme kapanmistir fakat sonuc belirsizdir veya gecici kosul nedeniyle ayni kimlikle tekrar kontrol edilebilir. | Ayni payload ve ayni `clientRequestId` korunur. `retryAfterSeconds` kuralina uyarak ilgili operasyonun durum/retry akisi kullanilir. |
+| `Failed` | `false` | Kalici icerik uyusmazligi veya request kimligi/body cakismasi gibi otomatik tekrar edilmemesi gereken durumdur. | Otomatik retry ve yeni id ile yeniden create kapatilir; manuel inceleme veya acik kullanici karari gerekir. |
+| `Failed` | `null` | Typed hata alanlari eklenmeden once olusmus eski kayit veya siniflandirilmamis kesin is kurali hatasidir. | Otomatik retry yapilmaz. `errorMessage` gosterilir; gerekiyorsa belge ve operasyon ozelinde manuel kontrol edilir. |
+
+Siniflandirilmis `errorCode` degerleri:
+
+| `errorCode` | `retryable` | Anlam |
+|---|---:|---|
+| `MIKRO_WRITE_IN_PROGRESS` | `true` | Ayni mantiksal istek halen isleniyor veya readback bekliyor. |
+| `MIKRO_WRITE_QUEUE_BUSY` | `true` | Yazma kuyrugu bekleme siniri doldu; bu denemenin Mikro yazimi baslamadi. |
+| `MIKRO_WRITE_OUTCOME_UNCONFIRMED` | `true` | Yazma sonucu kanitlanamadi; ayni kimlikle readback/guvenli retry gerekir. |
+| `MIKRO_DOCUMENT_CONTENT_MISMATCH` | `false` | Mikro'daki belge istek snapshot'i ile tam eslesmiyor; manuel inceleme gerekir. |
+| `CLIENT_REQUEST_PAYLOAD_MISMATCH` | `false` | Ayni `clientRequestId` farkli body ile kullanildi. |
+
+Alan ve filtre kurallari:
+
+- `status` filtresi yalniz `Processing`, `Completed` veya `Failed` kabul eder; baska deger `400 Bad Request` doner.
+- `status` acikca verilmisse bu filtre onceliklidir. Ornek `status=Completed&includeCompleted=false` yine yalniz tamamlanan kayitlari dondurur.
+- `status` verilmez ve `includeCompleted=false` ise sorgu `Completed` disindaki `Processing` ve `Failed` kayitlari dondurur. Bu secenek "yalniz su anda aktif istekler" anlamina gelmez.
+- `retryable=true/false` yalniz typed degeri bu secimle eslesen kayitlari getirir; `retryable=null` olan eski/siniflandirilmamis kayitlar bu iki filtreye de girmez.
+- `ageSeconds`, response uretilirken `updatedAtUtc ?? createdAtUtc` ile su an arasindaki suredir. Islem calisma suresi degildir; tamamlanmis veya basarisiz kayitlarda son guncellemeden beri gecen sureyi gosterir.
+- Siralama once `Processing`, sonra son guncelleme tarihi azalan bicimdedir. Bu nedenle cok eski bir `Processing` kaydi yeni `Failed` kayitlardan once gorunebilir.
+- Eski bir `Processing` kaydi aktif SQL istegi, acik transaction veya devam eden Mikro yazimi kaniti degildir. Canli SQL durumu icin `GET /api/ayar-islemleri/veritabani-izleme/anlik` kullanilir.
+- Endpoint request/response payload snapshot'larini dondurmez, kayit silmez, status degistirmez ve Mikro readback/recovery tetiklemez; yalniz Auth DB izleme kayitlarini okur.
+- Tek bir istegin kesin sonucunu uzlastirmak icin `operationCode` ile ilgili operasyonun `offline-sync/{clientRequestId}` endpoint'i kullanilir. Izleme response'u payload dondurmedigi icin bu ekrandan yeni create body uretilmemelidir.
+- Bir veya daha fazla eski `Processing` kaydi tum create ekranlarini ya da `Yeni Ekle` butonunu global olarak kilitlememelidir. Kilit yalniz ayni kullanici, operasyon ve `clientRequestId` ile temsil edilen pending islem icin uygulanir.
+
+UI gosterim onerisi:
+
+```text
+Processing, ageSeconds <= 300   Isleniyor
+Processing, ageSeconds > 300    Uzlastirma Bekliyor
+Failed, retryable=true          Guvenli Tekrar Kontrol Edilebilir
+Failed, retryable=false         Manuel Inceleme Gerekli
+Failed, retryable=null          Siniflandirilmamis / Eski Hata
+Completed                       Tamamlandi
+```
+
+Ornek filtreler:
+
+```text
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Processing&take=100
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Failed&retryable=true&take=100
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Failed&retryable=false&take=100
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Completed&take=100
+```
 
 #### Olay Gecmisi Response
 
@@ -7759,6 +7807,10 @@ Onemli not:
 - Ayni `clientRequestId` ile ayni payload tekrar gonderilirse backend ayni business response'u dondurmeye calisir.
 - Ayni `clientRequestId` ile farkli payload gonderilirse `409 Conflict` doner.
 - Ayni `clientRequestId` halen isleniyorsa `409 Conflict` doner.
+- `clientRequestId` kaydi Auth DB'de rezerve edildikten sonra terminalin HTTP baglantisinin kopmasi veya request'i iptal etmesi baslamis Mikro transaction'ini iptal etmez. Yazma kendi SQL/Mikro command timeout sinirlari icinde tamamlanir ve sonucu offline kaydina yazilir.
+- Eski kayitlarda ham `A task was canceled.` gibi siniflandirilmamis bir hata varsa durum veya ayni kimlikle retry akisi once trace readback yapar. Belge bulunamazsa kayit `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, `retryable=true` olarak makine-okunur bicimde guncellenir.
+- `MikroWriteRouting:CompanyReceiving=Database` iken onceki deneme transaction rollback ile kapanmis ve trace readback hic hareket bulamamissa ayni payload + ayni `clientRequestId` yeniden yazilabilir. Bu yeni bir mantiksal fis degildir ve yeni GUID uretilmez.
+- `MikroWriteRouting:CompanyReceiving=MikroApi` iken belirsiz sonuc sonrasi ayni kimlik yeni Mikro API create cagrisi baslatmaz; yalniz readback ile kesin sonuc aranir ve bulunamiyorsa islem kontrol bekleyen durumda kalir.
 
 Create body validasyonlari:
 
@@ -7965,6 +8017,8 @@ Onemli not:
 - Bu endpoint sadece ayni kullanicinin daha once acmis oldugu offline create kaydini sorgular.
 - Kayit bulunamazsa `404 Not Found` doner.
 - Sonuc ilk POST cevabinda cihaza donemediyse backend kaydi `sth_eticaret_kanal_kodu` izinden tekrar toparlayabilir.
+- Eski `Failed + A task was canceled. + errorCode=null` kaydi readback sonucunda belge bulunamazsa `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olarak kalici siniflandirilir; ham iptal mesaji UI karar kaynagi olmamalidir.
+- Durum sorgusu tek basina yeni create yazisi baslatmaz. `Database` rotasinda readback belge bulamadiysa ayni body ve ayni `clientRequestId` ile yapilan sonraki POST kontrollu yeniden yazmayi baslatabilir.
 - `status = Completed` ise `result` icinde asagidaki `CreateCompanyReceivingResponse` modeli bulunur.
 
 Ornek response:

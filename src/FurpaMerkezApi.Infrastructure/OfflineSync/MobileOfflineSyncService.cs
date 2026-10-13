@@ -201,6 +201,7 @@ public sealed class MobileOfflineSyncService(
             if (result is null)
             {
                 await MarkExpiredProcessingAsUnconfirmedAsync(record);
+                await ClassifyLegacyUncertainFailureAsync(record);
             }
         }
 
@@ -279,6 +280,7 @@ public sealed class MobileOfflineSyncService(
         }
 
         await MarkExpiredProcessingAsUnconfirmedAsync(existing);
+        await ClassifyLegacyUncertainFailureAsync(existing);
 
         if (preventReexecutionAfterUncertainOutcome &&
             (existing.Status == MobileOfflineSyncRequestStatus.Processing ||
@@ -323,6 +325,32 @@ public sealed class MobileOfflineSyncService(
                normalized.Contains("canceled", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("cancelled", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("write outcome could not be confirmed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ClassifyLegacyUncertainFailureAsync(MobileOfflineSyncRequest record)
+    {
+        if (record.Status != MobileOfflineSyncRequestStatus.Failed ||
+            record.Retryable.HasValue ||
+            !string.IsNullOrWhiteSpace(record.ErrorCode) ||
+            !IsUncertainWriteOutcome(record.ErrorMessage))
+        {
+            return;
+        }
+
+        record.MarkFailed(
+            OfflineWriteFailureClassifier.UnconfirmedMessage,
+            clock.UtcNow,
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            retryable: true);
+
+        try
+        {
+            await authDbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await authDbContext.Entry(record).ReloadAsync(CancellationToken.None);
+        }
     }
 
     private async Task<TResponse?> TryRecoverAsync<TResponse>(

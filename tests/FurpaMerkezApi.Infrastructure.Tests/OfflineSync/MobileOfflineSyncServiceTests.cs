@@ -45,6 +45,41 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     [Fact]
+    public async Task GetStatus_ClassifiesLegacyCanceledFailureAsRetryable()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+
+        await AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 25));
+        await service.MarkFailedAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "A task was canceled.",
+            CancellationToken.None);
+
+        var status = await service.GetStatusAsync<string>(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None);
+
+        Assert.Equal("Failed", status.Status);
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, status.ErrorCode);
+        Assert.True(status.Retryable);
+        Assert.Equal(5, status.RetryAfterSeconds);
+        Assert.Equal(OfflineWriteFailureClassifier.UnconfirmedMessage, status.ErrorMessage);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, record.ErrorCode);
+        Assert.True(record.Retryable);
+        Assert.Equal(OfflineWriteFailureClassifier.UnconfirmedMessage, record.ErrorMessage);
+    }
+
+    [Fact]
     public async Task GetStatus_CompletedResultHasNoRetryMetadata()
     {
         await using var db = CreateDbContext();
@@ -99,6 +134,42 @@ public sealed class MobileOfflineSyncServiceTests
         Assert.Equal(
             MobileOfflineSyncRequestStatus.Failed,
             (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Acquire_ReexecutesUncertainFailureWhenPreventionIsDisabled()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+
+        await AcquireAsync(service, userId, clientRequestId, request);
+        await service.MarkFailedAsync(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            "A task was canceled.",
+            CancellationToken.None);
+
+        var retry = await service.AcquireAsync<TestRequest, string>(
+            "shipment.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            preventReexecutionAfterUncertainOutcome: false);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Proceed, retry.State);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        Assert.Equal(MobileOfflineSyncRequestStatus.Processing, record.Status);
+        Assert.Null(record.ErrorCode);
+        Assert.Null(record.Retryable);
+        Assert.Null(record.ErrorMessage);
     }
 
     [Fact]
@@ -288,6 +359,39 @@ public sealed class MobileOfflineSyncServiceTests
             {
                 callerCancellation.Cancel();
                 return Task.FromResult("F56/88049");
+            },
+            callerCancellation.Token,
+            preventReexecutionAfterUncertainOutcome: true);
+
+        Assert.Equal("F56/88049", result);
+        Assert.Equal(
+            MobileOfflineSyncRequestStatus.Completed,
+            (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task OfflineCreateGuard_WriteSurvivesCallerCancellationAfterReservation()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 25);
+        using var callerCancellation = new CancellationTokenSource();
+
+        var result = await OfflineCreateGuard.ExecuteAsync<TestRequest, string>(
+            service,
+            "shipment.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) => Task.FromResult<string?>(null),
+            async writeCancellationToken =>
+            {
+                callerCancellation.Cancel();
+                await Task.Delay(10, writeCancellationToken);
+                return "F56/88049";
             },
             callerCancellation.Token,
             preventReexecutionAfterUncertainOutcome: true);
