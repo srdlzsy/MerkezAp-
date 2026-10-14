@@ -2,7 +2,7 @@
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
-Son hedefli kontrol: 2026-10-13. Kayitli 742 method/route ve 674 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
+Son hedefli kontrol: 2026-10-14. Kayitli 743 method/route ve 676 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
 
@@ -1239,7 +1239,7 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - Ayni `clientRequestId` halen isleniyorsa endpoint `409 Conflict` doner.
 - POST cevabi cihaza ulasmadiysa mobil uygulama once ayni `clientRequestId` ile tekrar POST denemelidir.
 - Desteklenen tum akislar ilgili `offline-sync/{clientRequestId}` endpoint'iyle sorgulanabilir. Durum sorgusu yeni create yazisi baslatmaz; kayitli request snapshot'i ile Mikro readback yapar ve bulunan kesin sonucu kalici kayda isler.
-- Depolar arasi sevk, depo iadesi, firma sevki/iadesi, zayiat, masraf ve virman Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa backend once ayni cagrida Mikro DB readback yapar. Evrak tum satirlariyla bulunursa cevap basarili doner ve Mikro API audit kaydi `Recovered` olur.
+- Firma mal kabul, depolar arasi sevk, depo iadesi, firma sevki/iadesi, zayiat, masraf ve virman Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa backend ayni cagrida Mikro DB readback yapar. Normal basarili Mikro cevaplarinda hizli readback penceresi 2,5 saniyedir. Timeout veya duplicate belge cevabinda Mikro satirlari gec gorunebilecegi icin readback artan araliklarla toplam 120 saniyeye kadar devam eder; bu uzun pencere normal basarili isteklere uygulanmaz. Evrak tum satirlari ve beklenen icerigiyle bulunursa cevap basarili doner ve Mikro API audit kaydi `RecoveredAfterUnknown` olur.
 - Ilk readback sirasinda evrak henuz gorunmuyorsa ayni `clientRequestId` ile gelen tekrar POST Mikro'ya ikinci create yazisi gondermez. Backend sadece trace ile readback yapar; tum satirlar tamamlandiysa mevcut evraki toparlar, henuz tamamlanmadiysa `409 Conflict` ile islemin surdugunu bildirir.
 - Mikro API `evrak zaten mevcut`/duplicate document cevabi verirse backend bunu otomatik basari saymaz. Ayni seri/sira veya trace ile Mikro satirlarini okur; stok, miktar, birim ve satir butunlugu beklenen istekle tam eslesirse mevcut evraki dondurur ve audit kaydini `Recovered` yapar. Icerik eslesmezse yeni evrak yazmaz ve manuel inceleme hatasi verir.
 - Bu akislarin hicbirinde belirsiz sonuc sonrasi `409 Conflict` alinmasi yeni `clientRequestId` uretilmesi gerektigi anlamina gelmez. UI ayni payload snapshot'ini ve ayni `clientRequestId` degerini korumali; yeni id ancak kullanici acikca yeni bir islem baslatirsa uretilmelidir.
@@ -1702,7 +1702,7 @@ Diagnostics acik response:
 ### Saglik Kontrolleri
 
 - `GET /health/live`: anonim; yalniz uygulama prosesinin cevap verebildigini olcer. DB/dis servis kontrolu yapmaz; `checks` bostur.
-- `GET /health/ready`: anonim; `core_dependencies` ve `operations_export_path` kontrollerini calistirir. Hazirlik/servis izleme icindir; UI her satir veya ekran icin cagirmamalidir.
+- `GET /health/ready`: anonim; `core_dependencies`, `operations_export_path` ve `background_workers` kontrollerini calistirir. `background_workers` su anda kritik AXATA kuyruk worker'ini ve AXATA scheduler'ini heartbeat/backlog bilgisiyle izler. Hazirlik/servis izleme icindir; UI her satir veya ekran icin cagirmamalidir.
 - `GET /health/ready` veritabani baglantilarini kontrol eder ancak Auth DB'de bekleyen EF Core migration bulunup bulunmadigini su an kontrol etmez. `Healthy` sonucu migration'larin guncel oldugunu kanitlamaz; migration kontrolu deployment adiminda ayrica yapilmalidir.
 - `Healthy` veya `Degraded` icin HTTP 200; `Unhealthy` icin HTTP 503 doner.
 - Bu middleware route'lari kodda HTTP method ile sinirlanmamistir. Istemciler GET kullanmalidir.
@@ -2441,6 +2441,7 @@ Endpointler:
 
 ```text
 GET  /api/ayar-islemleri/veritabani-izleme/anlik
+GET  /api/ayar-islemleri/veritabani-izleme/workerlar
 GET  /api/ayar-islemleri/veritabani-izleme/olaylar?take=100
 GET  /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?includeCompleted=false&take=100
 GET  /api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi?take=100
@@ -2554,6 +2555,27 @@ Alan notlari:
 - `openTransactions`: acik kullanici transaction'laridir; aktif request olmasa da listede bulunabilir.
 - `canTerminate=true` teknik olarak sonlandirilabilir kullanici SPID'i oldugunu belirtir. Buton icin ayrica `terminate-session` permission'i zorunludur.
 - `sqlText`, `blockedSqlText` ve `lastSqlText` icindeki string literal degerler backend tarafinda `***` ile maskelenir.
+
+#### Worker Heartbeat ve Backlog
+
+`GET /api/ayar-islemleri/veritabani-izleme/workerlar`
+
+Yetki: `ayar-islemleri.veritabani-izleme.list`
+
+Bu endpoint su anda oncelikli olarak AXATA altyapisindaki iki sureci izler:
+
+- `axata-synchronization-worker`: kuyruktaki gorevleri calistiran kritik worker
+- `axata-synchronization-scheduler`: zamanli AXATA gorevlerini kuyruga alan scheduler
+
+Response her surec icin `status`, son heartbeat/basari/hata zamanlarini, son hata metnini, o anki aktiviteyi, `queuedCount`, `runningCount`, en eski bekleyen isin zamanini/yasini ve heartbeat esigini dondurur. Durumlar `Healthy`, `Degraded`, `Unhealthy` veya konfigurasyonla kapaliysa `Disabled` olabilir.
+
+Kurallar:
+
+- Kritik AXATA worker'i 60 saniye heartbeat vermezse `Unhealthy` olur ve `/health/ready` HTTP `503` doner.
+- AXATA scheduler'i 3 dakika heartbeat vermezse kritik worker'i dusurmeden `Degraded` olur.
+- En eski AXATA isi 5 dakikayi asarsa `Degraded`, 30 dakikayi asarsa kritik worker `Unhealthy` olur.
+- Worker veya scheduler konfigurasyonla kapaliysa `Disabled` bilgi durumudur; tek basina readiness hatasi olusturmaz.
+- Heartbeat bellek ici runtime bilgisidir. Uygulama yeniden basladiginda zamanlar sifirdan baslar; kalici is/audit gecmisi yerine gecmez.
 
 #### Guvenli Yazma Izleme
 
@@ -24909,6 +24931,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseSessionTerminationDto&gt; |
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu` | JWT + ayar-islemleri.veritabani-izleme.detail | path: sessionId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseRollbackStatusDto |
 | POST | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/sonlandir` | JWT + ayar-islemleri.veritabani-izleme.terminate-session | path: sessionId / integer (int32) (zorunlu)<br>body: request / TerminateDatabaseSessionHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseSessionTerminationDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/ayar-islemleri/veritabani-izleme/workerlar` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: WorkerMonitoringSnapshotDto |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/alan-haritasi` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentFieldCatalogDto |
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDto<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -26441,6 +26464,35 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `status` | string | Hayir | nullable |
 | `updatedAtUtc` | string (date-time) | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activity` | string | Hayir | nullable |
+| `code` | string | Hayir | nullable |
+| `isCritical` | boolean | Hayir |  |
+| `isEnabled` | boolean | Hayir |  |
+| `lastError` | string | Hayir | nullable |
+| `lastFailureAtUtc` | string (date-time) | Hayir | nullable |
+| `lastHeartbeatAtUtc` | string (date-time) | Hayir | nullable |
+| `lastSuccessAtUtc` | string (date-time) | Hayir | nullable |
+| `name` | string | Hayir | nullable |
+| `oldestQueuedAgeSeconds` | integer (int64) | Hayir | nullable |
+| `oldestQueuedAtUtc` | string (date-time) | Hayir | nullable |
+| `queuedCount` | integer (int32) | Hayir |  |
+| `registeredAtUtc` | string (date-time) | Hayir |  |
+| `runningCount` | integer (int32) | Hayir |  |
+| `staleAfterSeconds` | integer (int32) | Hayir |  |
+| `status` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringSnapshotDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `overallStatus` | string | Hayir | nullable |
+| `workers` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringItemDto[] | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.Common.CompanyMovements.CompanyMovementDetailDto
 
