@@ -10,8 +10,15 @@ public interface ITrendyolGoPriceStockWorkbench
     TrendyolGoPriceStockRefreshStatus RequestRefresh(long storeId);
 
     Task<TrendyolGoPriceStockDispatch> DispatchAsync(
-        long storeId, string previewHash, bool sendAll,
+        long storeId, string previewHash, TrendyolGoPriceStockDispatchMode mode,
         IReadOnlyCollection<string> barcodes, CancellationToken cancellationToken);
+}
+
+public enum TrendyolGoPriceStockDispatchMode
+{
+    Selected,
+    Changed,
+    AllExisting
 }
 
 public sealed record TrendyolGoPriceStockPreview(
@@ -36,5 +43,5 @@ public sealed record TrendyolGoPriceStockRow(
     string Status, string? Reason);
 
 public sealed record TrendyolGoPriceStockDispatch(
-    long StoreId, int WarehouseNo, int SentCount, int BatchCount,
+    long StoreId, int WarehouseNo, string Mode, int SentCount, int BatchCount,
     IReadOnlyCollection<JsonElement?> UpstreamResponses);

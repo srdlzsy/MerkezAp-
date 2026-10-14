@@ -77,15 +77,16 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     }
 
     public async Task<TrendyolGoPriceStockDispatch> DispatchAsync(
-        long storeId, string previewHash, bool sendAll,
+        long storeId, string previewHash, TrendyolGoPriceStockDispatchMode mode,
         IReadOnlyCollection<string> barcodes, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(previewHash) || barcodes.Count > 10000 ||
             barcodes.Any(string.IsNullOrWhiteSpace) ||
             barcodes.Count != barcodes.Distinct(StringComparer.Ordinal).Count() ||
-            (!sendAll && barcodes.Count == 0))
+            (mode == TrendyolGoPriceStockDispatchMode.Selected && barcodes.Count == 0))
         {
-            throw new ArgumentException("A preview hash and either sendAll or distinct barcodes are required.");
+            throw new ArgumentException(
+                "A preview hash and either a bulk dispatch mode or distinct barcodes are required.");
         }
 
         GetConfiguredStore(storeId);
@@ -97,12 +98,10 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             throw new InvalidOperationException("Price, stock or Trendyol product data changed. Refresh the preview before sending.");
         }
 
-        var selected = sendAll
-            ? snapshot.Rows.Where(item => item.Status == "Ready").ToArray()
-            : ResolveSelectedRows(snapshot.Rows, barcodes);
+        var selected = SelectRows(snapshot.Rows, mode, barcodes);
         if (selected.Length == 0)
         {
-            throw new ArgumentException("There are no ready price-stock rows to send.");
+            throw new ArgumentException("There are no eligible price-stock rows to send.");
         }
 
         var config = options.CurrentValue;
@@ -139,7 +138,8 @@ internal sealed class TrendyolGoPriceStockWorkbench(
 
         snapshotCoordinator.Invalidate(storeId);
         return new TrendyolGoPriceStockDispatch(
-            storeId, snapshot.WarehouseNo, selected.Length, responses.Count, responses);
+            storeId, snapshot.WarehouseNo, ToWireValue(mode),
+            selected.Length, responses.Count, responses);
     }
     private async Task<CatalogPage> LoadCatalogPageAsync(
         long storeId, int page, int size, CancellationToken cancellationToken)
@@ -257,7 +257,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         {
             var product = products.Single(item => item.Barcode == selectedRow.Barcode);
             var currentRow = BuildRow(product, mikro.GetValueOrDefault(selectedRow.Barcode));
-            if (currentRow.Status != "Ready" || currentRow.MikroPrice != selectedRow.MikroPrice ||
+            if (currentRow.Status == "Skipped" || currentRow.MikroPrice != selectedRow.MikroPrice ||
                 currentRow.MikroQuantity != selectedRow.MikroQuantity)
             {
                 throw new InvalidOperationException(
@@ -278,6 +278,28 @@ internal sealed class TrendyolGoPriceStockWorkbench(
 
         return selected;
     }
+
+    internal static TrendyolGoPriceStockRow[] SelectRows(
+        IReadOnlyCollection<TrendyolGoPriceStockRow> rows,
+        TrendyolGoPriceStockDispatchMode mode,
+        IReadOnlyCollection<string> barcodes) =>
+        mode switch
+        {
+            TrendyolGoPriceStockDispatchMode.Selected => ResolveSelectedRows(rows, barcodes),
+            TrendyolGoPriceStockDispatchMode.Changed =>
+                rows.Where(item => item.Status == "Ready").ToArray(),
+            TrendyolGoPriceStockDispatchMode.AllExisting =>
+                rows.Where(item => item.Status is "Ready" or "Unchanged").ToArray(),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported dispatch mode.")
+        };
+
+    private static string ToWireValue(TrendyolGoPriceStockDispatchMode mode) => mode switch
+    {
+        TrendyolGoPriceStockDispatchMode.Selected => "selected",
+        TrendyolGoPriceStockDispatchMode.Changed => "changed",
+        TrendyolGoPriceStockDispatchMode.AllExisting => "all-existing",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported dispatch mode.")
+    };
 
     private static TrendyolGoPriceStockRow[] FilterRows(
         IReadOnlyCollection<TrendyolGoPriceStockRow> rows, string view) =>
@@ -468,7 +490,10 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             ReadString(product, "barcode") ?? string.Empty,
             ReadString(product, "title") ?? string.Empty,
             ReadDecimal(product, "sellingPrice"),
-            ReadInt(product, "quantity"));
+            ReadInt(product, "quantity"),
+            ReadNestedLong(product, "brand", "id"),
+            ReadNestedLong(product, "category", "id"),
+            ReadInt(product, "vatRate"));
     }
 
     private static string? ReadString(JsonElement value, string name) =>
@@ -487,6 +512,11 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Number
             ? property.GetInt64() : null;
 
+    private static long? ReadNestedLong(JsonElement value, string parentName, string name) =>
+        value.TryGetProperty(parentName, out var parent) && parent.ValueKind == JsonValueKind.Object
+            ? ReadLong(parent, name)
+            : null;
+
     private static void AddParameter(DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();
@@ -495,7 +525,9 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         command.Parameters.Add(parameter);
     }
 
-    internal sealed record TrendyolProduct(string Barcode, string Title, decimal? Price, int? Quantity);
+    internal sealed record TrendyolProduct(
+        string Barcode, string Title, decimal? Price, int? Quantity,
+        long? BrandId = null, long? CategoryId = null, int? VatRate = null);
     internal sealed record MikroProduct(
         string? StockCode, string StockName, decimal? Price, decimal? Quantity, bool Blocked,
         int UnitPointer = 1, string UnitName = "", int SalesBlocked = 0, int OrderBlocked = 0,

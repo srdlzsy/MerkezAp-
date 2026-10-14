@@ -70,6 +70,7 @@ Tum route'lar `/api/entegrasyon-islemleri/trendyol-go` kokunun altindadir. Tam q
 | Siparis | `GET /orders`, `/orders/by-number/{orderNumber}`, `/orders/{orderId}/invoice-amount`, `/packages/by-ids?id=...` | `PUT /packages/{packageId}/picked`, `/invoiced`, `/items/unsupplied`, `/mark-alternative`, `/manual-shipped`, `/manual-delivered` |
 | Urun | `GET /brands`, `/products`, `/products/batch-requests/{batchRequestId}` | `POST /products`, `PUT /products`, `POST /products/price-and-inventory`, `PUT /products/sale-on`, `/sale-off`, `POST /products/seller-attributes` |
 | Mikro fiyat/stok | `GET /price-stock/preview?storeId=&view=actionable` | `POST /price-stock/preview/refresh?storeId=`, `POST /price-stock/dispatch` |
+| Mikro urun katalogu | `GET /catalog/preview?storeId=&view=actionable` | `POST /catalog/dispatch` |
 | Fatura linki | - | `POST /invoice-links` |
 | Iade | `GET /claims`, `/claims/{claimId}/items/objectionable` | `PUT /claims/{claimId}/accept`, `/reject`, `POST /claims/{claimId}/items/objections` |
 
@@ -83,7 +84,7 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 4. Mikro fiyat, Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesinden (varsayilan `3`) ve `PaymentPlanNo` degerinden (varsayilan `0`) depo ve barkod birimi esleserek okunur. Liste 1 veya genel satis fiyati fallback olarak kullanilmaz. Stok `dbo.fn_DepodakiMiktar(stockCode,warehouseNo,today)` ile gelir. Negatif stok sifira cekilir, kesirli stok tam sayiya asagi yuvarlanir.
 5. `Ready` fiyat/stok farki olan ve gonderilebilir satirdir. `Unchanged` fark yoktur. `Skipped` Mikro barkodu/fiyati eksik, stok karti pasif/satisa kapali veya sayfada duplicate barkod gibi bir neden tasir. UI sebebi gostermelidir.
 6. Manuel `Yenile` butonu `POST /price-stock/preview/refresh?storeId={id}` cagirir. Cevap `202 Accepted` olur; ayni magazanin isi zaten kuyrukta/calisiyorsa ikinci yenileme acilmaz.
-7. Kullanici satirlari tiklar; UI barkod listesini otomatik kurar. `previewHash` ve `storeId` ile `POST /price-stock/dispatch` cagrilir. Tum farklar icin `sendAll=true`; sadece belirli satirlar icin `barcodes` kullanilir. Gonderimde tum katalog tekrar okunmaz, yalniz secilen barkodlar Mikro'dan yeniden dogrulanir. Fiyat/stok veya snapshot hash'i degismisse backend `409` dondurur; UI yeni onizleme ister.
+7. Kullanici gonderim modunu secer ve `previewHash` ile `storeId` degerlerini `POST /price-stock/dispatch` endpointine gonderir. `mode=selected` yalniz `barcodes` listesindeki `Ready` satirlari, `mode=changed` tum `Ready` farklari, `mode=all-existing` ise TGO'da mevcut olup Mikro'da gecerli bulunan `Ready + Unchanged` satirlarin tamamini yeniden gonderir. Gonderimde tum katalog tekrar okunmaz, yalniz gonderilecek barkodlar Mikro'dan yeniden dogrulanir. Fiyat/stok veya snapshot hash'i degismisse backend `409` dondurur; UI yeni onizleme ister.
 
 ### Sube POS fiyat senkronu
 
@@ -94,7 +95,7 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 - Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Trendyol gonderimi ve kullanici ekrani hata almaz veya bu ag beklemesini yasamaz.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
 - Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Merkez POS'ta ayni dogal anahtar icin benzersiz indeks kuruludur; diger POS veritabanlarinda da ayni indeks kurulmalidir.
-8. Basarili gonderimde `upstreamResponses[].batchRequestId` degerleri alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. `sendAll=true` kullanildiginda backend Trendyol limitine uygun paketlemeyi kendisi yapar; UI katalog sayfalama veya paket yonetimi yapmaz.
+8. Basarili gonderimde `upstreamResponses[].batchRequestId` degerleri alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. Toplu modlarda backend Trendyol limitine uygun paketlemeyi kendisi yapar; UI katalog sayfalama veya paket yonetimi yapmaz. Eski istemciler icin `sendAll=true`, `mode=changed` ile ayni davranisi korur.
 
 ```json
 {
@@ -102,12 +103,73 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 
 
   "previewHash": "onizlemeden-gelen-deger",
+  "mode": "all-existing",
+  "barcodes": []
+}
+```
+
+Gonderim modlari:
+
+```text
+selected      Yalniz barcodes listesindeki Ready farklari gonderir.
+changed       Snapshot'taki tum Ready fiyat/stok farklarini gonderir.
+all-existing  TGO'da mevcut, Mikro'da gecerli Ready ve Unchanged urunlerin tamamini yeniden gonderir.
+```
+
+`all-existing`, `Skipped` urunleri gondermez. Barkod eslesmesi olmayan, Mikro'da pasif/satisa kapali, fiyati sifir veya stoku okunamayan urunler sorun listesinde kalir. Bu mod TGO'da olmayan Mikro urunlerini olusturmaz.
+
+Fiyat/stok isi merkezi TGO'da olmayan Mikro urununu **olusturmaz**. Yeni katalog urunleri asagidaki katalog onizleme ve gonderim akisiyla olusturulur. `POST /products/price-and-inventory` ham endpointiyle ayrica 1-1000 satir gonderilebilir, fakat barkod ve fiyat/stok JSON'unu istemci hazirlar. Ilk aktarimda fiyat ve stok birlikte gonderilmelidir. `storeId` atlanirsa TGO islemi tum subelere uygulayabilir; UI bunu rutin sube akisinda hic kullanmamalidir. TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir; timeout sonrasi batch sonucu ve guncel urun durumu kontrol edilmeden yeni istek acilmamalidir ([resmi fiyat/stok kurallari](https://developers.tgoapps.com/docs/trendyol-go-hizli-market-entegrasyonu/urun-entegrasyonu/hm-sube-bazli-urun-fiyat-stok-guncelleme)).
+
+### Mikro katalog aktarimi
+
+`GET /api/entegrasyon-islemleri/trendyol-go/catalog/preview?storeId=402535&view=actionable&take=500`
+
+Bu endpoint Mikro stok kartlarini ana/master barkodlariyla tarar ve secili magazanin hazir TGO snapshot'i ile karsilastirir. Urun olusturma supplier genelinde calisir; `storeId`, karsilastirma yapilacak TGO katalogu ve sonraki ilk fiyat/stok aktariminda kullanilacak depo baglami icindir.
+
+Durumlar:
+
+```text
+Existing         Barkod TGO katalogunda zaten var; create gonderilmez.
+Ready            Yeni urun icin barkod, KDV, marka ve kategori hazir.
+MappingRequired  Mikro marka veya kategori kodunun TGO ID eslemesi eksik/celiskili.
+Skipped          Urun pasif/satisa kapali, barkodsuz, gecersiz barkodlu, fiyatsiz, desteklenmeyen KDV oranli veya duplicate barkodlu.
+```
+
+Backend marka ve kategori eslemelerini once secili magazada zaten kabul edilmis barkodlardan ogrenmeye calisir. Ayni Mikro kodu yalniz tek bir TGO ID degerine gidiyorsa otomatik eslesir. Bilinen istisnalar konfigurasyonla acikca verilebilir ve otomatik eslemeyi ezer:
+
+```json
+{
+  "TrendyolGo": {
+    "Catalog": {
+      "BrandMappings": {
+        "ULKER": 10050
+      },
+      "CategoryMappings": {
+        "BISKUVI": 2045
+      }
+    }
+  }
+}
+```
+
+Toplu gonderim:
+
+```http
+POST /api/entegrasyon-islemleri/trendyol-go/catalog/dispatch
+```
+
+```json
+{
+  "storeId": 402535,
+  "previewHash": "KATALOG-ONIZLEMESINDEN-GELEN-HASH",
   "sendAll": true,
   "barcodes": []
 }
 ```
 
-Bu manuel is merkezi TGO'da olmayan Mikro urununu **olusturmaz**, butun subeleri veya tum sayfalari tek seferde islemez. `POST /products/price-and-inventory` ham endpointiyle ayrica 1-1000 satir gonderilebilir, fakat barkod ve fiyat/stok JSON'unu istemci hazirlar. Ilk aktarimda fiyat ve stok birlikte gonderilmelidir. `storeId` atlanirsa TGO islemi tum subelere uygulayabilir; UI bunu rutin sube akisinda hic kullanmamalidir. TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir; timeout sonrasi batch sonucu ve guncel urun durumu kontrol edilmeden yeni istek acilmamalidir ([resmi fiyat/stok kurallari](https://developers.tgoapps.com/docs/trendyol-go-hizli-market-entegrasyonu/urun-entegrasyonu/hm-sube-bazli-urun-fiyat-stok-guncelleme)).
+`sendAll=true` yalniz `Ready` urunleri en fazla 1000 satirlik TGO create batch'lerine ayirir. Secili gonderimde `sendAll=false` ve onizlemeden gelen barkodlar kullanilir. Hash degismisse istek reddedilir. Response'taki tum `batchRequestId` degerleri kontrol edilmeden fiyat/stok gonderilmez. Urunler TGO tarafinda kabul edilip katalog snapshot'inda `Existing` gorundukten sonra ilgili subede `price-stock/dispatch` ve `mode=all-existing` ile ilk fiyat/stok yuklemesi yapilir.
+
+Katalog create akisi yalniz TGO'nun destekledigi `0`, `1`, `10` ve `20` KDV oranlarini kabul eder. Bosluk veya TGO'nun urun barkodunda kabul etmedigi `?/&%+^'*_` karakterlerini iceren barkodlar gonderilmez; onizlemede gerekcesiyle `Skipped` kalir.
 
 ## Diger operasyonlar
 

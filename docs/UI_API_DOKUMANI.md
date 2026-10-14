@@ -35,7 +35,7 @@ Timeout ve tekrar deneme notu:
 - Raw SQL ile yazilmis liste/arama/rapor komutlari da genel olarak `300` saniye bekleyecek sekilde ayarlanmistir.
 - `MikroApi:TimeoutSeconds` varsayilan appsettings'te `300` saniyedir. Yazma rotasi `MikroApi` ise UI bu sureyi de dikkate almalidir.
 - Yazma yollari `MikroWriteRouting` ile secilir. Mevcut Production ayarinda `GreenGrocerGoodsReceipt`, `PosAccountingSlip` dahil tum yazma rotalari `Database` degerindedir; UI request modeli degismez. Bir rota ileride `MikroApi` yapilirsa backend Mikro DB readback yapmadan islemi basarili saymaz.
-- Terminal, mobil ve web istemcileri liste ve create isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Subede internet zayifsa API islemi devam ederken istemci 30-60 saniyede vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
+- Terminal, mobil ve web istemcileri liste isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. `MikroApi` yazma rotasindaki create istekleri, konfigurasyondaki 300 saniyelik ust Mikro API timeout ile sonrasindaki 180 saniyelik readback penceresini ve ag payini kapsayabilmek icin en az `540` saniye beklemelidir. Canlida Mikro kendi icinden yaklasik 130 saniyede timeout dondururse istek daha erken tamamlanir. Subede internet zayifsa istemci erken vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
 - POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
 
 E-irsaliye alici alias notu:
@@ -1239,7 +1239,8 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - Ayni `clientRequestId` halen isleniyorsa endpoint `409 Conflict` doner.
 - POST cevabi cihaza ulasmadiysa mobil uygulama once ayni `clientRequestId` ile tekrar POST denemelidir.
 - Desteklenen tum akislar ilgili `offline-sync/{clientRequestId}` endpoint'iyle sorgulanabilir. Durum sorgusu yeni create yazisi baslatmaz; kayitli request snapshot'i ile Mikro readback yapar ve bulunan kesin sonucu kalici kayda isler.
-- Firma mal kabul, depolar arasi sevk, depo iadesi, firma sevki/iadesi, zayiat, masraf ve virman Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa backend ayni cagrida Mikro DB readback yapar. Normal basarili Mikro cevaplarinda hizli readback penceresi 2,5 saniyedir. Timeout veya duplicate belge cevabinda Mikro satirlari gec gorunebilecegi icin readback artan araliklarla toplam 120 saniyeye kadar devam eder; bu uzun pencere normal basarili isteklere uygulanmaz. Evrak tum satirlari ve beklenen icerigiyle bulunursa cevap basarili doner ve Mikro API audit kaydi `RecoveredAfterUnknown` olur.
+- Firma mal kabul, verilen depo siparisi, depolar arasi sevk, depo iadesi, firma sevki/iadesi, zayiat, masraf ve virman Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa backend ayni cagrida Mikro DB readback yapar. Normal basarili Mikro cevaplarinda hizli readback penceresi 2,5 saniyedir. Timeout veya duplicate belge cevabinda Mikro satirlari gec gorunebilecegi icin readback artan araliklarla toplam 180 saniyeye kadar devam eder; bu uzun pencere normal basarili isteklere uygulanmaz. Evrak tum satirlari ve beklenen icerigiyle bulunursa cevap basarili doner ve Mikro API audit kaydi `RecoveredAfterUnknown` olur.
+- Verilen depo siparisi readback'i ayrilan seri/sira altindaki satirlarin tamamini stok kodu, miktar, birim, fiyat, hedef/kaynak depo ve temel satir alanlariyla karsilastirir. Eksik satir seti tamamlanana kadar beklenir; farkli veya fazla satir kalici `MIKRO_DOCUMENT_CONTENT_MISMATCH` kabul edilir.
 - Ilk readback sirasinda evrak henuz gorunmuyorsa ayni `clientRequestId` ile gelen tekrar POST Mikro'ya ikinci create yazisi gondermez. Backend sadece trace ile readback yapar; tum satirlar tamamlandiysa mevcut evraki toparlar, henuz tamamlanmadiysa `409 Conflict` ile islemin surdugunu bildirir.
 - Mikro API `evrak zaten mevcut`/duplicate document cevabi verirse backend bunu otomatik basari saymaz. Ayni seri/sira veya trace ile Mikro satirlarini okur; stok, miktar, birim ve satir butunlugu beklenen istekle tam eslesirse mevcut evraki dondurur ve audit kaydini `Recovered` yapar. Icerik eslesmezse yeni evrak yazmaz ve manuel inceleme hatasi verir.
 - Bu akislarin hicbirinde belirsiz sonuc sonrasi `409 Conflict` alinmasi yeni `clientRequestId` uretilmesi gerektigi anlamina gelmez. UI ayni payload snapshot'ini ve ayni `clientRequestId` degerini korumali; yeni id ancak kullanici acikca yeni bir islem baslatirsa uretilmelidir.
@@ -18833,6 +18834,8 @@ Endpointler:
 | `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535&view=actionable` | query | `TrendyolGoPriceStockPreview` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh?storeId=402535` | query | `202` + `TrendyolGoPriceStockRefreshStatus` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | `TrendyolGoPriceStockDispatchHttpRequest` | `TrendyolGoPriceStockDispatch` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/catalog/preview?storeId=402535&view=actionable` | query | `TrendyolGoCatalogPreview` | `list` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/catalog/dispatch` | `TrendyolGoCatalogDispatchHttpRequest` | `TrendyolGoCatalogDispatch` | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}` | path | batch sonucu | `detail` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-on` | `{ items: [...] }` | batch response veya `204` | `update` |
 | `PUT /api/entegrasyon-islemleri/trendyol-go/products/sale-off` | `{ items: [...] }` | batch response veya `204` | `update` |
@@ -18903,7 +18906,7 @@ Mikro'dan barkod girmeden fiyat/stok gonderme:
 6. Sorun inceleme ekrani gerekiyorsa GET istegine `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Onizleme endpointinde kullaniciya acik sayfalama yoktur; katalog sayfalari backend tarafinda yonetilir.
 7. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Gonderimde tum katalog tekrar okunmaz; secilen satirlar Mikro'dan yeniden dogrulanir. Secilen urunun fiyati/stoku degismisse veya worker yeni snapshot yayinlayip hash'i degistirmisse `409 Conflict` doner ve UI guncel onizlemeyi alir.
 8. Gonderim response'undaki `upstreamResponses[].batchRequestId` degerleriyle mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
-9. Kullanici ister tek tek secim yapar, ister `sendAll=true` ile tum `Ready` farklarini gonderir. Backend Trendyol limitine uygun olarak gonderimi kendi icinde en fazla 1000 satirlik paketlere ayirir; UI paket veya sayfa yonetmez.
+9. UI `mode=selected` ile secili `Ready` satirlari, `mode=changed` ile tum `Ready` farklarini veya `mode=all-existing` ile TGO'da mevcut ve Mikro'da gecerli `Ready + Unchanged` urunlerin tamamini yeniden gonderebilir. Eski `sendAll=true` istegi geriye uyum icin `mode=changed` kabul edilir. Backend Trendyol limitine uygun olarak gonderimi kendi icinde en fazla 1000 satirlik paketlere ayirir; UI paket veya sayfa yonetmez.
 
 Snapshot durumlari:
 
@@ -18988,10 +18991,35 @@ Gonderim body:
 
 
   "previewHash": "A1B2...",
+  "mode": "all-existing",
+  "barcodes": []
+}
+```
+
+`mode` degerleri:
+
+```text
+selected      Yalniz barcodes listesindeki Ready farklarini gonderir.
+changed       Tum Ready fiyat/stok farklarini gonderir.
+all-existing  TGO'da mevcut, Mikro'da gecerli Ready ve Unchanged urunlerin tamamini yeniden gonderir.
+```
+
+`all-existing` sorunlu `Skipped` satirlari gondermez ve TGO'da bulunmayan Mikro urunlerini olusturmaz. Mikro'daki tum katalogun ilk kez aktarimi ayri urun olusturma akisidir; TGO `brandId`, `categoryId` ve `vatRate` alanlari tamamlanmadan otomatik gonderim yapilmamalidir.
+
+Mikro'daki TGO'da bulunmayan urunler icin `GET /catalog/preview` kullanilir. Backend mevcut TGO urunlerinden Mikro marka ve kategori kodu bazinda tekil ID eslemesi ogrenmeye calisir; konfigurasyondaki `TrendyolGo:Catalog:BrandMappings` ve `CategoryMappings` degerleri bu eslemeyi ezer. Satirlar `Existing`, `Ready`, `MappingRequired` veya `Skipped` doner. Desteklenmeyen KDV orani, gecersiz barkod, sifir fiyat, bloklu/pasif stok veya duplicate barkod gonderilmez ve `Skipped` sebebiyle birlikte doner. `POST /catalog/dispatch` yalniz `Ready` satirlari urun olusturma servisine gonderir. Batch sonucu tamamlanip urunler katalogda gorunmeden fiyat/stok gonderilmemelidir.
+
+Katalog gonderim body:
+
+```json
+{
+  "storeId": 402535,
+  "previewHash": "KATALOG-ONIZLEMESINDEN-GELEN-HASH",
   "sendAll": true,
   "barcodes": []
 }
 ```
+
+Katalog urunleri supplier genelinde olusturulur. Kabul sonrasinda her sube icin fiyat/stok ayri ele alinir; ilgili magazada `mode=all-existing` ilk tam yuklemeyi yapar.
 
 Bu akis sadece TGO katalogunda bulunan urunleri kapsar. Mikro satis fiyati sifir/bos, barkod eslesmesi yok, urun pasif veya satisa kapali ise satir `Skipped` olur. Negatif stok `0` kabul edilir; kesirli stok tam sayiya asagi yuvarlanir. `storeId` tum subeler yerine sadece secilen TGO magazasina gonderilir. Tekrar gonderimden once batch sonucunu ve guncel onizlemeyi kontrol edin; TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir.
 
@@ -24990,6 +25018,8 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}` | JWT + entegrasyon-islemleri.pos-muhasebe-aktarimi.detail | path: totalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: ZReportDetailDto<br>404: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go` | JWT + entegrasyon-islemleri.trendyol-go.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoConnectionStatusDto |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/brands` | JWT + entegrasyon-islemleri.trendyol-go.list | query: page / integer (int32)<br>query: size / integer (int32)<br>query: name / string | 401: ProblemDetails<br>403: ProblemDetails |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/catalog/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoCatalogDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogDispatch |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/catalog/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogPreview |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/claims` | JWT + entegrasyon-islemleri.trendyol-go.list | query: ClaimItemStatus / string<br>query: StartDate / integer (int64)<br>query: EndDate / integer (int64)<br>query: Page / integer (int32)<br>query: Size / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails |
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/accept` | JWT + entegrasyon-islemleri.trendyol-go.update | path: claimId / string (zorunlu)<br>body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/items/objectionable` | JWT + entegrasyon-islemleri.trendyol-go.detail | path: claimId / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -28742,6 +28772,50 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `isSent` | boolean | Hayir |  |
 | `totalId` | integer (int32) | Hayir |  |
 | `zNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchCount` | integer (int32) | Hayir |  |
+| `nextStep` | string | Hayir | nullable |
+| `sentCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `upstreamResponses` | [] | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogPreview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `existingCount` | integer (int32) | Hayir |  |
+| `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogRow[] | Hayir | nullable |
+| `mappingRequiredCount` | integer (int32) | Hayir |  |
+| `previewHash` | string | Hayir | nullable |
+| `readyCount` | integer (int32) | Hayir |  |
+| `skippedCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `totalCount` | integer (int32) | Hayir |  |
+| `view` | string | Hayir | nullable |
+| `visibleCount` | integer (int32) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogRow
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `mikroBrandCode` | string | Hayir | nullable |
+| `mikroCategoryCode` | string | Hayir | nullable |
+| `mikroPrice` | number (double) | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `reason` | string | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
+| `trendyolBrandId` | integer (int64) | Hayir | nullable |
+| `trendyolCategoryId` | integer (int64) | Hayir | nullable |
+| `vatRate` | integer (int32) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoConnectionStatusDto
 
@@ -34631,6 +34705,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentNo` | string | Hayir | minLength=0; maxLength=50; nullable |
 | `paymentType` | string | Hayir | minLength=0; maxLength=30; nullable |
 
+### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcodes` | string[] | Hayir | nullable |
+| `previewHash` | string | Evet | minLength=1 |
+| `sendAll` | boolean | Hayir |  |
+| `storeId` | integer (int64) | Hayir | min=1 |
+
 ### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoInvoiceHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -34645,6 +34728,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `barcodes` | string[] | Hayir | nullable |
+| `mode` | string | Hayir | pattern=^(?i:selected\|changed\|all-existing)$; nullable |
 | `previewHash` | string | Evet | minLength=1 |
 | `sendAll` | boolean | Hayir |  |
 | `storeId` | integer (int64) | Hayir | min=1 |

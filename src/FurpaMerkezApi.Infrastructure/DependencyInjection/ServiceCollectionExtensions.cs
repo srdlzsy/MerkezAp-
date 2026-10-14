@@ -732,6 +732,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<TrendyolGoPriceStockWorkbench>();
         services.AddScoped<ITrendyolGoPriceStockWorkbench>(serviceProvider =>
             serviceProvider.GetRequiredService<TrendyolGoPriceStockWorkbench>());
+        services.AddScoped<ITrendyolGoCatalogWorkbench, TrendyolGoCatalogWorkbench>();
         services.AddScoped<ITrendyolGoPriceStockSnapshotRefresher>(serviceProvider =>
             serviceProvider.GetRequiredService<TrendyolGoPriceStockWorkbench>());
         services.AddHostedService<TrendyolGoPriceStockSnapshotWorker>();

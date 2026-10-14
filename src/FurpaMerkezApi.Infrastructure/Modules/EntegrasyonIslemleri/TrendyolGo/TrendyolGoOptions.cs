@@ -48,7 +48,16 @@ public sealed class TrendyolGoOptions
 
     public TrendyolGoBranchPosPriceSyncOptions BranchPosPriceSync { get; init; } = new();
 
+    public TrendyolGoCatalogOptions Catalog { get; init; } = new();
+
     public TrendyolGoStoreMappingOptions[] Stores { get; init; } = [];
+}
+
+public sealed class TrendyolGoCatalogOptions
+{
+    // Explicit mappings override mappings inferred from products already accepted by TGO.
+    public Dictionary<string, long> BrandMappings { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, long> CategoryMappings { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class TrendyolGoBranchPosPriceSyncOptions

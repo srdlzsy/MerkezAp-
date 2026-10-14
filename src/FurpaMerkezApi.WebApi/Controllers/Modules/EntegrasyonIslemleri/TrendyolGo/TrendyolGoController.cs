@@ -13,7 +13,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Trendyo
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class TrendyolGoController(
     ITrendyolGoIntegrationService service,
-    ITrendyolGoPriceStockWorkbench priceStockWorkbench)
+    ITrendyolGoPriceStockWorkbench priceStockWorkbench,
+    ITrendyolGoCatalogWorkbench catalogWorkbench)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "entegrasyon-islemleri";
@@ -156,6 +157,27 @@ public sealed class TrendyolGoController(
         [FromBody] TrendyolGoPriceStockDispatchHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await priceStockWorkbench.DispatchAsync(
+            request.StoreId, request.PreviewHash, request.ResolveMode(),
+            request.Barcodes, cancellationToken));
+
+    [HttpGet("catalog/preview")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(TrendyolGoCatalogPreview), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoCatalogPreview>> PreviewCatalog(
+        [FromQuery, Range(1, long.MaxValue)] long storeId,
+        [FromQuery, RegularExpression("^(?i:actionable|all|issues|existing)$")] string view = "actionable",
+        [FromQuery, MaxLength(100)] string? search = null,
+        [FromQuery, Range(1, 5000)] int take = 500,
+        CancellationToken cancellationToken = default) =>
+        Ok(await catalogWorkbench.PreviewAsync(storeId, view, search, take, cancellationToken));
+
+    [HttpPost("catalog/dispatch")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoCatalogDispatch), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoCatalogDispatch>> DispatchCatalog(
+        [FromBody] TrendyolGoCatalogDispatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await catalogWorkbench.DispatchAsync(
             request.StoreId, request.PreviewHash, request.SendAll,
             request.Barcodes, cancellationToken));
 
@@ -371,6 +393,41 @@ public sealed class TrendyolGoClaimListHttpRequest
 }
 
 public sealed class TrendyolGoPriceStockDispatchHttpRequest
+{
+    [Range(1, long.MaxValue)]
+    public long StoreId { get; init; }
+
+    [Required]
+    public string PreviewHash { get; init; } = string.Empty;
+
+    public bool SendAll { get; init; }
+
+    [RegularExpression("^(?i:selected|changed|all-existing)$")]
+    public string? Mode { get; init; }
+
+    [MaxLength(10000)]
+    public string[] Barcodes { get; init; } = [];
+
+    public TrendyolGoPriceStockDispatchMode ResolveMode()
+    {
+        if (string.IsNullOrWhiteSpace(Mode))
+        {
+            return SendAll
+                ? TrendyolGoPriceStockDispatchMode.Changed
+                : TrendyolGoPriceStockDispatchMode.Selected;
+        }
+
+        return Mode.Trim().ToLowerInvariant() switch
+        {
+            "selected" => TrendyolGoPriceStockDispatchMode.Selected,
+            "changed" => TrendyolGoPriceStockDispatchMode.Changed,
+            "all-existing" => TrendyolGoPriceStockDispatchMode.AllExisting,
+            _ => throw new ArgumentException("mode must be selected, changed or all-existing.")
+        };
+    }
+}
+
+public sealed class TrendyolGoCatalogDispatchHttpRequest
 {
     [Range(1, long.MaxValue)]
     public long StoreId { get; init; }

@@ -80143,6 +80143,218 @@
         ]
       }
     },
+    "/api/entegrasyon-islemleri/trendyol-go/catalog/preview": {
+      "get": {
+        "tags": [
+          "TrendyolGo"
+        ],
+        "parameters": [
+          {
+            "name": "storeId",
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "pattern": "^(?i:actionable|all|issues|existing)$",
+              "type": "string",
+              "default": "actionable"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "maximum": 5000,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32",
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogPreview"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogPreview"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogPreview"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "entegrasyon-islemleri.trendyol-go.list"
+        ]
+      }
+    },
+    "/api/entegrasyon-islemleri/trendyol-go/catalog/dispatch": {
+      "post": {
+        "tags": [
+          "TrendyolGo"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "entegrasyon-islemleri.trendyol-go.update"
+        ]
+      }
+    },
     "/api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}": {
       "get": {
         "tags": [
@@ -102498,6 +102710,148 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sentCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "batchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextStep": {
+            "type": "string",
+            "nullable": true
+          },
+          "upstreamResponses": {
+            "type": "array",
+            "items": { },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogPreview": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "storeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "previewHash": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "existingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "readyCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "mappingRequiredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skippedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "view": {
+            "type": "string",
+            "nullable": true
+          },
+          "visibleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogRow"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogRow": {
+        "type": "object",
+        "properties": {
+          "stockCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string",
+            "nullable": true
+          },
+          "barcode": {
+            "type": "string",
+            "nullable": true
+          },
+          "mikroBrandCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "trendyolBrandId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "mikroCategoryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "trendyolCategoryId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "vatRate": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "mikroPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoConnectionStatusDto": {
         "type": "object",
         "properties": {
@@ -122407,6 +122761,35 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest": {
+        "required": [
+          "previewHash"
+        ],
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "previewHash": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sendAll": {
+            "type": "boolean"
+          },
+          "barcodes": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoInvoiceHttpRequest": {
         "type": "object",
         "properties": {
@@ -122457,6 +122840,11 @@
           },
           "sendAll": {
             "type": "boolean"
+          },
+          "mode": {
+            "pattern": "^(?i:selected|changed|all-existing)$",
+            "type": "string",
+            "nullable": true
           },
           "barcodes": {
             "maxItems": 10000,

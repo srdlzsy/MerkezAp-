@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 743. Model sayisi: 676.
+Endpoint sayisi (method + route): 745. Model sayisi: 680.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -139,6 +139,8 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}` | JWT + entegrasyon-islemleri.pos-muhasebe-aktarimi.detail | path: totalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: ZReportDetailDto<br>404: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go` | JWT + entegrasyon-islemleri.trendyol-go.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoConnectionStatusDto |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/brands` | JWT + entegrasyon-islemleri.trendyol-go.list | query: page / integer (int32)<br>query: size / integer (int32)<br>query: name / string | 401: ProblemDetails<br>403: ProblemDetails |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/catalog/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoCatalogDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogDispatch |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/catalog/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogPreview |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/claims` | JWT + entegrasyon-islemleri.trendyol-go.list | query: ClaimItemStatus / string<br>query: StartDate / integer (int64)<br>query: EndDate / integer (int64)<br>query: Page / integer (int32)<br>query: Size / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails |
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/accept` | JWT + entegrasyon-islemleri.trendyol-go.update | path: claimId / string (zorunlu)<br>body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/claims/{claimId}/items/objectionable` | JWT + entegrasyon-islemleri.trendyol-go.detail | path: claimId / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -3891,6 +3893,50 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `isSent` | boolean | Hayir |  |
 | `totalId` | integer (int32) | Hayir |  |
 | `zNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchCount` | integer (int32) | Hayir |  |
+| `nextStep` | string | Hayir | nullable |
+| `sentCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `upstreamResponses` | [] | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogPreview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `existingCount` | integer (int32) | Hayir |  |
+| `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogRow[] | Hayir | nullable |
+| `mappingRequiredCount` | integer (int32) | Hayir |  |
+| `previewHash` | string | Hayir | nullable |
+| `readyCount` | integer (int32) | Hayir |  |
+| `skippedCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `totalCount` | integer (int32) | Hayir |  |
+| `view` | string | Hayir | nullable |
+| `visibleCount` | integer (int32) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogRow
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `mikroBrandCode` | string | Hayir | nullable |
+| `mikroCategoryCode` | string | Hayir | nullable |
+| `mikroPrice` | number (double) | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `reason` | string | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
+| `trendyolBrandId` | integer (int64) | Hayir | nullable |
+| `trendyolCategoryId` | integer (int64) | Hayir | nullable |
+| `vatRate` | integer (int32) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoConnectionStatusDto
 
@@ -9780,6 +9826,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentNo` | string | Hayir | minLength=0; maxLength=50; nullable |
 | `paymentType` | string | Hayir | minLength=0; maxLength=30; nullable |
 
+### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcodes` | string[] | Hayir | nullable |
+| `previewHash` | string | Evet | minLength=1 |
+| `sendAll` | boolean | Hayir |  |
+| `storeId` | integer (int64) | Hayir | min=1 |
+
 ### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoInvoiceHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -9794,6 +9849,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `barcodes` | string[] | Hayir | nullable |
+| `mode` | string | Hayir | pattern=^(?i:selected\|changed\|all-existing)$; nullable |
 | `previewHash` | string | Evet | minLength=1 |
 | `sendAll` | boolean | Hayir |  |
 | `storeId` | integer (int64) | Hayir | min=1 |
