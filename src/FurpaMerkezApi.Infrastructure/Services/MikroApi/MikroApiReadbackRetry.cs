@@ -22,6 +22,10 @@ internal static class MikroApiReadbackRetry
         TimeSpan.FromSeconds(15),
         TimeSpan.FromSeconds(15),
         TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(15),
         TimeSpan.FromSeconds(15)
     ];
 

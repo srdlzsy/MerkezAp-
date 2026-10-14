@@ -32,8 +32,6 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     private const int GreenGrocerWarehouseNo = 56;
     private const int FirstDocumentOrderNo = 0;
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1900, 1, 1);
 
     public async Task<CreateIssuedWarehouseOrderResponse> ExecuteAsync(
@@ -211,22 +209,32 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             cancellationToken);
         LogCreatePhase("mikro-api-post", documentOrderNo);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API issued warehouse order create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request,
-            lines,
-            orderDate,
-            deliveryDate,
-            options.ConnectionStringName,
-            result.RawResponse,
-            cancellationToken);
+        CreateIssuedWarehouseOrderResponse recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                orderDate,
+                deliveryDate,
+                options.ConnectionStringName,
+                result.RawResponse,
+                recoverableCreateOutcome,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            throw MikroApiCreateConflictFactory.Create(result, exception);
+        }
         LogCreatePhase("recover-response", documentOrderNo);
 
         var orderLineGuidByRowNo = await GetOrderLineGuidByRowNoAsync(
@@ -257,6 +265,17 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
             cancellationToken: cancellationToken);
         LogCreatePhase("mark-recovered", recovered.DocumentOrderNo);
+
+        if (result.IsError)
+        {
+            logger.LogWarning(
+                "Recovered issued warehouse order after an unknown Mikro API write outcome. Document={DocumentSerie}/{DocumentOrderNo}, AuditId={AuditId}, RequestId={RequestId}",
+                recovered.DocumentSerie,
+                recovered.DocumentOrderNo,
+                result.AuditId,
+                result.RequestId);
+        }
+
         return recovered;
     }
 
@@ -279,14 +298,17 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         DateTime deliveryDate,
         string writeConnectionName,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverWarehouseOrderResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 request,
+                lines,
                 orderDate,
                 deliveryDate,
                 writeConnectionName,
@@ -297,15 +319,13 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
-        if (TryRecoverWarehouseOrderResponseFromMikroApiResult(
+        if (!uncertainWriteOutcome && TryRecoverWarehouseOrderResponseFromMikroApiResult(
                 documentSerie,
                 documentOrderNo,
                 request,
@@ -319,8 +339,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             return recoveredFromResponse;
         }
 
-        throw new InvalidOperationException(
-            "Mikro API issued warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryRecoverWarehouseOrderResponseFromMikroApiResult(
@@ -336,7 +355,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     {
         response = default!;
         var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
-        if (responseRows.Count < lines.Count)
+        if (responseRows.Count != lines.Count)
         {
             return false;
         }
@@ -380,6 +399,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         string documentSerie,
         int documentOrderNo,
         CreateIssuedWarehouseOrderRequest request,
+        IReadOnlyList<CreateIssuedWarehouseOrderLineRequest> lines,
         DateTime orderDate,
         DateTime deliveryDate,
         string writeConnectionName,
@@ -389,9 +409,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             .AsNoTracking()
             .Where(order =>
                 order.ssip_evrakno_seri == documentSerie &&
-                order.ssip_evrakno_sira == documentOrderNo &&
-                order.ssip_girdepo == request.InWarehouseNo &&
-                order.ssip_cikdepo == request.OutWarehouseNo)
+                order.ssip_evrakno_sira == documentOrderNo)
             .Select(order => new
             {
                 order.ssip_tarih,
@@ -400,31 +418,48 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 order.ssip_evrakno_sira,
                 order.ssip_girdepo,
                 order.ssip_cikdepo,
-                order.ssip_miktar
+                order.ssip_satirno,
+                order.ssip_stok_kod,
+                order.ssip_miktar,
+                order.ssip_b_fiyat,
+                order.ssip_tutar,
+                order.ssip_birim_pntr,
+                order.ssip_paket_kod,
+                order.ssip_projekodu,
+                order.ssip_sormerkezi,
+                order.ssip_rezervasyon_miktari,
+                order.ssip_iptal
             })
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == 0)
+        var match = IssuedWarehouseOrderRecoveryMatcher.Match(request, lines, rows.Select(row =>
+            new IssuedWarehouseOrderRecoveryRow(
+                row.ssip_tarih,
+                row.ssip_teslim_tarih,
+                row.ssip_evrakno_seri,
+                row.ssip_evrakno_sira,
+                row.ssip_satirno,
+                row.ssip_stok_kod,
+                row.ssip_miktar,
+                row.ssip_b_fiyat,
+                row.ssip_tutar,
+                row.ssip_girdepo,
+                row.ssip_cikdepo,
+                row.ssip_birim_pntr,
+                row.ssip_paket_kod,
+                row.ssip_projekodu,
+                row.ssip_sormerkezi,
+                row.ssip_rezervasyon_miktari,
+                row.ssip_iptal)).ToArray());
+
+        if (match is IssuedWarehouseOrderMatch.Missing or IssuedWarehouseOrderMatch.Incomplete)
         {
             return null;
         }
 
-        var headerCount = rows
-            .Select(row => new
-            {
-                row.ssip_tarih,
-                row.ssip_evrakno_seri,
-                row.ssip_evrakno_sira,
-                row.ssip_girdepo,
-                row.ssip_cikdepo
-            })
-            .Distinct()
-            .Count();
-
-        if (headerCount > 1)
+        if (match == IssuedWarehouseOrderMatch.Mismatch)
         {
-            throw new InvalidOperationException(
-                "More than one issued warehouse order document matched the same serie and order number.");
+            throw StockMovementRecoveryMatcher.ContentMismatch();
         }
 
         var firstRow = rows[0];

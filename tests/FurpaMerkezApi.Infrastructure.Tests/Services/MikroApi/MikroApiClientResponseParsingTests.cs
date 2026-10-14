@@ -195,8 +195,8 @@ public sealed class MikroApiClientResponseParsingTests
     {
         var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: true);
 
-        Assert.Equal(11, delays.Count);
-        Assert.Equal(TimeSpan.FromSeconds(120), TimeSpan.FromTicks(delays.Sum(delay => delay.Ticks)));
+        Assert.Equal(15, delays.Count);
+        Assert.Equal(TimeSpan.FromSeconds(180), TimeSpan.FromTicks(delays.Sum(delay => delay.Ticks)));
         Assert.Equal(TimeSpan.FromSeconds(15), delays.Max());
     }
 
