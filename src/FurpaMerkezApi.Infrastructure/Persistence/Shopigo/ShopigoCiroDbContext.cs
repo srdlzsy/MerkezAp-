@@ -94,7 +94,7 @@ public sealed class ShopigoCiroDbContext(DbContextOptions<ShopigoCiroDbContext> 
 
             entity.Property(item => item.Id).HasColumnName("id");
             entity.Property(item => item.SaleUuid).HasColumnName("sale_uuid");
-            entity.Property(item => item.Quantity).HasColumnName("quantity");
+            entity.Property(item => item.Quantity).HasColumnName("quantity").HasPrecision(10, 3);
             entity.Property(item => item.TotalPrice).HasColumnName("total_price");
             entity.Property(item => item.Refunded).HasColumnName("refunded");
             entity.Property(item => item.DeletedAt).HasColumnName("deleted_at");
