@@ -35,8 +35,6 @@ public sealed class StockReceiptWriteService(
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string OutageOfflineOperationCode = "stok-islemleri.zayiat-fisleri.create";
     private const string ExpenseOfflineOperationCode = "stok-islemleri.masraf-fisleri.create";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateStockReceiptResponse> ExecuteAsync(
@@ -299,6 +297,7 @@ public sealed class StockReceiptWriteService(
                 acceptor,
                 options.ConnectionStringName,
                 result.RawResponse,
+                recoverableCreateOutcome,
                 cancellationToken);
         }
         catch (Exception exception)
@@ -349,9 +348,11 @@ public sealed class StockReceiptWriteService(
         string acceptor,
         string writeConnectionName,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverStockReceiptResponseAsync(
                 documentSerie,
@@ -371,11 +372,9 @@ public sealed class StockReceiptWriteService(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

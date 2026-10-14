@@ -33,8 +33,6 @@ public sealed class VirmanWriteService(
     private const byte NormalMovement = 0;
     private const int FirstDocumentOrderNo = 0;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private const int StockSummaryDuplicateRetryAttemptCount = 3;
     private const int StockSummaryDuplicateRetryDelayMilliseconds = 150;
     private const string OfflineOperationCode = "stok-islemleri.virmanlar.create";
@@ -271,6 +269,7 @@ public sealed class VirmanWriteService(
                 documentNo,
                 options.ConnectionStringName,
                 result.RawResponse,
+                recoverableCreateOutcome,
                 cancellationToken);
         }
         catch (Exception exception)
@@ -316,9 +315,11 @@ public sealed class VirmanWriteService(
         string documentNo,
         string writeConnectionName,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverVirmanResponseAsync(
                 documentSerie,
@@ -335,11 +336,9 @@ public sealed class VirmanWriteService(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

@@ -39,8 +39,6 @@ public sealed class CreateWarehouseReturnUseCase(
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const string OfflineOperationCode = "iade-islemleri.giden-depo-iadeleri.create";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateWarehouseReturnResponse> ExecuteAsync(
@@ -302,6 +300,7 @@ public sealed class CreateWarehouseReturnUseCase(
                 documentDate,
                 documentNo,
                 result.RawResponse,
+                recoverableCreateOutcome,
                 cancellationToken);
         }
         catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
@@ -448,9 +447,11 @@ public sealed class CreateWarehouseReturnUseCase(
         DateTime documentDate,
         string documentNo,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverWarehouseReturnResponseAsync(
                 documentSerie,
@@ -467,11 +468,9 @@ public sealed class CreateWarehouseReturnUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
@@ -775,7 +774,8 @@ public sealed class CreateWarehouseReturnUseCase(
         string rawResponse,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: false);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
                 documentSerie,
@@ -789,11 +789,9 @@ public sealed class CreateWarehouseReturnUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

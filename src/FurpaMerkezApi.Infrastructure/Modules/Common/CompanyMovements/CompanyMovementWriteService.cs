@@ -36,8 +36,6 @@ public sealed class CompanyMovementWriteService(
     private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
     private const string CompanyShipmentOfflineOperationCode = "sevk-islemleri.giden-firma-sevkleri.create";
     private const string CompanyReturnOfflineOperationCode = "iade-islemleri.firma-iadeleri.create";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCompanyMovementResponse> ExecuteAsync(
@@ -312,6 +310,7 @@ public sealed class CompanyMovementWriteService(
                 options.ConnectionStringName,
                 movementGenre,
                 result.RawResponse,
+                recoverableCreateOutcome,
                 cancellationToken);
         }
         catch (Exception exception)
@@ -362,9 +361,11 @@ public sealed class CompanyMovementWriteService(
         string writeConnectionName,
         byte movementGenre,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverCompanyMovementResponseAsync(
                 documentSerie,
@@ -384,11 +385,9 @@ public sealed class CompanyMovementWriteService(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

@@ -49,8 +49,6 @@ public sealed class CreateCompanyReceivingUseCase(
     private const string ReturnEDespatchStatusNone = "Yok";
     private const string ReturnEDespatchStatusPending = "GonderimBekliyor";
     private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly TimeSpan DatabaseCreateQueueTimeout = TimeSpan.FromSeconds(180);
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
@@ -930,23 +928,33 @@ public sealed class CreateCompanyReceivingUseCase(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API company receiving create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request.WarehouseNo,
-            customerCode,
-            movements,
-            movementDate,
-            documentDate,
-            documentNo,
-            result.RawResponse,
-            cancellationToken);
+        RecoveredCompanyReceivingCreate recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request.WarehouseNo,
+                customerCode,
+                movements,
+                movementDate,
+                documentDate,
+                documentNo,
+                result.RawResponse,
+                recoverableCreateOutcome,
+                cancellationToken);
+        }
+        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        {
+            throw MikroApiCreateConflictFactory.Create(result, exception);
+        }
 
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
@@ -967,10 +975,12 @@ public sealed class CreateCompanyReceivingUseCase(
         DateTime documentDate,
         string documentNo,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
         var expectedLineCount = movements.Count;
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverCompanyReceivingResponseAsync(
                 documentSerie,
@@ -988,11 +998,9 @@ public sealed class CreateCompanyReceivingUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
@@ -1202,23 +1210,33 @@ public sealed class CreateCompanyReceivingUseCase(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API company receiving automatic return create failed.");
         }
 
-        var recovered = await RecoverMikroApiReturnCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request.WarehouseNo,
-            customerCode,
-            orderedReturnMovements,
-            movementDate,
-            documentDate,
-            documentNo,
-            result.RawResponse,
-            cancellationToken);
+        RecoveredCompanyReceivingCreate recovered;
+        try
+        {
+            recovered = await RecoverMikroApiReturnCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request.WarehouseNo,
+                customerCode,
+                orderedReturnMovements,
+                movementDate,
+                documentDate,
+                documentNo,
+                result.RawResponse,
+                recoverableCreateOutcome,
+                cancellationToken);
+        }
+        catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
+        {
+            throw MikroApiCreateConflictFactory.Create(result, exception);
+        }
         var recoveredGuid = recovered.MovementGuidByRowNo.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
             result,
@@ -1250,10 +1268,12 @@ public sealed class CreateCompanyReceivingUseCase(
         DateTime documentDate,
         string documentNo,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
         var expectedLineCount = movements.Count;
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverCompanyReceivingReturnResponseAsync(
                 documentSerie,
@@ -1271,11 +1291,9 @@ public sealed class CreateCompanyReceivingUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

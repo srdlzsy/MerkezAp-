@@ -50,8 +50,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const string OfflineOperationCode = "sevk-islemleri.giden-depolar-arasi-sevkler.create";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> LocalShipmentCreateLocks = new(StringComparer.Ordinal);
 
@@ -543,6 +541,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 documentDate,
                 documentNo,
                 result.RawResponse,
+                recoverableCreateOutcome,
                 cancellationToken);
         }
         catch (Exception exception) when (result.IsError && recoverableCreateOutcome)
@@ -985,9 +984,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         DateTime documentDate,
         string documentNo,
         string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverInterWarehouseShipmentResponseAsync(
                 documentSerie,
@@ -1004,11 +1005,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
@@ -1294,7 +1293,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         string rawResponse,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: false);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
                 documentSerie,
@@ -1308,11 +1308,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

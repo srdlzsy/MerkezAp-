@@ -161,6 +161,7 @@ public sealed class MikroApiClientResponseParsingTests
 
     [Theory]
     [InlineData("F56-88038 numarali evrak zaten mevcut.")]
+    [InlineData("1. Satır : F56-88727, Gönderilen evrak seri ve sıra ile hareket kaydı mevcuttur!")]
     [InlineData("Duplicate document number.")]
     public void IsRecoverableCreateOutcome_AllowsVerifiedReadbackForDuplicateDocumentErrors(
         string errorMessage)
@@ -178,6 +179,25 @@ public sealed class MikroApiClientResponseParsingTests
 
         Assert.True(MikroApiWriteAuditService.IsRecoverableCreateOutcome(result));
         Assert.False(MikroApiWriteAuditService.IsUnknownWriteOutcome(result));
+    }
+
+    [Fact]
+    public void ReadbackRetry_UsesShortProfileForSuccessfulWrites()
+    {
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: false);
+
+        Assert.Equal(4, delays.Count);
+        Assert.Equal(TimeSpan.FromMilliseconds(2500), TimeSpan.FromTicks(delays.Sum(delay => delay.Ticks)));
+    }
+
+    [Fact]
+    public void ReadbackRetry_CoversDelayedVisibilityForUncertainWrites()
+    {
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: true);
+
+        Assert.Equal(11, delays.Count);
+        Assert.Equal(TimeSpan.FromSeconds(120), TimeSpan.FromTicks(delays.Sum(delay => delay.Ticks)));
+        Assert.Equal(TimeSpan.FromSeconds(15), delays.Max());
     }
 
     [Fact]

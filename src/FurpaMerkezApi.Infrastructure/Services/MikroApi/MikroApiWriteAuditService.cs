@@ -117,6 +117,7 @@ public sealed class MikroApiWriteAuditService(
     private static bool ContainsDuplicateDocument(string? value) =>
         !string.IsNullOrWhiteSpace(value) &&
         (value.Contains("zaten mevcut", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("hareket kaydı mevcut", StringComparison.OrdinalIgnoreCase) ||
          value.Contains("mukerrer", StringComparison.OrdinalIgnoreCase) ||
          value.Contains("mükerrer", StringComparison.OrdinalIgnoreCase) ||
          value.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
