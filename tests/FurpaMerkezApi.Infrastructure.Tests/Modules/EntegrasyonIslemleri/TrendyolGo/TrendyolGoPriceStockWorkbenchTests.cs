@@ -94,4 +94,31 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
         Assert.Equal(0, row.MikroQuantity);
         Assert.Equal("Unchanged", row.Status);
     }
+
+    [Fact]
+    public void BranchPosVersion_UsesPersistedTaskTimeWhenSourceTimeIsMissing()
+    {
+        var taskCreatedAtUtc = new DateTime(2026, 10, 14, 9, 30, 0, DateTimeKind.Utc);
+
+        var result = TrendyolGoBranchPosPriceSyncService.ResolveSourceVersion(null, taskCreatedAtUtc);
+
+        Assert.Equal(taskCreatedAtUtc, result);
+    }
+
+    [Fact]
+    public void BranchPosUpsert_OnlyAppliesStrictlyNewerPriceAndWarehouseVersions()
+    {
+        Assert.Contains(
+            "@sfiyat_lastup_date > sfiyat_lastup_date",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "@sdp_lastup_date > sdp_lastup_date",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "WHERE NOT EXISTS (SELECT 1 FROM upd)",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+    }
 }

@@ -111,7 +111,13 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
                          .ThenBy(item => item.PriceListNo)
                          .ThenBy(item => item.UnitPointer))
             {
-                await UpsertAsync(connection, transaction, task.WarehouseNo, item, cancellationToken);
+                await UpsertAsync(
+                    connection,
+                    transaction,
+                    task.WarehouseNo,
+                    item,
+                    task.CreatedAtUtc,
+                    cancellationToken);
             }
 
             await transaction.CommitAsync(cancellationToken);
@@ -152,40 +158,77 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             .SingleOrDefaultAsync(cancellationToken);
     }
 
-    private static async Task UpsertAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int warehouseNo, BranchPosPriceItem item, CancellationToken cancellationToken)
+    internal const string UpsertCommandText = """
+        SELECT pg_advisory_xact_lock(
+            hashtextextended(CONCAT(@sdp_depo_no, '|', @sfiyat_stokkod, '|', @sfiyat_listesirano, '|', @fiyat_tip_kodu), 0));
+
+        WITH upd AS (
+            UPDATE stoksatisfiyat SET
+                fiyati = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date THEN @fiyati
+                    ELSE fiyati
+                END,
+                sto_birim_ad = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date THEN @sto_birim_ad
+                    ELSE sto_birim_ad
+                END,
+                sdp_satisdursun = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date THEN @sdp_satisdursun
+                    ELSE sdp_satisdursun
+                END,
+                sdp_sipdursun = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date THEN @sdp_sipdursun
+                    ELSE sdp_sipdursun
+                END,
+                sdp_malkabuldursun = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date THEN @sdp_malkabuldursun
+                    ELSE sdp_malkabuldursun
+                END,
+                sfiyat_lastup_date = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date THEN @sfiyat_lastup_date
+                    ELSE sfiyat_lastup_date
+                END,
+                sdp_lastup_date = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date THEN @sdp_lastup_date
+                    ELSE sdp_lastup_date
+                END
+            WHERE sdp_depo_no = @sdp_depo_no
+              AND sfiyat_stokkod = @sfiyat_stokkod
+              AND (sfiyat_listesirano = @sfiyat_listesirano OR (sfiyat_listesirano IS NULL AND @sfiyat_listesirano IS NULL))
+              AND (fiyat_tip_kodu = @fiyat_tip_kodu OR (fiyat_tip_kodu IS NULL AND @fiyat_tip_kodu IS NULL))
+              AND (
+                  sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date OR
+                  sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date)
+            RETURNING 1
+        )
+        INSERT INTO stoksatisfiyat (
+            sdp_depo_no, sfiyat_stokkod, fiyati, fiyat_tip_kodu, sto_birim_ad,
+            sdp_satisdursun, sdp_sipdursun, sdp_malkabuldursun, sfiyat_lastup_date,
+            sdp_lastup_date, sfiyat_listesirano)
+        SELECT
+            @sdp_depo_no, @sfiyat_stokkod, @fiyati, @fiyat_tip_kodu, @sto_birim_ad,
+            @sdp_satisdursun, @sdp_sipdursun, @sdp_malkabuldursun, @sfiyat_lastup_date,
+            @sdp_lastup_date, @sfiyat_listesirano
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM stoksatisfiyat
+            WHERE sdp_depo_no = @sdp_depo_no
+              AND sfiyat_stokkod = @sfiyat_stokkod
+              AND (sfiyat_listesirano = @sfiyat_listesirano OR (sfiyat_listesirano IS NULL AND @sfiyat_listesirano IS NULL))
+              AND (fiyat_tip_kodu = @fiyat_tip_kodu OR (fiyat_tip_kodu IS NULL AND @fiyat_tip_kodu IS NULL)));
+        """;
+
+    private static async Task UpsertAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int warehouseNo,
+        BranchPosPriceItem item,
+        DateTime taskCreatedAtUtc,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            SELECT pg_advisory_xact_lock(
-                hashtextextended(CONCAT(@sdp_depo_no, '|', @sfiyat_stokkod, '|', @sfiyat_listesirano, '|', @fiyat_tip_kodu), 0));
-
-            WITH upd AS (
-                UPDATE stoksatisfiyat SET
-                    fiyati = @fiyati,
-                    fiyat_tip_kodu = @fiyat_tip_kodu,
-                    sto_birim_ad = @sto_birim_ad,
-                    sdp_satisdursun = @sdp_satisdursun,
-                    sdp_sipdursun = @sdp_sipdursun,
-                    sdp_malkabuldursun = @sdp_malkabuldursun,
-                    sfiyat_lastup_date = @sfiyat_lastup_date,
-                    sdp_lastup_date = @sdp_lastup_date
-                WHERE sdp_depo_no = @sdp_depo_no
-                  AND sfiyat_stokkod = @sfiyat_stokkod
-                  AND (sfiyat_listesirano = @sfiyat_listesirano OR (sfiyat_listesirano IS NULL AND @sfiyat_listesirano IS NULL))
-                  AND (fiyat_tip_kodu = @fiyat_tip_kodu OR (fiyat_tip_kodu IS NULL AND @fiyat_tip_kodu IS NULL))
-                RETURNING 1
-            )
-            INSERT INTO stoksatisfiyat (
-                sdp_depo_no, sfiyat_stokkod, fiyati, fiyat_tip_kodu, sto_birim_ad,
-                sdp_satisdursun, sdp_sipdursun, sdp_malkabuldursun, sfiyat_lastup_date,
-                sdp_lastup_date, sfiyat_listesirano)
-            SELECT
-                @sdp_depo_no, @sfiyat_stokkod, @fiyati, @fiyat_tip_kodu, @sto_birim_ad,
-                @sdp_satisdursun, @sdp_sipdursun, @sdp_malkabuldursun, @sfiyat_lastup_date,
-                @sdp_lastup_date, @sfiyat_listesirano
-            WHERE NOT EXISTS (SELECT 1 FROM upd);
-            """;
+        command.CommandText = UpsertCommandText;
         command.Parameters.AddWithValue("sdp_depo_no", warehouseNo);
         command.Parameters.AddWithValue("sfiyat_stokkod", item.StockCode);
         command.Parameters.AddWithValue("fiyati", item.Price);
@@ -194,11 +237,26 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         command.Parameters.AddWithValue("sdp_satisdursun", item.SalesBlocked);
         command.Parameters.AddWithValue("sdp_sipdursun", item.OrderBlocked);
         command.Parameters.AddWithValue("sdp_malkabuldursun", item.GoodsAcceptanceBlocked);
-        command.Parameters.AddWithValue("sfiyat_lastup_date", item.PriceUpdatedAtUtc ?? DateTime.UtcNow);
-        command.Parameters.AddWithValue("sdp_lastup_date", item.WarehouseUpdatedAtUtc ?? DateTime.UtcNow);
+        command.Parameters.AddWithValue(
+            "sfiyat_lastup_date",
+            ResolveSourceVersion(item.PriceUpdatedAtUtc, taskCreatedAtUtc));
+        command.Parameters.AddWithValue(
+            "sdp_lastup_date",
+            ResolveSourceVersion(item.WarehouseUpdatedAtUtc, taskCreatedAtUtc));
         command.Parameters.AddWithValue("sfiyat_listesirano", item.PriceListNo);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    internal static DateTime ResolveSourceVersion(DateTime? sourceUpdatedAtUtc, DateTime taskCreatedAtUtc) =>
+        NormalizeUtc(sourceUpdatedAtUtc ?? taskCreatedAtUtc);
+
+    private static DateTime NormalizeUtc(DateTime value) =>
+        value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
 }
 
 internal sealed record BranchPosPriceItem(
