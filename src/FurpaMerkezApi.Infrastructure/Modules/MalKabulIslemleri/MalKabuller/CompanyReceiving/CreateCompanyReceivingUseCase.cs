@@ -75,7 +75,8 @@ public sealed class CreateCompanyReceivingUseCase(
                     storedRequestPayload,
                     innerCancellationToken),
                 cancellationToken,
-                preventReexecutionAfterUncertainOutcome: writeMode == MikroWriteMode.MikroApi);
+                preventReexecutionAfterUncertainOutcome: writeMode == MikroWriteMode.MikroApi,
+                verifyCompletedWithRecovery: true);
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {
@@ -146,7 +147,7 @@ public sealed class CreateCompanyReceivingUseCase(
             await using var createLock = await AcquireDatabaseCreateLockAsync(
                 request.WarehouseNo,
                 cancellationToken);
-            var response = await executionStrategy.ExecuteAsync(async () =>
+            var writeResult = await executionStrategy.ExecuteAsync(async () =>
             {
                 mikroWriteDbContext.ChangeTracker.Clear();
                 var lineTaxInfos = await LoadLineTaxInfosAsync(lines, cancellationToken);
@@ -430,7 +431,7 @@ public sealed class CreateCompanyReceivingUseCase(
                     await transaction.CommitAsync(cancellationToken);
                     LogCreatePhase("commit", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
-                    return new CreateCompanyReceivingResponse(
+                    var response = new CreateCompanyReceivingResponse(
                         documentSerie,
                         documentOrderNo,
                         movementDate,
@@ -455,6 +456,10 @@ public sealed class CreateCompanyReceivingUseCase(
                         returnMovements.Count > 0 ? returnDocumentSerie : null,
                         returnMovements.Count > 0 ? returnDocumentOrderNo : null,
                         returnMovements.Count > 0 ? ReturnEDespatchStatusPending : ReturnEDespatchStatusNone);
+                    return (
+                        Response: response,
+                        Movements: movements.ToArray(),
+                        ReturnMovements: returnMovements.ToArray());
                 }
                 catch
                 {
@@ -462,6 +467,15 @@ public sealed class CreateCompanyReceivingUseCase(
                     throw;
                 }
             });
+
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await VerifyCommittedMovementSetAsync(writeResult.Movements, CancellationToken.None);
+            if (writeResult.ReturnMovements.Length > 0)
+            {
+                await VerifyCommittedMovementSetAsync(writeResult.ReturnMovements, CancellationToken.None);
+            }
+
+            var response = writeResult.Response;
 
             if (request.ClientRequestId.HasValue)
             {
@@ -510,6 +524,34 @@ public sealed class CreateCompanyReceivingUseCase(
                 $"Another company receiving write for warehouse {warehouseNo} is still being processed. Keep the same payload and clientRequestId, then retry.",
                 retryable: true,
                 innerException: exception);
+        }
+    }
+
+    private async Task VerifyCommittedMovementSetAsync(
+        IReadOnlyCollection<STOK_HAREKETLERI> expectedRows,
+        CancellationToken cancellationToken)
+    {
+        if (expectedRows.Count == 0)
+        {
+            return;
+        }
+
+        var first = expectedRows.First();
+        var actualRows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evrakno_seri == first.sth_evrakno_seri &&
+                movement.sth_evrakno_sira == first.sth_evrakno_sira &&
+                movement.sth_evraktip == first.sth_evraktip &&
+                movement.sth_tip == first.sth_tip &&
+                movement.sth_cins == first.sth_cins &&
+                movement.sth_normal_iade == first.sth_normal_iade)
+            .ToListAsync(cancellationToken);
+
+        var match = StockMovementRecoveryMatcher.Snapshot(expectedRows, actualRows);
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match))
+        {
+            throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
         }
     }
 
@@ -856,7 +898,8 @@ public sealed class CreateCompanyReceivingUseCase(
                 clientRequestId,
                 storedRequestPayload,
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private async Task<RecoveredCompanyReceivingCreate> CreateCompanyReceivingMovementsWithMikroApiAsync(
         CreateCompanyReceivingRequest request,
@@ -2392,21 +2435,50 @@ public sealed class CreateCompanyReceivingUseCase(
     {
         var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
         var request = DeserializeStoredRequest(requestPayload);
-        var movementDate = (request?.MovementDate ?? DateTime.Today).Date;
-        var movementDateExclusive = movementDate.AddDays(1);
-        var movements = await mikroDbContext.STOK_HAREKETLERIs
+        if (request is null)
+        {
+            throw new InvalidOperationException("Stored company receiving request payload is unavailable for readback verification.");
+        }
+
+        var movementQuery = mikroDbContext.STOK_HAREKETLERIs
             .AsNoTracking()
             .Where(movement =>
                 movement.sth_evraktip == ReceivingReceiptDocumentType &&
                 movement.sth_tip == IncomingMovementType &&
                 movement.sth_normal_iade == NormalMovement &&
                 movement.sth_giris_depo_no == warehouseNo &&
+                movement.sth_eticaret_kanal_kodu == traceKey);
+
+        if (request.MovementDate.HasValue)
+        {
+            var movementDate = request.MovementDate.Value.Date;
+            var movementDateExclusive = movementDate.AddDays(1);
+            movementQuery = movementQuery.Where(movement =>
                 movement.sth_tarih.HasValue &&
                 movement.sth_tarih.Value >= movementDate &&
-                movement.sth_tarih.Value < movementDateExclusive &&
-                movement.sth_eticaret_kanal_kodu == traceKey)
+                movement.sth_tarih.Value < movementDateExclusive);
+        }
+
+        var movementRows = await movementQuery
             .OrderBy(movement => movement.sth_satirno)
             .ThenBy(movement => movement.sth_Guid)
+            .ToMeasuredListAsync(
+                logger,
+                "Recovery:CompanyReceiving:Trace",
+                cancellationToken);
+
+        if (movementRows.Count == 0)
+        {
+            return null;
+        }
+
+        var match = CompanyReceivingRecoveryMatcher.Match(request, movementRows);
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match, waitForIncomplete: true))
+        {
+            return null;
+        }
+
+        var movements = movementRows
             .Select(movement => new RecoveryMovementRow(
                 movement.sth_Guid,
                 movement.sth_tarih,
@@ -2421,15 +2493,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_miktar,
                 movement.sth_tutar,
                 movement.sth_sip_uid))
-            .ToMeasuredListAsync(
-                logger,
-                "Recovery:CompanyReceiving:Trace",
-                cancellationToken);
-
-        if (movements.Count == 0)
-        {
-            return null;
-        }
+            .ToArray();
 
         var headerCount = movements
             .Select(movement => new
@@ -2477,7 +2541,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 .Where(order => orderGuids.Contains(order.sip_Guid))
                 .ToDictionaryAsync(order => order.sip_Guid, cancellationToken);
 
-        var lineResults = new List<CreateCompanyReceivingLineResultDto>(movements.Count);
+        var lineResults = new List<CreateCompanyReceivingLineResultDto>(movements.Length);
 
         foreach (var movement in movements)
         {
@@ -2557,7 +2621,7 @@ public sealed class CreateCompanyReceivingUseCase(
             firstMovement.DocumentNo ?? string.Empty,
             firstMovement.WarehouseNo ?? warehouseNo,
             firstMovement.CustomerCode ?? string.Empty,
-            movements.Count,
+            movements.Length,
             movements.Sum(movement => movement.Quantity ?? 0d),
             lineResults.Sum(line => line.OrderLinkedQuantity),
             lineResults.Sum(line => line.OrderlessQuantity),

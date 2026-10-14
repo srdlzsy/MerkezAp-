@@ -59,7 +59,8 @@ public sealed class CreateWarehouseReturnUseCase(
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
             cancellationToken,
-            preventReexecutionAfterUncertainOutcome: true);
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
     }
 
     public Task<OfflineSyncStatusDto<CreateWarehouseReturnResponse>> GetOfflineSyncStatusAsync(
@@ -73,7 +74,8 @@ public sealed class CreateWarehouseReturnUseCase(
             (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
                 MobileOfflineSyncService.DeserializeRequest<CreateWarehouseReturnRequest>(storedRequestPayload),
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private Task<CreateWarehouseReturnResponse> ExecuteRoutedAsync(
         CreateWarehouseReturnRequest request,
@@ -124,7 +126,7 @@ public sealed class CreateWarehouseReturnUseCase(
 
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
@@ -211,6 +213,21 @@ public sealed class CreateWarehouseReturnUseCase(
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        var verified = await TryRecoverWarehouseReturnResponseAsync(
+            writeResult.DocumentSerie,
+            writeResult.DocumentOrderNo,
+            request,
+            lines,
+            movementDate,
+            documentDate,
+            documentNo,
+            CancellationToken.None);
+
+        return verified is null
+            ? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed()
+            : ToResponse(verified, options.ConnectionStringName);
     }
 
     private async Task<CreateWarehouseReturnResponse> ExecuteMikroApiAsync(
@@ -439,7 +456,7 @@ public sealed class CreateWarehouseReturnUseCase(
                 documentSerie,
                 documentOrderNo,
                 request,
-                lines.Count,
+                lines,
                 movementDate,
                 documentDate,
                 documentNo,
@@ -522,7 +539,7 @@ public sealed class CreateWarehouseReturnUseCase(
         string documentSerie,
         int documentOrderNo,
         CreateWarehouseReturnRequest request,
-        int expectedLineCount,
+        IReadOnlyList<CreateWarehouseReturnLineRequest> expectedLines,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
@@ -554,11 +571,37 @@ public sealed class CreateWarehouseReturnUseCase(
                 movement.sth_nakliyedeposu,
                 movement.sth_nakliyedurumu,
                 movement.sth_miktar,
-                movement.sth_tutar
+                movement.sth_tutar,
+                movement.sth_stok_kod,
+                movement.sth_birim_pntr,
+                movement.sth_aciklama,
+                movement.sth_parti_kodu,
+                movement.sth_lot_no,
+                movement.sth_proje_kodu,
+                movement.sth_cari_srm_merkezi,
+                movement.sth_stok_srm_merkezi,
+                movement.sth_eticaret_kanal_kodu
             })
             .ToListAsync(cancellationToken);
 
-        if (rows.Count < expectedLineCount)
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(
+                WarehouseReturnRecoveryMatcher.Match(
+                    request,
+                    expectedLines,
+                    rows.Select(row => new WarehouseReturnRecoveryLine(
+                        row.sth_satirno,
+                        row.sth_stok_kod,
+                        row.sth_miktar ?? 0d,
+                        row.sth_birim_pntr ?? 0,
+                        row.sth_tutar ?? 0d,
+                        row.sth_aciklama,
+                        row.sth_parti_kodu,
+                        row.sth_lot_no ?? 0,
+                        row.sth_proje_kodu,
+                        row.sth_cari_srm_merkezi,
+                        row.sth_stok_srm_merkezi,
+                        row.sth_eticaret_kanal_kodu)).ToArray()),
+                waitForIncomplete: true))
         {
             return null;
         }
@@ -596,7 +639,7 @@ public sealed class CreateWarehouseReturnUseCase(
             .Where(row => row.sth_satirno.HasValue)
             .ToDictionary(row => row.sth_satirno!.Value, row => row.sth_Guid);
 
-        for (var rowNo = 0; rowNo < expectedLineCount; rowNo++)
+        for (var rowNo = 0; rowNo < expectedLines.Count; rowNo++)
         {
             if (!movementGuidByRowNo.ContainsKey(rowNo))
             {
@@ -620,6 +663,22 @@ public sealed class CreateWarehouseReturnUseCase(
             rows.Sum(row => row.sth_tutar ?? 0d),
             movementGuidByRowNo);
     }
+
+    private static CreateWarehouseReturnResponse ToResponse(
+        RecoveredWarehouseReturnCreate recovered,
+        string connectionStringName) => new(
+        recovered.DocumentSerie,
+        recovered.DocumentOrderNo,
+        recovered.MovementDate,
+        recovered.DocumentDate,
+        recovered.DocumentNo,
+        recovered.SourceWarehouseNo,
+        recovered.TargetWarehouseNo,
+        recovered.TransitWarehouseNo,
+        recovered.LineCount,
+        recovered.TotalQuantity,
+        recovered.TotalAmount,
+        connectionStringName);
 
     private async Task<Dictionary<int, Guid>> CreateMikroApiAutomaticWarehouseOrderLineGuidsAsync(
         CreateWarehouseReturnRequest request,

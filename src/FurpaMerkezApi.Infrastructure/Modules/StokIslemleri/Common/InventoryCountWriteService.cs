@@ -3,6 +3,7 @@ using System.Text.Json;
 using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -43,11 +44,11 @@ public sealed class InventoryCountWriteService(
                 request.ClientRequestId.Value,
                 request,
                 (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(
-                    request.WarehouseNo,
-                    request.ClientRequestId.Value,
+                    request,
                     innerCancellationToken),
                 cancellationToken,
-                preventReexecutionAfterUncertainOutcome: true);
+                preventReexecutionAfterUncertainOutcome: true,
+                verifyCompletedWithRecovery: true);
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {
@@ -115,7 +116,7 @@ public sealed class InventoryCountWriteService(
             ? MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value)
             : string.Empty;
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
@@ -157,6 +158,16 @@ public sealed class InventoryCountWriteService(
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        var verified = await TryRecoverInventoryCountResponseByDocumentAsync(
+            request,
+            writeResult.DocumentNo,
+            name,
+            barcodeLookup,
+            options.ConnectionStringName,
+            CancellationToken.None);
+        return verified ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateInventoryCountResponse> ExecuteMikroApiAsync(
@@ -171,7 +182,7 @@ public sealed class InventoryCountWriteService(
         var traceKey = CreateMikroApiTraceKey(request.ClientRequestId);
 
         var existingResponse = await TryRecoverInventoryCountResponseByTraceAsync(
-            request.WarehouseNo,
+            request,
             traceKey,
             options.ConnectionStringName,
             cancellationToken);
@@ -208,7 +219,7 @@ public sealed class InventoryCountWriteService(
         }
 
         var recovered = await RecoverMikroApiCreateResponseAsync(
-            request.WarehouseNo,
+            request,
             traceKey,
             documentDate,
             name,
@@ -243,11 +254,11 @@ public sealed class InventoryCountWriteService(
             OfflineOperationCode,
             requestedByUserId,
             clientRequestId,
-            (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(
-                warehouseNo,
-                clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateInventoryCountRequest>(storedRequestPayload),
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private async Task<int> GetNextDocumentNoAsync(int warehouseNo, CancellationToken cancellationToken)
     {
@@ -348,20 +359,19 @@ public sealed class InventoryCountWriteService(
     }
 
     private async Task<CreateInventoryCountResponse?> TryRecoverOfflineResponseAsync(
-        int warehouseNo,
-        Guid clientRequestId,
+        CreateInventoryCountRequest request,
         CancellationToken cancellationToken)
     {
-        var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
+        var traceKey = MobileOfflineSyncService.ToTraceKey(request.ClientRequestId!.Value);
         return await TryRecoverInventoryCountResponseByTraceAsync(
-            warehouseNo,
+            request,
             traceKey,
             mikroWriteOptions.Value.ConnectionStringName,
             cancellationToken);
     }
 
     private async Task<CreateInventoryCountResponse> RecoverMikroApiCreateResponseAsync(
-        int warehouseNo,
+        CreateInventoryCountRequest request,
         string traceKey,
         DateTime documentDate,
         string name,
@@ -373,7 +383,7 @@ public sealed class InventoryCountWriteService(
         for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
         {
             var response = await TryRecoverInventoryCountResponseByTraceAsync(
-                warehouseNo,
+                request,
                 traceKey,
                 writeConnectionName,
                 cancellationToken);
@@ -392,7 +402,7 @@ public sealed class InventoryCountWriteService(
         }
 
         if (TryRecoverInventoryCountResponseFromMikroApiResult(
-                warehouseNo,
+                request.WarehouseNo,
                 documentDate,
                 name,
                 lines,
@@ -442,7 +452,7 @@ public sealed class InventoryCountWriteService(
     }
 
     private async Task<CreateInventoryCountResponse?> TryRecoverInventoryCountResponseByTraceAsync(
-        int warehouseNo,
+        CreateInventoryCountRequest request,
         string traceKey,
         string writeConnectionName,
         CancellationToken cancellationToken)
@@ -455,16 +465,8 @@ public sealed class InventoryCountWriteService(
         var rows = await mikroWriteDbContext.SAYIM_SONUCLARIs
             .AsNoTracking()
             .Where(item =>
-                item.sym_depono == warehouseNo &&
+                item.sym_depono == request.WarehouseNo &&
                 item.sym_serino == traceKey)
-            .Select(item => new
-            {
-                item.sym_tarihi,
-                item.sym_evrakno,
-                item.sym_depono,
-                item.sym_parti_kodu,
-                item.sym_miktar1
-            })
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
@@ -489,13 +491,41 @@ public sealed class InventoryCountWriteService(
                 "More than one inventory count document matched the same clientRequestId trace.");
         }
 
-        var firstRow = rows[0];
-        var resolvedDocumentDate = firstRow.sym_tarihi?.Date ?? DateTime.Today;
+        var name = NormalizeText(request.Name, 25);
+        var barcodeLookup = await BuildBarcodeLookupAsync(request.Lines.ToArray(), cancellationToken);
+        return BuildVerifiedInventoryCountResponse(request, name, barcodeLookup, rows, writeConnectionName);
+    }
 
+    private async Task<CreateInventoryCountResponse?> TryRecoverInventoryCountResponseByDocumentAsync(
+        CreateInventoryCountRequest request,
+        int documentNo,
+        string name,
+        IReadOnlyDictionary<string, string> barcodeLookup,
+        string writeConnectionName,
+        CancellationToken cancellationToken)
+    {
+        var rows = await mikroWriteDbContext.SAYIM_SONUCLARIs
+            .AsNoTracking()
+            .Where(item => item.sym_depono == request.WarehouseNo && item.sym_evrakno == documentNo)
+            .ToListAsync(cancellationToken);
+        return BuildVerifiedInventoryCountResponse(request, name, barcodeLookup, rows, writeConnectionName);
+    }
+
+    private static CreateInventoryCountResponse? BuildVerifiedInventoryCountResponse(
+        CreateInventoryCountRequest request,
+        string name,
+        IReadOnlyDictionary<string, string> barcodeLookup,
+        IReadOnlyCollection<SAYIM_SONUCLARI> rows,
+        string writeConnectionName)
+    {
+        var match = InventoryCountRecoveryMatcher.Match(request, name, barcodeLookup, rows);
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match, waitForIncomplete: true)) return null;
+
+        var firstRow = rows.First();
         return new CreateInventoryCountResponse(
             firstRow.sym_evrakno ?? 0,
-            resolvedDocumentDate,
-            firstRow.sym_depono ?? warehouseNo,
+            firstRow.sym_tarihi?.Date ?? DateTime.Today,
+            firstRow.sym_depono ?? request.WarehouseNo,
             firstRow.sym_parti_kodu ?? string.Empty,
             rows.Count,
             rows.Sum(item => item.sym_miktar1 ?? 0d),

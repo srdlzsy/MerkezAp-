@@ -131,6 +131,19 @@ public sealed class StockMovementRecoveryMatcherTests
     }
 
     [Fact]
+    public void Snapshot_RequiresEveryGeneratedFieldToMatch()
+    {
+        var expected = new[] { Row(), Row(1) };
+        var actual = expected.Select(Clone).ToArray();
+
+        Assert.Equal(StockMovementMatch.Complete, StockMovementRecoveryMatcher.Snapshot(expected, actual));
+        Assert.Equal(StockMovementMatch.Incomplete, StockMovementRecoveryMatcher.Snapshot(expected, [actual[0]]));
+
+        actual[1].sth_aciklama = "changed";
+        Assert.Equal(StockMovementMatch.Mismatch, StockMovementRecoveryMatcher.Snapshot(expected, actual));
+    }
+
+    [Fact]
     public void PartialAndMismatch_HaveDifferentRetryDecisions()
     {
         var partial = Assert.Throws<OperationConflictException>(() => StockMovementRecoveryMatcher.IsCompleteOrThrow(StockMovementMatch.Incomplete));
@@ -140,4 +153,32 @@ public sealed class StockMovementRecoveryMatcherTests
         Assert.False(mismatch.Retryable);
         Assert.Equal(OperationConflictErrorCodes.MikroDocumentContentMismatch, mismatch.ErrorCode);
     }
+
+    private static STOK_HAREKETLERI Clone(STOK_HAREKETLERI source) => new()
+    {
+        sth_Guid = source.sth_Guid,
+        sth_iptal = source.sth_iptal,
+        sth_evraktip = source.sth_evraktip,
+        sth_cins = source.sth_cins,
+        sth_normal_iade = source.sth_normal_iade,
+        sth_tip = source.sth_tip,
+        sth_evrakno_seri = source.sth_evrakno_seri,
+        sth_evrakno_sira = source.sth_evrakno_sira,
+        sth_satirno = source.sth_satirno,
+        sth_giris_depo_no = source.sth_giris_depo_no,
+        sth_cikis_depo_no = source.sth_cikis_depo_no,
+        sth_cari_kodu = source.sth_cari_kodu,
+        sth_stok_kod = source.sth_stok_kod,
+        sth_miktar = source.sth_miktar,
+        sth_birim_pntr = source.sth_birim_pntr,
+        sth_tutar = source.sth_tutar,
+        sth_parti_kodu = source.sth_parti_kodu,
+        sth_lot_no = source.sth_lot_no,
+        sth_proje_kodu = source.sth_proje_kodu,
+        sth_cari_srm_merkezi = source.sth_cari_srm_merkezi,
+        sth_stok_srm_merkezi = source.sth_stok_srm_merkezi,
+        sth_sip_uid = source.sth_sip_uid,
+        sth_aciklama = source.sth_aciklama,
+        sth_eticaret_kanal_kodu = source.sth_eticaret_kanal_kodu
+    };
 }

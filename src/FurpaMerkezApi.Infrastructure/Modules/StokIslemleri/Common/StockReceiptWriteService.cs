@@ -56,7 +56,8 @@ public sealed class StockReceiptWriteService(
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, kind, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
             cancellationToken,
-            preventReexecutionAfterUncertainOutcome: true);
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
     }
 
     public Task<OfflineSyncStatusDto<CreateStockReceiptResponse>> GetOfflineSyncStatusAsync(
@@ -72,7 +73,8 @@ public sealed class StockReceiptWriteService(
                 MobileOfflineSyncService.DeserializeRequest<CreateStockReceiptRequest>(storedRequestPayload),
                 kind,
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private Task<CreateStockReceiptResponse> ExecuteRoutedAsync(
         CreateStockReceiptRequest request,
@@ -118,7 +120,7 @@ public sealed class StockReceiptWriteService(
         {
             try
             {
-                return await executionStrategy.ExecuteAsync(async () =>
+                var writeResult = await executionStrategy.ExecuteAsync(async () =>
                 {
                     mikroWriteDbContext.ChangeTracker.Clear();
                     var pricedLines = await BuildPricedLinesAsync(lines, kind, cancellationToken);
@@ -176,6 +178,21 @@ public sealed class StockReceiptWriteService(
                         throw;
                     }
                 });
+
+                mikroWriteDbContext.ChangeTracker.Clear();
+                return await TryRecoverStockReceiptResponseAsync(
+                    writeResult.DocumentSerie,
+                    writeResult.DocumentOrderNo,
+                    request,
+                    movementGenre,
+                    movementDate,
+                    documentDate,
+                    documentNo,
+                    creator,
+                    acceptor,
+                    options.ConnectionStringName,
+                    CancellationToken.None)
+                    ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
             }
             catch (DbUpdateException exception) when (
                 attempt < DatabaseDocumentSequenceRetryAttemptCount &&

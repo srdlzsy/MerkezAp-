@@ -57,7 +57,8 @@ public sealed class VirmanWriteService(
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
             cancellationToken,
-            preventReexecutionAfterUncertainOutcome: true);
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
     }
 
     public Task<OfflineSyncStatusDto<CreateVirmanResponse>> GetOfflineSyncStatusAsync(
@@ -71,7 +72,8 @@ public sealed class VirmanWriteService(
             (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
                 MobileOfflineSyncService.DeserializeRequest<CreateVirmanRequest>(storedRequestPayload),
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private Task<CreateVirmanResponse> ExecuteRoutedAsync(
         CreateVirmanRequest request,
@@ -129,7 +131,7 @@ public sealed class VirmanWriteService(
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
@@ -193,6 +195,18 @@ public sealed class VirmanWriteService(
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        return await TryRecoverVirmanResponseAsync(
+            writeResult.DocumentSerie,
+            writeResult.DocumentOrderNo,
+            request,
+            movementDate,
+            documentDate,
+            documentNo,
+            options.ConnectionStringName,
+            CancellationToken.None)
+            ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateVirmanResponse> ExecuteMikroApiAsync(

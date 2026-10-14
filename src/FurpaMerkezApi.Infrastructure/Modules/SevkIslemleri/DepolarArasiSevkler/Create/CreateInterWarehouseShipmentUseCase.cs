@@ -71,7 +71,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(request, innerCancellationToken),
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
             cancellationToken,
-            preventReexecutionAfterUncertainOutcome: true);
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
     }
 
     public Task<OfflineSyncStatusDto<CreateInterWarehouseShipmentResponse>> GetOfflineSyncStatusAsync(
@@ -85,7 +86,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
                 MobileOfflineSyncService.DeserializeRequest<CreateInterWarehouseShipmentRequest>(storedRequestPayload),
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private Task<CreateInterWarehouseShipmentResponse> ExecuteRoutedAsync(
         CreateInterWarehouseShipmentRequest request,
@@ -109,10 +111,38 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         {
             try
             {
-                return await ExecuteDatabaseOnceAsync(
+                var writeResult = await ExecuteDatabaseOnceAsync(
                     request,
                     collidedDocumentOrderNos,
                     cancellationToken);
+
+                mikroWriteDbContext.ChangeTracker.Clear();
+                var verified = await TryRecoverInterWarehouseShipmentResponseAsync(
+                    writeResult.DocumentSerie,
+                    writeResult.DocumentOrderNo,
+                    request,
+                    request.Lines.ToArray(),
+                    writeResult.MovementDate,
+                    writeResult.DocumentDate,
+                    writeResult.DocumentNo,
+                    CancellationToken.None);
+
+                return verified is null
+                    ? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed()
+                    : new CreateInterWarehouseShipmentResponse(
+                        verified.DocumentSerie,
+                        verified.DocumentOrderNo,
+                        verified.MovementDate,
+                        verified.DocumentDate,
+                        verified.DocumentNo,
+                        verified.SourceWarehouseNo,
+                        verified.TargetWarehouseNo,
+                        verified.TransitWarehouseNo,
+                        verified.LineCount,
+                        writeResult.LinkedWarehouseOrderLineCount,
+                        verified.TotalQuantity,
+                        verified.TotalAmount,
+                        writeResult.WriteConnectionName);
             }
             catch (Exception exception) when (
                 !cancellationToken.IsCancellationRequested &&

@@ -31,6 +31,54 @@ internal static class StockMovementRecoveryMatcher
             .Select(type => new ExpectedLine(line.StockCode, line.Quantity, line.UnitPointer,
                 type, line.PartyCode, line.LotNo, line.ProjectCode))).ToArray(), rows);
 
+    internal static StockMovementMatch Snapshot(
+        IReadOnlyCollection<STOK_HAREKETLERI> expectedRows,
+        IReadOnlyCollection<STOK_HAREKETLERI> actualRows)
+    {
+        if (actualRows.Count == 0) return StockMovementMatch.Missing;
+        if (actualRows.Count > expectedRows.Count ||
+            actualRows.Any(row => !row.sth_satirno.HasValue) ||
+            actualRows.Select(row => row.sth_satirno).Distinct().Count() != actualRows.Count ||
+            actualRows.Select(row => (row.sth_evrakno_seri, row.sth_evrakno_sira)).Distinct().Count() != 1)
+            return StockMovementMatch.Mismatch;
+
+        var expectedByRowNo = expectedRows
+            .Where(row => row.sth_satirno.HasValue)
+            .ToDictionary(row => row.sth_satirno!.Value);
+        if (expectedByRowNo.Count != expectedRows.Count)
+            return StockMovementMatch.Mismatch;
+
+        foreach (var actual in actualRows)
+        {
+            if (!expectedByRowNo.TryGetValue(actual.sth_satirno!.Value, out var expected) ||
+                actual.sth_iptal != expected.sth_iptal ||
+                actual.sth_evraktip != expected.sth_evraktip ||
+                actual.sth_cins != expected.sth_cins ||
+                actual.sth_normal_iade != expected.sth_normal_iade ||
+                actual.sth_tip != expected.sth_tip ||
+                actual.sth_giris_depo_no != expected.sth_giris_depo_no ||
+                actual.sth_cikis_depo_no != expected.sth_cikis_depo_no ||
+                !TextEquals(actual.sth_cari_kodu, expected.sth_cari_kodu) ||
+                !TextEquals(actual.sth_stok_kod, expected.sth_stok_kod) ||
+                !NearlyEquals(actual.sth_miktar, expected.sth_miktar ?? 0d) ||
+                actual.sth_birim_pntr != expected.sth_birim_pntr ||
+                !NearlyEquals(actual.sth_tutar, expected.sth_tutar ?? 0d) ||
+                !TextEquals(actual.sth_parti_kodu, expected.sth_parti_kodu) ||
+                (actual.sth_lot_no ?? 0) != (expected.sth_lot_no ?? 0) ||
+                !TextEquals(actual.sth_proje_kodu, expected.sth_proje_kodu) ||
+                !TextEquals(actual.sth_cari_srm_merkezi, expected.sth_cari_srm_merkezi) ||
+                !TextEquals(actual.sth_stok_srm_merkezi, expected.sth_stok_srm_merkezi) ||
+                (actual.sth_sip_uid ?? Guid.Empty) != (expected.sth_sip_uid ?? Guid.Empty) ||
+                !TextEquals(actual.sth_aciklama, expected.sth_aciklama) ||
+                !TextEquals(actual.sth_eticaret_kanal_kodu, expected.sth_eticaret_kanal_kodu))
+                return StockMovementMatch.Mismatch;
+        }
+
+        return actualRows.Count == expectedRows.Count
+            ? StockMovementMatch.Complete
+            : StockMovementMatch.Incomplete;
+    }
+
     private static StockMovementMatch Match(int warehouseNo, Guid? requestId, byte documentType,
         byte genre, byte returnType, string customerCode, IReadOnlyList<ExpectedLine> expected,
         IReadOnlyCollection<STOK_HAREKETLERI> rows)

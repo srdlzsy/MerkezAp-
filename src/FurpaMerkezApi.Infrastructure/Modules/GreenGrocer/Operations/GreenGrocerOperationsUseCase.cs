@@ -139,7 +139,8 @@ public sealed class GreenGrocerOperationsUseCase(
                     request,
                     innerCancellationToken),
                 cancellationToken,
-                preventReexecutionAfterUncertainOutcome: true);
+                preventReexecutionAfterUncertainOutcome: true,
+                verifyCompletedWithRecovery: true);
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
         {
@@ -187,7 +188,8 @@ public sealed class GreenGrocerOperationsUseCase(
             (storedRequestPayload, innerCancellationToken) => TryRecoverAdjustmentResponseAsync(
                 MobileOfflineSyncService.DeserializeRequest<GreenGrocerOperationsAdjustmentApplyRequest>(storedRequestPayload),
                 innerCancellationToken),
-            cancellationToken);
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
 
     private Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentRoutedAsync(
         GreenGrocerOperationsAdjustmentApplyRequest request,
@@ -326,7 +328,7 @@ public sealed class GreenGrocerOperationsUseCase(
         var headerDescription = CreateTraceDescription(request.Description, traceKey);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
@@ -385,6 +387,10 @@ public sealed class GreenGrocerOperationsUseCase(
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        return await TryRecoverAdjustmentResponseAsync(request, CancellationToken.None)
+            ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<IReadOnlyCollection<GreenGrocerOperationsRawRow>> ListOperationRowsAsync(
@@ -889,21 +895,6 @@ public sealed class GreenGrocerOperationsUseCase(
                     movement.sth_giris_depo_no == request.WarehouseNo ||
                     movement.sth_cikis_depo_no == request.WarehouseNo
                 ))
-            .Select(movement => new
-            {
-                movement.sth_Guid,
-                movement.sth_tarih,
-                movement.sth_belge_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_tip,
-                movement.sth_evraktip,
-                movement.sth_giris_depo_no,
-                movement.sth_cikis_depo_no,
-                movement.sth_miktar,
-                movement.sth_tutar
-            })
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
@@ -931,6 +922,33 @@ public sealed class GreenGrocerOperationsUseCase(
         var firstRow = rows[0];
         var direction = firstRow.sth_tip == IncreaseMovementType ? "increase" : "decrease";
         var directionInfo = ResolveDirection(direction);
+        var normalized = NormalizeApply(request);
+        var movementDate = (request.MovementDate ?? DateTime.Today).Date;
+        var documentDate = (request.DocumentDate ?? movementDate).Date;
+        var documentNo = NormalizeText(request.DocumentNo, 50);
+        var creator = NormalizeText(request.Creator, 25);
+        var acceptor = NormalizeText(request.Acceptor, 25);
+        var headerDescription = CreateTraceDescription(request.Description, traceKey);
+        var expectedRows = normalized.Lines
+            .Select((line, rowNo) => CreateAdjustmentMovement(
+                normalized,
+                line,
+                rowNo,
+                DateTime.Now,
+                movementDate,
+                documentDate,
+                documentNo,
+                firstRow.sth_evrakno_sira ?? 0,
+                creator,
+                acceptor,
+                headerDescription,
+                traceKey))
+            .ToArray();
+        var match = StockMovementRecoveryMatcher.Snapshot(expectedRows, rows);
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match, waitForIncomplete: true))
+        {
+            return null;
+        }
 
         return new GreenGrocerOperationsAdjustmentApplyResponse(
             request.ClientRequestId,
