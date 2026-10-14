@@ -114,9 +114,28 @@ if ($appPool) {
     Write-Step "Setting App Pool to No Managed Code"
     Set-ItemProperty "IIS:\AppPools\$appPool" -Name managedRuntimeVersion -Value ""
 
+    Write-Step "Configuring App Pool for continuously running background workers"
+    Set-ItemProperty "IIS:\AppPools\$appPool" -Name startMode -Value "AlwaysRunning"
+    Set-ItemProperty "IIS:\AppPools\$appPool" -Name processModel.idleTimeout -Value ([TimeSpan]::Zero)
+
+    Write-Step "Enabling IIS application preload"
+    Set-WebConfigurationProperty `
+        -PSPath "MACHINE/WEBROOT/APPHOST" `
+        -Filter "system.applicationHost/sites/site[@name='$SiteName']/application[@path='/']" `
+        -Name "preloadEnabled" `
+        -Value $true
+
+    $applicationInitializationModule = Get-WebGlobalModule -Name "ApplicationInitializationModule" -ErrorAction SilentlyContinue
+    if ($null -eq $applicationInitializationModule) {
+        Write-Warning "IIS Application Initialization is not installed. preloadEnabled was set, but preload requires the Web-AppInit Windows feature."
+    }
+
     Write-Step "Starting App Pool"
     Start-WebAppPool $appPool
     Get-WebAppPoolState $appPool | Out-Host
+    Write-Host "Start mode  : $((Get-ItemProperty "IIS:\AppPools\$appPool").startMode)"
+    Write-Host "Idle timeout: $((Get-ItemProperty "IIS:\AppPools\$appPool").processModel.idleTimeout)"
+    Write-Host "Preload     : $((Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter "system.applicationHost/sites/site[@name='$SiteName']/application[@path='/']" -Name 'preloadEnabled').Value)"
 }
 else {
     icacls $logsPath /grant "IIS_IUSRS:(OI)(CI)(M)" /T | Out-Host

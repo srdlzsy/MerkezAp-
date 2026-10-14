@@ -11,7 +11,9 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzle
 [Route("api/ayar-islemleri/veritabani-izleme")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
-public sealed class VeritabaniIzlemeController(IDatabaseMonitoringService service)
+public sealed class VeritabaniIzlemeController(
+    IDatabaseMonitoringService service,
+    IWorkerMonitoringService workerMonitoringService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "ayar-islemleri";
@@ -27,6 +29,12 @@ public sealed class VeritabaniIzlemeController(IDatabaseMonitoringService servic
     [ProducesResponseType(typeof(DatabaseMonitoringSnapshotDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<DatabaseMonitoringSnapshotDto>> Snapshot(CancellationToken cancellationToken) =>
         Ok(await service.GetSnapshotAsync(cancellationToken));
+
+    [HttpGet("workerlar")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(WorkerMonitoringSnapshotDto), StatusCodes.Status200OK)]
+    public ActionResult<WorkerMonitoringSnapshotDto> Workers() =>
+        Ok(workerMonitoringService.GetSnapshot());
 
     [HttpGet("olaylar")]
     [Authorize(Policy = DetailPolicy)]

@@ -23,6 +23,7 @@ public sealed class VeritabaniIzlemePermissionTests
 
     [Theory]
     [InlineData(nameof(VeritabaniIzlemeController.Snapshot), "ayar-islemleri.veritabani-izleme.list")]
+    [InlineData(nameof(VeritabaniIzlemeController.Workers), "ayar-islemleri.veritabani-izleme.list")]
     [InlineData(nameof(VeritabaniIzlemeController.Incidents), "ayar-islemleri.veritabani-izleme.detail")]
     [InlineData(nameof(VeritabaniIzlemeController.TerminationHistory), "ayar-islemleri.veritabani-izleme.detail")]
     [InlineData(nameof(VeritabaniIzlemeController.Terminate), "ayar-islemleri.veritabani-izleme.terminate-session")]

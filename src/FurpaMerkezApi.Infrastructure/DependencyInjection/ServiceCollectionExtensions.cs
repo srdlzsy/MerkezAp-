@@ -534,6 +534,9 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<WorkerRuntimeMonitor>();
+        services.AddSingleton<IWorkerMonitoringService>(serviceProvider =>
+            serviceProvider.GetRequiredService<WorkerRuntimeMonitor>());
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtTokenFactory, JwtTokenFactory>();
         services.AddScoped<ISessionAccessProfileResolver, SessionAccessProfileResolver>();

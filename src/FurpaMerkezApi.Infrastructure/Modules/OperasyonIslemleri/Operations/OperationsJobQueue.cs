@@ -5,19 +5,62 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.Operations;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Operations;
 
-internal sealed class OperationsJobQueue(IClock clock)
+internal sealed class OperationsJobQueue
 {
-    private readonly Channel<OperationsJobWorkItem> channel = Channel.CreateUnbounded<OperationsJobWorkItem>();
+    private const int DefaultCapacity = 100;
+    private const int DefaultMaximumCompletedJobs = 1000;
+    private static readonly TimeSpan DefaultCompletedRetention = TimeSpan.FromHours(1);
+
+    private readonly IClock clock;
+    private readonly Channel<OperationsJobWorkItem> channel;
     private readonly ConcurrentDictionary<Guid, OperationsJobRecord> jobs = new();
+    private readonly TimeSpan completedRetention;
+    private readonly int maximumCompletedJobs;
+    private long completionSequence;
+
+    public OperationsJobQueue(IClock clock)
+        : this(clock, DefaultCapacity, DefaultCompletedRetention, DefaultMaximumCompletedJobs)
+    {
+    }
+
+    internal OperationsJobQueue(
+        IClock clock,
+        int capacity,
+        TimeSpan completedRetention,
+        int maximumCompletedJobs)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+        if (completedRetention < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(completedRetention));
+        if (maximumCompletedJobs <= 0) throw new ArgumentOutOfRangeException(nameof(maximumCompletedJobs));
+
+        this.clock = clock;
+        this.completedRetention = completedRetention;
+        this.maximumCompletedJobs = maximumCompletedJobs;
+        channel = Channel.CreateBounded<OperationsJobWorkItem>(new BoundedChannelOptions(capacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
+    }
 
     public OperationJobDto Enqueue(OperationFileKind kind, int warehouseNo, Guid requestedByUserId)
     {
+        CleanupCompletedJobs();
+
         var jobId = Guid.NewGuid();
         var createdAtUtc = clock.UtcNow;
         var record = new OperationsJobRecord(jobId, kind, warehouseNo, requestedByUserId, createdAtUtc);
 
         jobs[jobId] = record;
-        channel.Writer.TryWrite(new OperationsJobWorkItem(jobId, kind, warehouseNo, requestedByUserId));
+        if (!channel.Writer.TryWrite(new OperationsJobWorkItem(jobId, kind, warehouseNo, requestedByUserId)))
+        {
+            jobs.TryRemove(jobId, out _);
+            throw new InvalidOperationException(
+                "Operations job queue is full. Wait for a queued operation to finish and try again.");
+        }
+
         return record.ToSummary();
     }
 
@@ -55,10 +98,13 @@ internal sealed class OperationsJobQueue(IClock clock)
         {
             record.Status = OperationsJobStatus.Succeeded;
             record.CompletedAtUtc = clock.UtcNow;
+            record.CompletionSequence = Interlocked.Increment(ref completionSequence);
             record.Message = message;
             record.ErrorMessage = null;
             record.Files = files;
         }
+
+        CleanupCompletedJobs();
     }
 
     public void MarkFailed(Guid jobId, string errorMessage)
@@ -69,8 +115,42 @@ internal sealed class OperationsJobQueue(IClock clock)
         {
             record.Status = OperationsJobStatus.Failed;
             record.CompletedAtUtc = clock.UtcNow;
+            record.CompletionSequence = Interlocked.Increment(ref completionSequence);
             record.Message = "Operation failed.";
             record.ErrorMessage = errorMessage;
+        }
+
+        CleanupCompletedJobs();
+    }
+
+    private void CleanupCompletedJobs()
+    {
+        var now = clock.UtcNow;
+        var completed = jobs.Values
+            .Select(record =>
+            {
+                lock (record.SyncRoot)
+                {
+                    return (Record: record, record.CompletedAtUtc, record.CompletionSequence);
+                }
+            })
+            .Where(item => item.CompletedAtUtc.HasValue)
+            .OrderBy(item => item.CompletedAtUtc)
+            .ThenBy(item => item.CompletionSequence)
+            .ToArray();
+
+        foreach (var item in completed.Where(item => now - item.CompletedAtUtc!.Value >= completedRetention))
+        {
+            jobs.TryRemove(item.Record.JobId, out _);
+        }
+
+        var retainedCompleted = completed
+            .Where(item => jobs.ContainsKey(item.Record.JobId))
+            .ToArray();
+        var overflow = retainedCompleted.Length - maximumCompletedJobs;
+        for (var index = 0; index < overflow; index++)
+        {
+            jobs.TryRemove(retainedCompleted[index].Record.JobId, out _);
         }
     }
 
@@ -104,6 +184,8 @@ internal sealed class OperationsJobRecord(
     public DateTime? StartedAtUtc { get; set; }
 
     public DateTime? CompletedAtUtc { get; set; }
+
+    public long CompletionSequence { get; set; }
 
     public string? Message { get; set; } = "Operation is queued.";
 

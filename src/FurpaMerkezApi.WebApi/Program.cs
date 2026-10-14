@@ -83,6 +83,10 @@ builder.Services.AddHealthChecks()
     .AddCheck<OperationsExportWritableHealthCheck>(
         "operations_export_path",
         failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready"])
+    .AddCheck<BackgroundWorkersHealthCheck>(
+        "background_workers",
+        failureStatus: HealthStatus.Unhealthy,
         tags: ["ready"]);
 
 builder.Services.AddRouting(options =>

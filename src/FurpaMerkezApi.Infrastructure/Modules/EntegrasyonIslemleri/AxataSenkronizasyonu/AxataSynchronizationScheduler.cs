@@ -3,6 +3,7 @@ using FurpaMerkezApi.Application.Abstractions.Time;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.VeritabaniIzleme;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
@@ -10,24 +11,62 @@ internal sealed class AxataSynchronizationScheduler(
     AxataSynchronizationQueue queue,
     IClock clock,
     IOptionsMonitor<AxataSynchronizationOptions> options,
+    WorkerRuntimeMonitor runtimeMonitor,
     ILogger<AxataSynchronizationScheduler> logger) : BackgroundService
 {
     private readonly ConcurrentDictionary<string, DateTime> nextRunByTask = new(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        runtimeMonitor.Register(
+            WorkerRuntimeMonitor.AxataSchedulerCode,
+            "AXATA Synchronization Scheduler",
+            isCritical: false,
+            staleAfter: TimeSpan.FromMinutes(3));
+
         while (!stoppingToken.IsCancellationRequested)
         {
+            var currentOptions = options.CurrentValue;
+            if (!currentOptions.Enabled || !currentOptions.WorkerEnabled || !currentOptions.SchedulerEnabled)
+            {
+                runtimeMonitor.ReportDisabled(
+                    WorkerRuntimeMonitor.AxataSchedulerCode,
+                    "Disabled by configuration");
+            }
+            else
+            {
+                runtimeMonitor.ReportHeartbeat(
+                    WorkerRuntimeMonitor.AxataSchedulerCode,
+                    "Checking schedules");
+            }
+
             try
             {
                 ScheduleEligibleJobs();
+                if (currentOptions.Enabled && currentOptions.WorkerEnabled && currentOptions.SchedulerEnabled)
+                {
+                    runtimeMonitor.ReportSuccess(
+                        WorkerRuntimeMonitor.AxataSchedulerCode,
+                        "Schedule cycle completed");
+                }
             }
             catch (Exception exception)
             {
                 logger.LogError(exception, "AXATA synchronization scheduler cycle failed.");
+                runtimeMonitor.ReportFailure(
+                    WorkerRuntimeMonitor.AxataSchedulerCode,
+                    "Schedule cycle failed",
+                    exception);
             }
 
-            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 

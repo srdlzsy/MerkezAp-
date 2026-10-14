@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.VeritabaniIzleme;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 
@@ -10,6 +11,8 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
     private readonly ConcurrentDictionary<Guid, AxataSynchronizationJobRecord> jobs = new();
     private readonly SemaphoreSlim signal = new(0);
     private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> pending = new();
+    private int pendingCount;
+    private int runningCount;
 
     public AxataSynchronizationJobDto Enqueue(
         AxataSynchronizationTaskDefinition definition,
@@ -40,6 +43,7 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
             warehouseNo,
             requestedByUserId,
             createdAtUtc));
+        Interlocked.Increment(ref pendingCount);
         signal.Release();
 
         return record.ToSummary();
@@ -51,6 +55,7 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
 
         if (pending.TryDequeue(out var workItem))
         {
+            Interlocked.Decrement(ref pendingCount);
             return workItem;
         }
 
@@ -85,6 +90,8 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
             record.Message = "Senkronizasyon gorevi calisiyor.";
             record.ErrorMessage = null;
         }
+
+        Interlocked.Increment(ref runningCount);
     }
 
     public void MarkSucceeded(Guid jobId, AxataSynchronizationTaskExecutionResult result)
@@ -100,6 +107,8 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
             record.AffectedRecordCount = result.AffectedRecordCount;
             record.Artifacts = result.Artifacts;
         }
+
+        Interlocked.Decrement(ref runningCount);
     }
 
     public void MarkFailed(Guid jobId, string errorMessage)
@@ -113,6 +122,17 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
             record.Message = "Senkronizasyon gorevi basarisiz oldu.";
             record.ErrorMessage = errorMessage;
         }
+
+        Interlocked.Decrement(ref runningCount);
+    }
+
+    internal WorkerBacklogSnapshot GetBacklogSnapshot()
+    {
+        DateTime? oldestQueuedAtUtc = pending.TryPeek(out var oldest) ? oldest.CreatedAtUtc : null;
+        return new WorkerBacklogSnapshot(
+            Math.Max(0, Volatile.Read(ref pendingCount)),
+            Math.Max(0, Volatile.Read(ref runningCount)),
+            oldestQueuedAtUtc);
     }
 
     private AxataSynchronizationJobRecord GetRecord(Guid jobId) =>
