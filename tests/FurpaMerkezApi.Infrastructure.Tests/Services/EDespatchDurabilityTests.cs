@@ -206,6 +206,35 @@ public sealed class EDespatchDurabilityTests
     }
 
     [Fact]
+    public void TrackedLineCountMismatch_RequiresReviewInsteadOfRetryingForever()
+    {
+        var submission = Submission();
+        var exception = Assert.Throws<EDespatchMetadataConflictException>(() =>
+            EDespatchService.EnsureTrackedSubmissionMatchesDocument(
+                Number,
+                Uuid,
+                21,
+                Number,
+                Uuid,
+                26));
+
+        EDespatchService.ApplyMetadataProcessingFailure(submission, exception, DateTime.UtcNow);
+
+        Assert.Equal(EDespatchSubmissionStatus.NeedsReview, submission.Status);
+        Assert.Equal(0, submission.AttemptCount);
+        Assert.True(EDespatchService.IsUyumsoftLineMismatch(submission.LastError));
+    }
+
+    [Theory]
+    [InlineData("E-despatch line identities/count do not match Mikro.")]
+    [InlineData("E-despatch line 2 differs from Mikro.")]
+    [InlineData("Tracked Uyumsoft e-despatch does not match the complete Mikro document. Expected 26 lines, Uyumsoft returned 21.")]
+    public void UyumsoftLineMismatch_IsExcludedFromLegacyCompanyReturnReopen(string error)
+    {
+        Assert.True(EDespatchService.IsUyumsoftLineMismatch(error));
+    }
+
+    [Fact]
     public void UnknownTransientFailure_RemainsRetryable()
     {
         var submission = Submission();

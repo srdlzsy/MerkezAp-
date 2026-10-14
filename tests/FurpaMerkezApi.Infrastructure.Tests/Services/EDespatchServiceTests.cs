@@ -336,7 +336,7 @@ public sealed class EDespatchServiceTests
     [Fact]
     public void EnsureTrackedSubmissionMatchesDocument_RejectsPartialUyumsoftDocument()
     {
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<EDespatchMetadataConflictException>(() =>
             EDespatchService.EnsureTrackedSubmissionMatchesDocument(
                 "FRM2026600131485",
                 "928d1dc2-f814-48e1-9e62-1cbe980f0096",

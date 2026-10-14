@@ -88,7 +88,10 @@ internal sealed class EDespatchMetadataUpdateWorker(
                           x.Status == EDespatchSubmissionStatus.PendingMetadata) && x.NextAttemptAtUtc <= now) ||
                         (x.Status == EDespatchSubmissionStatus.NeedsReview &&
                          x.AttemptCount == 0 &&
-                         x.DocumentKey.StartsWith("CompanyReturn:")))
+                         x.DocumentKey.StartsWith("CompanyReturn:") &&
+                         (x.LastError == null ||
+                          (!x.LastError.StartsWith(EDespatchService.TrackedUyumsoftDocumentMismatchPrefix) &&
+                           !x.LastError.StartsWith(EDespatchService.UyumsoftLineMismatchPrefix)))))
                     .OrderBy(x => x.NextAttemptAtUtc).ThenBy(x => x.Id)
                     .Select(x => x.Id).Take(25).ToArrayAsync(stoppingToken);
 

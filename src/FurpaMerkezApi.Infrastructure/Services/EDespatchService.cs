@@ -61,6 +61,9 @@ public sealed class EDespatchService(
     private const string StockMovementUpdatePath = "/Api/apiMethods/DahiliStokHareketDuzeltV2";
     private const string InterWarehouseCreateOperationCode = "sevk-islemleri.giden-depolar-arasi-sevkler.create";
     private const string WarehouseReturnCreateOperationCode = "iade-islemleri.giden-depo-iadeleri.create";
+    internal const string TrackedUyumsoftDocumentMismatchPrefix =
+        "Tracked Uyumsoft e-despatch does not match the complete Mikro document.";
+    internal const string UyumsoftLineMismatchPrefix = "E-despatch line ";
     private static readonly SemaphoreSlim LocalDocumentNumberLock = new(1, 1);
 
     public async Task<SendEDespatchResponse> SendAsync(
@@ -341,7 +344,9 @@ public sealed class EDespatchService(
                 ?? throw new EDespatchMetadataConflictException("Stored e-despatch work is invalid.");
             if (submission.Status == EDespatchSubmissionStatus.NeedsReview)
             {
-                if (work.Request.DocumentType != EDespatchDocumentType.CompanyReturn || submission.AttemptCount != 0)
+                if (work.Request.DocumentType != EDespatchDocumentType.CompanyReturn ||
+                    submission.AttemptCount != 0 ||
+                    IsUyumsoftLineMismatch(submission.LastError))
                     return;
 
                 // A prior version treated Mikro's 0 -> 1 technical return warehouse normalization as a content conflict.
@@ -838,8 +843,8 @@ public sealed class EDespatchService(
             parsedActualUuid != parsedTrackedUuid ||
             actualLineCount != expectedLineCount)
         {
-            throw new InvalidOperationException(
-                $"Tracked Uyumsoft e-despatch does not match the complete Mikro document. " +
+            throw new EDespatchMetadataConflictException(
+                $"{TrackedUyumsoftDocumentMismatchPrefix} " +
                 $"Expected {expectedLineCount} lines, Uyumsoft returned {actualLineCount}. " +
                 "Automatic metadata recovery was blocked.");
         }
@@ -895,7 +900,8 @@ public sealed class EDespatchService(
             expectedMovements.Any(x => x.RowNo is null) ||
             expectedMovements.Select(x => x.RowNo).Distinct().Count() != expectedMovements.Length ||
             lines.Select(x => x.ID?.Value).Distinct().Count() != lines.Length)
-            throw new EDespatchMetadataConflictException("E-despatch line identities/count do not match Mikro.");
+            throw new EDespatchMetadataConflictException(
+                $"{UyumsoftLineMismatchPrefix}identities/count do not match Mikro.");
         foreach (var expected in expectedMovements)
         {
             var line = lines.SingleOrDefault(x => x.ID?.Value == (expected.RowNo!.Value + 1).ToString(CultureInfo.InvariantCulture));
@@ -915,6 +921,10 @@ public sealed class EDespatchService(
                     $"{(actualQuantity?.ToString(CultureInfo.InvariantCulture) ?? "<missing>")}. Submission or metadata recovery was blocked.");
         }
     }
+
+    internal static bool IsUyumsoftLineMismatch(string? error) =>
+        error?.StartsWith(TrackedUyumsoftDocumentMismatchPrefix, StringComparison.Ordinal) == true ||
+        error?.StartsWith(UyumsoftLineMismatchPrefix, StringComparison.Ordinal) == true;
 
     private async Task EnsureDocumentMovementSetUnchangedAsync(
         SendEDespatchRequest request,
