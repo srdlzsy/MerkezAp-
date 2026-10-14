@@ -1,7 +1,7 @@
 using FurpaMerkezApi.WebApi.Services;
-using PdfSharpCore.Drawing;
-using PdfSharpCore.Pdf;
-using PdfSharpCore.Pdf.IO;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 using PdfPigDocument = UglyToad.PdfPig.PdfDocument;
 using Xunit;
 
@@ -9,6 +9,11 @@ namespace FurpaMerkezApi.WebApi.Tests.Services;
 
 public sealed class InvoicePdfPrintOptimizerTests
 {
+    static InvoicePdfPrintOptimizerTests()
+    {
+        PdfSharpConfiguration.EnsureInitialized();
+    }
+
     [Fact]
     public void OptimizeForPrinting_ReturnsSinglePagePdf_WhenTailPageIsTiny()
     {
@@ -99,7 +104,7 @@ public sealed class InvoicePdfPrintOptimizerTests
 
         var page = document.AddPage();
         using var gfx = XGraphics.FromPdfPage(page);
-        gfx.DrawRectangle(XPens.Transparent, 0, 0, page.Width, page.Height);
+        gfx.DrawRectangle(XPens.Transparent, 0, 0, page.Width.Point, page.Height.Point);
 
         using var stream = new MemoryStream();
         document.Save(stream, closeStream: false);

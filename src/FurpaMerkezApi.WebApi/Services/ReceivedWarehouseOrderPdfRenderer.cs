@@ -1,7 +1,8 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
-using PdfSharpCore.Drawing;
-using PdfSharpCore.Pdf;
+using PdfSharp;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
 
 namespace FurpaMerkezApi.WebApi.Services;
 
@@ -19,12 +20,17 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     private static readonly XColor BorderColor = XColor.FromArgb(145, 156, 161);
     private static readonly XColor AlternateRowColor = XColor.FromArgb(246, 248, 249);
 
-    private readonly XFont titleFont = new("Arial", 15, XFontStyle.Bold);
-    private readonly XFont documentFont = new("Arial", 11, XFontStyle.Bold);
-    private readonly XFont headerFont = new("Arial", 8, XFontStyle.Bold);
-    private readonly XFont bodyFont = new("Arial", 8, XFontStyle.Regular);
-    private readonly XFont smallFont = new("Arial", 7, XFontStyle.Regular);
-    private readonly XFont smallBoldFont = new("Arial", 7, XFontStyle.Bold);
+    static ReceivedWarehouseOrderPdfRenderer()
+    {
+        PdfSharpConfiguration.EnsureInitialized();
+    }
+
+    private readonly XFont titleFont = new("Arial", 15, XFontStyleEx.Bold);
+    private readonly XFont documentFont = new("Arial", 11, XFontStyleEx.Bold);
+    private readonly XFont headerFont = new("Arial", 8, XFontStyleEx.Bold);
+    private readonly XFont bodyFont = new("Arial", 8, XFontStyleEx.Regular);
+    private readonly XFont smallFont = new("Arial", 7, XFontStyleEx.Regular);
+    private readonly XFont smallBoldFont = new("Arial", 7, XFontStyleEx.Bold);
 
     public byte[] Render(IReadOnlyCollection<WarehouseOrderDetailDto> documents)
     {
@@ -88,8 +94,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         bool continuation)
     {
         var page = pdf.AddPage();
-        page.Size = PdfSharpCore.PageSize.A4;
-        page.Orientation = PdfSharpCore.PageOrientation.Landscape;
+        page.Size = PageSize.A4;
+        page.Orientation = PageOrientation.Landscape;
         var graphics = XGraphics.FromPdfPage(page);
         var pageWidth = page.Width.Point;
         var pageHeight = page.Height.Point;

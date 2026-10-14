@@ -1,6 +1,6 @@
-using PdfSharpCore.Drawing;
-using PdfSharpCore.Pdf;
-using PdfSharpCore.Pdf.IO;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 using PdfPigDocument = UglyToad.PdfPig.PdfDocument;
 
 namespace FurpaMerkezApi.WebApi.Services;

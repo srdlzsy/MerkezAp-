@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging;
 using ApiDataProtectionOptions = FurpaMerkezApi.WebApi.Configuration.DataProtectionOptions;
 
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+PdfSharpConfiguration.EnsureInitialized();
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
