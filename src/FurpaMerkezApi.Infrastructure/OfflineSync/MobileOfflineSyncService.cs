@@ -428,9 +428,7 @@ public sealed class MobileOfflineSyncService(
         }
 
         var normalized = errorMessage.Trim();
-        return normalized.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("time out", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
+        return WriteTimeoutClassifier.ContainsTimeoutMarker(normalized) ||
                normalized.Contains("canceled", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("cancelled", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("write outcome could not be confirmed", StringComparison.OrdinalIgnoreCase);

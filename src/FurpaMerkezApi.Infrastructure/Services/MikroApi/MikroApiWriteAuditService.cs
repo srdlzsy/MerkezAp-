@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -101,7 +102,8 @@ public sealed class MikroApiWriteAuditService(
             return false;
         }
 
-        return ContainsTimeout(result.ErrorMessage) || ContainsTimeout(result.RawResponse);
+        return WriteTimeoutClassifier.ContainsTimeoutMarker(result.ErrorMessage) ||
+               WriteTimeoutClassifier.ContainsTimeoutMarker(result.RawResponse);
     }
 
     internal static bool IsRecoverableCreateOutcome<TResponse>(MikroApiResult<TResponse> result) =>
@@ -111,11 +113,6 @@ public sealed class MikroApiWriteAuditService(
     internal static bool IsDuplicateDocumentOutcome<TResponse>(MikroApiResult<TResponse> result) =>
         ContainsDuplicateDocument(result.ErrorMessage) ||
         ContainsDuplicateDocument(result.RawResponse);
-
-    private static bool ContainsTimeout(string? value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        (value.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
-         value.Contains("timed out", StringComparison.OrdinalIgnoreCase));
 
     private static bool ContainsDuplicateDocument(string? value) =>
         !string.IsNullOrWhiteSpace(value) &&

@@ -18,8 +18,7 @@ internal static class OfflineWriteFailureClassifier
                 conflict.Retryable);
         }
 
-        if (exception is OperationCanceledException ||
-            exception.GetBaseException() is OperationCanceledException)
+        if (WriteTimeoutClassifier.IsTimeout(exception))
         {
             return new OfflineWriteFailure(
                 UnconfirmedMessage,
