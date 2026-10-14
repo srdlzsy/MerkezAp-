@@ -22,5 +22,9 @@ public sealed class DocumentFlowEventConfiguration : IEntityTypeConfiguration<Do
 
         builder.HasIndex(flowEvent => new { flowEvent.DocumentFlowId, flowEvent.OccurredAtUtc })
             .HasDatabaseName("ix_document_flow_events_flow_occurred");
+        builder.HasIndex(flowEvent => flowEvent.DocumentFlowId)
+            .IsUnique()
+            .HasFilter("[step] = N'DocumentCreated' AND [status] = N'Succeeded'")
+            .HasDatabaseName("ux_document_flow_events_successful_creation");
     }
 }

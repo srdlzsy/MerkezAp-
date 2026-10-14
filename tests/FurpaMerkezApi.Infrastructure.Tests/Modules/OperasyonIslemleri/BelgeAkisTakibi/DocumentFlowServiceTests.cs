@@ -13,6 +13,50 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.OperasyonIslemleri.BelgeAk
 public sealed class DocumentFlowServiceTests
 {
     [Fact]
+    public async Task RecordAsync_DoesNotAppendDuplicateSuccessfulDocumentCreatedEvent()
+    {
+        await using var dbContext = CreateDbContext();
+        var initialTime = new DateTime(2026, 10, 14, 6, 30, 0, DateTimeKind.Utc);
+        var clock = new MutableClock(initialTime);
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+        const string flowKey = "CompanyReceiving:56:CX56:101";
+        var request = new RecordDocumentFlowRequest(
+            flowKey,
+            DocumentFlowType.CompanyReceiving,
+            56,
+            null,
+            "CX56",
+            101,
+            DocumentFlowStep.DocumentCreated,
+            DocumentFlowStatus.Succeeded,
+            "Firma mal kabul olusturuldu.");
+
+        await service.RecordAsync(request, CancellationToken.None);
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordAsync(request, CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var flow = await dbContext.DocumentFlows
+            .Include(item => item.Events)
+            .SingleAsync(item => item.FlowKey == flowKey);
+
+        Assert.Equal(initialTime, flow.UpdatedAtUtc);
+        Assert.Collection(
+            flow.Events,
+            item =>
+            {
+                Assert.Equal(DocumentFlowStep.DocumentCreated, item.Step);
+                Assert.Equal(DocumentFlowStatus.Succeeded, item.Status);
+                Assert.Equal(initialTime, item.OccurredAtUtc);
+            });
+    }
+
+    [Fact]
     public async Task RecordAsync_AppendsEventWhenExistingFlowIsUpdated()
     {
         await using var dbContext = CreateDbContext();
@@ -51,6 +95,20 @@ public sealed class DocumentFlowServiceTests
                 "E-irsaliye Uyumsoft'a basariyla gonderildi.",
                 ExternalDocumentNo: "FRM2026600132100",
                 ExternalUuid: "73e31507-3b9a-4ae2-b21d-83291b70e517"),
+            CancellationToken.None);
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                flowKey,
+                DocumentFlowType.InterWarehouseShipment,
+                56,
+                102,
+                "F56",
+                88029,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Depolar arasi sevk olusturuldu."),
             CancellationToken.None);
 
         dbContext.ChangeTracker.Clear();

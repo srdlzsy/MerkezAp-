@@ -169,6 +169,15 @@ public sealed class DocumentFlowService(
                 clock.UtcNow);
             authDbContext.DocumentFlows.Add(flow);
         }
+        else if (IsSuccessfulDocumentCreation(request)
+                 && await authDbContext.DocumentFlowEvents.AnyAsync(
+                     item => item.DocumentFlowId == flow.Id
+                         && item.Step == DocumentFlowStep.DocumentCreated
+                         && item.Status == DocumentFlowStatus.Succeeded,
+                     cancellationToken))
+        {
+            return;
+        }
 
         var flowEvent = flow.Record(
             request.Step,
@@ -185,6 +194,10 @@ public sealed class DocumentFlowService(
 
         await authDbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private static bool IsSuccessfulDocumentCreation(RecordDocumentFlowRequest request) =>
+        request.Step == DocumentFlowStep.DocumentCreated
+        && request.Status == DocumentFlowStatus.Succeeded;
 
     private static DocumentFlowListItemDto ToListItem(DocumentFlow flow) =>
         new(
