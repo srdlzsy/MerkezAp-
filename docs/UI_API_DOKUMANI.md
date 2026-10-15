@@ -34,7 +34,9 @@ Timeout ve tekrar deneme notu:
 - `MikroReadSeconds` liste/detay/rapor okumalari, `MikroWriteSeconds` create/update/delete yazma islemleri icin kullanilir. `AuthSeconds`, `FurpaSeconds`, `AxataSeconds`, `PuanSeconds` ve `ShopigoCiroSeconds` ilgili DB context'leri icindir.
 - Raw SQL ile yazilmis liste/arama/rapor komutlari da genel olarak `300` saniye bekleyecek sekilde ayarlanmistir.
 - `MikroApi:TimeoutSeconds` varsayilan appsettings'te `300` saniyedir. Yazma rotasi `MikroApi` ise UI bu sureyi de dikkate almalidir.
-- Yazma yollari `MikroWriteRouting` ile secilir. Mevcut Production ayarinda `GreenGrocerGoodsReceipt`, `PosAccountingSlip` dahil tum yazma rotalari `Database` degerindedir; UI request modeli degismez. Bir rota ileride `MikroApi` yapilirsa backend Mikro DB readback yapmadan islemi basarili saymaz.
+- Yazma yollari `MikroWriteRouting` ile secilir. Mevcut calisma profilinde belge/siparis olusturan insert rotalari (`InventoryCount`, `IssuedWarehouseOrder`, `IssuedCompanyOrder`, `StockReceipt`, `Virman`, `InterWarehouseShipment`, `WarehouseReturn`, `CompanyMovement`, `CompanyReceiving`, `GreenGrocerOperations`, `ProductDistribution`, `GreenGrocerGoodsReceipt`, `PosAccountingSlip`, `AxataDynamicCensus`) `MikroApi` degerindedir. Mevcut kaydi guncelleyen, isaretleyen veya silen rotalar `Database` kalir; bunlara `WarehouseOrderSentFlag`, `CompanyOrderSentFlag`, `WarehouseReceivingAcceptance`, `WarehouseShippingUpdate`, `GreenGrocerOrderDelete`, `MicroDocumentEditing`, `ProductDistributionStockUpdate`, fatura/e-irsaliye marker ve iade referans rotalari dahildir. UI request modeli degismez.
+- Mikro API create cevabi tek basina basari kaniti degildir. Backend olusan aktif Mikro satirlarini stok, miktar, depo, satir sayisi ve akisa ozel trace/link alanlariyla DB'den geri okumadan create islemini tamamlanmis saymaz. Normal basarida kisa readback uygulanir; timeout, baglanti kopmasi veya duplicate cevabinda ayni belge 180 saniyeye kadar readback ile aranir ve ikinci create yazisi uretilmez.
+- Mikro API'de guvenilir bir karsiligi bulunmayan yardimci/ozel tablo insertleri bu profile zorlanmaz. Kasa sayimi alt tablolari, cihaz/terminal tanimlari ve AXATA C04 legacy tablo yazimi gibi akislar kontrollu DB yolu ile devam eder.
 - Terminal, mobil ve web istemcileri liste isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. `MikroApi` yazma rotasindaki create istekleri, konfigurasyondaki 300 saniyelik ust Mikro API timeout ile sonrasindaki 180 saniyelik readback penceresini ve ag payini kapsayabilmek icin en az `540` saniye beklemelidir. Canlida Mikro kendi icinden yaklasik 130 saniyede timeout dondururse istek daha erken tamamlanir. Subede internet zayifsa istemci erken vazgecerse kullanici timeout gorur ve kontrolsuz tekrar basabilir.
 - POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
 
@@ -2441,6 +2443,7 @@ Bu ekran Mikro SQL Server uzerindeki aktif istekleri, kilit zincirlerini, uzun a
 Endpointler:
 
 ```text
+GET  /api/ayar-islemleri/veritabani-izleme/genel-bakis
 GET  /api/ayar-islemleri/veritabani-izleme/anlik
 GET  /api/ayar-islemleri/veritabani-izleme/workerlar
 GET  /api/ayar-islemleri/veritabani-izleme/olaylar?take=100
@@ -2449,6 +2452,61 @@ GET  /api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi?take=100
 POST /api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/sonlandir
 GET  /api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu
 ```
+
+#### Izleme Genel Bakis
+
+`GET /api/ayar-islemleri/veritabani-izleme/genel-bakis`
+
+Yetki: `ayar-islemleri.veritabani-izleme.list`
+
+Ekranin ilk istegidir. Canli SQL durumunu, worker heartbeat/backlog bilgisini, acik olay
+sayilarini ve guvenli yazma ozetini tek response'ta toplar. Ayrinti listeleri kendi
+endpointlerinden alinmaya devam eder.
+
+```json
+{
+  "generatedAtUtc": "2026-10-15T06:40:00Z",
+  "overallStatus": "warning",
+  "overallStatusName": "Dikkat Gerekiyor",
+  "headline": "1 izleme basligi dikkat bekliyor.",
+  "database": {
+    "status": "healthy",
+    "activeRequestCount": 2,
+    "blockedRequestCount": 0,
+    "longRunningRequestCount": 0,
+    "openTransactionCount": 0
+  },
+  "workers": {
+    "generatedAtUtc": "2026-10-15T06:40:00Z",
+    "overallStatus": "warning",
+    "workers": []
+  },
+  "incidents": {
+    "openCount": 0,
+    "criticalCount": 0,
+    "warningCount": 0,
+    "lastSeenAtUtc": null
+  },
+  "safeWrites": {
+    "windowHours": 24,
+    "processingCount": 0,
+    "staleProcessingCount": 0,
+    "retryableFailureCount": 0,
+    "manualReviewCount": 0,
+    "unclassifiedFailureCount": 0,
+    "completedCount": 125
+  }
+}
+```
+
+Ekran yerlesimi:
+
+- Ust bantta `overallStatusName`, `headline`, SQL durumu, worker durumu, acik olay ve dikkat bekleyen guvenli yazma sayilari gosterilir.
+- Alt gorunumler `Canli SQL`, `Workerlar`, `Olaylar`, `Guvenli Yazmalar` ve `Oturum Sonlandirma Gecmisi` sekmelerine ayrilir.
+- `genel-bakis`, `anlik` ve `workerlar` ekran gorunurken 10 saniyede bir yenilenebilir. Onceki istek bitmeden yenisi baslatilmaz.
+- `olaylar` ve `guvenli-yazmalar` varsayilan olarak 30 saniyede bir veya kullanici yenilediginde sorgulanir.
+- `safeWrites` hata sayilari son 24 saati, `processingCount` ve `staleProcessingCount` tum halen Processing kayitlarini kapsar.
+- `overallStatus=warning` uygulamanin durdugu anlamina gelmez; ilgili bolumdeki `recommendation` ve sayaclar incelenir.
 
 #### Anlik Izleme Response
 
@@ -2568,7 +2626,39 @@ Bu endpoint su anda oncelikli olarak AXATA altyapisindaki iki sureci izler:
 - `axata-synchronization-worker`: kuyruktaki gorevleri calistiran kritik worker
 - `axata-synchronization-scheduler`: zamanli AXATA gorevlerini kuyruga alan scheduler
 
-Response her surec icin `status`, son heartbeat/basari/hata zamanlarini, son hata metnini, o anki aktiviteyi, `queuedCount`, `runningCount`, en eski bekleyen isin zamanini/yasini ve heartbeat esigini dondurur. Durumlar `Healthy`, `Degraded`, `Unhealthy` veya konfigurasyonla kapaliysa `Disabled` olabilir.
+Response her surec icin `status`, `statusName`, son heartbeat/basari/hata zamanlarini,
+`heartbeatAgeSeconds`, son hata metnini, o anki aktiviteyi, `hasUnresolvedFailure`,
+`requiresAttention`, kullaniciya gosterilecek `recommendation`, `queuedCount`,
+`runningCount`, en eski bekleyen isin zamanini/yasini ve heartbeat esigini dondurur.
+Durumlar `Healthy`, `Degraded`, `Unhealthy` veya konfigurasyonla kapaliysa `Disabled`
+olabilir.
+
+Worker satiri ornegi:
+
+```json
+{
+  "code": "axata-synchronization-worker",
+  "name": "AXATA Synchronization Worker",
+  "isCritical": true,
+  "isEnabled": true,
+  "status": "Degraded",
+  "statusName": "Dikkat Gerekiyor",
+  "activity": "Waiting for work",
+  "lastHeartbeatAtUtc": "2026-10-15T06:39:48Z",
+  "heartbeatAgeSeconds": 7,
+  "lastSuccessAtUtc": "2026-10-15T06:37:33Z",
+  "lastFailureAtUtc": "2026-10-15T06:37:47Z",
+  "lastError": "AXATA G02 aktariminda 17 belge basarisiz oldu.",
+  "hasUnresolvedFailure": true,
+  "requiresAttention": true,
+  "recommendation": "Worker calisiyor; son basarisiz gorevin detayini inceleyin. Eski worker'i yeniden acmayin.",
+  "queuedCount": 0,
+  "runningCount": 0,
+  "oldestQueuedAtUtc": null,
+  "oldestQueuedAgeSeconds": null,
+  "staleAfterSeconds": 60
+}
+```
 
 Kurallar:
 
@@ -2576,6 +2666,8 @@ Kurallar:
 - AXATA scheduler'i 3 dakika heartbeat vermezse kritik worker'i dusurmeden `Degraded` olur.
 - En eski AXATA isi 5 dakikayi asarsa `Degraded`, 30 dakikayi asarsa kritik worker `Unhealthy` olur.
 - Worker veya scheduler konfigurasyonla kapaliysa `Disabled` bilgi durumudur; tek basina readiness hatasi olusturmaz.
+- `Degraded + activity=Waiting for work + guncel heartbeat`, worker'in calistigini fakat son gorevin hata verdigini anlatir. UI bunu `Worker durdu` olarak gostermemelidir.
+- `requiresAttention=true` ise UI `recommendation` metnini gosterir. Eski worker'i yeniden baslatmak otomatik cozum olarak sunulmaz.
 - Heartbeat bellek ici runtime bilgisidir. Uygulama yeniden basladiginda zamanlar sifirdan baslar; kalici is/audit gecmisi yerine gecmez.
 
 #### Guvenli Yazma Izleme
@@ -6552,7 +6644,7 @@ Yetki:
 
 Onemli not:
 
-- Yazma yolu `MikroWriteRouting:InterWarehouseShipment` ile secilir; mevcut config'te varsayilan deger `Database`tir.
+- Yazma yolu `MikroWriteRouting:InterWarehouseShipment` ile secilir; mevcut config'te deger `MikroApi`dir.
 - `Database` modunda EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar. Write hedefi canli `MikroConnection` degil; `MikroWriteConnection` yoksa `testMikroConnection` kullanilir.
 - `MikroWriteBatching:InterWarehouseShipmentEnabled`, `CompanyReceivingEnabled` ve `CompanyReturnEnabled` ayarlari ilgili `Database` yazma yollarini birbirinden bagimsiz acip kapatir. Ayar acikken bir evrakin `STOK_HAREKETLERI` satirlari mevcut transaction icinde tek SQL bulk batch olarak yazilir. Mikro trigger ve constraint kontrolleri acik kalir; hedef, cok satirli evrakta trigger'i satir basina degil belge batch'i basina bir kez calistirmaktir.
 - Firma mal kabulde normal kabul hareketleri tek batch, otomatik olusan firma iade evraki varsa onun satirlari ayri bir batch olarak yazilir. Boylece her belge kendi trigger calismasini bir kez yapar ve iki belge ayni transaction icinde birlikte commit/rollback olur.
@@ -7023,7 +7115,7 @@ Yetki:
 
 Onemli not:
 
-- Yazma yolu `MikroWriteRouting:CompanyMovement` ile belirlenir; mevcut config'te varsayilan deger `Database`tir.
+- Yazma yolu `MikroWriteRouting:CompanyMovement` ile belirlenir; mevcut config'te deger `MikroApi`dir.
 - `Database` modunda EF Core uzerinden ayri `MikroWriteDbContext` ile `STOK_HAREKETLERI` yazilir. Commit sonrasinda ayni write DB'den tum belge satirlari geri okunur; satir icerigi ve olusturulan `sth_Guid` kumesi dogrulanmadan create basarili sayilmaz.
 - `MikroApi` modunda `POST /Api/apiMethods/IrsaliyeKaydetV2` kullanilir ve olusan hareketler response/geri okuma ile mevcut response modeline cevrilir.
 - Firma giden sevki hareketi `sth_evraktip = 1`, `sth_tip = 1`, `sth_cins = 0`, `sth_normal_iade = 0` olarak olusur.
@@ -19185,6 +19277,12 @@ Desteklenen task kodlari:
 - `warehouse-inbound-order-sync`
 - `company-receiving-sync`
 - `inventory-count-sync`
+- `c01-outbound-delivery-import`
+- `c02-outbound-delivery-import`
+- `c03-outbound-delivery-import`
+- `c04-outbound-delivery-import`
+- `g01-inbound-atf-import`
+- `g02-inbound-delivery-import`
 
 Execution mode:
 
@@ -19302,7 +19400,7 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - response `AxataSynchronizationManualDispatchDto`
   - su an `issued-warehouse-order-sync`, `warehouse-inbound-order-sync` ve `company-receiving-sync` icin tanimlidir
   - `issued-warehouse-order-sync` worker parity icin `C01` hareket kodu ile `addOutboundOrder*` operasyonunu kullanir
-  - `issued-warehouse-order-sync` basarili donerse `ssip_special1=1` bayragi `MikroWriteRouting:IssuedWarehouseOrder=Database` iken DB update ile, `MikroApi` iken `POST /Api/apiMethods/DepolarArasiSiparisDuzeltV2` ile satir `ssip_Guid` degerleri uzerinden yazilir; MikroApi modunda DB fallback yoktur ve yazim read-only geri okuma ile dogrulanir
+  - `issued-warehouse-order-sync` basarili donerse `ssip_special1=1` bayragi ayri `MikroWriteRouting:WarehouseOrderSentFlag` ayarina gore yazilir. Mevcut profilde bu update rotasi `Database`tir; `IssuedWarehouseOrder=MikroApi` yalniz yeni depo siparisi insertini belirler
   - `warehouse-inbound-order-sync` worker parity icin `G02` hareket kodu ile `addInboundOrder*` operasyonunu kullanir; basarili donerse `ssip_special1=1` bayragi `ssip_girdepo = warehouseNo` evreninde isaretlenir
   - `company-receiving-sync` worker parity icin verilen firma/satinalma siparisini `G01` hareket kodu ile `addInboundOrder*` operasyonuna gonderir; basarili donerse `sip_special1=1` bayragi isaretlenir
 - `POST /api/integrations/axata-sync/manual/tasks/{taskCode}/documents/dispatch-batch`
@@ -19804,6 +19902,12 @@ Task bazli UI buton kurali:
 | `warehouse-inbound-order-sync` | Var | Var | Var | Var | Yok | Yok |
 | `company-receiving-sync` | Var | Var | Var | Var | Yok | Yok |
 | `inventory-count-sync` | Var | Var | Var | Yok | Yok | Var, task Live veya DynamicCensus route |
+| `c01-outbound-delivery-import` | AXATA kuyrugu | Var | Var | Yok | Var | Var, task Live veya C01 route |
+| `c02-outbound-delivery-import` | AXATA kuyrugu | Var | Var | Yok | Var | Var, task Live veya C02 route |
+| `c03-outbound-delivery-import` | AXATA kuyrugu | Var | Var | Yok | Var | Var, task Live veya C03 route |
+| `c04-outbound-delivery-import` | AXATA kuyrugu | Var | Var | Yok | Var | Var, task Live veya C4 route |
+| `g01-inbound-atf-import` | AXATA ATF kuyrugu | Var | Var | Yok | Var | Var, task Live veya G01 route |
+| `g02-inbound-delivery-import` | AXATA G02 kuyrugu | Var | Var | Yok | Var | Var, task Live veya G02 route |
 | `C01 outbound delivery` | AXATA kuyrugu + belge bazli rescue | Var | Yok | Yok | Var | Var |
 | `C02 outbound delivery` | AXATA kuyrugu | Var | Yok | Yok | Var | Var |
 | `C03 outbound delivery` | AXATA kuyrugu | Var | Yok | Yok | Var | Var |
@@ -20193,7 +20297,7 @@ Entegrasyon modulu notlari:
 - `live/axata/outbound-deliveries/preview` endpoint'i C01/C02/C03/C4 AXATA pending kuyrugunu canli okur; Mikro veya AXATA verisi yazmaz
 - `live/axata/outbound-deliveries/c01|c02|c03|c04/*` endpoint'leri AXATA'dan canli outbound delivery cekip Mikro'ya yazar; AXATA ack sadece Mikro kaydi basarili olursa atilir
 - `live/axata/inbound-atf/g01/*`, `live/axata/inbound-deliveries/g02/*` ve `live/axata/dynamic-census/*` endpoint'leri AXATA -> Mikro canli import endpointleridir
-- `inventory-count-sync` Live execution otomatik scheduler acilirsa DynamicCensus importu calistirir; diger live import endpointleri manuel operasyon aksiyonudur
+- `inventory-count-sync` ile `c01/c02/c03/c04/g01/g02` import task'lari Live execution ve otomatik scheduler uzerinden AXATA bekleyen kuyruklarini Mikro'ya isler
 - toplu endpoint'lerde `ContinueOnError = true` ise HTTP 200 donup basarisiz item'lari `Failures` listesinde raporlar
 - `Outbox` modu su an gercek WCF dispatch degil, payload uretim ve dosyalama asamasidir
 - canli AXATA import/ack adapter'i C01/C02/C03/C4 outbound delivery, G01 inbound ATF, G02 inbound delivery ve DynamicCensus icin aktiftir
@@ -20202,7 +20306,7 @@ Entegrasyon modulu notlari:
 
 Bu modulun tasarim hedefi:
 
-- eski worker'i birebir tasimak degil
+- eski worker'in aktif 13 akisinin tamamini task/handler/queue mantigiyla guvenli ve izlenebilir bicimde karsilamak
 - eski AXATA altyapisini task/handler/queue mantigiyla normalize etmek
 - ileride yeni worker rahat yazilsin diye preview, scheduler, queue ve dispatch omurgasini sabitlemek
 - ayni anda operasyon ekibine manuel kurtarma ve manuel aktarim ekranlari vermek
@@ -20218,6 +20322,12 @@ UI task/aksiyon matrisi:
 | `warehouse-inbound-order-sync` | Var | Var | Var | Var | Mikro -> AXATA G02 giris siparisi icin ana task |
 | `company-receiving-sync` | Var | Var | Var | Var | Mikro -> AXATA G01 verilen firma/satinalma siparisi |
 | `inventory-count-sync` | Var | Var | Var | Var | DryRun/Outbox Mikro sayim payload; Live AXATA DynamicCensus import |
+| `c01-outbound-delivery-import` | Var | Yok | Yok | Var | AXATA C01 bekleyen sevklerini Mikro'ya aktarir ve basari sonrasi acknowledge eder |
+| `c02-outbound-delivery-import` | Var | Yok | Yok | Var | AXATA C02 bekleyen sevklerini Mikro'ya aktarir ve basari sonrasi acknowledge eder |
+| `c03-outbound-delivery-import` | Var | Yok | Yok | Var | AXATA C03 bekleyen depo iadelerini Mikro'ya aktarir ve basari sonrasi acknowledge eder |
+| `c04-outbound-delivery-import` | Var | Yok | Yok | Var | AXATA C4 bekleyen firma iadelerini Mikro'ya aktarir ve basari sonrasi acknowledge eder |
+| `g01-inbound-atf-import` | Var | Yok | Yok | Var | AXATA G01 ATF kayitlarini Mikro firma mal kabule aktarir ve acknowledge eder |
+| `g02-inbound-delivery-import` | Var | Yok | Yok | Var | AXATA G02 kayitlarini Mikro depo mal kabule aktarir ve acknowledge eder |
 
 UI manuel aktarim senaryolari:
 
@@ -24954,6 +25064,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/ayar-islemleri/terminal-cihazlari/ozet` | JWT + ayar-islemleri.terminal-cihazlari.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationSummaryDto |
 | GET | `/api/ayar-islemleri/terminal-cihazlari/{id}` | JWT + ayar-islemleri.terminal-cihazlari.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationDto<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
+| GET | `/api/ayar-islemleri/veritabani-izleme/genel-bakis` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MonitoringOverviewDto |
 | GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/olaylar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseMonitoringIncidentDto&gt; |
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseSessionTerminationDto&gt; |
@@ -26365,6 +26476,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `waitMilliseconds` | integer (int64) | Hayir |  |
 | `waitType` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `criticalCount` | integer (int32) | Hayir |  |
+| `lastSeenAtUtc` | string (date-time) | Hayir | nullable |
+| `openCount` | integer (int32) | Hayir |  |
+| `warningCount` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -26386,6 +26506,16 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `sqlText` | string | Hayir | nullable |
 | `type` | string | Hayir | nullable |
 | `waitType` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeRequestCount` | integer (int32) | Hayir |  |
+| `blockedRequestCount` | integer (int32) | Hayir |  |
+| `longRunningRequestCount` | integer (int32) | Hayir |  |
+| `openTransactionCount` | integer (int32) | Hayir |  |
+| `status` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto
 
@@ -26477,6 +26607,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `sessionId` | integer (int32) | Hayir |  |
 | `sqlText` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.MonitoringOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `database` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringOverviewDto | Hayir |  |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `headline` | string | Hayir | nullable |
+| `incidents` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto | Hayir |  |
+| `overallStatus` | string | Hayir | nullable |
+| `overallStatusName` | string | Hayir | nullable |
+| `safeWrites` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto | Hayir |  |
+| `workers` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringSnapshotDto | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -26495,12 +26638,26 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `updatedAtUtc` | string (date-time) | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `completedCount` | integer (int32) | Hayir |  |
+| `manualReviewCount` | integer (int32) | Hayir |  |
+| `processingCount` | integer (int32) | Hayir |  |
+| `retryableFailureCount` | integer (int32) | Hayir |  |
+| `staleProcessingCount` | integer (int32) | Hayir |  |
+| `unclassifiedFailureCount` | integer (int32) | Hayir |  |
+| `windowHours` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `activity` | string | Hayir | nullable |
 | `code` | string | Hayir | nullable |
+| `hasUnresolvedFailure` | boolean | Hayir |  |
+| `heartbeatAgeSeconds` | integer (int64) | Hayir | nullable |
 | `isCritical` | boolean | Hayir |  |
 | `isEnabled` | boolean | Hayir |  |
 | `lastError` | string | Hayir | nullable |
@@ -26511,10 +26668,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `oldestQueuedAgeSeconds` | integer (int64) | Hayir | nullable |
 | `oldestQueuedAtUtc` | string (date-time) | Hayir | nullable |
 | `queuedCount` | integer (int32) | Hayir |  |
+| `recommendation` | string | Hayir | nullable |
 | `registeredAtUtc` | string (date-time) | Hayir |  |
+| `requiresAttention` | boolean | Hayir |  |
 | `runningCount` | integer (int32) | Hayir |  |
 | `staleAfterSeconds` | integer (int32) | Hayir |  |
 | `status` | string | Hayir | nullable |
+| `statusName` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringSnapshotDto
 

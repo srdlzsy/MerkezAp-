@@ -361,7 +361,7 @@ Destekleyen task'lar:
   - Varsayilan WCF operation fallback: `addOutboundOrder`
   - Config ile genelde `addOutboundOrderV2`
   - Hareket tipi: `C01`
-  - AXATA basarili donerse worker basari bayragi `ssip_special1=1` olarak isaretlenir; `MikroWriteRouting:IssuedWarehouseOrder=Database` iken mevcut DB update yolu, `MikroApi` iken `DepolarArasiSiparisDuzeltV2` yolu kullanilir. MikroApi modunda DB fallback yapilmaz, yazim satir GUID'leri uzerinden read-only geri okuma ile dogrulanir.
+   - AXATA basarili donerse worker basari bayragi `ssip_special1=1` olarak isaretlenir. Bu update islemi `MikroWriteRouting:WarehouseOrderSentFlag` ile yonetilir ve mevcut profilde `Database`tir. `IssuedWarehouseOrder=MikroApi` yalniz yeni depo siparisi insertini API'ye yonlendirir.
   - Master alanlari worker parity:
     - `S00TESN = DocumentSerie.DocumentOrderNo`
     - `S00TMUS = InWarehouseNo`
@@ -730,6 +730,8 @@ Temel alanlar:
 - `Tasks.{taskCode}.Enabled`
 - `Tasks.{taskCode}.ScheduleEnabled`
 - `Tasks.{taskCode}.IntervalMinutes`
+- `Tasks.{taskCode}.BatchSize`
+- `Tasks.{taskCode}.ChangeLookbackMinutes`
 - `Tasks.{taskCode}.DefaultWarehouseNo`
 - `Tasks.{taskCode}.LiveOperationName`
 
@@ -739,6 +741,22 @@ Davranis:
 - Manuel operasyon kullanilip otomatik worker istenmiyorsa production icin onerilen kombinasyon `Enabled=true`, `WorkerEnabled=false`, `SchedulerEnabled=false` olur.
 - `WorkerEnabled=false` sadece arka plan kuyruk isleyicisini kapatir; manuel `execute` ve `dispatch` icin ana `Enabled=true` olmalidir.
 - `Tasks.{taskCode}.Enabled=false` ise sadece ilgili task kapali sayilir.
+- Production ayarinda eski Windows worker'indaki 13 aktif akis zamanlanir: firma, urun, C01/C02/G01/G02 siparisleri, dinamik sayim ile C01/C02/C03/C4/G01/G02 hareket donusleri.
+- Firma ve urun master gorevleri her turda tum katalogu gondermez. `ChangeLookbackMinutes` icinde yeni veya degismis kayitlari secer; urun aktarimi `BatchSize` kadar kodu bir sorgu paketinde isler.
+- C02 firma siparisleri eski worker ile ayni bicimde tum depolardan taranir. C01, G01 ve G02 siparis gorevleri merkez depo `50` kapsaminda calisir.
+- AXATA'dan Mikro'ya donuslerde yalniz bekleyen durumdaki kayitlar okunur. Mikro yazimi basarili olduktan sonra AXATA status alani tamamlandi olarak isaretlenir; Mikro yazimi veya eslesme basarisizsa acknowledge yapilmaz ve kayit sonraki tur icin bekler.
+
+### Eski Worker'dan Gecis
+
+Yeni API scheduler'i acilmadan once `Furpa.WorkerService` Windows servisi durdurulmalidir. Eski worker ile IIS icindeki yeni worker ayni anda calistirilirsa iki proses ayni Mikro/AXATA kuyruklarini okuyabilir.
+
+Guvenli yayin sirasi:
+
+1. Eski `Furpa.WorkerService` servisini durdur ve baslangic turunu `Disabled` veya `Manual` yap.
+2. IIS yayinini `tools/Publish-Iis.ps1` ile al. Script app pool'u `AlwaysRunning`, `idleTimeout=0` ve siteyi `preloadEnabled=true` yapar.
+3. `GET /health/ready` cevabinda `axata-synchronization-worker` ve `axata-synchronization-scheduler` durumlarini kontrol et.
+4. AXATA senkronizasyon ekraninda ilk islerin `Queued`, `Running`, sonra `Succeeded` oldugunu dogrula.
+5. Eski servisi yeniden baslatma. Geri donus gerekirse once IIS app pool'unu durdur, sonra eski servisi ac; iki worker'i birlikte calistirma.
 
 Canli dispatch icin zorunlular:
 
