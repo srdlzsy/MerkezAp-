@@ -17,14 +17,14 @@ internal static class MikroApiCreateConflictFactory
         {
             return new OperationConflictException(
                 OperationConflictErrorCodes.MikroDocumentContentMismatch,
-                "The existing Mikro document does not match the requested document content. Manual review is required; do not retry with a new clientRequestId.",
+                OperationConflictMessages.MikroDocumentContentMismatch,
                 retryable: false,
                 innerException: innerException);
         }
 
         return new OperationConflictException(
             OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
-            $"Mikro API write outcome could not be confirmed. Do not create a new request; retry or query status with the same clientRequestId. Detail: {result.ErrorMessage}",
+            OperationConflictMessages.MikroWriteOutcomeUnconfirmed,
             retryable: true,
             innerException: innerException);
     }

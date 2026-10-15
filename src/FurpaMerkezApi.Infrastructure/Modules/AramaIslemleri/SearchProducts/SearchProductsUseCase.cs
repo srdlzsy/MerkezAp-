@@ -4,14 +4,18 @@ using FurpaMerkezApi.Application.Modules.AramaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.SearchProducts;
 
-public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISearchProductsUseCase
+public sealed class SearchProductsUseCase(
+    MikroDbContext mikroDbContext,
+    IMemoryCache cache) : ISearchProductsUseCase
 {
     private const int DefaultTake = 150;
     private const int MaxTake = 150;
     private const int MaxPartialBarcodeCandidates = 50;
+    private static readonly TimeSpan SourceWarehouseCatalogCacheDuration = TimeSpan.FromMinutes(5);
 
     public async Task<IReadOnlyCollection<ProductLookupItemDto>> ExecuteAsync(
         ProductSearchRequest request,
@@ -20,6 +24,13 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         if (request.WarehouseNo <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (request.SourceWarehouseNo is <= 0)
+        {
+            throw new ArgumentException(
+                "Source warehouse no must be greater than zero.",
+                nameof(request.SourceWarehouseNo));
         }
 
         var requestedBarcode = NormalizeOrNull(request.Barcode);
@@ -54,6 +65,18 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
         try
         {
+            var sourceWarehouseStockCodes = request.SourceWarehouseNo.HasValue
+                ? await GetSourceWarehouseStockCodesAsync(
+                    connection,
+                    request.SourceWarehouseNo.Value,
+                    cancellationToken)
+                : null;
+
+            if (sourceWarehouseStockCodes is { Count: 0 })
+            {
+                return Array.Empty<ProductLookupItemDto>();
+            }
+
             IReadOnlyCollection<ProductLookupItemDto> products;
 
             if (barcodeLookup is not null)
@@ -66,6 +89,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     stockName,
                     supplierCode,
                     lookupTake,
+                    sourceWarehouseStockCodes,
                     allowPartialSuffix: true,
                     cancellationToken);
             }
@@ -77,6 +101,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     stockName!,
                     supplierCode,
                     lookupTake,
+                    sourceWarehouseStockCodes,
                     cancellationToken);
             }
             else
@@ -90,6 +115,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     supplierCode,
                     lookupTake,
                     null,
+                    sourceWarehouseStockCodes,
                     cancellationToken);
             }
 
@@ -106,6 +132,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                     null,
                     supplierCode,
                     lookupTake,
+                    sourceWarehouseStockCodes,
                     allowPartialSuffix: true,
                     cancellationToken);
             }
@@ -145,6 +172,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         string input,
         string? supplierCode,
         int take,
+        IReadOnlySet<string>? sourceWarehouseStockCodes,
         CancellationToken cancellationToken)
     {
         var stockCodeProducts = await ReadProductsAsync(
@@ -156,6 +184,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             supplierCode,
             take,
             null,
+            sourceWarehouseStockCodes,
             cancellationToken);
         var barcodeLookup = BarcodeLookupNormalizer.Normalize(input);
         var exactBarcodeProducts = await ReadProductsByBarcodeCandidatesAsync(
@@ -166,6 +195,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             null,
             supplierCode,
             take,
+            sourceWarehouseStockCodes,
             allowPartialSuffix: false,
             cancellationToken);
         var exactProducts = MergeDistinctProducts(stockCodeProducts, exactBarcodeProducts, take);
@@ -183,6 +213,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             null,
             supplierCode,
             take,
+            sourceWarehouseStockCodes,
             cancellationToken);
     }
 
@@ -219,6 +250,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         string? stockName,
         string? supplierCode,
         int take,
+        IReadOnlySet<string>? sourceWarehouseStockCodes,
         bool allowPartialSuffix,
         CancellationToken cancellationToken)
     {
@@ -233,6 +265,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                 supplierCode,
                 take,
                 barcodeLookup,
+                sourceWarehouseStockCodes,
                 cancellationToken);
 
             if (products.Count > 0)
@@ -254,6 +287,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             stockName,
             supplierCode,
             take,
+            sourceWarehouseStockCodes,
             cancellationToken);
     }
 
@@ -265,6 +299,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         string? stockName,
         string? supplierCode,
         int take,
+        IReadOnlySet<string>? sourceWarehouseStockCodes,
         CancellationToken cancellationToken)
     {
         if (!BarcodeLookupNormalizer.IsPartialSuffixCandidate(barcodeLookup.LookupBarcode))
@@ -294,6 +329,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
                 supplierCode,
                 take,
                 barcodeLookup,
+                sourceWarehouseStockCodes,
                 cancellationToken);
 
             foreach (var product in candidateProducts)
@@ -325,6 +361,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         string? supplierCode,
         int take,
         BarcodeLookupInfo? barcodeLookup,
+        IReadOnlySet<string>? sourceWarehouseStockCodes,
         CancellationToken cancellationToken)
     {
         var products = new List<ProductLookupItemDto>(take);
@@ -344,6 +381,13 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
 
         while (products.Count < take && await reader.ReadAsync(cancellationToken))
         {
+            var resultStockCode = ReadString(reader, "StokKod");
+            if (sourceWarehouseStockCodes is not null &&
+                !sourceWarehouseStockCodes.Contains(resultStockCode))
+            {
+                continue;
+            }
+
             var salesBlockCode = ReadNullableInt(reader, "SatisDursun");
             var orderBlockCode = ReadNullableInt(reader, "SipDursun");
             var goodsAcceptanceBlockCode = ReadNullableInt(reader, "MalKabulDursun");
@@ -353,7 +397,7 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
             products.Add(new ProductLookupItemDto(
                 ReadInt(reader, "DepoNo"),
                 ReadString(reader, "BarKodu"),
-                ReadString(reader, "StokKod"),
+                resultStockCode,
                 ReadString(reader, "StokIsim"),
                 ReadDouble(reader, "Fiyati"),
                 ReadInt(reader, "FiyatTipKodu"),
@@ -377,6 +421,66 @@ public sealed class SearchProductsUseCase(MikroDbContext mikroDbContext) : ISear
         }
 
         return products;
+    }
+
+    private async Task<IReadOnlySet<string>> GetSourceWarehouseStockCodesAsync(
+        DbConnection connection,
+        int sourceWarehouseNo,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"product-search:source-warehouse-catalog:{sourceWarehouseNo}";
+        if (cache.TryGetValue(cacheKey, out IReadOnlySet<string>? stockCodes) && stockCodes is not null)
+        {
+            return stockCodes;
+        }
+
+        stockCodes = await ReadSourceWarehouseStockCodesAsync(
+            connection,
+            sourceWarehouseNo,
+            cancellationToken);
+        cache.Set(cacheKey, stockCodes, SourceWarehouseCatalogCacheDuration);
+        return stockCodes;
+    }
+
+    private static async Task<IReadOnlySet<string>> ReadSourceWarehouseStockCodesAsync(
+        DbConnection connection,
+        int sourceWarehouseNo,
+        CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DISTINCT
+                LTRIM(RTRIM(stock.sto_kod)) AS StockCode
+            FROM dbo.DEPOLAR AS sourceWarehouse WITH (NOLOCK)
+            CROSS APPLY STRING_SPLIT(
+                REPLACE(REPLACE(ISNULL(sourceWarehouse.dep_barkod_yazici_yolu, N''), N';', N','), N'|', N','),
+                N',') AS sourceModel
+            INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
+                ON LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, N''))) = LTRIM(RTRIM(sourceModel.value))
+            INNER JOIN dbo.STOK_DEPO_DETAYLARI AS sourceDetail WITH (NOLOCK)
+                ON sourceDetail.sdp_depo_no = sourceWarehouse.dep_no
+               AND sourceDetail.sdp_depo_kod = stock.sto_kod
+               AND ISNULL(sourceDetail.sdp_sipdursun, 0) = 0
+            WHERE sourceWarehouse.dep_no = @sourceWarehouseNo
+              AND LTRIM(RTRIM(sourceModel.value)) <> N'';
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+
+        AddParameter(command, "@sourceWarehouseNo", sourceWarehouseNo);
+
+        var stockCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var stockCode = ReadString(reader, "StockCode");
+            if (!string.IsNullOrWhiteSpace(stockCode))
+            {
+                stockCodes.Add(stockCode);
+            }
+        }
+
+        return stockCodes;
     }
 
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ApplyDelistStateAsync(

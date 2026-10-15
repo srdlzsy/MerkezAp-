@@ -47,7 +47,8 @@ public sealed class AramaIslemleriController(
                 request.StockName,
                 request.CompanyCode ?? request.SupplierCode,
                 request.Take,
-                request.IncludeDelisted),
+                request.IncludeDelisted,
+                request.SourceWarehouseNo),
             cancellationToken));
     }
 
@@ -70,7 +71,8 @@ public sealed class AramaIslemleriController(
                 request.StockName,
                 request.CompanyCode ?? request.SupplierCode,
                 request.Take,
-                request.IncludeDelisted),
+                request.IncludeDelisted,
+                request.SourceWarehouseNo),
             cancellationToken));
     }
 
@@ -96,7 +98,8 @@ public sealed class AramaIslemleriController(
                 null,
                 null,
                 request.Take,
-                request.IncludeDelisted),
+                request.IncludeDelisted,
+                request.SourceWarehouseNo),
             cancellationToken));
     }
 
@@ -349,6 +352,9 @@ public sealed class ProductSearchHttpRequest
 
     public string? CompanyCode { get; init; }
 
+    [Range(1, int.MaxValue)]
+    public int? SourceWarehouseNo { get; init; }
+
     public bool IncludeDelisted { get; init; } = true;
 
     [Range(1, 150)]
@@ -389,6 +395,9 @@ public sealed class ProductBarcodePriceLookupHttpRequest
 {
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? SourceWarehouseNo { get; init; }
 
     public bool IncludeDelisted { get; init; } = true;
 

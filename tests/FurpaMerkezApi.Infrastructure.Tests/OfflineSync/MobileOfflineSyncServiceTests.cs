@@ -41,6 +41,7 @@ public sealed class MobileOfflineSyncServiceTests
         Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, status.ErrorCode);
         Assert.True(status.Retryable);
         Assert.Equal(5, status.RetryAfterSeconds);
+        Assert.Equal(OperationConflictMessages.MikroWriteOutcomeUnconfirmed, status.ErrorMessage);
         Assert.Null(status.Result);
     }
 

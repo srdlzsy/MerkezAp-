@@ -5,8 +5,7 @@ namespace FurpaMerkezApi.Infrastructure.OfflineSync;
 internal static class OfflineWriteFailureClassifier
 {
     internal const string UnconfirmedMessage =
-        "The write request was interrupted before its outcome could be confirmed. " +
-        "Retry with the same clientRequestId; do not create a new request identity.";
+        OperationConflictMessages.MikroWriteOutcomeUnconfirmed;
 
     internal static OfflineWriteFailure Classify(Exception exception)
     {

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
@@ -431,7 +432,7 @@ public sealed partial class DatabaseMonitoringService(
             item.Status.ToExternalValue(),
             item.ErrorCode,
             item.Retryable,
-            item.ErrorMessage,
+            OperationConflictMessages.Resolve(item.ErrorCode, item.ErrorMessage),
             item.CreatedAtUtc,
             item.UpdatedAtUtc,
             item.CompletedAtUtc,

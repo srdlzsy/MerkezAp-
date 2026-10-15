@@ -48,7 +48,8 @@ public sealed class ExceptionHandlingMiddleware(
             await WriteProblemDetailsAsync(
                 httpContext,
                 StatusCodes.Status409Conflict,
-                exception.Message,
+                OperationConflictMessages.Resolve(exception.ErrorCode, exception.Message)
+                    ?? exception.Message,
                 exception.ErrorCode,
                 exception.Retryable);
         }

@@ -216,7 +216,7 @@ public sealed class MobileOfflineSyncService(
             record.Status.ToExternalValue(),
             record.CreatedAtUtc,
             record.CompletedAtUtc,
-            record.ErrorMessage,
+            OperationConflictMessages.Resolve(record.ErrorCode, record.ErrorMessage),
             record.ErrorCode,
             record.Retryable,
             record.Status == MobileOfflineSyncRequestStatus.Processing || record.Retryable == true

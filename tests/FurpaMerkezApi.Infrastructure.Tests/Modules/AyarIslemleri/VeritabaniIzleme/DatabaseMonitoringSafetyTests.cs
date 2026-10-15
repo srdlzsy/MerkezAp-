@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.VeritabaniIzleme;
@@ -104,7 +105,9 @@ public sealed class DatabaseMonitoringSafetyTests
         Assert.Equal(2, active.Count);
         Assert.Equal("Processing", active.First().Status);
         Assert.DoesNotContain(active, item => item.Status == "Completed");
-        Assert.False(Assert.Single(active, item => item.Status == "Failed").Retryable);
+        var failedItem = Assert.Single(active, item => item.Status == "Failed");
+        Assert.False(failedItem.Retryable);
+        Assert.Equal(OperationConflictMessages.MikroDocumentContentMismatch, failedItem.ErrorMessage);
         Assert.Equal("Completed", Assert.Single(completedOnly).Status);
     }
 

@@ -9,14 +9,22 @@ namespace FurpaMerkezApi.WebApi.Tests.Middleware;
 
 public sealed class ExceptionHandlingMiddlewareTests
 {
-    [Fact]
-    public async Task InvokeAsync_WritesClassifiedConflictExtensions()
+    [Theory]
+    [InlineData(OperationConflictErrorCodes.MikroWriteInProgress, true, OperationConflictMessages.MikroWriteInProgress)]
+    [InlineData(OperationConflictErrorCodes.MikroWriteQueueBusy, true, OperationConflictMessages.MikroWriteQueueBusy)]
+    [InlineData(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, true, OperationConflictMessages.MikroWriteOutcomeUnconfirmed)]
+    [InlineData(OperationConflictErrorCodes.MikroDocumentContentMismatch, false, OperationConflictMessages.MikroDocumentContentMismatch)]
+    [InlineData(OperationConflictErrorCodes.ClientRequestPayloadMismatch, false, OperationConflictMessages.ClientRequestPayloadMismatch)]
+    public async Task InvokeAsync_WritesLocalizedClassifiedConflictExtensions(
+        string errorCode,
+        bool retryable,
+        string expectedDetail)
     {
         var middleware = new ExceptionHandlingMiddleware(
             _ => throw new OperationConflictException(
-                OperationConflictErrorCodes.MikroDocumentContentMismatch,
-                "Manual review is required.",
-                retryable: false),
+                errorCode,
+                "Raw technical error message.",
+                retryable),
             NullLogger<ExceptionHandlingMiddleware>.Instance);
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/test";
@@ -28,10 +36,8 @@ public sealed class ExceptionHandlingMiddlewareTests
         context.Response.Body.Position = 0;
         using var body = await JsonDocument.ParseAsync(context.Response.Body);
         var root = body.RootElement;
-        Assert.Equal(
-            OperationConflictErrorCodes.MikroDocumentContentMismatch,
-            root.GetProperty("errorCode").GetString());
-        Assert.False(root.GetProperty("retryable").GetBoolean());
-        Assert.Equal("Manual review is required.", root.GetProperty("detail").GetString());
+        Assert.Equal(errorCode, root.GetProperty("errorCode").GetString());
+        Assert.Equal(retryable, root.GetProperty("retryable").GetBoolean());
+        Assert.Equal(expectedDetail, root.GetProperty("detail").GetString());
     }
 }

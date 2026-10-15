@@ -7,4 +7,5 @@ public sealed record ProductSearchRequest(
     string? StockName,
     string? SupplierCode,
     int Take,
-    bool IncludeDelisted = true);
+    bool IncludeDelisted = true,
+    int? SourceWarehouseNo = null);

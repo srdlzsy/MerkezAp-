@@ -122,11 +122,11 @@ internal static class StockMovementRecoveryMatcher
 
     internal static OperationConflictException ContentMismatch() => new(
         OperationConflictErrorCodes.MikroDocumentContentMismatch,
-        "The existing Mikro document does not match the requested document content. Manual review is required; do not retry with a new clientRequestId.", false);
+        OperationConflictMessages.MikroDocumentContentMismatch, false);
 
     internal static OperationConflictException OutcomeUnconfirmed() => new(
         OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
-        "Mikro API write outcome could not be confirmed. Keep the same payload and clientRequestId; only readback may be retried.", true);
+        OperationConflictMessages.MikroWriteOutcomeUnconfirmed, true);
 
     private static bool NearlyEquals(double? actual, double expected) =>
         actual.HasValue && double.IsFinite(actual.Value) && Math.Abs(actual.Value - expected) <= 0.0001d;
