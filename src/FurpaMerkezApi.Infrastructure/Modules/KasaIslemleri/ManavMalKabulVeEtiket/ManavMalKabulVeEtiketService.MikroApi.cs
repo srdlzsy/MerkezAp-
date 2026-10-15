@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
@@ -88,21 +90,44 @@ public sealed partial class ManavMalKabulVeEtiketService
             GreenGrocerGoodsReceiptPath,
             payload,
             cancellationToken);
-        apiResult.EnsureSuccess();
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(apiResult);
+        if (apiResult.IsError && !recoverableCreateOutcome)
+        {
+            apiResult.EnsureSuccess();
+        }
 
         mikroWriteDbContext.ChangeTracker.Clear();
-        var recovered = await TryReadBackMicroGoodsReceiptAsync(
-            normalized,
-            documentSeries,
-            documentOrderNo,
-            expectedRows,
-            stockInfos,
-            createUserNo,
-            offlineTraceKey,
-            updatedAcceptanceRecordCount: 0,
-            cancellationToken)
-            ?? throw new InvalidOperationException(
-                "Mikro API returned success, but the green-grocer goods receipt could not be verified by series/order and line totals.");
+        ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto? recovered = null;
+        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
+        {
+            recovered = await TryReadBackMicroGoodsReceiptAsync(
+                normalized,
+                documentSeries,
+                documentOrderNo,
+                expectedRows,
+                stockInfos,
+                createUserNo,
+                offlineTraceKey,
+                updatedAcceptanceRecordCount: 0,
+                cancellationToken);
+            if (recovered is not null)
+            {
+                break;
+            }
+
+            if (attempt < delays.Count)
+            {
+                await Task.Delay(delays[attempt], cancellationToken);
+            }
+        }
+
+        if (recovered is null)
+        {
+            throw MikroApiCreateConflictFactory.Create(
+                apiResult,
+                StockMovementRecoveryMatcher.OutcomeUnconfirmed());
+        }
 
         var updatedAcceptanceRecordCount = normalized.MarkAcceptanceRecordsTransferred
             ? await MarkAcceptanceRecordsTransferredAsync(normalized.Lines, cancellationToken)

@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Data;
 using System.Text.Json;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -30,12 +32,35 @@ public sealed partial class PosMuhasebeAktarimiService
             AccountingSlipSavePath,
             payload,
             cancellationToken);
-        apiResult.EnsureSuccess();
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(apiResult);
+        if (apiResult.IsError && !recoverableCreateOutcome)
+        {
+            apiResult.EnsureSuccess();
+        }
 
         mikroWriteDbContext.ChangeTracker.Clear();
-        var recovered = await TryReadBackAccountingSlipAsync(document, cancellationToken)
-            ?? throw new InvalidOperationException(
-                "Mikro API returned success, but the accounting slip could not be verified by its commercial link and line totals.");
+        AccountingSlipIdentity? recovered = null;
+        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
+        {
+            recovered = await TryReadBackAccountingSlipAsync(document, cancellationToken);
+            if (recovered is not null)
+            {
+                break;
+            }
+
+            if (attempt < delays.Count)
+            {
+                await Task.Delay(delays[attempt], cancellationToken);
+            }
+        }
+
+        if (recovered is null)
+        {
+            throw MikroApiCreateConflictFactory.Create(
+                apiResult,
+                StockMovementRecoveryMatcher.OutcomeUnconfirmed());
+        }
 
         await mikroApiClient.MarkRecoveredAsync(
             apiResult,

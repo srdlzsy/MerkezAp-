@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.UrunDagilimlari;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -1288,7 +1289,7 @@ public sealed class ProductDistributionService(
         string stockCode,
         CancellationToken cancellationToken)
     {
-        if (mikroWriteRoutingOptions.CurrentValue.ProductDistribution == MikroWriteMode.MikroApi)
+        if (mikroWriteRoutingOptions.CurrentValue.ProductDistributionStockUpdate == MikroWriteMode.MikroApi)
         {
             var stock = await mikroWriteDbContext.STOKLARs
                 .AsNoTracking()
@@ -1468,23 +1469,35 @@ public sealed class ProductDistributionService(
                 payload,
                 cancellationToken);
 
-            var recovered = await TryRecoverDistributionOrderAsync(
-                detail,
-                line,
-                description,
-                documentSerie,
-                documentOrderNo,
-                cancellationToken);
+            var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+            if (result.IsError && !recoverableCreateOutcome)
+            {
+                throw new InvalidOperationException(
+                    result.ErrorMessage ?? "Mikro API product distribution order create failed.");
+            }
+
+            (Guid Guid, int RowCount)? recovered;
+            try
+            {
+                recovered = await TryRecoverDistributionOrderAsync(
+                    detail,
+                    line,
+                    description,
+                    documentSerie,
+                    documentOrderNo,
+                    recoverableCreateOutcome,
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                throw MikroApiCreateConflictFactory.Create(result, exception);
+            }
+
             if (recovered is null)
             {
-                if (result.IsError)
-                {
-                    throw new InvalidOperationException(
-                        result.ErrorMessage ?? "Mikro API product distribution order create failed.");
-                }
-
-                throw new InvalidOperationException(
-                    "Mikro API product distribution order succeeded, but the created order could not be verified.");
+                throw MikroApiCreateConflictFactory.Create(
+                    result,
+                    StockMovementRecoveryMatcher.OutcomeUnconfirmed());
             }
 
             await mikroApiClient.MarkRecoveredAsync(
@@ -1509,9 +1522,11 @@ public sealed class ProductDistributionService(
         string description,
         string documentSerie,
         int documentOrderNo,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= 3; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
                 .AsNoTracking()
@@ -1519,20 +1534,43 @@ public sealed class ProductDistributionService(
                     order.ssip_iptal != true &&
                     order.ssip_evrakno_seri == documentSerie &&
                     order.ssip_evrakno_sira == documentOrderNo &&
-                    order.ssip_stok_kod == detail.Header.Stock.StockCode &&
                     order.ssip_girdepo == line.WarehouseNo &&
-                    order.ssip_cikdepo == detail.Header.DistributionCenter.WarehouseNo &&
-                    order.ssip_aciklama == description)
-                .Select(order => order.ssip_Guid)
+                    order.ssip_cikdepo == detail.Header.DistributionCenter.WarehouseNo)
+                .Select(order => new
+                {
+                    order.ssip_Guid,
+                    order.ssip_stok_kod,
+                    order.ssip_aciklama,
+                    order.ssip_miktar,
+                    order.ssip_rezervasyon_miktari
+                })
                 .ToArrayAsync(cancellationToken);
-            if (rows.Length > 0)
+            if (rows.Length == 1)
             {
-                return (rows[0], rows.Length);
+                var row = rows[0];
+                var matches = string.Equals(
+                                  row.ssip_stok_kod,
+                                  detail.Header.Stock.StockCode,
+                                  StringComparison.OrdinalIgnoreCase) &&
+                              string.Equals(row.ssip_aciklama, description, StringComparison.Ordinal) &&
+                              Math.Abs((row.ssip_miktar ?? 0d) - line.UnitQuantity) <= 0.000001d &&
+                              Math.Abs((row.ssip_rezervasyon_miktari ?? 0d) - line.CaseQuantity) <= 0.000001d;
+                if (!matches)
+                {
+                    throw StockMovementRecoveryMatcher.ContentMismatch();
+                }
+
+                return (row.ssip_Guid, rows.Length);
             }
 
-            if (attempt < 3)
+            if (rows.Length > 1)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                throw StockMovementRecoveryMatcher.ContentMismatch();
+            }
+
+            if (attempt < delays.Count)
+            {
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 

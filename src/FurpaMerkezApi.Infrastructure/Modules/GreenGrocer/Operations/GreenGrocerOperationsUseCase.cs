@@ -281,13 +281,15 @@ public sealed class GreenGrocerOperationsUseCase(
             DahiliStokHareketKaydetPath,
             payload,
             cancellationToken);
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API green grocer adjustment create failed.");
         }
 
-        for (var attempt = 1; attempt <= 3; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var recovered = await TryRecoverAdjustmentResponseAsync(request, cancellationToken);
             if (recovered is not null)
@@ -300,14 +302,15 @@ public sealed class GreenGrocerOperationsUseCase(
                 return recovered;
             }
 
-            if (attempt < 3)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
-        throw new InvalidOperationException(
-            "Mikro API green grocer adjustment succeeded, but created movement rows could not be verified.");
+        throw MikroApiCreateConflictFactory.Create(
+            result,
+            StockMovementRecoveryMatcher.OutcomeUnconfirmed());
     }
 
     private async Task<GreenGrocerOperationsAdjustmentApplyResponse> ExecuteAdjustmentDatabaseAsync(

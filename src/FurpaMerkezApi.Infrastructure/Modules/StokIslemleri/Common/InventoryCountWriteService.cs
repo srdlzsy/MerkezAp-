@@ -26,8 +26,6 @@ public sealed class InventoryCountWriteService(
     private const short MikroUserNo = 39;
     private const string OfflineOperationCode = "stok-islemleri.sayim-sonuclari.create";
     private const string SayimSonuclariKaydetPath = "/Api/apiMethods/SayimSonuclariKaydetV2";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
 
     public async Task<CreateInventoryCountResponse> ExecuteAsync(
         CreateInventoryCountRequest request,
@@ -212,21 +210,27 @@ public sealed class InventoryCountWriteService(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API inventory count create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            request,
-            traceKey,
-            documentDate,
-            name,
-            lines,
-            options.ConnectionStringName,
-            result.RawResponse,
-            cancellationToken);
+        CreateInventoryCountResponse recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                request,
+                traceKey,
+                options.ConnectionStringName,
+                recoverableCreateOutcome,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            throw MikroApiCreateConflictFactory.Create(result, exception);
+        }
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
@@ -373,14 +377,12 @@ public sealed class InventoryCountWriteService(
     private async Task<CreateInventoryCountResponse> RecoverMikroApiCreateResponseAsync(
         CreateInventoryCountRequest request,
         string traceKey,
-        DateTime documentDate,
-        string name,
-        IReadOnlyList<CreateInventoryCountLineRequest> lines,
         string writeConnectionName,
-        string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverInventoryCountResponseByTraceAsync(
                 request,
@@ -393,62 +395,13 @@ public sealed class InventoryCountWriteService(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
-        if (TryRecoverInventoryCountResponseFromMikroApiResult(
-                request.WarehouseNo,
-                documentDate,
-                name,
-                lines,
-                writeConnectionName,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API inventory count create succeeded, but created SAYIM_SONUCLARI rows could not be read back.");
-    }
-
-    private static bool TryRecoverInventoryCountResponseFromMikroApiResult(
-        int warehouseNo,
-        DateTime documentDate,
-        string name,
-        IReadOnlyList<CreateInventoryCountLineRequest> lines,
-        string writeConnectionName,
-        string rawResponse,
-        out CreateInventoryCountResponse response)
-    {
-        response = default!;
-        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
-        if (responseRows.Count < lines.Count)
-        {
-            return false;
-        }
-
-        var documentNo = responseRows[0].DocumentOrderNo;
-        if (!documentNo.HasValue)
-        {
-            return false;
-        }
-
-        response = new CreateInventoryCountResponse(
-            documentNo.Value,
-            documentDate,
-            warehouseNo,
-            name,
-            lines.Count,
-            lines.Sum(line => line.Quantity),
-            writeConnectionName);
-
-        return true;
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateInventoryCountResponse?> TryRecoverInventoryCountResponseByTraceAsync(

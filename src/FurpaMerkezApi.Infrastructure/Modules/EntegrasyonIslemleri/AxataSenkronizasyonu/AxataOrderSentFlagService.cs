@@ -26,7 +26,7 @@ internal sealed class AxataOrderSentFlagService(
         WarehouseOrderListDirection direction,
         CancellationToken cancellationToken)
     {
-        return mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
+        return mikroWriteRoutingOptions.CurrentValue.WarehouseOrderSentFlag switch
         {
             MikroWriteMode.MikroApi => new AxataOrderSentFlagMarkResult(
                 await MarkWarehouseOrderAsSentWithMikroApiAsync(request, direction, cancellationToken),
@@ -38,7 +38,7 @@ internal sealed class AxataOrderSentFlagService(
                 await MarkWarehouseOrderAsSentInDatabaseAsync(request, direction, cancellationToken),
                 "Database:DualShadowFallback"),
             var mode => throw new InvalidOperationException(
-                $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
+                $"Unsupported MikroWriteRouting:WarehouseOrderSentFlag mode '{mode}'.")
         };
     }
 

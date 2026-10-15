@@ -25,8 +25,6 @@ public sealed class CreateIssuedCompanyOrderUseCase(
     private const byte IssuedOrderType = 1;
     private const byte NormalOrderGenre = 0;
     private const string SiparisKaydetPath = "/api/APIMethods/SiparisKaydetV2";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
     private static readonly DateTime MikroEmptyDate = new(1900, 1, 1);
 
     public async Task<CreateIssuedCompanyOrderResponse> ExecuteAsync(
@@ -145,22 +143,31 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API issued company order create failed.");
         }
 
-        var recovered = await RecoverMikroApiCreateResponseAsync(
-            documentSerie,
-            documentOrderNo,
-            request,
-            lines,
-            orderDate,
-            deliveryDate,
-            options.ConnectionStringName,
-            result.RawResponse,
-            cancellationToken);
+        CreateIssuedCompanyOrderResponse recovered;
+        try
+        {
+            recovered = await RecoverMikroApiCreateResponseAsync(
+                documentSerie,
+                documentOrderNo,
+                request,
+                lines,
+                orderDate,
+                deliveryDate,
+                options.ConnectionStringName,
+                recoverableCreateOutcome,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            throw MikroApiCreateConflictFactory.Create(result, exception);
+        }
 
         await mikroApiClient.MarkRecoveredAsync(
             result,
@@ -187,15 +194,17 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         DateTime orderDate,
         DateTime deliveryDate,
         string writeConnectionName,
-        string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverCompanyOrderResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 request,
+                lines,
                 orderDate,
                 deliveryDate,
                 writeConnectionName,
@@ -206,71 +215,20 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 return response;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
-        if (TryRecoverCompanyOrderResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                request,
-                lines,
-                orderDate,
-                deliveryDate,
-                writeConnectionName,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API issued company order create succeeded, but created SIPARISLER rows could not be read back.");
-    }
-
-    private static bool TryRecoverCompanyOrderResponseFromMikroApiResult(
-        string documentSerie,
-        int documentOrderNo,
-        CreateIssuedCompanyOrderRequest request,
-        IReadOnlyList<CreateIssuedCompanyOrderLineRequest> lines,
-        DateTime orderDate,
-        DateTime deliveryDate,
-        string writeConnectionName,
-        string rawResponse,
-        out CreateIssuedCompanyOrderResponse response)
-    {
-        response = default!;
-        var responseRows = MikroApiCreatedDocumentResultReader.ReadRows(rawResponse);
-        if (responseRows.Count < lines.Count)
-        {
-            return false;
-        }
-
-        var normalizedCustomerCode = request.CustomerCode.Trim();
-        var firstRow = responseRows[0];
-        response = new CreateIssuedCompanyOrderResponse(
-            firstRow.DocumentSerie ?? documentSerie,
-            firstRow.DocumentOrderNo ?? documentOrderNo,
-            orderDate,
-            deliveryDate,
-            request.WarehouseNo,
-            normalizedCustomerCode,
-            lines.Count,
-            lines.Sum(line => line.Quantity),
-            lines.Sum(line => line.Quantity * line.UnitPrice),
-            writeConnectionName);
-
-        return true;
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateIssuedCompanyOrderResponse?> TryRecoverCompanyOrderResponseAsync(
         string documentSerie,
         int documentOrderNo,
         CreateIssuedCompanyOrderRequest request,
+        IReadOnlyList<CreateIssuedCompanyOrderLineRequest> expectedLines,
         DateTime orderDate,
         DateTime deliveryDate,
         string writeConnectionName,
@@ -290,36 +248,60 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             {
                 order.sip_tarih,
                 order.sip_teslim_tarih,
+                order.sip_iptal,
                 order.sip_evrakno_seri,
                 order.sip_evrakno_sira,
+                order.sip_satirno,
                 order.sip_depono,
                 order.sip_musteri_kod,
+                order.sip_stok_kod,
+                order.sip_b_fiyat,
                 order.sip_miktar,
-                order.sip_tutar
+                order.sip_tutar,
+                order.sip_birim_pntr,
+                order.sip_aciklama,
+                order.sip_aciklama2,
+                order.sip_cari_sormerk,
+                order.sip_stok_sormerk,
+                order.sip_projekodu,
+                order.sip_paket_kod,
+                order.sip_rezervasyon_miktari
             })
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == 0)
+        var match = IssuedCompanyOrderRecoveryMatcher.Match(
+            request,
+            expectedLines,
+            rows.Select(row => new IssuedCompanyOrderRecoveryRow(
+                row.sip_tarih,
+                row.sip_teslim_tarih,
+                row.sip_evrakno_seri,
+                row.sip_evrakno_sira,
+                row.sip_satirno,
+                row.sip_depono,
+                row.sip_musteri_kod,
+                row.sip_stok_kod,
+                row.sip_b_fiyat,
+                row.sip_miktar,
+                row.sip_tutar,
+                row.sip_birim_pntr,
+                row.sip_aciklama,
+                row.sip_aciklama2,
+                row.sip_cari_sormerk,
+                row.sip_stok_sormerk,
+                row.sip_projekodu,
+                row.sip_paket_kod,
+                row.sip_rezervasyon_miktari,
+                row.sip_iptal)).ToArray());
+
+        if (match is IssuedCompanyOrderMatch.Missing or IssuedCompanyOrderMatch.Incomplete)
         {
             return null;
         }
 
-        var headerCount = rows
-            .Select(row => new
-            {
-                row.sip_tarih,
-                row.sip_evrakno_seri,
-                row.sip_evrakno_sira,
-                row.sip_depono,
-                row.sip_musteri_kod
-            })
-            .Distinct()
-            .Count();
-
-        if (headerCount > 1)
+        if (match == IssuedCompanyOrderMatch.Mismatch)
         {
-            throw new InvalidOperationException(
-                "More than one issued company order document matched the same serie and order number.");
+            throw StockMovementRecoveryMatcher.ContentMismatch();
         }
 
         var firstRow = rows[0];

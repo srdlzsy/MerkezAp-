@@ -474,22 +474,7 @@ public sealed class CreateWarehouseReturnUseCase(
             }
         }
 
-        if (TryRecoverWarehouseReturnResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                request,
-                lines,
-                movementDate,
-                documentDate,
-                documentNo,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API warehouse return create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryRecoverWarehouseReturnResponseFromMikroApiResult(
@@ -743,19 +728,28 @@ public sealed class CreateWarehouseReturnUseCase(
             payload,
             cancellationToken);
 
-        if (result.IsError)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
         {
             throw new InvalidOperationException(
                 result.ErrorMessage ?? "Mikro API automatic warehouse order create failed.");
         }
 
-        var recovered = await RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
-            documentSerie,
-            documentOrderNo,
-            orderRequest,
-            automaticRows,
-            result.RawResponse,
-            cancellationToken);
+        Dictionary<int, Guid> recovered;
+        try
+        {
+            recovered = await RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+                documentSerie,
+                documentOrderNo,
+                orderRequest,
+                automaticRows,
+                recoverableCreateOutcome,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            throw MikroApiCreateConflictFactory.Create(result, exception);
+        }
         var recoveredGuid = recovered.Values.FirstOrDefault();
         await mikroApiClient.MarkRecoveredAsync(
             result,
@@ -771,10 +765,10 @@ public sealed class CreateWarehouseReturnUseCase(
         int documentOrderNo,
         CreateIssuedWarehouseOrderRequest orderRequest,
         IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
-        string rawResponse,
+        bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: false);
+        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
         for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var response = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
@@ -795,16 +789,7 @@ public sealed class CreateWarehouseReturnUseCase(
             }
         }
 
-        if (TryMapMikroApiAutomaticWarehouseOrderResponseRows(
-                rawResponse,
-                expectedRows,
-                out var responseRows))
-        {
-            return responseRows;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API automatic warehouse order create succeeded, but created DEPOLAR_ARASI_SIPARISLER rows could not be read back.");
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryMapMikroApiAutomaticWarehouseOrderResponseRows(

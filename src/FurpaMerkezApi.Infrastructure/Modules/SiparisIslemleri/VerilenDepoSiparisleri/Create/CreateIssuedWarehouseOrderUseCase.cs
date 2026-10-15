@@ -325,20 +325,6 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             }
         }
 
-        if (!uncertainWriteOutcome && TryRecoverWarehouseOrderResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                request,
-                lines,
-                orderDate,
-                deliveryDate,
-                writeConnectionName,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
         throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 

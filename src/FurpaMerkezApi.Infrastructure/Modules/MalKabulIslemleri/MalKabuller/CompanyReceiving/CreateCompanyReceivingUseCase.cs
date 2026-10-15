@@ -1004,23 +1004,7 @@ public sealed class CreateCompanyReceivingUseCase(
             }
         }
 
-        if (TryRecoverCompanyReceivingResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                warehouseNo,
-                customerCode,
-                movements,
-                movementDate,
-                documentDate,
-                documentNo,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API company receiving create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryRecoverCompanyReceivingResponseFromMikroApiResult(
@@ -1297,23 +1281,7 @@ public sealed class CreateCompanyReceivingUseCase(
             }
         }
 
-        if (TryRecoverCompanyReceivingResponseFromMikroApiResult(
-                documentSerie,
-                documentOrderNo,
-                warehouseNo,
-                customerCode,
-                movements,
-                movementDate,
-                documentDate,
-                documentNo,
-                rawResponse,
-                out var recoveredFromResponse))
-        {
-            return recoveredFromResponse;
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API company receiving automatic return create succeeded, but created STOK_HAREKETLERI rows could not be read back.");
+        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<RecoveredCompanyReceivingCreate?> TryRecoverCompanyReceivingReturnResponseAsync(

@@ -8,6 +8,8 @@ public sealed class MikroWriteRoutingOptions
 
     public MikroWriteMode IssuedWarehouseOrder { get; init; } = MikroWriteMode.Database;
 
+    public MikroWriteMode WarehouseOrderSentFlag { get; init; } = MikroWriteMode.Database;
+
     public MikroWriteMode IssuedCompanyOrder { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode CompanyOrderSentFlag { get; init; } = MikroWriteMode.Database;
@@ -35,6 +37,8 @@ public sealed class MikroWriteRoutingOptions
     public MikroWriteMode GreenGrocerOperations { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode ProductDistribution { get; init; } = MikroWriteMode.Database;
+
+    public MikroWriteMode ProductDistributionStockUpdate { get; init; } = MikroWriteMode.Database;
 
     public MikroWriteMode InvoiceSendingMarkAsSent { get; init; } = MikroWriteMode.Database;
 

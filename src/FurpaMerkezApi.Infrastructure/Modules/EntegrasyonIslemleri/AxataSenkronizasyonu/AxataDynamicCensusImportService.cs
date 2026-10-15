@@ -42,8 +42,6 @@ internal sealed class AxataDynamicCensusImportService(
     private const int OutboundOutputWarehouseNo = 50;
     private const double QuantityTolerance = 0.000001d;
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
-    private const int MikroApiRecoveryAttemptCount = 5;
-    private const int MikroApiRecoveryDelayMilliseconds = 250;
 
     public async Task<AxataDynamicCensusPreviewDto> PreviewAsync(
         AxataDynamicCensusPreviewRequest request,
@@ -322,7 +320,15 @@ internal sealed class AxataDynamicCensusImportService(
             payload,
             cancellationToken);
 
-        for (var attempt = 1; attempt <= MikroApiRecoveryAttemptCount; attempt++)
+        var recoverableCreateOutcome = MikroApiWriteAuditService.IsRecoverableCreateOutcome(result);
+        if (result.IsError && !recoverableCreateOutcome)
+        {
+            throw new InvalidOperationException(
+                result.ErrorMessage ?? "Mikro API dynamic census movement create failed.");
+        }
+
+        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
+        for (var attempt = 0; attempt <= delays.Count; attempt++)
         {
             var recovered = await TryRecoverMikroApiGroupAsync(
                 analyses,
@@ -337,22 +343,15 @@ internal sealed class AxataDynamicCensusImportService(
                 return recovered;
             }
 
-            if (attempt < MikroApiRecoveryAttemptCount)
+            if (attempt < delays.Count)
             {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(MikroApiRecoveryDelayMilliseconds * attempt),
-                    cancellationToken);
+                await Task.Delay(delays[attempt], cancellationToken);
             }
         }
 
-        if (result.IsError)
-        {
-            throw new InvalidOperationException(
-                result.ErrorMessage ?? "Mikro API dynamic census movement create failed.");
-        }
-
-        throw new InvalidOperationException(
-            "Mikro API dynamic census movement create succeeded, but created rows could not be verified.");
+        throw MikroApiCreateConflictFactory.Create(
+            result,
+            StockMovementRecoveryMatcher.OutcomeUnconfirmed());
     }
 
     private async Task<IReadOnlyCollection<AxataDynamicCensusResultDto>?> TryRecoverMikroApiGroupAsync(
