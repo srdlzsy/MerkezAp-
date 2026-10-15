@@ -371,7 +371,7 @@ Uctan uca akis:
 8. Ayni business response UI'ye 200/201 olarak doner.
 ```
 
-Mikro yazimindan sonra istemci baglantisi kopsa veya request token iptal edilse bile `Completed`/`Failed` kapanisi kullanici request token'ina birakilmaz. `OfflineCreateGuard` Auth DB sonucunu ayri ve kisa bir persistence token'i ile kaydetmeye calisir. Boylece yazim tamamlandigi halde kaydin gereksiz yere sahipsiz `Processing` kalma riski azaltilir.
+Mikro API yazma audit rezervasyonu acildiktan sonra upstream POST, istemci baglantisi kopsa veya request token iptal edilse bile kullanici token'iyla iptal edilmez; `HttpClient` konfigurasyonundaki ust timeout yaziyi sinirlamaya devam eder. Ardindan readback ve `Completed`/`Failed` kapanisi da kullanici request token'ina birakilmaz. Belirsiz Mikro create sonucu sunucuya ait bagimsiz 180 saniyelik readback token'iyle aranir; `OfflineCreateGuard` Auth DB sonucunu ayri ve kisa bir persistence token'i ile kaydetmeye calisir. Boylece terminal ekrani kapansa bile baslamis yazinin sonucu uzlastirilir ve kaydin gereksiz yere sahipsiz `Processing` kalma riski azaltilir.
 
 `clientRequestId` request modelinde geriye uyumluluk nedeniyle nullable olabilir. Bos gelirse `OfflineCreateGuard` legacy davranisla islemi dogrudan calistirir; kalici retry, payload eslestirme ve offline durum sorgusu korumasi olusmaz. Yeni UI'lar desteklenen kritik create ekranlarinda bu alani zorunlu kabul etmelidir.
 
@@ -476,7 +476,7 @@ Durumlar:
 | `Failed`, `retryable=false` | Kalici icerik/payload uyusmazligi | Otomatik retry kapatilir, manuel inceleme gosterilir |
 | `Failed`, siniflandirma yok | Eski veya genel hata | Otomatik retry yapilmaz; hata ve correlationId gosterilir |
 
-Durum `Processing` veya `retryable=true` ise su an `retryAfterSeconds=5` doner. Recovery readback icin 300 saniyelik ayri timeout kullanilir. Recovery teknik hata, SQL baglanti hatasi veya timeout ile tamamlanamazsa kayit sahipsiz `Processing` birakilmaz; `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olarak kapanir.
+Durum `Processing` veya `retryable=true` ise su an `retryAfterSeconds=5` doner. Recovery readback icin istemci baglantisindan bagimsiz 180 saniyelik ayri timeout kullanilir. Recovery teknik hata, SQL baglanti hatasi veya timeout ile tamamlanamazsa kayit sahipsiz `Processing` birakilmaz; `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olarak kapanir.
 
 `Processing` kaydi 5 dakikalik lease suresini asar ve readback tamamlanmis belge bulamazsa ayni siniflandirmaya gecirilir. Bu islem yeni Mikro yazimi baslatmaz.
 
