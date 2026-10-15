@@ -33,7 +33,7 @@ internal static class AxataSynchronizationCatalog
             "Alinan Firma Siparisi C02 Senkronizasyonu",
             "Alinan firma/musteri siparislerini AXATA C02 outbound order formatina cevirir.",
             "Mikro -> AXATA",
-            true,
+            false,
             "Mikro",
             "AXATA"),
         new(
@@ -55,11 +55,59 @@ internal static class AxataSynchronizationCatalog
         new(
             "inventory-count-sync",
             "Sayim Sonucu Senkronizasyonu",
-            "Sayim sonuc belgelerini senkronizasyon payload'ina donusturur.",
-            "Mikro -> AXATA",
+            "AXATA dinamik sayim/duzeltme satirlarini Mikro stok hareketlerine aktarir.",
+            "AXATA -> Mikro",
             true,
             "Mikro",
-            "AXATA")
+            "AXATA"),
+        new(
+            "c01-outbound-delivery-import",
+            "C01 Depo Sevki Aktarimi",
+            "AXATA'da tamamlanan C01 depo sevklerini Mikro stok hareketlerine aktarir.",
+            "AXATA -> Mikro",
+            false,
+            "AXATA",
+            "Mikro"),
+        new(
+            "c02-outbound-delivery-import",
+            "C02 Firma Sevki Aktarimi",
+            "AXATA'da tamamlanan C02 firma sevklerini Mikro stok hareketlerine aktarir.",
+            "AXATA -> Mikro",
+            false,
+            "AXATA",
+            "Mikro"),
+        new(
+            "c03-outbound-delivery-import",
+            "C03 Depo Iadesi Aktarimi",
+            "AXATA'da tamamlanan C03 depo iadelerini Mikro stok hareketlerine aktarir.",
+            "AXATA -> Mikro",
+            false,
+            "AXATA",
+            "Mikro"),
+        new(
+            "c04-outbound-delivery-import",
+            "C4 Firma Iadesi Aktarimi",
+            "AXATA'da tamamlanan C4 firma iadelerini Mikro stok hareketlerine aktarir.",
+            "AXATA -> Mikro",
+            false,
+            "AXATA",
+            "Mikro"),
+        new(
+            "g01-inbound-atf-import",
+            "G01 Firma Mal Kabul Aktarimi",
+            "AXATA G01 ATF satirlarini Mikro firma mal kabul hareketlerine aktarir.",
+            "AXATA -> Mikro",
+            false,
+            "AXATA",
+            "Mikro"),
+        new(
+            "g02-inbound-delivery-import",
+            "G02 Depo Mal Kabul Aktarimi",
+            "AXATA'da tamamlanan G02 depo mal kabullerini Mikro stok hareketlerine aktarir.",
+            "AXATA -> Mikro",
+            false,
+            "AXATA",
+            "Mikro")
     ];
 
     public static AxataSynchronizationTaskDefinition GetRequired(string taskCode) =>

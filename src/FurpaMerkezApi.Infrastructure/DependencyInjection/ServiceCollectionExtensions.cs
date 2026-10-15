@@ -744,6 +744,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAxataSynchronizationTaskHandler, WarehouseInboundOrderSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, CompanyReceivingSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, InventoryCountSyncTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, C01OutboundDeliveryImportTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, C02OutboundDeliveryImportTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, C03OutboundDeliveryImportTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, C04OutboundDeliveryImportTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, G01InboundAtfImportTaskHandler>();
+        services.AddScoped<IAxataSynchronizationTaskHandler, G02InboundDeliveryImportTaskHandler>();
         services.AddHostedService<AxataSynchronizationWorker>();
         services.AddHostedService<AxataSynchronizationScheduler>();
         services.AddSingleton<OperationsJobQueue>();

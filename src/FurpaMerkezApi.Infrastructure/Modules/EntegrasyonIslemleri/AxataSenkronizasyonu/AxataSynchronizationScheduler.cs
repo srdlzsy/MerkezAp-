@@ -111,12 +111,20 @@ internal sealed class AxataSynchronizationScheduler(
                 continue;
             }
 
-            queue.Enqueue(
-                definition,
-                ResolveScheduledExecutionMode(taskOptions),
-                AxataSynchronizationJobTriggerSource.Scheduled,
-                taskOptions.DefaultWarehouseNo,
-                Guid.Empty);
+            try
+            {
+                queue.Enqueue(
+                    definition,
+                    ResolveScheduledExecutionMode(taskOptions),
+                    AxataSynchronizationJobTriggerSource.Scheduled,
+                    taskOptions.DefaultWarehouseNo,
+                    Guid.Empty);
+            }
+            catch (InvalidOperationException) when (queue.HasActiveJob(definition.Code, taskOptions.DefaultWarehouseNo))
+            {
+                nextRunByTask[definition.Code] = now.AddMinutes(Math.Max(1, taskOptions.IntervalMinutes));
+                continue;
+            }
 
             logger.LogInformation(
                 "Scheduled AXATA synchronization job queued for task {TaskCode} and warehouse {WarehouseNo}.",

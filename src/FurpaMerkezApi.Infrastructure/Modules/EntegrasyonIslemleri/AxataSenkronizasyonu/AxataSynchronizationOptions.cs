@@ -49,6 +49,10 @@ public sealed class AxataSynchronizationTaskOptions
 
     public int IntervalMinutes { get; init; } = 5;
 
+    public int BatchSize { get; init; } = 100;
+
+    public int ChangeLookbackMinutes { get; init; } = 10;
+
     public int? DefaultWarehouseNo { get; init; }
 
     public string? LiveOperationName { get; init; }

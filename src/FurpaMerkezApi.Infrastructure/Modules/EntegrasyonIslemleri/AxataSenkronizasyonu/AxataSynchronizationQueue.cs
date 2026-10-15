@@ -8,7 +8,10 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkro
 
 internal sealed class AxataSynchronizationQueue(IClock clock)
 {
+    private const int MaxPendingJobCount = 100;
+    private const int MaxRetainedJobCount = 500;
     private readonly ConcurrentDictionary<Guid, AxataSynchronizationJobRecord> jobs = new();
+    private readonly object enqueueSyncRoot = new();
     private readonly SemaphoreSlim signal = new(0);
     private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> pending = new();
     private int pendingCount;
@@ -21,32 +24,49 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
         int? warehouseNo,
         Guid requestedByUserId)
     {
-        var jobId = Guid.NewGuid();
-        var createdAtUtc = clock.UtcNow;
-        var record = new AxataSynchronizationJobRecord(
-            jobId,
-            definition.Code,
-            definition.Name,
-            executionMode,
-            triggerSource,
-            warehouseNo,
-            requestedByUserId,
-            createdAtUtc);
+        lock (enqueueSyncRoot)
+        {
+            RemoveOldCompletedJobs();
 
-        jobs[jobId] = record;
-        pending.Enqueue(new AxataSynchronizationJobWorkItem(
-            jobId,
-            definition.Code,
-            definition.Name,
-            executionMode,
-            triggerSource,
-            warehouseNo,
-            requestedByUserId,
-            createdAtUtc));
-        Interlocked.Increment(ref pendingCount);
-        signal.Release();
+            if (Volatile.Read(ref pendingCount) >= MaxPendingJobCount)
+            {
+                throw new InvalidOperationException(
+                    $"AXATA synchronization queue reached its {MaxPendingJobCount} job capacity.");
+            }
 
-        return record.ToSummary();
+            if (HasActiveJob(definition.Code, warehouseNo))
+            {
+                throw new InvalidOperationException(
+                    $"AXATA synchronization task '{definition.Code}' already has an active job for warehouse '{warehouseNo}'.");
+            }
+
+            var jobId = Guid.NewGuid();
+            var createdAtUtc = clock.UtcNow;
+            var record = new AxataSynchronizationJobRecord(
+                jobId,
+                definition.Code,
+                definition.Name,
+                executionMode,
+                triggerSource,
+                warehouseNo,
+                requestedByUserId,
+                createdAtUtc);
+
+            jobs[jobId] = record;
+            pending.Enqueue(new AxataSynchronizationJobWorkItem(
+                jobId,
+                definition.Code,
+                definition.Name,
+                executionMode,
+                triggerSource,
+                warehouseNo,
+                requestedByUserId,
+                createdAtUtc));
+            Interlocked.Increment(ref pendingCount);
+            signal.Release();
+
+            return record.ToSummary();
+        }
     }
 
     public async ValueTask<AxataSynchronizationJobWorkItem> DequeueAsync(CancellationToken cancellationToken)
@@ -139,6 +159,29 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
         jobs.TryGetValue(jobId, out var record)
             ? record
             : throw new KeyNotFoundException($"AXATA synchronization job '{jobId}' was not found.");
+
+    private void RemoveOldCompletedJobs()
+    {
+        var removeCount = jobs.Count - MaxRetainedJobCount + 1;
+        if (removeCount <= 0)
+        {
+            return;
+        }
+
+        var removableJobIds = jobs.Values
+            .Where(record =>
+                record.Status == AxataSynchronizationJobStatus.Succeeded ||
+                record.Status == AxataSynchronizationJobStatus.Failed)
+            .OrderBy(record => record.CompletedAtUtc ?? record.CreatedAtUtc)
+            .Take(removeCount)
+            .Select(record => record.JobId)
+            .ToArray();
+
+        foreach (var jobId in removableJobIds)
+        {
+            jobs.TryRemove(jobId, out _);
+        }
+    }
 }
 
 internal sealed class AxataSynchronizationJobRecord(

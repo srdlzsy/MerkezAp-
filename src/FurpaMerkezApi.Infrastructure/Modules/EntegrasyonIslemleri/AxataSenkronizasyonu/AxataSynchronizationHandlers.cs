@@ -15,7 +15,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkro
 internal sealed class FirmMasterSyncTaskHandler(
     MikroDbContext mikroDbContext,
     AxataSynchronizationOutboxWriter outboxWriter,
-    AxataSynchronizationLiveTransportService liveTransportService)
+    AxataSynchronizationLiveTransportService liveTransportService,
+    IOptionsMonitor<AxataSynchronizationOptions> options)
     : IAxataSynchronizationTaskHandler
 {
     public string Code => "firm-master-sync";
@@ -91,13 +92,19 @@ internal sealed class FirmMasterSyncTaskHandler(
             artifacts);
     }
 
-    private IQueryable<FirmMasterPayloadItem> CreateQuery() =>
+    private IQueryable<FirmMasterPayloadItem> CreateQuery()
+    {
+        var changedAfter = DateTime.Now.AddMinutes(-GetChangeLookbackMinutes(options.CurrentValue, Code));
+
+        return
         mikroDbContext.CARI_HESAPLARs
             .AsNoTracking()
             .Where(customer =>
                 customer.cari_iptal != true &&
+                customer.cari_baglanti_tipi != 3 &&
                 customer.cari_kod != null &&
-                customer.cari_unvan1 != null)
+                customer.cari_unvan1 != null &&
+                (customer.cari_lastup_date ?? customer.cari_create_date) >= changedAfter)
             .GroupJoin(
                 mikroDbContext.CARI_HESAP_ADRESLERIs.AsNoTracking(),
                 customer => new
@@ -130,6 +137,12 @@ internal sealed class FirmMasterSyncTaskHandler(
                 item.customer.cari_sevk_adres_no,
                 item.customer.cari_efatura_fl ?? false,
                 item.customer.cari_eirsaliye_fl ?? false));
+    }
+
+    private static int GetChangeLookbackMinutes(AxataSynchronizationOptions currentOptions, string taskCode) =>
+        currentOptions.Tasks.TryGetValue(taskCode, out var taskOptions)
+            ? Math.Max(1, taskOptions.ChangeLookbackMinutes)
+            : 10;
 
     private async Task<IReadOnlyCollection<AxataSynchronizationJobArtifactDto>> WriteArtifactsIfNeededAsync(
         AxataSynchronizationTaskExecutionContext context,
@@ -149,7 +162,8 @@ internal sealed class FirmMasterSyncTaskHandler(
 internal sealed class ProductMasterSyncTaskHandler(
     MikroDbContext mikroDbContext,
     AxataSynchronizationOutboxWriter outboxWriter,
-    IAxataProductSynchronizationService productSynchronizationService)
+    IAxataProductSynchronizationService productSynchronizationService,
+    IOptionsMonitor<AxataSynchronizationOptions> options)
     : IAxataSynchronizationTaskHandler
 {
     public string Code => "product-master-sync";
@@ -184,21 +198,39 @@ internal sealed class ProductMasterSyncTaskHandler(
     {
         if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
         {
-            var dispatch = await productSynchronizationService.DispatchAsync(
-                new AxataProductSynchronizationDispatchRequest(
-                    Array.Empty<string>(),
-                    100000,
-                    true),
-                cancellationToken);
-            if (dispatch.FailedProductCount > 0)
+            var changedProductCodes = await CreateChangedProductCodesQuery()
+                .ToArrayAsync(cancellationToken);
+            if (changedProductCodes.Length == 0)
+            {
+                return new AxataSynchronizationTaskExecutionResult(
+                    0,
+                    "AXATA'ya gonderilecek yeni veya degismis urun bulunamadi.",
+                    Array.Empty<AxataSynchronizationJobArtifactDto>());
+            }
+
+            var succeededCount = 0;
+            var failedCount = 0;
+            foreach (var productCodeBatch in changedProductCodes.Chunk(GetBatchSize(options.CurrentValue, Code)))
+            {
+                var dispatch = await productSynchronizationService.DispatchAsync(
+                    new AxataProductSynchronizationDispatchRequest(
+                        productCodeBatch,
+                        productCodeBatch.Length,
+                        true),
+                    cancellationToken);
+                succeededCount += dispatch.SucceededProductCount;
+                failedCount += dispatch.FailedProductCount;
+            }
+
+            if (failedCount > 0)
             {
                 throw new InvalidOperationException(
-                    $"{dispatch.FailedProductCount} urun AXATA'ya gonderilemedi. Basarili: {dispatch.SucceededProductCount}.");
+                    $"{failedCount} urun AXATA'ya gonderilemedi. Basarili: {succeededCount}.");
             }
 
             return new AxataSynchronizationTaskExecutionResult(
-                dispatch.SucceededProductCount,
-                $"{dispatch.SucceededProductCount} urun AXATA addSKUMaster operasyonuyla canli gonderildi.",
+                succeededCount,
+                $"{succeededCount} yeni veya degismis urun AXATA addSKUMaster operasyonuyla canli gonderildi.",
                 Array.Empty<AxataSynchronizationJobArtifactDto>());
         }
 
@@ -220,10 +252,15 @@ internal sealed class ProductMasterSyncTaskHandler(
             artifacts);
     }
 
-    private IQueryable<ProductMasterPayloadItem> CreateQuery() =>
+    private IQueryable<ProductMasterPayloadItem> CreateQuery()
+    {
+        var changedProductCodes = CreateChangedProductCodesQuery();
+
+        return
         from stock in mikroDbContext.STOKLARs.AsNoTracking()
         where !(stock.sto_pasif_fl ?? false) &&
-              stock.sto_kod != null
+              stock.sto_kod != null &&
+              changedProductCodes.Contains(stock.sto_kod)
         let barcodeRow = mikroDbContext.BARKOD_TANIMLARIs
             .AsNoTracking()
             .Where(item => item.bar_stokkodu == stock.sto_kod && item.bar_kodu != null)
@@ -250,6 +287,38 @@ internal sealed class ProductMasterSyncTaskHandler(
             (stock.sto_satis_dursun ?? 0) != 0,
             (stock.sto_siparis_dursun ?? 0) != 0,
             (stock.sto_malkabul_dursun ?? 0) != 0);
+    }
+
+    private IQueryable<string> CreateChangedProductCodesQuery()
+    {
+        var changedAfter = DateTime.Now.AddMinutes(-GetChangeLookbackMinutes(options.CurrentValue, Code));
+        var supportedModelCodes = new[] { "01", "02", "03", "04", "20" };
+
+        return mikroDbContext.STOKLARs
+            .AsNoTracking()
+            .Where(stock =>
+                stock.sto_iptal != true &&
+                !(stock.sto_pasif_fl ?? false) &&
+                stock.sto_kod != null &&
+                supportedModelCodes.Contains(stock.sto_model_kodu!) &&
+                ((stock.sto_lastup_date ?? stock.sto_create_date) >= changedAfter ||
+                 mikroDbContext.BARKOD_TANIMLARIs.Any(barcode =>
+                     barcode.bar_iptal != true &&
+                     barcode.bar_stokkodu == stock.sto_kod &&
+                     (barcode.bar_lastup_date ?? barcode.bar_create_date) >= changedAfter)))
+            .OrderBy(stock => stock.sto_kod)
+            .Select(stock => stock.sto_kod);
+    }
+
+    private static int GetChangeLookbackMinutes(AxataSynchronizationOptions currentOptions, string taskCode) =>
+        currentOptions.Tasks.TryGetValue(taskCode, out var taskOptions)
+            ? Math.Max(1, taskOptions.ChangeLookbackMinutes)
+            : 10;
+
+    private static int GetBatchSize(AxataSynchronizationOptions currentOptions, string taskCode) =>
+        currentOptions.Tasks.TryGetValue(taskCode, out var taskOptions)
+            ? Math.Clamp(taskOptions.BatchSize, 1, 1000)
+            : 1000;
 
     private async Task<IReadOnlyCollection<AxataSynchronizationJobArtifactDto>> WriteArtifactsIfNeededAsync(
         AxataSynchronizationTaskExecutionContext context,
@@ -442,7 +511,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
         int take,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = GetRequiredWarehouseNo(context);
+        var warehouseNo = GetOptionalWarehouseNo(context);
         var request = CreateCompanyOrderListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
         var documents = await listQueryExecutor.ExecuteAsync(
             request,
@@ -455,7 +524,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
         foreach (var document in selected)
         {
             var detail = await detailQueryExecutor.ExecuteAsync(
-                new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                new CompanyOrderDetailRequest(document.WarehouseNo, document.DocumentSerie, document.DocumentOrderNo),
                 AxataCompanyOrderDirection,
                 cancellationToken);
 
@@ -481,7 +550,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
         AxataSynchronizationTaskExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = GetRequiredWarehouseNo(context);
+        var warehouseNo = GetOptionalWarehouseNo(context);
         var request = CreateCompanyOrderListRequest(options.CurrentValue.DefaultLookbackDays, warehouseNo);
         var documents = await listQueryExecutor.ExecuteAsync(
             request,
@@ -492,7 +561,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
         foreach (var document in documents)
         {
             var detail = await detailQueryExecutor.ExecuteAsync(
-                new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                new CompanyOrderDetailRequest(document.WarehouseNo, document.DocumentSerie, document.DocumentOrderNo),
                 AxataCompanyOrderDirection,
                 cancellationToken);
 
@@ -509,7 +578,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
                 }
 
                 var markResult = await sentFlagService.MarkCompanyOrderAsSentAsync(
-                    new CompanyOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
+                    new CompanyOrderDetailRequest(document.WarehouseNo, document.DocumentSerie, document.DocumentOrderNo),
                     AxataCompanyOrderDirection,
                     cancellationToken);
 
@@ -554,7 +623,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
             artifacts);
     }
 
-    private static CompanyOrderListRequest CreateCompanyOrderListRequest(int lookbackDays, int warehouseNo)
+    private static CompanyOrderListRequest CreateCompanyOrderListRequest(int lookbackDays, int? warehouseNo)
     {
         var normalizedLookbackDays = Math.Max(1, lookbackDays);
         var endDate = DateTime.Today;
@@ -563,10 +632,8 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
         return new CompanyOrderListRequest(warehouseNo, startDate, endDate, null, true, true);
     }
 
-    private static int GetRequiredWarehouseNo(AxataSynchronizationTaskExecutionContext context) =>
-        context.WarehouseNo is > 0
-            ? context.WarehouseNo.Value
-            : throw new ArgumentException("Warehouse number is required for this synchronization task.");
+    private static int? GetOptionalWarehouseNo(AxataSynchronizationTaskExecutionContext context) =>
+        context.WarehouseNo is > 0 ? context.WarehouseNo : null;
 
     private async Task<IReadOnlyCollection<AxataSynchronizationJobArtifactDto>> WriteArtifactsIfNeededAsync(
         AxataSynchronizationTaskExecutionContext context,
