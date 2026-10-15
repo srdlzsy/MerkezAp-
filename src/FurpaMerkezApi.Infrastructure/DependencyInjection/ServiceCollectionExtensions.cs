@@ -436,7 +436,10 @@ public static class ServiceCollectionExtensions
                     authConnection,
                     sqlServer =>
                     {
-                        sqlServer.EnableRetryOnFailure();
+                        sqlServer.EnableRetryOnFailure(
+                            maxRetryCount: 3,
+                            maxRetryDelay: TimeSpan.FromSeconds(5),
+                            errorNumbersToAdd: null);
                         sqlServer.CommandTimeout(authCommandTimeoutSeconds);
                     });
 
@@ -498,7 +501,10 @@ public static class ServiceCollectionExtensions
                         // AXATA SQL does not support EF's OPENJSON-based collection translation.
                         // Compatibility level 120 makes collection Contains generate classic IN clauses.
                         sqlServer.UseCompatibilityLevel(120);
-                        sqlServer.EnableRetryOnFailure();
+                        sqlServer.EnableRetryOnFailure(
+                            maxRetryCount: 3,
+                            maxRetryDelay: TimeSpan.FromSeconds(5),
+                            errorNumbersToAdd: null);
                         sqlServer.CommandTimeout(axataCommandTimeoutSeconds);
                     }));
         }

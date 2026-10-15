@@ -99,6 +99,15 @@ internal sealed class AxataSynchronizationWorker(
                     $"Completed {workItem.TaskCode}",
                     queue.GetBacklogSnapshot());
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                queue.MarkFailed(workItem.JobId, "Uygulama kapandigi icin AXATA gorevi kontrollu olarak durduruldu.");
+                runtimeMonitor.ReportDisabled(
+                    WorkerRuntimeMonitor.AxataWorkerCode,
+                    "Application is stopping",
+                    queue.GetBacklogSnapshot());
+                break;
+            }
             catch (Exception exception)
             {
                 logger.LogError(

@@ -34,8 +34,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
         CancellationToken cancellationToken)
     {
         var configuration = GetRequiredConfiguration();
-        var masterOperationName = ResolveOperationName(context.Definition.Code, DefaultFirmMasterOperationName);
-        var addressOperationName = DefaultFirmAddressOperationName;
+        var (masterOperationName, addressOperationName) = ResolveFirmOperationNames(context.Definition.Code);
         var payload = BuildFirmMasterPayload(item);
         var addressPayload = BuildFirmAddressPayload(item);
         var masterResponse = await AddFirmMasterAsync(
@@ -747,6 +746,24 @@ internal sealed class AxataSynchronizationLiveTransportService(
         }
 
         return fallbackOperationName;
+    }
+
+    private (string MasterOperationName, string AddressOperationName) ResolveFirmOperationNames(string taskCode)
+    {
+        var configured = ResolveOperationName(taskCode, DefaultFirmMasterOperationName);
+        var operationNames = configured
+            .Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return operationNames.Length switch
+        {
+            1 when operationNames[0].Equals(DefaultFirmMasterOperationName, StringComparison.OrdinalIgnoreCase) =>
+                (DefaultFirmMasterOperationName, DefaultFirmAddressOperationName),
+            2 when operationNames[0].Equals(DefaultFirmMasterOperationName, StringComparison.OrdinalIgnoreCase) &&
+                   operationNames[1].Equals(DefaultFirmAddressOperationName, StringComparison.OrdinalIgnoreCase) =>
+                (DefaultFirmMasterOperationName, DefaultFirmAddressOperationName),
+            _ => throw new NotSupportedException(
+                $"AXATA WCF firm synchronization operation '{configured}' is not supported.")
+        };
     }
 }
 

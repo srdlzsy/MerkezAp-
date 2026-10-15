@@ -92,9 +92,14 @@ internal sealed class AxataG01InboundAtfImportService(
                 if (!analysis.Dto.CanImport)
                 {
                     skippedDocumentCount++;
-                    failures.Add(new AxataG01InboundAtfFailureDto(
+                    var failure = new AxataG01InboundAtfFailureDto(
                         analysis.Document.OrderDocumentNo,
-                        analysis.Dto.Warning ?? "G01 inbound ATF can not be imported safely."));
+                        analysis.Dto.Warning ?? "G01 inbound ATF can not be imported safely.");
+                    failures.Add(failure);
+                    logger.LogWarning(
+                        "AXATA G01 belge guvenli aktarim kosullarini saglamadigi icin atlandi. OrderDocumentNo={OrderDocumentNo}, Reason={Reason}",
+                        failure.OrderDocumentNo,
+                        failure.ErrorMessage);
 
                     if (!request.ContinueOnError)
                     {
@@ -115,6 +120,10 @@ internal sealed class AxataG01InboundAtfImportService(
                 failures.Add(new AxataG01InboundAtfFailureDto(
                     analysis.Document.OrderDocumentNo,
                     exception.Message));
+                logger.LogError(
+                    exception,
+                    "AXATA G01 belge aktarimi hata verdi. OrderDocumentNo={OrderDocumentNo}",
+                    analysis.Document.OrderDocumentNo);
 
                 if (!request.ContinueOnError)
                 {

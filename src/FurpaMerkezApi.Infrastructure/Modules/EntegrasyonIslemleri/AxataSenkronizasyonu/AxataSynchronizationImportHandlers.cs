@@ -69,7 +69,7 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
         if (result.FailedDocumentCount > 0)
         {
             throw new InvalidOperationException(
-                $"AXATA {MovementType} aktariminda {result.FailedDocumentCount} belge basarisiz oldu. Basarili={result.SucceededDocumentCount}, Atlanan={result.SkippedDocumentCount}.");
+                $"AXATA {MovementType} aktariminda {result.FailedDocumentCount} belge basarisiz oldu. Basarili={result.SucceededDocumentCount}, Atlanan={result.SkippedDocumentCount}. Nedenler: {FormatFailures(result.Failures)}");
         }
 
         return new AxataSynchronizationTaskExecutionResult(
@@ -91,6 +91,13 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
         currentOptions.Tasks.TryGetValue(taskCode, out var taskOptions)
             ? Math.Clamp(taskOptions.BatchSize, 1, 500)
             : 100;
+
+    private static string FormatFailures(
+        IReadOnlyCollection<AxataOutboundDeliveryImportFailureDto> failures) =>
+        string.Join(" | ", failures
+            .Take(10)
+            .Select(failure =>
+                $"{failure.AxataDeliveryNo ?? failure.AxataSequenceNo?.ToString() ?? "bilinmeyen-belge"}: {failure.ErrorMessage}"));
 
     protected IAxataOutboundDeliveryImportService ImportService { get; } = importService;
 }
@@ -260,7 +267,7 @@ internal sealed class G01InboundAtfImportTaskHandler(
         if (result.FailedDocumentCount > 0)
         {
             throw new InvalidOperationException(
-                $"AXATA G01 aktariminda {result.FailedDocumentCount} belge basarisiz oldu. Basarili={result.SucceededDocumentCount}, Atlanan={result.SkippedDocumentCount}.");
+                $"AXATA G01 aktariminda {result.FailedDocumentCount} belge basarisiz oldu. Basarili={result.SucceededDocumentCount}, Atlanan={result.SkippedDocumentCount}. Nedenler: {FormatFailures(result.Failures)}");
         }
 
         return new AxataSynchronizationTaskExecutionResult(
@@ -268,4 +275,9 @@ internal sealed class G01InboundAtfImportTaskHandler(
             $"{result.SucceededDocumentCount} AXATA G01 belgesi Mikro'ya aktarildi. Satir={result.CreatedMovementLineCount}, Atlanan={result.SkippedDocumentCount}.",
             Array.Empty<AxataSynchronizationJobArtifactDto>());
     }
+
+    private static string FormatFailures(IReadOnlyCollection<AxataG01InboundAtfFailureDto> failures) =>
+        string.Join(" | ", failures
+            .Take(10)
+            .Select(failure => $"{failure.OrderDocumentNo ?? "bilinmeyen-belge"}: {failure.ErrorMessage}"));
 }
