@@ -16,7 +16,8 @@ internal static class IssuedCompanyOrderMikroApiPayloadFactory
         DateTime orderDate,
         DateTime deliveryDate,
         string documentSerie,
-        int documentOrderNo)
+        int documentOrderNo,
+        string traceKey)
     {
         var customerCode = NormalizeText(request.CustomerCode, 25);
         var satirlar = lines
@@ -65,7 +66,8 @@ internal static class IssuedCompanyOrderMikroApiPayloadFactory
                     line.RecommendedQuantity ?? 0d,
                     0d,
                     NormalizeText(request.Deliverer, 25),
-                    NormalizeText(request.Receiver, 25));
+                    NormalizeText(request.Receiver, 25),
+                    NormalizeText(traceKey, 25));
             })
             .ToArray();
 
@@ -135,4 +137,5 @@ internal sealed record IssuedCompanyOrderMikroApiLine(
     double sip_rezervasyon_miktari,
     double sip_rezerveden_teslim_edilen,
     string sip_HareketGrupKodu2,
-    string sip_HareketGrupKodu3);
+    string sip_HareketGrupKodu3,
+    string sip_eticaret_kanal_kodu);

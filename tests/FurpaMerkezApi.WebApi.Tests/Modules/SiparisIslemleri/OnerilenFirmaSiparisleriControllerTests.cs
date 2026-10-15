@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenFirmaSiparisleri.List;
@@ -111,6 +112,12 @@ public sealed class OnerilenFirmaSiparisleriControllerTests
     {
         public Task<CreateIssuedCompanyOrderResponse> ExecuteAsync(
             CreateIssuedCompanyOrderRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<OfflineSyncStatusDto<CreateIssuedCompanyOrderResponse>> GetOfflineSyncStatusAsync(
+            Guid requestedByUserId,
+            Guid clientRequestId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }

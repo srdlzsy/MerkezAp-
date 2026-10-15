@@ -9,7 +9,9 @@ public sealed record CreateIssuedCompanyOrderRequest(
     string? Description2,
     string? Deliverer,
     string? Receiver,
-    IReadOnlyCollection<CreateIssuedCompanyOrderLineRequest> Lines);
+    IReadOnlyCollection<CreateIssuedCompanyOrderLineRequest> Lines,
+    Guid? ClientRequestId = null,
+    Guid? RequestedByUserId = null);
 
 public sealed record CreateIssuedCompanyOrderLineRequest(
     string StockCode,

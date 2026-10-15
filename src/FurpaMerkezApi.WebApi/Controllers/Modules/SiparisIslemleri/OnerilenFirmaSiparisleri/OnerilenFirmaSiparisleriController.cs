@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
@@ -52,6 +53,7 @@ public sealed class OnerilenFirmaSiparisleriController(
     [ProducesResponseType(typeof(CreateIssuedCompanyOrderResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CreateIssuedCompanyOrderResponse>> ConvertToOrder(
         [FromBody] ConvertSuggestedCompanyOrderHttpRequest request,
         CancellationToken cancellationToken)
@@ -80,7 +82,9 @@ public sealed class OnerilenFirmaSiparisleriController(
                         line.ProjectCode,
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter))
-                    .ToArray()),
+                    .ToArray(),
+                request.ClientRequestId,
+                User.GetRequiredUserId()),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -103,6 +107,19 @@ public sealed class OnerilenFirmaSiparisleriController(
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateIssuedCompanyOrderResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateIssuedCompanyOrderResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createIssuedCompanyOrderUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 }
 
 public sealed class SuggestedCompanyOrderListHttpRequest
@@ -123,6 +140,8 @@ public sealed class SuggestedCompanyOrderListHttpRequest
 
 public sealed class ConvertSuggestedCompanyOrderHttpRequest
 {
+    public Guid? ClientRequestId { get; init; }
+
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 

@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.Common;
@@ -42,6 +43,30 @@ public sealed class IssuedCompanyOrderRecoveryMatcherTests
         Assert.Equal(
             IssuedCompanyOrderMatch.Mismatch,
             IssuedCompanyOrderRecoveryMatcher.Match(request, request.Lines.ToArray(), rows));
+    }
+
+    [Fact]
+    public void MikroApiPayload_WritesClientRequestTraceToEveryLine()
+    {
+        var clientRequestId = Guid.Parse("33b460c0-a1c3-4f11-a2c6-26c355704ac8");
+        var request = Request() with { ClientRequestId = clientRequestId };
+        var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
+
+        var payload = IssuedCompanyOrderMikroApiPayloadFactory.Create(
+            request,
+            request.Lines,
+            customerPaymentPlanNo: 7,
+            customerCanBeCalled: true,
+            OrderDate,
+            DeliveryDate,
+            documentSerie: "F110",
+            documentOrderNo: 2514,
+            traceKey);
+
+        var lines = Assert.Single(payload.evraklar).satirlar;
+        Assert.NotEmpty(lines);
+        Assert.All(lines, line => Assert.Equal(traceKey, line.sip_eticaret_kanal_kodu));
+        Assert.Equal(24, traceKey.Length);
     }
 
     private static CreateIssuedCompanyOrderRequest Request() =>
