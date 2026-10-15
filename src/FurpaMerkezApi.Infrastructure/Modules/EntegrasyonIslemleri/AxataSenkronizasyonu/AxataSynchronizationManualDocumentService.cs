@@ -22,6 +22,7 @@ internal sealed class AxataSynchronizationManualDocumentService(
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
     AxataOrderSentFlagService sentFlagService,
+    AxataOrderDocumentFlowRecorder documentFlowRecorder,
     MikroWriteDbContext mikroWriteDbContext,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
@@ -521,6 +522,14 @@ internal sealed class AxataSynchronizationManualDocumentService(
                         detailRequest,
                         AxataOutboundWarehouseOrderDirection,
                         cancellationToken);
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordWarehouseOrderSentAsync(
+                            detail,
+                            "C01",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
                     notes.Add(markResult.LineCount > 0
                         ? $"{markResult.LineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
                         : "UYARI: AXATA Success dondu ancak Mikro ssip_special1 bayragi icin eslesen satir bulunamadi.");
@@ -549,6 +558,14 @@ internal sealed class AxataSynchronizationManualDocumentService(
                         detailRequest,
                         AxataInboundWarehouseOrderDirection,
                         cancellationToken);
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordWarehouseOrderSentAsync(
+                            detail,
+                            "G02",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
                     notes.Add(markResult.LineCount > 0
                         ? $"{markResult.LineCount} Mikro siparis satirinda ssip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
                         : "UYARI: AXATA Success dondu ancak Mikro ssip_special1 bayragi icin eslesen G02 satiri bulunamadi.");

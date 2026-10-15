@@ -188,5 +188,6 @@ public enum DocumentFlowStep
     DocumentDeleted = 6,
     MasterDataUpdated = 7,
     PriceUpdated = 8,
-    PriceDeleted = 9
+    PriceDeleted = 9,
+    AxataOrderSent = 10
 }

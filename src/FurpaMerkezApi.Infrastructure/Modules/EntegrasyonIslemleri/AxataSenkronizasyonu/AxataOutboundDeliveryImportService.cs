@@ -4,8 +4,10 @@ using System.ServiceModel;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.FirmaSevkleri.Create;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Axata;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -26,6 +28,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     IAcceptWarehouseReceivingUseCase acceptWarehouseReceivingUseCase,
     ICreateCompanyShipmentUseCase createCompanyShipmentUseCase,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IDocumentFlowService documentFlowService,
     ILogger<AxataOutboundDeliveryImportService> logger,
     AxataDbContext? axataDbContext = null)
     : IAxataOutboundDeliveryImportService,
@@ -798,19 +801,23 @@ internal sealed class AxataOutboundDeliveryImportService(
                 var result = await ExecuteG02AnalysisAsync(
                     analysis,
                     request.Acknowledge,
+                    requestedByUserId,
                     cancellationToken);
 
                 if (result is not null)
                 {
                     results.Add(result);
+                    LogG02Success(analysis, result);
                     continue;
                 }
 
+                var warning = analysis.ImportDto.Warning ?? "G02 delivery can not be imported safely.";
                 skippedDocumentCount++;
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    analysis.ImportDto.Warning ?? "G02 delivery can not be imported safely."));
+                    warning));
+                LogG02Skipped(analysis, warning);
 
                 if (!request.ContinueOnError)
                 {
@@ -819,6 +826,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             }
             catch (Exception exception)
             {
+                LogG02Failure(analysis, exception);
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
@@ -897,23 +905,28 @@ internal sealed class AxataOutboundDeliveryImportService(
             var result = await ExecuteG02AnalysisAsync(
                 analysis,
                 request.Acknowledge,
+                requestedByUserId,
                 cancellationToken);
 
             if (result is not null)
             {
                 results.Add(result);
+                LogG02Success(analysis, result);
             }
             else
             {
+                var warning = analysis.ImportDto.Warning ?? "G02 delivery can not be imported safely.";
                 skippedDocumentCount++;
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    analysis.ImportDto.Warning ?? "G02 delivery can not be imported safely."));
+                    warning));
+                LogG02Skipped(analysis, warning);
             }
         }
         catch (Exception exception)
         {
+            LogG02Failure(analysis, exception);
             failures.Add(new AxataOutboundDeliveryImportFailureDto(
                 analysis.Document.AxataSequenceNo,
                 analysis.Document.AxataDeliveryNo,
@@ -2378,6 +2391,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     private async Task<AxataOutboundDeliveryImportResultDto?> ExecuteG02AnalysisAsync(
         G02DeliveryAnalysis analysis,
         bool acknowledge,
+        Guid requestedByUserId,
         CancellationToken cancellationToken)
     {
         if (analysis.ImportDto.CanImport)
@@ -2394,6 +2408,18 @@ internal sealed class AxataOutboundDeliveryImportService(
                 await AcknowledgeInboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
                 acknowledged = true;
             }
+
+            await RecordG02AcceptanceFlowAsync(
+                acceptanceResponse.IsReturn,
+                acceptanceResponse.SourceWarehouseNo,
+                acceptanceResponse.WarehouseNo,
+                acceptanceResponse.DocumentSerie,
+                acceptanceResponse.DocumentOrderNo,
+                analysis.Document.AxataDeliveryNo,
+                requestedByUserId,
+                acknowledged,
+                wasAlreadyAccepted: false,
+                cancellationToken: cancellationToken);
 
             return new AxataOutboundDeliveryImportResultDto(
                 analysis.Document.AxataSequenceNo,
@@ -2413,14 +2439,30 @@ internal sealed class AxataOutboundDeliveryImportService(
         if (acknowledge && CanAcknowledgeExistingG02Receiving(analysis))
         {
             await AcknowledgeInboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+            var movementLine = analysis.MatchedLines.First().ShipmentLine;
+            var targetWarehouseNo = analysis.MatchedLines
+                .Select(line => line.OrderLine.ssip_girdepo ?? 0)
+                .First(warehouseNo => warehouseNo > 0);
+
+            await RecordG02AcceptanceFlowAsync(
+                movementLine.NormalReturn == ReturnMovement,
+                movementLine.SourceWarehouseNo,
+                targetWarehouseNo,
+                movementLine.DocumentSerie,
+                movementLine.DocumentOrderNo,
+                analysis.Document.AxataDeliveryNo,
+                requestedByUserId,
+                acknowledged: true,
+                wasAlreadyAccepted: true,
+                cancellationToken: cancellationToken);
 
             return new AxataOutboundDeliveryImportResultDto(
                 analysis.Document.AxataSequenceNo,
                 analysis.Document.AxataDeliveryNo,
                 analysis.Document.DocumentSerie,
                 analysis.Document.DocumentOrderNo ?? 0,
-                string.Empty,
-                0,
+                movementLine.DocumentSerie,
+                movementLine.DocumentOrderNo,
                 0,
                 0d,
                 true,
@@ -3718,9 +3760,83 @@ internal sealed class AxataOutboundDeliveryImportService(
                 movement.sth_cikis_depo_no ?? 0,
                 movement.sth_giris_depo_no ?? 0,
                 movement.sth_nakliyedeposu ?? 0,
-                movement.sth_nakliyedurumu ?? 0))
+                movement.sth_nakliyedurumu ?? 0,
+                movement.sth_normal_iade ?? NormalMovement))
             .ToArrayAsync(cancellationToken);
     }
+
+    private async Task RecordG02AcceptanceFlowAsync(
+        bool isReturn,
+        int sourceWarehouseNo,
+        int targetWarehouseNo,
+        string documentSerie,
+        int documentOrderNo,
+        string axataDeliveryNo,
+        Guid requestedByUserId,
+        bool acknowledged,
+        bool wasAlreadyAccepted,
+        CancellationToken cancellationToken)
+    {
+        var documentType = isReturn
+            ? DocumentFlowType.WarehouseReturn
+            : DocumentFlowType.InterWarehouseShipment;
+        var acceptanceState = wasAlreadyAccepted
+            ? "Mikro depo mal kabulu daha once tamamlanmisti"
+            : "Mikro depo mal kabulu tamamlandi";
+        var acknowledgementState = acknowledged
+            ? "AXATA teslimati kapatildi"
+            : "AXATA teslimati acik birakildi";
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    documentType,
+                    sourceWarehouseNo,
+                    documentSerie,
+                    documentOrderNo),
+                documentType,
+                sourceWarehouseNo,
+                targetWarehouseNo,
+                documentSerie,
+                documentOrderNo,
+                DocumentFlowStep.WarehouseReceivingAccepted,
+                DocumentFlowStatus.Succeeded,
+                $"AXATA G02: {acceptanceState}; {acknowledgementState}. AXATA belge: {axataDeliveryNo}.",
+                ChangedByUserId: requestedByUserId == Guid.Empty ? null : requestedByUserId),
+            cancellationToken);
+    }
+
+    private void LogG02Success(
+        G02DeliveryAnalysis analysis,
+        AxataOutboundDeliveryImportResultDto result) =>
+        logger.LogInformation(
+            "AXATA G02 belge islendi. SequenceNo={SequenceNo}, AxataDeliveryNo={AxataDeliveryNo}, SourceDocument={SourceDocumentSerie}/{SourceDocumentOrderNo}, MovementDocument={MovementDocumentSerie}/{MovementDocumentOrderNo}, CreatedLineCount={CreatedLineCount}, Acknowledged={Acknowledged}",
+            analysis.Document.AxataSequenceNo,
+            analysis.Document.AxataDeliveryNo,
+            analysis.Document.DocumentSerie,
+            analysis.Document.DocumentOrderNo,
+            result.MovementSerie,
+            result.MovementOrderNo,
+            result.CreatedMovementLineCount,
+            result.Acknowledged);
+
+    private void LogG02Skipped(G02DeliveryAnalysis analysis, string warning) =>
+        logger.LogWarning(
+            "AXATA G02 belge guvenli aktarim kosullarini saglamadigi icin atlandi. SequenceNo={SequenceNo}, AxataDeliveryNo={AxataDeliveryNo}, SourceDocument={SourceDocumentSerie}/{SourceDocumentOrderNo}, Reason={Reason}",
+            analysis.Document.AxataSequenceNo,
+            analysis.Document.AxataDeliveryNo,
+            analysis.Document.DocumentSerie,
+            analysis.Document.DocumentOrderNo,
+            warning);
+
+    private void LogG02Failure(G02DeliveryAnalysis analysis, Exception exception) =>
+        logger.LogError(
+            exception,
+            "AXATA G02 belge aktarimi hata verdi. SequenceNo={SequenceNo}, AxataDeliveryNo={AxataDeliveryNo}, SourceDocument={SourceDocumentSerie}/{SourceDocumentOrderNo}",
+            analysis.Document.AxataSequenceNo,
+            analysis.Document.AxataDeliveryNo,
+            analysis.Document.DocumentSerie,
+            analysis.Document.DocumentOrderNo);
 
     private static IReadOnlyCollection<MatchedG02Line> MatchG02Lines(
         AxataOutboundDeliveryDocument document,
@@ -5930,7 +6046,8 @@ internal sealed record LinkedWarehouseShipmentLine(
     int SourceWarehouseNo,
     int CurrentWarehouseNo,
     int TransitWarehouseNo,
-    byte ShippingState);
+    byte ShippingState,
+    byte NormalReturn);
 
 internal sealed record OutboundDeliveryAuditFetchResult(
     bool IsSuccess,

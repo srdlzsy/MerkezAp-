@@ -169,11 +169,13 @@ public sealed class DocumentFlowService(
                 clock.UtcNow);
             authDbContext.DocumentFlows.Add(flow);
         }
-        else if (IsSuccessfulDocumentCreation(request)
+        else if (IsIdempotentSuccessfulStep(request)
                  && await authDbContext.DocumentFlowEvents.AnyAsync(
                      item => item.DocumentFlowId == flow.Id
-                         && item.Step == DocumentFlowStep.DocumentCreated
-                         && item.Status == DocumentFlowStatus.Succeeded,
+                         && item.Step == request.Step
+                         && item.Status == DocumentFlowStatus.Succeeded
+                         && (request.Step != DocumentFlowStep.AxataOrderSent
+                             || item.Message == request.Message),
                      cancellationToken))
         {
             return;
@@ -195,9 +197,11 @@ public sealed class DocumentFlowService(
         await authDbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static bool IsSuccessfulDocumentCreation(RecordDocumentFlowRequest request) =>
-        request.Step == DocumentFlowStep.DocumentCreated
-        && request.Status == DocumentFlowStatus.Succeeded;
+    private static bool IsIdempotentSuccessfulStep(RecordDocumentFlowRequest request) =>
+        request.Status == DocumentFlowStatus.Succeeded
+        && request.Step is DocumentFlowStep.DocumentCreated
+            or DocumentFlowStep.WarehouseReceivingAccepted
+            or DocumentFlowStep.AxataOrderSent;
 
     private static DocumentFlowListItemDto ToListItem(DocumentFlow flow) =>
         new(

@@ -340,7 +340,8 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
     IOptionsMonitor<AxataSynchronizationOptions> options,
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
-    AxataOrderSentFlagService sentFlagService)
+    AxataOrderSentFlagService sentFlagService,
+    AxataOrderDocumentFlowRecorder documentFlowRecorder)
     : IAxataSynchronizationTaskHandler
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
@@ -423,6 +424,15 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
                     new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
                     AxataWarehouseOrderDirection,
                     cancellationToken);
+
+                if (markResult.LineCount > 0)
+                {
+                    await documentFlowRecorder.RecordWarehouseOrderSentAsync(
+                        detail,
+                        "C01",
+                        context.RequestedByUserId,
+                        cancellationToken);
+                }
 
                 payloadDocuments.Add(new
                 {
@@ -655,7 +665,8 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
     IOptionsMonitor<AxataSynchronizationOptions> options,
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
-    AxataOrderSentFlagService sentFlagService)
+    AxataOrderSentFlagService sentFlagService,
+    AxataOrderDocumentFlowRecorder documentFlowRecorder)
     : IAxataSynchronizationTaskHandler
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Issued;
@@ -738,6 +749,15 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
                     new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
                     AxataWarehouseOrderDirection,
                     cancellationToken);
+
+                if (markResult.LineCount > 0)
+                {
+                    await documentFlowRecorder.RecordWarehouseOrderSentAsync(
+                        detail,
+                        "G02",
+                        context.RequestedByUserId,
+                        cancellationToken);
+                }
 
                 payloadDocuments.Add(new
                 {

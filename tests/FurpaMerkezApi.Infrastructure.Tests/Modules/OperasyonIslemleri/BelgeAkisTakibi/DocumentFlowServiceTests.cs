@@ -126,6 +126,90 @@ public sealed class DocumentFlowServiceTests
             item => Assert.Equal(DocumentFlowStep.EDespatchSubmission, item.Step));
     }
 
+    [Fact]
+    public async Task RecordAsync_DoesNotAppendDuplicateSuccessfulWarehouseReceivingAcceptedEvent()
+    {
+        await using var dbContext = CreateDbContext();
+        var initialTime = new DateTime(2026, 10, 15, 7, 30, 0, DateTimeKind.Utc);
+        var clock = new MutableClock(initialTime);
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+        const string flowKey = "InterWarehouseShipment:56:F56:88730";
+        var request = new RecordDocumentFlowRequest(
+            flowKey,
+            DocumentFlowType.InterWarehouseShipment,
+            56,
+            110,
+            "F56",
+            88730,
+            DocumentFlowStep.WarehouseReceivingAccepted,
+            DocumentFlowStatus.Succeeded,
+            "AXATA G02 worker ile depo mal kabulu tamamlandi.");
+
+        await service.RecordAsync(request, CancellationToken.None);
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordAsync(request, CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var flow = await dbContext.DocumentFlows
+            .Include(item => item.Events)
+            .SingleAsync(item => item.FlowKey == flowKey);
+
+        Assert.Equal(initialTime, flow.UpdatedAtUtc);
+        Assert.Collection(
+            flow.Events,
+            item =>
+            {
+                Assert.Equal(DocumentFlowStep.WarehouseReceivingAccepted, item.Step);
+                Assert.Equal(DocumentFlowStatus.Succeeded, item.Status);
+                Assert.Equal(initialTime, item.OccurredAtUtc);
+            });
+    }
+
+    [Fact]
+    public async Task RecordAsync_DeduplicatesAxataOrderSentPerMovementType()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 10, 15, 8, 0, 0, DateTimeKind.Utc));
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+        const string flowKey = "IssuedWarehouseOrder:56:F56:88731";
+
+        RecordDocumentFlowRequest CreateRequest(string movementType) => new(
+            flowKey,
+            DocumentFlowType.IssuedWarehouseOrder,
+            56,
+            110,
+            "F56",
+            88731,
+            DocumentFlowStep.AxataOrderSent,
+            DocumentFlowStatus.Succeeded,
+            $"Siparis AXATA'ya {movementType} olarak gonderildi ve Mikro gonderim isareti dogrulandi.");
+
+        await service.RecordAsync(CreateRequest("C01"), CancellationToken.None);
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordAsync(CreateRequest("C01"), CancellationToken.None);
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordAsync(CreateRequest("G02"), CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var flow = await dbContext.DocumentFlows
+            .Include(item => item.Events)
+            .SingleAsync(item => item.FlowKey == flowKey);
+
+        Assert.Collection(
+            flow.Events.OrderBy(item => item.OccurredAtUtc),
+            item => Assert.Contains("C01", item.Message, StringComparison.Ordinal),
+            item => Assert.Contains("G02", item.Message, StringComparison.Ordinal));
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()
