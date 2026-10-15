@@ -88544,6 +88544,83 @@
         ]
       }
     },
+    "/api/ayar-islemleri/veritabani-izleme/genel-bakis": {
+      "get": {
+        "tags": [
+          "VeritabaniIzleme"
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.MonitoringOverviewDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.MonitoringOverviewDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.MonitoringOverviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "ayar-islemleri.veritabani-izleme.list"
+        ]
+      }
+    },
     "/api/ayar-islemleri/veritabani-izleme/anlik": {
       "get": {
         "tags": [
@@ -94905,6 +94982,29 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto": {
+        "type": "object",
+        "properties": {
+          "openCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "criticalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warningCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lastSeenAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto": {
         "type": "object",
         "properties": {
@@ -94977,6 +95077,32 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringOverviewDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "activeRequestCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blockedRequestCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "longRunningRequestCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "openTransactionCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -95268,6 +95394,40 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.MonitoringOverviewDto": {
+        "type": "object",
+        "properties": {
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "overallStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "overallStatusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "headline": {
+            "type": "string",
+            "nullable": true
+          },
+          "database": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringOverviewDto"
+          },
+          "workers": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringSnapshotDto"
+          },
+          "incidents": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto"
+          },
+          "safeWrites": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto"
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringItemDto": {
         "type": "object",
         "properties": {
@@ -95328,6 +95488,40 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto": {
+        "type": "object",
+        "properties": {
+          "windowHours": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "processingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "staleProcessingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retryableFailureCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "manualReviewCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unclassifiedFailureCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "completedCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringItemDto": {
         "type": "object",
         "properties": {
@@ -95349,6 +95543,10 @@
             "type": "string",
             "nullable": true
           },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
           "activity": {
             "type": "string",
             "nullable": true
@@ -95362,6 +95560,11 @@
             "format": "date-time",
             "nullable": true
           },
+          "heartbeatAgeSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
           "lastSuccessAtUtc": {
             "type": "string",
             "format": "date-time",
@@ -95373,6 +95576,16 @@
             "nullable": true
           },
           "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "hasUnresolvedFailure": {
+            "type": "boolean"
+          },
+          "requiresAttention": {
+            "type": "boolean"
+          },
+          "recommendation": {
             "type": "string",
             "nullable": true
           },

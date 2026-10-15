@@ -21,6 +21,9 @@ public sealed partial class DatabaseMonitoringService(
     IClock clock,
     IOptionsMonitor<DatabaseMonitoringOptions> options) : IDatabaseMonitoringService
 {
+    private const int OverviewWindowHours = 24;
+    private static readonly TimeSpan StaleSafeWriteAge = TimeSpan.FromMinutes(5);
+
     private const string SnapshotSql =
         """
         SET NOCOUNT ON;
@@ -106,6 +109,110 @@ public sealed partial class DatabaseMonitoringService(
         OUTER APPLY sys.dm_exec_sql_text(COALESCE(r.sql_handle, c.most_recent_sql_handle)) AS txt
         WHERE s.session_id = @session_id;
         """;
+
+    public async Task<MonitoringOverviewDto> GetOverviewAsync(
+        WorkerMonitoringSnapshotDto workers,
+        CancellationToken cancellationToken)
+    {
+        var database = await GetSnapshotAsync(cancellationToken);
+        var now = clock.UtcNow;
+        var windowStart = now.AddHours(-OverviewWindowHours);
+        var staleProcessingBefore = now.Subtract(StaleSafeWriteAge);
+
+        var incidentCounts = await authDbContext.DatabaseMonitoringIncidents
+            .AsNoTracking()
+            .Where(item => item.ResolvedAtUtc == null)
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                OpenCount = group.Count(),
+                CriticalCount = group.Count(item => item.Severity == "critical"),
+                WarningCount = group.Count(item => item.Severity == "warning"),
+                LastSeenAtUtc = group.Max(item => (DateTime?)item.LastSeenAtUtc)
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        var safeWriteCounts = await authDbContext.MobileOfflineSyncRequests
+            .AsNoTracking()
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                ProcessingCount = group.Count(item =>
+                    item.Status == MobileOfflineSyncRequestStatus.Processing),
+                StaleProcessingCount = group.Count(item =>
+                    item.Status == MobileOfflineSyncRequestStatus.Processing &&
+                    (item.UpdatedAtUtc ?? item.CreatedAtUtc) < staleProcessingBefore),
+                RetryableFailureCount = group.Count(item =>
+                    item.Status == MobileOfflineSyncRequestStatus.Failed &&
+                    item.Retryable == true &&
+                    (item.UpdatedAtUtc ?? item.CreatedAtUtc) >= windowStart),
+                ManualReviewCount = group.Count(item =>
+                    item.Status == MobileOfflineSyncRequestStatus.Failed &&
+                    item.Retryable == false &&
+                    (item.UpdatedAtUtc ?? item.CreatedAtUtc) >= windowStart),
+                UnclassifiedFailureCount = group.Count(item =>
+                    item.Status == MobileOfflineSyncRequestStatus.Failed &&
+                    item.Retryable == null &&
+                    (item.UpdatedAtUtc ?? item.CreatedAtUtc) >= windowStart),
+                CompletedCount = group.Count(item =>
+                    item.Status == MobileOfflineSyncRequestStatus.Completed &&
+                    item.CompletedAtUtc >= windowStart)
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        var incidents = new DatabaseIncidentOverviewDto(
+            incidentCounts?.OpenCount ?? 0,
+            incidentCounts?.CriticalCount ?? 0,
+            incidentCounts?.WarningCount ?? 0,
+            incidentCounts?.LastSeenAtUtc);
+        var safeWrites = new SafeWriteMonitoringOverviewDto(
+            OverviewWindowHours,
+            safeWriteCounts?.ProcessingCount ?? 0,
+            safeWriteCounts?.StaleProcessingCount ?? 0,
+            safeWriteCounts?.RetryableFailureCount ?? 0,
+            safeWriteCounts?.ManualReviewCount ?? 0,
+            safeWriteCounts?.UnclassifiedFailureCount ?? 0,
+            safeWriteCounts?.CompletedCount ?? 0);
+        var databaseOverview = new DatabaseMonitoringOverviewDto(
+            database.OverallStatus,
+            database.ActiveRequestCount,
+            database.BlockedRequestCount,
+            database.LongRunningRequestCount,
+            database.OpenTransactionCount);
+        var safeWritesRequireAttention = safeWrites.StaleProcessingCount > 0 ||
+                                         safeWrites.RetryableFailureCount > 0 ||
+                                         safeWrites.ManualReviewCount > 0 ||
+                                         safeWrites.UnclassifiedFailureCount > 0;
+        var overallStatus = database.OverallStatus == "critical" || workers.OverallStatus == "critical"
+            ? "critical"
+            : database.OverallStatus == "warning" ||
+              workers.OverallStatus == "warning" ||
+              incidents.OpenCount > 0 ||
+              safeWritesRequireAttention
+                ? "warning"
+                : "healthy";
+        var attentionCount =
+            (database.OverallStatus == "healthy" ? 0 : 1) +
+            (workers.OverallStatus == "healthy" ? 0 : 1) +
+            (incidents.OpenCount == 0 ? 0 : 1) +
+            (safeWritesRequireAttention ? 1 : 0);
+        var headline = overallStatus switch
+        {
+            "critical" => "Acil mudahale gerektiren izleme bulgulari var.",
+            "warning" => $"{attentionCount} izleme basligi dikkat bekliyor.",
+            _ => "Sistem izleme gostergeleri normal."
+        };
+
+        return new MonitoringOverviewDto(
+            now,
+            overallStatus,
+            OverallStatusName(overallStatus),
+            headline,
+            databaseOverview,
+            workers,
+            incidents,
+            safeWrites);
+    }
 
     public async Task<DatabaseMonitoringSnapshotDto> GetSnapshotAsync(CancellationToken cancellationToken)
     {
@@ -702,6 +809,14 @@ public sealed partial class DatabaseMonitoringService(
         "warning" => 2,
         "info" => 1,
         _ => 0
+    };
+
+    private static string OverallStatusName(string status) => status switch
+    {
+        "healthy" => "Saglikli",
+        "warning" => "Dikkat Gerekiyor",
+        "critical" => "Kritik",
+        _ => status
     };
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)

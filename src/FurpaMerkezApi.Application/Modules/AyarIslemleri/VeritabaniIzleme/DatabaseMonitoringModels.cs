@@ -2,6 +2,10 @@ namespace FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 
 public interface IDatabaseMonitoringService
 {
+    Task<MonitoringOverviewDto> GetOverviewAsync(
+        WorkerMonitoringSnapshotDto workers,
+        CancellationToken cancellationToken);
+
     Task<DatabaseMonitoringSnapshotDto> GetSnapshotAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<DatabaseMonitoringIncidentDto>> GetIncidentsAsync(
@@ -26,6 +30,38 @@ public interface IDatabaseMonitoringService
         int sessionId,
         CancellationToken cancellationToken);
 }
+
+public sealed record MonitoringOverviewDto(
+    DateTime GeneratedAtUtc,
+    string OverallStatus,
+    string OverallStatusName,
+    string Headline,
+    DatabaseMonitoringOverviewDto Database,
+    WorkerMonitoringSnapshotDto Workers,
+    DatabaseIncidentOverviewDto Incidents,
+    SafeWriteMonitoringOverviewDto SafeWrites);
+
+public sealed record DatabaseMonitoringOverviewDto(
+    string Status,
+    int ActiveRequestCount,
+    int BlockedRequestCount,
+    int LongRunningRequestCount,
+    int OpenTransactionCount);
+
+public sealed record DatabaseIncidentOverviewDto(
+    int OpenCount,
+    int CriticalCount,
+    int WarningCount,
+    DateTime? LastSeenAtUtc);
+
+public sealed record SafeWriteMonitoringOverviewDto(
+    int WindowHours,
+    int ProcessingCount,
+    int StaleProcessingCount,
+    int RetryableFailureCount,
+    int ManualReviewCount,
+    int UnclassifiedFailureCount,
+    int CompletedCount);
 
 public sealed record DatabaseMonitoringSnapshotDto(
     DateTime GeneratedAtUtc,

@@ -21,6 +21,10 @@ public sealed class WorkerRuntimeMonitorTests
 
         Assert.Equal("healthy", snapshot.OverallStatus);
         Assert.Equal("Healthy", worker.Status);
+        Assert.Equal("Saglikli", worker.StatusName);
+        Assert.False(worker.RequiresAttention);
+        Assert.False(worker.HasUnresolvedFailure);
+        Assert.Equal("Mudahale gerekmiyor.", worker.Recommendation);
         Assert.Equal("Waiting for work", worker.Activity);
     }
 
@@ -35,7 +39,31 @@ public sealed class WorkerRuntimeMonitorTests
         var snapshot = monitor.GetSnapshot();
 
         Assert.Equal("critical", snapshot.OverallStatus);
-        Assert.Equal("Unhealthy", Assert.Single(snapshot.Workers).Status);
+        var worker = Assert.Single(snapshot.Workers);
+        Assert.Equal("Unhealthy", worker.Status);
+        Assert.True(worker.RequiresAttention);
+        Assert.Contains("Heartbeat", worker.Recommendation);
+    }
+
+    [Fact]
+    public void LatestFailure_ExplainsThatWorkerIsStillRunning()
+    {
+        var clock = Clock();
+        var monitor = Monitor(clock);
+        monitor.ReportSuccess(WorkerRuntimeMonitor.AxataWorkerCode, "Completed");
+        clock.UtcNow = clock.UtcNow.AddSeconds(5);
+        monitor.ReportFailure(
+            WorkerRuntimeMonitor.AxataWorkerCode,
+            "Waiting for work",
+            new InvalidOperationException("17 documents failed"));
+
+        var worker = Assert.Single(monitor.GetSnapshot().Workers);
+
+        Assert.Equal("Degraded", worker.Status);
+        Assert.Equal("Dikkat Gerekiyor", worker.StatusName);
+        Assert.True(worker.HasUnresolvedFailure);
+        Assert.True(worker.RequiresAttention);
+        Assert.Contains("Worker calisiyor", worker.Recommendation);
     }
 
     [Fact]

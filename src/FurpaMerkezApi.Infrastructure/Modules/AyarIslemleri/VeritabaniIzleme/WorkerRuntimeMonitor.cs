@@ -145,6 +145,12 @@ internal sealed class WorkerRuntimeMonitor(IClock clock) : IWorkerMonitoringServ
                     : hasUnresolvedFailure || backlogIsWarning
                         ? "Degraded"
                         : "Healthy";
+            var recommendation = BuildRecommendation(
+                status,
+                heartbeatIsStale,
+                backlogIsCritical,
+                backlogIsWarning,
+                hasUnresolvedFailure);
 
             return new WorkerMonitoringItemDto(
                 state.Code,
@@ -152,18 +158,52 @@ internal sealed class WorkerRuntimeMonitor(IClock clock) : IWorkerMonitoringServ
                 state.IsCritical,
                 state.IsEnabled,
                 status,
+                StatusName(status),
                 state.Activity,
                 state.RegisteredAtUtc,
                 state.LastHeartbeatAtUtc,
+                heartbeatAge.HasValue ? (long)heartbeatAge.Value.TotalSeconds : null,
                 state.LastSuccessAtUtc,
                 state.LastFailureAtUtc,
                 state.LastError,
+                hasUnresolvedFailure,
+                status is "Degraded" or "Unhealthy",
+                recommendation,
                 state.QueuedCount,
                 state.RunningCount,
                 state.OldestQueuedAtUtc,
                 oldestAge.HasValue ? (long)oldestAge.Value.TotalSeconds : null,
                 (int)state.StaleAfter.TotalSeconds);
         }
+    }
+
+    private static string StatusName(string status) => status switch
+    {
+        "Healthy" => "Saglikli",
+        "Degraded" => "Dikkat Gerekiyor",
+        "Unhealthy" => "Sagliksiz",
+        "Disabled" => "Kapali",
+        _ => status
+    };
+
+    private static string BuildRecommendation(
+        string status,
+        bool heartbeatIsStale,
+        bool backlogIsCritical,
+        bool backlogIsWarning,
+        bool hasUnresolvedFailure)
+    {
+        if (status == "Disabled")
+            return "Worker konfigurasyonla kapali; calismasi bekleniyorsa ortam ayarini kontrol edin.";
+        if (heartbeatIsStale)
+            return "Heartbeat gecikmis; IIS uygulama havuzunu, loglari ve worker dongusunu kontrol edin.";
+        if (backlogIsCritical)
+            return "Kuyruk 30 dakikadan uzun bekliyor; worker ve bagimli servisleri acil inceleyin.";
+        if (backlogIsWarning)
+            return "Kuyruk 5 dakikadan uzun bekliyor; backlog artis hizini ve son gorevleri izleyin.";
+        if (hasUnresolvedFailure)
+            return "Worker calisiyor; son basarisiz gorevin detayini inceleyin. Eski worker'i yeniden acmayin.";
+        return "Mudahale gerekmiyor.";
     }
 
     private static TimeSpan MaxZero(TimeSpan value) => value < TimeSpan.Zero ? TimeSpan.Zero : value;

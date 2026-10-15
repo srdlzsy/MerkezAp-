@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 745. Model sayisi: 680.
+Endpoint sayisi (method + route): 746. Model sayisi: 684.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -75,6 +75,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/terminal-cihazlari/ozet` | JWT + ayar-islemleri.terminal-cihazlari.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationSummaryDto |
 | GET | `/api/ayar-islemleri/terminal-cihazlari/{id}` | JWT + ayar-islemleri.terminal-cihazlari.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationDto<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
+| GET | `/api/ayar-islemleri/veritabani-izleme/genel-bakis` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MonitoringOverviewDto |
 | GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/olaylar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseMonitoringIncidentDto&gt; |
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturum-sonlandirma-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DatabaseSessionTerminationDto&gt; |
@@ -1486,6 +1487,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `waitMilliseconds` | integer (int64) | Hayir |  |
 | `waitType` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `criticalCount` | integer (int32) | Hayir |  |
+| `lastSeenAtUtc` | string (date-time) | Hayir | nullable |
+| `openCount` | integer (int32) | Hayir |  |
+| `warningCount` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringIncidentDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -1507,6 +1517,16 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `sqlText` | string | Hayir | nullable |
 | `type` | string | Hayir | nullable |
 | `waitType` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeRequestCount` | integer (int32) | Hayir |  |
+| `blockedRequestCount` | integer (int32) | Hayir |  |
+| `longRunningRequestCount` | integer (int32) | Hayir |  |
+| `openTransactionCount` | integer (int32) | Hayir |  |
+| `status` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto
 
@@ -1598,6 +1618,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `sessionId` | integer (int32) | Hayir |  |
 | `sqlText` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.MonitoringOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `database` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringOverviewDto | Hayir |  |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `headline` | string | Hayir | nullable |
+| `incidents` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto | Hayir |  |
+| `overallStatus` | string | Hayir | nullable |
+| `overallStatusName` | string | Hayir | nullable |
+| `safeWrites` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto | Hayir |  |
+| `workers` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringSnapshotDto | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -1616,12 +1649,26 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `updatedAtUtc` | string (date-time) | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `completedCount` | integer (int32) | Hayir |  |
+| `manualReviewCount` | integer (int32) | Hayir |  |
+| `processingCount` | integer (int32) | Hayir |  |
+| `retryableFailureCount` | integer (int32) | Hayir |  |
+| `staleProcessingCount` | integer (int32) | Hayir |  |
+| `unclassifiedFailureCount` | integer (int32) | Hayir |  |
+| `windowHours` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `activity` | string | Hayir | nullable |
 | `code` | string | Hayir | nullable |
+| `hasUnresolvedFailure` | boolean | Hayir |  |
+| `heartbeatAgeSeconds` | integer (int64) | Hayir | nullable |
 | `isCritical` | boolean | Hayir |  |
 | `isEnabled` | boolean | Hayir |  |
 | `lastError` | string | Hayir | nullable |
@@ -1632,10 +1679,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `oldestQueuedAgeSeconds` | integer (int64) | Hayir | nullable |
 | `oldestQueuedAtUtc` | string (date-time) | Hayir | nullable |
 | `queuedCount` | integer (int32) | Hayir |  |
+| `recommendation` | string | Hayir | nullable |
 | `registeredAtUtc` | string (date-time) | Hayir |  |
+| `requiresAttention` | boolean | Hayir |  |
 | `runningCount` | integer (int32) | Hayir |  |
 | `staleAfterSeconds` | integer (int32) | Hayir |  |
 | `status` | string | Hayir | nullable |
+| `statusName` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringSnapshotDto
 

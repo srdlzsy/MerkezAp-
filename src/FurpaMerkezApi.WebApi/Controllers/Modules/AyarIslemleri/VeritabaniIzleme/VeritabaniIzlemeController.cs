@@ -24,6 +24,12 @@ public sealed class VeritabaniIzlemeController(
     private const string DetailPolicy = "ayar-islemleri.veritabani-izleme.detail";
     private const string TerminatePolicy = "ayar-islemleri.veritabani-izleme.terminate-session";
 
+    [HttpGet("genel-bakis")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(MonitoringOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MonitoringOverviewDto>> Overview(CancellationToken cancellationToken) =>
+        Ok(await service.GetOverviewAsync(workerMonitoringService.GetSnapshot(), cancellationToken));
+
     [HttpGet("anlik")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(DatabaseMonitoringSnapshotDto), StatusCodes.Status200OK)]
