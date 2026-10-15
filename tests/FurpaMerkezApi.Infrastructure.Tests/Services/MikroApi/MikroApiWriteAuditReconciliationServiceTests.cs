@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
@@ -91,6 +92,67 @@ public sealed class MikroApiWriteAuditReconciliationServiceTests
 
         Assert.Equal(0, reconciledCount);
         Assert.Equal(MikroApiWriteAuditStatus.Pending, stalePending.Status);
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_MarksTraceMatchedCompletedSafeWriteAsRecoveredAfterUnknown()
+    {
+        await using var dbContext = CreateAuthDbContext();
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
+        var audit = new MikroApiWriteAudit(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid().ToString("N"),
+            "/Api/apiMethods/SiparisKaydetV2",
+            new string('A', 64),
+            Now.AddMinutes(-10),
+            documentSerie: "F120",
+            documentOrderNo: 2514,
+            warehouseNo: 120,
+            lineCount: 6,
+            traceKey: traceKey);
+        audit.Complete(
+            isError: true,
+            isUnknown: true,
+            httpStatusCode: null,
+            mikroStatusCode: null,
+            response: null,
+            error: "Mikro API request was canceled before its write outcome could be confirmed.",
+            attemptCount: 1,
+            elapsedMilliseconds: 25_000,
+            completedAtUtc: Now.AddMinutes(-9));
+
+        var safeWrite = new MobileOfflineSyncRequest(
+            Guid.NewGuid(),
+            "siparis-islemleri.verilen-firma-siparisleri.create",
+            userId,
+            120,
+            clientRequestId.ToString("D"),
+            new string('B', 64),
+            "{\"warehouseNo\":120,\"lines\":[{},{},{},{},{},{}]}",
+            Now.AddMinutes(-10));
+        safeWrite.MarkCompleted(
+            "{\"documentSerie\":\"F120\",\"documentOrderNo\":2514,\"warehouseNo\":120,\"lineCount\":6}",
+            Now.AddMinutes(-7));
+
+        dbContext.MikroApiWriteAudits.Add(audit);
+        dbContext.MobileOfflineSyncRequests.Add(safeWrite);
+        await dbContext.SaveChangesAsync();
+
+        var service = new MikroApiWriteAuditReconciliationService(
+            dbContext,
+            new FixedClock(Now),
+            new StaticOptionsMonitor<MikroApiWriteAuditOptions>(new MikroApiWriteAuditOptions()),
+            NullLogger<MikroApiWriteAuditReconciliationService>.Instance);
+
+        var reconciledCount = await service.ReconcileAsync(CancellationToken.None);
+
+        Assert.Equal(1, reconciledCount);
+        Assert.Equal(MikroApiWriteAuditStatus.RecoveredAfterUnknown, audit.Status);
+        Assert.Equal(MikroApiWriteAuditResultSource.MikroDatabaseReadback, audit.ResultSource);
+        Assert.Equal("F120/2514", audit.RecoveredDocumentNo);
     }
 
     private static MikroApiWriteAudit CreateAudit(DateTime createdAtUtc) =>

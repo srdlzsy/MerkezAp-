@@ -318,10 +318,9 @@ public sealed class VirmanWriteService(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverVirmanResponseAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverVirmanResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 request,
@@ -329,20 +328,9 @@ public sealed class VirmanWriteService(
                 documentDate,
                 documentNo,
                 writeConnectionName,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateVirmanResponse?> TryRecoverVirmanResponseAsync(

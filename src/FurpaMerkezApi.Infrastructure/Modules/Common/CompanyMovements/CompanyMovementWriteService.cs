@@ -364,10 +364,9 @@ public sealed class CompanyMovementWriteService(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverCompanyMovementResponseAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverCompanyMovementResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 request,
@@ -378,20 +377,9 @@ public sealed class CompanyMovementWriteService(
                 documentNo,
                 writeConnectionName,
                 movementGenre,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateCompanyMovementResponse?> TryRecoverCompanyMovementResponseAsync(

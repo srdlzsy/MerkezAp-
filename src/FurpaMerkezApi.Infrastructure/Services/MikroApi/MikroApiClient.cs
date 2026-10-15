@@ -90,6 +90,10 @@ public sealed class MikroApiClient(
         var auditHandle = auditWrite
             ? await writeAuditService.BeginAsync(normalizedPath, auditPayloadJson, cancellationToken)
             : new MikroApiWriteAuditHandle(null, Guid.NewGuid());
+        // Once the durable audit reservation exists, canceling the caller must not
+        // abort an upstream write with an unknowable commit outcome. HttpClient's
+        // configured timeout still bounds the transport operation.
+        var operationCancellationToken = ResolveOperationCancellationToken(auditWrite, cancellationToken);
         var currentOptions = options.CurrentValue;
         var maxAttempts = ResolveMaxAttempts(method, currentOptions);
         var stopwatch = Stopwatch.StartNew();
@@ -101,17 +105,17 @@ public sealed class MikroApiClient(
 
             try
             {
-                using var response = await httpClient.SendAsync(request, cancellationToken);
+                using var response = await httpClient.SendAsync(request, operationCancellationToken);
                 var rawResponse = response.Content is null
                     ? string.Empty
-                    : await response.Content.ReadAsStringAsync(cancellationToken);
+                    : await response.Content.ReadAsStringAsync(operationCancellationToken);
                 var elapsed = stopwatch.Elapsed;
 
                 LogResponse(method, normalizedPath, response, rawResponse, attempt, maxAttempts, elapsed);
 
                 if (ShouldRetry(response.StatusCode) && attempt < maxAttempts)
                 {
-                    await DelayBeforeRetryAsync(attempt, currentOptions, cancellationToken);
+                    await DelayBeforeRetryAsync(attempt, currentOptions, operationCancellationToken);
                     continue;
                 }
 
@@ -127,7 +131,7 @@ public sealed class MikroApiClient(
                     auditHandle,
                     auditWrite);
             }
-            catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException exception) when (!operationCancellationToken.IsCancellationRequested)
             {
                 lastException = exception;
                 logger.LogWarning(
@@ -140,11 +144,11 @@ public sealed class MikroApiClient(
 
                 if (attempt < maxAttempts)
                 {
-                    await DelayBeforeRetryAsync(attempt, currentOptions, cancellationToken);
+                    await DelayBeforeRetryAsync(attempt, currentOptions, operationCancellationToken);
                     continue;
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (operationCancellationToken.IsCancellationRequested)
             {
                 var canceledResult = new MikroApiResult<TResponse>(
                     true,
@@ -177,7 +181,7 @@ public sealed class MikroApiClient(
 
                 if (attempt < maxAttempts)
                 {
-                    await DelayBeforeRetryAsync(attempt, currentOptions, cancellationToken);
+                    await DelayBeforeRetryAsync(attempt, currentOptions, operationCancellationToken);
                     continue;
                 }
             }
@@ -587,6 +591,11 @@ public sealed class MikroApiClient(
         var numericStatusCode = (int)statusCode;
         return numericStatusCode is >= 200 and <= 299;
     }
+
+    internal static CancellationToken ResolveOperationCancellationToken(
+        bool auditWrite,
+        CancellationToken callerCancellationToken) =>
+        auditWrite ? CancellationToken.None : callerCancellationToken;
 
     private static bool ShouldRetry(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.RequestTimeout or

@@ -29,6 +29,8 @@ public sealed class MikroApiWriteAudit
 
     public int? LineCount { get; private set; }
 
+    public string? TraceKey { get; private set; }
+
     public MikroApiWriteAuditStatus Status { get; private set; }
 
     public MikroApiWriteAuditResultSource? ResultSource { get; private set; }
@@ -66,7 +68,8 @@ public sealed class MikroApiWriteAudit
         string? documentSerie = null,
         int? documentOrderNo = null,
         int? warehouseNo = null,
-        int? lineCount = null)
+        int? lineCount = null,
+        string? traceKey = null)
     {
         if (id == Guid.Empty) throw new ArgumentException("Audit id can not be empty.", nameof(id));
         if (requestId == Guid.Empty) throw new ArgumentException("Request id can not be empty.", nameof(requestId));
@@ -81,6 +84,7 @@ public sealed class MikroApiWriteAudit
         DocumentOrderNo = documentOrderNo;
         WarehouseNo = warehouseNo;
         LineCount = lineCount is >= 0 ? lineCount : null;
+        TraceKey = NormalizeOptional(traceKey, 25);
         Status = MikroApiWriteAuditStatus.Pending;
         CreatedAtUtc = NormalizeUtc(createdAtUtc);
     }

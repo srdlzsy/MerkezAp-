@@ -327,26 +327,19 @@ internal sealed class AxataDynamicCensusImportService(
                 result.ErrorMessage ?? "Mikro API dynamic census movement create failed.");
         }
 
-        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var recovered = await TryRecoverMikroApiGroupAsync(
+        var recovered = await MikroApiReadbackRetry.ExecuteAsync(
+            recoverableCreateOutcome,
+            readbackToken => TryRecoverMikroApiGroupAsync(
                 analyses,
                 documentOrderNo,
-                cancellationToken);
-            if (recovered is not null)
-            {
-                await mikroApiClient.MarkRecoveredAsync(
-                    result,
-                    $"{DynamicDocumentSerie}/{documentOrderNo}",
-                    cancellationToken: cancellationToken);
-                return recovered;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
+                readbackToken));
+        if (recovered is not null)
+        {
+            await mikroApiClient.MarkRecoveredAsync(
+                result,
+                $"{DynamicDocumentSerie}/{documentOrderNo}",
+                cancellationToken: cancellationToken);
+            return recovered;
         }
 
         throw MikroApiCreateConflictFactory.Create(

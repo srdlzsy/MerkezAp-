@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Common.Errors;
@@ -19,7 +18,7 @@ public sealed class MobileOfflineSyncService(
     private const int StatusRetryAfterSeconds = 5;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan ProcessingLeaseTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(300);
+    private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(180);
 
     internal async Task<MobileOfflineSyncAcquireResult<TResponse>> AcquireAsync<TRequest, TResponse>(
         string operationCode,
@@ -34,7 +33,7 @@ public sealed class MobileOfflineSyncService(
     {
         var normalizedClientRequestId = NormalizeClientRequestId(clientRequestId);
         var requestJson = JsonSerializer.Serialize(requestPayload, JsonOptions);
-        var requestFingerprint = ComputeFingerprint(requestJson);
+        var requestFingerprint = ComputeLogicalFingerprint(requestJson);
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -54,6 +53,22 @@ public sealed class MobileOfflineSyncService(
                     cancellationToken,
                     preventReexecutionAfterUncertainOutcome,
                     verifyCompletedWithRecovery);
+            }
+
+            var unresolvedDuplicate = await FindUnresolvedLogicalDuplicateAsync(
+                operationCode,
+                requestedByUserId,
+                warehouseNo,
+                normalizedClientRequestId,
+                requestFingerprint,
+                cancellationToken);
+
+            if (unresolvedDuplicate is not null)
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroWriteInProgress,
+                    $"Ayni kayit icerigi daha once {unresolvedDuplicate.ClientRequestId} istek kimligiyle gonderildi ve sonucu henuz kesinlesmedi. Yeni istek kimligiyle tekrar yazmayin; onceki kimlikle durum kontrolu yapin.",
+                    retryable: true);
             }
 
             var record = new MobileOfflineSyncRequest(
@@ -260,7 +275,11 @@ public sealed class MobileOfflineSyncService(
     {
         try
         {
-            existing.EnsureRequestFingerprintMatches(requestFingerprint);
+            if (!MatchesLogicalRequest(existing, requestFingerprint))
+            {
+                throw new InvalidOperationException(
+                    "The same clientRequestId was already used with a different request payload.");
+            }
         }
         catch (InvalidOperationException exception)
         {
@@ -552,6 +571,29 @@ public sealed class MobileOfflineSyncService(
                     item.ClientRequestId == normalizedClientRequestId,
                 cancellationToken);
 
+    private async Task<MobileOfflineSyncRequest?> FindUnresolvedLogicalDuplicateAsync(
+        string operationCode,
+        Guid requestedByUserId,
+        int warehouseNo,
+        string normalizedClientRequestId,
+        string requestFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await authDbContext.MobileOfflineSyncRequests
+            .AsNoTracking()
+            .Where(item =>
+                item.OperationCode == operationCode &&
+                item.RequestedByUserId == requestedByUserId &&
+                item.WarehouseNo == warehouseNo &&
+                item.ClientRequestId != normalizedClientRequestId &&
+                (item.Status == MobileOfflineSyncRequestStatus.Processing ||
+                 (item.Status == MobileOfflineSyncRequestStatus.Failed && item.Retryable == true)))
+            .OrderByDescending(item => item.UpdatedAtUtc ?? item.CreatedAtUtc)
+            .ToArrayAsync(cancellationToken);
+
+        return candidates.FirstOrDefault(candidate => MatchesLogicalRequest(candidate, requestFingerprint));
+    }
+
     private bool IsProcessingLeaseExpired(MobileOfflineSyncRequest record)
     {
         if (record.Status != MobileOfflineSyncRequestStatus.Processing)
@@ -592,9 +634,44 @@ public sealed class MobileOfflineSyncService(
         return response ?? throw new InvalidOperationException("Offline sync request result could not be deserialized.");
     }
 
-    private static string ComputeFingerprint(string payload)
+    private static bool MatchesLogicalRequest(
+        MobileOfflineSyncRequest record,
+        string requestFingerprint) =>
+        string.Equals(record.RequestFingerprint, requestFingerprint, StringComparison.Ordinal) ||
+        (!string.IsNullOrWhiteSpace(record.RequestPayload) &&
+         string.Equals(
+             ComputeLogicalFingerprint(record.RequestPayload),
+             requestFingerprint,
+             StringComparison.Ordinal));
+
+    private static string ComputeLogicalFingerprint(string payload)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        using var document = JsonDocument.Parse(payload);
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                document.RootElement.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteStartObject();
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (property.Name.Equals("clientRequestId", StringComparison.OrdinalIgnoreCase) ||
+                        property.Name.Equals("requestedByUserId", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    property.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+        }
+
+        var bytes = SHA256.HashData(stream.ToArray());
         return Convert.ToHexString(bytes);
     }
 

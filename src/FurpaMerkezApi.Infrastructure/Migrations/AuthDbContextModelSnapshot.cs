@@ -6388,6 +6388,11 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("nvarchar(32)")
                         .HasColumnName("status");
 
+                    b.Property<string>("TraceKey")
+                        .HasMaxLength(25)
+                        .HasColumnType("nvarchar(25)")
+                        .HasColumnName("trace_key");
+
                     b.Property<int?>("WarehouseNo")
                         .HasColumnType("int")
                         .HasColumnName("warehouse_no");
@@ -6406,6 +6411,9 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
 
                     b.HasIndex("Status", "CreatedAtUtc")
                         .HasDatabaseName("ix_mikro_api_write_audits_status_created");
+
+                    b.HasIndex("TraceKey", "Status")
+                        .HasDatabaseName("ix_mikro_api_write_audits_trace_status");
 
                     b.HasIndex("WarehouseNo", "CreatedAtUtc")
                         .HasDatabaseName("ix_mikro_api_write_audits_warehouse_created");

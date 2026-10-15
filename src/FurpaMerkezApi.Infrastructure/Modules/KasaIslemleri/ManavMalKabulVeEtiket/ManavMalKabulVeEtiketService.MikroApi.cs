@@ -97,11 +97,9 @@ public sealed partial class ManavMalKabulVeEtiketService
         }
 
         mikroWriteDbContext.ChangeTracker.Clear();
-        ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto? recovered = null;
-        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            recovered = await TryReadBackMicroGoodsReceiptAsync(
+        var recovered = await MikroApiReadbackRetry.ExecuteAsync(
+            recoverableCreateOutcome,
+            readbackToken => TryReadBackMicroGoodsReceiptAsync(
                 normalized,
                 documentSeries,
                 documentOrderNo,
@@ -110,17 +108,7 @@ public sealed partial class ManavMalKabulVeEtiketService
                 createUserNo,
                 offlineTraceKey,
                 updatedAcceptanceRecordCount: 0,
-                cancellationToken);
-            if (recovered is not null)
-            {
-                break;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
+                readbackToken));
 
         if (recovered is null)
         {

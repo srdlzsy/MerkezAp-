@@ -39,21 +39,9 @@ public sealed partial class PosMuhasebeAktarimiService
         }
 
         mikroWriteDbContext.ChangeTracker.Clear();
-        AccountingSlipIdentity? recovered = null;
-        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            recovered = await TryReadBackAccountingSlipAsync(document, cancellationToken);
-            if (recovered is not null)
-            {
-                break;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
+        var recovered = await MikroApiReadbackRetry.ExecuteAsync(
+            recoverableCreateOutcome,
+            readbackToken => TryReadBackAccountingSlipAsync(document, readbackToken));
 
         if (recovered is null)
         {

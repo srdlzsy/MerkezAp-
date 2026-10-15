@@ -301,10 +301,9 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverWarehouseOrderResponseAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverWarehouseOrderResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 request,
@@ -312,20 +311,9 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 orderDate,
                 deliveryDate,
                 writeConnectionName,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryRecoverWarehouseOrderResponseFromMikroApiResult(

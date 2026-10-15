@@ -21,6 +21,7 @@ public sealed class MikroApiWriteAuditConfiguration : IEntityTypeConfiguration<M
         builder.Property(audit => audit.DocumentOrderNo).HasColumnName("document_order_no");
         builder.Property(audit => audit.WarehouseNo).HasColumnName("warehouse_no");
         builder.Property(audit => audit.LineCount).HasColumnName("line_count");
+        builder.Property(audit => audit.TraceKey).HasColumnName("trace_key").HasMaxLength(25);
         builder.Property(audit => audit.Status).HasColumnName("status").HasMaxLength(32).HasConversion<string>().IsRequired();
         builder.Property(audit => audit.ResultSource).HasColumnName("result_source").HasMaxLength(32).HasConversion<string>();
         builder.Property(audit => audit.HttpStatusCode).HasColumnName("http_status_code");
@@ -51,5 +52,7 @@ public sealed class MikroApiWriteAuditConfiguration : IEntityTypeConfiguration<M
             .HasDatabaseName("ix_mikro_api_write_audits_warehouse_created");
         builder.HasIndex(audit => audit.CorrelationId)
             .HasDatabaseName("ix_mikro_api_write_audits_correlation_id");
+        builder.HasIndex(audit => new { audit.TraceKey, audit.Status })
+            .HasDatabaseName("ix_mikro_api_write_audits_trace_status");
     }
 }

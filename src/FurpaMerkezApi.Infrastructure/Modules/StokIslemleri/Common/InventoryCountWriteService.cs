@@ -32,72 +32,33 @@ public sealed class InventoryCountWriteService(
         CancellationToken cancellationToken)
     {
         Validate(request);
-
-        if (request.ClientRequestId.HasValue)
-        {
-            var acquireResult = await mobileOfflineSyncService.AcquireAsync<CreateInventoryCountRequest, CreateInventoryCountResponse>(
-                OfflineOperationCode,
-                request.RequestedByUserId,
-                request.WarehouseNo,
-                request.ClientRequestId.Value,
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            OfflineOperationCode,
+            request.RequestedByUserId,
+            request.WarehouseNo,
+            request.ClientRequestId,
+            request,
+            (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(
                 request,
-                (_, innerCancellationToken) => TryRecoverOfflineResponseAsync(
-                    request,
-                    innerCancellationToken),
-                cancellationToken,
-                preventReexecutionAfterUncertainOutcome: true,
-                verifyCompletedWithRecovery: true);
+                innerCancellationToken),
+            innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
+    }
 
-            if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
+    private Task<CreateInventoryCountResponse> ExecuteRoutedAsync(
+        CreateInventoryCountRequest request,
+        CancellationToken cancellationToken) =>
+        mikroWriteRoutingOptions.CurrentValue.InventoryCount switch
             {
-                return acquireResult.Response!;
-            }
-
-            if (acquireResult.State == MobileOfflineSyncAcquireState.Processing)
-            {
-                throw new OperationConflictException(
-                    OperationConflictErrorCodes.MikroWriteInProgress,
-                    "An offline inventory count sync request with the same clientRequestId is already being processed.",
-                    retryable: true);
-            }
-        }
-
-        try
-        {
-            var response = mikroWriteRoutingOptions.CurrentValue.InventoryCount switch
-            {
-                MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
-                MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
-                MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+                MikroWriteMode.Database => ExecuteDatabaseAsync(request, cancellationToken),
+                MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, cancellationToken),
+                MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, cancellationToken),
                 var mode => throw new InvalidOperationException(
                     $"Unsupported MikroWriteRouting:InventoryCount mode '{mode}'.")
             };
-
-            if (request.ClientRequestId.HasValue)
-            {
-                await mobileOfflineSyncService.CompleteAsync(
-                    OfflineOperationCode,
-                    request.RequestedByUserId,
-                    request.ClientRequestId.Value,
-                    response,
-                    cancellationToken);
-            }
-
-            return response;
-        }
-        catch (Exception exception)
-        {
-            if (request.ClientRequestId.HasValue)
-            {
-                await TryMarkFailedAsync(
-                    request.RequestedByUserId,
-                    request.ClientRequestId.Value,
-                    exception);
-            }
-
-            throw;
-        }
-    }
 
     private async Task<CreateInventoryCountResponse> ExecuteDatabaseAsync(
         CreateInventoryCountRequest request,
@@ -381,27 +342,15 @@ public sealed class InventoryCountWriteService(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverInventoryCountResponseByTraceAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverInventoryCountResponseByTraceAsync(
                 request,
                 traceKey,
                 writeConnectionName,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<CreateInventoryCountResponse?> TryRecoverInventoryCountResponseByTraceAsync(
@@ -553,27 +502,4 @@ public sealed class InventoryCountWriteService(
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
 
-    private async Task TryMarkFailedAsync(
-        Guid requestedByUserId,
-        Guid clientRequestId,
-        Exception exception)
-    {
-        try
-        {
-            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var conflict = exception as OperationConflictException;
-            await mobileOfflineSyncService.MarkFailedAsync(
-                OfflineOperationCode,
-                requestedByUserId,
-                clientRequestId,
-                exception.Message,
-                persistenceTimeout.Token,
-                conflict?.ErrorCode,
-                conflict?.Retryable);
-        }
-        catch
-        {
-            // Best effort only; preserve the original business exception.
-        }
-    }
 }

@@ -85,7 +85,7 @@ public sealed class CreateCompanyReceivingUseCase(
             {
                 throw new OperationConflictException(
                     OperationConflictErrorCodes.MikroWriteInProgress,
-                    "An offline company receiving sync request with the same clientRequestId is already being processed.",
+                    OperationConflictMessages.MikroWriteInProgress,
                     retryable: true);
             }
 
@@ -978,33 +978,20 @@ public sealed class CreateCompanyReceivingUseCase(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var expectedLineCount = movements.Count;
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverCompanyReceivingResponseAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverCompanyReceivingResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 warehouseNo,
                 customerCode,
-                expectedLineCount,
+                movements,
                 movementDate,
                 documentDate,
                 documentNo,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryRecoverCompanyReceivingResponseFromMikroApiResult(
@@ -1057,7 +1044,7 @@ public sealed class CreateCompanyReceivingUseCase(
         int documentOrderNo,
         int warehouseNo,
         string customerCode,
-        int expectedLineCount,
+        IReadOnlyCollection<STOK_HAREKETLERI> expectedRows,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
@@ -1074,62 +1061,22 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_evrakno_sira == documentOrderNo &&
                 movement.sth_giris_depo_no == warehouseNo &&
                 movement.sth_cari_kodu == customerCode)
-            .Select(movement => new
-            {
-                movement.sth_Guid,
-                movement.sth_tarih,
-                movement.sth_belge_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_satirno,
-                movement.sth_giris_depo_no,
-                movement.sth_cari_kodu,
-                movement.sth_miktar,
-                movement.sth_tutar
-            })
             .ToMeasuredListAsync(
                 logger,
                 "Recovery:CompanyReceiving:Document",
                 cancellationToken);
 
-        if (rows.Count < expectedLineCount)
+        var match = StockMovementRecoveryMatcher.Snapshot(expectedRows, rows);
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match, waitForIncomplete: true))
         {
             return null;
-        }
-
-        var headerCount = rows
-            .Select(row => new
-            {
-                row.sth_evrakno_seri,
-                row.sth_evrakno_sira,
-                row.sth_giris_depo_no,
-                row.sth_cari_kodu
-            })
-            .Distinct()
-            .Count();
-
-        if (headerCount > 1)
-        {
-            throw new InvalidOperationException(
-                "More than one company receiving document matched the same serie and order number.");
-        }
-
-        var duplicatedRowNo = rows
-            .GroupBy(row => row.sth_satirno ?? -1)
-            .FirstOrDefault(group => group.Count() > 1);
-
-        if (duplicatedRowNo is not null)
-        {
-            throw new InvalidOperationException(
-                "More than one company receiving line matched the same row number.");
         }
 
         var movementGuidByRowNo = rows
             .Where(row => row.sth_satirno.HasValue)
             .ToDictionary(row => row.sth_satirno!.Value, row => row.sth_Guid);
 
-        for (var rowNo = 0; rowNo < expectedLineCount; rowNo++)
+        for (var rowNo = 0; rowNo < expectedRows.Count; rowNo++)
         {
             if (!movementGuidByRowNo.ContainsKey(rowNo))
             {
@@ -1255,33 +1202,20 @@ public sealed class CreateCompanyReceivingUseCase(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var expectedLineCount = movements.Count;
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverCompanyReceivingReturnResponseAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverCompanyReceivingReturnResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 warehouseNo,
                 customerCode,
-                expectedLineCount,
+                movements,
                 movementDate,
                 documentDate,
                 documentNo,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<RecoveredCompanyReceivingCreate?> TryRecoverCompanyReceivingReturnResponseAsync(
@@ -1289,7 +1223,7 @@ public sealed class CreateCompanyReceivingUseCase(
         int documentOrderNo,
         int warehouseNo,
         string customerCode,
-        int expectedLineCount,
+        IReadOnlyCollection<STOK_HAREKETLERI> expectedRows,
         DateTime movementDate,
         DateTime documentDate,
         string documentNo,
@@ -1306,62 +1240,22 @@ public sealed class CreateCompanyReceivingUseCase(
                 movement.sth_evrakno_sira == documentOrderNo &&
                 movement.sth_cikis_depo_no == warehouseNo &&
                 movement.sth_cari_kodu == customerCode)
-            .Select(movement => new
-            {
-                movement.sth_Guid,
-                movement.sth_tarih,
-                movement.sth_belge_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_satirno,
-                movement.sth_cikis_depo_no,
-                movement.sth_cari_kodu,
-                movement.sth_miktar,
-                movement.sth_tutar
-            })
             .ToMeasuredListAsync(
                 logger,
                 "Recovery:CompanyReceiving:ReturnDocument",
                 cancellationToken);
 
-        if (rows.Count < expectedLineCount)
+        var match = StockMovementRecoveryMatcher.Snapshot(expectedRows, rows);
+        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match, waitForIncomplete: true))
         {
             return null;
-        }
-
-        var headerCount = rows
-            .Select(row => new
-            {
-                row.sth_evrakno_seri,
-                row.sth_evrakno_sira,
-                row.sth_cikis_depo_no,
-                row.sth_cari_kodu
-            })
-            .Distinct()
-            .Count();
-
-        if (headerCount > 1)
-        {
-            throw new InvalidOperationException(
-                "More than one company receiving return document matched the same serie and order number.");
-        }
-
-        var duplicatedRowNo = rows
-            .GroupBy(row => row.sth_satirno ?? -1)
-            .FirstOrDefault(group => group.Count() > 1);
-
-        if (duplicatedRowNo is not null)
-        {
-            throw new InvalidOperationException(
-                "More than one company receiving return line matched the same row number.");
         }
 
         var movementGuidByRowNo = rows
             .Where(row => row.sth_satirno.HasValue)
             .ToDictionary(row => row.sth_satirno!.Value, row => row.sth_Guid);
 
-        for (var rowNo = 0; rowNo < expectedLineCount; rowNo++)
+        for (var rowNo = 0; rowNo < expectedRows.Count; rowNo++)
         {
             if (!movementGuidByRowNo.ContainsKey(rowNo))
             {
@@ -1531,7 +1425,7 @@ public sealed class CreateCompanyReceivingUseCase(
         if (exists)
         {
             throw new InvalidOperationException(
-                "Company receiving document already exists for the selected customer and document no.");
+                "Secilen cari ve resmi belge numarasiyla firma mal kabul kaydi zaten mevcut. Yeni belge olusturulmadi; listeyi yenileyin.");
         }
     }
 

@@ -987,10 +987,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverInterWarehouseShipmentResponseAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverInterWarehouseShipmentResponseAsync(
                 documentSerie,
                 documentOrderNo,
                 request,
@@ -998,20 +997,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movementDate,
                 documentDate,
                 documentNo,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryRecoverInterWarehouseShipmentResponseFromMikroApiResult(
@@ -1287,28 +1275,16 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var response = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+        var response = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome,
+            readbackToken => TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
                 documentSerie,
                 documentOrderNo,
                 orderRequest,
                 expectedRows,
-                cancellationToken);
+                readbackToken));
 
-            if (response is not null)
-            {
-                return response;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        return response ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool TryMapMikroApiAutomaticWarehouseOrderResponseRows(

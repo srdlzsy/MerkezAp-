@@ -288,24 +288,17 @@ public sealed class GreenGrocerOperationsUseCase(
                 result.ErrorMessage ?? "Mikro API green grocer adjustment create failed.");
         }
 
-        var delays = MikroApiReadbackRetry.GetDelays(recoverableCreateOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
+        var recovered = await MikroApiReadbackRetry.ExecuteAsync(
+            recoverableCreateOutcome,
+            readbackToken => TryRecoverAdjustmentResponseAsync(request, readbackToken));
+        if (recovered is not null)
         {
-            var recovered = await TryRecoverAdjustmentResponseAsync(request, cancellationToken);
-            if (recovered is not null)
-            {
-                await mikroApiClient.MarkRecoveredAsync(
-                    result,
-                    $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
-                    recovered.MovementGuids.FirstOrDefault(),
-                    cancellationToken: cancellationToken);
-                return recovered;
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
+            await mikroApiClient.MarkRecoveredAsync(
+                result,
+                $"{recovered.DocumentSerie}/{recovered.DocumentOrderNo}",
+                recovered.MovementGuids.FirstOrDefault(),
+                cancellationToken: cancellationToken);
+            return recovered;
         }
 
         throw MikroApiCreateConflictFactory.Create(

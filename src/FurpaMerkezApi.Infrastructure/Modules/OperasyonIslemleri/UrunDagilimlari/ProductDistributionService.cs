@@ -1525,10 +1525,11 @@ public sealed class ProductDistributionService(
         bool uncertainWriteOutcome,
         CancellationToken cancellationToken)
     {
-        var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome);
-        for (var attempt = 0; attempt <= delays.Count; attempt++)
-        {
-            var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+        return await MikroApiReadbackRetry.ExecuteAsync<(Guid Guid, int RowCount)?>(
+            uncertainWriteOutcome,
+            async readbackToken =>
+            {
+                var rows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
                 .AsNoTracking()
                 .Where(order =>
                     order.ssip_iptal != true &&
@@ -1544,37 +1545,32 @@ public sealed class ProductDistributionService(
                     order.ssip_miktar,
                     order.ssip_rezervasyon_miktari
                 })
-                .ToArrayAsync(cancellationToken);
-            if (rows.Length == 1)
-            {
-                var row = rows[0];
-                var matches = string.Equals(
-                                  row.ssip_stok_kod,
-                                  detail.Header.Stock.StockCode,
-                                  StringComparison.OrdinalIgnoreCase) &&
-                              string.Equals(row.ssip_aciklama, description, StringComparison.Ordinal) &&
-                              Math.Abs((row.ssip_miktar ?? 0d) - line.UnitQuantity) <= 0.000001d &&
-                              Math.Abs((row.ssip_rezervasyon_miktari ?? 0d) - line.CaseQuantity) <= 0.000001d;
-                if (!matches)
+                .ToArrayAsync(readbackToken);
+                if (rows.Length == 1)
+                {
+                    var row = rows[0];
+                    var matches = string.Equals(
+                                      row.ssip_stok_kod,
+                                      detail.Header.Stock.StockCode,
+                                      StringComparison.OrdinalIgnoreCase) &&
+                                  string.Equals(row.ssip_aciklama, description, StringComparison.Ordinal) &&
+                                  Math.Abs((row.ssip_miktar ?? 0d) - line.UnitQuantity) <= 0.000001d &&
+                                  Math.Abs((row.ssip_rezervasyon_miktari ?? 0d) - line.CaseQuantity) <= 0.000001d;
+                    if (!matches)
+                    {
+                        throw StockMovementRecoveryMatcher.ContentMismatch();
+                    }
+
+                    return (row.ssip_Guid, rows.Length);
+                }
+
+                if (rows.Length > 1)
                 {
                     throw StockMovementRecoveryMatcher.ContentMismatch();
                 }
 
-                return (row.ssip_Guid, rows.Length);
-            }
-
-            if (rows.Length > 1)
-            {
-                throw StockMovementRecoveryMatcher.ContentMismatch();
-            }
-
-            if (attempt < delays.Count)
-            {
-                await Task.Delay(delays[attempt], cancellationToken);
-            }
-        }
-
-        return null;
+                return null;
+            });
     }
 
     private async Task<IReadOnlyCollection<ProductDistributionWarehouseOrderDto>> CreateWarehouseOrdersDatabaseAsync(

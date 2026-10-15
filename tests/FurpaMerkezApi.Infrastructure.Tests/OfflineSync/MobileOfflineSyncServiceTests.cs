@@ -13,6 +13,81 @@ public sealed class MobileOfflineSyncServiceTests
     private static readonly DateTime Now = new(2026, 9, 30, 9, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public async Task Acquire_BlocksSameLogicalPayloadWithDifferentClientRequestIdWhileFirstIsUnresolved()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var firstClientRequestId = Guid.NewGuid();
+        var secondClientRequestId = Guid.NewGuid();
+        var firstPayload = new RequestWithIdentity(56, 25, firstClientRequestId, userId);
+        var secondPayload = firstPayload with { ClientRequestId = secondClientRequestId };
+
+        await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            firstClientRequestId,
+            firstPayload,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            preventReexecutionAfterUncertainOutcome: true);
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            service.AcquireAsync<RequestWithIdentity, string>(
+                "shipment.create",
+                userId,
+                56,
+                secondClientRequestId,
+                secondPayload,
+                (_, _) => Task.FromResult<string?>(null),
+                CancellationToken.None,
+                preventReexecutionAfterUncertainOutcome: true));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteInProgress, exception.ErrorCode);
+        Assert.True(exception.Retryable);
+        Assert.Contains(firstClientRequestId.ToString("D"), exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(await db.MobileOfflineSyncRequests.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Acquire_AllowsSameLogicalPayloadWithNewClientRequestIdAfterFirstCompleted()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var firstClientRequestId = Guid.NewGuid();
+        var secondClientRequestId = Guid.NewGuid();
+
+        await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            firstClientRequestId,
+            new RequestWithIdentity(56, 25, firstClientRequestId, userId),
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None);
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            firstClientRequestId,
+            "F56/123",
+            CancellationToken.None);
+
+        var result = await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            secondClientRequestId,
+            new RequestWithIdentity(56, 25, secondClientRequestId, userId),
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Proceed, result.State);
+        Assert.Equal(2, await db.MobileOfflineSyncRequests.CountAsync());
+    }
+
+    [Fact]
     public async Task GetStatus_ExposesClassifiedRetryMetadata()
     {
         await using var db = CreateDbContext();
@@ -832,6 +907,12 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     private sealed record TestRequest(int WarehouseNo, int LineCount);
+
+    private sealed record RequestWithIdentity(
+        int WarehouseNo,
+        int LineCount,
+        Guid ClientRequestId,
+        Guid RequestedByUserId);
 
     private sealed class MutableClock(DateTime utcNow) : IClock
     {

@@ -195,9 +195,48 @@ public sealed class MikroApiClientResponseParsingTests
     {
         var delays = MikroApiReadbackRetry.GetDelays(uncertainWriteOutcome: true);
 
-        Assert.Equal(15, delays.Count);
-        Assert.Equal(TimeSpan.FromSeconds(180), TimeSpan.FromTicks(delays.Sum(delay => delay.Ticks)));
+        // The outer recovery token owns the full 180-second budget. Keep the
+        // scheduled delay total below it so the final database probe has time
+        // to execute before that independent token expires.
+        Assert.Equal(14, delays.Count);
+        Assert.Equal(TimeSpan.FromSeconds(165), TimeSpan.FromTicks(delays.Sum(delay => delay.Ticks)));
         Assert.Equal(TimeSpan.FromSeconds(15), delays.Max());
+        Assert.Equal(TimeSpan.FromSeconds(180), MikroApiReadbackRetry.UncertainWriteTimeout);
+    }
+
+    [Fact]
+    public async Task ReadbackRetry_ReturnsVerifiedResultFromIndependentScope()
+    {
+        CancellationToken observedToken = default;
+
+        var result = await MikroApiReadbackRetry.ExecuteAsync(
+            uncertainWriteOutcome: true,
+            token =>
+            {
+                observedToken = token;
+                return Task.FromResult<string?>("verified");
+            });
+
+        Assert.Equal("verified", result);
+        Assert.True(observedToken.CanBeCanceled);
+        Assert.False(observedToken.IsCancellationRequested);
+    }
+
+    [Fact]
+    public void WriteTransport_DoesNotInheritCallerCancellationAfterAuditReservation()
+    {
+        using var callerCancellation = new CancellationTokenSource();
+        callerCancellation.Cancel();
+
+        var writeToken = MikroApiClient.ResolveOperationCancellationToken(
+            auditWrite: true,
+            callerCancellation.Token);
+        var readToken = MikroApiClient.ResolveOperationCancellationToken(
+            auditWrite: false,
+            callerCancellation.Token);
+
+        Assert.False(writeToken.CanBeCanceled);
+        Assert.True(readToken.IsCancellationRequested);
     }
 
     [Fact]

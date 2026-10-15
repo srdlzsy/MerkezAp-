@@ -6,7 +6,8 @@ internal sealed record MikroApiWriteAuditContext(
     string? DocumentSerie,
     int? DocumentOrderNo,
     int? WarehouseNo,
-    int? LineCount);
+    int? LineCount,
+    string? TraceKey);
 
 internal static class MikroApiWriteAuditContextExtractor
 {
@@ -47,11 +48,19 @@ internal static class MikroApiWriteAuditContextExtractor
 
     private static readonly string[] LineArrayNames = ["satirlar", "lines", "Kayit"];
 
+    private static readonly string[] TraceKeyNames =
+    [
+        "sth_eticaret_kanal_kodu",
+        "sip_eticaret_kanal_kodu",
+        "ssip_eticaret_kanal_kodu",
+        "sym_serino"
+    ];
+
     public static MikroApiWriteAuditContext Extract(string? payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
-            return new(null, null, null, null);
+            return new(null, null, null, null, null);
         }
 
         try
@@ -63,12 +72,23 @@ internal static class MikroApiWriteAuditContextExtractor
                 FindString(root, DocumentSerieNames),
                 FindInt32(root, DocumentOrderNoNames),
                 FindInt32(root, WarehouseNoNames),
-                FindArrayLength(root, LineArrayNames));
+                FindArrayLength(root, LineArrayNames),
+                NormalizeTraceKey(FindString(root, TraceKeyNames)));
         }
         catch (JsonException)
         {
-            return new(null, null, null, null);
+            return new(null, null, null, null, null);
         }
+    }
+
+    private static string? NormalizeTraceKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var normalized = value.Trim();
+        return normalized.StartsWith("FR", StringComparison.OrdinalIgnoreCase) && normalized.Length <= 25
+            ? normalized
+            : null;
     }
 
     private static string? FindString(JsonElement root, IEnumerable<string> propertyNames)
