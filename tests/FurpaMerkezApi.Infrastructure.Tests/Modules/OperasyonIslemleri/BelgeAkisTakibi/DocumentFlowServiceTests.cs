@@ -12,8 +12,10 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.OperasyonIslemleri.BelgeAk
 
 public sealed class DocumentFlowServiceTests
 {
-    [Fact]
-    public async Task RecordAsync_DoesNotAppendDuplicateSuccessfulDocumentCreatedEvent()
+    [Theory]
+    [InlineData(DocumentFlowStep.DocumentCreated)]
+    [InlineData(DocumentFlowStep.OrderCreated)]
+    public async Task RecordAsync_DoesNotAppendDuplicateSuccessfulCreateEvent(DocumentFlowStep step)
     {
         await using var dbContext = CreateDbContext();
         var initialTime = new DateTime(2026, 10, 14, 6, 30, 0, DateTimeKind.Utc);
@@ -31,7 +33,7 @@ public sealed class DocumentFlowServiceTests
             null,
             "CX56",
             101,
-            DocumentFlowStep.DocumentCreated,
+            step,
             DocumentFlowStatus.Succeeded,
             "Firma mal kabul olusturuldu.");
 
@@ -50,7 +52,7 @@ public sealed class DocumentFlowServiceTests
             flow.Events,
             item =>
             {
-                Assert.Equal(DocumentFlowStep.DocumentCreated, item.Step);
+                Assert.Equal(step, item.Step);
                 Assert.Equal(DocumentFlowStatus.Succeeded, item.Status);
                 Assert.Equal(initialTime, item.OccurredAtUtc);
             });

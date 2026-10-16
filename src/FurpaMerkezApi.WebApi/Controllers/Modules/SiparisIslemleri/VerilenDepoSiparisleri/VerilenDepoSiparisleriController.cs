@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
@@ -87,6 +88,7 @@ public sealed class VerilenDepoSiparisleriController(
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(CreateIssuedWarehouseOrderResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CreateIssuedWarehouseOrderResponse>> Create(
         [FromBody] CreateIssuedWarehouseOrderHttpRequest request,
         CancellationToken cancellationToken)
@@ -112,7 +114,9 @@ public sealed class VerilenDepoSiparisleriController(
                         line.ResponsibilityCenter,
                         ToApplicationRequest(line.GreenGrocerCase)))
                     .ToArray(),
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ClientRequestId,
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -135,6 +139,19 @@ public sealed class VerilenDepoSiparisleriController(
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("offline-sync/{clientRequestId:guid}")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(OfflineSyncStatusDto<CreateIssuedWarehouseOrderResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OfflineSyncStatusDto<CreateIssuedWarehouseOrderResponse>>> GetOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await createIssuedWarehouseOrderUseCase.GetOfflineSyncStatusAsync(
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 
     [HttpPut("{id}")]
     [Authorize(Policy = UpdatePolicy)]
@@ -163,6 +180,10 @@ public sealed class VerilenDepoSiparisleriController(
 
 public sealed class CreateIssuedWarehouseOrderHttpRequest
 {
+    public Guid? ClientRequestId { get; init; }
+
+    public bool ForceCreateNew { get; init; }
+
     [Range(1, int.MaxValue)]
     public int? InWarehouseNo { get; init; }
 

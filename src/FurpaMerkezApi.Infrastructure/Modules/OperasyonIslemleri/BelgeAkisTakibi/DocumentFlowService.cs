@@ -200,6 +200,7 @@ public sealed class DocumentFlowService(
     private static bool IsIdempotentSuccessfulStep(RecordDocumentFlowRequest request) =>
         request.Status == DocumentFlowStatus.Succeeded
         && request.Step is DocumentFlowStep.DocumentCreated
+            or DocumentFlowStep.OrderCreated
             or DocumentFlowStep.WarehouseReceivingAccepted
             or DocumentFlowStep.AxataOrderSent;
 

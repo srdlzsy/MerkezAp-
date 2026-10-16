@@ -11,7 +11,10 @@ internal static class IssuedWarehouseOrderMikroApiPayloadFactory
         DateTime orderDate,
         DateTime deliveryDate,
         string documentSerie,
-        int documentOrderNo)
+        int documentOrderNo,
+        string tracePart1 = "0",
+        string tracePart2 = "",
+        string tracePart3 = "")
     {
         var satirlar = lines
             .Select((line, rowNo) =>
@@ -41,7 +44,10 @@ internal static class IssuedWarehouseOrderMikroApiPayloadFactory
                     NormalizeText(line.ProjectCode, 25),
                     NormalizeText(line.ResponsibilityCenter, 25),
                     string.Empty,
-                    line.RecommendedQuantity ?? 0d);
+                    line.RecommendedQuantity ?? 0d,
+                    NormalizeText(tracePart1, 4),
+                    NormalizeText(tracePart2, 4),
+                    NormalizeText(tracePart3, 4));
             })
             .ToArray();
 
@@ -93,4 +99,7 @@ internal sealed record IssuedWarehouseOrderMikroApiLine(
     string ssip_projekodu,
     string ssip_sormerkezi,
     string ssip_gecerlilik_tarihi,
-    double ssip_rezervasyon_miktari);
+    double ssip_rezervasyon_miktari,
+    string ssip_special1,
+    string ssip_special2,
+    string ssip_special3);

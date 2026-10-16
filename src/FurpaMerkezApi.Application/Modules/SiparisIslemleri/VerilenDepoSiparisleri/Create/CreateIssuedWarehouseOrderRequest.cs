@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 
 public sealed record CreateIssuedWarehouseOrderRequest(
@@ -7,7 +9,9 @@ public sealed record CreateIssuedWarehouseOrderRequest(
     DateTime? DeliveryDate,
     string? Description,
     IReadOnlyCollection<CreateIssuedWarehouseOrderLineRequest> Lines,
-    Guid? CreatedByUserId = null);
+    Guid? CreatedByUserId = null,
+    Guid? ClientRequestId = null,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateIssuedWarehouseOrderLineRequest(
     string StockCode,

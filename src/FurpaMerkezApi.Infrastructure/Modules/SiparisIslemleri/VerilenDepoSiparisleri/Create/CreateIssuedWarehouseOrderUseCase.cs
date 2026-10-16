@@ -2,10 +2,12 @@ using System.Data;
 using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Abstractions.Time;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -24,6 +26,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     IOptionsMonitor<GreenGrocerProductCaseOptions> greenGrocerProductCaseOptions,
     IClock clock,
     MikroApiClient mikroApiClient,
+    MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<CreateIssuedWarehouseOrderUseCase> logger)
     : ICreateIssuedWarehouseOrderUseCase
 {
@@ -32,19 +35,57 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     private const int GreenGrocerWarehouseNo = 56;
     private const int FirstDocumentOrderNo = 0;
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
+    private const string OfflineOperationCode = "siparis-islemleri.verilen-depo-siparisleri.create";
     private static readonly DateTime MikroEmptyDate = new(1900, 1, 1);
 
     public async Task<CreateIssuedWarehouseOrderResponse> ExecuteAsync(
         CreateIssuedWarehouseOrderRequest request,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
 
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            OfflineOperationCode,
+            request.CreatedByUserId,
+            request.InWarehouseNo,
+            request.ClientRequestId,
+            request,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                storedRequestPayload is null
+                    ? request
+                    : MobileOfflineSyncService.DeserializeRequest<CreateIssuedWarehouseOrderRequest>(storedRequestPayload),
+                innerCancellationToken),
+            innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
+    }
+
+    public Task<OfflineSyncStatusDto<CreateIssuedWarehouseOrderResponse>> GetOfflineSyncStatusAsync(
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        mobileOfflineSyncService.GetStatusAsync<CreateIssuedWarehouseOrderResponse>(
+            OfflineOperationCode,
+            requestedByUserId,
+            clientRequestId,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
+                MobileOfflineSyncService.DeserializeRequest<CreateIssuedWarehouseOrderRequest>(storedRequestPayload),
+                innerCancellationToken),
+            cancellationToken,
+            verifyCompletedWithRecovery: true);
+
+    private Task<CreateIssuedWarehouseOrderResponse> ExecuteRoutedAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
         return mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
         {
-            MikroWriteMode.Database => await ExecuteDatabaseAsync(request, cancellationToken),
-            MikroWriteMode.MikroApi => await ExecuteMikroApiAsync(request, cancellationToken),
-            MikroWriteMode.DualShadow => await ExecuteDualShadowAsync(request, cancellationToken),
+            MikroWriteMode.Database => ExecuteDatabaseAsync(request, cancellationToken),
+            MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, cancellationToken),
+            MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
         };
@@ -60,6 +101,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         var deliveryDate = (request.DeliveryDate ?? orderDate).Date;
         var documentSerie = $"F{request.InWarehouseNo}";
         var lines = request.Lines.ToArray();
+        var traceParts = ResolveOfflineTraceParts(request.ClientRequestId);
         var totalStopwatch = Stopwatch.StartNew();
         var phaseStartedAt = Stopwatch.GetTimestamp();
 
@@ -85,7 +127,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
 
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
@@ -106,7 +148,8 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                         orderDate,
                         deliveryDate,
                         documentSerie,
-                        documentOrderNo))
+                        documentOrderNo,
+                        traceParts))
                     .ToArray();
                 LogCreatePhase("build-order-rows", documentOrderNo);
 
@@ -117,26 +160,11 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 await transaction.CommitAsync(cancellationToken);
                 LogCreatePhase("commit", documentOrderNo);
 
-                await TryCreateGreenGrocerOrderLineSnapshotsAsync(
-                    request,
-                    lines,
-                    entities.ToDictionary(entity => entity.ssip_satirno ?? 0, entity => entity.ssip_Guid),
-                    documentSerie,
-                    documentOrderNo,
-                    orderDate,
-                    CancellationToken.None);
-                LogCreatePhase("green-grocer-snapshots", documentOrderNo);
-
-                return new CreateIssuedWarehouseOrderResponse(
-                    documentSerie,
-                    documentOrderNo,
-                    orderDate,
-                    deliveryDate,
-                    request.InWarehouseNo,
-                    request.OutWarehouseNo,
-                    entities.Length,
-                    lines.Sum(line => line.Quantity),
-                    options.ConnectionStringName);
+                return (
+                    DocumentOrderNo: documentOrderNo,
+                    LineGuidByRowNo: entities.ToDictionary(
+                        entity => entity.ssip_satirno ?? 0,
+                        entity => entity.ssip_Guid));
             }
             catch
             {
@@ -144,6 +172,29 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 throw;
             }
         });
+
+        await TryCreateGreenGrocerOrderLineSnapshotsAsync(
+            request,
+            lines,
+            writeResult.LineGuidByRowNo,
+            documentSerie,
+            writeResult.DocumentOrderNo,
+            orderDate,
+            CancellationToken.None);
+        LogCreatePhase("green-grocer-snapshots", writeResult.DocumentOrderNo);
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        return await RecoverMikroApiCreateResponseAsync(
+            documentSerie,
+            writeResult.DocumentOrderNo,
+            request,
+            lines,
+            orderDate,
+            deliveryDate,
+            options.ConnectionStringName,
+            rawResponse: string.Empty,
+            uncertainWriteOutcome: false,
+            cancellationToken: CancellationToken.None);
     }
 
     private async Task<CreateIssuedWarehouseOrderResponse> ExecuteMikroApiAsync(
@@ -155,6 +206,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         var deliveryDate = (request.DeliveryDate ?? orderDate).Date;
         var documentSerie = $"F{request.InWarehouseNo}";
         var lines = request.Lines.ToArray();
+        var traceParts = ResolveOfflineTraceParts(request.ClientRequestId);
         var totalStopwatch = Stopwatch.StartNew();
         var phaseStartedAt = Stopwatch.GetTimestamp();
 
@@ -191,7 +243,10 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             orderDate,
             deliveryDate,
             documentSerie,
-            documentOrderNo);
+            documentOrderNo,
+            traceParts.First,
+            traceParts.Second,
+            traceParts.Third);
         LogCreatePhase("build-payload", documentOrderNo);
 
         logger.LogInformation(
@@ -450,6 +505,86 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             writeConnectionName);
     }
 
+    private async Task<CreateIssuedWarehouseOrderResponse?> TryRecoverOfflineResponseAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!request.ClientRequestId.HasValue)
+        {
+            return null;
+        }
+
+        var traceParts = ResolveOfflineTraceParts(request.ClientRequestId);
+        var traceRows = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_girdepo == request.InWarehouseNo &&
+                order.ssip_cikdepo == request.OutWarehouseNo &&
+                order.ssip_special1 == traceParts.First &&
+                order.ssip_special2 == traceParts.Second &&
+                order.ssip_special3 == traceParts.Third)
+            .Select(order => new
+            {
+                order.ssip_evrakno_seri,
+                order.ssip_evrakno_sira,
+                order.ssip_tarih,
+                order.ssip_teslim_tarih
+            })
+            .ToListAsync(cancellationToken);
+
+        if (traceRows.Count == 0)
+        {
+            return null;
+        }
+
+        var documentKeys = traceRows
+            .Select(row => new { row.ssip_evrakno_seri, row.ssip_evrakno_sira })
+            .Distinct()
+            .ToArray();
+        if (documentKeys.Length != 1 ||
+            string.IsNullOrWhiteSpace(documentKeys[0].ssip_evrakno_seri) ||
+            !documentKeys[0].ssip_evrakno_sira.HasValue)
+        {
+            throw StockMovementRecoveryMatcher.ContentMismatch();
+        }
+
+        var orderDates = traceRows
+            .Where(row => row.ssip_tarih.HasValue)
+            .Select(row => row.ssip_tarih!.Value.Date)
+            .Distinct()
+            .ToArray();
+        var deliveryDates = traceRows
+            .Where(row => row.ssip_teslim_tarih.HasValue)
+            .Select(row => row.ssip_teslim_tarih!.Value.Date)
+            .Distinct()
+            .ToArray();
+        if (orderDates.Length > 1 || deliveryDates.Length > 1)
+        {
+            throw StockMovementRecoveryMatcher.ContentMismatch();
+        }
+
+        var recoveredOrderDate = orderDates.SingleOrDefault();
+        var recoveredDeliveryDate = deliveryDates.SingleOrDefault();
+        var recoveryRequest = request with
+        {
+            OrderDate = request.OrderDate ?? (recoveredOrderDate == default ? null : recoveredOrderDate),
+            DeliveryDate = request.DeliveryDate ?? (recoveredDeliveryDate == default ? null : recoveredDeliveryDate)
+        };
+        var orderDate = (recoveryRequest.OrderDate ?? DateTime.Today).Date;
+        var deliveryDate = (recoveryRequest.DeliveryDate ?? orderDate).Date;
+
+        var documentOrderNo = documentKeys[0].ssip_evrakno_sira.GetValueOrDefault();
+        return await TryRecoverWarehouseOrderResponseAsync(
+            documentKeys[0].ssip_evrakno_seri!,
+            documentOrderNo,
+            recoveryRequest,
+            recoveryRequest.Lines.ToArray(),
+            orderDate,
+            deliveryDate,
+            mikroWriteOptions.Value.ConnectionStringName,
+            cancellationToken);
+    }
+
     private async Task<int> GetNextDocumentOrderNoAsync(
         string documentSerie,
         CancellationToken cancellationToken)
@@ -583,7 +718,8 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         DateTime orderDate,
         DateTime deliveryDate,
         string documentSerie,
-        int documentOrderNo)
+        int documentOrderNo,
+        (string First, string Second, string Third) traceParts)
     {
         var unitPrice = line.UnitPrice;
         var amount = line.Quantity * unitPrice;
@@ -603,9 +739,9 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             ssip_create_date = now,
             ssip_lastup_user = MikroUserNo,
             ssip_lastup_date = now,
-            ssip_special1 = "0",
-            ssip_special2 = string.Empty,
-            ssip_special3 = string.Empty,
+            ssip_special1 = traceParts.First,
+            ssip_special2 = traceParts.Second,
+            ssip_special3 = traceParts.Third,
             ssip_firmano = 0,
             ssip_subeno = 0,
             ssip_tarih = orderDate,
@@ -731,6 +867,18 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static (string First, string Second, string Third) ResolveOfflineTraceParts(
+        Guid? clientRequestId)
+    {
+        if (!clientRequestId.HasValue)
+        {
+            return ("0", string.Empty, string.Empty);
+        }
+
+        var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId.Value)[..12];
+        return (traceKey[..4], traceKey[4..8], traceKey[8..12]);
+    }
 
     private static double Round(double value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
