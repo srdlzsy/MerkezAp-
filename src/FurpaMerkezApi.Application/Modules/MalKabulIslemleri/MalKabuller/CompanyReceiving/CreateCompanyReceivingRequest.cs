@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 
 public sealed record CreateCompanyReceivingRequest(
@@ -15,7 +17,8 @@ public sealed record CreateCompanyReceivingRequest(
     string? Description,
     bool AllowOrderOverReceiving,
     bool AutoCreateReturnForPartialAcceptance,
-    IReadOnlyCollection<CreateCompanyReceivingLineRequest> Lines);
+    IReadOnlyCollection<CreateCompanyReceivingLineRequest> Lines,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateCompanyReceivingLineRequest(
     string StockCode,

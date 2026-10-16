@@ -4,11 +4,14 @@ public sealed class OperationConflictException(
     string errorCode,
     string message,
     bool retryable,
-    Exception? innerException = null) : InvalidOperationException(message, innerException)
+    Exception? innerException = null,
+    Guid? relatedClientRequestId = null) : InvalidOperationException(message, innerException)
 {
     public string ErrorCode { get; } = errorCode;
 
     public bool Retryable { get; } = retryable;
+
+    public Guid? RelatedClientRequestId { get; } = relatedClientRequestId;
 }
 
 public static class OperationConflictErrorCodes

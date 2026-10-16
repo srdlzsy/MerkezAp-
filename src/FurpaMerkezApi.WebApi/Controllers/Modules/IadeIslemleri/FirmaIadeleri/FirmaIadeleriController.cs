@@ -109,7 +109,8 @@ public sealed class FirmaIadeleriController(
                 request.Deliverer,
                 request.Receiver,
                 request.ClientRequestId,
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(

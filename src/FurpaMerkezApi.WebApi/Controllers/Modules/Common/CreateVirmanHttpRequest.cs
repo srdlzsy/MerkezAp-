@@ -6,6 +6,8 @@ public sealed class CreateVirmanHttpRequest
 {
     public Guid? ClientRequestId { get; init; }
 
+    public bool ForceCreateNew { get; init; }
+
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 

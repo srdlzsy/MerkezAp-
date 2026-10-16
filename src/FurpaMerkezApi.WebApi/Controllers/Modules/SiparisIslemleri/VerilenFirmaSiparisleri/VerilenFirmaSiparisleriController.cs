@@ -143,7 +143,8 @@ public sealed class VerilenFirmaSiparisleriController(
                         line.ProductResponsibilityCenter))
                     .ToArray(),
                 request.ClientRequestId,
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -207,6 +208,8 @@ public sealed class IssuedCompanyOrderListHttpRequest
 public sealed class CreateIssuedCompanyOrderHttpRequest
 {
     public Guid? ClientRequestId { get; init; }
+
+    public bool ForceCreateNew { get; init; }
 
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }

@@ -101,7 +101,8 @@ public sealed class MasrafFisleriController(
                         line.ProjectCode))
                     .ToArray(),
                 request.ClientRequestId,
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(

@@ -98,7 +98,8 @@ public sealed class SayimSonuclariController(
                         line.Quantity,
                         line.Barcode,
                         line.UnitPointer))
-                    .ToArray()),
+                    .ToArray(),
+                request.ForceCreateNew),
             cancellationToken);
 
         const string documentSerie = "SAYIM";

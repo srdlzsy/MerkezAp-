@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
 
 public sealed record CreateInventoryCountRequest(
@@ -6,7 +8,8 @@ public sealed record CreateInventoryCountRequest(
     Guid? ClientRequestId,
     string? Name,
     DateTime? DocumentDate,
-    IReadOnlyCollection<CreateInventoryCountLineRequest> Lines);
+    IReadOnlyCollection<CreateInventoryCountLineRequest> Lines,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateInventoryCountLineRequest(
     string StockCode,

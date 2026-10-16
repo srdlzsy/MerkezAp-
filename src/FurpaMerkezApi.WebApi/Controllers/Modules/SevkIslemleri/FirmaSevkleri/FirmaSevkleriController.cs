@@ -244,7 +244,8 @@ public sealed class FirmaSevkleriController(
                 request.Deliverer,
                 request.Receiver,
                 request.ClientRequestId,
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(

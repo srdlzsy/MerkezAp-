@@ -1,9 +1,12 @@
 using FurpaMerkezApi.Application.Common.Errors;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 
 namespace FurpaMerkezApi.Infrastructure.OfflineSync;
 
 internal static class OfflineCreateGuard
 {
+    internal static readonly TimeSpan RecentCompletedDuplicateWindow = TimeSpan.FromHours(6);
+
     public static async Task<TResponse> ExecuteAsync<TRequest, TResponse>(
         MobileOfflineSyncService mobileOfflineSyncService,
         string operationCode,
@@ -41,7 +44,9 @@ internal static class OfflineCreateGuard
             recoverAsync,
             cancellationToken,
             preventReexecutionAfterUncertainOutcome,
-            verifyCompletedWithRecovery);
+            verifyCompletedWithRecovery,
+            RecentCompletedDuplicateWindow,
+            requestPayload is IExplicitNewCreateRequest { ForceCreateNew: true });
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
         {

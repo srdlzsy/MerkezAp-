@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
 
 public sealed record CreateWarehouseReturnRequest(
@@ -10,7 +12,8 @@ public sealed record CreateWarehouseReturnRequest(
     string? Description,
     IReadOnlyCollection<CreateWarehouseReturnLineRequest> Lines,
     Guid? ClientRequestId = null,
-    Guid? RequestedByUserId = null);
+    Guid? RequestedByUserId = null,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateWarehouseReturnLineRequest(
     string StockCode,

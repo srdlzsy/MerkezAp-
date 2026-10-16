@@ -35,6 +35,7 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         CreateIssuedCompanyOrderRequest request,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(

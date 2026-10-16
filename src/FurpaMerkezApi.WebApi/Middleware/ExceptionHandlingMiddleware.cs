@@ -1,4 +1,5 @@
 using System.ServiceModel;
+using System.Text.Json;
 using FurpaMerkezApi.Application.Common.Errors;
 using Microsoft.AspNetCore.Mvc;
 using FurpaMerkezApi.WebApi.Security;
@@ -9,6 +10,8 @@ public sealed class ExceptionHandlingMiddleware(
     RequestDelegate next,
     ILogger<ExceptionHandlingMiddleware> logger)
 {
+    private static readonly JsonSerializerOptions ProblemDetailsJsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task InvokeAsync(HttpContext httpContext)
     {
         try
@@ -51,7 +54,8 @@ public sealed class ExceptionHandlingMiddleware(
                 OperationConflictMessages.Resolve(exception.ErrorCode, exception.Message)
                     ?? exception.Message,
                 exception.ErrorCode,
-                exception.Retryable);
+                exception.Retryable,
+                exception.RelatedClientRequestId);
         }
         catch (InvalidOperationException exception)
         {
@@ -111,8 +115,14 @@ public sealed class ExceptionHandlingMiddleware(
         int statusCode,
         string detail,
         string? errorCode = null,
-        bool? retryable = null)
+        bool? retryable = null,
+        Guid? relatedClientRequestId = null)
     {
+        if (httpContext.RequestAborted.IsCancellationRequested || httpContext.Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
         httpContext.Response.StatusCode = statusCode;
         httpContext.Response.ContentType = "application/problem+json";
 
@@ -141,7 +151,12 @@ public sealed class ExceptionHandlingMiddleware(
             problemDetails.Extensions["retryable"] = retryable.Value;
         }
 
-        return httpContext.Response.WriteAsJsonAsync(problemDetails);
+        if (relatedClientRequestId.HasValue)
+        {
+            problemDetails.Extensions["relatedClientRequestId"] = relatedClientRequestId.Value;
+        }
+
+        return httpContext.Response.WriteAsJsonAsync(problemDetails, ProblemDetailsJsonOptions);
     }
 
     private static string GetTitle(int statusCode) =>

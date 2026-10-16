@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 
 public sealed record CreateIssuedCompanyOrderRequest(
@@ -11,7 +13,8 @@ public sealed record CreateIssuedCompanyOrderRequest(
     string? Receiver,
     IReadOnlyCollection<CreateIssuedCompanyOrderLineRequest> Lines,
     Guid? ClientRequestId = null,
-    Guid? RequestedByUserId = null);
+    Guid? RequestedByUserId = null,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateIssuedCompanyOrderLineRequest(
     string StockCode,

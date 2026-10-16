@@ -9,6 +9,8 @@ public sealed class CreateInventoryCountHttpRequest
 
     public Guid? ClientRequestId { get; init; }
 
+    public bool ForceCreateNew { get; init; }
+
     [StringLength(25)]
     public string? Name { get; init; }
 

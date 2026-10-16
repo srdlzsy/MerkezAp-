@@ -43,6 +43,7 @@ public sealed class CompanyMovementWriteService(
         CompanyMovementKind kind,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(

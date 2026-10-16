@@ -56,6 +56,7 @@ public sealed class CreateCompanyReceivingUseCase(
         CreateCompanyReceivingRequest request,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
         var writeMode = mikroWriteRoutingOptions.CurrentValue.CompanyReceiving;
 
@@ -73,8 +74,10 @@ public sealed class CreateCompanyReceivingUseCase(
                     storedRequestPayload,
                     innerCancellationToken),
                 cancellationToken,
-                preventReexecutionAfterUncertainOutcome: writeMode == MikroWriteMode.MikroApi,
-                verifyCompletedWithRecovery: true);
+                preventReexecutionAfterUncertainOutcome: true,
+                verifyCompletedWithRecovery: true,
+                recentCompletedDuplicateWindow: OfflineCreateGuard.RecentCompletedDuplicateWindow,
+                forceCreateNew: request.ForceCreateNew);
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {

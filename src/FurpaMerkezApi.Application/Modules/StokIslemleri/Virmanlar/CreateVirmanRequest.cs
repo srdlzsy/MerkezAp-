@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
 
 public sealed record CreateVirmanRequest(
@@ -8,7 +10,8 @@ public sealed record CreateVirmanRequest(
     string? Description,
     IReadOnlyCollection<CreateVirmanLineRequest> Lines,
     Guid? ClientRequestId = null,
-    Guid? RequestedByUserId = null);
+    Guid? RequestedByUserId = null,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateVirmanLineRequest(
     string StockCode,

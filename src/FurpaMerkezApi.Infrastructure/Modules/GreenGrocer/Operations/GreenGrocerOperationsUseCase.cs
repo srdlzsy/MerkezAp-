@@ -128,53 +128,22 @@ public sealed class GreenGrocerOperationsUseCase(
     {
         ValidateApplyIdentity(request);
 
-        var acquireResult = await mobileOfflineSyncService
-            .AcquireAsync<GreenGrocerOperationsAdjustmentApplyRequest, GreenGrocerOperationsAdjustmentApplyResponse>(
-                OfflineOperationCode,
-                request.RequestedByUserId,
-                request.WarehouseNo,
-                request.ClientRequestId,
-                request,
-                (_, innerCancellationToken) => TryRecoverAdjustmentResponseAsync(
-                    request,
-                    innerCancellationToken),
-                cancellationToken,
-                preventReexecutionAfterUncertainOutcome: true,
-                verifyCompletedWithRecovery: true);
-
-        if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
-        {
-            return acquireResult.Response!;
-        }
-
-        if (acquireResult.State == MobileOfflineSyncAcquireState.Processing)
-        {
-            throw new OperationConflictException(
-                OperationConflictErrorCodes.MikroWriteInProgress,
-                "A green grocer adjustment request with the same clientRequestId is already being processed.",
-                retryable: true);
-        }
-
-        try
-        {
-            var response = await ExecuteAdjustmentRoutedAsync(request, cancellationToken);
-            await mobileOfflineSyncService.CompleteAsync(
-                OfflineOperationCode,
-                request.RequestedByUserId,
-                request.ClientRequestId,
-                response,
-                cancellationToken);
-
-            return response;
-        }
-        catch (Exception exception)
-        {
-            await TryMarkFailedAsync(
-                request.RequestedByUserId,
-                request.ClientRequestId,
-                exception);
-            throw;
-        }
+        return await OfflineCreateGuard.ExecuteAsync(
+            mobileOfflineSyncService,
+            OfflineOperationCode,
+            request.RequestedByUserId,
+            request.WarehouseNo,
+            request.ClientRequestId,
+            request,
+            (storedRequestPayload, innerCancellationToken) => TryRecoverAdjustmentResponseAsync(
+                storedRequestPayload is null
+                    ? request
+                    : MobileOfflineSyncService.DeserializeRequest<GreenGrocerOperationsAdjustmentApplyRequest>(storedRequestPayload),
+                innerCancellationToken),
+            innerCancellationToken => ExecuteAdjustmentRoutedAsync(request, innerCancellationToken),
+            cancellationToken,
+            preventReexecutionAfterUncertainOutcome: true,
+            verifyCompletedWithRecovery: true);
     }
 
     public Task<OfflineSyncStatusDto<GreenGrocerOperationsAdjustmentApplyResponse>> GetAdjustmentOfflineSyncStatusAsync(

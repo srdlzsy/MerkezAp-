@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
 namespace FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 
 public sealed record CreateStockReceiptRequest(
@@ -10,7 +12,8 @@ public sealed record CreateStockReceiptRequest(
     string? Description,
     IReadOnlyCollection<CreateStockReceiptLineRequest> Lines,
     Guid? ClientRequestId = null,
-    Guid? RequestedByUserId = null);
+    Guid? RequestedByUserId = null,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateStockReceiptLineRequest(
     string StockCode,

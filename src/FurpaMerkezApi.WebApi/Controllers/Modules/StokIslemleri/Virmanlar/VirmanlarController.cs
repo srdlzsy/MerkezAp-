@@ -116,7 +116,8 @@ public sealed class VirmanlarController(
                         line.ProjectCode))
                     .ToArray(),
                 request.ClientRequestId,
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(

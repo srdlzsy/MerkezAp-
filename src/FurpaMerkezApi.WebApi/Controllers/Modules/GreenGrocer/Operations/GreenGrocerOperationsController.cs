@@ -95,7 +95,8 @@ public sealed class GreenGrocerOperationsController(
                 request.Description,
                 request.Creator,
                 request.Acceptor,
-                request.Lines.Select(MapLine).ToArray()),
+                request.Lines.Select(MapLine).ToArray(),
+                request.ForceCreateNew),
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, response);
@@ -176,6 +177,8 @@ public sealed class GreenGrocerOperationsAdjustmentApplyHttpRequest
 {
     [Required]
     public Guid ClientRequestId { get; init; }
+
+    public bool ForceCreateNew { get; init; }
 
     [Range(1, int.MaxValue)]
     public int WarehouseNo { get; init; } = 56;

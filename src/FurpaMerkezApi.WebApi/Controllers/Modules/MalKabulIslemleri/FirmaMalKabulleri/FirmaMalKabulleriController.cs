@@ -120,7 +120,8 @@ public sealed class FirmaMalKabulleriController(
                     request.AutoCreateReturnForPartialAcceptance,
                     request.Lines
                         .Select(MapLine)
-                        .ToArray()),
+                        .ToArray(),
+                    request.ForceCreateNew),
                 cancellationToken);
 
             await documentFlowService.RecordAsync(
@@ -408,6 +409,8 @@ public sealed class CreateCompanyReceivingHttpRequest
     public int? WarehouseNo { get; init; }
 
     public Guid? ClientRequestId { get; init; }
+
+    public bool ForceCreateNew { get; init; }
 
     [Required]
     [StringLength(25)]

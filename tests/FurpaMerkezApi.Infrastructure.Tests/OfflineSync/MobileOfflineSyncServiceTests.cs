@@ -88,6 +88,88 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     [Fact]
+    public async Task Acquire_ReplaysRecentCompletedLogicalDuplicateUnderNewClientRequestId()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var firstClientRequestId = Guid.NewGuid();
+        var secondClientRequestId = Guid.NewGuid();
+
+        await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            firstClientRequestId,
+            new RequestWithIdentity(56, 25, firstClientRequestId, userId),
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            recentCompletedDuplicateWindow: TimeSpan.FromHours(6));
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            firstClientRequestId,
+            "F56/123",
+            CancellationToken.None);
+
+        var result = await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            secondClientRequestId,
+            new RequestWithIdentity(56, 25, secondClientRequestId, userId),
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            recentCompletedDuplicateWindow: TimeSpan.FromHours(6));
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Completed, result.State);
+        Assert.Equal("F56/123", result.Response);
+        var records = await db.MobileOfflineSyncRequests.OrderBy(item => item.CreatedAtUtc).ToArrayAsync();
+        Assert.Equal(2, records.Length);
+        Assert.All(records, record => Assert.Equal(MobileOfflineSyncRequestStatus.Completed, record.Status));
+    }
+
+    [Fact]
+    public async Task Acquire_ForceCreateNew_BypassesRecentCompletedDuplicateReplay()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var firstClientRequestId = Guid.NewGuid();
+        var secondClientRequestId = Guid.NewGuid();
+
+        await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            firstClientRequestId,
+            new RequestWithIdentity(56, 25, firstClientRequestId, userId),
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            recentCompletedDuplicateWindow: TimeSpan.FromHours(6));
+        await service.CompleteAsync(
+            "shipment.create",
+            userId,
+            firstClientRequestId,
+            "F56/123",
+            CancellationToken.None);
+
+        var result = await service.AcquireAsync<RequestWithIdentity, string>(
+            "shipment.create",
+            userId,
+            56,
+            secondClientRequestId,
+            new RequestWithIdentity(56, 25, secondClientRequestId, userId),
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            recentCompletedDuplicateWindow: TimeSpan.FromHours(6),
+            forceCreateNew: true);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Proceed, result.State);
+        Assert.Equal(2, await db.MobileOfflineSyncRequests.CountAsync());
+    }
+
+    [Fact]
     public async Task GetStatus_ExposesClassifiedRetryMetadata()
     {
         await using var db = CreateDbContext();
@@ -775,14 +857,7 @@ public sealed class MobileOfflineSyncServiceTests
         }
         await using var firstDb = new AuthDbContext(options);
         await using var secondDb = new AuthDbContext(options);
-        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var arrived = 0;
-        async Task<string?> Recover(string? _, CancellationToken token)
-        {
-            if (Interlocked.Increment(ref arrived) == 2) barrier.SetResult();
-            await barrier.Task.WaitAsync(TimeSpan.FromSeconds(20), token);
-            return null;
-        }
+        Task<string?> Recover(string? payload, CancellationToken token) => Task.FromResult<string?>(null);
         Task<MobileOfflineSyncAcquireResult<string>> Acquire(AuthDbContext context) =>
             new MobileOfflineSyncService(context, new MutableClock(Now)).AcquireAsync<TestRequest, string>(
                 "shipment.create", user, 56, id, payload, Recover, CancellationToken.None, true);

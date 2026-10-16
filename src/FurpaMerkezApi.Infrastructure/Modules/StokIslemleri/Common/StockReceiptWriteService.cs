@@ -42,6 +42,7 @@ public sealed class StockReceiptWriteService(
         StockReceiptKind kind,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(

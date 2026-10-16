@@ -31,6 +31,7 @@ public sealed class InventoryCountWriteService(
         CreateInventoryCountRequest request,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
         return await OfflineCreateGuard.ExecuteAsync(
             mobileOfflineSyncService,

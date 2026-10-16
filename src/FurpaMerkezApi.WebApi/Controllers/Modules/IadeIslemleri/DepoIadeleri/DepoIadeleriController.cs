@@ -238,7 +238,8 @@ public sealed class DepoIadeleriController(
                         line.ProductResponsibilityCenter))
                     .ToArray(),
                 request.ClientRequestId,
-                User.GetRequiredUserId()),
+                User.GetRequiredUserId(),
+                request.ForceCreateNew),
             cancellationToken);
 
         await documentFlowService.RecordAsync(
@@ -396,6 +397,8 @@ public sealed class DepoIadeleriController(
 public sealed class CreateWarehouseReturnHttpRequest
 {
     public Guid? ClientRequestId { get; init; }
+
+    public bool ForceCreateNew { get; init; }
 
     [Range(1, int.MaxValue)]
     public int? SourceWarehouseNo { get; init; }

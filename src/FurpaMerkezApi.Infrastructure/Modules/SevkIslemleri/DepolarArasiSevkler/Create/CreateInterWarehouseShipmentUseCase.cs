@@ -57,6 +57,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CreateInterWarehouseShipmentRequest request,
         CancellationToken cancellationToken)
     {
+        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(

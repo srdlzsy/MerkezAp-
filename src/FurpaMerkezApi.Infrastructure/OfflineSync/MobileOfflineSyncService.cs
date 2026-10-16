@@ -29,11 +29,21 @@ public sealed class MobileOfflineSyncService(
         Func<string?, CancellationToken, Task<TResponse?>> recoverAsync,
         CancellationToken cancellationToken,
         bool preventReexecutionAfterUncertainOutcome = false,
-        bool verifyCompletedWithRecovery = false)
+        bool verifyCompletedWithRecovery = false,
+        TimeSpan? recentCompletedDuplicateWindow = null,
+        bool forceCreateNew = false)
     {
         var normalizedClientRequestId = NormalizeClientRequestId(clientRequestId);
         var requestJson = JsonSerializer.Serialize(requestPayload, JsonOptions);
         var requestFingerprint = ComputeLogicalFingerprint(requestJson);
+
+        await using var logicalRequestLock = await OfflineLogicalRequestLock.AcquireAsync(
+            authDbContext,
+            operationCode,
+            requestedByUserId,
+            warehouseNo,
+            requestFingerprint,
+            cancellationToken);
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -55,6 +65,50 @@ public sealed class MobileOfflineSyncService(
                     verifyCompletedWithRecovery);
             }
 
+            if (!forceCreateNew && recentCompletedDuplicateWindow > TimeSpan.Zero)
+            {
+                var recentCompletedDuplicate = await FindRecentCompletedLogicalDuplicateAsync(
+                    operationCode,
+                    requestedByUserId,
+                    warehouseNo,
+                    normalizedClientRequestId,
+                    requestFingerprint,
+                    recentCompletedDuplicateWindow.Value,
+                    cancellationToken);
+
+                if (recentCompletedDuplicate is not null)
+                {
+                    var completedResult = await ResolveCompletedAcquireAsync<TResponse>(
+                        recentCompletedDuplicate,
+                        recoverAsync,
+                        cancellationToken,
+                        verifyCompletedWithRecovery);
+                    var alias = new MobileOfflineSyncRequest(
+                        Guid.NewGuid(),
+                        operationCode,
+                        requestedByUserId,
+                        warehouseNo,
+                        normalizedClientRequestId,
+                        requestFingerprint,
+                        requestJson,
+                        clock.UtcNow);
+                    alias.MarkCompleted(
+                        JsonSerializer.Serialize(completedResult.Response, JsonOptions),
+                        clock.UtcNow);
+                    await authDbContext.MobileOfflineSyncRequests.AddAsync(alias, cancellationToken);
+                    await authDbContext.SaveChangesAsync(cancellationToken);
+
+                    logger?.LogWarning(
+                        "Recent duplicate create was replayed without a new Mikro write. OperationCode={OperationCode}, OriginalClientRequestId={OriginalClientRequestId}, ReplayedClientRequestId={ReplayedClientRequestId}, WindowMinutes={WindowMinutes}",
+                        operationCode,
+                        recentCompletedDuplicate.ClientRequestId,
+                        normalizedClientRequestId,
+                        recentCompletedDuplicateWindow.Value.TotalMinutes);
+
+                    return completedResult;
+                }
+            }
+
             var unresolvedDuplicate = await FindUnresolvedLogicalDuplicateAsync(
                 operationCode,
                 requestedByUserId,
@@ -68,7 +122,8 @@ public sealed class MobileOfflineSyncService(
                 throw new OperationConflictException(
                     OperationConflictErrorCodes.MikroWriteInProgress,
                     $"Ayni kayit icerigi daha once {unresolvedDuplicate.ClientRequestId} istek kimligiyle gonderildi ve sonucu henuz kesinlesmedi. Yeni istek kimligiyle tekrar yazmayin; onceki kimlikle durum kontrolu yapin.",
-                    retryable: true);
+                    retryable: true,
+                    relatedClientRequestId: Guid.Parse(unresolvedDuplicate.ClientRequestId));
             }
 
             var record = new MobileOfflineSyncRequest(
@@ -594,6 +649,32 @@ public sealed class MobileOfflineSyncService(
         return candidates.FirstOrDefault(candidate => MatchesLogicalRequest(candidate, requestFingerprint));
     }
 
+    private async Task<MobileOfflineSyncRequest?> FindRecentCompletedLogicalDuplicateAsync(
+        string operationCode,
+        Guid requestedByUserId,
+        int warehouseNo,
+        string normalizedClientRequestId,
+        string requestFingerprint,
+        TimeSpan completedDuplicateWindow,
+        CancellationToken cancellationToken)
+    {
+        var cutoff = clock.UtcNow - completedDuplicateWindow;
+        var candidates = await authDbContext.MobileOfflineSyncRequests
+            .AsNoTracking()
+            .Where(item =>
+                item.OperationCode == operationCode &&
+                item.RequestedByUserId == requestedByUserId &&
+                item.WarehouseNo == warehouseNo &&
+                item.ClientRequestId != normalizedClientRequestId &&
+                item.Status == MobileOfflineSyncRequestStatus.Completed &&
+                item.CompletedAtUtc >= cutoff)
+            .OrderByDescending(item => item.CompletedAtUtc)
+            .Take(20)
+            .ToArrayAsync(cancellationToken);
+
+        return candidates.FirstOrDefault(candidate => MatchesLogicalRequest(candidate, requestFingerprint));
+    }
+
     private bool IsProcessingLeaseExpired(MobileOfflineSyncRequest record)
     {
         if (record.Status != MobileOfflineSyncRequestStatus.Processing)
@@ -660,7 +741,9 @@ public sealed class MobileOfflineSyncService(
                 foreach (var property in document.RootElement.EnumerateObject())
                 {
                     if (property.Name.Equals("clientRequestId", StringComparison.OrdinalIgnoreCase) ||
-                        property.Name.Equals("requestedByUserId", StringComparison.OrdinalIgnoreCase))
+                        property.Name.Equals("requestedByUserId", StringComparison.OrdinalIgnoreCase) ||
+                        property.Name.Equals("createdByUserId", StringComparison.OrdinalIgnoreCase) ||
+                        property.Name.Equals("forceCreateNew", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }

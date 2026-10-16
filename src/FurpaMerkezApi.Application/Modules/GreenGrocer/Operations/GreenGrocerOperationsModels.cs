@@ -1,4 +1,6 @@
-﻿namespace FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
+﻿using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+
+namespace FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 
 public sealed record GreenGrocerOperationsOverviewRequest(
     DateTime StartDate,
@@ -102,7 +104,8 @@ public sealed record GreenGrocerOperationsAdjustmentApplyRequest(
     string? Description,
     string? Creator,
     string? Acceptor,
-    IReadOnlyCollection<GreenGrocerOperationsAdjustmentLineRequest> Lines);
+    IReadOnlyCollection<GreenGrocerOperationsAdjustmentLineRequest> Lines,
+    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
 
 public sealed record GreenGrocerOperationsAdjustmentLineRequest(
     string StockCode,

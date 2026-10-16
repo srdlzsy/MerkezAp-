@@ -3,16 +3,16 @@ namespace FurpaMerkezApi.Application.Common.Errors;
 public static class OperationConflictMessages
 {
     public const string MikroWriteInProgress =
-        "Kayit islemi halen devam ediyor. Formu degistirmeden kisa bir sure sonra tekrar deneyin; yeni bir kayit istegi olusturmayin.";
+        "Kayit islemi halen devam ediyor. Yalniz bu taslagin Kaydet butonunu bekletin; ekrani veya Yeni Ekle islemini genel olarak kilitlemeyin. Formu degistirmeden ayni istek kimligiyle durum kontrolu yapin.";
 
     public const string MikroWriteQueueBusy =
-        "Mikro yazma kuyrugu su anda mesgul. Bu istegin yazimi henuz baslamadi. Ayni kaydi kisa bir sure sonra tekrar deneyin.";
+        "Mikro yazma kuyrugu su anda mesgul. Bu istegin yazimi henuz baslamadi. Yalniz bu taslagi bekletin ve ayni istek kimligiyle kisa bir sure sonra tekrar deneyin.";
 
     public const string MikroWriteOutcomeUnconfirmed =
-        "Kaydin Mikro'ya yazilip yazilmadigi henuz kesinlestirilemedi. Yeni bir kayit olusturmayin; mevcut islem icin durum kontrolu yapin veya guvenli tekrar deneyin.";
+        "Kaydin Mikro'ya yazilip yazilmadigi henuz kesinlestirilemedi. Bu taslak icin yeni kayit olusturmayin; ayni istek kimligiyle durum kontrolu yapin. Diger ekranlar ve yeni islemler kullanilmaya devam edebilir.";
 
     public const string MikroDocumentContentMismatch =
-        "Mikro'daki belge ile gonderilen kaydin satirlari eslesmiyor. Tekrar gondermeyin; yetkili incelemesi gerekiyor.";
+        "Mikro'daki belge ile gonderilen kaydin satirlari eslesmiyor. Yalniz bu kaydi tekrar gondermeyin ve yetkili incelemesine alin; modulun diger islemlerini kilitlemeyin.";
 
     public const string ClientRequestPayloadMismatch =
         "Ayni istek kimligi farkli bir kayit icerigiyle kullanilmis. Bekleyen kaydi degistirmeyin; yalniz gercekten yeni bir islem baslatacaksaniz yeni kayit olusturun.";
