@@ -7,6 +7,7 @@ using System.Text;
 using System.Xml.Linq;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
@@ -1109,7 +1110,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
         var offlineTraceKey = BuildOfflineTraceKey(normalized.Date, normalized.SupplierCode, documentSeries);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
-        return await executionStrategy.ExecuteAsync(async () =>
+        var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             var alternativeCurrencyRate = await GetAlternativeCurrencyRateAsync(normalized.Date, cancellationToken);
@@ -1201,7 +1202,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
                         row.sth_aciklama))
                     .ToArray();
 
-                return new ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto(
+                var response = new ManavMalKabulVeEtiketCreateMicroGoodsReceiptResultDto(
                     normalized.Date,
                     documentSeries,
                     documentOrderNo,
@@ -1215,13 +1216,27 @@ public sealed partial class ManavMalKabulVeEtiketService(
                     updatedAcceptanceRecordCount,
                     offlineTraceKey,
                     resultLines);
+                return (Response: response, ExpectedRows: movementRows);
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        var verified = await TryReadBackMicroGoodsReceiptAsync(
+            normalized,
+            writeResult.Response.DocumentSeries,
+            writeResult.Response.DocumentOrderNo,
+            writeResult.ExpectedRows,
+            stockInfos,
+            createUserNo,
+            offlineTraceKey,
+            writeResult.Response.UpdatedAcceptanceRecordCount,
+            CancellationToken.None);
+        return verified ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<UyumsoftInboxInvoice?> FindCachedIncomingInvoiceAsync(
@@ -2239,8 +2254,6 @@ public sealed partial class ManavMalKabulVeEtiketService(
             cha_ebelgeno_sira = 0,
             cha_hubid = string.Empty,
             cha_hubglbid = string.Empty,
-            cha_disyazilimid = string.Empty,
-            cha_disyazilim_tip = 0,
             cha_bsba_e_belge_mi = 0,
             cha_eticaret_kanal_kodu = NormalizeText(offlineTraceKey, 25),
             cha_hizli_satis_kasa_no = 0,

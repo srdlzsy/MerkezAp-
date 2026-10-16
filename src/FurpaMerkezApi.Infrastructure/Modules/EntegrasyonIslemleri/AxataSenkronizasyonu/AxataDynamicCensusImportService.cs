@@ -126,13 +126,15 @@ internal sealed class AxataDynamicCensusImportService(
             try
             {
                 var writeMode = mikroWriteRoutingOptions.CurrentValue.AxataDynamicCensus;
+                await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+                    mikroWriteDbContext,
+                    $"AxataDynamicCensus:{group.Key.MovementType}:{group.Key.DocumentType}",
+                    DynamicDocumentSerie,
+                    cancellationToken);
+                await EnsureGroupWasNotImportedAsync(groupedAnalyses, cancellationToken);
+
                 if (writeMode == MikroWriteMode.MikroApi)
                 {
-                    await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
-                        mikroWriteDbContext,
-                        $"AxataDynamicCensus:{group.Key.MovementType}:{group.Key.DocumentType}",
-                        DynamicDocumentSerie,
-                        cancellationToken);
                     var documentOrderNo = await GetNextDocumentOrderNoAsync(
                         group.Key.MovementType,
                         group.Key.DocumentType,
@@ -254,19 +256,25 @@ internal sealed class AxataDynamicCensusImportService(
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
 
-        return movements.Select((movement, index) => new AxataDynamicCensusResultDto(
-            analyses[index].Line.RowNo,
-            movement.sth_stok_kod ?? analyses[index].Line.StockCode,
-            movement.sth_evrakno_seri ?? DynamicDocumentSerie,
-            movement.sth_evrakno_sira ?? documentOrderNo,
-            movement.sth_satirno ?? index,
-            movement.sth_miktar ?? analyses[index].Line.Quantity,
-            false,
-            "Mikro dynamic census movement created via database route."))
+        mikroWriteDbContext.ChangeTracker.Clear();
+        var verified = await TryRecoverMikroApiGroupAsync(
+            analyses,
+            documentOrderNo,
+            CancellationToken.None);
+        if (verified is null)
+        {
+            throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        }
+
+        return verified
+            .Select(result => result with
+            {
+                Message = "Mikro dynamic census movement created via database route and verified."
+            })
             .ToArray();
     }
 
@@ -498,6 +506,42 @@ internal sealed class AxataDynamicCensusImportService(
                         warning));
             })
             .ToArray();
+    }
+
+    private async Task EnsureGroupWasNotImportedAsync(
+        IReadOnlyCollection<DynamicCensusAnalysis> analyses,
+        CancellationToken cancellationToken)
+    {
+        var rowKeys = analyses
+            .Select(analysis => BuildMovementGroupCode(analysis.Line.RowNo))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (rowKeys.Length == 0)
+        {
+            return;
+        }
+
+        var existingRowKeys = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                (movement.sth_evraktip == InboundDocumentType ||
+                 movement.sth_evraktip == OutboundDocumentType) &&
+                movement.sth_evrakno_seri == DynamicDocumentSerie &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalReturn &&
+                movement.sth_iptal != true &&
+                movement.sth_HareketGrupKodu1 != null &&
+                rowKeys.Contains(movement.sth_HareketGrupKodu1))
+            .Select(movement => movement.sth_HareketGrupKodu1!)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        if (existingRowKeys.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "AXATA dynamic census source rows were already imported: " +
+                string.Join(", ", existingRowKeys.OrderBy(value => value, StringComparer.OrdinalIgnoreCase)));
+        }
     }
 
     private async Task<IReadOnlyCollection<DynamicCensusLine>> FetchPendingLinesAsync(CancellationToken cancellationToken)

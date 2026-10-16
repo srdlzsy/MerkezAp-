@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -991,6 +992,12 @@ public sealed partial class PosMuhasebeAktarimiService(
             throw new InvalidOperationException("Accounting slip has no lines.");
         }
 
+        var existing = await TryReadBackAccountingSlipAsync(document, cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
         var slipNo = await GetNextAccountingSlipNoAsync(document.DocumentDate, cancellationToken);
         var journalNo = await GetNextAccountingJournalNoAsync(cancellationToken);
 
@@ -1003,7 +1010,8 @@ public sealed partial class PosMuhasebeAktarimiService(
             lineNo++;
         }
 
-        return new AccountingSlipIdentity(slipNo, journalNo);
+        var verified = await TryReadBackAccountingSlipAsync(document, cancellationToken);
+        return verified ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<int> GetNextAccountingSlipNoAsync(
@@ -1896,9 +1904,12 @@ public sealed partial class PosMuhasebeAktarimiService(
     private string GetMikroTargetDatabaseName()
     {
         var databaseName = mikroWriteDbContext.Database.GetDbConnection().Database;
-        return string.IsNullOrWhiteSpace(databaseName)
-            ? "MikroDB_V16_FURPA_2024"
-            : databaseName;
+        if (string.IsNullOrWhiteSpace(databaseName))
+        {
+            throw new InvalidOperationException("Mikro hedef veritabani aktif baglantidan cozumlenemedi.");
+        }
+
+        return databaseName;
     }
 
     private string GetFurpaSourceDatabaseName()

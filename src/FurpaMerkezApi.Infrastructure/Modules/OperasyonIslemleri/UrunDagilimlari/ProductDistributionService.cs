@@ -1371,6 +1371,12 @@ public sealed class ProductDistributionService(
         DateTime now,
         CancellationToken cancellationToken)
     {
+        await using var createLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "ProductDistributionCreate",
+            "WarehouseOrders",
+            cancellationToken);
+
         return mikroWriteRoutingOptions.CurrentValue.ProductDistribution switch
         {
             MikroWriteMode.Database => await CreateWarehouseOrdersDatabaseAsync(
@@ -1583,7 +1589,7 @@ public sealed class ProductDistributionService(
         CancellationToken cancellationToken)
     {
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
-        return await executionStrategy.ExecuteAsync(async () =>
+        var orders = await executionStrategy.ExecuteAsync(async () =>
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
@@ -1646,10 +1652,30 @@ public sealed class ProductDistributionService(
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
         });
+
+        mikroWriteDbContext.ChangeTracker.Clear();
+        foreach (var order in orders)
+        {
+            var line = positiveLines.First(item => item.WarehouseNo == order.InWarehouseNo);
+            var verified = await TryRecoverDistributionOrderAsync(
+                detail,
+                line,
+                description,
+                order.DocumentSerie,
+                order.DocumentOrderNo,
+                uncertainWriteOutcome: false,
+                CancellationToken.None);
+            if (verified is null)
+            {
+                throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+            }
+        }
+
+        return orders;
     }
 
     private static string FormatMikroDate(DateTime value) =>
