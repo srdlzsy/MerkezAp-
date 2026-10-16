@@ -57,6 +57,10 @@ public sealed class AxataSynchronizationQueueTests
         Assert.Equal(0, running.QueuedCount);
         Assert.Equal(1, running.RunningCount);
         Assert.Null(running.OldestQueuedAtUtc);
+        Assert.Equal(job.JobId, running.CurrentJob?.JobId);
+        Assert.Equal("product-master-sync", running.CurrentJob?.TaskCode);
+        Assert.Equal("Running", running.CurrentJob?.Status);
+        Assert.Null(running.LastJob);
 
         queue.MarkSucceeded(
             job.JobId,
@@ -64,6 +68,11 @@ public sealed class AxataSynchronizationQueueTests
         var completed = queue.GetBacklogSnapshot();
         Assert.Equal(0, completed.QueuedCount);
         Assert.Equal(0, completed.RunningCount);
+        Assert.Null(completed.CurrentJob);
+        Assert.Equal(job.JobId, completed.LastJob?.JobId);
+        Assert.Equal("Succeeded", completed.LastJob?.Status);
+        Assert.Equal(1, completed.LastJob?.AffectedRecordCount);
+        Assert.Equal("Completed.", completed.LastJob?.Message);
     }
 
     [Fact]
@@ -87,6 +96,41 @@ public sealed class AxataSynchronizationQueueTests
             Guid.NewGuid()));
 
         Assert.Contains("already has an active job", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BacklogSnapshot_DifferentTaskSuccess_DoesNotHideUnresolvedFailure()
+    {
+        var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));
+        var failedDefinition = AxataSynchronizationCatalog.GetRequired("g02-inbound-delivery-import");
+        var successfulDefinition = AxataSynchronizationCatalog.GetRequired("product-master-sync");
+        var failedJob = queue.Enqueue(
+            failedDefinition,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+        var failedWorkItem = await queue.DequeueAsync(CancellationToken.None);
+        queue.MarkRunning(failedWorkItem.JobId);
+        queue.MarkFailed(failedWorkItem.JobId, "G02 belge eslesmedi.");
+
+        queue.Enqueue(
+            successfulDefinition,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+        var successfulWorkItem = await queue.DequeueAsync(CancellationToken.None);
+        queue.MarkRunning(successfulWorkItem.JobId);
+        queue.MarkSucceeded(
+            successfulWorkItem.JobId,
+            new AxataSynchronizationTaskExecutionResult(5, "5 urun aktarildi.", []));
+
+        var snapshot = queue.GetBacklogSnapshot();
+
+        Assert.Equal(1, snapshot.UnresolvedFailureCount);
+        Assert.Equal(failedJob.JobId, snapshot.LastFailedJob?.JobId);
+        Assert.Equal("G02 belge eslesmedi.", snapshot.LastFailedJob?.ErrorMessage);
     }
 
     private sealed class FixedClock(DateTime utcNow) : IClock

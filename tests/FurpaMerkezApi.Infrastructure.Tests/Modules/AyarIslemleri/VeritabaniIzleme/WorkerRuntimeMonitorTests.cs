@@ -116,6 +116,66 @@ public sealed class WorkerRuntimeMonitorTests
         Assert.Equal("Degraded", Assert.Single(snapshot.Workers).Status);
     }
 
+    [Fact]
+    public void BacklogSnapshot_ExposesCurrentAndLastJobDetails()
+    {
+        var clock = Clock();
+        var monitor = Monitor(clock);
+        var currentJobId = Guid.NewGuid();
+        var lastJobId = Guid.NewGuid();
+        var currentJob = new WorkerJobRuntimeSnapshot(
+            currentJobId,
+            "g02-inbound-delivery-import",
+            "G02 Depo Mal Kabul Aktarimi",
+            "Running",
+            "Live",
+            "Scheduled",
+            null,
+            clock.UtcNow.AddSeconds(-20),
+            clock.UtcNow.AddSeconds(-15),
+            null,
+            0,
+            "Senkronizasyon gorevi calisiyor.",
+            null);
+        var lastJob = new WorkerJobRuntimeSnapshot(
+            lastJobId,
+            "g01-inbound-atf-import",
+            "G01 Firma Mal Kabul Aktarimi",
+            "Succeeded",
+            "Live",
+            "Scheduled",
+            null,
+            clock.UtcNow.AddMinutes(-2),
+            clock.UtcNow.AddMinutes(-2),
+            clock.UtcNow.AddMinutes(-1),
+            12,
+            "12 belge aktarildi.",
+            null);
+
+        monitor.ReportHeartbeat(
+            WorkerRuntimeMonitor.AxataWorkerCode,
+            "G02 aktarimi calisiyor",
+            new WorkerBacklogSnapshot(0, 1, null, currentJob, lastJob, 1, lastJob with
+            {
+                Status = "Failed",
+                ErrorMessage = "G01 aktarimi tamamlanamadi."
+            }));
+
+        var worker = Assert.Single(monitor.GetSnapshot().Workers);
+
+        Assert.Equal(currentJobId, worker.CurrentJob?.JobId);
+        Assert.Equal("g02-inbound-delivery-import", worker.CurrentJob?.TaskCode);
+        Assert.Equal(15, worker.CurrentJob?.DurationSeconds);
+        Assert.Equal(lastJobId, worker.LastJob?.JobId);
+        Assert.Equal("Succeeded", worker.LastJob?.Status);
+        Assert.Equal(12, worker.LastJob?.AffectedRecordCount);
+        Assert.Equal(60, worker.LastJob?.DurationSeconds);
+        Assert.True(worker.HasUnresolvedFailure);
+        Assert.Equal(1, worker.UnresolvedFailureCount);
+        Assert.Equal(lastJobId, worker.LastFailedJob?.JobId);
+        Assert.Equal("G01 aktarimi tamamlanamadi.", worker.LastError);
+    }
+
     private static WorkerRuntimeMonitor Monitor(MutableClock clock)
     {
         var monitor = new WorkerRuntimeMonitor(clock);

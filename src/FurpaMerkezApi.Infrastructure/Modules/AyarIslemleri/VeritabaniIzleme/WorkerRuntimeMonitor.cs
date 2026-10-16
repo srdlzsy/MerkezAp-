@@ -120,6 +120,11 @@ internal sealed class WorkerRuntimeMonitor(IClock clock) : IWorkerMonitoringServ
         state.QueuedCount = Math.Max(0, backlog.QueuedCount);
         state.RunningCount = Math.Max(0, backlog.RunningCount);
         state.OldestQueuedAtUtc = backlog.OldestQueuedAtUtc;
+        state.CurrentJob = backlog.CurrentJob;
+        state.LastJob = backlog.LastJob;
+        state.HasJobFailureInventory = true;
+        state.UnresolvedFailureCount = Math.Max(0, backlog.UnresolvedFailureCount);
+        state.LastFailedJob = backlog.LastFailedJob;
     }
 
     private static WorkerMonitoringItemDto ToDto(WorkerRuntimeState state, DateTime now)
@@ -132,8 +137,10 @@ internal sealed class WorkerRuntimeMonitor(IClock clock) : IWorkerMonitoringServ
             var heartbeatAge = state.LastHeartbeatAtUtc.HasValue
                 ? MaxZero(now - state.LastHeartbeatAtUtc.Value)
                 : (TimeSpan?)null;
-            var hasUnresolvedFailure = state.LastFailureAtUtc.HasValue &&
-                (!state.LastSuccessAtUtc.HasValue || state.LastFailureAtUtc > state.LastSuccessAtUtc);
+            var hasUnresolvedFailure = state.HasJobFailureInventory
+                ? state.UnresolvedFailureCount > 0
+                : state.LastFailureAtUtc.HasValue &&
+                  (!state.LastSuccessAtUtc.HasValue || state.LastFailureAtUtc > state.LastSuccessAtUtc);
             var heartbeatIsStale = !heartbeatAge.HasValue || heartbeatAge > state.StaleAfter;
             var backlogIsCritical = state.QueuedCount > 0 && oldestAge >= BacklogCriticalAge;
             var backlogIsWarning = state.QueuedCount > 0 && oldestAge >= BacklogWarningAge;
@@ -164,8 +171,8 @@ internal sealed class WorkerRuntimeMonitor(IClock clock) : IWorkerMonitoringServ
                 state.LastHeartbeatAtUtc,
                 heartbeatAge.HasValue ? (long)heartbeatAge.Value.TotalSeconds : null,
                 state.LastSuccessAtUtc,
-                state.LastFailureAtUtc,
-                state.LastError,
+                state.LastFailedJob?.CompletedAtUtc ?? state.LastFailureAtUtc,
+                state.LastFailedJob?.ErrorMessage ?? state.LastError,
                 hasUnresolvedFailure,
                 status is "Degraded" or "Unhealthy",
                 recommendation,
@@ -173,8 +180,40 @@ internal sealed class WorkerRuntimeMonitor(IClock clock) : IWorkerMonitoringServ
                 state.RunningCount,
                 state.OldestQueuedAtUtc,
                 oldestAge.HasValue ? (long)oldestAge.Value.TotalSeconds : null,
-                (int)state.StaleAfter.TotalSeconds);
+                (int)state.StaleAfter.TotalSeconds,
+                ToJobDto(state.CurrentJob, now),
+                ToJobDto(state.LastJob, now),
+                state.UnresolvedFailureCount,
+                ToJobDto(state.LastFailedJob, now));
         }
+    }
+
+    private static WorkerJobMonitoringDto? ToJobDto(WorkerJobRuntimeSnapshot? job, DateTime now)
+    {
+        if (job is null)
+        {
+            return null;
+        }
+
+        var durationStart = job.StartedAtUtc ?? job.CreatedAtUtc;
+        var durationEnd = job.CompletedAtUtc ?? now;
+        var duration = MaxZero(durationEnd - durationStart);
+
+        return new WorkerJobMonitoringDto(
+            job.JobId,
+            job.TaskCode,
+            job.TaskName,
+            job.Status,
+            job.ExecutionMode,
+            job.TriggerSource,
+            job.WarehouseNo,
+            job.CreatedAtUtc,
+            job.StartedAtUtc,
+            job.CompletedAtUtc,
+            (long)duration.TotalSeconds,
+            job.AffectedRecordCount,
+            job.Message,
+            job.ErrorMessage);
     }
 
     private static string StatusName(string status) => status switch
@@ -234,9 +273,33 @@ internal sealed class WorkerRuntimeState(
     public int QueuedCount { get; set; }
     public int RunningCount { get; set; }
     public DateTime? OldestQueuedAtUtc { get; set; }
+    public WorkerJobRuntimeSnapshot? CurrentJob { get; set; }
+    public WorkerJobRuntimeSnapshot? LastJob { get; set; }
+    public bool HasJobFailureInventory { get; set; }
+    public int UnresolvedFailureCount { get; set; }
+    public WorkerJobRuntimeSnapshot? LastFailedJob { get; set; }
 }
 
 internal sealed record WorkerBacklogSnapshot(
     int QueuedCount,
     int RunningCount,
-    DateTime? OldestQueuedAtUtc);
+    DateTime? OldestQueuedAtUtc,
+    WorkerJobRuntimeSnapshot? CurrentJob = null,
+    WorkerJobRuntimeSnapshot? LastJob = null,
+    int UnresolvedFailureCount = 0,
+    WorkerJobRuntimeSnapshot? LastFailedJob = null);
+
+internal sealed record WorkerJobRuntimeSnapshot(
+    Guid JobId,
+    string TaskCode,
+    string TaskName,
+    string Status,
+    string ExecutionMode,
+    string TriggerSource,
+    int? WarehouseNo,
+    DateTime CreatedAtUtc,
+    DateTime? StartedAtUtc,
+    DateTime? CompletedAtUtc,
+    int AffectedRecordCount,
+    string? Message,
+    string? ErrorMessage);

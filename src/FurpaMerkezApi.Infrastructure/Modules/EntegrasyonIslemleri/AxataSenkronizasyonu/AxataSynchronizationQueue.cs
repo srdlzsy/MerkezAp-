@@ -149,10 +149,33 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
     internal WorkerBacklogSnapshot GetBacklogSnapshot()
     {
         DateTime? oldestQueuedAtUtc = pending.TryPeek(out var oldest) ? oldest.CreatedAtUtc : null;
+        var snapshots = jobs.Values
+            .Select(record => record.ToRuntimeSnapshot())
+            .ToArray();
+        var currentJob = snapshots
+            .Where(job => string.Equals(job.Status, "Running", StringComparison.Ordinal))
+            .OrderByDescending(job => job.StartedAtUtc ?? job.CreatedAtUtc)
+            .FirstOrDefault();
+        var lastJob = snapshots
+            .Where(job => job.CompletedAtUtc.HasValue)
+            .OrderByDescending(job => job.CompletedAtUtc)
+            .FirstOrDefault();
+        var unresolvedFailures = snapshots
+            .Where(job => job.CompletedAtUtc.HasValue)
+            .GroupBy(job => job.TaskCode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(job => job.CompletedAtUtc).First())
+            .Where(job => string.Equals(job.Status, "Failed", StringComparison.Ordinal))
+            .OrderByDescending(job => job.CompletedAtUtc)
+            .ToArray();
+
         return new WorkerBacklogSnapshot(
             Math.Max(0, Volatile.Read(ref pendingCount)),
             Math.Max(0, Volatile.Read(ref runningCount)),
-            oldestQueuedAtUtc);
+            oldestQueuedAtUtc,
+            currentJob,
+            lastJob,
+            unresolvedFailures.Length,
+            unresolvedFailures.FirstOrDefault());
     }
 
     private AxataSynchronizationJobRecord GetRecord(Guid jobId) =>
@@ -255,6 +278,27 @@ internal sealed class AxataSynchronizationJobRecord(
             Message,
             ErrorMessage,
             Artifacts);
+
+    public WorkerJobRuntimeSnapshot ToRuntimeSnapshot()
+    {
+        lock (SyncRoot)
+        {
+            return new WorkerJobRuntimeSnapshot(
+                JobId,
+                TaskCode,
+                TaskName,
+                Status.ToExternalValue(),
+                ExecutionMode.ToExternalValue(),
+                TriggerSource.ToExternalValue(),
+                WarehouseNo,
+                CreatedAtUtc,
+                StartedAtUtc,
+                CompletedAtUtc,
+                AffectedRecordCount,
+                Message,
+                ErrorMessage);
+        }
+    }
 }
 
 internal sealed record AxataSynchronizationJobWorkItem(

@@ -31,4 +31,24 @@ public sealed record WorkerMonitoringItemDto(
     int RunningCount,
     DateTime? OldestQueuedAtUtc,
     long? OldestQueuedAgeSeconds,
-    int StaleAfterSeconds);
+    int StaleAfterSeconds,
+    WorkerJobMonitoringDto? CurrentJob = null,
+    WorkerJobMonitoringDto? LastJob = null,
+    int UnresolvedFailureCount = 0,
+    WorkerJobMonitoringDto? LastFailedJob = null);
+
+public sealed record WorkerJobMonitoringDto(
+    Guid JobId,
+    string TaskCode,
+    string TaskName,
+    string Status,
+    string ExecutionMode,
+    string TriggerSource,
+    int? WarehouseNo,
+    DateTime CreatedAtUtc,
+    DateTime? StartedAtUtc,
+    DateTime? CompletedAtUtc,
+    long? DurationSeconds,
+    int AffectedRecordCount,
+    string? Message,
+    string? ErrorMessage);

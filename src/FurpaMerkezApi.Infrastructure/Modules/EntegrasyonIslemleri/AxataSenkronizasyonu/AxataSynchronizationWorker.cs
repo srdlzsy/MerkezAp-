@@ -60,7 +60,7 @@ internal sealed class AxataSynchronizationWorker(
             queue.MarkRunning(workItem.JobId);
             runtimeMonitor.ReportHeartbeat(
                 WorkerRuntimeMonitor.AxataWorkerCode,
-                $"Running {workItem.TaskCode}",
+                $"{workItem.TaskName} calisiyor (Job: {workItem.JobId})",
                 queue.GetBacklogSnapshot());
 
             try
@@ -79,24 +79,28 @@ internal sealed class AxataSynchronizationWorker(
                 var executionTask = coordinator.ExecuteAsync(context, stoppingToken);
                 while (!executionTask.IsCompleted)
                 {
-                    var heartbeatDelay = Task.Delay(HeartbeatInterval, stoppingToken);
+                    // Keep the scoped services alive until the running task observes shutdown
+                    // and completes. Abandoning the task here disposes its DbContexts mid-query.
+                    var heartbeatDelay = Task.Delay(HeartbeatInterval, CancellationToken.None);
                     if (await Task.WhenAny(executionTask, heartbeatDelay) == executionTask)
                     {
                         break;
                     }
 
-                    stoppingToken.ThrowIfCancellationRequested();
-                    runtimeMonitor.ReportHeartbeat(
-                        WorkerRuntimeMonitor.AxataWorkerCode,
-                        $"Running {workItem.TaskCode}",
-                        queue.GetBacklogSnapshot());
+                    if (!stoppingToken.IsCancellationRequested)
+                    {
+                        runtimeMonitor.ReportHeartbeat(
+                            WorkerRuntimeMonitor.AxataWorkerCode,
+                            $"{workItem.TaskName} calisiyor (Job: {workItem.JobId})",
+                            queue.GetBacklogSnapshot());
+                    }
                 }
 
                 var result = await executionTask;
                 queue.MarkSucceeded(workItem.JobId, result);
                 runtimeMonitor.ReportSuccess(
                     WorkerRuntimeMonitor.AxataWorkerCode,
-                    $"Completed {workItem.TaskCode}",
+                    $"{workItem.TaskName} tamamlandi (Job: {workItem.JobId})",
                     queue.GetBacklogSnapshot());
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -118,7 +122,7 @@ internal sealed class AxataSynchronizationWorker(
                 queue.MarkFailed(workItem.JobId, exception.Message);
                 runtimeMonitor.ReportFailure(
                     WorkerRuntimeMonitor.AxataWorkerCode,
-                    $"Failed {workItem.TaskCode}",
+                    $"{workItem.TaskName} basarisiz oldu (Job: {workItem.JobId})",
                     exception,
                     queue.GetBacklogSnapshot());
             }
