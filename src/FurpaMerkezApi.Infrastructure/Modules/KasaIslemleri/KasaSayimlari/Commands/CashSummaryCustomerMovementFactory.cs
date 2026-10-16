@@ -242,8 +242,6 @@ internal static class CashSummaryCustomerMovementFactory
             cha_ebelgeno_sira = 0,
             cha_hubid = string.Empty,
             cha_hubglbid = string.Empty,
-            cha_disyazilimid = string.Empty,
-            cha_disyazilim_tip = 0,
             cha_bsba_e_belge_mi = 0,
             cha_eticaret_kanal_kodu = string.Empty,
             cha_hizli_satis_kasa_no = 0,

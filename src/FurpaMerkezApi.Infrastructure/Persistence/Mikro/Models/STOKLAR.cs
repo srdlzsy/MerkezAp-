@@ -237,10 +237,6 @@ public partial class STOKLAR
 
     public string? sto_marka_kodu { get; set; }
 
-    public string? sto_beden_kodu { get; set; }
-
-    public string? sto_renk_kodu { get; set; }
-
     public string? sto_model_kodu { get; set; }
 
     public string? sto_sezon_kodu { get; set; }
@@ -258,10 +254,6 @@ public partial class STOKLAR
     public string? sto_mkod_artik { get; set; }
 
     public bool? sto_kasa_tarti_fl { get; set; }
-
-    public bool? sto_bedenli_takip { get; set; }
-
-    public bool? sto_renkDetayli { get; set; }
 
     public bool? sto_miktarondalikli_fl { get; set; }
 

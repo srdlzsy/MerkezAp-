@@ -5,7 +5,7 @@ toplandigi ana yerdir. Koddaki ana uygulama `.NET 9` Web API olarak calisir ve
 iki temel veritabani kullanir:
 
 - `FurpaMerkezDb` (`PostgreSQL`): login, register, rol, yetki ve merkez uygulama verileri.
-- `MikroDB_V16_FURPA_2024` (`SQL Server`): stok, cari, fatura, sevk, siparis ve operasyonel Mikro verileri.
+- `MikroDesktop_FURPA_2024` (`SQL Server`): canli stok, cari, fatura, sevk, siparis ve operasyonel Mikro verileri. Eski `MikroDB_V16_FURPA_2024` hedefinden gecis ve geri donus adimlari ayri rehberdedir.
 
 ## Hizli Baslangic
 
@@ -44,6 +44,7 @@ Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
 | [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md) | Yeni menu/API eklerken yetki katalogu, migration ve policy adimlari. |
 | [KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md](KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md) | Kasa Sayimlari, Icmal Kaydi Girisi, depo yetkisi, update/delete ve Z raporu Mikro yazim rehberi. |
 | [PRODUCTION_HAZIRLIK.md](PRODUCTION_HAZIRLIK.md) | Production hazirlik ve canliya alma notlari. |
+| [MIKRO_DESKTOP_GECIS_REHBERI.md](MIKRO_DESKTOP_GECIS_REHBERI.md) | Mikro Desktop veritabanina kontrollu gecis, harici Mikro API eslemesi, Furpa prosedur referanslari, dogrulama ve geri donus adimlari. |
 
 ### Operasyon
 

@@ -322,7 +322,6 @@ public partial class MikroDbContext : DbContext
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime");
             entity.Property(e => e.cha_diger_belge_adi).HasMaxLength(50);
-            entity.Property(e => e.cha_disyazilimid).HasMaxLength(50);
             entity.Property(e => e.cha_ebelgeno_seri).HasMaxLength(20);
             entity.Property(e => e.cha_eticaret_kanal_kodu).HasMaxLength(25);
             entity.Property(e => e.cha_evrakno_seri).HasMaxLength(20);
@@ -534,15 +533,11 @@ public partial class MikroDbContext : DbContext
 
             entity.HasIndex(e => new { e.sto_sat_cari_kod, e.sto_kod }, "NDX_STOKLAR_13").HasFillFactor(30);
 
-            entity.HasIndex(e => new { e.sto_renk_kodu, e.sto_kod }, "NDX_STOKLAR_14").HasFillFactor(30);
-
             entity.HasIndex(e => new { e.sto_model_kodu, e.sto_kod }, "NDX_STOKLAR_15").HasFillFactor(30);
 
             entity.HasIndex(e => new { e.sto_sezon_kodu, e.sto_kod }, "NDX_STOKLAR_16").HasFillFactor(30);
 
             entity.HasIndex(e => new { e.sto_hammadde_kodu, e.sto_kod }, "NDX_STOKLAR_17").HasFillFactor(30);
-
-            entity.HasIndex(e => new { e.sto_beden_kodu, e.sto_kod }, "NDX_STOKLAR_18").HasFillFactor(30);
 
             entity.HasIndex(e => new { e.sto_kategori_kodu, e.sto_kod }, "NDX_STOKLAR_19").HasFillFactor(30);
 
@@ -567,7 +562,6 @@ public partial class MikroDbContext : DbContext
             entity.Property(e => e.sto_bagortsatmal_ufrsfark_kod).HasMaxLength(40);
             entity.Property(e => e.sto_bagortsatmalmuhkod).HasMaxLength(40);
             entity.Property(e => e.sto_bagortsatmuhkod).HasMaxLength(40);
-            entity.Property(e => e.sto_beden_kodu).HasMaxLength(25);
             entity.Property(e => e.sto_birim1_ad).HasMaxLength(10);
             entity.Property(e => e.sto_birim2_ad).HasMaxLength(10);
             entity.Property(e => e.sto_birim3_ad).HasMaxLength(10);
@@ -615,7 +609,6 @@ public partial class MikroDbContext : DbContext
             entity.Property(e => e.sto_plu_no).ValueGeneratedOnAdd();
             entity.Property(e => e.sto_pozisyonbayrak_kodu).HasMaxLength(25);
             entity.Property(e => e.sto_prim_kodu).HasMaxLength(25);
-            entity.Property(e => e.sto_renk_kodu).HasMaxLength(25);
             entity.Property(e => e.sto_resim_url).HasMaxLength(127);
             entity.Property(e => e.sto_reyon_kodu).HasMaxLength(25);
             entity.Property(e => e.sto_sat_cari_kod).HasMaxLength(25);

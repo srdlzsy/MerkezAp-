@@ -5,6 +5,9 @@ param(
     [string]$ProjectPath = "",
     [string]$LocalSettingsPath = "",
     [string]$HealthBaseUrl = "http://10.0.0.100:7508",
+    [ValidateSet("None", "Legacy", "Desktop")]
+    [string]$MikroDatabaseTarget = "None",
+    [switch]$ConfirmMikroApiMapping,
     [switch]$SkipPublish,
     [switch]$SkipRestore,
     [switch]$RunStandalone,
@@ -64,6 +67,15 @@ Write-Host "Publish path: $PublishPath"
 Write-Host "Local config: $LocalSettingsPath"
 Write-Host "Site        : $SiteName"
 Write-Host "App Pool    : $appPool"
+Write-Host "Mikro target: $MikroDatabaseTarget"
+
+if ($MikroDatabaseTarget -ne "None" -and -not $ConfirmMikroApiMapping) {
+    throw "Confirm the Mikro API FURPA_2024 company mapping, then re-run with -ConfirmMikroApiMapping."
+}
+
+if ($MikroDatabaseTarget -ne "None" -and -not $appPool) {
+    throw "An IIS application pool is required for a controlled Mikro database cutover."
+}
 
 if (-not $SkipPublish -and -not (Test-Path $ProjectPath)) {
     throw "Project file was not found: $ProjectPath. If this server only has published files, run with -SkipPublish."
@@ -93,6 +105,15 @@ if (Test-Path $LocalSettingsPath) {
 }
 else {
     Write-Warning "appsettings.Local.json was not found: $LocalSettingsPath"
+}
+
+$publishedLocalSettingsPath = Join-Path $PublishPath "appsettings.Local.json"
+$publishedProductionSettingsPath = Join-Path $PublishPath "appsettings.Production.json"
+$effectiveSettingsPath = if (Test-Path -LiteralPath $publishedLocalSettingsPath) {
+    $publishedLocalSettingsPath
+}
+else {
+    $publishedProductionSettingsPath
 }
 
 Write-Step "Creating writable folders"
@@ -130,9 +151,27 @@ if ($appPool) {
         Write-Warning "IIS Application Initialization is not installed. preloadEnabled was set, but preload requires the Web-AppInit Windows feature."
     }
 
-    Write-Step "Starting App Pool"
-    Start-WebAppPool $appPool
-    Get-WebAppPoolState $appPool | Out-Host
+    if ($MikroDatabaseTarget -ne "None") {
+        Write-Step "Applying controlled Mikro database cutover"
+        $switchScript = Join-Path $PSScriptRoot "Switch-MikroDatabase.ps1"
+        if (-not (Test-Path -LiteralPath $switchScript)) {
+            throw "Mikro database switch script was not found: $switchScript"
+        }
+
+        & $switchScript `
+            -Target $MikroDatabaseTarget `
+            -ConfigurationPath $effectiveSettingsPath `
+            -SiteName $SiteName `
+            -HealthBaseUrl $HealthBaseUrl `
+            -Apply `
+            -ConfirmMikroApiMapping
+    }
+    else {
+        Write-Step "Starting App Pool"
+        Start-WebAppPool $appPool
+        Get-WebAppPoolState $appPool | Out-Host
+    }
+
     Write-Host "Start mode  : $((Get-ItemProperty "IIS:\AppPools\$appPool").startMode)"
     Write-Host "Idle timeout: $((Get-ItemProperty "IIS:\AppPools\$appPool").processModel.idleTimeout)"
     Write-Host "Preload     : $((Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter "system.applicationHost/sites/site[@name='$SiteName']/application[@path='/']" -Name 'preloadEnabled').Value)"
@@ -145,9 +184,33 @@ else {
 
 if (-not [string]::IsNullOrWhiteSpace($HealthBaseUrl)) {
     Write-Step "Testing IIS endpoints"
-    curl.exe -i "$HealthBaseUrl/"
-    curl.exe -i "$HealthBaseUrl/health/ready"
-    curl.exe -i "$HealthBaseUrl/__test__"
+    $rootResponse = Invoke-RestMethod -Uri ($HealthBaseUrl.TrimEnd('/') + "/") -Method Get -TimeoutSec 15
+    $rootResponse | ConvertTo-Json -Depth 10 | Write-Host
+
+    if ($MikroDatabaseTarget -ne "None") {
+        $expectedDatabase = if ($MikroDatabaseTarget -eq "Desktop") {
+            "MikroDesktop_FURPA_2024"
+        }
+        else {
+            "MikroDB_V16_FURPA_2024"
+        }
+
+        if (-not ([string]$rootResponse.businessDatabase).Equals(
+            $expectedDatabase,
+            [StringComparison]::OrdinalIgnoreCase)) {
+            if ($appPool) {
+                Stop-WebAppPool $appPool -ErrorAction SilentlyContinue
+            }
+            throw "Published application reports '$($rootResponse.businessDatabase)' instead of '$expectedDatabase'. The app pool was stopped."
+        }
+    }
+
+    Invoke-WebRequest `
+        -Uri ($HealthBaseUrl.TrimEnd('/') + "/health/ready") `
+        -Method Get `
+        -TimeoutSec 15 `
+        -UseBasicParsing | Out-Null
+    Write-Host "Readiness check succeeded."
 }
 
 if ($RunStandalone) {

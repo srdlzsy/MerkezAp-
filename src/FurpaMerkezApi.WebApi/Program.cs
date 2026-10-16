@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -29,6 +30,8 @@ var hostingOptions = builder.Configuration.GetSection("Hosting").Get<ApiHostingO
 var reverseProxyOptions = builder.Configuration.GetSection("ReverseProxy").Get<ReverseProxyOptions>() ?? new ReverseProxyOptions();
 var corsOptions = builder.Configuration.GetSection("Cors").Get<ApiCorsOptions>() ?? new ApiCorsOptions();
 var dataProtectionOptions = builder.Configuration.GetSection("DataProtection").Get<ApiDataProtectionOptions>() ?? new ApiDataProtectionOptions();
+var mainMikroDatabaseName = ResolveDatabaseName(
+    builder.Configuration.GetConnectionString("MikroConnection"));
 
 ValidateProductionConfiguration(builder.Configuration, builder.Environment, hostingOptions, reverseProxyOptions);
 
@@ -232,7 +235,7 @@ app.MapGet("/", () =>
         service = "FurpaMerkezApi",
         architecture = "Clean Architecture",
         authDatabase = "FurpaMerkezDb",
-        businessDatabase = "MikroDB_V16_FURPA_2024",
+        businessDatabase = mainMikroDatabaseName,
         swagger = hostingOptions.EnableSwagger ? "/swagger" : string.Empty,
         status = "Running"
     });
@@ -286,6 +289,33 @@ static string ResolveModelStateErrorMessage(ModelError error) =>
         ? error.ErrorMessage
         : error.Exception?.Message ?? "Invalid value.";
 
+static string ResolveDatabaseName(string? connectionString)
+{
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        return "NotConfigured";
+    }
+
+    try
+    {
+        var builder = new DbConnectionStringBuilder { ConnectionString = connectionString };
+        foreach (var key in new[] { "Database", "Initial Catalog" })
+        {
+            if (builder.TryGetValue(key, out var value) &&
+                !string.IsNullOrWhiteSpace(Convert.ToString(value)))
+            {
+                return Convert.ToString(value)!;
+            }
+        }
+    }
+    catch (ArgumentException)
+    {
+        // Production validation reports malformed or missing connection settings.
+    }
+
+    return "Unknown";
+}
+
 static void ValidateProductionConfiguration(
     IConfiguration configuration,
     IWebHostEnvironment environment,
@@ -303,6 +333,10 @@ static void ValidateProductionConfiguration(
     var (mikroReadConnectionKey, mikroWriteConnectionKey) = ResolveMikroConnectionSettingKeys(configuration);
     ValidateRequiredSetting(configuration, $"ConnectionStrings:{mikroReadConnectionKey}");
     ValidateRequiredSetting(configuration, $"ConnectionStrings:{mikroWriteConnectionKey}");
+    ValidateExpectedMikroDatabase(
+        configuration,
+        mikroReadConnectionKey,
+        mikroWriteConnectionKey);
 
     if (configuration.GetValue("AxataSynchronization:Enabled", false))
     {
@@ -318,6 +352,29 @@ static void ValidateProductionConfiguration(
             "Production JWT secret is missing or still using the placeholder value. Override Jwt__SecretKey before deployment.");
     }
 
+}
+
+static void ValidateExpectedMikroDatabase(
+    IConfiguration configuration,
+    string readConnectionKey,
+    string writeConnectionKey)
+{
+    var expectedDatabase = configuration["MikroDatabase:ExpectedDatabase"]?.Trim();
+    if (string.IsNullOrWhiteSpace(expectedDatabase))
+    {
+        return;
+    }
+
+    foreach (var connectionKey in new[] { readConnectionKey, writeConnectionKey }.Distinct(StringComparer.Ordinal))
+    {
+        var actualDatabase = ResolveDatabaseName(configuration.GetConnectionString(connectionKey));
+        if (!actualDatabase.Equals(expectedDatabase, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Production Mikro connection '{connectionKey}' targets database '{actualDatabase}', " +
+                $"but MikroDatabase:ExpectedDatabase requires '{expectedDatabase}'.");
+        }
+    }
 }
 
 static void ValidateRequiredSetting(IConfiguration configuration, string key)

@@ -263,10 +263,6 @@ public partial class CARI_HESAP_HAREKETLERI
 
     public string? cha_hubglbid { get; set; }
 
-    public string? cha_disyazilimid { get; set; }
-
-    public byte? cha_disyazilim_tip { get; set; }
-
     public byte? cha_bsba_e_belge_mi { get; set; }
 
     public string? cha_eticaret_kanal_kodu { get; set; }
