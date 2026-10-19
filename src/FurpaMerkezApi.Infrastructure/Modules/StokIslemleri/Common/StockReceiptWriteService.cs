@@ -22,7 +22,7 @@ public sealed class StockReceiptWriteService(
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<StockReceiptWriteService> logger)
 {
-    private const int DatabaseDocumentSequenceRetryAttemptCount = 3;
+    private const int DatabaseDocumentSequenceRetryAttemptCount = 5;
     private const int DatabaseDocumentSequenceRetryDelayMilliseconds = 250;
     private const short MovementFileId = 16;
     private const short MikroUserNo = 39;
@@ -35,6 +35,7 @@ public sealed class StockReceiptWriteService(
     private const string DahiliStokHareketKaydetPath = "/Api/apiMethods/DahiliStokHareketKaydetV2";
     private const string OutageOfflineOperationCode = "stok-islemleri.zayiat-fisleri.create";
     private const string ExpenseOfflineOperationCode = "stok-islemleri.masraf-fisleri.create";
+    private const string DocumentSequenceLockOperationCode = "StockMovement:0";
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateStockReceiptResponse> ExecuteAsync(
@@ -110,7 +111,7 @@ public sealed class StockReceiptWriteService(
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
             mikroWriteDbContext,
-            $"StockReceipt:{movementGenre}",
+            DocumentSequenceLockOperationCode,
             documentSerie,
             cancellationToken);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
@@ -131,7 +132,6 @@ public sealed class StockReceiptWriteService(
                     {
                         var documentOrderNo = await GetNextDocumentOrderNoAsync(
                             documentSerie,
-                            movementGenre,
                             cancellationToken);
                         var movements = pricedLines
                             .Select((pricedLine, rowNo) => CreateMovement(
@@ -237,12 +237,11 @@ public sealed class StockReceiptWriteService(
         var offlineTraceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
             mikroWriteDbContext,
-            $"StockReceipt:{movementGenre}",
+            DocumentSequenceLockOperationCode,
             documentSerie,
             cancellationToken);
         var documentOrderNo = await GetNextDocumentOrderNoAsync(
             documentSerie,
-            movementGenre,
             cancellationToken);
         var pricedLines = await BuildPricedLinesAsync(lines, kind, cancellationToken);
         var payload = StockMovementMikroApiPayloadFactory.CreateStockReceipt(
@@ -515,17 +514,13 @@ public sealed class StockReceiptWriteService(
             ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
-    private async Task<int> GetNextDocumentOrderNoAsync(
+    internal async Task<int> GetNextDocumentOrderNoAsync(
         string documentSerie,
-        byte movementGenre,
         CancellationToken cancellationToken)
     {
         var currentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
             .Where(movement =>
                 movement.sth_evraktip == StockReceiptDocumentType &&
-                movement.sth_tip == OutgoingMovementType &&
-                movement.sth_normal_iade == NormalMovement &&
-                movement.sth_cins == movementGenre &&
                 movement.sth_evrakno_seri == documentSerie)
             .MaxAsync(movement => movement.sth_evrakno_sira, cancellationToken);
 
