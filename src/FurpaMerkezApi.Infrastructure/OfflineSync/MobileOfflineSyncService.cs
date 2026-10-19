@@ -17,6 +17,8 @@ public sealed class MobileOfflineSyncService(
 {
     private const int StatusRetryAfterSeconds = 5;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan InFlightJoinTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan InFlightJoinPollInterval = TimeSpan.FromMilliseconds(500);
     // Durable create owns the request for ten minutes. The lease must not expire
     // while that bounded server-side execution can still be running.
     private static readonly TimeSpan ProcessingLeaseTimeout = DurableCreateExecution.Timeout + TimeSpan.FromMinutes(2);
@@ -272,7 +274,9 @@ public sealed class MobileOfflineSyncService(
                 ? await VerifyCompletedAsync(record, recoverAsync, cancellationToken)
                 : DeserializeResponse<TResponse>(record.ResponsePayload);
         }
-        else if (record.Retryable != false)
+        else if (record.Retryable != false &&
+                 (record.Status != MobileOfflineSyncRequestStatus.Processing ||
+                  IsProcessingLeaseExpired(record)))
         {
             result = await TryRecoverAsync(record, recoverAsync, cancellationToken);
             if (result is null)
@@ -364,6 +368,29 @@ public sealed class MobileOfflineSyncService(
                 verifyCompletedWithRecovery);
         }
 
+        if (existing.Status == MobileOfflineSyncRequestStatus.Processing &&
+            !IsProcessingLeaseExpired(existing))
+        {
+            if (authDbContext.Database.IsRelational())
+            {
+                await WaitForInFlightResolutionAsync(existing, cancellationToken);
+            }
+
+            if (existing.Status == MobileOfflineSyncRequestStatus.Completed)
+            {
+                return await ResolveCompletedAcquireAsync(
+                    existing,
+                    recoverAsync,
+                    cancellationToken,
+                    verifyCompletedWithRecovery);
+            }
+
+            if (existing.Status == MobileOfflineSyncRequestStatus.Processing)
+            {
+                return MobileOfflineSyncAcquireResult<TResponse>.Processing();
+            }
+        }
+
         ThrowIfReviewRequired(existing);
 
         var recovered = await TryRecoverAsync(existing, recoverAsync, cancellationToken);
@@ -411,6 +438,29 @@ public sealed class MobileOfflineSyncService(
         }
 
         return MobileOfflineSyncAcquireResult<TResponse>.Processing();
+    }
+
+    private async Task WaitForInFlightResolutionAsync(
+        MobileOfflineSyncRequest record,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        while (System.Diagnostics.Stopwatch.GetElapsedTime(startedAt) < InFlightJoinTimeout)
+        {
+            await Task.Delay(InFlightJoinPollInterval, cancellationToken);
+            await authDbContext.Entry(record).ReloadAsync(cancellationToken);
+
+            if (record.Status != MobileOfflineSyncRequestStatus.Processing)
+            {
+                logger?.LogInformation(
+                    "A repeated safe create request joined its existing result. OperationCode={OperationCode}, ClientRequestId={ClientRequestId}, Status={Status}",
+                    record.OperationCode,
+                    record.ClientRequestId,
+                    record.Status);
+                return;
+            }
+        }
     }
 
     private async Task<MobileOfflineSyncAcquireResult<TResponse>> ResolveCompletedAcquireAsync<TResponse>(

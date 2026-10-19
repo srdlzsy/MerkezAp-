@@ -484,12 +484,14 @@ public sealed class MobileOfflineSyncServiceTests
     public async Task GetStatus_RecoveryFailureMarksRequestRetryableInsteadOfLeavingItProcessing()
     {
         await using var db = CreateDbContext();
-        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var clock = new MutableClock(Now);
+        var service = new MobileOfflineSyncService(db, clock);
         var userId = Guid.NewGuid();
         var clientRequestId = Guid.NewGuid();
         var request = new TestRequest(56, 25);
 
         await AcquireAsync(service, userId, clientRequestId, request);
+        clock.UtcNow = Now.AddMinutes(30);
 
         var status = await service.GetStatusAsync<string>(
             "shipment.create",
@@ -510,7 +512,35 @@ public sealed class MobileOfflineSyncServiceTests
     }
 
     [Fact]
-    public async Task Acquire_RecoveryFailureReturnsProcessingWithoutStartingASecondWrite()
+    public async Task GetStatus_FreshProcessingRequestDoesNotStartCompetingRecovery()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var recoveryCalls = 0;
+
+        await AcquireAsync(service, userId, clientRequestId, new TestRequest(56, 25));
+
+        var status = await service.GetStatusAsync<string>(
+            "shipment.create",
+            userId,
+            clientRequestId,
+            (_, _) =>
+            {
+                recoveryCalls++;
+                return Task.FromResult<string?>(null);
+            },
+            CancellationToken.None);
+
+        Assert.Equal("Processing", status.Status);
+        Assert.Equal("WaitAndCheck", status.RecommendedAction);
+        Assert.Equal(0, recoveryCalls);
+        Assert.Equal(5, status.RetryAfterSeconds);
+    }
+
+    [Fact]
+    public async Task Acquire_FreshProcessingRequestReturnsProcessingWithoutStartingRecovery()
     {
         await using var db = CreateDbContext();
         var service = new MobileOfflineSyncService(db, new MutableClock(Now));
@@ -520,22 +550,28 @@ public sealed class MobileOfflineSyncServiceTests
 
         await AcquireAsync(service, userId, clientRequestId, request);
 
+        var recoveryCalls = 0;
         var retry = await service.AcquireAsync<TestRequest, string>(
             "shipment.create",
             userId,
             56,
             clientRequestId,
             request,
-            (_, _) => throw new TimeoutException("Recovery query timed out."),
+            (_, _) =>
+            {
+                recoveryCalls++;
+                throw new TimeoutException("Recovery query timed out.");
+            },
             CancellationToken.None,
             preventReexecutionAfterUncertainOutcome: true);
 
         Assert.Equal(MobileOfflineSyncAcquireState.Processing, retry.State);
+        Assert.Equal(0, recoveryCalls);
 
         var record = await db.MobileOfflineSyncRequests.SingleAsync();
-        Assert.Equal(MobileOfflineSyncRequestStatus.Failed, record.Status);
-        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, record.ErrorCode);
-        Assert.True(record.Retryable);
+        Assert.Equal(MobileOfflineSyncRequestStatus.Processing, record.Status);
+        Assert.Null(record.ErrorCode);
+        Assert.Null(record.Retryable);
     }
 
     [Fact]

@@ -75,6 +75,17 @@ public sealed class StockMovementReadbackTests
             var service = new StockReceiptWriteService(mikro, writeOptions, null!, null!, sync, NullLogger<StockReceiptWriteService>.Instance);
             run = async () => { await service.ExecuteAsync(request, isExpense ? StockReceiptKind.ExpenseReceipt : StockReceiptKind.OutageReceipt, CancellationToken.None); };
         }
+
+        var reserved = await auth.MobileOfflineSyncRequests.SingleAsync();
+        await sync.MarkFailedAsync(
+            reserved.OperationCode,
+            user,
+            id,
+            "Write outcome could not be confirmed.",
+            CancellationToken.None,
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            retryable: true);
+
         if (scenario == "partial") rows.RemoveAt(1);
         if (scenario == "changed") rows[1].sth_miktar = 999;
         if (scenario == "extra-untraced")
