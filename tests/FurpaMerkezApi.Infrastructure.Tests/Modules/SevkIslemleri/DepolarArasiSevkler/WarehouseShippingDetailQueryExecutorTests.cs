@@ -43,12 +43,52 @@ public sealed class WarehouseShippingDetailQueryExecutorTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ExecuteAsync_DoesNotExposeLineDescriptionAsEDespatchUuid()
+    {
+        await using var db = CreateContext();
+        db.STOK_HAREKETLERIs.AddRange(
+            CreateMovement(0, null, "PILIC KANAT KG"),
+            CreateMovement(1, null, "ULKER BIZIM MARGARIN"));
+        await db.SaveChangesAsync();
+
+        var detail = await new WarehouseShippingDetailQueryExecutor(db).ExecuteAsync(
+            new WarehouseShippingDetailRequest(56, "F56", 88049),
+            WarehouseShippingDirection.Outgoing,
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(string.Empty, detail.Header.DescriptionEttn);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsValidEDespatchUuidFromMovementDescription()
+    {
+        await using var db = CreateContext();
+        var eDespatchUuid = Guid.NewGuid();
+        db.STOK_HAREKETLERIs.AddRange(
+            CreateMovement(0, "FRM2026600132349", eDespatchUuid.ToString()),
+            CreateMovement(1, "FRM2026600132349", eDespatchUuid.ToString()));
+        await db.SaveChangesAsync();
+
+        var detail = await new WarehouseShippingDetailQueryExecutor(db).ExecuteAsync(
+            new WarehouseShippingDetailRequest(56, "F56", 88049),
+            WarehouseShippingDirection.Outgoing,
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(eDespatchUuid.ToString(), detail.Header.DescriptionEttn);
+    }
+
     private static MikroDbContext CreateContext() => new(
         new DbContextOptionsBuilder<MikroDbContext>()
             .UseInMemoryDatabase($"warehouse-shipping-detail-{Guid.NewGuid():N}")
             .Options);
 
-    private static STOK_HAREKETLERI CreateMovement(int rowNo, string? documentNo) => new()
+    private static STOK_HAREKETLERI CreateMovement(
+        int rowNo,
+        string? documentNo,
+        string? description = null) => new()
     {
         sth_Guid = Guid.NewGuid(),
         sth_evraktip = 17,
@@ -66,6 +106,7 @@ public sealed class WarehouseShippingDetailQueryExecutorTests
         sth_tarih = new DateTime(2026, 9, 30),
         sth_belge_tarih = new DateTime(2026, 9, 30),
         sth_belge_no = documentNo,
+        sth_aciklama = description,
         sth_miktar = 1d,
         sth_tutar = 10d,
         sth_birim_pntr = 1

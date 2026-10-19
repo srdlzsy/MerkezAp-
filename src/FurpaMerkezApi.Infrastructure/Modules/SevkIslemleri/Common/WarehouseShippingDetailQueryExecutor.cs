@@ -177,8 +177,19 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
             throw new InvalidOperationException("Warehouse shipping lines have different e-despatch document numbers.");
         }
 
+        var eDespatchUuids = rows
+            .Select(row => NormalizeEDespatchUuid(row.sth_aciklama))
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (eDespatchUuids.Length > 1)
+        {
+            throw new InvalidOperationException("Warehouse shipping lines have different e-despatch UUID values.");
+        }
+
         var firstRow = rows[0];
         var documentNo = sentDocumentNos.FirstOrDefault() ?? firstRow.sth_belge_no ?? string.Empty;
+        var descriptionEttn = eDespatchUuids.FirstOrDefault() ?? string.Empty;
         var sourceWarehouseNo = firstRow.sth_cikis_depo_no ?? 0;
         var targetWarehouseNo = firstRow.ResolvedTargetWarehouseNo ?? 0;
         var shippingWarehouseNo = firstRow.ResolvedShippingWarehouseNo ?? 0;
@@ -232,7 +243,7 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
             firstRow.sth_HareketGrupKodu1 ?? string.Empty,
             firstRow.sth_HareketGrupKodu3 ?? string.Empty,
             firstRow.sth_ismerkezi_kodu ?? string.Empty,
-            firstRow.sth_aciklama ?? string.Empty,
+            descriptionEttn,
             string.Join(", ", warehouseOrderNos),
             warehouseOrderNos,
             items.Length,
@@ -251,6 +262,9 @@ public sealed class WarehouseShippingDetailQueryExecutor(MikroDbContext mikroDbC
 
         return $"{documentSerie.Trim()}.{documentOrderNo.Value}";
     }
+
+    private static string NormalizeEDespatchUuid(string? value) =>
+        Guid.TryParse(value?.Trim(), out var uuid) ? uuid.ToString() : string.Empty;
 
     private static byte NormalizeUnitPointer(byte? unitPointer) =>
         unitPointer is >= 1 and <= 4 ? unitPointer.Value : (byte)1;

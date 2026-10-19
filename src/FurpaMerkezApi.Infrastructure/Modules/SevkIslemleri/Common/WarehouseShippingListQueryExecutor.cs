@@ -87,7 +87,6 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
             group movement
             by new
             {
-                movement.sth_belge_no,
                 movement.sth_belge_tarih,
                 movement.sth_tarih,
                 movement.sth_evrakno_seri,
@@ -103,14 +102,13 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_normal_iade,
                 movement.sth_HareketGrupKodu1,
                 movement.sth_HareketGrupKodu3,
-                movement.sth_ismerkezi_kodu,
-                movement.sth_aciklama
+                movement.sth_ismerkezi_kodu
             }
             into grouped
             orderby grouped.Key.sth_tarih, grouped.Key.sth_evrakno_seri, grouped.Key.sth_evrakno_sira
             select new
             {
-                grouped.Key.sth_belge_no,
+                DocumentNo = grouped.Max(movement => movement.sth_belge_no),
                 grouped.Key.sth_belge_tarih,
                 grouped.Key.sth_tarih,
                 grouped.Key.sth_evrakno_seri,
@@ -127,7 +125,10 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 grouped.Key.sth_HareketGrupKodu1,
                 grouped.Key.sth_HareketGrupKodu3,
                 grouped.Key.sth_ismerkezi_kodu,
-                grouped.Key.sth_aciklama,
+                DescriptionEttnCandidate = grouped.Max(movement =>
+                    movement.sth_aciklama != null && movement.sth_aciklama.Length == 36
+                        ? movement.sth_aciklama
+                        : null),
                 LineCount = grouped.Count(),
                 TotalQuantity = grouped.Sum(movement => movement.sth_miktar ?? 0d)
             };
@@ -138,7 +139,7 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
             .Select(shipment => new WarehouseShippingListItemDto(
                 shipment.sth_belge_tarih,
                 shipment.sth_tarih,
-                shipment.sth_belge_no ?? string.Empty,
+                shipment.DocumentNo ?? string.Empty,
                 shipment.sth_evrakno_seri ?? string.Empty,
                 shipment.sth_evrakno_sira ?? 0,
                 shipment.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
@@ -151,12 +152,15 @@ public sealed class WarehouseShippingListQueryExecutor(MikroDbContext mikroDbCon
                 shipment.sth_HareketGrupKodu1 ?? string.Empty,
                 shipment.sth_HareketGrupKodu3 ?? string.Empty,
                 shipment.sth_ismerkezi_kodu ?? string.Empty,
-                shipment.sth_aciklama ?? string.Empty,
+                NormalizeEDespatchUuid(shipment.DescriptionEttnCandidate),
                 string.Empty,
                 shipment.LineCount,
                 shipment.TotalQuantity))
             .ToArray();
     }
+
+    private static string NormalizeEDespatchUuid(string? value) =>
+        Guid.TryParse(value?.Trim(), out var uuid) ? uuid.ToString() : string.Empty;
 
     private async Task<List<T>> ExecuteReadOnlyListAsync<T>(
         IQueryable<T> query,
