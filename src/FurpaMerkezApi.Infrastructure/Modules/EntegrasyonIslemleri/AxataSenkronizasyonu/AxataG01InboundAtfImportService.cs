@@ -167,42 +167,83 @@ internal sealed class AxataG01InboundAtfImportService(
         }
 
         var orderGuids = analysis.MatchedLines.Select(line => line.OrderLine.sip_Guid).Distinct().ToArray();
-        var trackedOrders = await mikroWriteDbContext.SIPARISLERs
-            .Where(order => orderGuids.Contains(order.sip_Guid))
-            .ToDictionaryAsync(order => order.sip_Guid, cancellationToken);
-        var rowNo = await GetNextLineNoAsync(
-            analysis.Dto.DocumentSerie,
-            analysis.Dto.DocumentOrderNo,
-            cancellationToken);
-        var now = DateTime.Now;
-        var movementDate = DateTime.Today;
-        var createdLineCount = 0;
-        var createdQuantity = 0d;
-
-        await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(cancellationToken);
-        foreach (var matchedLine in analysis.MatchedLines)
-        {
-            if (!trackedOrders.TryGetValue(matchedLine.OrderLine.sip_Guid, out var order))
+        var writeResult = await mikroWriteDbContext.Database
+            .CreateExecutionStrategy()
+            .ExecuteAsync(async () =>
             {
-                throw new InvalidOperationException(
-                    $"Mikro order line was not found for guid {matchedLine.OrderLine.sip_Guid}.");
-            }
+                mikroWriteDbContext.ChangeTracker.Clear();
+                await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            order.sip_teslim_miktar = (order.sip_teslim_miktar ?? 0d) + matchedLine.Line.Quantity;
-            mikroWriteDbContext.STOK_HAREKETLERIs.Add(CreateMovement(
-                matchedLine,
-                analysis.Dto.DocumentSerie,
-                analysis.Dto.DocumentOrderNo,
-                rowNo,
-                now,
-                movementDate));
-            rowNo++;
-            createdLineCount++;
-            createdQuantity += matchedLine.Line.Quantity;
-        }
+                try
+                {
+                    var expectedLines = analysis.MatchedLines
+                        .Select(item => item.Line)
+                        .ToArray();
+                    var expectedRowKeys = expectedLines
+                        .Select(line => BuildMovementGroupCode(line.SequenceNo))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var existingRowKeys = await GetExistingRowKeysAsync(
+                        expectedLines,
+                        [analysis.Dto.DocumentSerie],
+                        cancellationToken);
 
-        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+                    if (existingRowKeys.Count > 0)
+                    {
+                        if (!existingRowKeys.SetEquals(expectedRowKeys))
+                        {
+                            throw new InvalidOperationException(
+                                "AXATA G01 hareketleri Mikro'da kismi olarak bulundu; duplicate riski nedeniyle otomatik retry durduruldu.");
+                        }
+
+                        await transaction.CommitAsync(cancellationToken);
+                        return (
+                            CreatedLineCount: analysis.MatchedLines.Count,
+                            CreatedQuantity: analysis.MatchedLines.Sum(item => item.Line.Quantity));
+                    }
+
+                    var trackedOrders = await mikroWriteDbContext.SIPARISLERs
+                        .Where(order => orderGuids.Contains(order.sip_Guid))
+                        .ToDictionaryAsync(order => order.sip_Guid, cancellationToken);
+                    var rowNo = await GetNextLineNoAsync(
+                        analysis.Dto.DocumentSerie,
+                        analysis.Dto.DocumentOrderNo,
+                        cancellationToken);
+                    var now = DateTime.Now;
+                    var movementDate = DateTime.Today;
+                    var createdLineCount = 0;
+                    var createdQuantity = 0d;
+
+                    foreach (var matchedLine in analysis.MatchedLines)
+                    {
+                        if (!trackedOrders.TryGetValue(matchedLine.OrderLine.sip_Guid, out var order))
+                        {
+                            throw new InvalidOperationException(
+                                $"Mikro order line was not found for guid {matchedLine.OrderLine.sip_Guid}.");
+                        }
+
+                        order.sip_teslim_miktar = (order.sip_teslim_miktar ?? 0d) + matchedLine.Line.Quantity;
+                        mikroWriteDbContext.STOK_HAREKETLERIs.Add(CreateMovement(
+                            matchedLine,
+                            analysis.Dto.DocumentSerie,
+                            analysis.Dto.DocumentOrderNo,
+                            rowNo,
+                            now,
+                            movementDate));
+                        rowNo++;
+                        createdLineCount++;
+                        createdQuantity += matchedLine.Line.Quantity;
+                    }
+
+                    await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return (CreatedLineCount: createdLineCount, CreatedQuantity: createdQuantity);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    throw;
+                }
+            });
 
         var acknowledged = false;
         if (acknowledge)
@@ -219,8 +260,8 @@ internal sealed class AxataG01InboundAtfImportService(
             analysis.Document.OrderDocumentNo,
             analysis.Dto.DocumentSerie,
             analysis.Dto.DocumentOrderNo,
-            createdLineCount,
-            createdQuantity,
+            writeResult.CreatedLineCount,
+            writeResult.CreatedQuantity,
             acknowledged,
             acknowledged
                 ? "Mikro G01 firma mal kabul hareketi olusturuldu, siparis teslim miktari guncellendi ve AXATA ENT016_IRS.S16STAT=1 yapildi."

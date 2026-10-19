@@ -14,6 +14,8 @@ internal sealed class AxataSynchronizationScheduler(
     WorkerRuntimeMonitor runtimeMonitor,
     ILogger<AxataSynchronizationScheduler> logger) : BackgroundService
 {
+    // Scheduled writes need a stable actor so their idempotency scope survives restarts.
+    private static readonly Guid ScheduledWorkerUserId = new("73c53eb1-67ea-4baa-9951-c5c1a600a1a1");
     private readonly ConcurrentDictionary<string, DateTime> nextRunByTask = new(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -118,7 +120,7 @@ internal sealed class AxataSynchronizationScheduler(
                     ResolveScheduledExecutionMode(taskOptions),
                     AxataSynchronizationJobTriggerSource.Scheduled,
                     taskOptions.DefaultWarehouseNo,
-                    Guid.Empty);
+                    ScheduledWorkerUserId);
             }
             catch (InvalidOperationException) when (queue.HasActiveJob(definition.Code, taskOptions.DefaultWarehouseNo))
             {

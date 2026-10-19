@@ -177,6 +177,7 @@ Bu yonde bugun alti farkli canli import seviyesi vardir:
    - `S16SIPN` seri.sira formatinda Mikro firma siparisi, `S16KALN` siparis satir no kabul edilir.
    - Satirlar Mikro `SIPARISLER` ile eslesirse `DocumentType=13` firma mal kabul hareketine cevrilir.
    - `MikroWriteRouting:CompanyReceiving=Database` ise eski worker parity icin dogrudan DB transaction yolu kullanilir; `S16SIRA -> sth_HareketGrupKodu1` izi korunur ve `sip_teslim_miktar` ayni transaction icinde artirilir.
+   - Database yolundaki transaction EF Core execution strategy icinde calisir. Gecici SQL hatasi sonrasi retry baslamadan once beklenen `S16SIRA` izleri geri okunur; tumu varsa onceki deneme basarili kabul edilir, bir kismi varsa duplicate riski nedeniyle otomatik yazma durdurulur.
    - `MikroWriteRouting:CompanyReceiving=MikroApi` ise mevcut firma mal kabul use case yolu calisir, `POST /Api/apiMethods/IrsaliyeKaydetV2` kullanilir, siparis linkleri `sth_sip_uid` ile geri okunup dogrulanmadan AXATA ack atilmaz.
    - MikroApi yolunda ayni siparis satiri AXATA tarafinda parcalanmis gelirse miktarlar siparis GUID bazinda toplanarak tek mal kabul satirina indirilir; duplicate kontrolu mevcut `sth_sip_uid` linkleriyle yapilir.
    - Basarili Mikro yazimdan sonra istenirse AXATA EXT `ENT016_IRS.S16STAT=1`, `IDField=S16SIRA` ack atilir.
@@ -234,7 +235,9 @@ Ana servisler:
 - `AxataSynchronizationWorker`
   - Queue'daki job'lari calistiran hosted service.
 - `AxataSynchronizationScheduler`
-  - Config ile acilan periyodik task tetikleyici.
+  - Config ile acilan periyodik task tetikleyici. Zamanlanmis isler, kullanici
+    oturumuna bagli olmayan sabit servis kimligiyle kuyruga girer; boylece
+    idempotency kapsami uygulama yeniden baslatilsa da degismez.
 - `AxataSynchronizationExecutionCoordinator`
   - Task code -> handler eslestirmesi.
 - `AxataSynchronizationManualDocumentService`
@@ -742,6 +745,7 @@ Davranis:
 - `WorkerEnabled=false` sadece arka plan kuyruk isleyicisini kapatir; manuel `execute` ve `dispatch` icin ana `Enabled=true` olmalidir.
 - `Tasks.{taskCode}.Enabled=false` ise sadece ilgili task kapali sayilir.
 - Production ayarinda eski Windows worker'indaki 13 aktif akis zamanlanir: firma, urun, C01/C02/G01/G02 siparisleri, dinamik sayim ile C01/C02/C03/C4/G01/G02 hareket donusleri.
+- Mevcut calisma profilinde tum `MikroWriteRouting` rotalari `Database` degerindedir. Worker insert, update, isaretleme ve silme islemlerinde dogrudan Mikro DB transaction yolunu kullanir; Mikro API yolu kodda desteklenmeye devam eder ancak konfigurasyonla yeniden acilmadikca calismaz.
 - Firma ve urun master gorevleri her turda tum katalogu gondermez. `ChangeLookbackMinutes` icinde yeni veya degismis kayitlari secer; urun aktarimi `BatchSize` kadar kodu bir sorgu paketinde isler.
 - C02 firma siparisleri eski worker ile ayni bicimde tum depolardan taranir. C01, G01 ve G02 siparis gorevleri merkez depo `50` kapsaminda calisir.
 - AXATA'dan Mikro'ya donuslerde yalniz bekleyen durumdaki kayitlar okunur. Mikro yazimi basarili olduktan sonra AXATA status alani tamamlandi olarak isaretlenir; Mikro yazimi veya eslesme basarisizsa acknowledge yapilmaz ve kayit sonraki tur icin bekler.

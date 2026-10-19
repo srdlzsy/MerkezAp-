@@ -394,6 +394,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                     var shipmentResponse = await createInterWarehouseShipmentUseCase.ExecuteAsync(
                         BuildCreateShipmentRequest(
                             analysis,
+                            requestedByUserId,
                             request.DateMode,
                             request.MovementDate,
                             request.DocumentDate),
@@ -539,6 +540,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 var shipmentResponse = await createInterWarehouseShipmentUseCase.ExecuteAsync(
                     BuildCreateShipmentRequest(
                         analysis,
+                        requestedByUserId,
                         request.DateMode,
                         request.MovementDate,
                         request.DocumentDate),
@@ -682,6 +684,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 var result = await ExecuteC02AnalysisAsync(
                     analysis,
                     request.Acknowledge,
+                    requestedByUserId,
                     cancellationToken);
                 results.Add(result);
             }
@@ -2767,11 +2770,16 @@ internal sealed class AxataOutboundDeliveryImportService(
     private async Task<AxataOutboundDeliveryImportResultDto> ExecuteC02AnalysisAsync(
         C02DeliveryAnalysis analysis,
         bool acknowledge,
+        Guid requestedByUserId,
         CancellationToken cancellationToken)
     {
         if (mikroWriteRoutingOptions.CurrentValue.CompanyMovement == MikroWriteMode.MikroApi)
         {
-            return await ExecuteC02AnalysisWithMikroApiAsync(analysis, acknowledge, cancellationToken);
+            return await ExecuteC02AnalysisWithMikroApiAsync(
+                analysis,
+                acknowledge,
+                requestedByUserId,
+                cancellationToken);
         }
 
         var now = DateTime.Now;
@@ -2889,6 +2897,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     private async Task<AxataOutboundDeliveryImportResultDto> ExecuteC02AnalysisWithMikroApiAsync(
         C02DeliveryAnalysis analysis,
         bool acknowledge,
+        Guid requestedByUserId,
         CancellationToken cancellationToken)
     {
         var orderGuids = GetC02OrderLineGuids(analysis);
@@ -2904,7 +2913,7 @@ internal sealed class AxataOutboundDeliveryImportService(
         }
 
         var movementResponse = await createCompanyShipmentUseCase.ExecuteAsync(
-            BuildCreateCompanyShipmentRequest(analysis),
+            BuildCreateCompanyShipmentRequest(analysis, requestedByUserId),
             cancellationToken);
 
         await VerifyC02MikroApiOrderLinksAsync(analysis, orderGuids, cancellationToken);
@@ -4576,6 +4585,7 @@ internal sealed class AxataOutboundDeliveryImportService(
 
     private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(
         C01DeliveryAnalysis analysis,
+        Guid requestedByUserId,
         string? dateMode = null,
         DateTime? movementDate = null,
         DateTime? documentDate = null)
@@ -4609,7 +4619,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                     null,
                     line.OrderLine.ssip_sormerkezi))
                 .ToArray(),
-            true);
+            true,
+            RequestedByUserId: requestedByUserId);
     }
 
     private static C01ShipmentDates ResolveC01ShipmentDates(
@@ -4643,7 +4654,9 @@ internal sealed class AxataOutboundDeliveryImportService(
 
     private sealed record C01ShipmentDates(DateTime MovementDate, DateTime DocumentDate);
 
-    private static CreateCompanyMovementRequest BuildCreateCompanyShipmentRequest(C02DeliveryAnalysis analysis) =>
+    private static CreateCompanyMovementRequest BuildCreateCompanyShipmentRequest(
+        C02DeliveryAnalysis analysis,
+        Guid requestedByUserId) =>
         new(
             analysis.WarehouseNo,
             analysis.CustomerCode,
@@ -4667,7 +4680,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                     null,
                     null,
                     line.OrderLine.sip_Guid))
-                .ToArray());
+                .ToArray(),
+            RequestedByUserId: requestedByUserId);
 
     private async Task<IReadOnlyCollection<AxataOutboundDeliveryDocument>> FetchPendingOutboundDeliveriesAsync(
         string movementType,
