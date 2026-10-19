@@ -42,6 +42,7 @@ public sealed class CreateCompanyReceivingUseCase(
     private const byte NormalOrderGenre = 0;
     private const int FirstDocumentOrderNo = 1;
     private const int MaxDocumentSerieLength = 20;
+    private const double MaxLineQuantity = 1_000_000d;
     private const double QuantityTolerance = 0.000001d;
     private const string OfflineOperationCode = "mal-kabul-islemleri.firma-mal-kabulleri.create";
     private const string ReturnStatusNone = "Yok";
@@ -2300,6 +2301,13 @@ public sealed class CreateCompanyReceivingUseCase(
                 throw new ArgumentException("Line dispatch quantity must be greater than zero.", nameof(request.Lines));
             }
 
+            if (dispatchQuantity > MaxLineQuantity)
+            {
+                throw new ArgumentException(
+                    $"Line dispatch quantity can not exceed {MaxLineQuantity:0}.",
+                    nameof(request.Lines));
+            }
+
             if (physicalAcceptedQuantity < -QuantityTolerance)
             {
                 throw new ArgumentException("Line accepted quantity can not be negative.", nameof(request.Lines));
@@ -2309,6 +2317,13 @@ public sealed class CreateCompanyReceivingUseCase(
             {
                 throw new ArgumentException(
                     "Line accepted quantity can not be greater than dispatch quantity.",
+                    nameof(request.Lines));
+            }
+
+            if (physicalAcceptedQuantity > MaxLineQuantity)
+            {
+                throw new ArgumentException(
+                    $"Line accepted quantity can not exceed {MaxLineQuantity:0}.",
                     nameof(request.Lines));
             }
 
@@ -2405,14 +2420,26 @@ public sealed class CreateCompanyReceivingUseCase(
             throw new InvalidOperationException("Stored company receiving request payload is unavailable for readback verification.");
         }
 
-        var movementQuery = mikroDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .Where(movement =>
-                movement.sth_evraktip == ReceivingReceiptDocumentType &&
-                movement.sth_tip == IncomingMovementType &&
-                movement.sth_normal_iade == NormalMovement &&
-                movement.sth_giris_depo_no == warehouseNo &&
-                movement.sth_eticaret_kanal_kodu == traceKey);
+        var movementQuery = mikroDbContext.Database.IsSqlServer()
+            ? mikroDbContext.STOK_HAREKETLERIs
+                .FromSqlInterpolated($"""
+                    SELECT *
+                    FROM dbo.STOK_HAREKETLERI
+                    WHERE sth_evraktip = 13
+                      AND sth_tip = 0
+                      AND sth_normal_iade = 0
+                      AND sth_giris_depo_no = {warehouseNo}
+                      AND sth_eticaret_kanal_kodu = {traceKey}
+                    """)
+                .AsNoTracking()
+            : mikroDbContext.STOK_HAREKETLERIs
+                .AsNoTracking()
+                .Where(movement =>
+                    movement.sth_evraktip == ReceivingReceiptDocumentType &&
+                    movement.sth_tip == IncomingMovementType &&
+                    movement.sth_normal_iade == NormalMovement &&
+                    movement.sth_giris_depo_no == warehouseNo &&
+                    movement.sth_eticaret_kanal_kodu == traceKey);
 
         if (request.MovementDate.HasValue)
         {
