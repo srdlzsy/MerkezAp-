@@ -67,6 +67,20 @@ public sealed class DatabaseMonitoringSafetyTests
     }
 
     [Fact]
+    public void AssessRequest_IdentifiesMikroStockSummaryTriggerContention()
+    {
+        var result = DatabaseMonitoringService.AssessRequest(
+            "LCK_M_U",
+            blockingSessionId: 164,
+            elapsedMilliseconds: 30_000,
+            sqlText: "CREATE TRIGGER dbo.mye_STOK_HAREKETLERI_Trigger ON dbo.STOK_HAREKETLERI",
+            settings: new DatabaseMonitoringOptions());
+
+        Assert.Equal("critical", result.Severity);
+        Assert.Contains("stok ozet trigger", result.Recommendation, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GetSafeWrites_DefaultsToActionableButExplicitTerminalStatusWins()
     {
         var now = new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc);

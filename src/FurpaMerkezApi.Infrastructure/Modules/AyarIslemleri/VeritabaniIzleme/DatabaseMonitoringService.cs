@@ -23,7 +23,8 @@ public sealed partial class DatabaseMonitoringService(
     IOptionsMonitor<DatabaseMonitoringOptions> options) : IDatabaseMonitoringService
 {
     private const int OverviewWindowHours = 24;
-    private static readonly TimeSpan StaleSafeWriteAge = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan StaleSafeWriteAge =
+        DurableCreateExecution.Timeout + TimeSpan.FromMinutes(2);
 
     private const string SnapshotSql =
         """
@@ -246,7 +247,13 @@ public sealed partial class DatabaseMonitoringService(
                 var elapsed = GetInt64(reader, "elapsed_ms");
                 var waitType = GetString(reader, "wait_type");
                 var blockingSessionId = GetNullableInt32(reader, "blocking_session_id");
-                var assessment = AssessRequest(waitType, blockingSessionId, elapsed, settings);
+                var sqlText = SanitizeSql(GetString(reader, "sql_text"), settings.SqlTextMaxLength);
+                var assessment = AssessRequest(
+                    waitType,
+                    blockingSessionId,
+                    elapsed,
+                    sqlText,
+                    settings);
 
                 requests.Add(new DatabaseActiveRequestDto(
                     GetInt32(reader, "session_id"),
@@ -272,7 +279,7 @@ public sealed partial class DatabaseMonitoringService(
                     GetString(reader, "host_name"),
                     GetString(reader, "program_name"),
                     GetString(reader, "client_net_address"),
-                    SanitizeSql(GetString(reader, "sql_text"), settings.SqlTextMaxLength),
+                    sqlText,
                     assessment.Severity,
                     assessment.Recommendation,
                     GetInt32(reader, "session_id") > 50));
@@ -742,6 +749,18 @@ public sealed partial class DatabaseMonitoringService(
         DatabaseMonitoringOptions settings)
     {
         var result = new List<DatabaseRecommendationDto>();
+        var stockSummaryTriggerContention = requests.Where(item =>
+            item.SqlText.Contains("mye_STOK_HAREKETLERI_Trigger", StringComparison.OrdinalIgnoreCase) &&
+            (item.BlockingSessionId.HasValue ||
+             item.WaitType?.StartsWith("LCK_", StringComparison.OrdinalIgnoreCase) == true)).ToArray();
+        if (stockSummaryTriggerContention.Length > 0)
+            result.Add(new(
+                "stock-summary-trigger-contention",
+                "critical",
+                "Mikro stok ozet trigger darbogazi var",
+                "STOK_HAREKETLERI yazilari STOK_HAREKETLERI_OZET guncellemesinde kuyruga girdi. Bulk yazimda tek-satir trigger batch profilinin yayinda oldugunu kontrol edin; oturumlari topluca KILL etmeyin.",
+                stockSummaryTriggerContention.Length));
+
         var blocked = requests.Where(item => item.BlockingSessionId.HasValue && item.WaitMilliseconds >= settings.BlockingThresholdSeconds * 1000L).ToArray();
         if (blocked.Length > 0)
             result.Add(new("blocking", "critical", "SQL kilit zinciri var", "Root blocker oturumunu, acik transaction'i ve uygulama islemini kontrol edin. Etkisi dogrulanmadan KILL kullanmayin.", blocked.Length));
@@ -832,12 +851,19 @@ public sealed partial class DatabaseMonitoringService(
         return false;
     }
 
-    private static (string Severity, string Recommendation) AssessRequest(
+    internal static (string Severity, string Recommendation) AssessRequest(
         string? waitType,
         int? blockingSessionId,
         long elapsedMilliseconds,
+        string sqlText,
         DatabaseMonitoringOptions settings)
     {
+        if (sqlText.Contains("mye_STOK_HAREKETLERI_Trigger", StringComparison.OrdinalIgnoreCase) &&
+            (blockingSessionId.HasValue ||
+             waitType?.StartsWith("LCK_", StringComparison.OrdinalIgnoreCase) == true))
+            return (
+                "critical",
+                "Mikro stok ozet trigger kilidi: tek-satir bulk batch profilini ve root blocker'i kontrol edin; toplu KILL uygulamayin.");
         if (blockingSessionId.HasValue)
             return ("critical", "Kilitleyen oturumu ve root blocker'i inceleyin; KILL son secenek olmalidir.");
         if (waitType?.StartsWith("LCK_", StringComparison.OrdinalIgnoreCase) == true)
