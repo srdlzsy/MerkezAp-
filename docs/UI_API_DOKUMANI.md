@@ -39,9 +39,9 @@ Timeout ve tekrar deneme notu:
 - Yazma yollari `MikroWriteRouting` ile secilir. Mevcut varsayilan ve Production calisma profilinde insert, update, isaretleme ve silme rotalarinin tamami `Database` degerindedir. Kodda desteklenen `MikroApi` yolu konfigurasyonla yeniden acilabilir; UI request modeli degismez.
 - Mikro API create cevabi tek basina basari kaniti degildir. Backend olusan aktif Mikro satirlarini stok, miktar, depo, satir sayisi ve akisa ozel trace/link alanlariyla DB'den geri okumadan create islemini tamamlanmis saymaz. Mikro API yazma audit rezervasyonu acildiktan sonra upstream POST ve onu izleyen readback kullanicinin HTTP baglantisindan bagimsiz devam eder; `HttpClient` ve readback'in kendi sure sinirlari yine uygulanir. Normal basarida kisa readback uygulanir; timeout, baglanti kopmasi veya duplicate cevabinda ayni belge 180 saniyeye kadar readback ile aranir ve ikinci create yazisi uretilmez.
 - Mikro API'de guvenilir bir karsiligi bulunmayan yardimci/ozel tablo insertleri bu profile zorlanmaz. Kasa sayimi alt tablolari, cihaz/terminal tanimlari ve AXATA C04 legacy tablo yazimi gibi akislar kontrollu DB yolu ile devam eder.
-- Terminal, mobil ve web istemcileri liste isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Kritik create islemlerinin server-side toplam calisma siniri `4` dakikadir; istemci create timeout'u `5` dakikadir. Kalan yaklasik bir dakikalik pencere status/readback ile kesin sonucu veya guvenli tekrar iznini almak icindir. UI bes dakikadan sonra ayni ekranda ya belge sonucunu ya da `RetrySameRequest` kararini gostermeli; kontrolsuz yeni GUID/body ile ikinci evrak gondermemelidir.
-- Bes dakika sonunda veritabani gecici olarak okunamadigi icin kesin karar alinamazsa form kapanmaz ve normal Offline/Bulut listesine tasinmaz. Kaydet yeniden acilabilir; ancak ayni snapshot ve ayni `clientRequestId` korunur. Backend `RetrySameRequest` karari olusmadan ikinci Mikro yazisini baslatmaz, tekrar gelen istegi mevcut durum kontrolu olarak ele alir.
-- POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; mumkunse ayni payload ile guvenli retry yapmali veya liste/detay yenileyerek evrakin olusup olusmadigini kontrol etmelidir.
+- Terminal, mobil ve web istemcileri liste isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Terminalde kritik create timeout'u `5` dakikadir; bu sabit bekleme degil, geciken/sonucu belirsiz islem icin ust sinirdir. Normal `200/201` cevabi beklemeden ekrana doner. Terminal ortak API istemcisi belirsiz POST cevabinda ilk istege yaklasik `4 dakika 30 saniye`, ardindan ayni request kimliginin status GET kontrollerine kalan sureyi ayirir. Status sorgulari yeni Mikro create yazisi baslatmaz.
+- Terminalin kritik create formlari sonucu ayni ekranda bekler. `Completed` ve `result` gelince normal basari gibi form kapanir. Bes dakika icinde sonuc kesinlesmezse snapshot ve `clientRequestId` korunur, form acik kalir ve normal Offline/Bulut listesine zorla tasinmaz. `RetrySameRequest` karari olmadan ikinci Mikro yazisi baslatilmaz.
+- POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; once ayni `clientRequestId` icin status/readback yapmali ve yalniz backend `recommendedAction=RetrySameRequest` derse saklanan ayni body ile tekrar POST etmelidir.
 
 E-irsaliye alici alias notu:
 
@@ -1230,7 +1230,7 @@ Create miktar guvenligi:
 
 ### Terminal Icin Nihai Kullanici Akisi
 
-Bu bolum guvenli create ekranlarinin ana UI sozlesmesidir. Terminal teknik `status`, `retryable` veya hata metninden kendi kararini turetmemeli; response'taki `recommendedAction` alanini esas almalidir.
+Bu bolum guvenli create ekranlarinin ana UI sozlesmesidir. Terminal teknik `status`, `retryable` veya hata metninden kendi kararini turetmemeli; response'taki `recommendedAction` alanini esas almalidir. Asagidaki 14 create akisi terminalin ortak foreground create katmanini kullanir: firma mal kabul, sayim sonucu, verilen depo siparisi, onerilen depo siparisini siparise cevirme, verilen firma siparisi, onerilen firma siparisini siparise cevirme, depolar arasi sevk, firma sevki, depo iadesi, firma iadesi, zayiat, masraf, virman ve manav MNV duzeltmesi.
 
 Kullanicinin gorecegi bes temel durum:
 
@@ -1245,16 +1245,17 @@ Islem gerekiyor          Yalniz ilgili evrak korunur; kullanici diger evraklara 
 Kaydet butonunun kesin davranisi:
 
 1. UI ilk Kaydet aninda GUID `clientRequestId` uretir ve gonderilecek body'nin degismez snapshot'ini yerel veritabanina atomik olarak yazar.
-2. UI formu kapatmaz veya liste/bulut ekranina zorunlu olarak yonlendirmez. Ayni ekranda `Kaydediliyor` gosterir.
-3. POST devam ederken yalniz bu formun alanlari ve Kaydet butonu kilitlenir. Geri/menu kullanilabilir; kullanici ayrilirsa islem `Bekleyen Islemler` ozetinden izlenebilir.
-4. `200/201` ve kesin business response gelirse seri/sira gosterilir, yerel pending kayit silinir; `Tamam` ve `Yeni Evrak` aksiyonlari acilir.
-5. HTTP baglantisi kopar, timeout olur veya `500/502/503/504` gelirse form silinmez ve yeni GUID uretilmez. UI once ilgili status GET'ini kullanir.
-6. UI ancak `recommendedAction=RetrySameRequest` aldiginda saklanan body snapshot'ini ayni `clientRequestId` ile POST eder. Form state'inden yeniden body uretmez.
-7. Kullanici ekrandan ayrilsa veya uygulama kapansa da snapshot/id korunur. Uygulama acilisinda once status/readback ile uzlastirilir.
+2. Ayni form acik kalir. POST surerken yalniz bu form kilitlenir ve `Kayit yapiliyor` durumu gorunur; normal basarida form hemen kapanir.
+3. POST `WaitAndCheck`, HTTP 0 veya `5xx` ile belirsiz kalirsa ortak API istemcisi ayni ekranda status GET kontrolu yapar. Bu GET yeni create yazisi baslatmaz ve kullaniciya ikinci evrak olusturmaz.
+4. Status `Completed` ve kesin `result` donerse bu normal basari cevabi gibi forma iletilir, belge seri/sirasi gosterilir ve yerel pending kayit temizlenir.
+5. `RetrySameRequest` donerse otomatik POST yapilmaz. Ayni form acik kalir; kullanici yeniden Kaydet dediginde ayni body snapshot'i ve ayni `clientRequestId` gonderilir.
+6. Kesin validation/is kurali hatasinda ayni form duzeltmeye acilir. Kullanici ekrandan ayrilir veya uygulama kapanirsa belirsiz istegin snapshot/id bilgisi korunur ve acilista status ile uzlastirilir.
 
 Backend sorumlulugu:
 
 - Request body tamamen alindiktan ve Auth DB rezervasyonu olustuktan sonra backend create islemini istemci baglantisindan bagimsiz, en fazla 4 dakikalik sinirli bir server token'iyle tamamlar.
+- Terminalin ortak API istemcisi su 14 create route'u icin sonucu POST istegi icinde ayni ekranda bekletir: firma mal kabul, sayim sonucu, verilen depo siparisi, iki onerilen siparis donusumu, verilen firma siparisi, depolar arasi sevk, firma sevki, depo iadesi, firma iadesi, zayiat, masraf, virman ve manav duzeltmesi. Angular uygulamasi da ayni kullanici sonucunu kendi interceptor'i ile saglar.
+- Normal create basarisi hemen dondurulur. Belirsiz cevapta terminal toplam 5 dakikalik deadline kullanir; ilk POST'a deadline'dan yaklasik 30 saniye onceye kadar sure tanir, ardindan `offline-sync/{clientRequestId}` status endpointini 3 saniyelik araliklarla GET eder. 5 dakika ust sinirdir, zorunlu bekleme degildir.
 - Ayni `clientRequestId` ile ayni POST taze `Processing` kaydina denk gelirse ikinci Mikro yazisi veya rakip readback baslatilmaz. Backend mevcut sonuca en fazla 15 saniye baglanir; tamamlanirsa ayni business response'u, tamamlanmazsa `WaitAndCheck` kararini doner.
 - `Processing` kaydi 4 dakika 30 saniyeden once sahipsiz kabul edilmez. Bu esik 4 dakikalik server calisma penceresine 30 saniyelik hand-off payi ekler; calisan islem erken ikinci yazima acilmaz.
 - Taze `Processing` kaydinin status GET'i Mikro recovery sorgusu baslatmaz; yalniz Auth DB durumunu dondurur. Readback create sahibinin kendi akisinda, `Failed + retryable=true` kaydinda veya 4 dakika 30 saniyelik lease asildiktan sonra calisir.
