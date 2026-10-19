@@ -115,7 +115,11 @@ public sealed class UblTrInvoiceBusinessRuleValidator(
     {
         if (string.IsNullOrWhiteSpace(targetAlias))
         {
-            errors.Add("Target customer alias/e-mail is required.");
+            if (scenario == InvoiceSendingScenario.EFatura)
+            {
+                errors.Add("Target customer alias is required for E-Fatura.");
+            }
+
             return;
         }
 

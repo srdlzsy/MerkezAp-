@@ -41,12 +41,43 @@ public sealed class UblTrInvoiceBusinessRuleValidatorTests
         Assert.Contains("KDV amount does not match", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Validate_AcceptsEArchiveInvoiceWithoutTargetEmail()
+    {
+        var xml = BuildInvoiceXml(
+            lineExtensionAmount: 90m,
+            taxableAmount: 90m,
+            taxAmount: 9m,
+            taxExclusiveAmount: 90m,
+            payableAmount: 99m,
+            profileId: "EARSIVFATURA");
+
+        validator.Validate(xml, "FEA2026000004177", InvoiceSendingScenario.EArsiv, string.Empty);
+    }
+
+    [Fact]
+    public void Validate_RejectsEInvoiceWithoutTargetAlias()
+    {
+        var xml = BuildInvoiceXml(
+            lineExtensionAmount: 90m,
+            taxableAmount: 90m,
+            taxAmount: 9m,
+            taxExclusiveAmount: 90m,
+            payableAmount: 99m);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            validator.Validate(xml, "FAT2026000000001", InvoiceSendingScenario.EFatura, string.Empty));
+
+        Assert.Contains("Target customer alias is required for E-Fatura", exception.Message, StringComparison.Ordinal);
+    }
+
     private static string BuildInvoiceXml(
         decimal lineExtensionAmount,
         decimal taxableAmount,
         decimal taxAmount,
         decimal taxExclusiveAmount,
-        decimal payableAmount)
+        decimal payableAmount,
+        string profileId = "TICARIFATURA")
     {
         XNamespace invoice = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
         XNamespace aggregate = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
@@ -59,7 +90,7 @@ public sealed class UblTrInvoiceBusinessRuleValidatorTests
                 new XAttribute(XNamespace.Xmlns + "cbc", basic.NamespaceName),
                 new XElement(basic + "UBLVersionID", "2.1"),
                 new XElement(basic + "CustomizationID", "TR1.2"),
-                new XElement(basic + "ProfileID", "TICARIFATURA"),
+                new XElement(basic + "ProfileID", profileId),
                 new XElement(basic + "ID", "FAT2026000000001"),
                 new XElement(basic + "UUID", Guid.NewGuid()),
                 new XElement(basic + "IssueDate", "2026-09-01"),
