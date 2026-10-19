@@ -893,6 +893,14 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = new Guid("867eb4b4-d079-1d86-4d37-0ca5ff26855d"),
+                            Code = "ayar-islemleri.veritabani-izleme.resolve-safe-write",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AyarIslemleri > VeritabaniIzleme > Guvenli Yazmayi Sonuclandir yetkisi.",
+                            Name = "VeritabaniIzleme Guvenli Yazmayi Sonuclandir"
+                        },
+                        new
+                        {
                             Id = new Guid("5119a720-a70b-bebc-ef60-fc08429d4bc9"),
                             Code = "ayar-islemleri.veritabani-izleme.terminate-session",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -3668,6 +3676,12 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("5e387039-cc94-53a7-2dfc-8f2d74073f4f"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("867eb4b4-d079-1d86-4d37-0ca5ff26855d"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
@@ -6510,6 +6524,83 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.ToTable("mobile_offline_sync_requests", (string)null);
                 });
 
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.SafeWriteReviewAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("action");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("message");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("PreviousErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("previous_error_code");
+
+                    b.Property<string>("PreviousStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("previous_status");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ResultErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("result_error_code");
+
+                    b.Property<string>("ResultStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("result_status");
+
+                    b.Property<DateTime>("ReviewedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("reviewed_at_utc");
+
+                    b.Property<Guid>("ReviewedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reviewed_by_user_id");
+
+                    b.Property<Guid>("SafeWriteId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("safe_write_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewedAtUtc")
+                        .HasDatabaseName("ix_safe_write_review_audits_reviewed_at");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("SafeWriteId", "ReviewedAtUtc")
+                        .HasDatabaseName("ix_safe_write_review_audits_write_reviewed");
+
+                    b.ToTable("safe_write_review_audits", (string)null);
+                });
+
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.StockAnomaly", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7247,6 +7338,21 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("DocumentFlowId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.SafeWriteReviewAudit", b =>
+                {
+                    b.HasOne("FurpaMerkezApi.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FurpaMerkezApi.Domain.Entities.MobileOfflineSyncRequest", null)
+                        .WithMany()
+                        .HasForeignKey("SafeWriteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.StockAnomalyEvent", b =>

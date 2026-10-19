@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Application.Modules.MobileSync.CustomerCatalog;
 using FurpaMerkezApi.Application.Modules.MobileSync.ProductPriceCatalog;
 using FurpaMerkezApi.Application.Modules.MobileSync.WarehouseCatalog;
@@ -15,7 +16,8 @@ namespace FurpaMerkezApi.WebApi.Controllers;
 public sealed class MobileSyncController(
     IGetMobileProductPriceCatalogUseCase getMobileProductPriceCatalogUseCase,
     IGetMobileCustomerCatalogUseCase getMobileCustomerCatalogUseCase,
-    IGetMobileWarehouseCatalogUseCase getMobileWarehouseCatalogUseCase) : ControllerBase
+    IGetMobileWarehouseCatalogUseCase getMobileWarehouseCatalogUseCase,
+    ISafeWriteReviewService safeWriteReviewService) : ControllerBase
 {
     private const string PriceLookupPolicy = "arama-islemleri.fiyat-gor.list";
 
@@ -64,6 +66,28 @@ public sealed class MobileSyncController(
                 request.Cursor,
                 request.PageSize),
             cancellationToken));
+
+    [HttpPost("guvenli-yazmalar/{clientRequestId:guid}/yeniden-dogrula")]
+    [ProducesResponseType(typeof(SafeWriteReviewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SafeWriteReviewResultDto>> RecheckSafeWrite(
+        Guid clientRequestId,
+        [FromBody] RecheckMobileSafeWriteHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await safeWriteReviewService.RecheckOwnedAsync(
+            request.OperationCode,
+            User.GetRequiredWarehouseNo(),
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
+}
+
+public sealed class RecheckMobileSafeWriteHttpRequest
+{
+    [Required, MaxLength(150)]
+    public string OperationCode { get; init; } = string.Empty;
 }
 
 public sealed class MobileProductPriceCatalogHttpRequest

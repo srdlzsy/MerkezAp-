@@ -568,6 +568,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DatabaseMonitoringService>();
         services.AddScoped<IDatabaseMonitoringService>(serviceProvider =>
             serviceProvider.GetRequiredService<DatabaseMonitoringService>());
+        services.AddScoped<ISafeWriteReviewService, SafeWriteReviewService>();
+        services.AddScoped<ISafeWriteRecoveryDispatcher, SafeWriteRecoveryDispatcher>();
         services.AddSingleton<TerminalVersionManifestProvider>();
         services.AddScoped<ITerminalInstallationService, TerminalInstallationService>();
         services.AddScoped<IMikroDocumentEditingService, MikroDocumentEditingService>();

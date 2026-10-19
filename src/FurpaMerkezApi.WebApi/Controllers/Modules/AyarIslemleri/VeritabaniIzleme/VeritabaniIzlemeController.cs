@@ -13,7 +13,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.VeritabaniIzle
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class VeritabaniIzlemeController(
     IDatabaseMonitoringService service,
-    IWorkerMonitoringService workerMonitoringService)
+    IWorkerMonitoringService workerMonitoringService,
+    ISafeWriteReviewService safeWriteReviewService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "ayar-islemleri";
@@ -22,6 +23,7 @@ public sealed class VeritabaniIzlemeController(
     private const string MenuName = "VeritabaniIzleme";
     private const string ListPolicy = "ayar-islemleri.veritabani-izleme.list";
     private const string DetailPolicy = "ayar-islemleri.veritabani-izleme.detail";
+    private const string ResolveSafeWritePolicy = "ayar-islemleri.veritabani-izleme.resolve-safe-write";
     private const string TerminatePolicy = "ayar-islemleri.veritabani-izleme.terminate-session";
 
     [HttpGet("genel-bakis")]
@@ -65,6 +67,57 @@ public sealed class VeritabaniIzlemeController(
                 request.Retryable,
                 request.IncludeCompleted,
                 request.Take),
+            cancellationToken));
+
+    [HttpGet("guvenli-yazmalar/{id:guid}/inceleme-gecmisi")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<SafeWriteReviewAuditDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyCollection<SafeWriteReviewAuditDto>>> SafeWriteReviewHistory(
+        Guid id,
+        CancellationToken cancellationToken) =>
+        Ok(await safeWriteReviewService.GetHistoryAsync(id, cancellationToken));
+
+    [HttpPost("guvenli-yazmalar/{id:guid}/yeniden-dogrula")]
+    [Authorize(Policy = ResolveSafeWritePolicy)]
+    [ProducesResponseType(typeof(SafeWriteReviewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SafeWriteReviewResultDto>> RecheckSafeWrite(
+        Guid id,
+        [FromBody] SafeWriteReviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await safeWriteReviewService.RecheckAsync(
+            id,
+            new SafeWriteReviewRequest(request.Reason!),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpPost("guvenli-yazmalar/{id:guid}/tekrar-ac")]
+    [Authorize(Policy = ResolveSafeWritePolicy)]
+    [ProducesResponseType(typeof(SafeWriteReviewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SafeWriteReviewResultDto>> AllowSafeWriteRetry(
+        Guid id,
+        [FromBody] SafeWriteReviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await safeWriteReviewService.AllowRetryAsync(
+            id,
+            new SafeWriteReviewRequest(request.Reason!),
+            User.GetRequiredUserId(),
+            cancellationToken));
+
+    [HttpPost("guvenli-yazmalar/{id:guid}/iptal")]
+    [Authorize(Policy = ResolveSafeWritePolicy)]
+    [ProducesResponseType(typeof(SafeWriteReviewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SafeWriteReviewResultDto>> CancelSafeWrite(
+        Guid id,
+        [FromBody] SafeWriteReviewHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await safeWriteReviewService.CancelAsync(
+            id,
+            new SafeWriteReviewRequest(request.Reason!),
+            User.GetRequiredUserId(),
             cancellationToken));
 
     [HttpGet("oturum-sonlandirma-gecmisi")]
@@ -136,4 +189,11 @@ public sealed class SafeWriteMonitoringHttpRequest
 
     [Range(1, 500)]
     public int Take { get; init; } = 100;
+}
+
+public sealed class SafeWriteReviewHttpRequest
+{
+    [Required(AllowEmptyStrings = false)]
+    [StringLength(500, MinimumLength = 10)]
+    public string? Reason { get; init; }
 }

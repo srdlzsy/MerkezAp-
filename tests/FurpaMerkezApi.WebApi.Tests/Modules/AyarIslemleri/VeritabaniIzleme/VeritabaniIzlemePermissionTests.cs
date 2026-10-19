@@ -18,7 +18,7 @@ public sealed class VeritabaniIzlemePermissionTests
             .Order()
             .ToArray();
 
-        Assert.Equal(["detail", "list", "manage", "terminate-session"], actions);
+        Assert.Equal(["detail", "list", "manage", "resolve-safe-write", "terminate-session"], actions);
     }
 
     [Theory]
@@ -26,6 +26,10 @@ public sealed class VeritabaniIzlemePermissionTests
     [InlineData(nameof(VeritabaniIzlemeController.Snapshot), "ayar-islemleri.veritabani-izleme.list")]
     [InlineData(nameof(VeritabaniIzlemeController.Workers), "ayar-islemleri.veritabani-izleme.list")]
     [InlineData(nameof(VeritabaniIzlemeController.Incidents), "ayar-islemleri.veritabani-izleme.detail")]
+    [InlineData(nameof(VeritabaniIzlemeController.SafeWriteReviewHistory), "ayar-islemleri.veritabani-izleme.detail")]
+    [InlineData(nameof(VeritabaniIzlemeController.RecheckSafeWrite), "ayar-islemleri.veritabani-izleme.resolve-safe-write")]
+    [InlineData(nameof(VeritabaniIzlemeController.AllowSafeWriteRetry), "ayar-islemleri.veritabani-izleme.resolve-safe-write")]
+    [InlineData(nameof(VeritabaniIzlemeController.CancelSafeWrite), "ayar-islemleri.veritabani-izleme.resolve-safe-write")]
     [InlineData(nameof(VeritabaniIzlemeController.TerminationHistory), "ayar-islemleri.veritabani-izleme.detail")]
     [InlineData(nameof(VeritabaniIzlemeController.Terminate), "ayar-islemleri.veritabani-izleme.terminate-session")]
     [InlineData(nameof(VeritabaniIzlemeController.RollbackStatus), "ayar-islemleri.veritabani-izleme.detail")]

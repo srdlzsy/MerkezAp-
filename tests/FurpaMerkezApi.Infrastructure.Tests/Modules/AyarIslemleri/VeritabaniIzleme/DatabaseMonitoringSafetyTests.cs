@@ -67,7 +67,7 @@ public sealed class DatabaseMonitoringSafetyTests
     }
 
     [Fact]
-    public async Task GetSafeWrites_DefaultsToUncompletedButExplicitCompletedStatusWins()
+    public async Task GetSafeWrites_DefaultsToActionableButExplicitTerminalStatusWins()
     {
         var now = new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc);
         await using var authDb = new AuthDbContext(
@@ -87,7 +87,12 @@ public sealed class DatabaseMonitoringSafetyTests
             retryable: false);
         var completed = Request("count.create", now.AddMinutes(-3));
         completed.MarkCompleted("{}", now.AddMinutes(-1));
-        authDb.MobileOfflineSyncRequests.AddRange(processing, failed, completed);
+        var cancelled = Request("expense.create", now.AddMinutes(-3));
+        cancelled.CancelAfterManualReview(
+            OperationConflictErrorCodes.SafeWriteCancelled,
+            OperationConflictMessages.SafeWriteCancelled,
+            now.AddMinutes(-1));
+        authDb.MobileOfflineSyncRequests.AddRange(processing, failed, completed, cancelled);
         await authDb.SaveChangesAsync();
         var service = new DatabaseMonitoringService(
             mikroDb,
@@ -101,14 +106,19 @@ public sealed class DatabaseMonitoringSafetyTests
         var completedOnly = await service.GetSafeWritesAsync(
             new SafeWriteMonitoringRequest("Completed", null, null, null, IncludeCompleted: false, Take: 100),
             CancellationToken.None);
+        var cancelledOnly = await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest("Cancelled", null, null, null, IncludeCompleted: false, Take: 100),
+            CancellationToken.None);
 
         Assert.Equal(2, active.Count);
         Assert.Equal("Processing", active.First().Status);
         Assert.DoesNotContain(active, item => item.Status == "Completed");
+        Assert.DoesNotContain(active, item => item.Status == "Cancelled");
         var failedItem = Assert.Single(active, item => item.Status == "Failed");
         Assert.False(failedItem.Retryable);
         Assert.Equal(OperationConflictMessages.MikroDocumentContentMismatch, failedItem.ErrorMessage);
         Assert.Equal("Completed", Assert.Single(completedOnly).Status);
+        Assert.Equal("Cancelled", Assert.Single(cancelledOnly).Status);
     }
 
     private static DatabaseMonitoringService.IncidentCandidate Candidate(

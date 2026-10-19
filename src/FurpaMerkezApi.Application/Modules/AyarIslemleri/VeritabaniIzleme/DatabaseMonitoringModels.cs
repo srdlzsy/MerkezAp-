@@ -31,6 +31,56 @@ public interface IDatabaseMonitoringService
         CancellationToken cancellationToken);
 }
 
+public interface ISafeWriteReviewService
+{
+    Task<SafeWriteReviewResultDto> RecheckOwnedAsync(
+        string operationCode,
+        int warehouseNo,
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken);
+
+    Task<SafeWriteReviewResultDto> RecheckAsync(
+        Guid safeWriteId,
+        SafeWriteReviewRequest request,
+        Guid reviewedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<SafeWriteReviewResultDto> AllowRetryAsync(
+        Guid safeWriteId,
+        SafeWriteReviewRequest request,
+        Guid reviewedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<SafeWriteReviewResultDto> CancelAsync(
+        Guid safeWriteId,
+        SafeWriteReviewRequest request,
+        Guid reviewedByUserId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<SafeWriteReviewAuditDto>> GetHistoryAsync(
+        Guid safeWriteId,
+        CancellationToken cancellationToken);
+}
+
+public interface ISafeWriteRecoveryDispatcher
+{
+    Task<SafeWriteRecoveryResult> RecoverAsync(
+        string operationCode,
+        int warehouseNo,
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken);
+}
+
+public sealed record SafeWriteRecoveryResult(
+    string Status,
+    object? Result,
+    string RecoveryState = "Unknown",
+    string RecommendedAction = "NeedsReview",
+    string? ErrorCode = null,
+    bool? Retryable = null);
+
 public sealed record MonitoringOverviewDto(
     DateTime GeneratedAtUtc,
     string OverallStatus,
@@ -191,6 +241,31 @@ public sealed record SafeWriteMonitoringItemDto(
     DateTime? UpdatedAtUtc,
     DateTime? CompletedAtUtc,
     long AgeSeconds);
+
+public sealed record SafeWriteReviewRequest(string Reason);
+
+public sealed record SafeWriteReviewResultDto(
+    string Action,
+    string Outcome,
+    string Message,
+    SafeWriteMonitoringItemDto SafeWrite,
+    object? Result,
+    string RecoveryState,
+    string RecommendedAction);
+
+public sealed record SafeWriteReviewAuditDto(
+    Guid Id,
+    Guid SafeWriteId,
+    string Action,
+    string Outcome,
+    string Reason,
+    Guid ReviewedByUserId,
+    DateTime ReviewedAtUtc,
+    string PreviousStatus,
+    string? PreviousErrorCode,
+    string ResultStatus,
+    string? ResultErrorCode,
+    string? Message);
 
 public sealed record TerminateDatabaseSessionRequest(
     DateTime ExpectedLoginTime,

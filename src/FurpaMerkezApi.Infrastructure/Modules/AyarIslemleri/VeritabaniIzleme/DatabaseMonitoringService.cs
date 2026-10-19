@@ -384,7 +384,7 @@ public sealed partial class DatabaseMonitoringService(
             if (!Enum.TryParse<MobileOfflineSyncRequestStatus>(request.Status.Trim(), true, out var status))
             {
                 throw new ArgumentException(
-                    "Safe write status must be Processing, Completed or Failed.",
+                    "Safe write status must be Processing, Completed, Failed or Cancelled.",
                     nameof(request));
             }
 
@@ -397,7 +397,9 @@ public sealed partial class DatabaseMonitoringService(
         }
         else if (!request.IncludeCompleted)
         {
-            query = query.Where(item => item.Status != MobileOfflineSyncRequestStatus.Completed);
+            query = query.Where(item =>
+                item.Status != MobileOfflineSyncRequestStatus.Completed &&
+                item.Status != MobileOfflineSyncRequestStatus.Cancelled);
         }
 
         if (!string.IsNullOrWhiteSpace(request.OperationCode))

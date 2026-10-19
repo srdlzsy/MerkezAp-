@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.Common.EIrsaliyeLookup;
@@ -25,6 +26,7 @@ public sealed class FirmaMalKabulleriController(
     IGetCompanyReceivingDocumentDetailUseCase getCompanyReceivingDocumentDetailUseCase,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
     IGetCompanyReceivingOfflineSyncStatusUseCase getCompanyReceivingOfflineSyncStatusUseCase,
+    ISafeWriteReviewService safeWriteReviewService,
     IDocumentFlowService documentFlowService,
     IGetInboundDespatchLookupUseCase getInboundDespatchLookupUseCase,
     ILogger<FirmaMalKabulleriController> logger)
@@ -38,6 +40,7 @@ public sealed class FirmaMalKabulleriController(
     private const string DetailPolicy = "mal-kabul-islemleri.firma-mal-kabulleri.detail";
     private const string CreatePolicy = "mal-kabul-islemleri.firma-mal-kabulleri.create";
     private const string UpdatePolicy = "mal-kabul-islemleri.firma-mal-kabulleri.update";
+    private const string OfflineOperationCode = "mal-kabul-islemleri.firma-mal-kabulleri.create";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -350,6 +353,26 @@ public sealed class FirmaMalKabulleriController(
         var requestedByUserId = User.GetRequiredUserId();
 
         return Ok(await getCompanyReceivingOfflineSyncStatusUseCase.ExecuteAsync(
+            warehouseNo,
+            requestedByUserId,
+            clientRequestId,
+            cancellationToken));
+    }
+
+    [HttpPost("offline-sync/{clientRequestId:guid}/yeniden-dogrula")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(SafeWriteReviewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SafeWriteReviewResultDto>> RecheckOfflineSyncStatus(
+        Guid clientRequestId,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = User.GetRequiredWarehouseNo();
+        var requestedByUserId = User.GetRequiredUserId();
+
+        return Ok(await safeWriteReviewService.RecheckOwnedAsync(
+            OfflineOperationCode,
             warehouseNo,
             requestedByUserId,
             clientRequestId,

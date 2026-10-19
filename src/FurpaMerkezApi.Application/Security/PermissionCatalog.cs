@@ -65,6 +65,7 @@ public static class PermissionCatalog
         ManageAction,
         ListAction,
         DetailAction,
+        new("resolve-safe-write", "Guvenli Yazmayi Sonuclandir"),
         new("terminate-session", "Oturum Sonlandir")
     ];
 

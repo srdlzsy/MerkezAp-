@@ -3013,6 +3013,11 @@ Accept: application/json
 Authorization: Bearer {{token}}
 
 ###
+POST {{baseUrl}}/api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/11111111-1111-1111-1111-111111111111/yeniden-dogrula
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
 
 # MalKabulFarklari
 GET {{baseUrl}}/api/mal-kabul-islemleri/mal-kabul-farklari?Scope=sample&WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08

@@ -43,6 +43,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<DatabaseSessionTerminationAudit> DatabaseSessionTerminationAudits => Set<DatabaseSessionTerminationAudit>();
 
+    public DbSet<SafeWriteReviewAudit> SafeWriteReviewAudits => Set<SafeWriteReviewAudit>();
+
     public DbSet<TerminalInstallation> TerminalInstallations => Set<TerminalInstallation>();
 
     public DbSet<TrendyolGoBranchPosPriceSyncTask> TrendyolGoBranchPosPriceSyncTasks => Set<TrendyolGoBranchPosPriceSyncTask>();
