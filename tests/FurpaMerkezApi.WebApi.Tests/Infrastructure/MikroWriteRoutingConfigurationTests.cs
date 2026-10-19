@@ -5,7 +5,7 @@ namespace FurpaMerkezApi.WebApi.Tests.Infrastructure;
 
 public sealed class MikroWriteRoutingConfigurationTests
 {
-    private static readonly string[] InsertRoutes =
+    private static readonly string[] Routes =
     [
         "InventoryCount",
         "IssuedWarehouseOrder",
@@ -20,11 +20,7 @@ public sealed class MikroWriteRoutingConfigurationTests
         "ProductDistribution",
         "GreenGrocerGoodsReceipt",
         "PosAccountingSlip",
-        "AxataDynamicCensus"
-    ];
-
-    private static readonly string[] MutationRoutes =
-    [
+        "AxataDynamicCensus",
         "WarehouseOrderSentFlag",
         "CompanyOrderSentFlag",
         "WarehouseReceivingAcceptance",
@@ -38,7 +34,7 @@ public sealed class MikroWriteRoutingConfigurationTests
     ];
 
     [Fact]
-    public void DefaultConfiguration_RoutesOnlyDocumentInsertsToMikroApi()
+    public void DefaultConfiguration_RoutesAllWritesToDatabase()
     {
         var root = FindRoot();
         using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
@@ -48,9 +44,7 @@ public sealed class MikroWriteRoutingConfigurationTests
             "appsettings.json")));
         var routing = document.RootElement.GetProperty("MikroWriteRouting");
 
-        Assert.All(InsertRoutes, route =>
-            Assert.Equal("MikroApi", routing.GetProperty(route).GetString()));
-        Assert.All(MutationRoutes, route =>
+        Assert.All(Routes, route =>
             Assert.Equal("Database", routing.GetProperty(route).GetString()));
     }
 
