@@ -31,7 +31,7 @@ Kurallar:
 
 - `clientRequestId` GUID'dir ve tek mantiksal kaydetme denemesi boyunca degismez.
 - `payloadSnapshot`, POST edilen body'nin aynisidir. Pending durumda ekrandaki son form degerlerinden yeniden uretilmez.
-- Basarili business response veya `ClearCancelled` gelmeden yerel kayit silinmez.
+- Basarili business response veya `ClearCancelled` gelmeden belirsiz/pending kayit silinmez. Yazimin baslamadigi kesin olan `EditAndRetry` ve `RefreshList` kararlarinda offline guvenlik snapshot'i silinir; duzenlenebilir normal form taslagi korunur.
 - Uygulama kapanirsa kayit kalir; acilista once status/readback ile uzlastirilir.
 
 ## Ayni Ekran Akisi
@@ -72,6 +72,8 @@ Basarida:
 | `Completed` | Sonucu goster, pending kaydi sil. | `Evrak kaydedildi.` |
 | `WaitAndCheck` | POST yapma; `retryAfterSeconds` sonrasinda status GET yap. | `Kayit sonucu kontrol ediliyor.` |
 | `RetrySameRequest` | Saklanan snapshot'i ayni `clientRequestId` ile POST et. | `Baglanti kuruldu, kayit guvenli sekilde devam ediyor.` |
+| `EditAndRetry` | Offline snapshot'i sil, normal form taslagini ayni satirlarla yeniden ac. Duzenlemeden sonra yeni kaydetme denemesi ve yeni `clientRequestId` olustur. | `Seri veya sira numarasini degistirip yeniden kaydedin.` |
+| `RefreshList` | Offline snapshot'i sil, ikinci create yapma ve listeyi yenile. | `Bu resmi belge zaten alinmis; mevcut evraki kontrol edin.` |
 | `RecheckExisting` | Ortak `yeniden-dogrula` POST'unu cagir; create POST yapma. | `Mikro kaydi yeniden kontrol ediliyor.` |
 | `RestoreOriginalRequest` | Orijinal snapshot'i geri yukle; degismis body ile gonderme. | `Bekleyen evragin icerigi degistirilmis.` |
 | `NeedsReview` | Otomatik istek/POST durdur; kaydi koru. | `Bu evrak kontrol bekliyor. Diger islemlere devam edebilirsiniz.` |
@@ -93,6 +95,9 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 - Alan hatasi ilgili input yaninda gosterilir.
 - Create satirlarindaki gercek miktar alanlari en fazla `100000` olabilir. Barkod veya baska uzun bir sayi miktar alanina okutulursa API guvenli yazma rezervasyonu ya da Mikro yazimi baslatmadan `400 Bad Request` doner.
 - UI miktar alaninda `100000` ustunu yerelde de engeller; yine de backend kontrolu asil guvenlik siniridir.
+- Merkez depo siparisinde `outWarehouseNo=50` ve stok kartindaki koli katsayisi `1`den buyukse miktar koli katinda olmalidir. Ornek: koli ici `9` ise `9`, `18`, `27` gecerlidir; `10` gecersizdir.
+- Terminal koli adedini ana giris olarak kullanmali ve toplam adedi `koliAdedi * unitMultiplier` ile hesaplamalidir. Adet elle degistirilebiliyorsa koli disi deger Kaydet'ten once engellenip en yakin gecerli alt/ust miktarlar gosterilmelidir.
+- API koli disi miktari otomatik yuvarlamaz; `400` cevabi Mikro yaziminin baslamadigi anlamina gelir. Form duzeltilebilir kalir ve duzeltilen body yeni kaydetme denemesi olarak gonderilir.
 - Kullanici duzelttikten sonra bu yeni kaydetme denemesi icin snapshot yeniden alinir.
 
 ### 401
@@ -118,6 +123,8 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 - `retryable=true` tek basina POST sebebi degildir.
 - `MIKRO_WRITE_IN_PROGRESS` kullaniciya manuel `Tekrar Dene` olarak sunulmaz; UI ayni ekranda otomatik status kontrolu yapar.
 - `MIKRO_WRITE_OUTCOME_UNCONFIRMED` ve `MIKRO_DOCUMENT_INCOMPLETE` durumunda POST yapilmaz.
+- `MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false`, `recommendedAction=EditAndRetry`: Mikro yazimi baslamamistir. Kayit Offline listesine alinmaz; form ve satirlar korunarak seri/sira duzeltmesine acilir.
+- `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false`, `recommendedAction=RefreshList`: ayni cari ve resmi belge daha once alinmistir. Kayit Offline listesine alinmaz, ikinci create yapilmaz ve gecmis listesi yenilenir.
 - Yalniz `RetrySameRequest` POST'a izin verir.
 
 ### HTTP 0, 500, 502, 503, 504 veya Timeout
@@ -216,3 +223,4 @@ green-grocer.operations.adjustment.apply
 - Tek pending evrak diger evraklari veya tum modulu kilitlemez.
 - Iptal sonucu basarili evrak gibi gosterilmez.
 - Teknik kararlar mesaj metniyle degil `recommendedAction` ile verilir.
+- Yazimin baslamadigi kesin seri/sira ve resmi belge cakismalari Offline/Bulut sayacini artirmaz.

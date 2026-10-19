@@ -1331,6 +1331,8 @@ Guvenli create `409 Conflict` response sozlesmesi:
 - `MIKRO_WRITE_QUEUE_BUSY`, `retryable=true`: depolar arasi sevkte ayni belge serisinin onceki islemi devam ettigi icin 180 saniyelik kuyruk bekleme siniri dolmustur. Bu istegin Mikro yazimi baslamamistir; UI ayni payload ve ayni `clientRequestId` ile kisa bir sure sonra yeniden deneyebilir. Yeni id uretilmemelidir.
 - `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, `retryable=true`: Mikro yazma sonucu kanitlanamadi. `recommendedAction=WaitAndCheck`; UI create POST yapmaz, status/readback ile sonucu uzlastirir.
 - `MIKRO_DOCUMENT_INCOMPLETE`, `retryable=true`: Ayni trace'e ait bazi satirlar goruluyor ancak tam satir seti henuz olusmadi. `recommendedAction=WaitAndCheck`; eksik set basari sayilmaz ve ikinci create yazisi baslatilmaz.
+- `MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false`: Girilen belge seri/sira anahtari Mikro'da baska bir firma mal kabul evraki tarafindan kullanilmistir. Bu denemede yazim baslamamistir; `recoveryState=NotStarted`, `recommendedAction=EditAndRetry` doner. Terminal offline snapshot'ini siler, normal form taslagini satirlariyla yeniden acar ve kullanicidan seri/sirayi duzeltmesini ister.
+- `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false`: Ayni cari ve resmi belge numarasiyla firma mal kabul zaten vardir. Bu denemede yazim baslamamistir; `recoveryState=ExistingDocument`, `recommendedAction=RefreshList` doner. Terminal ikinci evrak olusturmaz, offline snapshot'ini siler ve mevcut kaydi gostermek icin listeyi yeniler.
 - `SAFE_WRITE_RETRY_ALLOWED`, `retryable=true`: Salt-okuma incelemesi Mikro'da bu istege ait hic belge olmadigini kesinlestirmistir. `recommendedAction=RetrySameRequest`; sadece bu durumda ayni snapshot/id ile create POST yeniden baslatilabilir.
 - `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false`: Mikro'da ayni evrak anahtariyla kayit vardir fakat satir icerigi istekle tam eslesmemistir. UI otomatik veya yeni id ile POST yapmamalidir. Firma mal kabulde kaydi olusturan kullanici once `POST .../offline-sync/{clientRequestId}/yeniden-dogrula` ile salt-okuma kontrolunu kendisi baslatabilir; tam eslesme bulunursa kayit otomatik `Completed` olur. Eslesme bulunmazsa yetkili incelemesi gerekir.
 - Bu manuel inceleme karari backend'de kalici saklanir. Ayni id tekrar gonderilse bile yeniden create baslatilmaz. Firma mal kabulde kullaniciya acik yeniden dogrulama yalniz mevcut Mikro satirlarini okur; `tekrar-ac` ve `iptal` kararlari yetkili guvenli yazma inceleme akisinda kalir.
@@ -1350,6 +1352,8 @@ UI hata ve ekran kilidi karar matrisi:
 | `MIKRO_WRITE_QUEUE_BUSY`, `retryable=true` | Bu yazimin henuz baslamadigini bildir; ayni payload ve ayni `clientRequestId` ile belirtilen sure sonra tekrar dene. | Yalniz ilgili taslak bekletilir; modul global kilitlenmez. | Tekrarlayan uzun kuyruk veya SQL izleme bulgusu varsa destek gerekir. |
 | `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, `retryable=true` | `Mikro sonucu kontrol ediliyor` goster; create POST yapmadan ayni kimlikle status/readback sorgula. | Yalniz bu mantiksal islem pending kalir. Kullanici baska bagimsiz bir isleme gecebilir. | Birden cok recovery denemesinden sonra durum degismiyorsa `operationCode`, `clientRequestId`, depo ve `correlationId` ile destek aksiyonu acilir. |
 | `MIKRO_DOCUMENT_INCOMPLETE`, `retryable=true` | `Belge satirlari tamamlaniyor` goster ve status sorgusuna devam et. | Yalniz ilgili taslak kilitli kalir. | Normalde destek gerekmez; uzun sure degismezse inceleme gerekir. |
+| `MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false` | Offline'a tasima; formu ayni satirlarla yeniden ac ve seri/sira duzeltmesini iste. Duzeltilmis kayit yeni bir `clientRequestId` alir. | Bekleyen/offline kilidi yoktur; normal form taslagi korunur. | Destek gerekmez. |
+| `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false` | Offline'a tasima ve ikinci POST yapma; listeyi yenileyip mevcut evraki goster. | Bekleyen/offline kilidi yoktur. | Mevcut evrak bulunamazsa destek gerekir. |
 | `SAFE_WRITE_RETRY_ALLOWED`, `retryable=true` | Saklanan ayni snapshot ve ayni `clientRequestId` ile POST'u yeniden dene. | Yalniz ilgili taslak yeniden kaydedilir. | Destek gerekmez. |
 | `Completed` | `result` icindeki belge seri/sirasini goster; yerel pending snapshot'ini sil ve bu taslagin kilidini ac. | Kilit tamamen kalkar. | Destek gerekmez. |
 | `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false` | Otomatik retry, yeni id ve `forceCreateNew` kapali kalir. `recommendedAction=RecheckExisting` ile salt-okuma yeniden dogrulama sunulur. Tam eslesirse `Completed`, aksi halde inceleme durumu korunur. | Yalniz ilgili kayit `needsReview` olur. Tum modul veya diger kullanicilar kilitlenmez. | Kullanici dogrulamasi sonrasi uyusmazlik suruyorsa belge, istek kimligi ve satir farki yetkili tarafindan incelenmelidir. |
@@ -5928,6 +5932,11 @@ Onemli not:
 - `outWarehouseNo` siparis verilen/karsi depo numarasidir.
 - Merkez depoya siparis verme senaryosunda `inWarehouseNo` islemi yapan sube/magaza, `outWarehouseNo` kaynak/merkez depodur. Normal sube kullanicisinda `inWarehouseNo` gonderilmemeli, yalniz `outWarehouseNo=50` gonderilmelidir.
 - UI urun arama veya barkod cozumleme isteklerinde kaynak depo olan `50` degerini `warehouseNo` alanina basmamalidir. `warehouseNo` bos kalirsa backend JWT deposunu kullanir; kaynak depo yalniz siparis create body icindeki `outWarehouseNo` alanina yazilir.
+- `outWarehouseNo=50` merkez depo siparisinde backend her satirin koli katsayisini Mikro `STOKLAR.sto_birim2_katsayi` alanindan okur. Mutlak koli katsayisi `1`den buyukse `quantity` bu katsayinin tam kati olmalidir.
+- Merkez depo koli kontrolu hem dogrudan verilen depo siparisi create hem de onerilen siparisi `convert-to-order` akisi icin gecerlidir. Koli kati olmayan miktar Mikro yazimi baslamadan `400 Bad Request` ile reddedilir.
+- Backend koli disi miktari sessizce yukari veya asagi yuvarlamaz. ProblemDetails `detail` alaninda stok kodu, koli ici, girilen miktar ve en yakin gecerli miktarlar bulunur.
+- UI merkez depo seciliyken ana girisi koli adedi olarak sunmali, toplam `quantity = koliAdedi * unitMultiplier` hesabini yapmali ve adet alani elle degistirilirse koli katini kaydetmeden once kontrol etmelidir. Ornek: koli ici `9`, girilen `10` ise kullaniciya `9` veya `18` secenekleri gosterilir.
+- `sto_birim2_katsayi` bos, `0` veya `1` ise urun tekli miktar mantigiyla devam eder. Bu kural diger kaynak depolara ve manav KG/kasa cozumleme akisina uygulanmaz.
 - Manav depo siparisinde `outWarehouseNo=56` olmalidir. UI `resolution-preview` kullandiysa satirda `quantity = estimatedQuantity` gonderir; kullanicinin girdigi kasa/koli ve ortalama bilgisi opsiyonel `greenGrocerCase` nesnesinde gonderilir.
 - `greenGrocerCase` gonderilirse `estimatedQuantity` ile satir `quantity` birebir eslesmelidir; eslesmezse API `400 Bad Request` doner.
 - `greenGrocerCase` sadece snapshot/rapor/detay gosterimi icindir; Mikro siparis satirina yine `quantity` alani yazilir.
@@ -5945,7 +5954,7 @@ Request:
   "lines": [
     {
       "stockCode": "015550",
-      "quantity": 10,
+      "quantity": 18,
       "recommendedQuantity": 0,
       "unitPrice": 0,
       "unitPointer": 1,
@@ -6012,7 +6021,7 @@ Response:
   "inWarehouseNo": 110,
   "outWarehouseNo": 50,
   "lineCount": 1,
-  "totalQuantity": 10,
+  "totalQuantity": 18,
   "writeConnectionName": "testMikroConnection"
 }
 ```
@@ -6077,6 +6086,7 @@ UI akisi:
 - UI listeyi getirir ve stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis, ihtiyac, `unitMultiplier` koli ici ve onerilen siparis miktarini gosterir.
 - Kullanici satirlari secer, `quantity` alanini varsayilan olarak `suggestedOrderQuantity` ile doldurur.
 - Kullanici miktari degistirebilir; `recommendedQuantity` alanina orijinal `suggestedOrderQuantity` yazilmasi onerilir.
+- Kaynak depo `50` ve `unitMultiplier > 1` ise degistirilen `quantity` de `unitMultiplier` katinda kalmalidir. UI miktar step degerini `unitMultiplier` yapmali, koli disi degeri satirda gostermeli ve siparise cevirme aksiyonunu acmamalidir.
 
 ### Onerilen Depo Siparisleri / Kaynak Depo Urun Secimi
 
@@ -6170,6 +6180,7 @@ Not:
 - `siparis-islemleri.onerilen-depo-siparisleri.all-warehouses` yoksa `targetWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `targetWarehouseNo` gonderilebilir.
 - `sourceWarehouseNo`, olusacak depo siparisindeki `outWarehouseNo` olarak kullanilir.
 - Normal sube/terminal kullanicisinda `targetWarehouseNo` gonderilmemelidir. Merkez depo siparisi icin `sourceWarehouseNo=50` yeterlidir; hedef subeyi backend token deposundan cozer.
+- `sourceWarehouseNo=50` ise secilen her `quantity`, Mikro stok kartindaki koli katsayisinin tam kati olmalidir. Endpoint ayni verilen depo siparisi altyapisini kullandigi icin koli disi miktari `400 Bad Request` ile reddeder ve Mikro yazimi baslatmaz.
 
 Request:
 
@@ -6184,8 +6195,8 @@ Request:
   "lines": [
     {
       "stockCode": "010001",
-      "quantity": 12,
-      "recommendedQuantity": 12,
+      "quantity": 10,
+      "recommendedQuantity": 10,
       "unitPrice": 0,
       "unitPointer": 1,
       "description": "",
@@ -6834,6 +6845,7 @@ Not:
 - giden sevklerde filtre `sth_cikis_depo_no = WarehouseNo` olarak uygulanir
 - hedef depo nakliye durumuna gore `sth_giris_depo_no` veya `sth_nakliyedeposu` olarak cozulur
 - performans icin liste sorgusu sadece `STOK_HAREKETLERI` belge basliklarini gruplayarak doner; depo siparisi baglantisi gibi satir bazli ek bilgiler detay endpointinden okunur
+- Ayni `documentSerie + documentOrderNo` altindaki hareketler tek sevk evraki olarak doner. Siparise bagli satirlarda `sth_aciklama` urun adi gibi satir bazli farkli degerler tasisa da liste birden fazla evrak satirina bolunmez; `lineCount` tum satirlari, `totalQuantity` toplam miktari gosterir.
 - bu endpoint Mikro veritabaninda sadece SELECT yapar; insert/update/delete yoktur
 
 Geriye uyum icin su route da giden sevk listesi gibi calisir:
@@ -6883,6 +6895,7 @@ UI kullanim notlari:
 - Liste ekraninda `documentSerie`, `documentOrderNo`, `sourceWarehouse`, `targetWarehouse`, `shippingState`, `plaque`, `driverNameSurname`, `lineCount`, `totalQuantity` yeterlidir
 - `shippingState = 1` ise sevk hedef depoya ulasmis kabul edilebilir; diger durumlar icin operasyonel isimlendirme UI tarafinda netlestirilebilir
 - `warehouseOrderNo` liste response'unda performans nedeniyle bos gelebilir. Sevkin bagli oldugu depo siparisi gerekiyorsa detay endpointindeki `header.warehouseOrderNo`, `header.warehouseOrderNos` veya `items[].warehouseOrderNo` alanlari kullanilmalidir.
+- `descriptionEttn` yalniz hareket aciklamasinda gecerli bir e-irsaliye UUID degeri varsa dolar. Urun/satir aciklamalari bu alana ETTN olarak yansitilmaz.
 - Mal kabul satir eslestirmesi icin detay response icindeki `items[].movementGuid` kullanilmalidir; sadece stok kodu ile eslestirme ayni stoktan birden fazla satir oldugunda hatali olabilir
 - Plaka, sofor adi ve sofor TCKN create ekraninda sorulmaz; kullanici bu bilgileri e-irsaliye gonderirken elle girer veya kayitli sofor listesinden secer.
 
@@ -8177,7 +8190,8 @@ Onemli not:
 - `officialDocumentNo` varsa Mikro `STOK_HAREKETLERI.sth_belge_no` alanina da yazilir. ETTN/UUID bu alana yazilmaz.
 - `IRS19105-1`, `ABC` veya yalniz sayisal metinlerden seri/sira ya da belge no uretilmez.
 - Response'taki `documentNo`, Mikro'ya yazilan resmi belge numarasidir; manuel kayitta bos string doner. Evrak anahtari her zaman response `documentSerie + documentOrderNo` alanlaridir.
-- Ayni `documentSerie + documentOrderNo` kombinasyonu tum depolar genelinde yalnizca bir firma mal kabul evrakinda kullanilabilir. Baska depoda daha once kullanildiysa API yeni kaydi reddeder.
+- Ayni `documentSerie + documentOrderNo` kombinasyonu tum depolar genelinde yalnizca bir firma mal kabul evrakinda kullanilabilir. Baska depoda daha once kullanildiysa API `409`, `errorCode=MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false`, `recommendedAction=EditAndRetry` doner. Mikro yazimi baslamaz.
+- Ayni cari ve `officialDocumentNo` ile mevcut firma mal kabul varsa API `409`, `errorCode=MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false`, `recommendedAction=RefreshList` doner. Ikinci evrak yazilmaz.
 - Mobil retry icin backend `clientRequestId` izini `FR` prefixli trace olarak `sth_eticaret_kanal_kodu` alanina tasir; `MikroApi` modunda bu payload ile Mikro'ya gider, tekrar istekte sonuc bu iz uzerinden toparlanabilir.
 - Ayni `clientRequestId` ile ayni payload tekrar gonderilirse backend ayni business response'u dondurmeye calisir.
 - Ayni `clientRequestId` ile farkli payload gonderilirse `409 Conflict` doner.
@@ -8470,6 +8484,8 @@ Firma mal kabul UI akisi:
 - QR/ETTN ile cozumlenmis belgede lookup sonucu mutlaka `officialDocument*` alanlarina tasinmalidir. `officialDocumentNo` Mikro `sth_belge_no`, resmi belge no/ETTN ise Belge Akis Takibi `externalDocumentNo` ve `externalUuid` alanlarinda aranabilir olur.
 - `lines[].isMatched = true` olan satirlar tek tikla create satirina aktarilabilir; `isMatched = false` olanlar ayrica "manuel eslestir" listesine dusurulebilir.
 - UI her durumda ayri `documentSerie` ve `documentOrderNo` alanlarini gostermeli ve ikisini de zorunlu tutmalidir. Birlesik manuel belge no veya prefix alani yoktur.
+- `MIKRO_DOCUMENT_IDENTITY_CONFLICT` gelirse bu kayit Offline/Bulut listesine tasinmaz. UI normal form taslagini ve tum satirlari koruyarak formu yeniden acar; seri/sira alanini belirginlestirir. Kullanici numarayi duzeltip Kaydet'e bastiginda yeni bir kaydetme denemesi ve yeni `clientRequestId` olusur.
+- `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED` gelirse bu kayit Offline/Bulut listesine tasinmaz ve seri/sira degistirilerek ikinci evrak olusturulmaz. UI firma mal kabul listesini yenileyip mevcut resmi belge kaydini kontrol ettirir.
 - Manuel kayitta `officialDocumentNo` gonderilmez ve response `documentNo` bos gelir. UI detay gecisinde response `documentSerie` ve `documentOrderNo` alanlarini kullanir.
 - Cari secildikten sonra kullanici manuel satir ekleyebilir. Manuel satirlarda `orderGuid = null` gonderilir.
 - `Siparis Bagla` aksiyonunda UI secili carinin acik verilen firma siparislerini `GET /api/siparis-islemleri/verilen-firma-siparisleri?WarehouseNo=...&CustomerCode=...&OnlyOpen=true` ile listeler.
