@@ -47,7 +47,7 @@ Kaydediliyor
   -> timeout / HTTP 0 / 500 / 502 / 503 / 504
 Sonuc kontrol ediliyor
   -> status/readback
-Kaydedildi | Bekleniyor | Islem gerekiyor
+Kaydedildi | Olusmadi, yeniden Kaydet | Sonuc kontrol ediliyor
 ```
 
 Kaydet sirasinda:
@@ -71,12 +71,12 @@ Basarida:
 |---|---|---|
 | `Completed` | Sonucu goster, pending kaydi sil. | `Evrak kaydedildi.` |
 | `WaitAndCheck` | POST yapma; `retryAfterSeconds` sonrasinda status GET yap. | `Kayit sonucu kontrol ediliyor.` |
-| `RetrySameRequest` | Saklanan snapshot'i ayni `clientRequestId` ile POST et. | `Baglanti kuruldu, kayit guvenli sekilde devam ediyor.` |
+| `RetrySameRequest` | Ayni formda Kaydet'i ac. Kullanici tekrar bastiginda saklanan snapshot'i ayni `clientRequestId` ile POST et. | `Evrak olusmadi. Ayni bilgilerle yeniden Kaydet kullanabilirsiniz.` |
 | `EditAndRetry` | Offline snapshot'i sil, normal form taslagini ayni satirlarla yeniden ac. Duzenlemeden sonra yeni kaydetme denemesi ve yeni `clientRequestId` olustur. | `Seri veya sira numarasini degistirip yeniden kaydedin.` |
 | `RefreshList` | Offline snapshot'i sil, ikinci create yapma ve listeyi yenile. | `Bu resmi belge zaten alinmis; mevcut evraki kontrol edin.` |
 | `RecheckExisting` | Ortak `yeniden-dogrula` POST'unu cagir; create POST yapma. | `Mikro kaydi yeniden kontrol ediliyor.` |
 | `RestoreOriginalRequest` | Orijinal snapshot'i geri yukle; degismis body ile gonderme. | `Bekleyen evragin icerigi degistirilmis.` |
-| `NeedsReview` | Otomatik istek/POST durdur; kaydi koru. | `Bu evrak kontrol bekliyor. Diger islemlere devam edebilirsiniz.` |
+| `NeedsReview` | Yalniz gercek icerik uyusmazliginda kaydi koru; normal timeout/yogunluk bu duruma dusmez. | `Kayit otomatik dogrulanamadi; ikinci evrak gonderilmedi.` |
 | `ClearCancelled` | Pending kaydi sil; basari mesaji verme. | `Islem iptal edildi; Mikro evraki olusturulmadi.` |
 
 Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici mesajinda gosterilmez. Teknik ayrinti panelinde veya destek bilgisinde bulunabilir.
@@ -174,8 +174,11 @@ Guvenlik ve davranis:
 
 - Ayni `clientRequestId` ile ayni POST, ilk islem halen taze `Processing` durumundaysa ikinci Mikro yazisi veya rakip readback baslatmaz.
 - Tekrar POST mevcut sonuca en fazla 15 saniye baglanir. Ilk islem bu arada tamamlanirsa ayni kesin business response'u doner; tamamlanmazsa `WaitAndCheck` verir.
-- `Processing` kaydi 12 dakikadan once sahipsiz kabul edilmez. Bu sure icinde status endpointi Mikro'ya recovery sorgusu acmaz.
-- Mikro readback create sahibinin kendi uzlastirma adiminda, `Failed + retryable=true` kaydinda veya 12 dakikalik lease asildiktan sonra calisir.
+- Create sahibinin server-side calisma siniri 4 dakikadir. `Processing` kaydi 4 dakika 30 saniyeden once sahipsiz kabul edilmez; bu sure icinde status endpointi rakip recovery sorgusu acmaz.
+- Mikro readback create sahibinin kendi uzlastirma adiminda, `Failed + retryable=true` kaydinda veya 4 dakika 30 saniyelik lease asildiktan sonra calisir.
+- Arka plan uzlastiricisi 30 saniyede bir en fazla 10 uygun kaydi kontrol eder. Belgeyi bulursa `Completed`, bulunmadigini kesinlestirirse `RetrySameRequest` yapar; yeni create yazisi baslatmaz.
+- Terminal ve Angular create ekrani toplam 5 dakikaya kadar ayni ekranda sonucu bekler. Normal kosulda kullanici bu pencerenin sonunda ya kesin belge sonucunu ya da yeniden Kaydet iznini gorur.
+- Bes dakika sonunda Mikro sorgusu gecici olarak kesinlestirilemediyse form kapanmaz ve Bulut/Offline ekranina atilmaz. Terminal ayni formda Kaydet'i yeniden acar; ayni snapshot ve ayni `clientRequestId` ile gelen istek backend tarafinda once mevcut sonuca baglanir. `RetrySameRequest` karari yoksa ikinci Mikro yazisi baslamaz.
 - Bu kurallar cok sayida terminalin ayni evrak icin paralel 180 saniyelik sorgular acmasini engeller.
 
 Firma mal kabul icin eski operasyon-ozel endpoint de ayni amacla kullanilabilir:
@@ -184,12 +187,12 @@ Firma mal kabul icin eski operasyon-ozel endpoint de ayni amacla kullanilabilir:
 POST /api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}/yeniden-dogrula
 ```
 
-## Yetkili Kararlari
+## Istisnai Teknik Inceleme
 
-Yetkili yalniz kalici belirsizlikte devreye girer:
+Normal timeout, sunucu yogunlugu, seri/sira cakismasi, alinmis resmi belge ve kapanmis siparis satiri yetkili islemi gerektirmez. Bunlar otomatik uzlastirilir veya form/liste karariyla kapanir. Yalniz Mikro'da ayni anahtarda farkli satir icerigi bulunmasi gibi gercek veri butunlugu uyusmazligi teknik incelemeye kalabilir:
 
 - `yeniden-dogrula`: Salt-okuma kontrolunu tekrarlar.
-- `tekrar-ac`: Yalniz Mikro'da belge olmadigi kesinlestiyse `SAFE_WRITE_RETRY_ALLOWED + RetrySameRequest` verir.
+- `tekrar-ac`: Normal akista arka plan uzlastiricisi Mikro'da belge olmadigini kesinlestirince otomatik `SAFE_WRITE_RETRY_ALLOWED + RetrySameRequest` verir; manuel kullanim yalniz istisnai kayitlar icindir.
 - `iptal`: Auth DB kaydini `Cancelled` yapar; Mikro belgesini silmez.
 
 `tekrar-ac` sonrasinda terminal yeni id veya yeni body uretmez. Saklanan ayni snapshot/id ile POST yapar. Backend bu ozel karari normal belirsiz sonuçtan ayirir ve yazimin gercekten tekrar baslamasina izin verir.
@@ -217,7 +220,7 @@ green-grocer.operations.adjustment.apply
 - Cift tik iki POST olusturmaz.
 - Timeout sonrasi yeni GUID uretilmez.
 - `WaitAndCheck` durumunda create POST atilmaz.
-- `RetrySameRequest` disinda otomatik POST atilmaz.
+- `RetrySameRequest` disinda yeni Mikro yazisi baslatilmaz. Bes dakikalik pencere sonunda kullanicinin ayni formda tekrar Kaydetmesi ayni kimlikle durum kontrolu gibi guvenlidir; backend tekrar izni yoksa create'i calistirmaz.
 - Tam eslesmeyen veya eksik belge `Completed` sayilmaz.
 - Uygulama yeniden acildiginda pending islem kaybolmaz.
 - Tek pending evrak diger evraklari veya tum modulu kilitlemez.
