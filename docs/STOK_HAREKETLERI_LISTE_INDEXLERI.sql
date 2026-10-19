@@ -6,6 +6,7 @@
     - Firma mal kabul guvenli retry/recovery trace sorgusunu dar bir seek ile calistirmak.
     - Depolar arasi sevk, depo mal kabul bekleyen/gelen ve depo iade listelerini hizlandirmak.
     - Zayiat, masraf fisi ve virman listelerine dar kapsamli destek vermek.
+    - Zayiat/masraf guvenli retry readback sorgusunu trace ile seek ettirmek.
 
     Notlar:
     - Bu script Mikro DB uzerinde manuel/kontrollu calistirilmalidir.
@@ -294,6 +295,48 @@ BEGIN
     )
     WHERE
         sth_evraktip = 17
+        AND sth_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.STOK_HAREKETLERI')
+      AND name = N'IX_FR_STH_StokFisi_Trace'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_FR_STH_StokFisi_Trace
+    ON dbo.STOK_HAREKETLERI
+    (
+        sth_eticaret_kanal_kodu,
+        sth_cikis_depo_no,
+        sth_cins,
+        sth_tarih,
+        sth_satirno
+    )
+    INCLUDE
+    (
+        sth_belge_tarih,
+        sth_belge_no,
+        sth_evrakno_seri,
+        sth_evrakno_sira,
+        sth_HareketGrupKodu1,
+        sth_HareketGrupKodu2,
+        sth_miktar,
+        sth_tutar
+    )
+    WHERE
+        sth_evraktip = 0
+        AND sth_tip = 1
+        AND sth_normal_iade = 0
+        AND sth_eticaret_kanal_kodu IS NOT NULL
         AND sth_tarih IS NOT NULL
     WITH
     (

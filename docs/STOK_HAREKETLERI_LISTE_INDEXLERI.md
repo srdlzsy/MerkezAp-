@@ -43,6 +43,7 @@ Bu yaklasim:
 | `IX_FR_STH_DepoSevkCikis_Liste` | Depolar arasi giden sevk listesi |
 | `IX_FR_STH_DepoSevkNakliye_Liste` | Depo mal kabul bekleyen/gelen nakliye deposu filtresi |
 | `IX_FR_STH_DepoSevkGiris_Liste` | Depolar arasi gelen sevk giris depo filtresi |
+| `IX_FR_STH_StokFisi_Trace` | Zayiat/masraf guvenli retry ve readback trace aramasi |
 | `IX_FR_STH_StokFisi_Liste` | Zayiat ve masraf fisi listesi |
 | `IX_FR_STH_Virman_Liste` | Virman listesi |
 
@@ -65,6 +66,12 @@ eder, sadece bu indexi dusurur ve dogru kolonla yeniden olusturur.
 trace anahtarini `sth_eticaret_kanal_kodu` uzerinden arayan recovery sorgusuna
 ozeldir. Yalniz firma mal kabul hareketlerini kapsayan filtered index oldugu icin
 tum `STOK_HAREKETLERI` tablosunu ikinci kez genis bir anahtarla indexlemez.
+
+`IX_FR_STH_StokFisi_Liste`, zayiat/masraf ekraninin depo + hareket turu + tarih
+filtreli belge gruplamasini destekler. `IX_FR_STH_StokFisi_Trace` ise create
+sonrasi ayni `FR...` izini arayan dogrulama sorgusuna ozeldir. Liste ve trace
+sorgulari farkli erisim yollari kullandigi icin bu iki index birbirinin yerine
+gecmez.
 
 ## Uygulama Oncesi
 
@@ -97,7 +104,7 @@ Sebep:
 - Veri kaybi riski yoktur, fakat yogun saatte calistirmak liste ve yazma islemlerini yavaslatabilir.
 
 Script tekrar calistirilabilir sekilde yazilmistir. Index varsa tekrar olusturmaz.
-Sekiz indexin tamami `ONLINE = ON`, `MAXDOP = 2` ve 60 saniyelik kilit
+Dokuz indexin tamami `ONLINE = ON`, `MAXDOP = 2` ve 60 saniyelik kilit
 bekleme siniri ile olusturulur. Bu ayarlar tabloyu kullanim disi birakmaz; yine de
 buyuk tablo taramasi IO/CPU tuketecegi icin indexler sirayla ve dusuk kullanim
 saatinde uygulanmalidir.
@@ -123,6 +130,9 @@ DROP INDEX IF EXISTS IX_FR_STH_DepoSevkNakliye_Liste
 ON dbo.STOK_HAREKETLERI;
 
 DROP INDEX IF EXISTS IX_FR_STH_DepoSevkGiris_Liste
+ON dbo.STOK_HAREKETLERI;
+
+DROP INDEX IF EXISTS IX_FR_STH_StokFisi_Trace
 ON dbo.STOK_HAREKETLERI;
 
 DROP INDEX IF EXISTS IX_FR_STH_StokFisi_Liste

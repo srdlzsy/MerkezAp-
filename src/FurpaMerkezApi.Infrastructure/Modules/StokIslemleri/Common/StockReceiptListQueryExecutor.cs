@@ -1,3 +1,4 @@
+using System.Data;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -113,7 +114,9 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
                 document.TotalQuantity,
                 document.TotalAmount);
 
-        return await query.ToListAsync(cancellationToken);
+        return await ExecuteReadOnlyListAsync(
+            query.TagWith("Furpa:List:StockReceipt"),
+            cancellationToken);
     }
 
     private static byte ResolveMovementGenre(StockReceiptKind kind) =>
@@ -123,4 +126,30 @@ public sealed class StockReceiptListQueryExecutor(MikroDbContext mikroDbContext)
             StockReceiptKind.ExpenseReceipt => ExpenseMovementGenre,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported stock receipt kind.")
         };
+
+    private async Task<List<T>> ExecuteReadOnlyListAsync<T>(
+        IQueryable<T> query,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSqlServerProvider())
+        {
+            return await query.ToListAsync(cancellationToken);
+        }
+
+        var executionStrategy = mikroDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using var readTransaction = await mikroDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadUncommitted,
+                cancellationToken);
+            var result = await query.ToListAsync(cancellationToken);
+            await readTransaction.CommitAsync(cancellationToken);
+
+            return result;
+        });
+    }
+
+    private bool IsSqlServerProvider() =>
+        mikroDbContext.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 }
