@@ -223,6 +223,75 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
+    public async Task ListBankPaymentTypesAsync_MergesUniqueTerminalsAndPrefersFurpaForDuplicates()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        mikroDbContext.PaymentTypes.AddRange(
+            CreatePaymentType(3, "Is Bankasi", "0004"),
+            CreatePaymentType(4, "TEB", "0007"),
+            CreatePaymentType(5, "Yapi Kredi", "0011"),
+            CreatePaymentType(6, "Ziraat Bankasi", "0019"));
+
+        mikroDbContext.CashRegisterDetails.AddRange(
+            CreateMikroCashRegisterDetail(1, "SD0024109036", "TEB", "PS373078", "495383"),
+            CreateMikroCashRegisterDetail(2, "SD0024109036", "Is Bankasi", "SO28AL09", "656322211"));
+
+        furpaDbContext.CashRegisterDetails.AddRange(
+            CreateCashRegisterDetail(3, "SD0024109036", "Ziraat Bankasi", "2547147", "3595242"),
+            CreateCashRegisterDetail(4, "SD0024109036", "Is Bankasi", "S028AL09", "656322211"),
+            CreateCashRegisterDetail(5, "SD0024109036", "Yapi Kredi", "00C9814B", "2602669384"));
+
+        await mikroDbContext.SaveChangesAsync();
+        await furpaDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var result = await useCase.ListBankPaymentTypesAsync(
+            new BankPaymentTypeRequest("SD0024109036"),
+            CancellationToken.None);
+
+        Assert.Equal(
+            new[]
+            {
+                "Is Bankasi:S028AL09:0004",
+                "TEB:PS373078:0007",
+                "Yapi Kredi:00C9814B:0011",
+                "Ziraat Bankasi:2547147:0019"
+            },
+            result.Select(item => $"{item.PaymentName}:{item.TerminalId}:{item.AccountCode}").ToArray());
+    }
+
+    [Fact]
+    public async Task ListBankPaymentTypesAsync_PreservesDistinctTerminalsSharingMerchantNumber()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        mikroDbContext.PaymentTypes.Add(CreatePaymentType(1, "Akbank", "0001"));
+        mikroDbContext.CashRegisterDetails.AddRange(
+            CreateMikroCashRegisterDetail(1, "POS001", "Akbank", "M-T01", "MERCHANT-1"),
+            CreateMikroCashRegisterDetail(2, "POS001", "Akbank", "M-T02", "MERCHANT-1"));
+        furpaDbContext.CashRegisterDetails.AddRange(
+            CreateCashRegisterDetail(3, "POS001", "Akbank", "F-T01", "MERCHANT-1"),
+            CreateCashRegisterDetail(4, "POS001", "Akbank", "F-T02", "MERCHANT-1"));
+
+        await mikroDbContext.SaveChangesAsync();
+        await furpaDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var result = await useCase.ListBankPaymentTypesAsync(
+            new BankPaymentTypeRequest("POS001"),
+            CancellationToken.None);
+
+        Assert.Equal(
+            new[] { "Akbank:F-T01:0001", "Akbank:F-T02:0001" },
+            result.Select(item => $"{item.PaymentName}:{item.TerminalId}:{item.AccountCode}").ToArray());
+    }
+
+    [Fact]
     public async Task GetCashRegisterDetailAsync_PrefersFurpaWhenLookingUpByCashNo()
     {
         await using var mikroDbContext = CreateMikroDbContext();
@@ -369,14 +438,15 @@ public sealed class CashSummaryLookupsUseCaseTests
         int id,
         string cashRegisterNo,
         string bank,
-        string terminalId) =>
+        string terminalId,
+        string merchantNo = "") =>
         new()
         {
             Id = id,
             CashRegisterNo = cashRegisterNo,
             Bank = bank,
             TerminalId = terminalId,
-            MerchantNo = string.Empty,
+            MerchantNo = merchantNo,
             CashNo = null
         };
 
@@ -384,14 +454,15 @@ public sealed class CashSummaryLookupsUseCaseTests
         int id,
         string cashRegisterNo,
         string bank,
-        string terminalId) =>
+        string terminalId,
+        string merchantNo = "") =>
         new()
         {
             Id = id,
             CashRegisterNo = cashRegisterNo,
             Bank = bank,
             TerminalId = terminalId,
-            MerchantNo = string.Empty,
+            MerchantNo = merchantNo,
             CashNo = null
         };
 

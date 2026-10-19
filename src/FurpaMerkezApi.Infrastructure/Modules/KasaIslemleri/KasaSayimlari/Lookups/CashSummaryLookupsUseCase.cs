@@ -159,32 +159,26 @@ public sealed class CashSummaryLookupsUseCase(
         }
 
         var cashRegisterNo = request.CashRegisterNo.Trim();
-        var cashRegisterTerminals = await ListMikroCashRegisterDetailsByRegisterNoAsync(
+        var furpaTerminals = await ListFurpaCashRegisterDetailsByRegisterNoAsync(
             cashRegisterNo,
             cancellationToken);
+        var mikroTerminals = await ListMikroCashRegisterDetailsByRegisterNoAsync(
+            cashRegisterNo,
+            cancellationToken);
+        var cashRegisterTerminals = MergeBankTerminalSources(
+            furpaTerminals,
+            mikroTerminals);
 
         var terminalBanks = cashRegisterTerminals
             .Select(item => item.Bank)
             .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         if (terminalBanks.Length == 0)
         {
-            cashRegisterTerminals = await ListFurpaCashRegisterDetailsByRegisterNoAsync(
-                cashRegisterNo,
-                cancellationToken);
-
-            terminalBanks = cashRegisterTerminals
-                .Select(item => item.Bank)
-                .Where(item => !string.IsNullOrWhiteSpace(item))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            if (terminalBanks.Length == 0)
-            {
-                return [];
-            }
+            return [];
         }
 
         var paymentTypeRows = await mikroDbContext.PaymentTypes
@@ -199,19 +193,25 @@ public sealed class CashSummaryLookupsUseCase(
             })
             .ToArrayAsync(cancellationToken);
 
-        var paymentTypes = (
-            from paymentType in paymentTypeRows
-            join cashRegister in cashRegisterTerminals
-                on paymentType.PaymentName equals cashRegister.Bank
-            orderby paymentType.PaymentName, cashRegister.TerminalId
-            select new
-            {
-                paymentType.PaymentName,
-                paymentType.PaymentTypeNo,
-                paymentType.PaymentGenus,
-                paymentType.AccountCode,
-                cashRegister.TerminalId
-            }).ToArray();
+        var paymentTypesByName = paymentTypeRows.ToLookup(
+            item => item.PaymentName.Trim(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var paymentTypes = cashRegisterTerminals
+            .Where(item => !string.IsNullOrWhiteSpace(item.Bank))
+            .SelectMany(
+                cashRegister => paymentTypesByName[cashRegister.Bank.Trim()],
+                (cashRegister, paymentType) => new
+                {
+                    paymentType.PaymentName,
+                    paymentType.PaymentTypeNo,
+                    paymentType.PaymentGenus,
+                    paymentType.AccountCode,
+                    cashRegister.TerminalId
+                })
+            .OrderBy(item => item.PaymentName)
+            .ThenBy(item => item.TerminalId)
+            .ToArray();
 
         return paymentTypes
             .Select(item => new PaymentTypeItemDto(
@@ -534,6 +534,96 @@ public sealed class CashSummaryLookupsUseCase(
 
         return result;
     }
+
+    private static IReadOnlyCollection<CashRegisterTerminalSource> MergeBankTerminalSources(
+        IReadOnlyCollection<CashRegisterTerminalSource> preferredSource,
+        IReadOnlyCollection<CashRegisterTerminalSource> fallbackSource)
+    {
+        var preferredRows = DistinctBankTerminals(preferredSource);
+        var fallbackRows = DistinctBankTerminals(fallbackSource);
+        var result = new List<CashRegisterTerminalSource>(preferredRows.Count + fallbackRows.Count);
+        result.AddRange(preferredRows);
+
+        // Match sources one-to-one so multiple real terminals sharing a merchant number are preserved.
+        var matchedPreferredRows = new bool[preferredRows.Count];
+        foreach (var fallbackRow in fallbackRows)
+        {
+            var matchingIndex = -1;
+            for (var index = 0; index < preferredRows.Count; index++)
+            {
+                if (!matchedPreferredRows[index] &&
+                    IsSameLogicalBankTerminal(preferredRows[index], fallbackRow))
+                {
+                    matchingIndex = index;
+                    break;
+                }
+            }
+
+            if (matchingIndex >= 0)
+            {
+                matchedPreferredRows[matchingIndex] = true;
+                continue;
+            }
+
+            result.Add(fallbackRow);
+        }
+
+        return result;
+    }
+
+    private static List<CashRegisterTerminalSource> DistinctBankTerminals(
+        IReadOnlyCollection<CashRegisterTerminalSource> source)
+    {
+        var result = new List<CashRegisterTerminalSource>(source.Count);
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var item in source.Where(item => !string.IsNullOrWhiteSpace(item.Bank)))
+        {
+            var key = string.Join(
+                "|",
+                NormalizeTerminalIdentity(item.Bank),
+                NormalizeTerminalIdentity(item.TerminalId),
+                NormalizeTerminalIdentity(item.MerchantNo));
+
+            if (seenKeys.Add(key))
+            {
+                result.Add(item);
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsSameLogicalBankTerminal(
+        CashRegisterTerminalSource preferred,
+        CashRegisterTerminalSource fallback)
+    {
+        if (!string.Equals(
+                NormalizeTerminalIdentity(preferred.Bank),
+                NormalizeTerminalIdentity(fallback.Bank),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var preferredTerminalId = NormalizeTerminalIdentity(preferred.TerminalId);
+        var fallbackTerminalId = NormalizeTerminalIdentity(fallback.TerminalId);
+        if (preferredTerminalId.Length > 0 &&
+            fallbackTerminalId.Length > 0 &&
+            preferredTerminalId == fallbackTerminalId)
+        {
+            return true;
+        }
+
+        var preferredMerchantNo = NormalizeTerminalIdentity(preferred.MerchantNo);
+        var fallbackMerchantNo = NormalizeTerminalIdentity(fallback.MerchantNo);
+        return preferredMerchantNo.Length > 0 &&
+               fallbackMerchantNo.Length > 0 &&
+               preferredMerchantNo == fallbackMerchantNo;
+    }
+
+    private static string NormalizeTerminalIdentity(string value) =>
+        string.Concat(value.Where(char.IsLetterOrDigit)).ToUpperInvariant();
 
     private static CashRegisterDetailDto ToCashRegisterDetailDto(CashRegisterTerminalSource item) =>
         new(
