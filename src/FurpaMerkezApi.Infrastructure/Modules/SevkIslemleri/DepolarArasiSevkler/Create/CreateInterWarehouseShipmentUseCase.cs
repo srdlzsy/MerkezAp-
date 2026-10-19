@@ -337,8 +337,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                         batchingOptions.BulkCopyTimeoutSeconds,
                         cancellationToken);
                     logger.LogInformation(
-                        "Inter warehouse shipment stock movements were inserted as one SQL bulk batch. ElapsedMs={ElapsedMs}, BatchCount=1, LineCount={LineCount}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
+                        "Inter warehouse shipment stock movements were inserted with single-row Mikro trigger batches. ElapsedMs={ElapsedMs}, BatchCount={BatchCount}, LineCount={LineCount}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
                         bulkStopwatch.Elapsed.TotalMilliseconds,
+                        movements.Count,
                         movements.Count,
                         documentSerie,
                         documentOrderNo.Value,

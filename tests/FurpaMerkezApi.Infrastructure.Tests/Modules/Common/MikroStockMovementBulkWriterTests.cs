@@ -14,7 +14,7 @@ public sealed class MikroStockMovementBulkWriterTests
     [InlineData(1)]
     [InlineData(10)]
     [InlineData(50)]
-    public void BuildDataTable_MapsWholeDocumentToOneBatch(int lineCount)
+    public void BuildDataTable_MapsWholeDocumentAndUsesSingleRowTriggerBatches(int lineCount)
     {
         using var dbContext = CreateDbContext();
         var movements = Enumerable.Range(0, lineCount)
@@ -27,7 +27,7 @@ public sealed class MikroStockMovementBulkWriterTests
         Assert.Equal(
             typeof(STOK_HAREKETLERI).GetProperties().Length,
             table.Columns.Count);
-        Assert.Equal(0, MikroStockMovementBulkWriter.SingleBatchSize);
+        Assert.Equal(1, MikroStockMovementBulkWriter.TriggerBatchSize);
 
         for (var rowNo = 0; rowNo < lineCount; rowNo++)
         {
@@ -90,7 +90,7 @@ public sealed class MikroStockMovementBulkWriterTests
     [InlineData(1)]
     [InlineData(10)]
     [InlineData(50)]
-    public async Task WriteAsync_WritesOneTriggerBatchAndRollsBack(int lineCount)
+    public async Task WriteAsync_WritesSingleRowTriggerBatchesAndRollsBack(int lineCount)
     {
         var connectionString = Environment.GetEnvironmentVariable("FURPA_MIKRO_BULK_TEST_CONNECTION")!;
         var options = new DbContextOptionsBuilder<MikroWriteDbContext>()
@@ -142,7 +142,7 @@ public sealed class MikroStockMovementBulkWriterTests
             var probe = await ReadTriggerProbeAsync(dbContext, probeTableName);
 
             Assert.Equal(lineCount, insertedLineCount);
-            Assert.Equal(1, probe.ExecutionCount);
+            Assert.Equal(lineCount, probe.ExecutionCount);
             Assert.Equal(lineCount, probe.InsertedLineCount);
         }
         finally

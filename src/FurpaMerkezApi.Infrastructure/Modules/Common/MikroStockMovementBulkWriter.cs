@@ -10,7 +10,9 @@ namespace FurpaMerkezApi.Infrastructure.Modules.Common;
 
 internal static class MikroStockMovementBulkWriter
 {
-    internal const int SingleBatchSize = 0;
+    // Mikro's trigger has a much cheaper single-row branch. Larger batches make
+    // it scan and update the multi-million-row STOK_HAREKETLERI_OZET table by page.
+    internal const int TriggerBatchSize = 1;
     internal const SqlBulkCopyOptions RequiredOptions =
         SqlBulkCopyOptions.CheckConstraints |
         SqlBulkCopyOptions.FireTriggers;
@@ -48,7 +50,7 @@ internal static class MikroStockMovementBulkWriter
         using var bulkCopy = new SqlBulkCopy(connection, RequiredOptions, transaction)
         {
             DestinationTableName = "[dbo].[STOK_HAREKETLERI]",
-            BatchSize = SingleBatchSize,
+            BatchSize = TriggerBatchSize,
             BulkCopyTimeout = Math.Clamp(timeoutSeconds, 1, 600)
         };
 
