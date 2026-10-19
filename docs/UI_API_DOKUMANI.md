@@ -2563,6 +2563,10 @@ Veri kaynaklari:
 
 Bu ekran Mikro SQL Server uzerindeki aktif istekleri, kilit zincirlerini, uzun acik transaction'lari ve temel bekleme nedenlerini canli gosterir. Ekran acilisi `manage`, canli veri `list`, olay/sonlandirma gecmisi `detail`, SQL oturumu sonlandirma ise ayri `terminate-session` yetkisine baglidir.
 
+Canli `STOK_HAREKETLERI` / `STOK_HAREKETLERI_OZET` kilit kok nedeni,
+uygulama duzeltmeleri ve yayin sirasi:
+`docs/MIKRO_STOK_HAREKETLERI_KILIT_ANALIZI.md`.
+
 Endpointler:
 
 ```text
@@ -2629,6 +2633,7 @@ Ekran yerlesimi:
 - `genel-bakis`, `anlik` ve `workerlar` ekran gorunurken 10 saniyede bir yenilenebilir. Onceki istek bitmeden yenisi baslatilmaz.
 - `olaylar` ve `guvenli-yazmalar` varsayilan olarak 30 saniyede bir veya kullanici yenilediginde sorgulanir.
 - `safeWrites` hata sayilari son 24 saati, `processingCount` ve `staleProcessingCount` tum halen Processing kayitlarini kapsar.
+- `staleProcessingCount`, 10 dakikalik dayanikli create ust suresi ve 2 dakikalik islem kirasi payi nedeniyle son guncellemesi 12 dakikadan eski `Processing` kayitlarini sayar. Bu kayitlar tek basina aktif SQL kilidi kaniti degildir.
 - `overallStatus=warning` uygulamanin durdugu anlamina gelmez; ilgili bolumdeki `recommendation` ve sayaclar incelenir.
 
 #### Anlik Izleme Response
@@ -2737,6 +2742,10 @@ Alan notlari:
 - `openTransactions`: acik kullanici transaction'laridir; aktif request olmasa da listede bulunabilir.
 - `canTerminate=true` teknik olarak sonlandirilabilir kullanici SPID'i oldugunu belirtir. Buton icin ayrica `terminate-session` permission'i zorunludur.
 - `sqlText`, `blockedSqlText` ve `lastSqlText` icindeki string literal degerler backend tarafinda `***` ile maskelenir.
+- `Guvenli Yazmalar` Auth DB'deki idempotency/sonuc kayitlarini, `Canli SQL` ise Mikro SQL Server'daki gercek request, transaction ve kilitleri gosterir. Bir guvenli yazma kaydi tek basina kilit olusturmaz; SQL kilidi veya yavaslik create sonucunu belirsiz birakip bu kaydin `Processing`/`Failed` gorunmesine neden olabilir.
+- Root blocker uzun bir `SELECT` ise once sorgunun endpointi ve eksik indexi bulunmalidir. Zayiat/masraf listeleri production SQL Server'da `ReadUncommitted` ile calisir; bu ekranlar create yazilarini bekletmemelidir. Kalici hiz icin `IX_FR_STH_StokFisi_Liste`, zayiat/masraf readback'i icin `IX_FR_STH_StokFisi_Trace` kurulmalidir.
+- `STOK_HAREKETLERI` indexleri 218 milyon ve benzeri buyuk tablolarda yogun saatte kurulmaz. Acil iki index icin `docs/STOK_HAREKETLERI_STOK_FISI_ACIL_INDEXLERI.sql`, tum liste indexleri icin `docs/STOK_HAREKETLERI_LISTE_INDEXLERI.sql` kullanilir.
+- `recommendations[].code=stock-summary-trigger-contention`, Mikro `mye_STOK_HAREKETLERI_Trigger` icindeki `STOK_HAREKETLERI_OZET` guncellemelerinin `LCK_M_U` ile kuyruklandigini gosterir. Bu durumda API'nin tek-satir trigger batch profilinin yayinda oldugu kontrol edilir; bekleyen tum SPID'ler topluca sonlandirilmaz.
 
 #### Worker Heartbeat ve Backlog
 
@@ -2911,8 +2920,8 @@ Alan ve filtre kurallari:
 UI gosterim onerisi:
 
 ```text
-Processing, ageSeconds <= 300   Isleniyor
-Processing, ageSeconds > 300    Uzlastirma Bekliyor
+Processing, ageSeconds <= 720   Isleniyor
+Processing, ageSeconds > 720    Uzlastirma Bekliyor
 Failed, retryable=true          Guvenli Tekrar Kontrol Edilebilir
 Failed, retryable=false         Manuel Inceleme Gerekli
 Failed, retryable=null          Siniflandirilmamis / Eski Hata
@@ -6885,7 +6894,7 @@ Onemli not:
 
 - Yazma yolu `MikroWriteRouting:InterWarehouseShipment` ile secilir; mevcut config'te deger `Database`tir.
 - `Database` modunda EF Core uzerinden ayri `MikroWriteDbContext` ile yazma yapar. Write hedefi canli `MikroConnection` degil; `MikroWriteConnection` yoksa `testMikroConnection` kullanilir.
-- `MikroWriteBatching:InterWarehouseShipmentEnabled`, `CompanyReceivingEnabled` ve `CompanyReturnEnabled` ayarlari ilgili `Database` yazma yollarini birbirinden bagimsiz acip kapatir. Ayar acikken bir evrakin `STOK_HAREKETLERI` satirlari mevcut transaction icinde tek SQL bulk batch olarak yazilir. Mikro trigger ve constraint kontrolleri acik kalir; hedef, cok satirli evrakta trigger'i satir basina degil belge batch'i basina bir kez calistirmaktir.
+- `MikroWriteBatching:InterWarehouseShipmentEnabled`, `CompanyReceivingEnabled` ve `CompanyReturnEnabled` ayarlari ilgili `Database` yazma yollarini birbirinden bagimsiz acip kapatir. Ayar acikken bir evrakin `STOK_HAREKETLERI` satirlari ayni SQL transaction'i icinde `SqlBulkCopy` ile yazilir; atomiklik korunur. Mikro'nun `mye_STOK_HAREKETLERI_Trigger` trigger'i cok satirli batch'te 22 milyon satirli `STOK_HAREKETLERI_OZET` tablosunda sayfa taramasi ve `LCK_M_U` zinciri olusturdugu icin bulk kopya `BatchSize=1` kullanir. Boylece trigger her satirda kendi hizli tek-satir kolunu calistirir; belge ancak tum satirlar ve bagli guncellemeler basariliysa commit edilir.
 - Firma mal kabulde normal kabul hareketleri tek batch, otomatik olusan firma iade evraki varsa onun satirlari ayri bir batch olarak yazilir. Boylece her belge kendi trigger calismasini bir kez yapar ve iki belge ayni transaction icinde birlikte commit/rollback olur.
 - Bulk yazma yalniz satirlarin SQL'e gonderilme seklini degistirir. `clientRequestId`, trace, duplicate kontrolu, belge numarasi, transaction, rollback, readback ve recovery davranisi aynen korunur.
 - Bulk yolunun timeout degeri `MikroWriteBatching:BulkCopyTimeoutSeconds` ile belirlenir; varsayilan `300` saniyedir. Ozellik kapatilirsa ayni endpoint ve response korunarak eski EF insert yoluna donulur.
