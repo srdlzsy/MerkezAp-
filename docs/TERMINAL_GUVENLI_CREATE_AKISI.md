@@ -114,6 +114,7 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 
 - `recommendedAction` uygulanir.
 - `retryable=true` tek basina POST sebebi degildir.
+- `MIKRO_WRITE_IN_PROGRESS` kullaniciya manuel `Tekrar Dene` olarak sunulmaz; UI ayni ekranda otomatik status kontrolu yapar.
 - `MIKRO_WRITE_OUTCOME_UNCONFIRMED` ve `MIKRO_DOCUMENT_INCOMPLETE` durumunda POST yapilmaz.
 - Yalniz `RetrySameRequest` POST'a izin verir.
 
@@ -127,6 +128,7 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 ## Polling
 
 - Ilk kontrol `retryAfterSeconds` kadar sonra yapilir; verilmezse 5 saniye kullanilir.
+- Taze `Processing` kaydinin status GET'i Mikro readback baslatmaz; yalniz Auth DB'deki mevcut durumu okur.
 - Gecici hatalarda 5, 10, 20 ve en fazla 30 saniye beklenir.
 - Onceki istek bitmeden yenisi baslatilmaz.
 - Ekran gorunurken ayni evrak icin tek polling dongusu bulunur.
@@ -158,6 +160,14 @@ Guvenlik ve davranis:
 - Eksik satir `Incomplete + WaitAndCheck` olur.
 - Kalici fark `Mismatch + NeedsReview` olur.
 - Belge bulunamazsa normal kullaniciya ikinci create izni verilmez; karar kayit bazli incelemeye gider.
+
+## Backend Yuk Kontrolu
+
+- Ayni `clientRequestId` ile ayni POST, ilk islem halen taze `Processing` durumundaysa ikinci Mikro yazisi veya rakip readback baslatmaz.
+- Tekrar POST mevcut sonuca en fazla 15 saniye baglanir. Ilk islem bu arada tamamlanirsa ayni kesin business response'u doner; tamamlanmazsa `WaitAndCheck` verir.
+- `Processing` kaydi 12 dakikadan once sahipsiz kabul edilmez. Bu sure icinde status endpointi Mikro'ya recovery sorgusu acmaz.
+- Mikro readback create sahibinin kendi uzlastirma adiminda, `Failed + retryable=true` kaydinda veya 12 dakikalik lease asildiktan sonra calisir.
+- Bu kurallar cok sayida terminalin ayni evrak icin paralel 180 saniyelik sorgular acmasini engeller.
 
 Firma mal kabul icin eski operasyon-ozel endpoint de ayni amacla kullanilabilir:
 

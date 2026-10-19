@@ -126818,16 +126818,19 @@
             "type": "string"
           },
           "quantity": {
+            "maximum": 1000000,
             "type": "number",
             "format": "double",
             "nullable": true
           },
           "dispatchQuantity": {
+            "maximum": 1000000,
             "type": "number",
             "format": "double",
             "nullable": true
           },
           "acceptedQuantity": {
+            "maximum": 1000000,
             "minimum": 0,
             "type": "number",
             "format": "double",

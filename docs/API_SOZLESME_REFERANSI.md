@@ -10557,17 +10557,17 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
-| `acceptedQuantity` | number (double) | Hayir | min=0; nullable |
+| `acceptedQuantity` | number (double) | Hayir | min=0; max=1000000; nullable |
 | `customerResponsibilityCenter` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `description` | string | Hayir | minLength=0; maxLength=50; nullable |
-| `dispatchQuantity` | number (double) | Hayir | nullable |
+| `dispatchQuantity` | number (double) | Hayir | max=1000000; nullable |
 | `lastConsumingDate` | string (date-time) | Hayir | nullable |
 | `lotNo` | integer (int32) | Hayir | min=0; max=2147483647 |
 | `orderGuid` | string (uuid) | Hayir | nullable |
 | `partyCode` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `productResponsibilityCenter` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `projectCode` | string | Hayir | minLength=0; maxLength=25; nullable |
-| `quantity` | number (double) | Hayir | nullable |
+| `quantity` | number (double) | Hayir | max=1000000; nullable |
 | `stockCode` | string | Evet | minLength=0; maxLength=25 |
 | `unitPointer` | integer (int32) | Hayir | min=1; max=255 |
 | `unitPrice` | number (double) | Hayir | min=0 |

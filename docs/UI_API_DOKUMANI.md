@@ -1247,7 +1247,9 @@ Kaydet butonunun kesin davranisi:
 Backend sorumlulugu:
 
 - Request body tamamen alindiktan ve Auth DB rezervasyonu olustuktan sonra backend create islemini istemci baglantisindan bagimsiz, en fazla 10 dakikalik sinirli bir server token'iyle tamamlar.
+- Ayni `clientRequestId` ile ayni POST taze `Processing` kaydina denk gelirse ikinci Mikro yazisi veya rakip readback baslatilmaz. Backend mevcut sonuca en fazla 15 saniye baglanir; tamamlanirsa ayni business response'u, tamamlanmazsa `WaitAndCheck` kararini doner.
 - `Processing` kaydi 12 dakikadan once sahipsiz kabul edilmez. Bu esik 10 dakikalik server calisma penceresinden uzundur; calisan islem erken ikinci yazima acilmaz.
+- Taze `Processing` kaydinin status GET'i Mikro recovery sorgusu baslatmaz; yalniz Auth DB durumunu dondurur. Readback create sahibinin kendi akisinda, `Failed + retryable=true` kaydinda veya 12 dakikalik lease asildiktan sonra calisir.
 - Her kesin basari request snapshot'i ile Mikro readback sonucu birebir eslestirilmeden `Completed` olmaz.
 - Status GET ve `yeniden-dogrula` create/update/delete yapmaz; yalniz mevcut Mikro kaydini okur ve sonucu uzlastirir.
 - Tek bir sorunlu evrak modulu, `Yeni Ekle` butonunu veya diger kullanicilarin islemlerini global kilitlemez.
@@ -1294,12 +1296,13 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - Ayni kullanici, ayni islem ve ayni `clientRequestId` kombinasyonu backend tarafinda tekil kabul edilir.
 - Ayni `clientRequestId` ile ayni payload tekrar gelirse backend ayni is sonucunu donmeye calisir; boylece timeout veya kopan internet sonrasi guvenli retry yapilabilir.
 - Ayni `clientRequestId` ile farkli payload gelirse endpoint `409 Conflict` doner.
-- Ayni `clientRequestId` halen isleniyorsa endpoint `409 Conflict` doner.
+- Ayni `clientRequestId` halen taze `Processing` durumundaysa backend ikinci Mikro yazisi veya rakip recovery sorgusu baslatmaz. Create POST mevcut sonuca en fazla 15 saniye baglanir; ilk islem tamamlanirsa ayni business response'u, tamamlanmazsa `409 Conflict` ve `recommendedAction=WaitAndCheck` doner.
 - UI yanlislikla yeni bir `clientRequestId` uretse bile ayni kullanici, operasyon ve depoda ayni mantiksal payload'in onceki kaydi `Processing` veya `retryable=true` belirsiz durumda ise backend ikinci kalici rezervasyonu ve Mikro yazimini engeller. ProblemDetails icindeki `relatedClientRequestId`, durum sorgulanmasi gereken ilk kimligi bildirir.
 - Ayni mantiksal payload son 6 saat icinde `Completed` olduysa farkli `clientRequestId` ile tekrar POST edilmesi yeni Mikro yazisi baslatmaz. Backend onceki belgeyi readback ile yeniden dogrular, ayni business response'u dondurur ve yeni kimligi de tamamlanmis alias kaydi olarak saklar.
 - Gercekten ayri fakat icerigi birebir ayni yeni bir evrak gerekiyorsa kullanici acik bir onay aksiyonuyla yeni `clientRequestId` ve `forceCreateNew=true` gonderir. Bu alan yalniz son 6 saatteki dogrulanmis `Completed` tekrarini asar; `Processing`, sonucu belirsiz veya `retryable=false` manuel inceleme kaydini asmaz.
 - Eski istemci `clientRequestId` gondermezse backend geriye uyumluluk icin islem kimligini kendisi uretir ve ayni icerik korumasini uygular. Ancak UI bu uretilen kimligi bilmeyecegi icin durum sorgulama ve iyi hata deneyimi kaybolur; yeni UI yine her zaman kendi GUID degerini gondermelidir.
 - Request body tamamen alinip `clientRequestId` kaydi Auth DB'de rezerve edildikten sonra create islemi terminalin HTTP baglantisindan ayrilir ve en fazla 10 dakikalik sunucu calisma penceresiyle devam eder. Baglanti acik kalirsa ayni POST kesin business sonucunu bekleyip doner. Terminal baglantiyi kaybederse backend baslamis islemi iptal etmez; UI ayni kimlikle `offline-sync/{clientRequestId}` durumunu sorgular.
+- Taze `Processing` kaydi icin status GET yalniz Auth DB durumunu okur; Mikro recovery/readback sorgusu baslatmaz. Bu kural cok sayida terminalin ayni anda uzun recovery sorgulari acmasini engeller.
 - Baglanti request body tamamen alinmadan koparsa controller ve kalici rezervasyon henuz calismamis olabilir. Bu durumda Mikro yazimi baslamaz; terminal sakladigi ayni payload ve ayni `clientRequestId` ile POST'u yeniden gonderir. UI yalniz HTTP isteginin baslamasini `sunucuda kayit basladi` kaniti olarak gostermemelidir.
 - POST cevabi cihaza ulasmadiysa mobil uygulama once ilgili `offline-sync/{clientRequestId}` status GET'ini cagirir. Yalniz backend `recommendedAction=RetrySameRequest` dondururse ayni snapshot ve ayni kimlikle POST'u tekrarlar.
 - Desteklenen tum akislar ilgili `offline-sync/{clientRequestId}` endpoint'iyle sorgulanabilir. Durum sorgusu yeni create yazisi baslatmaz; kayitli request snapshot'i ile Mikro readback yapar ve bulunan kesin sonucu kalici kayda isler.
@@ -1317,7 +1320,7 @@ Guvenli create `409 Conflict` response sozlesmesi:
 
 - Siniflandirilmis create cakismalarinda standart ProblemDetails alanlarina ek olarak `errorCode` ve `retryable` doner.
 - Siniflandirilmis guvenli yazma/readback mesajlari API tarafinda kullaniciya acik Turkce metne cevrilir. Ayni ceviri `409 detail`, `offline-sync errorMessage` ve guvenli yazma izleme response'unda kullanilir; UI yine metin eslestirmemeli, kararini `errorCode` ve `retryable` alanlariyla vermelidir.
-- `MIKRO_WRITE_IN_PROGRESS`, `retryable=true`: ayni `clientRequestId` halen isleniyor veya onceki belirsiz yazmanin readback sonucu bekleniyor. UI payload snapshot'ini korur; yeni id uretmez.
+- `MIKRO_WRITE_IN_PROGRESS`, `retryable=true`: ayni `clientRequestId` halen isleniyor veya onceki belirsiz yazmanin readback sonucu bekleniyor. UI payload snapshot'ini korur, yeni id uretmez ve kullaniciya manuel `Tekrar Dene` butonu acmaz; `retryAfterSeconds` sonrasinda status GET yapar.
 - `MIKRO_WRITE_QUEUE_BUSY`, `retryable=true`: depolar arasi sevkte ayni belge serisinin onceki islemi devam ettigi icin 180 saniyelik kuyruk bekleme siniri dolmustur. Bu istegin Mikro yazimi baslamamistir; UI ayni payload ve ayni `clientRequestId` ile kisa bir sure sonra yeniden deneyebilir. Yeni id uretilmemelidir.
 - `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, `retryable=true`: Mikro yazma sonucu kanitlanamadi. `recommendedAction=WaitAndCheck`; UI create POST yapmaz, status/readback ile sonucu uzlastirir.
 - `MIKRO_DOCUMENT_INCOMPLETE`, `retryable=true`: Ayni trace'e ait bazi satirlar goruluyor ancak tam satir seti henuz olusmadi. `recommendedAction=WaitAndCheck`; eksik set basari sayilmaz ve ikinci create yazisi baslatilmaz.
@@ -8149,7 +8152,7 @@ Onemli not:
 - Mal kabul giris hareketinde `sth_miktar` irsaliye/gelen miktari olan `dispatchQuantity` ile yazilir.
 - Fiili/net kabul miktari `acceptedQuantity` alanidir. UI farkli kabul durumunda `dispatchQuantity` ve `acceptedQuantity` alanlarini ayri gondermelidir.
 - Eski uyumluluk icin `quantity` hala desteklenir; UI sadece `quantity` gonderirse backend bunu hem `dispatchQuantity` hem `acceptedQuantity` gibi yorumlar.
-- `acceptedQuantity`, `dispatchQuantity` degerinden buyuk olamaz. `dispatchQuantity` sifirdan buyuk olmali, `acceptedQuantity` sifir olabilir.
+- `acceptedQuantity`, `dispatchQuantity` degerinden buyuk olamaz. `dispatchQuantity` sifirdan buyuk olmali, `acceptedQuantity` sifir olabilir. Her iki miktar da en fazla `1.000.000` olabilir; barkodun yanlislikla miktar alanina yazilmasi gibi uc degerler Mikro yazimi baslamadan `400 Bad Request` ile durdurulur.
 - `autoCreateReturnForPartialAcceptance = true` varsayilandir. `acceptedQuantity < dispatchQuantity` ise backend fark kadar firma iade evragi olusturur. `Database` modunda ana mal kabul ve otomatik iade ayni DB transaction icindedir; `MikroApi` modunda ana mal kabul ve otomatik iade Mikro API create cagrilariyla sirali olusturulur.
 - Otomatik firma iade hareketi `sth_evraktip = 1`, `sth_tip = 1`, `sth_normal_iade = 1` olarak olusturulur; seri `F{warehouseNo}` seklinde uretilir ve sira Mikro'daki sonraki uygun sira olur.
 - Mikro net stok etkisi: `dispatchQuantity` kadar firma mal kabul girisi, fark kadar firma iade cikisi. Ornek: 10 geldi, 8 kabul edildi ise +10 mal kabul ve -2 firma iade yazilir; net stok 8 olur.
@@ -8171,7 +8174,7 @@ Onemli not:
 - Mobil retry icin backend `clientRequestId` izini `FR` prefixli trace olarak `sth_eticaret_kanal_kodu` alanina tasir; `MikroApi` modunda bu payload ile Mikro'ya gider, tekrar istekte sonuc bu iz uzerinden toparlanabilir.
 - Ayni `clientRequestId` ile ayni payload tekrar gonderilirse backend ayni business response'u dondurmeye calisir.
 - Ayni `clientRequestId` ile farkli payload gonderilirse `409 Conflict` doner.
-- Ayni `clientRequestId` halen isleniyorsa `409 Conflict` doner.
+- Ayni `clientRequestId` halen taze `Processing` durumundaysa ikinci yazma/readback baslatilmaz. Backend mevcut islemin sonucuna en fazla 15 saniye baglanir; tamamlanirsa ayni business response'u, tamamlanmazsa `409 Conflict` ve `WaitAndCheck` karari doner.
 - `clientRequestId` kaydi Auth DB'de rezerve edildikten sonra terminalin HTTP baglantisinin kopmasi veya request'i iptal etmesi baslamis Mikro transaction'ini iptal etmez. Yazma kendi SQL/Mikro command timeout sinirlari icinde tamamlanir ve sonucu offline kaydina yazilir.
 - Eski kayitlarda ham `A task was canceled.` gibi siniflandirilmamis bir hata varsa durum veya ayni kimlikle retry akisi once trace readback yapar. Belge bulunamazsa kayit `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, `retryable=true` olarak makine-okunur bicimde guncellenir.
 - `MikroWriteRouting:CompanyReceiving=Database` iken onceki deneme transaction rollback ile kapanmis ve trace readback hic hareket bulamamissa ayni payload + ayni `clientRequestId` yeniden yazilabilir. Bu yeni bir mantiksal fis degildir ve yeni GUID uretilmez.
@@ -8214,9 +8217,9 @@ Satir validasyonlari:
 | Alan | Zorunlu | Kural |
 |---|---|---|
 | `stockCode` | Evet | Max 25; bos olamaz. |
-| `quantity` | Eski uyum | Pozitif olmali; `dispatchQuantity` ve `acceptedQuantity` bos ise ikisi icin de kullanilir. |
-| `dispatchQuantity` | Onerilen | Pozitif olmali; resmi/gelen miktardir ve Mikro mal kabul hareket miktari olarak yazilir. |
-| `acceptedQuantity` | Onerilen | Sifir veya pozitif olabilir; fiili kabul miktaridir; `dispatchQuantity` degerinden buyuk olamaz. |
+| `quantity` | Eski uyum | Pozitif ve en fazla `1.000.000` olmali; `dispatchQuantity` ve `acceptedQuantity` bos ise ikisi icin de kullanilir. |
+| `dispatchQuantity` | Onerilen | Pozitif ve en fazla `1.000.000` olmali; resmi/gelen miktardir ve Mikro mal kabul hareket miktari olarak yazilir. |
+| `acceptedQuantity` | Onerilen | Sifir veya pozitif, en fazla `1.000.000` olabilir; fiili kabul miktaridir; `dispatchQuantity` degerinden buyuk olamaz. |
 | `unitPrice` | Hayir | Sifir veya pozitif olmali. |
 | `unitPointer` | Hayir | 1-255 arasi; bos ise 1 kabul edilir. |
 | `lastConsumingDate` | Hayir | SKT/son tuketim tarihi gerekiyorsa gonderilir. |
@@ -35845,17 +35848,17 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
-| `acceptedQuantity` | number (double) | Hayir | min=0; nullable |
+| `acceptedQuantity` | number (double) | Hayir | min=0; max=1000000; nullable |
 | `customerResponsibilityCenter` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `description` | string | Hayir | minLength=0; maxLength=50; nullable |
-| `dispatchQuantity` | number (double) | Hayir | nullable |
+| `dispatchQuantity` | number (double) | Hayir | max=1000000; nullable |
 | `lastConsumingDate` | string (date-time) | Hayir | nullable |
 | `lotNo` | integer (int32) | Hayir | min=0; max=2147483647 |
 | `orderGuid` | string (uuid) | Hayir | nullable |
 | `partyCode` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `productResponsibilityCenter` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `projectCode` | string | Hayir | minLength=0; maxLength=25; nullable |
-| `quantity` | number (double) | Hayir | nullable |
+| `quantity` | number (double) | Hayir | max=1000000; nullable |
 | `stockCode` | string | Evet | minLength=0; maxLength=25 |
 | `unitPointer` | integer (int32) | Hayir | min=1; max=255 |
 | `unitPrice` | number (double) | Hayir | min=0 |
