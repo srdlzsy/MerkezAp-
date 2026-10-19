@@ -33,6 +33,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     private const short FileId = 86;
     private const short MikroUserNo = 39;
     private const int GreenGrocerWarehouseNo = 56;
+    private const int StockCodeQueryBatchSize = 1000;
     private const int FirstDocumentOrderNo = 0;
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
     private const string OfflineOperationCode = "siparis-islemleri.verilen-depo-siparisleri.create";
@@ -77,19 +78,88 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             cancellationToken,
             verifyCompletedWithRecovery: true);
 
-    private Task<CreateIssuedWarehouseOrderResponse> ExecuteRoutedAsync(
+    private async Task<CreateIssuedWarehouseOrderResponse> ExecuteRoutedAsync(
         CreateIssuedWarehouseOrderRequest request,
         CancellationToken cancellationToken)
     {
-        return mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
+        await ValidateCentralWarehousePackageQuantitiesAsync(request, cancellationToken);
+
+        return await (mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
         {
             MikroWriteMode.Database => ExecuteDatabaseAsync(request, cancellationToken),
             MikroWriteMode.MikroApi => ExecuteMikroApiAsync(request, cancellationToken),
             MikroWriteMode.DualShadow => ExecuteDualShadowAsync(request, cancellationToken),
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
-        };
+        });
     }
+
+    private async Task ValidateCentralWarehousePackageQuantitiesAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.OutWarehouseNo != CentralWarehousePackageQuantityRule.WarehouseNo)
+        {
+            return;
+        }
+
+        var stockCodes = request.Lines
+            .Select(line => line.StockCode.Trim())
+            .Where(stockCode => stockCode.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var packageFactorByStockCode = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var stockCodeBatch in stockCodes.Chunk(StockCodeQueryBatchSize))
+        {
+            var stockPackageFactors = await mikroWriteDbContext.STOKLARs
+                .AsNoTracking()
+                .Where(stock => stockCodeBatch.Contains(stock.sto_kod) && stock.sto_iptal != true)
+                .Select(stock => new
+                {
+                    StockCode = stock.sto_kod,
+                    PackageFactor = stock.sto_birim2_katsayi ?? 0d
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var stockPackageFactor in stockPackageFactors)
+            {
+                packageFactorByStockCode[stockPackageFactor.StockCode.Trim()] =
+                    stockPackageFactor.PackageFactor;
+            }
+        }
+
+        foreach (var line in request.Lines)
+        {
+            var stockCode = line.StockCode.Trim();
+            if (!packageFactorByStockCode.TryGetValue(stockCode, out var packageFactor))
+            {
+                continue;
+            }
+
+            var violation = CentralWarehousePackageQuantityRule.Validate(
+                stockCode,
+                line.Quantity,
+                packageFactor);
+
+            if (violation is null)
+            {
+                continue;
+            }
+
+            var validQuantities = violation.LowerQuantity.HasValue
+                ? $"{FormatQuantity(violation.LowerQuantity.Value)} veya {FormatQuantity(violation.UpperQuantity)}"
+                : FormatQuantity(violation.UpperQuantity);
+
+            throw new ArgumentException(
+                $"Merkez depo siparisinde {violation.StockCode} stogu icin miktar koli katinda olmalidir. " +
+                $"Koli ici {FormatQuantity(violation.PackageFactor)}, girilen miktar {FormatQuantity(violation.Quantity)}. " +
+                $"En yakin gecerli miktar: {validQuantities}.",
+                nameof(request.Lines));
+        }
+    }
+
+    private static string FormatQuantity(double quantity) => quantity.ToString("0.######");
 
     private async Task<CreateIssuedWarehouseOrderResponse> ExecuteDatabaseAsync(
         CreateIssuedWarehouseOrderRequest request,

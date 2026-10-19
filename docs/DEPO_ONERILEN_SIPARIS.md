@@ -353,6 +353,8 @@ SET @SourceWarehouseNo = 58;
 - `sto_birim2_katsayi` 1'den buyukse miktar koli katina yukari yuvarlanir.
 - `sto_max_stok_belirleme_gun` doluysa onerilen miktar maksimum stok seviyesini asmayacak sekilde sinirlanir; koli kati korunur.
 - Kaynak depodaki stok daha azsa son miktar kaynak stokla sinirlanir; koli kati korunur.
+- Kaynak depo `50 MERKEZ DEPO` ise kullanicinin sonradan degistirdigi miktar da koli katinda kalmalidir. `convert-to-order` koli disi miktari Mikro yazimi baslamadan `400 Bad Request` ile reddeder.
+- Backend miktari sessizce yuvarlamaz. UI koli adedini ana giris olarak kullanir, toplam adedi hesaplar ve koli disi manuel giriste en yakin alt/ust gecerli miktarlari gosterir.
 - Sorgu read-only'dir; Mikro'ya veri yazmaz.
 - Acik siparis dusumu ayari:
 
@@ -457,7 +459,7 @@ UI tek sayfa akisi:
 2. Sayfa `GET /onerilen-depo-siparisleri` ile onerilen kalemleri getirir.
 3. Grid stok kodu, stok adi, barkod, hedef stok, kaynak stok, son satis, acik siparis,
    ihtiyac, koli katsayisi ve onerilen siparis miktarini gosterir.
-4. Kullanici satirlari secer ve gerekirse miktari duzenler.
+4. Kullanici satirlari secer ve gerekirse miktari duzenler. Kaynak depo `50` ve koli katsayisi `1`den buyukse miktar koli katinda kalir.
 5. Secilen satirlar `POST /convert-to-order` ile verilen depo siparisine cevrilir.
 
 `convert-to-order` body ornegi:
