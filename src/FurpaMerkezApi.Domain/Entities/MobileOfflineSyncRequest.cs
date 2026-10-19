@@ -164,6 +164,89 @@ public sealed class MobileOfflineSyncRequest
         Revision = Guid.NewGuid();
     }
 
+    public void PrepareForManualRecoveryCheck(
+        string checkingErrorCode,
+        string checkingMessage,
+        DateTime updatedAtUtc)
+    {
+        if (Status == MobileOfflineSyncRequestStatus.Completed ||
+            Status == MobileOfflineSyncRequestStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Completed or cancelled requests cannot be reviewed again.");
+        }
+
+        Status = MobileOfflineSyncRequestStatus.Failed;
+        ErrorCode = NormalizeRequired(checkingErrorCode, nameof(checkingErrorCode), 100);
+        ErrorMessage = NormalizeRequired(checkingMessage, nameof(checkingMessage), 1000);
+        Retryable = true;
+        ResponsePayload = null;
+        CompletedAtUtc = NormalizeUtc(updatedAtUtc);
+        UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
+    }
+
+    public void RestoreManualReview(
+        string errorCode,
+        string errorMessage,
+        DateTime updatedAtUtc)
+    {
+        if (Status == MobileOfflineSyncRequestStatus.Completed ||
+            Status == MobileOfflineSyncRequestStatus.Cancelled)
+        {
+            return;
+        }
+
+        Status = MobileOfflineSyncRequestStatus.Failed;
+        ErrorCode = NormalizeRequired(errorCode, nameof(errorCode), 100);
+        ErrorMessage = NormalizeRequired(errorMessage, nameof(errorMessage), 1000);
+        Retryable = false;
+        ResponsePayload = null;
+        CompletedAtUtc = NormalizeUtc(updatedAtUtc);
+        UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
+    }
+
+    public void AllowRetryAfterManualReview(
+        string errorCode,
+        string errorMessage,
+        DateTime updatedAtUtc)
+    {
+        if (Status == MobileOfflineSyncRequestStatus.Completed ||
+            Status == MobileOfflineSyncRequestStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Completed or cancelled requests cannot be reopened.");
+        }
+
+        Status = MobileOfflineSyncRequestStatus.Failed;
+        ErrorCode = NormalizeRequired(errorCode, nameof(errorCode), 100);
+        ErrorMessage = NormalizeRequired(errorMessage, nameof(errorMessage), 1000);
+        Retryable = true;
+        ResponsePayload = null;
+        CompletedAtUtc = NormalizeUtc(updatedAtUtc);
+        UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
+    }
+
+    public void CancelAfterManualReview(
+        string errorCode,
+        string message,
+        DateTime cancelledAtUtc)
+    {
+        if (Status == MobileOfflineSyncRequestStatus.Completed)
+        {
+            throw new InvalidOperationException("Completed requests cannot be cancelled.");
+        }
+
+        Status = MobileOfflineSyncRequestStatus.Cancelled;
+        ErrorCode = NormalizeRequired(errorCode, nameof(errorCode), 100);
+        ErrorMessage = NormalizeRequired(message, nameof(message), 1000);
+        Retryable = false;
+        ResponsePayload = null;
+        CompletedAtUtc = NormalizeUtc(cancelledAtUtc);
+        UpdatedAtUtc = CompletedAtUtc;
+        Revision = Guid.NewGuid();
+    }
+
     private static DateTime NormalizeUtc(DateTime value) =>
         DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
@@ -191,5 +274,6 @@ public enum MobileOfflineSyncRequestStatus
 {
     Processing = 1,
     Completed = 2,
-    Failed = 3
+    Failed = 3,
+    Cancelled = 4
 }

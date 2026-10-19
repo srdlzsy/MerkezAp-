@@ -7,6 +7,27 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.MalKabulIslemleri.MalKabul
 public sealed class CompanyReceivingIrsaliyeMikroApiPayloadFactoryTests
 {
     [Fact]
+    public void DatabaseCreateQueueTimeout_AllowsFiveMinutesForSerializedWrites()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(5), CreateCompanyReceivingUseCase.DatabaseCreateQueueTimeout);
+    }
+
+    [Theory]
+    [InlineData(-2, true)]
+    [InlineData(0, true)]
+    [InlineData(64, true)]
+    [InlineData(1205, true)]
+    [InlineData(1222, true)]
+    [InlineData(2601, false)]
+    [InlineData(2627, false)]
+    public void IsRetryableDatabaseSqlErrorNumber_ClassifiesOnlyTransientFailures(
+        int errorNumber,
+        bool expected)
+    {
+        Assert.Equal(expected, CreateCompanyReceivingUseCase.IsRetryableDatabaseSqlErrorNumber(errorNumber));
+    }
+
+    [Fact]
     public void CalculateTaxAmount_ReturnsRoundedTaxForPositiveAmount()
     {
         var taxAmount = CreateCompanyReceivingUseCase.CalculateTaxAmount(11935d, 1m);

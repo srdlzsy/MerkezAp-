@@ -128,6 +128,10 @@ internal static class StockMovementRecoveryMatcher
         OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
         OperationConflictMessages.MikroWriteOutcomeUnconfirmed, true);
 
+    internal static OperationConflictException Incomplete() => new(
+        OperationConflictErrorCodes.MikroDocumentIncomplete,
+        OperationConflictMessages.MikroDocumentIncomplete, true);
+
     private static bool NearlyEquals(double? actual, double expected) =>
         actual.HasValue && double.IsFinite(actual.Value) && Math.Abs(actual.Value - expected) <= 0.0001d;
 

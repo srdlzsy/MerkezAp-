@@ -972,6 +972,31 @@ public sealed class MobileOfflineSyncServiceTests
         Assert.False(record.Retryable);
     }
 
+    [Fact]
+    public async Task ReviewApprovedRetry_ProceedsWithTheSameRequestInsteadOfRemainingProcessing()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new TestRequest(56, 2);
+
+        var first = await AcquireAsync(service, userId, clientRequestId, request);
+        Assert.Equal(MobileOfflineSyncAcquireState.Proceed, first.State);
+
+        var record = await db.MobileOfflineSyncRequests.SingleAsync();
+        record.AllowRetryAfterManualReview(
+            OperationConflictErrorCodes.SafeWriteRetryAllowed,
+            OperationConflictMessages.SafeWriteRetryAllowed,
+            Now.AddMinutes(1));
+        await db.SaveChangesAsync();
+
+        var retry = await AcquireAsync(service, userId, clientRequestId, request);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Proceed, retry.State);
+        Assert.Equal(MobileOfflineSyncRequestStatus.Processing, record.Status);
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()

@@ -1,6 +1,8 @@
 using System.ServiceModel;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Common.Errors;
+using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
 using FurpaMerkezApi.WebApi.Security;
 
@@ -100,6 +102,12 @@ public sealed class ExceptionHandlingMiddleware(
         {
             logger.LogInformation(exception, "The client aborted the request.");
         }
+        catch (ConnectionResetException exception)
+        {
+            logger.LogInformation(
+                exception,
+                "The client connection was reset before the request could be completed.");
+        }
         catch (Exception exception)
         {
             logger.LogError(exception, "An unexpected error occurred.");
@@ -144,6 +152,9 @@ public sealed class ExceptionHandlingMiddleware(
         if (!string.IsNullOrWhiteSpace(errorCode))
         {
             problemDetails.Extensions["errorCode"] = errorCode;
+            var clientDecision = SafeWriteClientContract.Resolve("Failed", errorCode, retryable);
+            problemDetails.Extensions["recoveryState"] = clientDecision.RecoveryState;
+            problemDetails.Extensions["recommendedAction"] = clientDecision.RecommendedAction;
         }
 
         if (retryable.HasValue)

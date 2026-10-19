@@ -11,6 +11,7 @@ using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -49,7 +50,7 @@ public sealed class CreateCompanyReceivingUseCase(
     private const string ReturnEDespatchStatusNone = "Yok";
     private const string ReturnEDespatchStatusPending = "GonderimBekliyor";
     private const string IrsaliyeKaydetPath = "/Api/apiMethods/IrsaliyeKaydetV2";
-    private static readonly TimeSpan DatabaseCreateQueueTimeout = TimeSpan.FromSeconds(180);
+    internal static readonly TimeSpan DatabaseCreateQueueTimeout = TimeSpan.FromSeconds(300);
     private static readonly DateTime MikroEmptyDate = new(1899, 12, 30);
 
     public async Task<CreateCompanyReceivingResponse> ExecuteAsync(
@@ -59,6 +60,8 @@ public sealed class CreateCompanyReceivingUseCase(
         request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
         var writeMode = mikroWriteRoutingOptions.CurrentValue.CompanyReceiving;
+        using var durableExecutionTimeout = DurableCreateExecution.CreateTimeout();
+        var durableCancellationToken = durableExecutionTimeout.Token;
 
         if (request.ClientRequestId.HasValue)
         {
@@ -73,7 +76,7 @@ public sealed class CreateCompanyReceivingUseCase(
                     request.ClientRequestId.Value,
                     storedRequestPayload,
                     innerCancellationToken),
-                cancellationToken,
+                durableCancellationToken,
                 preventReexecutionAfterUncertainOutcome: true,
                 verifyCompletedWithRecovery: true,
                 recentCompletedDuplicateWindow: OfflineCreateGuard.RecentCompletedDuplicateWindow,
@@ -92,9 +95,9 @@ public sealed class CreateCompanyReceivingUseCase(
                     retryable: true);
             }
 
-            // The durable request record is now the owner of this write. A terminal or
-            // network disconnect must not abort the transaction mid-flight.
-            cancellationToken = CancellationToken.None;
+            // ASP.NET has received the complete body. The durable request now owns this
+            // bounded operation even if the terminal connection is lost.
+            cancellationToken = durableCancellationToken;
         }
 
         if (writeMode == MikroWriteMode.MikroApi)
@@ -120,6 +123,7 @@ public sealed class CreateCompanyReceivingUseCase(
             : string.Empty;
         var totalStopwatch = Stopwatch.StartNew();
         var phaseStartedAt = Stopwatch.GetTimestamp();
+        var databaseWriteOutcomeMayExist = false;
 
         void LogCreatePhase(string phase, string documentSerie, int? documentOrderNo, int movementCount, int returnMovementCount)
         {
@@ -150,6 +154,7 @@ public sealed class CreateCompanyReceivingUseCase(
                 cancellationToken);
             var writeResult = await executionStrategy.ExecuteAsync(async () =>
             {
+                databaseWriteOutcomeMayExist = false;
                 mikroWriteDbContext.ChangeTracker.Clear();
                 var lineTaxInfos = await LoadLineTaxInfosAsync(lines, cancellationToken);
                 LogCreatePhase("line-tax-info-lookup", "-", null, 0, 0);
@@ -429,6 +434,9 @@ public sealed class CreateCompanyReceivingUseCase(
                         documentOrderNo,
                         movements.Count,
                         returnMovements.Count);
+                    // A connection failure from this point can leave the commit result
+                    // uncertain. Only a successful rollback may make a retry safe again.
+                    databaseWriteOutcomeMayExist = true;
                     await transaction.CommitAsync(cancellationToken);
                     LogCreatePhase("commit", documentSerie, documentOrderNo, movements.Count, returnMovements.Count);
 
@@ -464,7 +472,17 @@ public sealed class CreateCompanyReceivingUseCase(
                 }
                 catch
                 {
-                    await transaction.RollbackAsync(CancellationToken.None);
+                    try
+                    {
+                        await transaction.RollbackAsync(CancellationToken.None);
+                        databaseWriteOutcomeMayExist = false;
+                    }
+                    catch
+                    {
+                        databaseWriteOutcomeMayExist = true;
+                        throw;
+                    }
+
                     throw;
                 }
             });
@@ -493,16 +511,80 @@ public sealed class CreateCompanyReceivingUseCase(
         }
         catch (Exception exception)
         {
+            var reportedException = !databaseWriteOutcomeMayExist && IsRetryableDatabaseFailure(exception)
+                ? new OperationConflictException(
+                    OperationConflictErrorCodes.MikroWriteQueueBusy,
+                    OperationConflictMessages.MikroWriteQueueBusy,
+                    retryable: true,
+                    innerException: exception)
+                : exception;
+
             if (request.ClientRequestId.HasValue)
             {
                 await TryMarkFailedAsync(
                     request.RequestedByUserId,
                     request.ClientRequestId.Value,
-                    exception);
+                    reportedException);
+            }
+
+            if (!ReferenceEquals(reportedException, exception))
+            {
+                throw reportedException;
             }
 
             throw;
         }
+    }
+
+    internal static bool IsRetryableDatabaseSqlErrorNumber(int errorNumber) =>
+        errorNumber is
+            -2 or
+            0 or
+            2 or
+            20 or
+            53 or
+            64 or
+            121 or
+            233 or
+            1205 or
+            1222 or
+            10053 or
+            10054 or
+            10060 or
+            10061 or
+            10928 or
+            10929 or
+            40197 or
+            40501 or
+            40613 or
+            49918 or
+            49919 or
+            49920;
+
+    private static bool IsRetryableDatabaseFailure(Exception exception)
+    {
+        if (exception is OperationConflictException)
+        {
+            return false;
+        }
+
+        if (WriteTimeoutClassifier.IsTimeout(exception))
+        {
+            return true;
+        }
+
+        if (exception is SqlException sqlException &&
+            sqlException.Errors.Cast<SqlError>().Any(error => IsRetryableDatabaseSqlErrorNumber(error.Number)))
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregateException)
+        {
+            return aggregateException.InnerExceptions.Any(IsRetryableDatabaseFailure);
+        }
+
+        return exception.InnerException is not null && IsRetryableDatabaseFailure(exception.InnerException);
     }
 
     private async Task<IAsyncDisposable> AcquireDatabaseCreateLockAsync(
@@ -2356,6 +2438,11 @@ public sealed class CreateCompanyReceivingUseCase(
         }
 
         var match = CompanyReceivingRecoveryMatcher.Match(request, movementRows);
+        if (match == StockMovementMatch.Incomplete)
+        {
+            throw StockMovementRecoveryMatcher.Incomplete();
+        }
+
         if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(match, waitForIncomplete: true))
         {
             return null;

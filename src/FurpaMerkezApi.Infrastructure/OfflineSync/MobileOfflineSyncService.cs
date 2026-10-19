@@ -17,7 +17,9 @@ public sealed class MobileOfflineSyncService(
 {
     private const int StatusRetryAfterSeconds = 5;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly TimeSpan ProcessingLeaseTimeout = TimeSpan.FromMinutes(5);
+    // Durable create owns the request for ten minutes. The lease must not expire
+    // while that bounded server-side execution can still be running.
+    private static readonly TimeSpan ProcessingLeaseTimeout = DurableCreateExecution.Timeout + TimeSpan.FromMinutes(2);
     private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(180);
 
     internal async Task<MobileOfflineSyncAcquireResult<TResponse>> AcquireAsync<TRequest, TResponse>(
@@ -280,10 +282,16 @@ public sealed class MobileOfflineSyncService(
             }
         }
 
+        var externalStatus = record.Status.ToExternalValue();
+        var clientDecision = SafeWriteClientContract.Resolve(
+            externalStatus,
+            record.ErrorCode,
+            record.Retryable);
+
         return new OfflineSyncStatusDto<TResponse>(
             clientRequestId,
             record.OperationCode,
-            record.Status.ToExternalValue(),
+            externalStatus,
             record.CreatedAtUtc,
             record.CompletedAtUtc,
             OperationConflictMessages.Resolve(record.ErrorCode, record.ErrorMessage),
@@ -292,7 +300,9 @@ public sealed class MobileOfflineSyncService(
             record.Status == MobileOfflineSyncRequestStatus.Processing || record.Retryable == true
                 ? StatusRetryAfterSeconds
                 : null,
-            result);
+            result,
+            clientDecision.RecoveryState,
+            clientDecision.RecommendedAction);
     }
 
     private static string NormalizeClientRequestId(Guid clientRequestId) =>
@@ -367,7 +377,9 @@ public sealed class MobileOfflineSyncService(
 
         if (preventReexecutionAfterUncertainOutcome &&
             (existing.Status == MobileOfflineSyncRequestStatus.Processing ||
-             existing.ErrorCode is OperationConflictErrorCodes.MikroWriteInProgress or OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed ||
+             existing.ErrorCode is OperationConflictErrorCodes.MikroWriteInProgress or
+                 OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed or
+                 OperationConflictErrorCodes.MikroDocumentIncomplete ||
              IsUncertainWriteOutcome(existing.ErrorMessage)))
         {
             return MobileOfflineSyncAcquireResult<TResponse>.Processing();
@@ -791,6 +803,7 @@ internal static class MobileOfflineSyncRequestStatusExtensions
             MobileOfflineSyncRequestStatus.Processing => "Processing",
             MobileOfflineSyncRequestStatus.Completed => "Completed",
             MobileOfflineSyncRequestStatus.Failed => "Failed",
+            MobileOfflineSyncRequestStatus.Cancelled => "Cancelled",
             _ => status.ToString()
         };
 }

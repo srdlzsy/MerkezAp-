@@ -35,6 +35,9 @@ internal static class OfflineCreateGuard
             throw new ArgumentException("Requested by user id is required when clientRequestId is provided.", nameof(requestedByUserId));
         }
 
+        using var durableExecutionTimeout = DurableCreateExecution.CreateTimeout();
+        var durableCancellationToken = durableExecutionTimeout.Token;
+
         var acquireResult = await mobileOfflineSyncService.AcquireAsync<TRequest, TResponse>(
             operationCode,
             requestedByUserId.Value,
@@ -42,7 +45,7 @@ internal static class OfflineCreateGuard
             clientRequestId.Value,
             requestPayload,
             recoverAsync,
-            cancellationToken,
+            durableCancellationToken,
             preventReexecutionAfterUncertainOutcome,
             verifyCompletedWithRecovery,
             RecentCompletedDuplicateWindow,
@@ -63,10 +66,9 @@ internal static class OfflineCreateGuard
 
         try
         {
-            // Once a durable idempotency record exists, a dropped HTTP connection must
-            // not cancel the business write. Database and upstream command timeouts still
-            // bound the operation, and the stored result can be recovered by the client.
-            var response = await executeAsync(CancellationToken.None);
+            // Action execution means ASP.NET has received and bound the complete body.
+            // From this point the durable request owns the bounded business operation.
+            var response = await executeAsync(durableCancellationToken);
             using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await mobileOfflineSyncService.CompleteAsync(
                 operationCode,
