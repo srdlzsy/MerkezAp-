@@ -91,6 +91,8 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 - Mikro yazimi baslamamistir.
 - Ayni form acik ve duzenlenebilir kalir.
 - Alan hatasi ilgili input yaninda gosterilir.
+- Create satirlarindaki gercek miktar alanlari en fazla `100000` olabilir. Barkod veya baska uzun bir sayi miktar alanina okutulursa API guvenli yazma rezervasyonu ya da Mikro yazimi baslatmadan `400 Bad Request` doner.
+- UI miktar alaninda `100000` ustunu yerelde de engeller; yine de backend kontrolu asil guvenlik siniridir.
 - Kullanici duzelttikten sonra bu yeni kaydetme denemesi icin snapshot yeniden alinir.
 
 ### 401
