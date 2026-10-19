@@ -43,7 +43,7 @@ public sealed class CreateCompanyMovementLineHttpRequest
     [StringLength(25)]
     public string StockCode { get; init; } = string.Empty;
 
-    [Range(0.000001, double.MaxValue)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double Quantity { get; init; }
 
     [Range(0, double.MaxValue)]

@@ -28,7 +28,7 @@ public sealed class CreateInventoryCountLineHttpRequest
     [StringLength(25)]
     public string StockCode { get; init; } = string.Empty;
 
-    [Range(0, double.MaxValue)]
+    [Range(0, CreateQuantityLimits.Maximum)]
     public double Quantity { get; init; }
 
     [StringLength(50)]

@@ -224,7 +224,7 @@ public sealed class GreenGrocerOperationsAdjustmentLineHttpRequest
     [StringLength(25)]
     public string? StockCode { get; init; }
 
-    [Range(0.0001d, double.MaxValue)]
+    [Range(0.0001d, CreateQuantityLimits.Maximum)]
     public double Quantity { get; init; }
 
     [Range(1, byte.MaxValue)]

@@ -177,6 +177,6 @@ public sealed class AcceptWarehouseReceivingLineHttpRequest
 {
     public Guid MovementGuid { get; init; }
 
-    [Range(0, double.MaxValue)]
+    [Range(0, CreateQuantityLimits.Maximum)]
     public double ReceivedQuantity { get; init; }
 }

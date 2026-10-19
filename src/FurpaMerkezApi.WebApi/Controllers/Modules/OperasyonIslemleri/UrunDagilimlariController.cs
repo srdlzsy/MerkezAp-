@@ -215,13 +215,13 @@ public sealed class ProductDistributionProposalHttpRequest
     [Range(1, int.MaxValue)]
     public int DistributionCenterWarehouseNo { get; init; }
 
-    [Range(1, int.MaxValue)]
+    [Range(1, CreateQuantityLimits.MaximumInteger)]
     public int? TotalCaseQuantity { get; init; }
 
-    [Range(1, int.MaxValue)]
+    [Range(1, CreateQuantityLimits.MaximumInteger)]
     public int? TargetCaseQuantity { get; init; }
 
-    [Range(1, int.MaxValue)]
+    [Range(1, CreateQuantityLimits.MaximumInteger)]
     public int? AllocatedCaseQuantity { get; init; }
 
     [Range(1, 365)]
@@ -239,7 +239,7 @@ public sealed class ProductDistributionBalanceHttpRequest
     [StringLength(25)]
     public string StockCode { get; init; } = string.Empty;
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int TargetCaseQuantity { get; init; }
 
     [Range(1, 365)]
@@ -273,7 +273,7 @@ public sealed class ProductDistributionBalanceLineHttpRequest
 
     public double BranchAverageDailySales { get; init; }
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int CaseQuantity { get; init; }
 
     public bool IsLocked { get; init; }
@@ -309,13 +309,13 @@ public sealed class ProductDistributionSaveHttpRequest
     [Range(1, int.MaxValue)]
     public int DistributionCenterWarehouseNo { get; init; }
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int TotalCaseQuantity { get; init; }
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int? TargetCaseQuantity { get; init; }
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int? AllocatedCaseQuantity { get; init; }
 
     [StringLength(100)]
@@ -333,10 +333,10 @@ public sealed class ProductDistributionSaveLineHttpRequest
     [Range(1, int.MaxValue)]
     public int WarehouseNo { get; init; }
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int CaseQuantity { get; init; }
 
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int? UnitQuantity { get; init; }
 
     [Range(0, double.MaxValue)]

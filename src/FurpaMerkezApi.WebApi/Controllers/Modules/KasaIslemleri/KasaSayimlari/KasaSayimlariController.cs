@@ -830,7 +830,7 @@ public sealed class CreateGiftCheckMovementHttpRequest
     public int? GiftCheckType { get; init; }
 
     [Required]
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int? Quantity { get; init; }
 
     public double Total { get; init; }
@@ -845,7 +845,7 @@ public sealed class CreateBanknoteMovementHttpRequest
     public int? BanknoteType { get; init; }
 
     [Required]
-    [Range(0, int.MaxValue)]
+    [Range(0, CreateQuantityLimits.MaximumInteger)]
     public int? Quantity { get; init; }
 
     public double Total { get; init; }

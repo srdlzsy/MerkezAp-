@@ -36,7 +36,7 @@ public sealed class CreateVirmanLineHttpRequest
     [Range(0, byte.MaxValue)]
     public int MovementType { get; init; }
 
-    [Range(0.000001, double.MaxValue)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double Quantity { get; init; }
 
     [Range(1, byte.MaxValue)]

@@ -644,6 +644,8 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 throw new ArgumentException("Line quantity must be greater than zero.", nameof(request.Lines));
             }
 
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.Lines));
+
             if (line.UnitPrice < 0)
             {
                 throw new ArgumentException("Line unit price can not be negative.", nameof(request.Lines));
@@ -657,6 +659,11 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             if (line.RecommendedQuantity is < 0)
             {
                 throw new ArgumentException("Line recommended quantity can not be negative.", nameof(request.Lines));
+            }
+
+            if (line.RecommendedQuantity.HasValue)
+            {
+                CreateQuantityLimits.EnsureWithinMaximum(line.RecommendedQuantity.Value, nameof(request.Lines));
             }
         }
     }

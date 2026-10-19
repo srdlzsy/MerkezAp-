@@ -1152,6 +1152,8 @@ public sealed class CreateWarehouseReturnUseCase(
                 throw new ArgumentException("Line quantity must be greater than zero.", nameof(request.Lines));
             }
 
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.Lines));
+
             if (line.UnitPrice < 0)
             {
                 throw new ArgumentException("Line unit price can not be negative.", nameof(request.Lines));

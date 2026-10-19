@@ -42,7 +42,6 @@ public sealed class CreateCompanyReceivingUseCase(
     private const byte NormalOrderGenre = 0;
     private const int FirstDocumentOrderNo = 1;
     private const int MaxDocumentSerieLength = 20;
-    private const double MaxLineQuantity = 1_000_000d;
     private const double QuantityTolerance = 0.000001d;
     private const string OfflineOperationCode = "mal-kabul-islemleri.firma-mal-kabulleri.create";
     private const string ReturnStatusNone = "Yok";
@@ -2296,17 +2295,14 @@ public sealed class CreateCompanyReceivingUseCase(
             var dispatchQuantity = ResolveDispatchQuantity(line);
             var physicalAcceptedQuantity = ResolvePhysicalAcceptedQuantity(line);
 
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.Lines));
+
             if (dispatchQuantity <= QuantityTolerance)
             {
                 throw new ArgumentException("Line dispatch quantity must be greater than zero.", nameof(request.Lines));
             }
 
-            if (dispatchQuantity > MaxLineQuantity)
-            {
-                throw new ArgumentException(
-                    $"Line dispatch quantity can not exceed {MaxLineQuantity:0}.",
-                    nameof(request.Lines));
-            }
+            CreateQuantityLimits.EnsureWithinMaximum(dispatchQuantity, nameof(request.Lines));
 
             if (physicalAcceptedQuantity < -QuantityTolerance)
             {
@@ -2320,12 +2316,7 @@ public sealed class CreateCompanyReceivingUseCase(
                     nameof(request.Lines));
             }
 
-            if (physicalAcceptedQuantity > MaxLineQuantity)
-            {
-                throw new ArgumentException(
-                    $"Line accepted quantity can not exceed {MaxLineQuantity:0}.",
-                    nameof(request.Lines));
-            }
+            CreateQuantityLimits.EnsureWithinMaximum(physicalAcceptedQuantity, nameof(request.Lines));
 
             if (line.UnitPrice < 0)
             {

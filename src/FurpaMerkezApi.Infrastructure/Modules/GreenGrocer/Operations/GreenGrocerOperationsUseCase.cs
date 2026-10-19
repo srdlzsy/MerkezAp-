@@ -1368,6 +1368,8 @@ public sealed class GreenGrocerOperationsUseCase(
                     throw new ArgumentException("Line quantity must be greater than zero.", nameof(lines));
                 }
 
+                CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(lines));
+
                 if (line.UnitPointer is < 1 or > byte.MaxValue)
                 {
                     throw new ArgumentException("Line unit pointer must be between 1 and 255.", nameof(lines));

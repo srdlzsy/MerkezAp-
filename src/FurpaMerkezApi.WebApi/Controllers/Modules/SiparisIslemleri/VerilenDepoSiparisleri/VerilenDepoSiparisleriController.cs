@@ -209,10 +209,10 @@ public sealed class CreateIssuedWarehouseOrderLineHttpRequest
     [StringLength(25)]
     public string StockCode { get; init; } = string.Empty;
 
-    [Range(0.000001, double.MaxValue)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double Quantity { get; init; }
 
-    [Range(0, double.MaxValue)]
+    [Range(0, CreateQuantityLimits.Maximum)]
     public double? RecommendedQuantity { get; init; }
 
     [Range(0, double.MaxValue)]
@@ -238,7 +238,7 @@ public sealed class CreateIssuedWarehouseOrderLineHttpRequest
 
 public sealed class GreenGrocerOrderLineSnapshotHttpRequest
 {
-    [Range(0.000001, double.MaxValue)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double InputQuantity { get; init; }
 
     [Required]
@@ -253,7 +253,7 @@ public sealed class GreenGrocerOrderLineSnapshotHttpRequest
     [StringLength(20)]
     public string MicroUnit { get; init; } = string.Empty;
 
-    [Range(0.000001, double.MaxValue)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double EstimatedQuantity { get; init; }
 
     [Range(0.000001, double.MaxValue)]

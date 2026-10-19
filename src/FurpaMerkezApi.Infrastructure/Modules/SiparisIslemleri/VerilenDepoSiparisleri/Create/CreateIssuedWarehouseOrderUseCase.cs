@@ -814,6 +814,8 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 throw new ArgumentException("Line quantity must be greater than zero.", nameof(request.Lines));
             }
 
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.Lines));
+
             if (line.UnitPrice < 0)
             {
                 throw new ArgumentException("Line unit price can not be negative.", nameof(request.Lines));
@@ -827,6 +829,11 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             if (line.RecommendedQuantity is < 0)
             {
                 throw new ArgumentException("Line recommended quantity can not be negative.", nameof(request.Lines));
+            }
+
+            if (line.RecommendedQuantity.HasValue)
+            {
+                CreateQuantityLimits.EnsureWithinMaximum(line.RecommendedQuantity.Value, nameof(request.Lines));
             }
 
             if (line.GreenGrocerCase is not null)
@@ -845,10 +852,14 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             throw new ArgumentException("Green grocer input quantity must be greater than zero.");
         }
 
+        CreateQuantityLimits.EnsureWithinMaximum(snapshot.InputQuantity, nameof(snapshot.InputQuantity));
+
         if (snapshot.EstimatedQuantity <= 0)
         {
             throw new ArgumentException("Green grocer estimated quantity must be greater than zero.");
         }
+
+        CreateQuantityLimits.EnsureWithinMaximum(snapshot.EstimatedQuantity, nameof(snapshot.EstimatedQuantity));
 
         if (Math.Abs(snapshot.EstimatedQuantity - lineQuantity) > 0.0001d)
         {

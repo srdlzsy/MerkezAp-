@@ -509,13 +509,13 @@ public sealed class CreateCompanyReceivingLineHttpRequest
     [StringLength(25)]
     public string StockCode { get; init; } = string.Empty;
 
-    [Range(0.000001, 1_000_000d)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double? Quantity { get; init; }
 
-    [Range(0.000001, 1_000_000d)]
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
     public double? DispatchQuantity { get; init; }
 
-    [Range(0, 1_000_000d)]
+    [Range(0, CreateQuantityLimits.Maximum)]
     public double? AcceptedQuantity { get; init; }
 
     [Range(0, double.MaxValue)]

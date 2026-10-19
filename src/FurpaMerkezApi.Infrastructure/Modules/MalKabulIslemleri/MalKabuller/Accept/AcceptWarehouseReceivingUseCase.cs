@@ -444,6 +444,11 @@ public sealed class AcceptWarehouseReceivingUseCase(
         {
             throw new ArgumentException("Received quantity can not be negative.", nameof(request.Lines));
         }
+
+        foreach (var line in request.Lines)
+        {
+            CreateQuantityLimits.EnsureWithinMaximum(line.ReceivedQuantity, nameof(request.Lines));
+        }
     }
 
     private static string ResolveDifferenceType(double differenceQuantity)

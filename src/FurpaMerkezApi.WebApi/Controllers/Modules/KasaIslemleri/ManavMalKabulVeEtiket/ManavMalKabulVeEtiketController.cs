@@ -457,6 +457,7 @@ public sealed class ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineHttpRequest
     [StringLength(25)]
     public string StockCode { get; init; } = string.Empty;
 
+    [Range(0.000001d, CreateQuantityLimits.Maximum)]
     public decimal Quantity { get; init; }
 
     public decimal UnitPrice { get; init; }

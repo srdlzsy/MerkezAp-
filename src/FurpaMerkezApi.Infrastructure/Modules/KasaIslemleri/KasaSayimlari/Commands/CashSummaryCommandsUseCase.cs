@@ -1083,6 +1083,16 @@ public sealed class CashSummaryCommandsUseCase(
         {
             throw new ArgumentException("At least one summary detail line is required.");
         }
+
+        foreach (var line in request.BanknoteMovements)
+        {
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.BanknoteMovements));
+        }
+
+        foreach (var line in request.GiftCheckMovements)
+        {
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.GiftCheckMovements));
+        }
     }
 
     private static void Validate(UpdateCashSummaryDetailsRequest request)

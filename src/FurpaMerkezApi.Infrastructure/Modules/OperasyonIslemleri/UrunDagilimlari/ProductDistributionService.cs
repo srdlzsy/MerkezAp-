@@ -1113,6 +1113,8 @@ public sealed class ProductDistributionService(
                 throw new ArgumentException("Dagilim koli miktari negatif olamaz.", nameof(request.Lines));
             }
 
+            CreateQuantityLimits.EnsureWithinMaximum(line.CaseQuantity, nameof(request.Lines));
+
             if (!warehouses.TryGetValue(line.WarehouseNo, out var warehouse))
             {
                 throw new KeyNotFoundException($"Sube/depo bulunamadi: {line.WarehouseNo}");
@@ -1123,6 +1125,8 @@ public sealed class ProductDistributionService(
             {
                 throw new ArgumentException("Dagilim adet miktari negatif olamaz.", nameof(request.Lines));
             }
+
+            CreateQuantityLimits.EnsureWithinMaximum(unitQuantity, nameof(request.Lines));
 
             preparedLines.Add(new PreparedSaveLine(
                 ParseRegionNo(warehouse.RegionCode),
@@ -2000,6 +2004,8 @@ public sealed class ProductDistributionService(
         {
             throw new ArgumentException("Toplam koli miktari sifirdan buyuk olmalidir.", nameof(request.TotalCaseQuantity));
         }
+
+        CreateQuantityLimits.EnsureWithinMaximum(request.TotalCaseQuantity, nameof(request.TotalCaseQuantity));
     }
 
 
@@ -2014,6 +2020,8 @@ public sealed class ProductDistributionService(
         {
             throw new ArgumentException("Hedef koli miktari negatif olamaz.", nameof(request.TargetCaseQuantity));
         }
+
+        CreateQuantityLimits.EnsureWithinMaximum(request.TargetCaseQuantity, nameof(request.TargetCaseQuantity));
 
         if (request.Lines is null || request.Lines.Count == 0)
         {
@@ -2031,6 +2039,8 @@ public sealed class ProductDistributionService(
             {
                 throw new ArgumentException("Dagilim koli miktari negatif olamaz.", nameof(request.Lines));
             }
+
+            CreateQuantityLimits.EnsureWithinMaximum(line.CaseQuantity, nameof(request.Lines));
         }
     }
     private static void ValidateSaveRequest(ProductDistributionSaveRequest request)
@@ -2050,9 +2060,16 @@ public sealed class ProductDistributionService(
             throw new ArgumentException("Toplam koli miktari negatif olamaz.", nameof(request.TotalCaseQuantity));
         }
 
+        CreateQuantityLimits.EnsureWithinMaximum(request.TotalCaseQuantity, nameof(request.TotalCaseQuantity));
+
         if (request.TargetCaseQuantity is < 0)
         {
             throw new ArgumentException("Hedef koli miktari negatif olamaz.", nameof(request.TargetCaseQuantity));
+        }
+
+        if (request.TargetCaseQuantity.HasValue)
+        {
+            CreateQuantityLimits.EnsureWithinMaximum(request.TargetCaseQuantity.Value, nameof(request.TargetCaseQuantity));
         }
 
         if (request.AllocatedCaseQuantity is < 0)
@@ -2060,9 +2077,23 @@ public sealed class ProductDistributionService(
             throw new ArgumentException("Dagitilan koli miktari negatif olamaz.", nameof(request.AllocatedCaseQuantity));
         }
 
+        if (request.AllocatedCaseQuantity.HasValue)
+        {
+            CreateQuantityLimits.EnsureWithinMaximum(request.AllocatedCaseQuantity.Value, nameof(request.AllocatedCaseQuantity));
+        }
+
         if (request.Lines is null || request.Lines.Count == 0)
         {
             throw new ArgumentException("En az bir dagilim satiri zorunludur.", nameof(request.Lines));
+        }
+
+        foreach (var line in request.Lines)
+        {
+            CreateQuantityLimits.EnsureWithinMaximum(line.CaseQuantity, nameof(request.Lines));
+            if (line.UnitQuantity.HasValue)
+            {
+                CreateQuantityLimits.EnsureWithinMaximum(line.UnitQuantity.Value, nameof(request.Lines));
+            }
         }
     }
 

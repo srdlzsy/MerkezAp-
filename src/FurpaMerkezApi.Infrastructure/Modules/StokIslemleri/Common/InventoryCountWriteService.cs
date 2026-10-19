@@ -485,6 +485,8 @@ public sealed class InventoryCountWriteService(
                 throw new ArgumentException("Line quantity can not be negative.", nameof(request.Lines));
             }
 
+            CreateQuantityLimits.EnsureWithinMaximum(line.Quantity, nameof(request.Lines));
+
             if (line.UnitPointer is < 1 or > byte.MaxValue)
             {
                 throw new ArgumentException("Line unit pointer must be between 1 and 255.", nameof(request.Lines));
