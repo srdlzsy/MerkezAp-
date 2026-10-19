@@ -40,6 +40,8 @@ public static class SafeWriteClientContract
             OperationConflictErrorCodes.SafeWriteRetryAllowed => ("Missing", "RetrySameRequest"),
             OperationConflictErrorCodes.MikroDocumentIncomplete => ("Incomplete", "WaitAndCheck"),
             OperationConflictErrorCodes.MikroDocumentContentMismatch => ("Mismatch", "RecheckExisting"),
+            OperationConflictErrorCodes.MikroDocumentIdentityConflict => ("NotStarted", "EditAndRetry"),
+            OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived => ("ExistingDocument", "RefreshList"),
             OperationConflictErrorCodes.ClientRequestPayloadMismatch => ("RequestChanged", "RestoreOriginalRequest"),
             OperationConflictErrorCodes.SafeWriteReviewChecking => ("Checking", "WaitAndCheck"),
             OperationConflictErrorCodes.MikroWriteInProgress => ("Checking", "WaitAndCheck"),

@@ -17,6 +17,12 @@ public static class OperationConflictMessages
     public const string MikroDocumentContentMismatch =
         "Mikro'daki belge ile gonderilen kaydin satirlari eslesmiyor. Yalniz bu kaydi tekrar gondermeyin ve yetkili incelemesine alin; modulun diger islemlerini kilitlemeyin.";
 
+    public const string MikroDocumentIdentityConflict =
+        "Bu belge seri ve sira numarasi Mikro'da zaten kullaniliyor. Bu denemede yeni evrak yazimi baslamadi. Seri veya sira numarasini degistirip yeniden kaydedin.";
+
+    public const string MikroOfficialDocumentAlreadyReceived =
+        "Secilen cari ve resmi belge numarasiyla firma mal kabul kaydi zaten mevcut. Bu denemede yeni evrak yazimi baslamadi. Ikinci kaydi olusturmayin; mal kabul listesini yenileyip mevcut evraki kontrol edin.";
+
     public const string ClientRequestPayloadMismatch =
         "Ayni istek kimligi farkli bir kayit icerigiyle kullanilmis. Bekleyen kaydi degistirmeyin; yalniz gercekten yeni bir islem baslatacaksaniz yeni kayit olusturun.";
 
@@ -34,6 +40,8 @@ public static class OperationConflictMessages
             OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed => MikroWriteOutcomeUnconfirmed,
             OperationConflictErrorCodes.MikroDocumentIncomplete => MikroDocumentIncomplete,
             OperationConflictErrorCodes.MikroDocumentContentMismatch => MikroDocumentContentMismatch,
+            OperationConflictErrorCodes.MikroDocumentIdentityConflict => MikroDocumentIdentityConflict,
+            OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived => MikroOfficialDocumentAlreadyReceived,
             OperationConflictErrorCodes.ClientRequestPayloadMismatch => ClientRequestPayloadMismatch,
             OperationConflictErrorCodes.SafeWriteRetryAllowed => SafeWriteRetryAllowed,
             OperationConflictErrorCodes.SafeWriteCancelled => SafeWriteCancelled,

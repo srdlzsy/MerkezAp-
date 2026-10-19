@@ -1509,8 +1509,10 @@ public sealed class CreateCompanyReceivingUseCase(
 
         if (exists)
         {
-            throw new InvalidOperationException(
-                "Secilen cari ve resmi belge numarasiyla firma mal kabul kaydi zaten mevcut. Yeni belge olusturulmadi; listeyi yenileyin.");
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived,
+                OperationConflictMessages.MikroOfficialDocumentAlreadyReceived,
+                retryable: false);
         }
     }
 
@@ -1532,8 +1534,10 @@ public sealed class CreateCompanyReceivingUseCase(
 
         if (exists)
         {
-            throw new InvalidOperationException(
-                "Firma mal kabul belgesi kimligi zaten mevcut. Belge seri ve sira numarasi tum depolar genelinde benzersiz olmalidir.");
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+                OperationConflictMessages.MikroDocumentIdentityConflict,
+                retryable: false);
         }
     }
 
