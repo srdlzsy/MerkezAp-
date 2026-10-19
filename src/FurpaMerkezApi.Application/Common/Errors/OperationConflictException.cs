@@ -23,6 +23,9 @@ public static class OperationConflictErrorCodes
     public const string MikroDocumentContentMismatch = "MIKRO_DOCUMENT_CONTENT_MISMATCH";
     public const string MikroDocumentIdentityConflict = "MIKRO_DOCUMENT_IDENTITY_CONFLICT";
     public const string MikroOfficialDocumentAlreadyReceived = "MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED";
+    public const string WarehouseOrderLineClosed = "WAREHOUSE_ORDER_LINE_CLOSED";
+    public const string CreateReferenceNotFound = "CREATE_REFERENCE_NOT_FOUND";
+    public const string MikroBusinessRuleRejected = "MIKRO_BUSINESS_RULE_REJECTED";
     public const string ClientRequestPayloadMismatch = "CLIENT_REQUEST_PAYLOAD_MISMATCH";
     public const string SafeWriteRetryAllowed = "SAFE_WRITE_RETRY_ALLOWED";
     public const string SafeWriteCancelled = "SAFE_WRITE_CANCELLED";

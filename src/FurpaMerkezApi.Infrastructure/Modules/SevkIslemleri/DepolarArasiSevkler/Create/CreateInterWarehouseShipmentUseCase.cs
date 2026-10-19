@@ -71,7 +71,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true,
-            verifyCompletedWithRecovery: true);
+            verifyCompletedWithRecovery: true,
+            validateBeforeReservation: innerCancellationToken =>
+                ValidateLinkedOrdersBeforeReservationAsync(request, innerCancellationToken));
     }
 
     public Task<OfflineSyncStatusDto<CreateInterWarehouseShipmentResponse>> GetOfflineSyncStatusAsync(
@@ -1523,7 +1525,10 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
             if (orderLine.ssip_kapat_fl == true)
             {
-                throw new InvalidOperationException("Linked warehouse order line is already closed.");
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.WarehouseOrderLineClosed,
+                    OperationConflictMessages.WarehouseOrderLineClosed,
+                    retryable: false);
             }
 
             if (requestedQuantity > remainingQuantity)
@@ -1546,6 +1551,21 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
 
         return orderLines;
+    }
+
+    private async Task ValidateLinkedOrdersBeforeReservationAsync(
+        CreateInterWarehouseShipmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var lines = await GreenGrocerShipmentLineNormalizer.DetachWarehouseOrderLinksAsync(
+            mikroWriteDbContext,
+            request,
+            request.Lines.ToArray(),
+            IsGreenGrocerOrderLinkingEnabled(),
+            cancellationToken);
+
+        await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
+        mikroWriteDbContext.ChangeTracker.Clear();
     }
 
     private static bool ShouldUpdateLinkedOrderDeliveredQuantities(

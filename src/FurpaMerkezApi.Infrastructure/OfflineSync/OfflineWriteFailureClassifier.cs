@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Common.Errors;
+using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.OfflineSync;
 
@@ -25,8 +26,38 @@ internal static class OfflineWriteFailureClassifier
                 Retryable: true);
         }
 
+        if (exception is DbUpdateException)
+        {
+            return new OfflineWriteFailure(
+                UnconfirmedMessage,
+                OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+                Retryable: true);
+        }
+
+        if (exception is KeyNotFoundException)
+        {
+            return new OfflineWriteFailure(
+                OperationConflictMessages.CreateReferenceNotFound,
+                OperationConflictErrorCodes.CreateReferenceNotFound,
+                Retryable: false);
+        }
+
+        if (ContainsMikroBusinessRuleMarker(exception.Message))
+        {
+            return new OfflineWriteFailure(
+                exception.Message,
+                OperationConflictErrorCodes.MikroBusinessRuleRejected,
+                Retryable: false);
+        }
+
         return new OfflineWriteFailure(exception.Message, null, null);
     }
+
+    private static bool ContainsMikroBusinessRuleMarker(string? message) =>
+        !string.IsNullOrWhiteSpace(message) &&
+        (message.Contains("Uyari Kodu", StringComparison.OrdinalIgnoreCase) ||
+         message.Contains("Uyarı Kodu", StringComparison.OrdinalIgnoreCase) ||
+         message.Contains("U17", StringComparison.OrdinalIgnoreCase));
 }
 
 internal sealed record OfflineWriteFailure(

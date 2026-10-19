@@ -18,7 +18,8 @@ internal static class OfflineCreateGuard
         Func<CancellationToken, Task<TResponse>> executeAsync,
         CancellationToken cancellationToken,
         bool preventReexecutionAfterUncertainOutcome = false,
-        bool verifyCompletedWithRecovery = false)
+        bool verifyCompletedWithRecovery = false,
+        Func<CancellationToken, Task>? validateBeforeReservation = null)
     {
         if (!clientRequestId.HasValue)
         {
@@ -49,7 +50,8 @@ internal static class OfflineCreateGuard
             preventReexecutionAfterUncertainOutcome,
             verifyCompletedWithRecovery,
             RecentCompletedDuplicateWindow,
-            requestPayload is IExplicitNewCreateRequest { ForceCreateNew: true });
+            requestPayload is IExplicitNewCreateRequest { ForceCreateNew: true },
+            validateBeforeReservation);
 
         if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
         {

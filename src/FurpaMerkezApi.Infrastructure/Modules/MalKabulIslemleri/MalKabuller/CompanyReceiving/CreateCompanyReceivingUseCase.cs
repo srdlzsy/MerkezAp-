@@ -80,7 +80,9 @@ public sealed class CreateCompanyReceivingUseCase(
                 preventReexecutionAfterUncertainOutcome: true,
                 verifyCompletedWithRecovery: true,
                 recentCompletedDuplicateWindow: OfflineCreateGuard.RecentCompletedDuplicateWindow,
-                forceCreateNew: request.ForceCreateNew);
+                forceCreateNew: request.ForceCreateNew,
+                validateBeforeReservation: innerCancellationToken =>
+                    ValidateDocumentAvailabilityBeforeReservationAsync(request, innerCancellationToken));
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {
@@ -1514,6 +1516,22 @@ public sealed class CreateCompanyReceivingUseCase(
                 OperationConflictMessages.MikroOfficialDocumentAlreadyReceived,
                 retryable: false);
         }
+    }
+
+    private async Task ValidateDocumentAvailabilityBeforeReservationAsync(
+        CreateCompanyReceivingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var documentSerie = NormalizeDocumentSerie(request.DocumentSerie);
+        await EnsureDocumentDoesNotExistAsync(
+            request.WarehouseNo,
+            request.CustomerCode.Trim(),
+            NormalizeText(request.OfficialDocumentNo),
+            cancellationToken);
+        await EnsureDocumentIdentityDoesNotExistAsync(
+            documentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
     }
 
     private async Task EnsureDocumentIdentityDoesNotExistAsync(

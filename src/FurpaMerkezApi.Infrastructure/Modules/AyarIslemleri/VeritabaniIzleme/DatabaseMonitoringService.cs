@@ -24,7 +24,16 @@ public sealed partial class DatabaseMonitoringService(
 {
     private const int OverviewWindowHours = 24;
     private static readonly TimeSpan StaleSafeWriteAge =
-        DurableCreateExecution.Timeout + TimeSpan.FromMinutes(2);
+        MobileOfflineSyncService.ProcessingLeaseTimeout;
+    private static readonly string[] ClientResolvedSafeWriteErrorCodes =
+    [
+        OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+        OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived,
+        OperationConflictErrorCodes.WarehouseOrderLineClosed,
+        OperationConflictErrorCodes.CreateReferenceNotFound,
+        OperationConflictErrorCodes.MikroBusinessRuleRejected,
+        OperationConflictErrorCodes.SafeWriteRetryAllowed
+    ];
 
     private const string SnapshotSql =
         """
@@ -147,10 +156,12 @@ public sealed partial class DatabaseMonitoringService(
                 RetryableFailureCount = group.Count(item =>
                     item.Status == MobileOfflineSyncRequestStatus.Failed &&
                     item.Retryable == true &&
+                    !ClientResolvedSafeWriteErrorCodes.Contains(item.ErrorCode!) &&
                     (item.UpdatedAtUtc ?? item.CreatedAtUtc) >= windowStart),
                 ManualReviewCount = group.Count(item =>
                     item.Status == MobileOfflineSyncRequestStatus.Failed &&
                     item.Retryable == false &&
+                    !ClientResolvedSafeWriteErrorCodes.Contains(item.ErrorCode!) &&
                     (item.UpdatedAtUtc ?? item.CreatedAtUtc) >= windowStart),
                 UnclassifiedFailureCount = group.Count(item =>
                     item.Status == MobileOfflineSyncRequestStatus.Failed &&
@@ -404,9 +415,12 @@ public sealed partial class DatabaseMonitoringService(
         }
         else if (!request.IncludeCompleted)
         {
+            var operationalWindowStart = clock.UtcNow.AddHours(-OverviewWindowHours);
             query = query.Where(item =>
-                item.Status != MobileOfflineSyncRequestStatus.Completed &&
-                item.Status != MobileOfflineSyncRequestStatus.Cancelled);
+                (item.UpdatedAtUtc ?? item.CreatedAtUtc) >= operationalWindowStart &&
+                (item.Status == MobileOfflineSyncRequestStatus.Processing ||
+                (item.Status == MobileOfflineSyncRequestStatus.Failed &&
+                 !ClientResolvedSafeWriteErrorCodes.Contains(item.ErrorCode!))));
         }
 
         if (!string.IsNullOrWhiteSpace(request.OperationCode))

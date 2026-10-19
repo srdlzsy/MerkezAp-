@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.OfflineSync;
@@ -74,6 +75,36 @@ public sealed class WriteTimeoutClassifierTests
 
         Assert.Equal("The write queue is busy.", failure.Message);
         Assert.Equal(OperationConflictErrorCodes.MikroWriteQueueBusy, failure.ErrorCode);
+        Assert.True(failure.Retryable);
+    }
+
+    [Fact]
+    public void OfflineFailureClassifier_MapsMissingReferenceToEditableFailure()
+    {
+        var failure = OfflineWriteFailureClassifier.Classify(
+            new KeyNotFoundException("Customer was not found."));
+
+        Assert.Equal(OperationConflictErrorCodes.CreateReferenceNotFound, failure.ErrorCode);
+        Assert.False(failure.Retryable);
+    }
+
+    [Fact]
+    public void OfflineFailureClassifier_MapsMikroBusinessRuleWithoutManualReview()
+    {
+        var failure = OfflineWriteFailureClassifier.Classify(
+            new InvalidOperationException("U17 Uyari Kodu: miktar gecersiz."));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroBusinessRuleRejected, failure.ErrorCode);
+        Assert.False(failure.Retryable);
+    }
+
+    [Fact]
+    public void OfflineFailureClassifier_TreatsDatabaseUpdateFailureAsUnconfirmed()
+    {
+        var failure = OfflineWriteFailureClassifier.Classify(
+            new DbUpdateException("Save failed."));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, failure.ErrorCode);
         Assert.True(failure.Retryable);
     }
 

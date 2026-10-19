@@ -14,4 +14,7 @@ public sealed class DatabaseMonitoringOptions
     public int MaxIncidentCount { get; set; } = 5000;
     public int SqlTextMaxLength { get; set; } = 2000;
     public int CommandTimeoutSeconds { get; set; } = 5;
+    public bool SafeWriteReconciliationEnabled { get; set; } = true;
+    public int SafeWriteReconciliationIntervalSeconds { get; set; } = 30;
+    public int SafeWriteReconciliationBatchSize { get; set; } = 10;
 }

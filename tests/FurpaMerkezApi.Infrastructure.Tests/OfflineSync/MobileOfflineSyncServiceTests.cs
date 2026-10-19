@@ -13,6 +13,76 @@ public sealed class MobileOfflineSyncServiceTests
     private static readonly DateTime Now = new(2026, 9, 30, 9, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public async Task Acquire_ValidatesNewRequestBeforeCreatingSafeWriteReservation()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            service.AcquireAsync<RequestWithIdentity, string>(
+                "receiving.create",
+                userId,
+                56,
+                clientRequestId,
+                new RequestWithIdentity(56, 25, clientRequestId, userId),
+                (_, _) => Task.FromResult<string?>(null),
+                CancellationToken.None,
+                validateBeforeReservation: _ => throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+                    OperationConflictMessages.MikroDocumentIdentityConflict,
+                    retryable: false)));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentIdentityConflict, exception.ErrorCode);
+        Assert.Empty(await db.MobileOfflineSyncRequests.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Acquire_DoesNotRunNewRequestValidationWhenExistingResultCanBeReplayed()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var userId = Guid.NewGuid();
+        var clientRequestId = Guid.NewGuid();
+        var request = new RequestWithIdentity(56, 25, clientRequestId, userId);
+
+        await service.AcquireAsync<RequestWithIdentity, string>(
+            "receiving.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None);
+        await service.CompleteAsync(
+            "receiving.create",
+            userId,
+            clientRequestId,
+            "F56/123",
+            CancellationToken.None);
+
+        var validationCalled = false;
+        var result = await service.AcquireAsync<RequestWithIdentity, string>(
+            "receiving.create",
+            userId,
+            56,
+            clientRequestId,
+            request,
+            (_, _) => Task.FromResult<string?>(null),
+            CancellationToken.None,
+            validateBeforeReservation: _ =>
+            {
+                validationCalled = true;
+                return Task.CompletedTask;
+            });
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Completed, result.State);
+        Assert.False(validationCalled);
+        Assert.Single(await db.MobileOfflineSyncRequests.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task Acquire_BlocksSameLogicalPayloadWithDifferentClientRequestIdWhileFirstIsUnresolved()
     {
         await using var db = CreateDbContext();

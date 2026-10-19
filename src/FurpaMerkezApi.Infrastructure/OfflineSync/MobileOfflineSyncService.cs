@@ -19,9 +19,9 @@ public sealed class MobileOfflineSyncService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan InFlightJoinTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan InFlightJoinPollInterval = TimeSpan.FromMilliseconds(500);
-    // Durable create owns the request for ten minutes. The lease must not expire
-    // while that bounded server-side execution can still be running.
-    private static readonly TimeSpan ProcessingLeaseTimeout = DurableCreateExecution.Timeout + TimeSpan.FromMinutes(2);
+    // The lease includes a short hand-off window after bounded create execution,
+    // so status checks cannot start a competing readback while the owner is active.
+    internal static readonly TimeSpan ProcessingLeaseTimeout = DurableCreateExecution.Timeout + TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(180);
 
     internal async Task<MobileOfflineSyncAcquireResult<TResponse>> AcquireAsync<TRequest, TResponse>(
@@ -35,7 +35,8 @@ public sealed class MobileOfflineSyncService(
         bool preventReexecutionAfterUncertainOutcome = false,
         bool verifyCompletedWithRecovery = false,
         TimeSpan? recentCompletedDuplicateWindow = null,
-        bool forceCreateNew = false)
+        bool forceCreateNew = false,
+        Func<CancellationToken, Task>? validateBeforeReservation = null)
     {
         var normalizedClientRequestId = NormalizeClientRequestId(clientRequestId);
         var requestJson = JsonSerializer.Serialize(requestPayload, JsonOptions);
@@ -128,6 +129,11 @@ public sealed class MobileOfflineSyncService(
                     $"Ayni kayit icerigi daha once {unresolvedDuplicate.ClientRequestId} istek kimligiyle gonderildi ve sonucu henuz kesinlesmedi. Yeni istek kimligiyle tekrar yazmayin; onceki kimlikle durum kontrolu yapin.",
                     retryable: true,
                     relatedClientRequestId: Guid.Parse(unresolvedDuplicate.ClientRequestId));
+            }
+
+            if (validateBeforeReservation is not null)
+            {
+                await validateBeforeReservation(cancellationToken);
             }
 
             var record = new MobileOfflineSyncRequest(

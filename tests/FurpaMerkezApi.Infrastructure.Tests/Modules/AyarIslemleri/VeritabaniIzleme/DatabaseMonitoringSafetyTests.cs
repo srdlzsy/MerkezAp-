@@ -106,7 +106,13 @@ public sealed class DatabaseMonitoringSafetyTests
             OperationConflictErrorCodes.SafeWriteCancelled,
             OperationConflictMessages.SafeWriteCancelled,
             now.AddMinutes(-1));
-        authDb.MobileOfflineSyncRequests.AddRange(processing, failed, completed, cancelled);
+        var clientResolved = Request("receiving.create", now.AddMinutes(-3));
+        clientResolved.MarkFailed(
+            OperationConflictMessages.MikroDocumentIdentityConflict,
+            now.AddMinutes(-1),
+            OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+            retryable: false);
+        authDb.MobileOfflineSyncRequests.AddRange(processing, failed, completed, cancelled, clientResolved);
         await authDb.SaveChangesAsync();
         var service = new DatabaseMonitoringService(
             mikroDb,
@@ -123,6 +129,9 @@ public sealed class DatabaseMonitoringSafetyTests
         var cancelledOnly = await service.GetSafeWritesAsync(
             new SafeWriteMonitoringRequest("Cancelled", null, null, null, IncludeCompleted: false, Take: 100),
             CancellationToken.None);
+        var failedOnly = await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest("Failed", null, null, null, IncludeCompleted: false, Take: 100),
+            CancellationToken.None);
 
         Assert.Equal(2, active.Count);
         Assert.Equal("Processing", active.First().Status);
@@ -133,6 +142,9 @@ public sealed class DatabaseMonitoringSafetyTests
         Assert.Equal(OperationConflictMessages.MikroDocumentContentMismatch, failedItem.ErrorMessage);
         Assert.Equal("Completed", Assert.Single(completedOnly).Status);
         Assert.Equal("Cancelled", Assert.Single(cancelledOnly).Status);
+        Assert.Equal(2, failedOnly.Count);
+        Assert.Contains(failedOnly, item =>
+            item.ErrorCode == OperationConflictErrorCodes.MikroDocumentIdentityConflict);
     }
 
     private static DatabaseMonitoringService.IncidentCandidate Candidate(

@@ -23,6 +23,15 @@ public static class OperationConflictMessages
     public const string MikroOfficialDocumentAlreadyReceived =
         "Secilen cari ve resmi belge numarasiyla firma mal kabul kaydi zaten mevcut. Bu denemede yeni evrak yazimi baslamadi. Ikinci kaydi olusturmayin; mal kabul listesini yenileyip mevcut evraki kontrol edin.";
 
+    public const string WarehouseOrderLineClosed =
+        "Bagli depo siparisi satiri daha once kapatilmis. Yeni sevk yazimi baslamadi; siparis listesini yenileyip acik satirla yeniden deneyin.";
+
+    public const string CreateReferenceNotFound =
+        "Kayitta kullanilan cari, siparis veya diger referans Mikro'da bulunamadi. Yeni evrak yazimi baslamadi; secimleri yenileyip kaydi duzeltin.";
+
+    public const string MikroBusinessRuleRejected =
+        "Mikro kaydi bir is kurali nedeniyle reddetti. Kalici evrak olusmadi; hata verilen alani duzeltip ayni taslagi yeniden kaydedin.";
+
     public const string ClientRequestPayloadMismatch =
         "Ayni istek kimligi farkli bir kayit icerigiyle kullanilmis. Bekleyen kaydi degistirmeyin; yalniz gercekten yeni bir islem baslatacaksaniz yeni kayit olusturun.";
 
@@ -42,6 +51,9 @@ public static class OperationConflictMessages
             OperationConflictErrorCodes.MikroDocumentContentMismatch => MikroDocumentContentMismatch,
             OperationConflictErrorCodes.MikroDocumentIdentityConflict => MikroDocumentIdentityConflict,
             OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived => MikroOfficialDocumentAlreadyReceived,
+            OperationConflictErrorCodes.WarehouseOrderLineClosed => WarehouseOrderLineClosed,
+            OperationConflictErrorCodes.CreateReferenceNotFound => CreateReferenceNotFound,
+            OperationConflictErrorCodes.MikroBusinessRuleRejected => MikroBusinessRuleRejected,
             OperationConflictErrorCodes.ClientRequestPayloadMismatch => ClientRequestPayloadMismatch,
             OperationConflictErrorCodes.SafeWriteRetryAllowed => SafeWriteRetryAllowed,
             OperationConflictErrorCodes.SafeWriteCancelled => SafeWriteCancelled,
