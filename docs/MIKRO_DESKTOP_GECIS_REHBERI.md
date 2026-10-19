@@ -113,6 +113,23 @@ Ardindan:
 4. Mikro API audit kaydinin `Verified` veya gerekiyorsa `RecoveredAfterUnknown` oldugunu kontrol edin.
 5. Furpa prosedurlerinden calisan ilgili operasyon icin yeni DB'de veri olustugunu kontrol edin.
 
+## Kritik Firma Mal Kabul Indeksi
+
+Yeni DB'de `IX_FR_STH_FirmaMalKabul_Trace` yoksa firma mal kabul readback
+sorgulari buyuk `STOK_HAREKETLERI` tablosunda genis tarama yapabilir. Yalniz bu
+kritik indeksi kuran script:
+
+```text
+docs/STOK_HAREKETLERI_FIRMA_MAL_KABUL_TRACE_INDEX.sql
+```
+
+SQL Server 2017, `CREATE INDEX` icin dusuk oncelikli kilit beklemesini
+desteklemez. Bu nedenle script aktif create/readback trafigi varken
+calistirilmamalidir. `FurpaMerkez` app pool durdurulduktan ve devam eden Mikro
+yazmalari bittikten sonra `MikroDesktop_FURPA_2024` uzerinde calistirilmalidir.
+Script yeniden calistirilabilir; index zaten varsa yeni bir islem yapmaz ve
+sonunda `is_disabled`, filtre ve boyut bilgisini dondurur.
+
 ## Geri Donus
 
 Geri donus karari verilirse once Mikro API tarafinda `FURPA_2024` firma eslemesini tekrar `MikroDB_V16_FURPA_2024` yapin. Sonra:

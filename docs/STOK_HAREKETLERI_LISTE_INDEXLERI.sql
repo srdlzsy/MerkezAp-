@@ -12,7 +12,21 @@
     - Canlida mesai disi uygulanmasi onerilir.
     - Indexler unique degildir; duplicate key riski olusturmaz.
     - CREATE INDEX sirasinda tablo buyukse gecici IO/CPU yuku olusturur.
+    - Tum indexler ONLINE ve dusuk paralellikle olusturulur. SQL Server
+      son kilidi 60 saniyede alamazsa canli yazmalari bekletmemek icin komut
+      iptal olur; sakin bir bakim penceresinde yeniden calistirilmalidir.
 */
+
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
+SET DEADLOCK_PRIORITY LOW;
+SET LOCK_TIMEOUT 60000;
+GO
 
 IF OBJECT_ID(N'dbo.STOK_HAREKETLERI', N'U') IS NULL
 BEGIN
@@ -74,7 +88,13 @@ BEGIN
         sth_evraktip = 13
         AND sth_tip = 0
         AND sth_normal_iade = 0
-        AND sth_eticaret_kanal_kodu IS NOT NULL;
+        AND sth_eticaret_kanal_kodu IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -110,7 +130,13 @@ BEGIN
         sth_evraktip = 13
         AND sth_tip = 0
         AND sth_normal_iade = 0
-        AND sth_tarih IS NOT NULL;
+        AND sth_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -145,7 +171,13 @@ BEGIN
     WHERE
         sth_evraktip = 1
         AND sth_tip = 1
-        AND sth_belge_tarih IS NOT NULL;
+        AND sth_belge_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -180,7 +212,13 @@ BEGIN
     )
     WHERE
         sth_evraktip = 17
-        AND sth_tarih IS NOT NULL;
+        AND sth_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -215,7 +253,13 @@ BEGIN
     )
     WHERE
         sth_evraktip = 17
-        AND sth_tarih IS NOT NULL;
+        AND sth_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -250,7 +294,13 @@ BEGIN
     )
     WHERE
         sth_evraktip = 17
-        AND sth_tarih IS NOT NULL;
+        AND sth_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -288,7 +338,13 @@ BEGIN
         sth_evraktip = 0
         AND sth_tip = 1
         AND sth_normal_iade = 0
-        AND sth_belge_tarih IS NOT NULL;
+        AND sth_belge_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO
 
@@ -323,6 +379,12 @@ BEGIN
         sth_evraktip = 6
         AND sth_cins = 3
         AND sth_normal_iade = 0
-        AND sth_belge_tarih IS NOT NULL;
+        AND sth_belge_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
 END;
 GO

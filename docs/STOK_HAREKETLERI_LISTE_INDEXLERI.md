@@ -97,6 +97,10 @@ Sebep:
 - Veri kaybi riski yoktur, fakat yogun saatte calistirmak liste ve yazma islemlerini yavaslatabilir.
 
 Script tekrar calistirilabilir sekilde yazilmistir. Index varsa tekrar olusturmaz.
+Sekiz indexin tamami `ONLINE = ON`, `MAXDOP = 2` ve 60 saniyelik kilit
+bekleme siniri ile olusturulur. Bu ayarlar tabloyu kullanim disi birakmaz; yine de
+buyuk tablo taramasi IO/CPU tuketecegi icin indexler sirayla ve dusuk kullanim
+saatinde uygulanmalidir.
 
 ## Geri Alma
 
