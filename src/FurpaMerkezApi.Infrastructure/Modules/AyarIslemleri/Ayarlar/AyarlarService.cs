@@ -699,28 +699,34 @@ public sealed class AyarlarService(
         ValidatePositive(cashierCode, nameof(cashierCode));
         ValidateNonNegative(currentUserWarehouseNo, nameof(currentUserWarehouseNo));
 
-        await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
-            IsolationLevel.ReadCommitted,
-            cancellationToken);
+        var executionStrategy = furpaDbContext.Database.CreateExecutionStrategy();
 
-        var entity = await furpaDbContext.Cashiers
-            .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
-            ?? throw new KeyNotFoundException("Cashier was not found.");
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            furpaDbContext.ChangeTracker.Clear();
+            await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
 
-        var generatedPassword = GenerateNumericPassword();
-        entity.CashierPassword = generatedPassword;
-        entity.UpdateUser = currentUserWarehouseNo;
-        entity.UpdateDate = DateTime.Now;
+            var entity = await furpaDbContext.Cashiers
+                .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
+                ?? throw new KeyNotFoundException("Cashier was not found.");
 
-        await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            var generatedPassword = GenerateNumericPassword();
+            entity.CashierPassword = generatedPassword;
+            entity.UpdateUser = currentUserWarehouseNo;
+            entity.UpdateDate = DateTime.Now;
 
-        var cashier = ToCashierDto(entity);
-        return new CashierPasswordMutationDto(
-            cashier.CashierCode,
-            generatedPassword,
-            cashier);
+            await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
+            await furpaDbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            var cashier = ToCashierDto(entity);
+            return new CashierPasswordMutationDto(
+                cashier.CashierCode,
+                generatedPassword,
+                cashier);
+        });
     }
 
     public async Task<IReadOnlyCollection<B2BBulletinDto>> ListB2BBulletinsAsync(
