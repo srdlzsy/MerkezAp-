@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.Detail;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.List;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.Print;
@@ -19,6 +20,7 @@ public sealed class AlinanDepoSiparisleriController(
     IListReceivedWarehouseOrdersUseCase listReceivedWarehouseOrdersUseCase,
     IGetReceivedWarehouseOrderDetailUseCase getReceivedWarehouseOrderDetailUseCase,
     IGetReceivedWarehouseOrdersForPrintUseCase getReceivedWarehouseOrdersForPrintUseCase,
+    IGetBakeryProductionReportUseCase getBakeryProductionReportUseCase,
     IReceivedWarehouseOrderPdfRenderer receivedWarehouseOrderPdfRenderer)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
@@ -114,6 +116,23 @@ public sealed class AlinanDepoSiparisleriController(
         return File(pdf, "application/pdf");
     }
 
+    [HttpGet("unlu-uretim-raporu")]
+    [Authorize(Policy = PrintPolicy)]
+    [ProducesResponseType(typeof(BakeryProductionReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BakeryProductionReportDto>> BakeryProductionReport(
+        [FromQuery] BakeryProductionReportHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var sourceWarehouseNo = User.ResolveWarehouseNoForPolicy(
+            request.SourceWarehouseNo,
+            PrintPolicy);
+
+        return Ok(await getBakeryProductionReportUseCase.ExecuteAsync(
+            new BakeryProductionReportRequest(request.Date!.Value, sourceWarehouseNo),
+            cancellationToken));
+    }
+
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
@@ -133,4 +152,13 @@ public sealed class BulkPrintReceivedWarehouseOrdersHttpRequest
     [MinLength(1)]
     [MaxLength(100)]
     public required IReadOnlyCollection<string> DocumentKeys { get; init; }
+}
+
+public sealed class BakeryProductionReportHttpRequest
+{
+    [Required]
+    public DateOnly? Date { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? SourceWarehouseNo { get; init; }
 }

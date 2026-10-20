@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 760. Model sayisi: 692.
+Endpoint sayisi (method + route): 761. Model sayisi: 694.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -702,6 +702,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/siparis-islemleri/alinan-depo-siparisleri` | JWT + siparis-islemleri.alinan-depo-siparisleri.create | body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/siparis-islemleri/alinan-depo-siparisleri/key/{documentKey}` | JWT + siparis-islemleri.alinan-depo-siparisleri.detail | path: documentKey / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/siparis-islemleri/alinan-depo-siparisleri/toplu-yazdir` | JWT + siparis-islemleri.alinan-depo-siparisleri.print | body: request / BulkPrintReceivedWarehouseOrdersHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/siparis-islemleri/alinan-depo-siparisleri/unlu-uretim-raporu` | JWT + siparis-islemleri.alinan-depo-siparisleri.print | query: Date / string (date) (zorunlu)<br>query: SourceWarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BakeryProductionReportDto<br>400: ProblemDetails |
 | GET | `/api/siparis-islemleri/alinan-depo-siparisleri/{documentSerie}/{documentOrderNo}` | JWT + siparis-islemleri.alinan-depo-siparisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/siparis-islemleri/alinan-depo-siparisleri/{id}` | JWT + siparis-islemleri.alinan-depo-siparisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/siparis-islemleri/alinan-firma-siparisleri` | JWT + siparis-islemleri.alinan-firma-siparisleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyOrderListItemDto&gt;<br>400: ProblemDetails |
@@ -8094,6 +8095,29 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalQuantity` | number (double) | Hayir |  |
 | `transitWarehouseNo` | integer (int32) | Hayir |  |
 | `writeConnectionName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport.BakeryProductionReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `items` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport.BakeryProductionReportItemDto[] | Hayir | nullable |
+| `reportDate` | string (date) | Hayir |  |
+| `sourceWarehouseName` | string | Hayir | nullable |
+| `sourceWarehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport.BakeryProductionReportItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `productCode` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `typeCode` | string | Hayir | nullable |
+| `typeName` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.CompanyOrderDetailDto
 

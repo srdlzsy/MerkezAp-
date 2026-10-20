@@ -2,7 +2,7 @@
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
-Son hedefli kontrol: 2026-10-20. Kayitli 757 method/route ve 691 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
+Son hedefli kontrol: 2026-10-20. Kayitli 761 method/route ve 694 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
 
@@ -72,6 +72,7 @@ Controller'da acik olan pratik alias/canonical route'lar:
 - `GET /api/siparis-islemleri/alinan-depo-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/alinan-depo-siparisleri/key/{documentKey}`
 - `POST /api/siparis-islemleri/alinan-depo-siparisleri/toplu-yazdir`
+- `GET /api/siparis-islemleri/alinan-depo-siparisleri/unlu-uretim-raporu`
 - `GET /api/siparis-islemleri/alinan-firma-siparisleri/{documentSerie}/{documentOrderNo}`
 - `GET /api/siparis-islemleri/alinan-firma-siparisleri/key/{documentKey}`
 - `GET /api/siparis-islemleri/verilen-depo-siparisleri/{documentSerie}/{documentOrderNo}`
@@ -6748,6 +6749,7 @@ Kurallar:
 - Secilen evraklardan biri bulunamazsa eksik veya kismi PDF donmez; API `404 Not Found` doner.
 - Backend secilen evraklari ve satirlarini toplu Mikro sorgusuyla okur; UI'nin her evrak icin ayri detay istegi atmasi gerekmez.
 - Response JSON degildir. `Content-Type: application/pdf` ve `Content-Disposition: inline` ile tek PDF doner.
+- Baskida A4 dikey sayfa, yaklasik 15 mm kenar boslugu ve `Times New Roman` kullanilir. Bu duzen eski operasyon baskilarindaki sade siyah-beyaz tablo yapisiyla uyumludur.
 - Her siparis yeni PDF sayfasindan baslar. Uzun siparisler devam sayfasina tasar; tablo basligi tekrar yazilir.
 
 UI akisi:
@@ -6772,6 +6774,63 @@ const pdfUrl = URL.createObjectURL(response.data);
 window.open(pdfUrl, "_blank", "noopener,noreferrer");
 setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
 ```
+
+### Alinan Depo Siparisleri / Unlu Uretim Raporu
+
+`GET /api/siparis-islemleri/alinan-depo-siparisleri/unlu-uretim-raporu?Date=2026-10-20&SourceWarehouseNo=55`
+
+Yetki:
+
+- `siparis-islemleri.alinan-depo-siparisleri.print`
+- Baska bir kaynak depo icin ayrica `siparis-islemleri.alinan-depo-siparisleri.all-warehouses`
+
+Query:
+
+```text
+Date               zorunlu; tek rapor gunu, yyyy-MM-dd
+SourceWarehouseNo  opsiyonel; verilmezse JWT deposu kullanilir
+```
+
+Kapsam ve gruplar:
+
+- Endpoint alinan depo siparislerini cikis/kaynak depo, siparis tarihi ve stok model koduna gore okur; Mikro'ya veri yazmaz.
+- Unlu uretim rapor gruplari kesin olarak `22 = Sarf Pastane`, `30 = Yas Pasta`, `31 = Kuru Pasta`, `32 = Baklava`, `33 = Mayali Grup` seklindedir.
+- Eski rapordaki yinelenen `32` filtresi kullanilmaz; `33 Mayali Grup` ayri ve dogru kolon olarak doner.
+- Canli Mikro gecmisinde unlu uretim siparisleri kaynak depo `55` altinda bulunur. Yeni yerlesimde kaynak depo `62` kullanilabilecek sekilde endpoint depo numarasini sabitlemez; yetkili kullanici 55 veya 62'yi secebilir.
+- Response satirlari hedef sube, evrak, urun ve unlu grup koduna gore gruplanmis toplam miktari doner.
+- Iptal edilen siparisler, secilen gunun disindaki satirlar ve yukaridaki bes grubun disindaki stoklar donmez.
+
+Response:
+
+```json
+{
+  "reportDate": "2026-10-20",
+  "sourceWarehouseNo": 55,
+  "sourceWarehouseName": "UNLU URETIM",
+  "items": [
+    {
+      "branchNo": 110,
+      "branchName": "KESTEL 1",
+      "documentSerie": "F110",
+      "documentOrderNo": 4177,
+      "productCode": "010001",
+      "productName": "ORNEK MAYALI URUN",
+      "typeCode": "33",
+      "typeName": "Mayali Grup",
+      "quantity": 24
+    }
+  ]
+}
+```
+
+UI ve baski akisi:
+
+1. `Alinan Depo Siparisleri` ekraninda kullanicida `print` yetkisi ve etkin kaynak depo 55 veya 62 ise `Unlu Toplu Rapor` ile `Unlu Sube Detayli` aksiyonlari gosterilir.
+2. Rapor tek gunluk oldugu icin baslangic ve bitis tarihleri ayni olmalidir. Farkliysa istek gonderilmeden kullanici uyarilir.
+3. `Unlu Toplu Rapor`, urunleri bes unlu grubuna ayirir ve tum sube/evrak miktarlarini urun bazinda toplar.
+4. `Unlu Sube Detayli`, her hedef sube ve evraki ayri sayfa grubu yapar; kolonlar `Kod`, `Urun`, `Sarf Pastane`, `Yas Pasta`, `Kuru Pasta`, `Baklava`, `Mayali Grup` sirasindadir. Sifir miktarlar bos basilir.
+5. Her iki baski A4 dikey, 15 mm kenar bosluklu, `Times New Roman` ve sade siyah-beyaz tablo duzenindedir.
+6. Rapor istegi yeni pencereyi kullanici tiklamasi aninda acar. Veri gec gelse bile popup engeline takilmaz; bos sonuc veya hata halinde pencere kapanir ve hata ayni ekranda gosterilir.
 
 ### Siparis Detay Response
 
@@ -26065,6 +26124,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | POST | `/api/siparis-islemleri/alinan-depo-siparisleri` | JWT + siparis-islemleri.alinan-depo-siparisleri.create | body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/siparis-islemleri/alinan-depo-siparisleri/key/{documentKey}` | JWT + siparis-islemleri.alinan-depo-siparisleri.detail | path: documentKey / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/siparis-islemleri/alinan-depo-siparisleri/toplu-yazdir` | JWT + siparis-islemleri.alinan-depo-siparisleri.print | body: request / BulkPrintReceivedWarehouseOrdersHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/siparis-islemleri/alinan-depo-siparisleri/unlu-uretim-raporu` | JWT + siparis-islemleri.alinan-depo-siparisleri.print | query: Date / string (date) (zorunlu)<br>query: SourceWarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BakeryProductionReportDto<br>400: ProblemDetails |
 | GET | `/api/siparis-islemleri/alinan-depo-siparisleri/{documentSerie}/{documentOrderNo}` | JWT + siparis-islemleri.alinan-depo-siparisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/siparis-islemleri/alinan-depo-siparisleri/{id}` | JWT + siparis-islemleri.alinan-depo-siparisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/siparis-islemleri/alinan-firma-siparisleri` | JWT + siparis-islemleri.alinan-firma-siparisleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyOrderListItemDto&gt;<br>400: ProblemDetails |
@@ -33457,6 +33517,29 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalQuantity` | number (double) | Hayir |  |
 | `transitWarehouseNo` | integer (int32) | Hayir |  |
 | `writeConnectionName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport.BakeryProductionReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `items` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport.BakeryProductionReportItemDto[] | Hayir | nullable |
+| `reportDate` | string (date) | Hayir |  |
+| `sourceWarehouseName` | string | Hayir | nullable |
+| `sourceWarehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.AlinanDepoSiparisleri.BakeryReport.BakeryProductionReportItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `productCode` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `typeCode` | string | Hayir | nullable |
+| `typeName` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.CompanyOrderDetailDto
 

@@ -32,6 +32,8 @@ public sealed class ReceivedWarehouseOrderBulkPrintTests
         Assert.Contains("F50/1001", pdf.GetPage(1).Text);
         Assert.DoesNotContain("F50/1002", pdf.GetPage(1).Text);
         Assert.Contains("F50/1002", pdf.GetPage(2).Text);
+        Assert.True(pdf.GetPage(1).Height > pdf.GetPage(1).Width);
+        Assert.Contains("Kaynak depo", pdf.GetPage(1).Text);
         Assert.StartsWith("%PDF", System.Text.Encoding.ASCII.GetString(pdfBytes, 0, 4));
     }
 

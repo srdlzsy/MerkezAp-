@@ -8,29 +8,27 @@ namespace FurpaMerkezApi.WebApi.Services;
 
 public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderPdfRenderer
 {
-    private const double PageMargin = 28d;
-    private const double FooterHeight = 22d;
-    private const double HeaderHeight = 104d;
-    private const double TableHeaderHeight = 25d;
+    private const double PageMargin = 42.5d;
+    private const double FooterHeight = 24d;
+    private const double HeaderHeight = 126d;
+    private const double TableHeaderHeight = 24d;
     private const double MinimumRowHeight = 22d;
     private const double CellPadding = 4d;
 
-    private static readonly XColor HeaderColor = XColor.FromArgb(35, 72, 91);
-    private static readonly XColor LightHeaderColor = XColor.FromArgb(229, 237, 240);
-    private static readonly XColor BorderColor = XColor.FromArgb(145, 156, 161);
-    private static readonly XColor AlternateRowColor = XColor.FromArgb(246, 248, 249);
+    private static readonly XColor BorderColor = XColor.FromArgb(25, 25, 25);
+    private static readonly XColor LightHeaderColor = XColor.FromArgb(238, 238, 238);
 
     static ReceivedWarehouseOrderPdfRenderer()
     {
         PdfSharpConfiguration.EnsureInitialized();
     }
 
-    private readonly XFont titleFont = new("Arial", 15, XFontStyleEx.Bold);
-    private readonly XFont documentFont = new("Arial", 11, XFontStyleEx.Bold);
-    private readonly XFont headerFont = new("Arial", 8, XFontStyleEx.Bold);
-    private readonly XFont bodyFont = new("Arial", 8, XFontStyleEx.Regular);
-    private readonly XFont smallFont = new("Arial", 7, XFontStyleEx.Regular);
-    private readonly XFont smallBoldFont = new("Arial", 7, XFontStyleEx.Bold);
+    private readonly XFont titleFont = new("Times New Roman", 18, XFontStyleEx.Bold);
+    private readonly XFont documentFont = new("Times New Roman", 11, XFontStyleEx.Bold);
+    private readonly XFont headerFont = new("Times New Roman", 9, XFontStyleEx.Bold);
+    private readonly XFont bodyFont = new("Times New Roman", 9, XFontStyleEx.Regular);
+    private readonly XFont smallFont = new("Times New Roman", 7, XFontStyleEx.Regular);
+    private readonly XFont smallBoldFont = new("Times New Roman", 8, XFontStyleEx.Bold);
 
     public byte[] Render(IReadOnlyCollection<WarehouseOrderDetailDto> documents)
     {
@@ -40,8 +38,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         }
 
         using var pdf = new PdfDocument();
-        pdf.Info.Title = "Alınan Depo Siparişleri";
-        pdf.Info.Subject = "Toplu depo siparişi yazdırma";
+        pdf.Info.Title = "Alinan Depo Siparisleri";
+        pdf.Info.Subject = "Toplu depo siparisi yazdirma";
         pdf.Info.Creator = "FurpaMerkezApi";
 
         foreach (var document in documents)
@@ -73,7 +71,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             pageState.Y += rowHeight;
         }
 
-        const double totalsHeight = 31d;
+        const double totalsHeight = 29d;
         const double signaturesHeight = 52d;
         if (pageState.Y + totalsHeight + signaturesHeight > pageState.ContentBottom)
         {
@@ -95,7 +93,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     {
         var page = pdf.AddPage();
         page.Size = PageSize.A4;
-        page.Orientation = PageOrientation.Landscape;
+        page.Orientation = PageOrientation.Portrait;
         var graphics = XGraphics.FromPdfPage(page);
         var pageWidth = page.Width.Point;
         var pageHeight = page.Height.Point;
@@ -103,15 +101,15 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         DrawDocumentHeader(graphics, pageWidth, document.Header, continuation);
         DrawTableHeader(graphics, HeaderHeight);
         graphics.DrawString(
-            $"Evrak sayfası: {documentPageNo}",
+            $"Evrak sayfasi: {documentPageNo}",
             smallFont,
-            XBrushes.DimGray,
+            XBrushes.Black,
             new XRect(PageMargin, pageHeight - FooterHeight, pageWidth - (2 * PageMargin), 12d),
             XStringFormats.CenterRight);
         graphics.DrawString(
-            $"Yazdırma: {DateTime.Now:dd.MM.yyyy HH:mm}",
+            $"Yazdirma: {DateTime.Now:dd.MM.yyyy HH:mm}",
             smallFont,
-            XBrushes.DimGray,
+            XBrushes.Black,
             new XRect(PageMargin, pageHeight - FooterHeight, pageWidth - (2 * PageMargin), 12d),
             XStringFormats.CenterLeft);
 
@@ -128,13 +126,13 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         bool continuation)
     {
         var contentWidth = pageWidth - (2 * PageMargin);
-        graphics.DrawRectangle(new XSolidBrush(HeaderColor), PageMargin, PageMargin, contentWidth, 28d);
         graphics.DrawString(
-            "ALINAN DEPO SİPARİŞİ",
+            "ALINAN DEPO SIPARISI",
             titleFont,
-            XBrushes.White,
-            new XRect(PageMargin + 9d, PageMargin + 4d, contentWidth - 18d, 20d),
-            XStringFormats.CenterLeft);
+            XBrushes.Black,
+            new XRect(PageMargin, PageMargin, contentWidth, 24d),
+            XStringFormats.TopCenter);
+        graphics.DrawLine(new XPen(BorderColor, 1.2d), PageMargin, 69d, pageWidth - PageMargin, 69d);
 
         var documentLabel = $"{header.DocumentSerie}/{header.DocumentOrderNo}";
         if (continuation)
@@ -146,31 +144,31 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             documentLabel,
             documentFont,
             XBrushes.Black,
-            new XRect(PageMargin, 62d, 220d, 18d),
+            new XRect(PageMargin, 74d, contentWidth * 0.34d, 16d),
             XStringFormats.CenterLeft);
         graphics.DrawString(
-            $"Sipariş tarihi: {FormatDate(header.DocumentDate)}   Teslim tarihi: {FormatDate(header.DeliveryDate)}",
+            $"Siparis: {FormatDate(header.DocumentDate)}  Teslim: {FormatDate(header.DeliveryDate)}",
             bodyFont,
             XBrushes.Black,
-            new XRect(PageMargin + 225d, 62d, 310d, 18d),
+            new XRect(PageMargin + (contentWidth * 0.34d), 74d, contentWidth * 0.66d, 16d),
+            XStringFormats.CenterRight);
+        graphics.DrawString(
+            $"Siparisi veren: {header.InWarehouseNo} - {EmptyAsDash(header.InWarehouseName)}",
+            bodyFont,
+            XBrushes.Black,
+            new XRect(PageMargin, 94d, contentWidth, 14d),
+            XStringFormats.CenterLeft);
+        graphics.DrawString(
+            $"Kaynak depo: {header.OutWarehouseNo} - {EmptyAsDash(header.OutWarehouseName)}",
+            bodyFont,
+            XBrushes.Black,
+            new XRect(PageMargin, 110d, contentWidth * 0.7d, 14d),
             XStringFormats.CenterLeft);
         graphics.DrawString(
             $"Belge no: {EmptyAsDash(header.DocumentNumber)}",
             bodyFont,
             XBrushes.Black,
-            new XRect(PageMargin + 540d, 62d, contentWidth - 540d, 18d),
-            XStringFormats.CenterRight);
-        graphics.DrawString(
-            $"Siparişi veren: {header.InWarehouseNo} - {header.InWarehouseName}",
-            bodyFont,
-            XBrushes.Black,
-            new XRect(PageMargin, 82d, contentWidth / 2d, 18d),
-            XStringFormats.CenterLeft);
-        graphics.DrawString(
-            $"Siparişi alan / kaynak depo: {header.OutWarehouseNo} - {header.OutWarehouseName}",
-            bodyFont,
-            XBrushes.Black,
-            new XRect(PageMargin + (contentWidth / 2d), 82d, contentWidth / 2d, 18d),
+            new XRect(PageMargin + (contentWidth * 0.7d), 110d, contentWidth * 0.3d, 14d),
             XStringFormats.CenterRight);
     }
 
@@ -180,7 +178,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         foreach (var column in Columns)
         {
             graphics.DrawRectangle(new XSolidBrush(LightHeaderColor), x, y, column.Width, TableHeaderHeight);
-            graphics.DrawRectangle(new XPen(BorderColor, 0.6d), x, y, column.Width, TableHeaderHeight);
+            graphics.DrawRectangle(new XPen(BorderColor, 0.7d), x, y, column.Width, TableHeaderHeight);
             graphics.DrawString(
                 column.Title,
                 headerFont,
@@ -202,12 +200,11 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         {
             (item.LineNo + 1).ToString(CultureInfo.InvariantCulture),
             item.StockCode,
-            item.StockName,
+            FormatProduct(item),
             FormatNumber(item.Quantity),
             item.UnitName,
             FormatNumber(item.DeliveredQuantity),
-            FormatNumber(item.RemainingQuantity),
-            item.Description
+            FormatNumber(item.RemainingQuantity)
         };
 
         var x = PageMargin;
@@ -216,7 +213,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             var column = Columns[index];
             if (alternate)
             {
-                graphics.DrawRectangle(new XSolidBrush(AlternateRowColor), x, y, column.Width, height);
+                graphics.DrawRectangle(XBrushes.WhiteSmoke, x, y, column.Width, height);
             }
 
             graphics.DrawRectangle(new XPen(BorderColor, 0.45d), x, y, column.Width, height);
@@ -226,7 +223,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
                 column.Width - (2 * CellPadding),
                 height - 6d);
 
-            if (index is 2 or 7)
+            if (index == 2)
             {
                 var lines = WrapText(graphics, values[index], bodyFont, textRect.Width, 3);
                 for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
@@ -266,8 +263,6 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         DrawTotalCell(graphics, x, y, Columns[5].Width, FormatNumber(header.TotalDeliveredQuantity));
         x += Columns[5].Width;
         DrawTotalCell(graphics, x, y, Columns[6].Width, FormatNumber(header.TotalRemainingQuantity));
-        x += Columns[6].Width;
-        DrawTotalCell(graphics, x, y, Columns[7].Width, string.Empty);
     }
 
     private void DrawTotalCell(XGraphics graphics, double x, double y, double width, string value)
@@ -286,7 +281,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     {
         var contentWidth = Columns.Sum(column => column.Width);
         var boxWidth = contentWidth / 3d;
-        var labels = new[] { "Hazırlayan", "Kontrol Eden", "Teslim Alan" };
+        var labels = new[] { "Hazirlayan", "Kontrol Eden", "Teslim Alan" };
 
         for (var index = 0; index < labels.Length; index++)
         {
@@ -303,10 +298,14 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
 
     private double CalculateRowHeight(WarehouseOrderLineItemDto item)
     {
-        var nameLines = EstimateLineCount(item.StockName, Columns[2].Width, 47d);
-        var descriptionLines = EstimateLineCount(item.Description, Columns[7].Width, 48d);
-        return Math.Max(MinimumRowHeight, 8d + (Math.Max(nameLines, descriptionLines) * 10d));
+        var productLines = EstimateLineCount(FormatProduct(item), Columns[2].Width, 47d);
+        return Math.Max(MinimumRowHeight, 8d + (productLines * 10d));
     }
+
+    private static string FormatProduct(WarehouseOrderLineItemDto item) =>
+        string.IsNullOrWhiteSpace(item.Description)
+            ? item.StockName
+            : $"{item.StockName} - {item.Description}";
 
     private static int EstimateLineCount(string? value, double columnWidth, double averageCharacterWidth)
     {
@@ -395,14 +394,13 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
 
     private static readonly Column[] Columns =
     [
-        new("No", 30d, XStringFormats.Center),
-        new("Stok Kodu", 76d, XStringFormats.CenterLeft),
-        new("Ürün Adı", 258d, XStringFormats.CenterLeft),
-        new("Sipariş", 66d, XStringFormats.CenterRight),
-        new("Birim", 52d, XStringFormats.Center),
-        new("Teslim", 66d, XStringFormats.CenterRight),
-        new("Kalan", 66d, XStringFormats.CenterRight),
-        new("Açıklama", 160d, XStringFormats.CenterLeft)
+        new("No", 25d, XStringFormats.Center),
+        new("Stok Kodu", 66d, XStringFormats.CenterLeft),
+        new("Urun", 212d, XStringFormats.CenterLeft),
+        new("Siparis", 54d, XStringFormats.CenterRight),
+        new("Birim", 45d, XStringFormats.Center),
+        new("Teslim", 54d, XStringFormats.CenterRight),
+        new("Kalan", 54d, XStringFormats.CenterRight)
     ];
 
     private sealed record Column(string Title, double Width, XStringFormat Alignment);
