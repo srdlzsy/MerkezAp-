@@ -3217,7 +3217,7 @@ Kasa ve terminal kaynagi:
 - Icmal/kasa sayim banka odeme tipi seciminde UI `cashNo` yerine mumkunse `cashFinanceNumber` gondermelidir. Ornek: kasa `130`, finans no `PAV210010584` ise banka odeme tipi endpointi `cashRegisterNo=PAV210010584` ile cagrilir.
 - `cashNo` sadece subedeki kasa numarasidir; banka/POS eslesmesinin guvenilir anahtari `cashFinanceNumber`/terminal `cashRegisterNo` degeridir.
 
-Kasiyer listelerinde sifre donmez. Yeni kasiyer olusturma ve sifre sifirlama response'lari uretilen sifreyi tek seferlik `generatedPassword` alaninda dondurur.
+Kasiyer listelerinde sifre donmez. Yeni kasiyer olusturma ve sifre sifirlama response'lari uretilen sifreyi `generatedPassword` alaninda dondurur. Mevcut sifre yalniz `kasiyerler.detail` yetkisiyle secili kasiyer icin `GET /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre` endpointinden okunur.
 
 UI icin tip/lookup kullanimi:
 
@@ -3295,9 +3295,12 @@ Endpoint ozeti:
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT | - | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | path | `branchNo: int` | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `POST /api/ayar-islemleri/kasa-pos-terminalleri` | body | `CreateCashRegisterHttpRequest` | `CashRegisterResponse` | `kasa-pos-terminalleri.create` |
+| `POST /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller` | body + path | `CreateCashRegisterTerminalHttpRequest` | `CashRegisterTerminalDto` | `kasa-pos-terminalleri.create` |
+| `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | body + path | `CreateCashRegisterTerminalHttpRequest` | `CashRegisterTerminalDto` | `kasa-pos-terminalleri.update` |
 | `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | path | `branchNo`, `cashNo` | - | `kasa-pos-terminalleri.update` |
 | `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | path | `branchNo`, `cashNo`, `terminalId` | - | `kasa-pos-terminalleri.update` |
 | `GET /api/ayar-islemleri/kasiyerler` | - | - | `CashierDto[]` | `kasiyerler.list` |
+| `GET /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre` | path | `cashierCode: int` | `CashierPasswordDto` | `kasiyerler.detail` |
 | `POST /api/ayar-islemleri/kasiyerler` | body | `CreateCashierHttpRequest` | `CashierPasswordMutationDto` | `kasiyerler.create` |
 | `PUT /api/ayar-islemleri/kasiyerler/{cashierCode}` | body + path | `UpdateCashierHttpRequest` | `CashierDto` | `kasiyerler.update` |
 | `POST /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre-sifirla` | path | `cashierCode: int` | `CashierPasswordMutationDto` | `kasiyerler.update` |
@@ -3621,6 +3624,7 @@ Notlar:
 
 - `branchNo + cashNo` duplicate ise `409 Conflict` doner.
 - Terminal no daha once Mikro `CashRegisterDetails` veya `CashRegisterBranches` icinde varsa `409 Conflict` doner.
+- Ayni fiziksel terminal/grup numarasi birden fazla banka satirinda kullanilabilir. Tekrarlanan tam satir (`terminalNo + bank + terminalId + merchantNo`) `409 Conflict` doner.
 - Silme islemleri mutlaka branch-scoped endpointlerle yapilir.
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller`
@@ -3654,13 +3658,21 @@ Ornek:
 
 Ayni terminal numarasina sahip banka satirlari `id` ile birbirinden ayrilir. UI silme isteginde secili satirin `id` degerini kullanmalidir.
 
+`POST /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller`
+
+Mevcut kasaya tek banka/terminal detay satiri ekler. Body, kasa olusturma istegindeki `CreateCashRegisterTerminalHttpRequest` ile aynidir. Kasa Furpa terminal kayitlarini kullaniyorsa satir Furpa kaynagina, aksi halde Mikro kaynagina ve gerekli terminal-sube eslemesine yazilir.
+
+`PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
+
+Secili terminal detay satirini gunceller. Terminal grup numarasi degisirse Mikro kaynaginda yeni sube eslemesi olusturulur; eski grup eslemesi yalniz o numarayi kullanan baska banka satiri kalmadiysa kaldirilir.
+
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}`
 
-Sube kapsaminda kasa kaydini siler. Furpa `CashRegistryDetails` kaydi silinir. Mikro tarafinda ilgili terminal detaylari ve branch mappingleri de temizlenir.
+Sube kapsaminda kasa kaydini siler. Furpa `CashRegistryDetails` ile Furpa `CashRegisterDetails` kayitlari silinir. Mikro tarafinda ilgili terminal detaylari ve yalniz bu subeye ait branch mappingleri de temizlenir.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
 
-Secili kasa icindeki tek terminal detay satirini `terminalId` ile siler; ayni terminal numarasina ait diger banka satirlari korunur.
+Secili kasa icindeki tek terminal detay satirini `terminalId` ile siler; ayni terminal numarasina ait diger banka satirlari korunur. Mikro terminal-sube eslemesi de ancak ayni terminal numarasini kullanan son detay satiri silindiginde kaldirilir.
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari`
 
@@ -3716,6 +3728,18 @@ Response:
     "cashierState": true
   }
 ]
+```
+
+`GET /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre`
+
+Yalniz `ayar-islemleri.kasiyerler.detail` yetkisi olan kullanici icin secili kasiyerin mevcut sifresini dondurur. UI sifreleri toplu listeye yuklememeli; kullanici `Sifreyi Goster` aksiyonuna bastiginda yalniz secili kasiyer icin bu endpointi cagirmalidir.
+
+```json
+{
+  "cashierCode": 1001,
+  "cashierName": "ALI VELI",
+  "password": "482901"
+}
 ```
 
 `POST /api/ayar-islemleri/kasiyerler`
@@ -25388,11 +25412,14 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterSettingsLookupsDto |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| POST | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller` | JWT + ayar-islemleri.kasa-pos-terminalleri.create | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasiyerler/{cashierCode}` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu)<br>body: request / UpdateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierDto<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/kasiyerler/{cashierCode}/sifre` | JWT + ayar-islemleri.kasiyerler.detail | path: cashierCode / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierPasswordDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/kasiyerler/{cashierCode}/sifre-sifirla` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierPasswordMutationDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/soforler` | JWT + ayar-islemleri.soforler.list | query: Search / string<br>query: IncludeInactive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DespatchDriverDto&gt;<br>400: ProblemDetails |
 | POST | `/api/ayar-islemleri/soforler` | JWT + ayar-islemleri.soforler.create | body: request / SaveDespatchDriverHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: DespatchDriverDto<br>400: ProblemDetails<br>409: ProblemDetails |
@@ -26648,6 +26675,14 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `cashierCode` | integer (int32) | Hayir |  |
 | `cashierName` | string | Hayir | nullable |
 | `cashierState` | boolean | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashierPasswordDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `cashierCode` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `password` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashierPasswordMutationDto
 

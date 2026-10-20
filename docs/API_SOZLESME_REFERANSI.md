@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 757. Model sayisi: 691.
+Endpoint sayisi (method + route): 760. Model sayisi: 692.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -54,11 +54,14 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterSettingsLookupsDto |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| POST | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller` | JWT + ayar-islemleri.kasa-pos-terminalleri.create | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasiyerler/{cashierCode}` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu)<br>body: request / UpdateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierDto<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/kasiyerler/{cashierCode}/sifre` | JWT + ayar-islemleri.kasiyerler.detail | path: cashierCode / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierPasswordDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/kasiyerler/{cashierCode}/sifre-sifirla` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierPasswordMutationDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/soforler` | JWT + ayar-islemleri.soforler.list | query: Search / string<br>query: IncludeInactive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DespatchDriverDto&gt;<br>400: ProblemDetails |
 | POST | `/api/ayar-islemleri/soforler` | JWT + ayar-islemleri.soforler.create | body: request / SaveDespatchDriverHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: DespatchDriverDto<br>400: ProblemDetails<br>409: ProblemDetails |
@@ -1314,6 +1317,14 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `cashierCode` | integer (int32) | Hayir |  |
 | `cashierName` | string | Hayir | nullable |
 | `cashierState` | boolean | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashierPasswordDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `cashierCode` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `password` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashierPasswordMutationDto
 

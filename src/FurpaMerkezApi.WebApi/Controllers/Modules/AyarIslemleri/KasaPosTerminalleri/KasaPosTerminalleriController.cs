@@ -38,6 +38,46 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
         CancellationToken cancellationToken) =>
         Ok(await ayarlarService.ListCashRegisterTerminalsAsync(cashNo, cancellationToken));
 
+    [HttpPost("subeler/{branchNo:int}/kasalar/{cashNo:int}/terminaller")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(CashRegisterTerminalDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CashRegisterTerminalDto>> CreateTerminal(
+        [Range(1, int.MaxValue)] int branchNo,
+        [Range(1, int.MaxValue)] int cashNo,
+        [FromBody] CreateCashRegisterTerminalHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await ayarlarService.CreateCashRegisterTerminalAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, CreatePolicy),
+            cashNo,
+            ToTerminalRequest(request),
+            cancellationToken);
+
+        return StatusCode(StatusCodes.Status201Created, response);
+    }
+
+    [HttpPut("subeler/{branchNo:int}/kasalar/{cashNo:int}/terminaller/{terminalId:int}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(CashRegisterTerminalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CashRegisterTerminalDto>> UpdateTerminal(
+        [Range(1, int.MaxValue)] int branchNo,
+        [Range(1, int.MaxValue)] int cashNo,
+        [Range(1, int.MaxValue)] int terminalId,
+        [FromBody] CreateCashRegisterTerminalHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.UpdateCashRegisterTerminalAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, UpdatePolicy),
+            cashNo,
+            terminalId,
+            ToTerminalRequest(request),
+            cancellationToken));
+
     [HttpGet("mevcut-sube/mesaj-durumlari")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterMessageStatusDto>), StatusCodes.Status200OK)]
@@ -123,6 +163,14 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
             cancellationToken);
         return NoContent();
     }
+
+    private static CreateCashRegisterTerminalRequest ToTerminalRequest(
+        CreateCashRegisterTerminalHttpRequest request) =>
+        new(
+            request.TerminalNo!,
+            request.Bank!,
+            request.TerminalId!,
+            request.MerchantNo!);
 }
 
 public sealed class CreateCashRegisterHttpRequest

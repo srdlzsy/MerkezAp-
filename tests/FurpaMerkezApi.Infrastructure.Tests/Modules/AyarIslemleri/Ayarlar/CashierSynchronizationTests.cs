@@ -77,6 +77,20 @@ public sealed class CashierSynchronizationTests
         Assert.Matches("^[0-9]{6}$", result.GeneratedPassword);
     }
 
+    [Fact]
+    public async Task GetCashierPasswordAsync_ReturnsPasswordForSingleCashier()
+    {
+        await using var contexts = CreateContexts();
+        await SeedCashierAsync(contexts.Furpa);
+        var service = CreateService(contexts);
+
+        var result = await service.GetCashierPasswordAsync(4855, CancellationToken.None);
+
+        Assert.Equal(4855, result.CashierCode);
+        Assert.Equal("SERAY AYHAN", result.CashierName);
+        Assert.Equal("654321", result.Password);
+    }
+
     private static AyarlarService CreateService(TestContexts contexts) =>
         new(contexts.Furpa, contexts.FurpaB2B, contexts.MikroWrite);
 

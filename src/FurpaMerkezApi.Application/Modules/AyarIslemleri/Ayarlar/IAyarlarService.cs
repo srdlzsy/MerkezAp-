@@ -43,6 +43,19 @@ public interface IAyarlarService
         int cashNo,
         CancellationToken cancellationToken);
 
+    Task<CashRegisterTerminalDto> CreateCashRegisterTerminalAsync(
+        int branchNo,
+        int cashNo,
+        CreateCashRegisterTerminalRequest request,
+        CancellationToken cancellationToken);
+
+    Task<CashRegisterTerminalDto> UpdateCashRegisterTerminalAsync(
+        int branchNo,
+        int cashNo,
+        int terminalId,
+        CreateCashRegisterTerminalRequest request,
+        CancellationToken cancellationToken);
+
     Task DeleteCashRegisterAsync(int branchNo, int cashNo, CancellationToken cancellationToken);
 
     Task DeleteCashRegisterTerminalAsync(
@@ -56,6 +69,10 @@ public interface IAyarlarService
         CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<CashierDto>> ListCashiersAsync(CancellationToken cancellationToken);
+
+    Task<CashierPasswordDto> GetCashierPasswordAsync(
+        int cashierCode,
+        CancellationToken cancellationToken);
 
     Task<CashierPasswordMutationDto> CreateCashierAsync(
         CreateCashierRequest request,

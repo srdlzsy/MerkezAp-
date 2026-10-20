@@ -19,6 +19,7 @@ public sealed class KasiyerlerController(IAyarlarService ayarlarService)
     private const string MenuCode = "kasiyerler";
     private const string MenuName = "Kasiyerler";
     private const string ListPolicy = "ayar-islemleri.kasiyerler.list";
+    private const string DetailPolicy = "ayar-islemleri.kasiyerler.detail";
     private const string CreatePolicy = "ayar-islemleri.kasiyerler.create";
     private const string UpdatePolicy = "ayar-islemleri.kasiyerler.update";
 
@@ -28,6 +29,16 @@ public sealed class KasiyerlerController(IAyarlarService ayarlarService)
     public async Task<ActionResult<IReadOnlyCollection<CashierDto>>> List(
         CancellationToken cancellationToken) =>
         Ok(await ayarlarService.ListCashiersAsync(cancellationToken));
+
+    [HttpGet("{cashierCode:int}/sifre")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(CashierPasswordDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CashierPasswordDto>> Password(
+        [Range(1, int.MaxValue)] int cashierCode,
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.GetCashierPasswordAsync(cashierCode, cancellationToken));
 
     [HttpPost]
     [Authorize(Policy = CreatePolicy)]

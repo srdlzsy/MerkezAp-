@@ -12,6 +12,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B.Models;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
+using FurpaCashRegisterDetailEntity = FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models.CashRegisterDetailEntity;
 using MikroCashRegisterDetailEntity = FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models.CashRegisterDetailEntity;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
@@ -234,38 +235,38 @@ public sealed class AyarlarService(
             throw new InvalidOperationException("Branch settings already exist.");
         }
 
-        await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+        return await ExecuteFurpaTransactionAsync(
             IsolationLevel.Serializable,
-            cancellationToken);
-
-        var entity = new BranchDetailEntity
-        {
-            BranchNo = request.BranchNo,
-            BranchIpAddress = NormalizeText(request.BranchIpAddress, 100, nameof(request.BranchIpAddress)),
-            BranchScalesFolderPath = NormalizeText(request.BranchScalesFolderPath, 255, nameof(request.BranchScalesFolderPath)),
-            ScalesType = request.ScalesType,
-            PoskonFolderPath = NormalizeText(request.PoskonFolderPath, 255, nameof(request.PoskonFolderPath)),
-            PosGenelFolderPath = NormalizeText(request.PosGenelFolderPath, 255, nameof(request.PosGenelFolderPath))
-        };
-
-        await furpaDbContext.BranchDetails.AddAsync(entity, cancellationToken);
-
-        if (request.CashRegisters.Count > 0)
-        {
-            await furpaDbContext.CashRegistryDetails.AddRangeAsync(
-                request.CashRegisters.Select(item => new CashRegistryDetailEntity
+            async () =>
+            {
+                var entity = new BranchDetailEntity
                 {
                     BranchNo = request.BranchNo,
-                    CashRegisterNo = item.CashNo,
-                    CashRegisterType = item.CashType
-                }),
-                cancellationToken);
-        }
+                    BranchIpAddress = NormalizeText(request.BranchIpAddress, 100, nameof(request.BranchIpAddress)),
+                    BranchScalesFolderPath = NormalizeText(request.BranchScalesFolderPath, 255, nameof(request.BranchScalesFolderPath)),
+                    ScalesType = request.ScalesType,
+                    PoskonFolderPath = NormalizeText(request.PoskonFolderPath, 255, nameof(request.PoskonFolderPath)),
+                    PosGenelFolderPath = NormalizeText(request.PosGenelFolderPath, 255, nameof(request.PosGenelFolderPath))
+                };
 
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+                await furpaDbContext.BranchDetails.AddAsync(entity, cancellationToken);
 
-        return ToBranchDto(entity);
+                if (request.CashRegisters.Count > 0)
+                {
+                    await furpaDbContext.CashRegistryDetails.AddRangeAsync(
+                        request.CashRegisters.Select(item => new CashRegistryDetailEntity
+                        {
+                            BranchNo = request.BranchNo,
+                            CashRegisterNo = item.CashNo,
+                            CashRegisterType = item.CashType
+                        }),
+                        cancellationToken);
+                }
+
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
+                return ToBranchDto(entity);
+            },
+            cancellationToken);
     }
 
     public async Task<BranchDetailDto> UpdateBranchAsync(
@@ -366,55 +367,60 @@ public sealed class AyarlarService(
                 $"Terminal branch mapping already exists: {string.Join(", ", existingBranchMappings.OrderBy(item => item))}");
         }
 
-        await using var furpaTransaction = await furpaDbContext.Database.BeginTransactionAsync(
+        return await ExecuteFurpaTransactionAsync(
             IsolationLevel.Serializable,
+            async () =>
+            {
+                mikroWriteDbContext.ChangeTracker.Clear();
+
+                var cashRegistry = new CashRegistryDetailEntity
+                {
+                    BranchNo = request.BranchNo,
+                    CashRegisterNo = request.CashNo,
+                    CashRegisterType = request.CashType
+                };
+
+                await furpaDbContext.CashRegistryDetails.AddAsync(cashRegistry, cancellationToken);
+
+                var terminalEntities = terminalRequests
+                    .Select(item => new MikroCashRegisterDetailEntity
+                    {
+                        CashRegisterNo = item.TerminalNo,
+                        Bank = item.Bank,
+                        TerminalId = item.TerminalId,
+                        MerchantNo = item.MerchantNo,
+                        CashNo = request.CashNo
+                    })
+                    .ToArray();
+
+                var branchEntities = terminalRequests
+                    .Select(item => item.TerminalNo)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(item => new CashRegisterBranchEntity
+                    {
+                        CashRegisterNo = item,
+                        BranchNo = request.BranchNo
+                    })
+                    .ToArray();
+
+                await mikroWriteDbContext.CashRegisterDetails.AddRangeAsync(terminalEntities, cancellationToken);
+                await mikroWriteDbContext.CashRegisterBranches.AddRangeAsync(branchEntities, cancellationToken);
+
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+
+                return new CashRegisterResponse(
+                    request.BranchNo,
+                    request.CashNo,
+                    request.CashType,
+                    ResolveCashTypeName(request.CashType),
+                    ResolveCashTypeDescription(request.CashType),
+                    terminalEntities
+                        .OrderBy(item => item.CashRegisterNo)
+                        .Select(ToTerminalDto)
+                        .ToArray());
+            },
             cancellationToken);
-
-        var cashRegistry = new CashRegistryDetailEntity
-        {
-            BranchNo = request.BranchNo,
-            CashRegisterNo = request.CashNo,
-            CashRegisterType = request.CashType
-        };
-
-        await furpaDbContext.CashRegistryDetails.AddAsync(cashRegistry, cancellationToken);
-
-        var terminalEntities = terminalRequests
-            .Select(item => new MikroCashRegisterDetailEntity
-            {
-                CashRegisterNo = item.TerminalNo,
-                Bank = item.Bank,
-                TerminalId = item.TerminalId,
-                MerchantNo = item.MerchantNo,
-                CashNo = request.CashNo
-            })
-            .ToArray();
-
-        var branchEntities = terminalRequests
-            .Select(item => new CashRegisterBranchEntity
-            {
-                CashRegisterNo = item.TerminalNo,
-                BranchNo = request.BranchNo
-            })
-            .ToArray();
-
-        await mikroWriteDbContext.CashRegisterDetails.AddRangeAsync(terminalEntities, cancellationToken);
-        await mikroWriteDbContext.CashRegisterBranches.AddRangeAsync(branchEntities, cancellationToken);
-
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-        await furpaTransaction.CommitAsync(cancellationToken);
-
-        return new CashRegisterResponse(
-            request.BranchNo,
-            request.CashNo,
-            request.CashType,
-            ResolveCashTypeName(request.CashType),
-            ResolveCashTypeDescription(request.CashType),
-            terminalEntities
-                .OrderBy(item => item.CashRegisterNo)
-                .Select(ToTerminalDto)
-                .ToArray());
     }
 
     public async Task<IReadOnlyCollection<CashRegisterTerminalDto>> ListCashRegisterTerminalsAsync(
@@ -459,6 +465,209 @@ public sealed class AyarlarService(
             .ToArray();
     }
 
+    public async Task<CashRegisterTerminalDto> CreateCashRegisterTerminalAsync(
+        int branchNo,
+        int cashNo,
+        CreateCashRegisterTerminalRequest request,
+        CancellationToken cancellationToken)
+    {
+        await EnsureCashRegisterExistsAsync(branchNo, cashNo, cancellationToken);
+        var terminal = NormalizeTerminalRequest(request);
+
+        var usesFurpaDetails = await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .AnyAsync(item => item.CashNo == cashNo, cancellationToken);
+
+        if (usesFurpaDetails)
+        {
+            var usedByAnotherCashRegister = await furpaDbContext.CashRegisterDetails
+                .AsNoTracking()
+                .AnyAsync(
+                    item =>
+                        item.CashRegisterNo == terminal.TerminalNo &&
+                        (!item.CashNo.HasValue || item.CashNo.Value != cashNo),
+                    cancellationToken);
+
+            if (usedByAnotherCashRegister)
+            {
+                throw new InvalidOperationException("Terminal number is already assigned to another cash register.");
+            }
+
+            var duplicateExists = await furpaDbContext.CashRegisterDetails
+                .AsNoTracking()
+                .AnyAsync(
+                    item =>
+                        item.CashNo == cashNo &&
+                        item.CashRegisterNo == terminal.TerminalNo &&
+                        item.Bank == terminal.Bank &&
+                        item.TerminalId == terminal.TerminalId &&
+                        item.MerchantNo == terminal.MerchantNo,
+                    cancellationToken);
+
+            if (duplicateExists)
+            {
+                throw new InvalidOperationException("The same terminal bank row already exists for this cash register.");
+            }
+
+            var entity = new FurpaCashRegisterDetailEntity
+            {
+                CashRegisterNo = terminal.TerminalNo,
+                Bank = terminal.Bank,
+                TerminalId = terminal.TerminalId,
+                MerchantNo = terminal.MerchantNo,
+                CashNo = cashNo
+            };
+
+            await furpaDbContext.CashRegisterDetails.AddAsync(entity, cancellationToken);
+            await furpaDbContext.SaveChangesAsync(cancellationToken);
+            return ToTerminalDto(entity);
+        }
+
+        await ValidateMikroTerminalScopeAsync(
+            branchNo,
+            cashNo,
+            terminal,
+            excludedTerminalId: null,
+            cancellationToken);
+
+        var mikroEntity = new MikroCashRegisterDetailEntity
+        {
+            CashRegisterNo = terminal.TerminalNo,
+            Bank = terminal.Bank,
+            TerminalId = terminal.TerminalId,
+            MerchantNo = terminal.MerchantNo,
+            CashNo = cashNo
+        };
+
+        var mappingExists = await mikroWriteDbContext.CashRegisterBranches
+            .AsNoTracking()
+            .AnyAsync(
+                item => item.BranchNo == branchNo && item.CashRegisterNo == terminal.TerminalNo,
+                cancellationToken);
+
+        await mikroWriteDbContext.CashRegisterDetails.AddAsync(mikroEntity, cancellationToken);
+        if (!mappingExists)
+        {
+            await mikroWriteDbContext.CashRegisterBranches.AddAsync(
+                new CashRegisterBranchEntity
+                {
+                    BranchNo = branchNo,
+                    CashRegisterNo = terminal.TerminalNo
+                },
+                cancellationToken);
+        }
+
+        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+        return ToTerminalDto(mikroEntity);
+    }
+
+    public async Task<CashRegisterTerminalDto> UpdateCashRegisterTerminalAsync(
+        int branchNo,
+        int cashNo,
+        int terminalId,
+        CreateCashRegisterTerminalRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidatePositive(terminalId, nameof(terminalId));
+        await EnsureCashRegisterExistsAsync(branchNo, cashNo, cancellationToken);
+        var terminal = NormalizeTerminalRequest(request);
+
+        var furpaEntity = await furpaDbContext.CashRegisterDetails
+            .FirstOrDefaultAsync(
+                item => item.Id == terminalId && item.CashNo == cashNo,
+                cancellationToken);
+
+        if (furpaEntity is not null)
+        {
+            var usedByAnotherCashRegister = await furpaDbContext.CashRegisterDetails
+                .AsNoTracking()
+                .AnyAsync(
+                    item =>
+                        item.CashRegisterNo == terminal.TerminalNo &&
+                        (!item.CashNo.HasValue || item.CashNo.Value != cashNo),
+                    cancellationToken);
+
+            if (usedByAnotherCashRegister)
+            {
+                throw new InvalidOperationException("Terminal number is already assigned to another cash register.");
+            }
+
+            var duplicateExists = await furpaDbContext.CashRegisterDetails
+                .AsNoTracking()
+                .AnyAsync(
+                    item =>
+                        item.Id != terminalId &&
+                        item.CashNo == cashNo &&
+                        item.CashRegisterNo == terminal.TerminalNo &&
+                        item.Bank == terminal.Bank &&
+                        item.TerminalId == terminal.TerminalId &&
+                        item.MerchantNo == terminal.MerchantNo,
+                    cancellationToken);
+
+            if (duplicateExists)
+            {
+                throw new InvalidOperationException("The same terminal bank row already exists for this cash register.");
+            }
+
+            ApplyTerminalValues(furpaEntity, terminal);
+            await furpaDbContext.SaveChangesAsync(cancellationToken);
+            return ToTerminalDto(furpaEntity);
+        }
+
+        var mikroEntity = await mikroWriteDbContext.CashRegisterDetails
+            .FirstOrDefaultAsync(
+                item => item.Id == terminalId && item.CashNo == cashNo,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("Terminal detail was not found.");
+        var previousTerminalNo = mikroEntity.CashRegisterNo ?? string.Empty;
+
+        await ValidateMikroTerminalScopeAsync(
+            branchNo,
+            cashNo,
+            terminal,
+            terminalId,
+            cancellationToken);
+
+        ApplyTerminalValues(mikroEntity, terminal);
+
+        var newMappingExists = await mikroWriteDbContext.CashRegisterBranches
+            .AsNoTracking()
+            .AnyAsync(
+                item => item.BranchNo == branchNo && item.CashRegisterNo == terminal.TerminalNo,
+                cancellationToken);
+
+        if (!newMappingExists)
+        {
+            await mikroWriteDbContext.CashRegisterBranches.AddAsync(
+                new CashRegisterBranchEntity
+                {
+                    BranchNo = branchNo,
+                    CashRegisterNo = terminal.TerminalNo
+                },
+                cancellationToken);
+        }
+
+        if (!string.Equals(previousTerminalNo, terminal.TerminalNo, StringComparison.OrdinalIgnoreCase))
+        {
+            var oldGroupHasOtherRows = await mikroWriteDbContext.CashRegisterDetails
+                .AsNoTracking()
+                .AnyAsync(
+                    item => item.Id != terminalId && item.CashRegisterNo == previousTerminalNo,
+                    cancellationToken);
+
+            if (!oldGroupHasOtherRows)
+            {
+                var oldMappings = await mikroWriteDbContext.CashRegisterBranches
+                    .Where(item => item.BranchNo == branchNo && item.CashRegisterNo == previousTerminalNo)
+                    .ToArrayAsync(cancellationToken);
+                mikroWriteDbContext.CashRegisterBranches.RemoveRange(oldMappings);
+            }
+        }
+
+        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+        return ToTerminalDto(mikroEntity);
+    }
+
     public async Task DeleteCashRegisterAsync(
         int branchNo,
         int cashNo,
@@ -467,61 +676,67 @@ public sealed class AyarlarService(
         ValidatePositive(branchNo, nameof(branchNo));
         ValidatePositive(cashNo, nameof(cashNo));
 
-        var cashRegistry = await furpaDbContext.CashRegistryDetails
-            .FirstOrDefaultAsync(
-                item =>
-                    item.BranchNo == branchNo &&
-                    item.CashRegisterNo == cashNo,
-                cancellationToken)
-            ?? throw new KeyNotFoundException("Cash register was not found for this branch.");
-
-        var terminalDetails = await mikroWriteDbContext.CashRegisterDetails
-            .Where(item => item.CashNo == cashNo)
-            .ToArrayAsync(cancellationToken);
-        var terminalNos = terminalDetails
-            .Select(item => item.CashRegisterNo)
-            .Where(item => !string.IsNullOrWhiteSpace(item))
-            .Select(item => item!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var terminalMappings = terminalNos.Length == 0
-            ? Array.Empty<CashRegisterBranchEntity>()
-            : await mikroWriteDbContext.CashRegisterBranches
-                .Where(item => terminalNos.Contains(item.CashRegisterNo))
-                .ToArrayAsync(cancellationToken);
-
-        var terminalNosMappedToOtherBranches = terminalMappings
-            .Where(item => item.BranchNo != branchNo)
-            .Select(item => item.CashRegisterNo)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var removableTerminalNos = terminalNos
-            .Where(item => !terminalNosMappedToOtherBranches.Contains(item))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var terminalDetailsToRemove = terminalDetails
-            .Where(item =>
-                !string.IsNullOrWhiteSpace(item.CashRegisterNo) &&
-                removableTerminalNos.Contains(item.CashRegisterNo))
-            .ToArray();
-        var terminalMappingsToRemove = terminalMappings
-            .Where(item =>
-                item.BranchNo == branchNo &&
-                removableTerminalNos.Contains(item.CashRegisterNo))
-            .ToArray();
-
-        await using var furpaTransaction = await furpaDbContext.Database.BeginTransactionAsync(
+        _ = await ExecuteFurpaTransactionAsync(
             IsolationLevel.Serializable,
+            async () =>
+            {
+                mikroWriteDbContext.ChangeTracker.Clear();
+
+                var cashRegistry = await furpaDbContext.CashRegistryDetails
+                    .FirstOrDefaultAsync(
+                        item =>
+                            item.BranchNo == branchNo &&
+                            item.CashRegisterNo == cashNo,
+                        cancellationToken)
+                    ?? throw new KeyNotFoundException("Cash register was not found for this branch.");
+
+                var terminalDetails = await mikroWriteDbContext.CashRegisterDetails
+                    .Where(item => item.CashNo == cashNo)
+                    .ToArrayAsync(cancellationToken);
+                var furpaTerminalDetails = await furpaDbContext.CashRegisterDetails
+                    .Where(item => item.CashNo == cashNo)
+                    .ToArrayAsync(cancellationToken);
+                var terminalNos = terminalDetails
+                    .Select(item => item.CashRegisterNo)
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .Select(item => item!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var terminalMappings = terminalNos.Length == 0
+                    ? Array.Empty<CashRegisterBranchEntity>()
+                    : await mikroWriteDbContext.CashRegisterBranches
+                        .Where(item => terminalNos.Contains(item.CashRegisterNo))
+                        .ToArrayAsync(cancellationToken);
+
+                var mappedToOtherBranches = terminalMappings
+                    .Where(item => item.BranchNo != branchNo)
+                    .Select(item => item.CashRegisterNo)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var removableTerminalNos = terminalNos
+                    .Where(item => !mappedToOtherBranches.Contains(item))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var terminalDetailsToRemove = terminalDetails
+                    .Where(item =>
+                        !string.IsNullOrWhiteSpace(item.CashRegisterNo) &&
+                        removableTerminalNos.Contains(item.CashRegisterNo))
+                    .ToArray();
+                var terminalMappingsToRemove = terminalMappings
+                    .Where(item =>
+                        item.BranchNo == branchNo &&
+                        removableTerminalNos.Contains(item.CashRegisterNo))
+                    .ToArray();
+
+                furpaDbContext.CashRegistryDetails.Remove(cashRegistry);
+                furpaDbContext.CashRegisterDetails.RemoveRange(furpaTerminalDetails);
+                mikroWriteDbContext.CashRegisterBranches.RemoveRange(terminalMappingsToRemove);
+                mikroWriteDbContext.CashRegisterDetails.RemoveRange(terminalDetailsToRemove);
+
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                return true;
+            },
             cancellationToken);
-
-        furpaDbContext.CashRegistryDetails.Remove(cashRegistry);
-        mikroWriteDbContext.CashRegisterBranches.RemoveRange(terminalMappingsToRemove);
-        mikroWriteDbContext.CashRegisterDetails.RemoveRange(terminalDetailsToRemove);
-
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-        await furpaTransaction.CommitAsync(cancellationToken);
     }
 
     public async Task DeleteCashRegisterTerminalAsync(
@@ -563,16 +778,24 @@ public sealed class AyarlarService(
             ?? throw new KeyNotFoundException("Terminal detail was not found.");
 
         var mapping = await mikroWriteDbContext.CashRegisterBranches
-            .FirstOrDefaultAsync(
+            .Where(
                 item =>
                     item.BranchNo == branchNo &&
+                    item.CashRegisterNo == mikroDetail.CashRegisterNo)
+            .ToArrayAsync(cancellationToken);
+
+        var groupHasOtherRows = await mikroWriteDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .AnyAsync(
+                item =>
+                    item.Id != terminalId &&
                     item.CashRegisterNo == mikroDetail.CashRegisterNo,
                 cancellationToken);
 
         mikroWriteDbContext.CashRegisterDetails.Remove(mikroDetail);
-        if (mapping is not null)
+        if (!groupHasOtherRows)
         {
-            mikroWriteDbContext.CashRegisterBranches.Remove(mapping);
+            mikroWriteDbContext.CashRegisterBranches.RemoveRange(mapping);
         }
 
         await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
@@ -617,6 +840,23 @@ public sealed class AyarlarService(
                 item.CashierState))
             .ToArrayAsync(cancellationToken);
 
+    public async Task<CashierPasswordDto> GetCashierPasswordAsync(
+        int cashierCode,
+        CancellationToken cancellationToken)
+    {
+        ValidatePositive(cashierCode, nameof(cashierCode));
+
+        return await furpaDbContext.Cashiers
+            .AsNoTracking()
+            .Where(item => item.CashierCode == cashierCode)
+            .Select(item => new CashierPasswordDto(
+                item.CashierCode,
+                item.CashierName,
+                item.CashierPassword))
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new KeyNotFoundException("Cashier was not found.");
+    }
+
     public async Task<CashierPasswordMutationDto> CreateCashierAsync(
         CreateCashierRequest request,
         int currentUserWarehouseNo,
@@ -626,40 +866,41 @@ public sealed class AyarlarService(
         var cashierName = NormalizeCashierName(request.CashierName);
         var authorization = NormalizeText(request.CashierAuthorization, 1, nameof(request.CashierAuthorization));
 
-        await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+        return await ExecuteFurpaTransactionAsync(
             IsolationLevel.Serializable,
+            async () =>
+            {
+                var lastCode = await furpaDbContext.Cashiers
+                    .Select(item => (int?)item.CashierCode)
+                    .MaxAsync(cancellationToken) ?? 0;
+                var generatedPassword = GenerateNumericPassword();
+                var now = DateTime.Now;
+
+                var entity = new CashierEntity
+                {
+                    CreateUser = currentUserWarehouseNo,
+                    CreateDate = now,
+                    UpdateUser = currentUserWarehouseNo,
+                    UpdateDate = now,
+                    CashierCode = lastCode + 1,
+                    CashierName = cashierName,
+                    CashierPassword = generatedPassword,
+                    CashierAuthorization = authorization,
+                    CashierState = true
+                };
+
+                await furpaDbContext.Cashiers.AddAsync(entity, cancellationToken);
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
+                await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
+
+                var cashier = ToCashierDto(entity);
+                return new CashierPasswordMutationDto(
+                    cashier.CashierCode,
+                    generatedPassword,
+                    cashier);
+            },
             cancellationToken);
-
-        var lastCode = await furpaDbContext.Cashiers
-            .Select(item => (int?)item.CashierCode)
-            .MaxAsync(cancellationToken) ?? 0;
-        var generatedPassword = GenerateNumericPassword();
-        var now = DateTime.Now;
-
-        var entity = new CashierEntity
-        {
-            CreateUser = currentUserWarehouseNo,
-            CreateDate = now,
-            UpdateUser = currentUserWarehouseNo,
-            UpdateDate = now,
-            CashierCode = lastCode + 1,
-            CashierName = cashierName,
-            CashierPassword = generatedPassword,
-            CashierAuthorization = authorization,
-            CashierState = true
-        };
-
-        await furpaDbContext.Cashiers.AddAsync(entity, cancellationToken);
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        var cashier = ToCashierDto(entity);
-        return new CashierPasswordMutationDto(
-            cashier.CashierCode,
-            generatedPassword,
-            cashier);
     }
 
     public async Task<CashierDto> UpdateCashierAsync(
@@ -671,24 +912,25 @@ public sealed class AyarlarService(
         ValidatePositive(cashierCode, nameof(cashierCode));
         ValidateNonNegative(currentUserWarehouseNo, nameof(currentUserWarehouseNo));
 
-        await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+        return await ExecuteFurpaTransactionAsync(
             IsolationLevel.ReadCommitted,
+            async () =>
+            {
+                var entity = await furpaDbContext.Cashiers
+                    .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
+                    ?? throw new KeyNotFoundException("Cashier was not found.");
+
+                entity.UpdateUser = currentUserWarehouseNo;
+                entity.UpdateDate = DateTime.Now;
+                entity.CashierName = NormalizeCashierName(request.CashierName);
+                entity.CashierAuthorization = NormalizeText(request.CashierAuthorization, 1, nameof(request.CashierAuthorization));
+                entity.CashierState = request.CashierState;
+
+                await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
+                return ToCashierDto(entity);
+            },
             cancellationToken);
-
-        var entity = await furpaDbContext.Cashiers
-            .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
-            ?? throw new KeyNotFoundException("Cashier was not found.");
-
-        entity.UpdateUser = currentUserWarehouseNo;
-        entity.UpdateDate = DateTime.Now;
-        entity.CashierName = NormalizeCashierName(request.CashierName);
-        entity.CashierAuthorization = NormalizeText(request.CashierAuthorization, 1, nameof(request.CashierAuthorization));
-        entity.CashierState = request.CashierState;
-
-        await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
-        await furpaDbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return ToCashierDto(entity);
     }
 
     public async Task<CashierPasswordMutationDto> ResetCashierPasswordAsync(
@@ -699,34 +941,29 @@ public sealed class AyarlarService(
         ValidatePositive(cashierCode, nameof(cashierCode));
         ValidateNonNegative(currentUserWarehouseNo, nameof(currentUserWarehouseNo));
 
-        var executionStrategy = furpaDbContext.Database.CreateExecutionStrategy();
+        return await ExecuteFurpaTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            async () =>
+            {
+                var entity = await furpaDbContext.Cashiers
+                    .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
+                    ?? throw new KeyNotFoundException("Cashier was not found.");
 
-        return await executionStrategy.ExecuteAsync(async () =>
-        {
-            furpaDbContext.ChangeTracker.Clear();
-            await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.ReadCommitted,
-                cancellationToken);
+                var generatedPassword = GenerateNumericPassword();
+                entity.CashierPassword = generatedPassword;
+                entity.UpdateUser = currentUserWarehouseNo;
+                entity.UpdateDate = DateTime.Now;
 
-            var entity = await furpaDbContext.Cashiers
-                .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
-                ?? throw new KeyNotFoundException("Cashier was not found.");
+                await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
+                await furpaDbContext.SaveChangesAsync(cancellationToken);
 
-            var generatedPassword = GenerateNumericPassword();
-            entity.CashierPassword = generatedPassword;
-            entity.UpdateUser = currentUserWarehouseNo;
-            entity.UpdateDate = DateTime.Now;
-
-            await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
-            await furpaDbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            var cashier = ToCashierDto(entity);
-            return new CashierPasswordMutationDto(
-                cashier.CashierCode,
-                generatedPassword,
-                cashier);
-        });
+                var cashier = ToCashierDto(entity);
+                return new CashierPasswordMutationDto(
+                    cashier.CashierCode,
+                    generatedPassword,
+                    cashier);
+            },
+            cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<B2BBulletinDto>> ListB2BBulletinsAsync(
@@ -1154,6 +1391,15 @@ public sealed class AyarlarService(
             item.MerchantNo ?? string.Empty,
             item.CashNo);
 
+    private static CashRegisterTerminalDto ToTerminalDto(FurpaCashRegisterDetailEntity item) =>
+        new(
+            item.Id,
+            item.CashRegisterNo ?? string.Empty,
+            item.Bank ?? string.Empty,
+            item.TerminalId ?? string.Empty,
+            item.MerchantNo ?? string.Empty,
+            item.CashNo);
+
     private static CashRegisterTerminalDto ToTerminalDto(CashRegisterTerminalSource item) =>
         new(
             item.Id,
@@ -1267,26 +1513,121 @@ public sealed class AyarlarService(
         IReadOnlyCollection<CreateCashRegisterTerminalRequest> terminals)
     {
         var normalized = terminals
-            .Select(item => new NormalizedTerminalRequest(
-                NormalizeText(item.TerminalNo, 40, nameof(item.TerminalNo)),
-                NormalizeText(item.Bank, 100, nameof(item.Bank)),
-                NormalizeText(item.TerminalId, 40, nameof(item.TerminalId)),
-                NormalizeText(item.MerchantNo, 40, nameof(item.MerchantNo))))
+            .Select(NormalizeTerminalRequest)
             .ToArray();
 
-        var duplicateTerminalNos = normalized
-            .GroupBy(item => item.TerminalNo, StringComparer.OrdinalIgnoreCase)
+        var duplicateRows = normalized
+            .GroupBy(
+                item => $"{item.TerminalNo}\u001f{item.Bank}\u001f{item.TerminalId}\u001f{item.MerchantNo}",
+                StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
+            .Select(group => group.First().TerminalNo)
             .ToArray();
 
-        if (duplicateTerminalNos.Length > 0)
+        if (duplicateRows.Length > 0)
         {
             throw new InvalidOperationException(
-                $"Duplicate terminal numbers were found: {string.Join(", ", duplicateTerminalNos)}");
+                $"Duplicate terminal bank rows were found: {string.Join(", ", duplicateRows)}");
         }
 
         return normalized;
+    }
+
+    private static NormalizedTerminalRequest NormalizeTerminalRequest(
+        CreateCashRegisterTerminalRequest terminal) =>
+        new(
+            NormalizeText(terminal.TerminalNo, 40, nameof(terminal.TerminalNo)),
+            NormalizeText(terminal.Bank, 100, nameof(terminal.Bank)),
+            NormalizeText(terminal.TerminalId, 40, nameof(terminal.TerminalId)),
+            NormalizeText(terminal.MerchantNo, 40, nameof(terminal.MerchantNo)));
+
+    private async Task EnsureCashRegisterExistsAsync(
+        int branchNo,
+        int cashNo,
+        CancellationToken cancellationToken)
+    {
+        ValidatePositive(branchNo, nameof(branchNo));
+        ValidatePositive(cashNo, nameof(cashNo));
+
+        var exists = await furpaDbContext.CashRegistryDetails
+            .AsNoTracking()
+            .AnyAsync(
+                item => item.BranchNo == branchNo && item.CashRegisterNo == cashNo,
+                cancellationToken);
+
+        if (!exists)
+        {
+            throw new KeyNotFoundException("Cash register was not found for this branch.");
+        }
+    }
+
+    private async Task ValidateMikroTerminalScopeAsync(
+        int branchNo,
+        int cashNo,
+        NormalizedTerminalRequest terminal,
+        int? excludedTerminalId,
+        CancellationToken cancellationToken)
+    {
+        var usedByAnotherCashRegister = await mikroWriteDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .AnyAsync(
+                item =>
+                    item.CashRegisterNo == terminal.TerminalNo &&
+                    (!item.CashNo.HasValue || item.CashNo.Value != cashNo),
+                cancellationToken);
+
+        if (usedByAnotherCashRegister)
+        {
+            throw new InvalidOperationException("Terminal number is already assigned to another cash register.");
+        }
+
+        var duplicateExists = await mikroWriteDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .AnyAsync(
+                item =>
+                    (!excludedTerminalId.HasValue || item.Id != excludedTerminalId.Value) &&
+                    item.CashNo == cashNo &&
+                    item.CashRegisterNo == terminal.TerminalNo &&
+                    item.Bank == terminal.Bank &&
+                    item.TerminalId == terminal.TerminalId &&
+                    item.MerchantNo == terminal.MerchantNo,
+                cancellationToken);
+
+        if (duplicateExists)
+        {
+            throw new InvalidOperationException("The same terminal bank row already exists for this cash register.");
+        }
+
+        var mappedToAnotherBranch = await mikroWriteDbContext.CashRegisterBranches
+            .AsNoTracking()
+            .AnyAsync(
+                item => item.CashRegisterNo == terminal.TerminalNo && item.BranchNo != branchNo,
+                cancellationToken);
+
+        if (mappedToAnotherBranch)
+        {
+            throw new InvalidOperationException("Terminal number is already assigned to another branch.");
+        }
+    }
+
+    private static void ApplyTerminalValues(
+        FurpaCashRegisterDetailEntity entity,
+        NormalizedTerminalRequest terminal)
+    {
+        entity.CashRegisterNo = terminal.TerminalNo;
+        entity.Bank = terminal.Bank;
+        entity.TerminalId = terminal.TerminalId;
+        entity.MerchantNo = terminal.MerchantNo;
+    }
+
+    private static void ApplyTerminalValues(
+        MikroCashRegisterDetailEntity entity,
+        NormalizedTerminalRequest terminal)
+    {
+        entity.CashRegisterNo = terminal.TerminalNo;
+        entity.Bank = terminal.Bank;
+        entity.TerminalId = terminal.TerminalId;
+        entity.MerchantNo = terminal.MerchantNo;
     }
 
     private static string NormalizeIpAddress(string value)
@@ -1411,6 +1752,26 @@ public sealed class AyarlarService(
         }
 
         return new string(chars);
+    }
+
+    private async Task<T> ExecuteFurpaTransactionAsync<T>(
+        IsolationLevel isolationLevel,
+        Func<Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        var executionStrategy = furpaDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            furpaDbContext.ChangeTracker.Clear();
+            await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+                isolationLevel,
+                cancellationToken);
+
+            var result = await operation();
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        });
     }
 
     private async Task SynchronizeCashierDefinitionAsync(

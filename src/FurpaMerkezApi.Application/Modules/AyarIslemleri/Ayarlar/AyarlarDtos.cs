@@ -156,6 +156,11 @@ public sealed record CashierPasswordMutationDto(
     string GeneratedPassword,
     CashierDto Cashier);
 
+public sealed record CashierPasswordDto(
+    int CashierCode,
+    string CashierName,
+    string Password);
+
 public sealed record B2BBulletinDto(
     int Id,
     string Definition,
