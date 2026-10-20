@@ -95423,6 +95423,10 @@
           },
           "hasPurchaseRequirement": {
             "type": "boolean"
+          },
+          "unitPointer": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

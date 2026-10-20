@@ -1146,6 +1146,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `stockName` | string | Hayir | nullable |
 | `unitMultiplier` | number (double) | Hayir |  |
 | `unitName` | string | Hayir | nullable |
+| `unitPointer` | integer (int32) | Hayir |  |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts.ProductSourceWarehouseDto

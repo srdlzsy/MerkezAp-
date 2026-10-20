@@ -936,10 +936,7 @@ public sealed class CompanyMovementWriteService(
                 throw new ArgumentException("Line unit price can not be negative.", nameof(request.Lines));
             }
 
-            if (line.UnitPointer is < 1 or > byte.MaxValue)
-            {
-                throw new ArgumentException("Line unit pointer must be between 1 and 255.", nameof(request.Lines));
-            }
+            EnsurePrimaryUnitPointer(line.UnitPointer, nameof(request.Lines));
 
             if (line.LotNo < 0)
             {
@@ -950,6 +947,16 @@ public sealed class CompanyMovementWriteService(
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    internal static void EnsurePrimaryUnitPointer(int unitPointer, string parameterName)
+    {
+        if (unitPointer != 1)
+        {
+            throw new ArgumentException(
+                "Company movement lines must use primary unit pointer 1. Unit multiplier is a package quantity and must not be sent as unit pointer.",
+                parameterName);
+        }
+    }
 }
 
 internal sealed record CompanyMovementLineTaxInfo(byte TaxPointer, decimal TaxRatePercent)

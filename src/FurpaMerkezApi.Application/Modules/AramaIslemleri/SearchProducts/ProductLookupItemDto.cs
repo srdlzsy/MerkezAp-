@@ -34,7 +34,8 @@ public sealed record ProductLookupItemDto(
     string ModelCode = "",
     string ProcurementType = "Unassigned",
     IReadOnlyCollection<ProductSourceWarehouseDto>? SourceWarehouses = null,
-    bool HasPurchaseRequirement = false);
+    bool HasPurchaseRequirement = false,
+    int UnitPointer = 1);
 
 public sealed record ProductSourceWarehouseDto(
     int WarehouseNo,

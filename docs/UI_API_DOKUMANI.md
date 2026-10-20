@@ -5217,8 +5217,10 @@ Kural:
 
 Koli ici standart alan:
 
+- `unitPointer`, urun arama sonucunda ana birimi gosteren sabit `1` degeridir. Firma sevki/iadesi create satirlarinda bu alan kullanilir.
 - UI urun secim, miktar giris paneli ve terminal satir ekranlarinda koli ici miktar icin ana alan olarak `unitMultiplier` kullanmalidir.
 - `unitMultiplier`, ana miktar birimine gore koli/ikinci birim katsayisidir. Ornek: `unitName=ADET`, `secondaryUnitName=KOLI`, `1 KOLI = 6 ADET` ise `unitMultiplier=6` doner.
+- `unitMultiplier`, `unitPointer` degildir. Ornegin `unitMultiplier=6`, altinci birim anlamina gelmez ve create body icinde `unitPointer: 6` olarak gonderilmemelidir.
 - Deger negatif donmez; Mikro `sto_birim2_katsayi` veya kaynak alan negatif olsa bile API pozitiflestirir.
 - `secondaryUnitMultiplier` geriye uyum icin korunur; yeni UI ana karar icin `unitMultiplier` okumalidir.
 
@@ -5238,6 +5240,7 @@ Response:
     "purchasePriceSource": "purchase-requirement",
     "purchaseSupplierCode": "120.01.03106",
     "unitName": "ADET",
+    "unitPointer": 1,
     "unitMultiplier": 6,
     "secondaryUnitName": "KOLI",
     "secondaryUnitMultiplier": 6,
@@ -5285,6 +5288,7 @@ UI kullanim notu:
 - Satis/sevk formlarinda `isSalesBlocked = true` olan urunlerde uyari gosterilebilir; depolar arasi sevkte bu alan tek basina satira ekleme engeli degildir.
 - `isDelisted=true` gelen satirlar normalde listede gorunur ama pasif/delist etiketiyle ayrilmalidir. Kullanici gizle toggle'ini acarsa UI tekrar `includeDelisted=false` ile backend'den liste istemelidir.
 - Koli ici gosterim icin `unitMultiplier > 1` ise `KOLI ici 6 ADET` gibi gosterim yapilabilir; miktar girisinde koli adedi girilecekse ana miktar `koliAdedi * unitMultiplier` olarak hesaplanir.
+- Firma sevki ve firma iadesi satirlari ana miktar biriminde yazilir. UI bu akislarin create body satirinda `unitPointer=1` gondermeli; `unitMultiplier` yalniz miktar adimi/koli hesabi icin kullanilmalidir. Backend farkli pointer'i `400 Bad Request` ile reddeder.
 - Barkod okutulan satir ekleme ekranlarinda nihai karar icin once `barkodlar/{barcode}/cozumle` cagrilmalidir; `urunler` daha cok liste/arama deneyimi icindir.
 
 ### Fiyat Gor
@@ -26470,6 +26474,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `stockName` | string | Hayir | nullable |
 | `unitMultiplier` | number (double) | Hayir |  |
 | `unitName` | string | Hayir | nullable |
+| `unitPointer` | integer (int32) | Hayir |  |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts.ProductSourceWarehouseDto
