@@ -2576,7 +2576,7 @@ Bu modul eski `SettingsController` islevlerini yeni API mimarisine uygun olarak 
 
 Veri kaynaklari:
 
-- Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `Cashiers`
+- Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `Cashiers`, `KASIYER_TANIMLARI`
 - FurpaB2B DB: `Bultens`, `Users`, `UserAccounts`
 - Mikro write DB: `CashRegisterDetails`, `CashRegisterBranches`
 - Auth DB: `despatch_drivers`
@@ -3296,7 +3296,7 @@ Endpoint ozeti:
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | path | `branchNo: int` | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `POST /api/ayar-islemleri/kasa-pos-terminalleri` | body | `CreateCashRegisterHttpRequest` | `CashRegisterResponse` | `kasa-pos-terminalleri.create` |
 | `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | path | `branchNo`, `cashNo` | - | `kasa-pos-terminalleri.update` |
-| `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}` | path | `branchNo`, `terminalNo` | - | `kasa-pos-terminalleri.update` |
+| `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | path | `branchNo`, `cashNo`, `terminalId` | - | `kasa-pos-terminalleri.update` |
 | `GET /api/ayar-islemleri/kasiyerler` | - | - | `CashierDto[]` | `kasiyerler.list` |
 | `POST /api/ayar-islemleri/kasiyerler` | body | `CreateCashierHttpRequest` | `CashierPasswordMutationDto` | `kasiyerler.create` |
 | `PUT /api/ayar-islemleri/kasiyerler/{cashierCode}` | body + path | `UpdateCashierHttpRequest` | `CashierDto` | `kasiyerler.update` |
@@ -3636,7 +3636,6 @@ Ornek:
   {
     "id": 3503,
     "terminalNo": "PAV210010584",
-    "cashRegisterNo": "PAV210010584",
     "bank": "Ä°ÅŸ BankasÄ±",
     "terminalId": "PAV210010584-3",
     "merchantNo": "PAV210010584-3",
@@ -3645,7 +3644,6 @@ Ornek:
   {
     "id": 3566,
     "terminalNo": "PAV210010584",
-    "cashRegisterNo": "PAV210010584",
     "bank": "TEB",
     "terminalId": "PSB25681",
     "merchantNo": "670522",
@@ -3654,15 +3652,15 @@ Ornek:
 ]
 ```
 
-Bu response'ta `terminalNo` ve `cashRegisterNo` ayni terminal/finans grup numarasidir. UI eski ad icin `terminalNo`, yeni net ad icin `cashRegisterNo` kullanabilir.
+Ayni terminal numarasina sahip banka satirlari `id` ile birbirinden ayrilir. UI silme isteginde secili satirin `id` degerini kullanmalidir.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}`
 
 Sube kapsaminda kasa kaydini siler. Furpa `CashRegistryDetails` kaydi silinir. Mikro tarafinda ilgili terminal detaylari ve branch mappingleri de temizlenir.
 
-`DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}`
+`DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
 
-Tek terminal mapping ve terminal detay kaydini siler.
+Secili kasa icindeki tek terminal detay satirini `terminalId` ile siler; ayni terminal numarasina ait diger banka satirlari korunur.
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari`
 
@@ -3698,6 +3696,10 @@ Durum hesabi:
 - `stateName` UI icin metinsel karsiliktir; hata durumunda `null` gelir.
 
 ### Kasiyerler
+
+Kasiyer ana kaydi eski POS/dosya akisi icin `Cashiers`, yeni kasa uyumluluk kaydi ise `KASIYER_TANIMLARI` tablosundadir. API kasiyer olusturma, ad/yetki/durum guncelleme ve sifre sifirlama islemlerinde iki tabloyu ayni transaction icinde gunceller. Iki kaynaktan biri yazilamazsa islem basarili donmez ve diger yazim da rollback edilir. API veritabanindaki devre disi trigger'a guvenmez.
+
+`KASIYER_TANIMLARI` guncellenirken ad son bosluktan ad/soyad olarak ayrilir. Mevcut `Adres`, `Telefon` ve `sifre_anahtari` alanlari korunur.
 
 `GET /api/ayar-islemleri/kasiyerler`
 
@@ -3746,7 +3748,10 @@ Notlar:
 
 - `cashierName` backend tarafinda buyuk harfe cevrilir.
 - Yeni sifre 6 haneli numeric uretilir.
+- `cashierAuthorization` tek karakterdir; ornek `R` veya `Z`.
 - `createUser` ve `updateUser` JWT icindeki `warehouse_no` degerinden set edilir.
+- Response ancak `Cashiers` ve `KASIYER_TANIMLARI` birlikte kaydedildikten sonra doner.
+- Eski dosya tabanli POS kasalarinda DB degisikliginin cihaza ulasmasi icin ilgili sube adina `GET /api/operations/cashierfile?warehouseNo={warehouseNo}` akisi yine calistirilmalidir. Bu akis guncel `Cashiers` verisinden `KASIYER.DAT`/`YETKI.DAT` uretir ve kasa mesaj dosyalarini yazar.
 
 `PUT /api/ayar-islemleri/kasiyerler/{cashierCode}`
 
@@ -3764,7 +3769,7 @@ Body:
 
 `POST /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre-sifirla`
 
-Kasiyere yeni 6 haneli numeric sifre uretir. Response `CashierPasswordMutationDto` modelidir.
+Kasiyere yeni 6 haneli numeric sifre uretir. Ayni sifre `Cashiers.CashierPassword` ve `KASIYER_TANIMLARI.KasiyerSifre` alanlarina atomik olarak yazilir. Response `CashierPasswordMutationDto` modelidir ve sifre yalniz bu response'ta acik olarak doner.
 
 ### Soforler
 
@@ -25383,8 +25388,8 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterSettingsLookupsDto |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
-| DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: terminalNo / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasiyerler/{cashierCode}` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu)<br>body: request / UpdateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierDto<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -26614,7 +26619,6 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `bank` | string | Hayir | nullable |
 | `cashNo` | integer (int32) | Hayir | nullable |
-| `cashRegisterNo` | string | Hayir | nullable |
 | `id` | integer (int32) | Hayir |  |
 | `merchantNo` | string | Hayir | nullable |
 | `terminalId` | string | Hayir | nullable |
@@ -34223,14 +34227,14 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
-| `cashierAuthorization` | string | Evet | minLength=0; maxLength=100 |
+| `cashierAuthorization` | string | Evet | minLength=0; maxLength=1 |
 | `cashierName` | string | Evet | minLength=0; maxLength=100 |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.Kasiyerler.UpdateCashierHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
-| `cashierAuthorization` | string | Evet | minLength=0; maxLength=100 |
+| `cashierAuthorization` | string | Evet | minLength=0; maxLength=1 |
 | `cashierName` | string | Evet | minLength=0; maxLength=100 |
 | `cashierState` | boolean | Evet |  |
 

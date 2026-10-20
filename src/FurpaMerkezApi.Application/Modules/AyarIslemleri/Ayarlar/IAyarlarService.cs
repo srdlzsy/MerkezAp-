@@ -45,7 +45,11 @@ public interface IAyarlarService
 
     Task DeleteCashRegisterAsync(int branchNo, int cashNo, CancellationToken cancellationToken);
 
-    Task DeleteCashRegisterTerminalAsync(int branchNo, string terminalNo, CancellationToken cancellationToken);
+    Task DeleteCashRegisterTerminalAsync(
+        int branchNo,
+        int cashNo,
+        int terminalId,
+        CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<CashRegisterMessageStatusDto>> ReadCashRegisterMessageStatusAsync(
         int branchNo,

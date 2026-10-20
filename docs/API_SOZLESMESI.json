@@ -47480,7 +47480,7 @@
         ]
       }
     },
-    "/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}": {
+    "/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}": {
       "delete": {
         "tags": [
           "KasaPosTerminalleri"
@@ -47498,13 +47498,25 @@
             }
           },
           {
-            "name": "terminalNo",
+            "name": "cashNo",
             "in": "path",
             "required": true,
             "schema": {
-              "maxLength": 40,
-              "minLength": 0,
-              "type": "string"
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "terminalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
             }
           }
         ],
@@ -95838,11 +95850,6 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
-          },
-          "cashRegisterNo": {
-            "type": "string",
-            "nullable": true,
-            "readOnly": true
           }
         },
         "additionalProperties": false
@@ -120172,7 +120179,7 @@
             "type": "string"
           },
           "cashierAuthorization": {
-            "maxLength": 100,
+            "maxLength": 1,
             "minLength": 0,
             "type": "string"
           }
@@ -120193,7 +120200,7 @@
             "type": "string"
           },
           "cashierAuthorization": {
-            "maxLength": 100,
+            "maxLength": 1,
             "minLength": 0,
             "type": "string"
           },

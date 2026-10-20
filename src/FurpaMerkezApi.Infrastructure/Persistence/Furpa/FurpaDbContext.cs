@@ -17,6 +17,8 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
 
     public DbSet<CashierEntity> Cashiers => Set<CashierEntity>();
 
+    public DbSet<CashierDefinitionEntity> CashierDefinitions => Set<CashierDefinitionEntity>();
+
     public DbSet<CashRegistryDetailEntity> CashRegistryDetails => Set<CashRegistryDetailEntity>();
 
     public DbSet<CashRegisterDetailEntity> CashRegisterDetails => Set<CashRegisterDetailEntity>();
@@ -76,10 +78,30 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
             entity.ToTable("Cashiers");
             entity.HasKey(item => item.CashierId);
             entity.Property(item => item.CashierName).HasMaxLength(100);
-            entity.Property(item => item.CashierPassword).HasMaxLength(100);
-            entity.Property(item => item.CashierAuthorization).HasMaxLength(100);
+            entity.Property(item => item.CashierPassword).HasMaxLength(6);
+            entity.Property(item => item.CashierAuthorization).HasMaxLength(1);
             entity.Property(item => item.CreateDate).HasColumnType("datetime");
             entity.Property(item => item.UpdateDate).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<CashierDefinitionEntity>(entity =>
+        {
+            entity.ToTable("KASIYER_TANIMLARI");
+            entity.HasKey(item => item.CashierId);
+            entity.Property(item => item.CashierId).HasColumnName("KasiyerId").ValueGeneratedNever();
+            entity.Property(item => item.CreatedByUser).HasColumnName("OlusturanKullanici").HasMaxLength(100);
+            entity.Property(item => item.CreatedAt).HasColumnName("OlusturmaTarihi").HasColumnType("datetime");
+            entity.Property(item => item.UpdatedByUser).HasColumnName("GuncelleyenKullanici").HasMaxLength(100);
+            entity.Property(item => item.UpdatedAt).HasColumnName("GuncellemeTarihi").HasColumnType("datetime");
+            entity.Property(item => item.CashierCode).HasColumnName("KasiyerKodu").HasMaxLength(100);
+            entity.Property(item => item.FirstName).HasColumnName("KasiyerAdi").HasMaxLength(200);
+            entity.Property(item => item.LastName).HasColumnName("KasiyerSoyadi").HasMaxLength(200);
+            entity.Property(item => item.Password).HasColumnName("KasiyerSifre").HasMaxLength(200);
+            entity.Property(item => item.Authorization).HasColumnName("KasiyerYetki").HasMaxLength(200);
+            entity.Property(item => item.IsActive).HasColumnName("KasiyerDurumu");
+            entity.Property(item => item.Address).HasColumnName("Adres").HasMaxLength(500);
+            entity.Property(item => item.Phone).HasColumnName("Telefon").HasMaxLength(100);
+            entity.Property(item => item.PasswordKey).HasColumnName("sifre_anahtari").HasMaxLength(100);
         });
 
         modelBuilder.Entity<CashRegistryDetailEntity>(entity =>

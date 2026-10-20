@@ -105,19 +105,21 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
         return NoContent();
     }
 
-    [HttpDelete("subeler/{branchNo:int}/terminaller/{terminalNo}")]
+    [HttpDelete("subeler/{branchNo:int}/kasalar/{cashNo:int}/terminaller/{terminalId:int}")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteTerminal(
         [Range(1, int.MaxValue)] int branchNo,
-        [Required(AllowEmptyStrings = false), StringLength(40)] string terminalNo,
+        [Range(1, int.MaxValue)] int cashNo,
+        [Range(1, int.MaxValue)] int terminalId,
         CancellationToken cancellationToken)
     {
         await ayarlarService.DeleteCashRegisterTerminalAsync(
             User.ResolveWarehouseNoForPolicy(branchNo, UpdatePolicy),
-            terminalNo,
+            cashNo,
+            terminalId,
             cancellationToken);
         return NoContent();
     }

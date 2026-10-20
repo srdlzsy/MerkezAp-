@@ -526,26 +526,55 @@ public sealed class AyarlarService(
 
     public async Task DeleteCashRegisterTerminalAsync(
         int branchNo,
-        string terminalNo,
+        int cashNo,
+        int terminalId,
         CancellationToken cancellationToken)
     {
         ValidatePositive(branchNo, nameof(branchNo));
-        var normalizedTerminalNo = NormalizeText(terminalNo, 40, nameof(terminalNo));
+        ValidatePositive(cashNo, nameof(cashNo));
+        ValidatePositive(terminalId, nameof(terminalId));
+
+        var cashRegistryExists = await furpaDbContext.CashRegistryDetails
+            .AnyAsync(
+                item => item.BranchNo == branchNo && item.CashRegisterNo == cashNo,
+                cancellationToken);
+
+        if (!cashRegistryExists)
+        {
+            throw new KeyNotFoundException("Cash register was not found for this branch.");
+        }
+
+        var furpaDetail = await furpaDbContext.CashRegisterDetails
+            .FirstOrDefaultAsync(
+                item => item.Id == terminalId && item.CashNo == cashNo,
+                cancellationToken);
+
+        if (furpaDetail is not null)
+        {
+            furpaDbContext.CashRegisterDetails.Remove(furpaDetail);
+            await furpaDbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var mikroDetail = await mikroWriteDbContext.CashRegisterDetails
+            .FirstOrDefaultAsync(
+                item => item.Id == terminalId && item.CashNo == cashNo,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("Terminal detail was not found.");
 
         var mapping = await mikroWriteDbContext.CashRegisterBranches
             .FirstOrDefaultAsync(
                 item =>
                     item.BranchNo == branchNo &&
-                    item.CashRegisterNo == normalizedTerminalNo,
-                cancellationToken)
-            ?? throw new KeyNotFoundException("Terminal branch mapping was not found.");
+                    item.CashRegisterNo == mikroDetail.CashRegisterNo,
+                cancellationToken);
 
-        var detail = await mikroWriteDbContext.CashRegisterDetails
-            .FirstOrDefaultAsync(item => item.CashRegisterNo == normalizedTerminalNo, cancellationToken)
-            ?? throw new KeyNotFoundException("Terminal detail was not found.");
+        mikroWriteDbContext.CashRegisterDetails.Remove(mikroDetail);
+        if (mapping is not null)
+        {
+            mikroWriteDbContext.CashRegisterBranches.Remove(mapping);
+        }
 
-        mikroWriteDbContext.CashRegisterBranches.Remove(mapping);
-        mikroWriteDbContext.CashRegisterDetails.Remove(detail);
         await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -595,7 +624,7 @@ public sealed class AyarlarService(
     {
         ValidateNonNegative(currentUserWarehouseNo, nameof(currentUserWarehouseNo));
         var cashierName = NormalizeCashierName(request.CashierName);
-        var authorization = NormalizeText(request.CashierAuthorization, 100, nameof(request.CashierAuthorization));
+        var authorization = NormalizeText(request.CashierAuthorization, 1, nameof(request.CashierAuthorization));
 
         await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
@@ -622,6 +651,8 @@ public sealed class AyarlarService(
 
         await furpaDbContext.Cashiers.AddAsync(entity, cancellationToken);
         await furpaDbContext.SaveChangesAsync(cancellationToken);
+        await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
+        await furpaDbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var cashier = ToCashierDto(entity);
@@ -640,6 +671,10 @@ public sealed class AyarlarService(
         ValidatePositive(cashierCode, nameof(cashierCode));
         ValidateNonNegative(currentUserWarehouseNo, nameof(currentUserWarehouseNo));
 
+        await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+
         var entity = await furpaDbContext.Cashiers
             .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
             ?? throw new KeyNotFoundException("Cashier was not found.");
@@ -647,10 +682,12 @@ public sealed class AyarlarService(
         entity.UpdateUser = currentUserWarehouseNo;
         entity.UpdateDate = DateTime.Now;
         entity.CashierName = NormalizeCashierName(request.CashierName);
-        entity.CashierAuthorization = NormalizeText(request.CashierAuthorization, 100, nameof(request.CashierAuthorization));
+        entity.CashierAuthorization = NormalizeText(request.CashierAuthorization, 1, nameof(request.CashierAuthorization));
         entity.CashierState = request.CashierState;
 
+        await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
         await furpaDbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return ToCashierDto(entity);
     }
 
@@ -662,6 +699,10 @@ public sealed class AyarlarService(
         ValidatePositive(cashierCode, nameof(cashierCode));
         ValidateNonNegative(currentUserWarehouseNo, nameof(currentUserWarehouseNo));
 
+        await using var transaction = await furpaDbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+
         var entity = await furpaDbContext.Cashiers
             .FirstOrDefaultAsync(item => item.CashierCode == cashierCode, cancellationToken)
             ?? throw new KeyNotFoundException("Cashier was not found.");
@@ -671,7 +712,9 @@ public sealed class AyarlarService(
         entity.UpdateUser = currentUserWarehouseNo;
         entity.UpdateDate = DateTime.Now;
 
+        await SynchronizeCashierDefinitionAsync(entity, cancellationToken);
         await furpaDbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var cashier = ToCashierDto(entity);
         return new CashierPasswordMutationDto(
@@ -1362,6 +1405,47 @@ public sealed class AyarlarService(
         }
 
         return new string(chars);
+    }
+
+    private async Task SynchronizeCashierDefinitionAsync(
+        CashierEntity cashier,
+        CancellationToken cancellationToken)
+    {
+        var definition = await furpaDbContext.CashierDefinitions
+            .FirstOrDefaultAsync(item => item.CashierId == cashier.CashierId, cancellationToken);
+        var (firstName, lastName) = SplitCashierName(cashier.CashierName);
+
+        if (definition is null)
+        {
+            definition = new CashierDefinitionEntity
+            {
+                CashierId = cashier.CashierId,
+                Address = string.Empty,
+                Phone = string.Empty
+            };
+            await furpaDbContext.CashierDefinitions.AddAsync(definition, cancellationToken);
+        }
+
+        definition.CreatedByUser = cashier.CreateUser.ToString(CultureInfo.InvariantCulture);
+        definition.CreatedAt = cashier.CreateDate;
+        definition.UpdatedByUser = cashier.UpdateUser.ToString(CultureInfo.InvariantCulture);
+        definition.UpdatedAt = cashier.UpdateDate;
+        definition.CashierCode = cashier.CashierCode.ToString(CultureInfo.InvariantCulture);
+        definition.FirstName = firstName;
+        definition.LastName = lastName;
+        definition.Password = cashier.CashierPassword;
+        definition.Authorization = cashier.CashierAuthorization;
+        definition.IsActive = cashier.CashierState;
+    }
+
+    private static (string FirstName, string LastName) SplitCashierName(string cashierName)
+    {
+        var normalizedName = cashierName.Trim();
+        var lastSpaceIndex = normalizedName.LastIndexOf(' ');
+
+        return lastSpaceIndex > 0
+            ? (normalizedName[..lastSpaceIndex].Trim(), normalizedName[(lastSpaceIndex + 1)..].Trim())
+            : (normalizedName, string.Empty);
     }
 
     private sealed record DeviceStatusSource(

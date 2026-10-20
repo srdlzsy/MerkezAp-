@@ -352,6 +352,8 @@ Not:
 
 Kasiyer dosyasi tum aktif kasiyerleri okur. Depo bazli kasiyer filtresi kodda yoktur; depo bilgisi dosyanin nereye yazilacagini ve kasa mesajlarini belirler.
 
+Kasiyer yonetim API'si `Cashiers` ile yeni kasa tarafindaki `KASIYER_TANIMLARI` tablosunu atomik olarak senkron tutar. Bu dosya endpointi ise eski POS cihazlari icin ayrica `Cashiers` kaynagindan fiziksel `KASIYER.DAT` uretir; DB sifre degisikligi tek basina eski POS dosyasini yenilemez.
+
 ## Promosyon Dosyalari
 
 Endpoint:

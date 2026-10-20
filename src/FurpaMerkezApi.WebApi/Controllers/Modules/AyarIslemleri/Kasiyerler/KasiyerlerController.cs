@@ -86,7 +86,7 @@ public sealed class CreateCashierHttpRequest
     public string? CashierName { get; init; }
 
     [Required(AllowEmptyStrings = false)]
-    [StringLength(100)]
+    [StringLength(1)]
     public string? CashierAuthorization { get; init; }
 }
 
@@ -97,7 +97,7 @@ public sealed class UpdateCashierHttpRequest
     public string? CashierName { get; init; }
 
     [Required(AllowEmptyStrings = false)]
-    [StringLength(100)]
+    [StringLength(1)]
     public string? CashierAuthorization { get; init; }
 
     [Required]

@@ -123,10 +123,7 @@ public sealed record CashRegisterTerminalDto(
     string Bank,
     string TerminalId,
     string MerchantNo,
-    int? CashNo)
-{
-    public string CashRegisterNo => TerminalNo;
-}
+    int? CashNo);
 
 public sealed record CashRegisterMessageStatusDto(
     int BranchNo,

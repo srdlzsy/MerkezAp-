@@ -54,8 +54,8 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterSettingsLookupsDto |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
-| DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/terminaller/{terminalNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: terminalNo / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasiyerler/{cashierCode}` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu)<br>body: request / UpdateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierDto<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -1285,7 +1285,6 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `bank` | string | Hayir | nullable |
 | `cashNo` | integer (int32) | Hayir | nullable |
-| `cashRegisterNo` | string | Hayir | nullable |
 | `id` | integer (int32) | Hayir |  |
 | `merchantNo` | string | Hayir | nullable |
 | `terminalId` | string | Hayir | nullable |
@@ -8894,14 +8893,14 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
-| `cashierAuthorization` | string | Evet | minLength=0; maxLength=100 |
+| `cashierAuthorization` | string | Evet | minLength=0; maxLength=1 |
 | `cashierName` | string | Evet | minLength=0; maxLength=100 |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.Kasiyerler.UpdateCashierHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
-| `cashierAuthorization` | string | Evet | minLength=0; maxLength=100 |
+| `cashierAuthorization` | string | Evet | minLength=0; maxLength=1 |
 | `cashierName` | string | Evet | minLength=0; maxLength=100 |
 | `cashierState` | boolean | Evet |  |
 
