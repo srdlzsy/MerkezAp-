@@ -73,11 +73,45 @@ public sealed class DatabaseMonitoringSafetyTests
             "LCK_M_U",
             blockingSessionId: 164,
             elapsedMilliseconds: 30_000,
+            reads: 0,
+            logicalReads: 0,
             sqlText: "CREATE TRIGGER dbo.mye_STOK_HAREKETLERI_Trigger ON dbo.STOK_HAREKETLERI",
             settings: new DatabaseMonitoringOptions());
 
         Assert.Equal("critical", result.Severity);
         Assert.Contains("stok ozet trigger", result.Recommendation, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AssessRequest_IdentifiesUnboundedMikroChooseCountAsCritical()
+    {
+        var result = DatabaseMonitoringService.AssessRequest(
+            "PAGEIOLATCH_SH",
+            blockingSessionId: null,
+            elapsedMilliseconds: 60_000,
+            reads: 600_000,
+            logicalReads: 20_000_000,
+            sqlText: "select count(1) from CARI_HESAP_HAREKETLERI_CHOOSE_26",
+            settings: new DatabaseMonitoringOptions());
+
+        Assert.Equal("critical", result.Severity);
+        Assert.Contains("CHOOSE", result.Recommendation, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AssessRequest_IdentifiesExcessiveReadsAsCritical()
+    {
+        var result = DatabaseMonitoringService.AssessRequest(
+            "PAGEIOLATCH_SH",
+            blockingSessionId: null,
+            elapsedMilliseconds: 60_000,
+            reads: 500_000,
+            logicalReads: 10_000_000,
+            sqlText: "SELECT * FROM dbo.LargeTable",
+            settings: new DatabaseMonitoringOptions());
+
+        Assert.Equal("critical", result.Severity);
+        Assert.Contains("asiri", result.Recommendation, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

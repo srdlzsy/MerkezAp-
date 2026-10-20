@@ -263,6 +263,8 @@ public sealed partial class DatabaseMonitoringService(
                     waitType,
                     blockingSessionId,
                     elapsed,
+                    GetInt64(reader, "reads"),
+                    GetInt64(reader, "logical_reads"),
                     sqlText,
                     settings);
 
@@ -689,6 +691,8 @@ public sealed partial class DatabaseMonitoringService(
             UiRefreshSeconds = Math.Clamp(value.UiRefreshSeconds, 5, 300),
             BlockingThresholdSeconds = Math.Clamp(value.BlockingThresholdSeconds, 5, 3600),
             LongRunningThresholdSeconds = Math.Clamp(value.LongRunningThresholdSeconds, 5, 86400),
+            CriticalPhysicalReads = Math.Clamp(value.CriticalPhysicalReads, 10_000, 1_000_000_000),
+            CriticalLogicalReads = Math.Clamp(value.CriticalLogicalReads, 100_000, 10_000_000_000),
             OpenTransactionThresholdSeconds = Math.Clamp(value.OpenTransactionThresholdSeconds, 10, 86400),
             RetentionHours = Math.Clamp(value.RetentionHours, 1, 720),
             MaxIncidentCount = Math.Clamp(value.MaxIncidentCount, 100, 50000),
@@ -779,7 +783,31 @@ public sealed partial class DatabaseMonitoringService(
         if (blocked.Length > 0)
             result.Add(new("blocking", "critical", "SQL kilit zinciri var", "Root blocker oturumunu, acik transaction'i ve uygulama islemini kontrol edin. Etkisi dogrulanmadan KILL kullanmayin.", blocked.Length));
 
-        var io = requests.Where(item => item.WaitType?.Contains("PAGEIOLATCH", StringComparison.OrdinalIgnoreCase) == true).ToArray();
+        var unboundedMikroChooseCounts = requests.Where(item =>
+            IsUnboundedMikroChooseCount(item.SqlText) &&
+            item.ElapsedMilliseconds >= settings.LongRunningThresholdSeconds * 1000L).ToArray();
+        if (unboundedMikroChooseCounts.Length > 0)
+            result.Add(new(
+                "mikro-unbounded-choose-count",
+                "critical",
+                "Mikro filtresiz sayim sorgusu sunucuyu zorluyor",
+                "Mikro istemcisindeki ilgili liste/raporu kapatin. Host ve program bilgisini dogrulayin; acik transaction'i olmayan SELECT oturumu devam ederse kontrollu Oturumu Sonlandir aksiyonu kullanilabilir.",
+                unboundedMikroChooseCounts.Length));
+
+        var excessiveReads = requests.Where(item =>
+            !IsUnboundedMikroChooseCount(item.SqlText) &&
+            IsExcessiveReadRequest(item.Reads, item.LogicalReads, settings)).ToArray();
+        if (excessiveReads.Length > 0)
+            result.Add(new(
+                "excessive-reads",
+                "critical",
+                "Asiri okuma yapan SQL sorgusu var",
+                "En yuksek fiziksel/mantiksal okuma yapan oturumun host, program ve SQL metnini inceleyin. Sorguyu kaynaginda durdurun; KILL yalniz oturum kimligi ve islem etkisi dogrulandiktan sonra kullanilmalidir.",
+                excessiveReads.Length));
+
+        var io = requests.Where(item =>
+            item.WaitType?.Contains("PAGEIOLATCH", StringComparison.OrdinalIgnoreCase) == true &&
+            !IsExcessiveReadRequest(item.Reads, item.LogicalReads, settings)).ToArray();
         if (io.Length > 0)
             result.Add(new("io-wait", "warning", "Disk okuma beklemesi var", "Execution plan, eksik/uygunsuz index ve SQL Server disk gecikmesini birlikte inceleyin.", io.Length));
 
@@ -869,6 +897,8 @@ public sealed partial class DatabaseMonitoringService(
         string? waitType,
         int? blockingSessionId,
         long elapsedMilliseconds,
+        long reads,
+        long logicalReads,
         string sqlText,
         DatabaseMonitoringOptions settings)
     {
@@ -878,6 +908,15 @@ public sealed partial class DatabaseMonitoringService(
             return (
                 "critical",
                 "Mikro stok ozet trigger kilidi: tek-satir bulk batch profilini ve root blocker'i kontrol edin; toplu KILL uygulamayin.");
+        if (IsUnboundedMikroChooseCount(sqlText) &&
+            elapsedMilliseconds >= settings.LongRunningThresholdSeconds * 1000L)
+            return (
+                "critical",
+                "Mikro istemcisinde filtresiz CHOOSE sayimi calisiyor. Ilgili liste/raporu kaynak istemcide kapatin; acik transaction'i olmayan SELECT oturumunu kimligini dogruladiktan sonra sonlandirin.");
+        if (IsExcessiveReadRequest(reads, logicalReads, settings))
+            return (
+                "critical",
+                "Sorgu asiri fiziksel/mantiksal okuma uretiyor. Host, program ve execution planini inceleyin; sorguyu kaynaginda durdurun.");
         if (blockingSessionId.HasValue)
             return ("critical", "Kilitleyen oturumu ve root blocker'i inceleyin; KILL son secenek olmalidir.");
         if (waitType?.StartsWith("LCK_", StringComparison.OrdinalIgnoreCase) == true)
@@ -896,6 +935,17 @@ public sealed partial class DatabaseMonitoringService(
             return ("warning", "Execution plan, okuma sayisi ve filtre/index uygunlugunu inceleyin.");
         return ("info", "Anlik calisan istek; esik asilmadikca mudahale gerekmez.");
     }
+
+    internal static bool IsUnboundedMikroChooseCount(string sqlText) =>
+        sqlText.Contains("_CHOOSE_", StringComparison.OrdinalIgnoreCase) &&
+        Regex.IsMatch(sqlText, @"\bselect\s+count\s*\(", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static bool IsExcessiveReadRequest(
+        long reads,
+        long logicalReads,
+        DatabaseMonitoringOptions settings) =>
+        reads >= settings.CriticalPhysicalReads ||
+        logicalReads >= settings.CriticalLogicalReads;
 
     private static DatabaseSessionTerminationDto ToDto(DatabaseSessionTerminationAudit item) =>
         new(item.Id, item.SessionId, item.LoginTime, item.HostProcessId, item.LoginName, item.HostName,
