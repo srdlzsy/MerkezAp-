@@ -40,6 +40,12 @@ public interface ISafeWriteReviewService
         Guid clientRequestId,
         CancellationToken cancellationToken);
 
+    Task<SafeWriteReviewResultDto> CancelOwnedRetryAllowedAsync(
+        int warehouseNo,
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken);
+
     Task<SafeWriteReviewResultDto> RecheckAsync(
         Guid safeWriteId,
         SafeWriteReviewRequest request,

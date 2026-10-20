@@ -71,7 +71,7 @@ Basarida:
 |---|---|---|
 | `Completed` | Sonucu goster, pending kaydi sil. | `Evrak kaydedildi.` |
 | `WaitAndCheck` | POST yapma; `retryAfterSeconds` sonrasinda status GET yap. | `Kayit sonucu kontrol ediliyor.` |
-| `RetrySameRequest` | Saklanan snapshot'i ve ayni `clientRequestId` degerini degistirmeden bir kez otomatik POST et. Ayni karar ikinci kez gelirse otomatik donguyu durdur. | Ilk kararda form `Kayit yapiliyor` durumunda kalir; ikinci kararda kullaniciya sonuc gosterilir. |
+| `RetrySameRequest` | Saklanan snapshot'i ve ayni `clientRequestId` degerini degistirmeden bir kez otomatik POST et. Ayni karar ikinci kez gelirse ucuncu create yapma; sahip-kapsamli `vazgec` endpointiyle kesin belge-yok kaydini kapat ve yerel pending kaydi temizle. | Ilk kararda form `Kayit yapiliyor` durumunda kalir; ikinci kararda `Kayit olusturulamadi, formu kontrol edip yeniden kaydedin` gosterilir. |
 | `EditAndRetry` | Offline snapshot'i sil, normal form taslagini ayni satirlarla yeniden ac. Duzenlemeden sonra yeni kaydetme denemesi ve yeni `clientRequestId` olustur. | `Seri veya sira numarasini degistirip yeniden kaydedin.` |
 | `RefreshList` | Offline snapshot'i sil, ikinci create yapma ve listeyi yenile. | `Bu resmi belge zaten alinmis; mevcut evraki kontrol edin.` |
 | `RecheckExisting` | Ortak `yeniden-dogrula` POST'unu cagir; create POST yapma. | `Mikro kaydi yeniden kontrol ediliyor.` |
@@ -114,8 +114,12 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 ### 404 Status
 
 - Backend rezervasyonu bulunamamistir; request body sunucuya hic ulasmamis olabilir.
-- Saklanan ayni snapshot ve ayni `clientRequestId` ile create POST bir kez yeniden gonderilir.
+- Arka plan senkronunda saklanan ayni snapshot ve ayni `clientRequestId` ile create POST bir kez yeniden gonderilir.
+- Kullanici Offline Firma Mal Kabul ekraninda `Durumu Kontrol Et` ile bu `404` cevabini alirsa kontrol aksiyonu POST'a donusmez. Kayit yerel taslaga cevrilir ve kullaniciya `Tekrar Dene` ile `Sil` sunulur.
 - Yeni GUID uretilmez.
+- Bu yeniden gonderimden sonra status endpointi yine `404` donerse terminal kaydi `sunucuda isleniyor` durumunda tutmaz ve status sorgusunu donguye sokmaz. Kayit sunucuya ulasmamis yerel taslaga geri cevrilir.
+- Bu yerel taslak arka planda tekrar tekrar POST edilmez. Ekranda `Tekrar Dene` ve `Sil` aksiyonlari acilir; `Durumu Kontrol Et` kaldirilir. Kullanici `Tekrar Dene` dediginde ayni body ve ayni `clientRequestId` ile yeni bir kullanici denemesi baslar.
+- Daha once `retryable=false` veri butunlugu karari verilmis bir kaydin status endpointi `404` donerse bu guvenlik karari kaldirilmaz ve otomatik POST baslatilmaz.
 
 ### 409
 
@@ -181,7 +185,8 @@ Guvenlik ve davranis:
 - Normal `200/201` create cevabinda bekleme penceresi calismaz; sonuc hemen forma iletilir ve form kapanir. Yalniz `WaitAndCheck`, HTTP 0 veya `5xx` gibi belirsiz cevaplarda ortak istemci ayni ekranda ilgili `offline-sync/{clientRequestId}` adresine GET atarak sonucu kontrol eder. Bu GET'ler yeni create yazisi baslatmaz.
 - Create isteginin toplam istemci siniri 5 dakikadir. Ilk POST'a en fazla yaklasik 4 dakika 30 saniye ayrilir; kalan sure status GET kontrolleri icindir. Bu 5 dakika sabit bekleme degil, yalniz geciken/sonucu belirsiz islem icin ust sinirdir.
 - Backend ilk pencerenin sonunda `SAFE_WRITE_RETRY_ALLOWED` ile belgenin hic olusmadigini kesinlestirirse terminal ayni snapshot/id icin ikinci ve son otomatik denemeyi baslatir. Bu son deneme kendi en fazla 5 dakikalik POST/status penceresine sahiptir; ucuncu otomatik deneme yoktur.
-- Status `Completed` ve `result` dondururse bu normal basari cevabi gibi forma iletilir, pending snapshot temizlenir ve form kapanir. Status `RetrySameRequest` derse terminal ayni snapshot ve ayni `clientRequestId` ile bir kez otomatik POST yapar. Ikinci denemede ayni karar tekrar gelirse ucuncu POST atilmaz; kesin validation/is kurali hatasi da ayni formda duzeltilebilir kalir.
+- Status `Completed` ve `result` dondururse bu normal basari cevabi gibi forma iletilir, pending snapshot temizlenir ve form kapanir. Status `RetrySameRequest` derse terminal ayni snapshot ve ayni `clientRequestId` ile bir kez otomatik POST yapar. Ikinci denemede ayni karar tekrar gelirse terminal `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` cagirir; backend yalniz kayit ayni kullanici/depo kapsaminda ve halen `SAFE_WRITE_RETRY_ALLOWED` ise `Cancelled` yapar. Ucuncu create atilmaz, yerel pending temizlenir ve normal form taslagi korunur.
+- Uygulama veya modul yeniden acildiginda yerel pending kayit yalniz okunur. Ekran acilisi create POST, status GET veya `yeniden-dogrula` baslatmaz; boylece eski kayit her acilista yeni Snackbar/uyari dongusu uretmez.
 - Bes dakikada sonuc kesinlesmezse form kapanmaz ve Bulut/Offline ekranina atilmaz. Ayni formdaki kayit ve `clientRequestId` korunur; sonraki kullanici denemesi backend kararina baglidir ve `RetrySameRequest` olmadan ikinci Mikro yazisi baslatilmaz.
 - Bu kurallar cok sayida terminalin ayni evrak icin paralel 180 saniyelik sorgular acmasini engeller.
 
@@ -224,7 +229,8 @@ green-grocer.operations.adjustment.apply
 - Cift tik iki POST olusturmaz.
 - Timeout sonrasi yeni GUID uretilmez.
 - `WaitAndCheck` durumunda create POST atilmaz.
-- `RetrySameRequest` disinda yeni Mikro yazisi baslatilmaz. Terminal bu karari ilk kez aldiginda ayni kimlikle bir otomatik deneme yapar; ayni form islemi icinde ikinci `RetrySameRequest` karari ucuncu POST baslatmaz.
+- `RetrySameRequest` disinda yeni Mikro yazisi baslatilmaz. Terminal bu karari ilk kez aldiginda ayni kimlikle bir otomatik deneme yapar; ayni form islemi icinde ikinci `RetrySameRequest` karari ucuncu POST baslatmaz ve kesin belge-yok pending kaydini kapatir.
+- Ekran acilisi kaydi kendiliginden yeniden gondermez veya dogrulamaz. Kullanici aksiyonu olmadan create POST baslamaz.
 - Tam eslesmeyen veya eksik belge `Completed` sayilmaz.
 - Uygulama yeniden acildiginda pending islem kaybolmaz.
 - Tek pending evrak diger evraklari veya tum modulu kilitlemez.

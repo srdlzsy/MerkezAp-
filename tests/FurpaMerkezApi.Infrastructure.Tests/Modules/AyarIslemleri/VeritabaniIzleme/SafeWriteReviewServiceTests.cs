@@ -255,6 +255,64 @@ public sealed class SafeWriteReviewServiceTests
         Assert.False(recoveryWasCalled);
     }
 
+    [Fact]
+    public async Task CancelOwnedRetryAllowed_ClosesOnlyTheOwnersDefinitivelyMissingRecord()
+    {
+        await using var db = CreateDb();
+        var record = CreateReviewRecord();
+        record.AllowRetryAfterManualReview(
+            OperationConflictErrorCodes.SafeWriteRetryAllowed,
+            OperationConflictMessages.SafeWriteRetryAllowed,
+            Now.AddMinutes(-1));
+        db.MobileOfflineSyncRequests.Add(record);
+        await db.SaveChangesAsync();
+        var service = new SafeWriteReviewService(
+            db,
+            new FixedClock(Now),
+            new FakeDispatcher((_, _, _, _, _) => throw new InvalidOperationException("Should not run.")));
+
+        var result = await service.CancelOwnedRetryAllowedAsync(
+            record.WarehouseNo,
+            record.RequestedByUserId,
+            Guid.Parse(record.ClientRequestId),
+            CancellationToken.None);
+
+        Assert.Equal("Cancelled", result.Outcome);
+        Assert.Equal("Cancelled", result.SafeWrite.Status);
+        Assert.Equal(OperationConflictErrorCodes.SafeWriteCancelled, result.SafeWrite.ErrorCode);
+        Assert.Equal("ClearCancelled", result.RecommendedAction);
+        var audit = Assert.Single(db.SafeWriteReviewAudits);
+        Assert.Equal("OwnerRetryExhausted", audit.Action);
+    }
+
+    [Fact]
+    public async Task CancelOwnedRetryAllowed_RejectsUncertainRecord()
+    {
+        await using var db = CreateDb();
+        var record = CreateReviewRecord();
+        record.RestoreManualReview(
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            OperationConflictMessages.MikroWriteOutcomeUnconfirmed,
+            Now.AddMinutes(-1));
+        db.MobileOfflineSyncRequests.Add(record);
+        await db.SaveChangesAsync();
+        var service = new SafeWriteReviewService(
+            db,
+            new FixedClock(Now),
+            new FakeDispatcher((_, _, _, _, _) => throw new InvalidOperationException("Should not run.")));
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            service.CancelOwnedRetryAllowedAsync(
+                record.WarehouseNo,
+                record.RequestedByUserId,
+                Guid.Parse(record.ClientRequestId),
+                CancellationToken.None));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, exception.ErrorCode);
+        Assert.NotEqual(MobileOfflineSyncRequestStatus.Cancelled, record.Status);
+        Assert.Empty(db.SafeWriteReviewAudits);
+    }
+
     private static MobileOfflineSyncRequest CreateReviewRecord()
     {
         var record = new MobileOfflineSyncRequest(

@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 756. Model sayisi: 691.
+Endpoint sayisi (method + route): 757. Model sayisi: 691.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -561,6 +561,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/mal-kabul-islemleri/mal-kabuller/firma` | JWT + mal-kabul-islemleri.firma-mal-kabulleri.create | body: request / CreateCompanyReceivingHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateCompanyReceivingResponse<br>200: CreateCompanyReceivingResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mobile-sync/cari-katalogu` | JWT | query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileCustomerCatalogResponse<br>400: ProblemDetails |
 | GET | `/api/mobile-sync/depo-katalogu` | JWT | query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileWarehouseCatalogResponse<br>400: ProblemDetails |
+| POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` | JWT | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/yeniden-dogrula` | JWT | path: clientRequestId / string (uuid) (zorunlu)<br>body: request / RecheckMobileSafeWriteHttpRequest (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mobile-sync/urun-fiyat-katalogu` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileProductPriceCatalogResponse<br>400: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |

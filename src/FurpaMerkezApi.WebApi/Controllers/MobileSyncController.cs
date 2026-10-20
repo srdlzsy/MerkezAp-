@@ -82,6 +82,19 @@ public sealed class MobileSyncController(
             User.GetRequiredUserId(),
             clientRequestId,
             cancellationToken));
+
+    [HttpPost("guvenli-yazmalar/{clientRequestId:guid}/vazgec")]
+    [ProducesResponseType(typeof(SafeWriteReviewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SafeWriteReviewResultDto>> CancelRetryExhaustedSafeWrite(
+        Guid clientRequestId,
+        CancellationToken cancellationToken) =>
+        Ok(await safeWriteReviewService.CancelOwnedRetryAllowedAsync(
+            User.GetRequiredWarehouseNo(),
+            User.GetRequiredUserId(),
+            clientRequestId,
+            cancellationToken));
 }
 
 public sealed class RecheckMobileSafeWriteHttpRequest

@@ -17,6 +17,8 @@ public sealed class SafeWriteReviewService(
         "Mikro belgesi salt-okuma ile yeniden dogrulaniyor.";
     private const string OwnerRecheckReason =
         "Kayit sahibi kullanici Mikro belgesini salt-okuma ile yeniden dogruladi.";
+    private const string OwnerRetryExhaustedReason =
+        "Terminal ayni istek kimligiyle izin verilen otomatik tekrari tamamladi; Mikro'da belge bulunmadigi kesinlesen bekleyen kayit kapatildi.";
 
     public async Task<SafeWriteReviewResultDto> RecheckOwnedAsync(
         string operationCode,
@@ -42,6 +44,68 @@ public sealed class SafeWriteReviewService(
             allowRetryWhenMissing: false,
             action: "OwnerRecheck",
             cancellationToken);
+    }
+
+    public async Task<SafeWriteReviewResultDto> CancelOwnedRetryAllowedAsync(
+        int warehouseNo,
+        Guid requestedByUserId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedClientRequestId = clientRequestId.ToString("D").ToLowerInvariant();
+        var records = await authDbContext.MobileOfflineSyncRequests
+            .Where(item =>
+                item.WarehouseNo == warehouseNo &&
+                item.RequestedByUserId == requestedByUserId &&
+                item.ClientRequestId == normalizedClientRequestId)
+            .ToArrayAsync(cancellationToken);
+
+        if (records.Length == 0)
+        {
+            throw new KeyNotFoundException("Safe write record was not found for the current user and warehouse.");
+        }
+
+        if (records.Length != 1)
+        {
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.ClientRequestPayloadMismatch,
+                "Ayni istek kimligi birden fazla operasyon kaydinda bulundu; otomatik kapatma yapilmadi.",
+                retryable: false);
+        }
+
+        var record = records[0];
+        var previous = Snapshot(record);
+
+        if (record.Status == MobileOfflineSyncRequestStatus.Cancelled)
+        {
+            return await CompleteReviewAsync(
+                record, previous, "OwnerRetryExhausted", "AlreadyCancelled",
+                OwnerRetryExhaustedReason, requestedByUserId,
+                "Bekleyen kayit daha once kapatilmis.", result: null, cancellationToken);
+        }
+
+        if (record.Status != MobileOfflineSyncRequestStatus.Failed ||
+            record.Retryable != true ||
+            record.ErrorCode != OperationConflictErrorCodes.SafeWriteRetryAllowed)
+        {
+            throw new OperationConflictException(
+                record.ErrorCode ?? OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+                "Yalniz Mikro'da belge bulunmadigi kesinlesen tekrar-izinli kayit terminal tarafindan kapatilabilir.",
+                retryable: record.Retryable == true);
+        }
+
+        record.CancelAfterManualReview(
+            OperationConflictErrorCodes.SafeWriteCancelled,
+            "Mikro'da belge bulunmadi; izin verilen otomatik tekrar da tamamlanamayinca bekleyen terminal kaydi kapatildi.",
+            clock.UtcNow);
+
+        return await CompleteReviewAsync(
+            record, previous, "OwnerRetryExhausted", "Cancelled",
+            OwnerRetryExhaustedReason, requestedByUserId,
+            "Mikro evraki olusmadi; bekleyen islem kapatildi. Kullanici formu kontrol edip yeniden kaydedebilir.",
+            result: null, cancellationToken,
+            recoveryState: "Missing",
+            recommendedAction: "ClearCancelled");
     }
 
     public Task<SafeWriteReviewResultDto> RecheckAsync(
