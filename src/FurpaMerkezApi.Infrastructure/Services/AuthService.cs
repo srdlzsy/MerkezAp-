@@ -284,6 +284,21 @@ public sealed class AuthService(
                 clock.UtcNow);
         }
 
+        if (!RequiresTerminalNetworkValidation(userWarehouseNo))
+        {
+            return new WarehouseContextResponse(
+                user.Id,
+                user.Username,
+                user.WarehouseNo,
+                user.WarehouseName,
+                null,
+                null,
+                true,
+                false,
+                "NetworkCheckDisabled",
+                clock.UtcNow);
+        }
+
         var currentWarehouse = await ResolveWarehouseFromIpAsync(ipAddress, cancellationToken);
         if (currentWarehouse.Status != "Resolved")
         {
@@ -450,6 +465,14 @@ public sealed class AuthService(
             throw new UnauthorizedAccessException("Kullanici depo numarasi gecersiz.");
         }
 
+        if (!RequiresTerminalNetworkValidation(userWarehouseNo))
+        {
+            logger.LogInformation(
+                "Terminal login network validation is disabled for warehouse {WarehouseNo}.",
+                userWarehouseNo);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(ipAddress))
         {
             throw new UnauthorizedAccessException("Terminal kullanicisi icin IP adresi zorunludur.");
@@ -482,6 +505,14 @@ public sealed class AuthService(
         {
             throw new UnauthorizedAccessException("Bu kullanici bu subeden giris yapamaz.");
         }
+    }
+
+    private bool RequiresTerminalNetworkValidation(int warehouseNo)
+    {
+        var minimumWarehouseNo = configuration.GetValue<int?>(
+            "Auth:TerminalLogin:MinimumWarehouseNo") ?? 100;
+
+        return warehouseNo >= Math.Max(1, minimumWarehouseNo);
     }
 
     private int[] GetAllowedNetworkBranchNos(int userWarehouseNo)

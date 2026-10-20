@@ -21,26 +21,65 @@ public sealed class AuthServiceTests
     private const string Password = "secret";
 
     [Fact]
-    public async Task LoginAsync_AllowsTerminalWarehouseFromSharedNetworkGroupWithoutOwnBranchIpSettings()
+    public async Task LoginAsync_SkipsNetworkValidationForWarehouseBelow100()
     {
         await using var authDbContext = CreateAuthDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
         await AddTerminalUserAsync(authDbContext, "terminal56", "56");
-        await AddBranchAsync(furpaDbContext, 50, "192.168.254.12");
 
-        var service = CreateService(
-            authDbContext,
-            furpaDbContext,
-            [50, 56]);
+        var service = CreateService(authDbContext, furpaDbContext);
 
         var response = await service.LoginAsync(
-            new LoginRequest("terminal56", Password, "192.168.254.237"),
+            new LoginRequest("terminal56", Password),
             CancellationToken.None);
 
         Assert.Equal("token-56", response.AccessToken);
         Assert.Equal("56", response.User.WarehouseNo);
         Assert.False(string.IsNullOrWhiteSpace(response.RefreshToken));
         Assert.Equal(Now.AddDays(14), response.RefreshTokenExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task GetWarehouseContextAsync_DoesNotRequireReloginForWarehouseBelow100()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+        await AddTerminalUserAsync(authDbContext, "terminal56", "56");
+        await AddBranchAsync(furpaDbContext, 120, "10.0.120.15");
+
+        var userId = await authDbContext.Users
+            .Where(user => user.Username == "terminal56")
+            .Select(user => user.Id)
+            .SingleAsync();
+        var service = CreateService(authDbContext, furpaDbContext);
+
+        var response = await service.GetWarehouseContextAsync(
+            userId,
+            "10.0.120.88",
+            AuthenticationClientTypes.Terminal,
+            CancellationToken.None);
+
+        Assert.False(response.RequiresRelogin);
+        Assert.Equal("NetworkCheckDisabled", response.Reason);
+        Assert.Null(response.CurrentWarehouseNo);
+    }
+
+    [Fact]
+    public async Task LoginAsync_AllowsTerminalWarehouse100OrGreaterFromSharedNetworkGroup()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+        await AddTerminalUserAsync(authDbContext, "terminal116", "116");
+        await AddBranchAsync(furpaDbContext, 53, "10.0.53.15");
+
+        var service = CreateService(authDbContext, furpaDbContext, [53, 58, 116]);
+
+        var response = await service.LoginAsync(
+            new LoginRequest("terminal116", Password, "10.0.53.88"),
+            CancellationToken.None);
+
+        Assert.Equal("token-116", response.AccessToken);
+        Assert.Equal("116", response.User.WarehouseNo);
     }
 
     [Fact]
@@ -59,6 +98,22 @@ public sealed class AuthServiceTests
 
         Assert.Equal("token-120", response.AccessToken);
         Assert.Equal("120", response.User.WarehouseNo);
+    }
+
+    [Fact]
+    public async Task LoginAsync_EnforcesNetworkValidationAtWarehouse100Boundary()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+        await AddTerminalUserAsync(authDbContext, "terminal100", "100");
+        await AddBranchAsync(furpaDbContext, 100, "10.0.100.15");
+
+        var service = CreateService(authDbContext, furpaDbContext);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.LoginAsync(
+                new LoginRequest("terminal100", Password, "10.0.99.88"),
+                CancellationToken.None));
     }
 
     [Fact]

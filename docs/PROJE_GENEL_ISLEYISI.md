@@ -648,7 +648,7 @@ Terminal role kullanicilarda IP kontrolu vardir.
 Temel mantik:
 
 ```text
-kullanicinin deposu 100 altindaysa terminal IP kontrolu atlanir
+kullanicinin deposu `Auth:TerminalLogin:MinimumWarehouseNo` degerinden kucukse terminal IP kontrolu atlanir; mevcut esik 100'dur
 terminal/sube kullanicisinda gelen IPv4 ile BranchDetails.BranchIpAddress karsilastirilir
 ilk 3 IP blogu ayniysa giris serbesttir
 ```
@@ -659,11 +659,11 @@ Ek olarak paylasimli internet kullanan depolar config ile ayni gruba alinabilir:
 Auth:TerminalLogin:SharedNetworkWarehouseGroups
 ```
 
-Ornek:
+Ornek (`MinimumWarehouseNo=100` iken kontrol edilen bir terminal icin):
 
 ```text
-50 ve 56 ayni interneti kullaniyorsa [50, 56] grubu tanimlanir.
-56 kullanicisi 50 deposunun tanimli agindan da girebilir.
+53 ve 116 ayni interneti kullaniyorsa [53, 58, 116] grubu tanimlanir.
+116 kullanicisi 53 deposunun tanimli agindan da girebilir.
 ```
 
 ## JWT Icindeki Bilgiler

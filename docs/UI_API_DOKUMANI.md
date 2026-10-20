@@ -1926,7 +1926,7 @@ Token ve yetki notu:
 - Client-role eslesmesi hic olmayan `50.muhasebe`, `01.icmal`, `Administrator` gibi klasik kullanicilar mevcut `app_user_roles` rolleriyle calismaya devam eder.
 - Istemci rol eslesmesi bulunan hesaplarda resolver fail-closed calisir. Istenen `clientType` icin aktif rol kalmazsa genel rollere fallback yapilmaz ve bos yetki profili doner. `SubeKullanicisi` teknik rolu pasif olsa bile bu hesaplar genel rollere geri dusmez.
 - Login response ve `GET /api/auth/me` icindeki `roles`, `permissions` ve `modules` alanlari mevcut oturumun etkin profilini doner. UI yalniz bu response'u kullanmali; Auth DB'deki teknik `SubeKullanicisi` rolunu veya baska oturumun menu listesini onbellekten kullanmamalidir.
-- Terminale ozel IP/depo kontrolu sadece `clientType=terminal` oturumunda calisir.
+- Terminale ozel IP/depo kontrolu sadece `clientType=terminal` oturumunda ve depo numarasi `Auth:TerminalLogin:MinimumWarehouseNo` degerine esit veya buyukse calisir. Mevcut esik `100` oldugu icin `1-99` depolarinda kontrol uygulanmaz.
 - Web ve terminal refresh token'lari birbirinden bagimsizdir. Bir cihazdaki logout yalniz o cihazda gonderilen refresh token'i iptal eder.
 - Refresh isteginde `clientType` tekrar gonderilmez. Backend oturum turunu, cihaz kimligini, ilk login IP'sini ve depoyu refresh token kaydindan devralir; refresh ile web oturumu terminale veya terminal oturumu web'e cevrilemez.
 - Access token icinde `client_type`, `session_id` ve verildiyse `device_id` claim'leri bulunur. UI bunlari yetki kaynagi olarak kullanmamalidir.
@@ -1978,7 +1978,7 @@ Alan kurallari:
 
 - `clientType`: yeni istemciler icin zorunlu kabul edilmelidir; yalniz `web` veya `terminal` gonderilir. Alan teknik olarak geriye uyumluluk icin opsiyoneldir ve bos oldugunda `web` kabul edilir.
 - `deviceId`: opsiyonel, max 100 karakter. Cihaz kurulumu boyunca sabit kalan ve sifre/seri numarasi gibi hassas veri icermeyen bir kimlik onerilir.
-- `clientType=terminal` girisinde backend request IP'sini kullanicinin Auth DB deposu ve Furpa `BranchDetails.BranchIpAddress` tanimiyla kontrol eder. Uygun sube aginda degilse `401 Unauthorized` doner.
+- `clientType=terminal` girisinde depo numarasi `100` veya daha buyukse backend request IP'sini kullanicinin Auth DB deposu ve Furpa `BranchDetails.BranchIpAddress` tanimiyla kontrol eder. Uygun sube aginda degilse `401 Unauthorized` doner. Depo numarasi `1-99` arasindaysa IP kontrolu atlanir.
 - Web arayuzu kesinlikle `clientType=terminal` gondermemelidir. El terminali de terminal ag kontrolunun korunmasi icin kesinlikle `clientType=terminal` gondermelidir.
 - Eski `{warehouseNo}.magazaci` ve `{warehouseNo}.terminal` hesaplari yerine iki istemci de ayni `{warehouseNo}.sube` kullanici adini kullanmalidir.
 - Web ve terminal istemcileri login response'undaki `user.permissions` verisini ayri saklamalidir. Ayni kullanici adi nedeniyle bir istemcinin menu/permission cache'i diger istemcinin cache'ini ezmemelidir; cache anahtarinda en az `user.id + clientType` kullanilmalidir.
@@ -2178,16 +2178,17 @@ Alan notlari:
 - `currentWarehouseNo` / `currentWarehouseName`: request IP'sinin Furpa `BranchDetails.BranchIpAddress` ayarlarindan cozuldugu aktif depo baglamidir. Cozulemez veya ag birden fazla depoya denk gelirse `null` gelebilir.
 - `isTerminalUser`: geriye uyumlu alan adidir; artik kullanicinin rolunu degil, mevcut JWT'nin `client_type=terminal` oturumu olup olmadigini belirtir.
 - `requiresRelogin`: `true` ise UI kullaniciyi oturumdan cikarmali ve tekrar login istemelidir.
-- `reason`: `Ok`, `SharedNetwork`, `WarehouseChanged`, `NetworkUnknown`, `NetworkAmbiguous`, `NotTerminalUser`, `UserInactive`, `InvalidTokenWarehouse` degerlerinden biri olabilir.
+- `reason`: `Ok`, `NetworkCheckDisabled`, `SharedNetwork`, `WarehouseChanged`, `NetworkUnknown`, `NetworkAmbiguous`, `NotTerminalUser`, `UserInactive`, `InvalidTokenWarehouse` degerlerinden biri olabilir.
+- `NetworkCheckDisabled`: token deposu ayarlanan minimum depo numarasindan kucuktur. Mevcut ayarda `1-99` depolarinda `requiresRelogin=false` doner ve IP/depo karsilastirmasi yapilmaz.
 - Backend sadece terminal oturumlarinda IP/depo degisimini relogin sebebi yapar. Web oturumlarinda `requiresRelogin=false`, `reason=NotTerminalUser` doner.
-- `Auth:TerminalLogin:SharedNetworkWarehouseGroups` icinde ayni grupta olan depolar ortak ag kabul edilir. Ornek `[50, 56]` tanimliyken 56 terminal kullanicisi 50 agindan gorunurse `requiresRelogin=false`, `reason=SharedNetwork` doner.
+- `Auth:TerminalLogin:SharedNetworkWarehouseGroups` icinde ayni grupta olan ve IP kontrolu uygulanan depolar ortak ag kabul edilir. Ornek `[53, 58, 116]` tanimliyken 116 terminal kullanicisi 53 agindan gorunurse `requiresRelogin=false`, `reason=SharedNetwork` doner.
 - `NetworkUnknown` ve `NetworkAmbiguous` durumlarinda kullanici gereksiz atilmaz; UI bu durumlari sessiz gecmelidir.
 
 UI kullanim notu:
 
 - Terminal/mobil uygulama aktifken 1 dakikada bir bu endpoint cagrilabilir.
 - `requiresRelogin=true` veya `401 Unauthorized` gelirse UI logout yapmalidir.
-- UI logout kararini `currentWarehouseNo !== tokenWarehouseNo` karsilastirmasiyla vermemelidir; 50/56 gibi ortak aglarda bu alanlar farkli olabilir ama `requiresRelogin=false` doner.
+- UI logout kararini `currentWarehouseNo !== tokenWarehouseNo` karsilastirmasiyla vermemelidir; ortak aglarda bu alanlar farkli olabilir, `1-99` depolarinda ise current depo cozumlenmez. Her iki durumda da `requiresRelogin=false` doner.
 - Ag yoksa, HTTP status `0` veya network exception durumunda UI kullaniciyi atmamalidir; offline akis devam edebilir.
 - Bu endpoint katalog, permission, rol veya menu verisi dondurmez; periyodik kontrol icin `/api/auth/me` yerine tercih edilmelidir.
 
