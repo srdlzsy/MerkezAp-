@@ -64,6 +64,30 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
     }
 
     [Fact]
+    public void Evaluate_DistinguishesMissingTraceFromExistingMismatchedContent()
+    {
+        var request = CreateRequest(Guid.Parse("a94669b8-b916-474a-9830-bbf87cc9f408"));
+        var rows = CreateMatchingRows(MobileOfflineSyncService.ToTraceKey(request.ClientRequestId!.Value));
+        rows[0] = rows[0] with { Quantity = 99d };
+
+        Assert.Equal(
+            InterWarehouseShipmentRecoveryMatch.NotFound,
+            InterWarehouseShipmentRecoveryMatcher.Evaluate(request, request.Lines.ToArray(), []));
+        Assert.Equal(
+            InterWarehouseShipmentRecoveryMatch.ContentMismatch,
+            InterWarehouseShipmentRecoveryMatcher.Evaluate(request, request.Lines.ToArray(), rows));
+        Assert.Contains(
+            "line[0].quantity",
+            InterWarehouseShipmentRecoveryMatcher.GetMismatchFields(request, request.Lines.ToArray(), rows));
+        Assert.Equal(
+            InterWarehouseShipmentRecoveryMatch.ExactMatch,
+            InterWarehouseShipmentRecoveryMatcher.Evaluate(
+                request,
+                request.Lines.ToArray(),
+                CreateMatchingRows(MobileOfflineSyncService.ToTraceKey(request.ClientRequestId.Value))));
+    }
+
+    [Fact]
     public void Matches_ReturnsFalseWhenSequenceContainsExtraLines()
     {
         var request = CreateRequest(null);

@@ -615,13 +615,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
         if (mikroWriteDbContext.Database.IsSqlServer())
         {
-            // The trace column is not part of the large shipment list index. Force the
-            // selective warehouse/date seek first so recovery never scans all shipments.
             recoveryQuery = mikroWriteDbContext.STOK_HAREKETLERIs
                 .FromSqlInterpolated($@"
                     SELECT movements.*
                     FROM dbo.STOK_HAREKETLERI AS movements WITH
-                        (INDEX(IX_FR_STH_DepoSevkCikis_Liste), FORCESEEK)
+                        (INDEX(IX_FR_STH_DepoSevk_Trace), FORCESEEK)
                     WHERE movements.sth_evraktip = 17
                       AND movements.sth_tip = 2
                       AND movements.sth_cins = 6
@@ -677,10 +675,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 cancellationToken);
 
         var expectedLines = request.Lines.ToArray();
-        if (!InterWarehouseShipmentRecoveryMatcher.Matches(
-                request,
-                expectedLines,
-                rows.Select(row => new InterWarehouseShipmentRecoveryLine(
+        var recoveredLines = rows.Select(row => new InterWarehouseShipmentRecoveryLine(
                     row.sth_satirno,
                     row.sth_stok_kod,
                     row.sth_miktar ?? 0d,
@@ -692,7 +687,33 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     row.sth_proje_kodu,
                     row.sth_cari_srm_merkezi,
                     row.sth_stok_srm_merkezi,
-                    row.sth_eticaret_kanal_kodu)).ToArray()))
+                    row.sth_eticaret_kanal_kodu)).ToArray();
+        var recoveryMatch = InterWarehouseShipmentRecoveryMatcher.Evaluate(
+            request,
+            expectedLines,
+            recoveredLines);
+        if (recoveryMatch == InterWarehouseShipmentRecoveryMatch.ContentMismatch)
+        {
+            var mismatchFields = InterWarehouseShipmentRecoveryMatcher.GetMismatchFields(
+                request,
+                expectedLines,
+                recoveredLines);
+            logger.LogError(
+                "Inter warehouse shipment trace was found in Mikro but its document content did not match the stored request. ClientRequestId={ClientRequestId}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, ExpectedLineCount={ExpectedLineCount}, ActualLineCount={ActualLineCount}, MismatchFields={MismatchFields}",
+                request.ClientRequestId,
+                request.SourceWarehouseNo,
+                request.TargetWarehouseNo,
+                expectedLines.Length,
+                recoveredLines.Length,
+                string.Join(",", mismatchFields));
+
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroDocumentContentMismatch,
+                "Mikro contains rows with this request trace, but their content does not match the stored shipment request. Do not create another shipment.",
+                retryable: false);
+        }
+
+        if (recoveryMatch == InterWarehouseShipmentRecoveryMatch.NotFound)
         {
             return null;
         }
@@ -750,10 +771,33 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         var duplicateThreshold = now.AddMinutes(-RecentDuplicateLookupMinutes);
         var documentSerie = $"F{request.SourceWarehouseNo}";
         var excludedOrderNos = excludedDocumentOrderNos.ToArray();
-        var candidateDocumentOrderNos = await mikroWriteDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .TagWith("InterWarehouseShipment:RecentDuplicateCandidateDocuments")
-            .Where(movement =>
+        var candidateQuery = mikroWriteDbContext.STOK_HAREKETLERIs.AsNoTracking();
+
+        if (mikroWriteDbContext.Database.IsSqlServer())
+        {
+            candidateQuery = mikroWriteDbContext.STOK_HAREKETLERIs
+                .FromSqlInterpolated($@"
+                    SELECT movements.*
+                    FROM dbo.STOK_HAREKETLERI AS movements WITH
+                        (INDEX(IX_FR_STH_DepoSevk_Duplicate), FORCESEEK)
+                    WHERE movements.sth_evraktip = 17
+                      AND movements.sth_tip = 2
+                      AND movements.sth_cins = 6
+                      AND movements.sth_normal_iade = 0
+                      AND movements.sth_cikis_depo_no = {request.SourceWarehouseNo}
+                      AND movements.sth_nakliyedeposu = {request.TargetWarehouseNo}
+                      AND movements.sth_giris_depo_no = {request.TransitWarehouseNo}
+                      AND movements.sth_tarih = {movementDate}
+                      AND movements.sth_belge_tarih = {documentDate}
+                      AND movements.sth_evrakno_seri = {documentSerie}
+                      AND movements.sth_create_date >= {duplicateThreshold}
+                      AND movements.sth_evrakno_sira IS NOT NULL
+                      AND movements.sth_satirno IS NOT NULL")
+                .AsNoTracking();
+        }
+        else
+        {
+            candidateQuery = candidateQuery.Where(movement =>
                 movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
                 movement.sth_tip == MovementType &&
                 movement.sth_cins == MovementGenre &&
@@ -766,26 +810,17 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_nakliyedeposu == request.TargetWarehouseNo &&
                 movement.sth_tarih == movementDate &&
                 movement.sth_belge_tarih == documentDate &&
-                movement.sth_create_date >= duplicateThreshold &&
-                (excludedOrderNos.Length == 0 ||
-                 !excludedOrderNos.Contains(movement.sth_evrakno_sira.Value)))
-            .Select(movement => movement.sth_evrakno_sira!.Value)
-            .Distinct()
-            .ToArrayAsync(cancellationToken);
-
-        if (candidateDocumentOrderNos.Length == 0)
-        {
-            return null;
+                movement.sth_create_date >= duplicateThreshold);
         }
 
-        var candidateRows = await mikroWriteDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .TagWith("InterWarehouseShipment:RecentDuplicateDocumentRows")
-            .Where(movement =>
-                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
-                movement.sth_evrakno_seri == documentSerie &&
-                movement.sth_evrakno_sira.HasValue &&
-                candidateDocumentOrderNos.Contains(movement.sth_evrakno_sira.Value))
+        if (excludedOrderNos.Length > 0)
+        {
+            candidateQuery = candidateQuery.Where(movement =>
+                !excludedOrderNos.Contains(movement.sth_evrakno_sira!.Value));
+        }
+
+        var candidateRows = await candidateQuery
+            .TagWith("InterWarehouseShipment:RecentDuplicateRows")
             .Select(movement => new ShipmentDuplicateRow(
                 movement.sth_evrakno_seri ?? string.Empty,
                 movement.sth_evrakno_sira,
@@ -807,7 +842,10 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 movement.sth_cari_srm_merkezi,
                 movement.sth_stok_srm_merkezi,
                 movement.sth_eticaret_kanal_kodu))
-            .ToListAsync(cancellationToken);
+            .ToMeasuredListAsync(
+                logger,
+                "Create:InterWarehouseShipment:RecentDuplicate",
+                cancellationToken);
 
         foreach (var candidate in candidateRows.GroupBy(row => new
                  {

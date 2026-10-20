@@ -71,7 +71,7 @@ Basarida:
 |---|---|---|
 | `Completed` | Sonucu goster, pending kaydi sil. | `Evrak kaydedildi.` |
 | `WaitAndCheck` | POST yapma; `retryAfterSeconds` sonrasinda status GET yap. | `Kayit sonucu kontrol ediliyor.` |
-| `RetrySameRequest` | Ayni formda Kaydet'i ac. Kullanici tekrar bastiginda saklanan snapshot'i ayni `clientRequestId` ile POST et. | `Evrak olusmadi. Ayni bilgilerle yeniden Kaydet kullanabilirsiniz.` |
+| `RetrySameRequest` | Saklanan snapshot'i ve ayni `clientRequestId` degerini degistirmeden bir kez otomatik POST et. Ayni karar ikinci kez gelirse otomatik donguyu durdur. | Ilk kararda form `Kayit yapiliyor` durumunda kalir; ikinci kararda kullaniciya sonuc gosterilir. |
 | `EditAndRetry` | Offline snapshot'i sil, normal form taslagini ayni satirlarla yeniden ac. Duzenlemeden sonra yeni kaydetme denemesi ve yeni `clientRequestId` olustur. | `Seri veya sira numarasini degistirip yeniden kaydedin.` |
 | `RefreshList` | Offline snapshot'i sil, ikinci create yapma ve listeyi yenile. | `Bu resmi belge zaten alinmis; mevcut evraki kontrol edin.` |
 | `RecheckExisting` | Ortak `yeniden-dogrula` POST'unu cagir; create POST yapma. | `Mikro kaydi yeniden kontrol ediliyor.` |
@@ -125,7 +125,7 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 - `MIKRO_WRITE_OUTCOME_UNCONFIRMED` ve `MIKRO_DOCUMENT_INCOMPLETE` durumunda POST yapilmaz.
 - `MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false`, `recommendedAction=EditAndRetry`: Mikro yazimi baslamamistir. Kayit Offline listesine alinmaz; form ve satirlar korunarak seri/sira duzeltmesine acilir.
 - `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false`, `recommendedAction=RefreshList`: ayni cari ve resmi belge daha once alinmistir. Kayit Offline listesine alinmaz, ikinci create yapilmaz ve gecmis listesi yenilenir.
-- Yalniz `RetrySameRequest` POST'a izin verir.
+- Yalniz `RetrySameRequest` POST'a izin verir. Terminal bu kararda ayni snapshot/id ile en fazla bir otomatik tekrar yapar; yeni GUID, seri veya body uretmez.
 
 ### HTTP 0, 500, 502, 503, 504 veya Timeout
 
@@ -180,7 +180,8 @@ Guvenlik ve davranis:
 - Terminalin ortak API istemcisi asagidaki 14 kritik create akisinda POST ve sonuc uzlastirmasini ayni ekran istegi icinde yurutur: firma mal kabul, sayim sonucu, verilen depo siparisi, onerilen depo siparisini siparise cevirme, verilen firma siparisi, onerilen firma siparisini siparise cevirme, depolar arasi sevk, firma sevki, depo iadesi, firma iadesi, zayiat, masraf, virman ve manav MNV duzeltmesi.
 - Normal `200/201` create cevabinda bekleme penceresi calismaz; sonuc hemen forma iletilir ve form kapanir. Yalniz `WaitAndCheck`, HTTP 0 veya `5xx` gibi belirsiz cevaplarda ortak istemci ayni ekranda ilgili `offline-sync/{clientRequestId}` adresine GET atarak sonucu kontrol eder. Bu GET'ler yeni create yazisi baslatmaz.
 - Create isteginin toplam istemci siniri 5 dakikadir. Ilk POST'a en fazla yaklasik 4 dakika 30 saniye ayrilir; kalan sure status GET kontrolleri icindir. Bu 5 dakika sabit bekleme degil, yalniz geciken/sonucu belirsiz islem icin ust sinirdir.
-- Status `Completed` ve `result` dondururse bu normal basari cevabi gibi forma iletilir, pending snapshot temizlenir ve form kapanir. Status `RetrySameRequest` derse ikinci POST otomatik atilmaz; ayni form acik kalir, kullanici tekrar Kaydet'e bastiginda ayni snapshot ve ayni `clientRequestId` kullanilir. Kesin validation/is kurali hatasi da ayni formda duzeltilebilir kalir.
+- Backend ilk pencerenin sonunda `SAFE_WRITE_RETRY_ALLOWED` ile belgenin hic olusmadigini kesinlestirirse terminal ayni snapshot/id icin ikinci ve son otomatik denemeyi baslatir. Bu son deneme kendi en fazla 5 dakikalik POST/status penceresine sahiptir; ucuncu otomatik deneme yoktur.
+- Status `Completed` ve `result` dondururse bu normal basari cevabi gibi forma iletilir, pending snapshot temizlenir ve form kapanir. Status `RetrySameRequest` derse terminal ayni snapshot ve ayni `clientRequestId` ile bir kez otomatik POST yapar. Ikinci denemede ayni karar tekrar gelirse ucuncu POST atilmaz; kesin validation/is kurali hatasi da ayni formda duzeltilebilir kalir.
 - Bes dakikada sonuc kesinlesmezse form kapanmaz ve Bulut/Offline ekranina atilmaz. Ayni formdaki kayit ve `clientRequestId` korunur; sonraki kullanici denemesi backend kararina baglidir ve `RetrySameRequest` olmadan ikinci Mikro yazisi baslatilmaz.
 - Bu kurallar cok sayida terminalin ayni evrak icin paralel 180 saniyelik sorgular acmasini engeller.
 
@@ -223,7 +224,7 @@ green-grocer.operations.adjustment.apply
 - Cift tik iki POST olusturmaz.
 - Timeout sonrasi yeni GUID uretilmez.
 - `WaitAndCheck` durumunda create POST atilmaz.
-- `RetrySameRequest` disinda yeni Mikro yazisi baslatilmaz. Bes dakikalik pencere sonunda kullanicinin ayni formda tekrar Kaydetmesi ayni kimlikle durum kontrolu gibi guvenlidir; backend tekrar izni yoksa create'i calistirmaz.
+- `RetrySameRequest` disinda yeni Mikro yazisi baslatilmaz. Terminal bu karari ilk kez aldiginda ayni kimlikle bir otomatik deneme yapar; ayni form islemi icinde ikinci `RetrySameRequest` karari ucuncu POST baslatmaz.
 - Tam eslesmeyen veya eksik belge `Completed` sayilmaz.
 - Uygulama yeniden acildiginda pending islem kaybolmaz.
 - Tek pending evrak diger evraklari veya tum modulu kilitlemez.
