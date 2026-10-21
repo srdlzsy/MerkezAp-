@@ -7902,8 +7902,11 @@ Depo mal kabul UI akisi:
 - Fark yoksa `allowDiscrepancy = false` ile direkt kabul gonderilebilir.
 - Fark varsa UI once uyari verir. Kullanici farkli kabul etmeyi onaylamadan `allowDiscrepancy = true` gonderilmemelidir.
 - Kaydet butonu `POST /api/mal-kabul-islemleri/depo-mal-kabulleri/{seri}/{sira}/kabul` endpoint'ine gider.
+- Ayni depo, seri ve sira icin gelen kabul istekleri backend tarafinda belge bazinda tek siraya alinir. UI yine Kaydet butonunu ilk tikta kilitlemelidir; ancak ag tekrari veya cift tik olursa ayni belge uzerinde paralel SQL transaction baslatilmaz.
+- Belge daha once ayni hareket GUID'leri ve ayni `receivedQuantity` degerleriyle kabul edilmisse endpoint idempotent davranir: yeni yazma yapmadan mevcut kabul sonucunu `200 OK` ile yeniden dondurur. UI bu cevabi normal basari gibi ele alip belgeyi bekleyen listesinden dusurmelidir.
+- Daha once kabul edilmis belge farkli satir veya miktarla tekrar gonderilirse endpoint mevcut Mikro kaydini degistirmez ve `409 Conflict` dondurur. UI bu durumda otomatik tekrar yapmamalidir; detay yeniden okunup gercek kabul miktarlari gosterilmelidir.
 - Basarili response geldikten sonra evrak bekleyen listesinden dusurulur veya detayda "Kabul edildi" durumuna alinip kullaniciya toplam sevk, toplam kabul, eksik ve fazla miktarlari gosterilir.
-- `409 Conflict` gelirse UI bunu "evrak daha once kabul edilmis olabilir" veya "fark onayi gerekiyor" mesaji olarak gostermelidir.
+- `409 Conflict` gelirse UI bunu "fark onayi gerekiyor", "evrak farkli miktarla daha once kabul edilmis" veya response `detail` alanindaki ilgili is kurali mesaji olarak gostermelidir.
 - Bu ekran plaka, sofor ve TCKN istemez; bu bilgiler sevk/iade e-irsaliyesi gonderilirken ayrica girilir.
 
 ### Mal Kabul Farklari
@@ -19698,6 +19701,17 @@ Production gecici gorev notu:
 - `inventory-count-sync`, AXATA EXT tarafinda `vw_stok_duzeltme` view'i bulunmadigi icin `Enabled=false` ve `ScheduleEnabled=false` durumundadir. Bu yalniz DynamicCensus/sayim import gorevini kapatir; siparis, C01-C04, G01, G02, urun ve firma worker gorevleri calismaya devam eder. View dogru kolon sozlesmesiyle AXATA tarafinda kurulduktan sonra gorev yeniden acilmalidir.
 - `firm-master-sync` icin `addFirmMaster+addFirmAddress` konfigurasyon degeri iki ayri WCF cagrisi olarak calisir; birlesik metin tek operasyon adi olarak servise gonderilmez.
 
+Production AXATA import calisma kurali:
+
+- `c01-outbound-delivery-import`, `c02-outbound-delivery-import`, `g01-inbound-atf-import` ve `g02-inbound-delivery-import` Production profilinde aciktir ve 5 dakikada bir calisir.
+- Bu dort gorevde `ImportLookbackDays=14` kullanilir. Zamanlanmis worker bugun dahil son 14 gunluk AXATA kayitlarini isler; daha eski `Status=0` arsiv kayitlari her dongude yeniden taranarak yeni evraklari geciktirmez.
+- C01, C02 ve G02 zamanlanmis okumalarinda `AxataConnection` tanimliysa tarih/durum filtresi dogrudan AXATA SQL tablolarinda uygulanir. WCF, canli import/ack islemi ve SQL baglantisi bulunmayan manuel akislar icin korunur.
+- Eski bir belgenin kurtarilmasi gerekiyorsa belgeye ozel manuel `preview/import/rescue` route'u kullanilir. Manuel route'lar 14 gunluk worker penceresiyle sinirlanmaz.
+- C01/C02 belgesi iptal kodluysa veya sevk durumu iptal olup toplam miktari sifirsa Mikro'da bos fis uretilmez; AXATA kaydi tamamlandi olarak isaretlenir. Bu kayit worker'i surekli `Degraded` durumda tutmaz.
+- G01 icin ayni AXATA satir anahtarlari Mikro'da eksiksiz bulunursa ikinci hareket yazilmaz; yalniz AXATA satirlari tamamlandi olarak isaretlenir.
+- Siparis/satir/miktar eslesmesi gercekten uyusmuyorsa kayit AXATA'da bekler, Mikro'ya tahmini belge yazilmaz ve worker hatasi ayrintili olarak izleme ekraninda gorunur. Diger uygun belgeler ayni batch icinde islenmeye devam eder.
+- Mikro yazisi veya mevcut Mikro kaydinin kesin readback dogrulamasi tamamlanmadan AXATA `Status=1` ack yapilmaz.
+
 Execution mode:
 
 - `DryRun`
@@ -20732,6 +20746,8 @@ Entegrasyon modulu notlari:
 - `inventory-count-sync` ile `c01/c02/c03/c04/g01/g02` import task'lari Live execution ve otomatik scheduler uzerinden AXATA bekleyen kuyruklarini Mikro'ya isler
 - toplu endpoint'lerde `ContinueOnError = true` ise HTTP 200 donup basarisiz item'lari `Failures` listesinde raporlar
 - Zamanli G01/G02 gorevi hata verirse worker son hata metninde ilk 10 belgenin numarasini ve nedenini gosterir. G02 ayrica her atlanan/basarisiz belgeyi structured log'a `SequenceNo`, AXATA belge no, kaynak Mikro belge ve neden ile yazar; G01 de belge no ve nedeni ayri loglar. Mikro'da tam ve eslesen kayit zaten varsa duplicate yazilmaz; yalniz kismi/uyusmayan mevcut kayit guvenli kabul edilmez ve inceleme nedeni olarak kalir.
+- C02 kaydi AXATA tarafinda iptal kodu tasiyorsa veya `shipmentState=3` ve toplam miktari sifirsa terminal kayit kabul edilir. Backend bu kayit icin Mikro `SIPARISLER`/`STOK_HAREKETLERI` eslestirme sorgularini calistirmadan AXATA acknowledge adimina gecer; ayni iptal kaydi scheduler'i her 5 dakikada bir mesgul etmez.
+- `product-master-sync` toplu gonderiminde hata olursa worker hata metni yalniz toplam sayiyi degil, ilk 5 hatali urunun `Urun`, AXATA `State` ve servis `Neden` bilgisini de dondurur. Veritabani Izleme ekraninda `lastFailedJob.errorMessage` bu ayrintiyla gosterilmelidir.
 - `Outbox` modu su an gercek WCF dispatch degil, payload uretim ve dosyalama asamasidir
 - canli AXATA import/ack adapter'i C01/C02/C03/C4 outbound delivery, G01 inbound ATF, G02 inbound delivery ve DynamicCensus icin aktiftir
 - `GET /api/integrations/axata-sync` icindeki her task artik `supportsManualDocuments`, `supportsLiveDispatch` ve varsa `liveOperationName` alanlarini da dondurur
