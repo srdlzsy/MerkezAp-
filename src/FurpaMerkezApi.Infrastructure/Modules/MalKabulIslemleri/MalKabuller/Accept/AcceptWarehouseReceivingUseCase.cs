@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -33,6 +34,13 @@ public sealed class AcceptWarehouseReceivingUseCase(
         CancellationToken cancellationToken)
     {
         Validate(request);
+
+        var documentSerie = request.DocumentSerie.Trim();
+        await using var documentLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "WarehouseReceivingAcceptance",
+            $"{request.WarehouseNo}:{documentSerie}:{request.DocumentOrderNo}",
+            cancellationToken);
 
         return mikroWriteRoutingOptions.CurrentValue.WarehouseReceivingAcceptance switch
         {
@@ -72,6 +80,30 @@ public sealed class AcceptWarehouseReceivingUseCase(
                 var lineResults = BuildLineResults(movements, receivedQuantitiesByMovementGuid);
                 var hasDiscrepancy = lineResults.Any(line => line.DifferenceType != "none");
 
+                if (IsAlreadyAccepted(request.WarehouseNo, movements))
+                {
+                    EnsureAcceptedQuantitiesMatch(movements, receivedQuantitiesByMovementGuid);
+                    await transaction.CommitAsync(cancellationToken);
+
+                    logger.LogInformation(
+                        "Warehouse receiving was already accepted with the same quantities; returning the existing result. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}",
+                        documentSerie,
+                        request.DocumentOrderNo,
+                        request.WarehouseNo);
+
+                    return BuildResponse(
+                        request,
+                        documentSerie,
+                        movements,
+                        lineResults,
+                        hasDiscrepancy,
+                        movements[0].sth_nakliyedeposu ?? 0,
+                        options.ConnectionStringName);
+                }
+
+                EnsurePendingReceivingState(request.WarehouseNo, movements);
+                EnsureEDespatchWasSent(movements, documentSerie, request.DocumentOrderNo);
+
                 if (hasDiscrepancy && !request.AllowDiscrepancy)
                 {
                     throw new InvalidOperationException(
@@ -83,26 +115,14 @@ public sealed class AcceptWarehouseReceivingUseCase(
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
-                var firstMovement = movements[0];
-                var transitWarehouseNo = firstMovement.sth_nakliyedeposu ?? 0;
-
-                return new AcceptWarehouseReceivingResponse(
+                return BuildResponse(
+                    request,
                     documentSerie,
-                    request.DocumentOrderNo,
-                    request.WarehouseNo,
-                    firstMovement.sth_cikis_depo_no ?? 0,
-                    transitWarehouseNo,
-                    DeliveredToTargetWarehouseState,
-                    firstMovement.sth_normal_iade == ReturnMovement,
-                    lineResults.Count,
-                    lineResults.Sum(line => line.ShippedQuantity),
-                    lineResults.Sum(line => line.ReceivedQuantity),
-                    lineResults.Where(line => line.DifferenceQuantity < -QuantityTolerance).Sum(line => Math.Abs(line.DifferenceQuantity)),
-                    lineResults.Where(line => line.DifferenceQuantity > QuantityTolerance).Sum(line => line.DifferenceQuantity),
+                    movements,
+                    lineResults,
                     hasDiscrepancy,
-                    hasDiscrepancy ? "recorded-on-formula-quantity" : "not-required",
-                    options.ConnectionStringName,
-                    lineResults);
+                    movements[0].sth_nakliyedeposu ?? 0,
+                    options.ConnectionStringName);
             }
             catch
             {
@@ -131,6 +151,29 @@ public sealed class AcceptWarehouseReceivingUseCase(
             cancellationToken);
         var lineResults = BuildLineResults(movements, receivedQuantitiesByMovementGuid);
         var hasDiscrepancy = lineResults.Any(line => line.DifferenceType != "none");
+
+        if (IsAlreadyAccepted(request.WarehouseNo, movements))
+        {
+            EnsureAcceptedQuantitiesMatch(movements, receivedQuantitiesByMovementGuid);
+
+            logger.LogInformation(
+                "Warehouse receiving was already accepted with the same quantities; returning the existing result. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, WarehouseNo={WarehouseNo}",
+                documentSerie,
+                request.DocumentOrderNo,
+                request.WarehouseNo);
+
+            return BuildResponse(
+                request,
+                documentSerie,
+                movements,
+                lineResults,
+                hasDiscrepancy,
+                movements[0].sth_nakliyedeposu ?? 0,
+                options.ConnectionStringName);
+        }
+
+        EnsurePendingReceivingState(request.WarehouseNo, movements);
+        EnsureEDespatchWasSent(movements, documentSerie, request.DocumentOrderNo);
 
         if (hasDiscrepancy && !request.AllowDiscrepancy)
         {
@@ -180,23 +223,16 @@ public sealed class AcceptWarehouseReceivingUseCase(
             firstMovement.sth_Guid,
             cancellationToken: cancellationToken);
 
-        return new AcceptWarehouseReceivingResponse(
+        return BuildResponse(
+            request,
             documentSerie,
-            request.DocumentOrderNo,
-            request.WarehouseNo,
-            sourceWarehouseNo,
-            transitWarehouseNo,
-            DeliveredToTargetWarehouseState,
-            isReturn,
-            lineResults.Count,
-            lineResults.Sum(line => line.ShippedQuantity),
-            lineResults.Sum(line => line.ReceivedQuantity),
-            lineResults.Where(line => line.DifferenceQuantity < -QuantityTolerance).Sum(line => Math.Abs(line.DifferenceQuantity)),
-            lineResults.Where(line => line.DifferenceQuantity > QuantityTolerance).Sum(line => line.DifferenceQuantity),
+            movements,
+            lineResults,
             hasDiscrepancy,
-            hasDiscrepancy ? "recorded-on-formula-quantity" : "not-required",
+            transitWarehouseNo,
             options.ConnectionStringName,
-            lineResults);
+            sourceWarehouseNo,
+            isReturn);
     }
 
     private async Task<AcceptWarehouseReceivingResponse> ExecuteDualShadowAsync(
@@ -304,13 +340,35 @@ public sealed class AcceptWarehouseReceivingUseCase(
             throw new KeyNotFoundException("Warehouse receiving document was not found.");
         }
 
-        if (movements.All(movement =>
-                movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState &&
-                movement.sth_giris_depo_no == warehouseNo))
-        {
-            throw new InvalidOperationException("Warehouse receiving document is already accepted.");
-        }
+        return movements;
+    }
 
+    internal static bool IsAlreadyAccepted(
+        int warehouseNo,
+        IReadOnlyCollection<STOK_HAREKETLERI> movements) =>
+        movements.Count > 0 &&
+        movements.All(movement =>
+            movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState &&
+            movement.sth_giris_depo_no == warehouseNo);
+
+    internal static void EnsureAcceptedQuantitiesMatch(
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        IReadOnlyDictionary<Guid, double> receivedQuantitiesByMovementGuid)
+    {
+        if (movements.Count != receivedQuantitiesByMovementGuid.Count ||
+            movements.Any(movement =>
+                !receivedQuantitiesByMovementGuid.TryGetValue(movement.sth_Guid, out var requestedQuantity) ||
+                Math.Abs((movement.sth_FormulMiktar ?? 0d) - requestedQuantity) > QuantityTolerance))
+        {
+            throw new InvalidOperationException(
+                "Depo mal kabul evraki daha once farkli satir veya miktarlarla kabul edilmis. Evrak detayini yenileyip kayitli kabul miktarlarini kontrol edin.");
+        }
+    }
+
+    private static void EnsurePendingReceivingState(
+        int warehouseNo,
+        IReadOnlyCollection<STOK_HAREKETLERI> movements)
+    {
         if (movements.Any(movement =>
                 movement.sth_nakliyedeposu != warehouseNo ||
                 movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState))
@@ -323,10 +381,38 @@ public sealed class AcceptWarehouseReceivingUseCase(
         {
             throw new InvalidOperationException("Warehouse receiving document does not contain a valid transit warehouse.");
         }
+    }
 
-        EnsureEDespatchWasSent(movements, documentSerie, documentOrderNo);
+    private static AcceptWarehouseReceivingResponse BuildResponse(
+        AcceptWarehouseReceivingRequest request,
+        string documentSerie,
+        IReadOnlyList<STOK_HAREKETLERI> movements,
+        IReadOnlyCollection<AcceptWarehouseReceivingLineResultDto> lineResults,
+        bool hasDiscrepancy,
+        int transitWarehouseNo,
+        string connectionStringName,
+        int? sourceWarehouseNo = null,
+        bool? isReturn = null)
+    {
+        var firstMovement = movements[0];
 
-        return movements;
+        return new AcceptWarehouseReceivingResponse(
+            documentSerie,
+            request.DocumentOrderNo,
+            request.WarehouseNo,
+            sourceWarehouseNo ?? firstMovement.sth_cikis_depo_no ?? 0,
+            transitWarehouseNo,
+            DeliveredToTargetWarehouseState,
+            isReturn ?? firstMovement.sth_normal_iade == ReturnMovement,
+            lineResults.Count,
+            lineResults.Sum(line => line.ShippedQuantity),
+            lineResults.Sum(line => line.ReceivedQuantity),
+            lineResults.Where(line => line.DifferenceQuantity < -QuantityTolerance).Sum(line => Math.Abs(line.DifferenceQuantity)),
+            lineResults.Where(line => line.DifferenceQuantity > QuantityTolerance).Sum(line => line.DifferenceQuantity),
+            hasDiscrepancy,
+            hasDiscrepancy ? "recorded-on-formula-quantity" : "not-required",
+            connectionStringName,
+            lineResults);
     }
 
     private static void EnsureEDespatchWasSent(

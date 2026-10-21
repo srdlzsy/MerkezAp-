@@ -39,4 +39,50 @@ public sealed class AcceptWarehouseReceivingUseCaseEDespatchTests
 
         Assert.False(AcceptWarehouseReceivingUseCase.HasSentEDespatch(movement));
     }
+
+    [Fact]
+    public void AcceptedDocument_AllowsIdempotentRetry_WhenQuantitiesMatch()
+    {
+        var movementGuid = Guid.NewGuid();
+        var movements = new[]
+        {
+            new STOK_HAREKETLERI
+            {
+                sth_Guid = movementGuid,
+                sth_giris_depo_no = 110,
+                sth_nakliyedurumu = 1,
+                sth_FormulMiktar = 12.5d
+            }
+        };
+        var requestedQuantities = new Dictionary<Guid, double>
+        {
+            [movementGuid] = 12.5d
+        };
+
+        Assert.True(AcceptWarehouseReceivingUseCase.IsAlreadyAccepted(110, movements));
+        AcceptWarehouseReceivingUseCase.EnsureAcceptedQuantitiesMatch(movements, requestedQuantities);
+    }
+
+    [Fact]
+    public void AcceptedDocument_RejectsRetry_WhenQuantitiesDiffer()
+    {
+        var movementGuid = Guid.NewGuid();
+        var movements = new[]
+        {
+            new STOK_HAREKETLERI
+            {
+                sth_Guid = movementGuid,
+                sth_giris_depo_no = 110,
+                sth_nakliyedurumu = 1,
+                sth_FormulMiktar = 12.5d
+            }
+        };
+        var requestedQuantities = new Dictionary<Guid, double>
+        {
+            [movementGuid] = 13d
+        };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            AcceptWarehouseReceivingUseCase.EnsureAcceptedQuantitiesMatch(movements, requestedQuantities));
+    }
 }
