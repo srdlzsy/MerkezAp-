@@ -19,8 +19,9 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
         int take,
         CancellationToken cancellationToken)
     {
+        var minimumAxataDate = AxataSynchronizationImportWindow.GetMinimumDate(options.CurrentValue, Code);
         var preview = await PreviewImportAsync(
-            new AxataOutboundDeliveryImportPreviewRequest(take),
+            new AxataOutboundDeliveryImportPreviewRequest(take, minimumAxataDate),
             cancellationToken);
 
         return new AxataSynchronizationPreviewDto(
@@ -43,10 +44,11 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
         CancellationToken cancellationToken)
     {
         var batchSize = GetBatchSize(options.CurrentValue, Code);
+        var minimumAxataDate = AxataSynchronizationImportWindow.GetMinimumDate(options.CurrentValue, Code);
         if (context.ExecutionMode != AxataSynchronizationJobExecutionMode.Live)
         {
             var preview = await PreviewImportAsync(
-                new AxataOutboundDeliveryImportPreviewRequest(batchSize),
+                new AxataOutboundDeliveryImportPreviewRequest(batchSize, minimumAxataDate),
                 cancellationToken);
             var artifacts = context.ExecutionMode == AxataSynchronizationJobExecutionMode.Outbox
                 ? new[] { await outboxWriter.WritePayloadAsync(context, preview, cancellationToken) }
@@ -62,7 +64,8 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
             new AxataOutboundDeliveryImportExecuteRequest(
                 batchSize,
                 ContinueOnError: true,
-                Acknowledge: true),
+                Acknowledge: true,
+                MinimumAxataDate: minimumAxataDate),
             context.RequestedByUserId,
             cancellationToken);
 
@@ -215,8 +218,9 @@ internal sealed class G01InboundAtfImportTaskHandler(
         int take,
         CancellationToken cancellationToken)
     {
+        var minimumAxataDate = AxataSynchronizationImportWindow.GetMinimumDate(options.CurrentValue, Code);
         var preview = await importService.PreviewAsync(
-            new AxataG01InboundAtfPreviewRequest(take),
+            new AxataG01InboundAtfPreviewRequest(take, minimumAxataDate),
             cancellationToken);
 
         return new AxataSynchronizationPreviewDto(
@@ -241,10 +245,11 @@ internal sealed class G01InboundAtfImportTaskHandler(
         var batchSize = options.CurrentValue.Tasks.TryGetValue(Code, out var taskOptions)
             ? Math.Clamp(taskOptions.BatchSize, 1, 500)
             : 100;
+        var minimumAxataDate = AxataSynchronizationImportWindow.GetMinimumDate(options.CurrentValue, Code);
         if (context.ExecutionMode != AxataSynchronizationJobExecutionMode.Live)
         {
             var preview = await importService.PreviewAsync(
-                new AxataG01InboundAtfPreviewRequest(batchSize),
+                new AxataG01InboundAtfPreviewRequest(batchSize, minimumAxataDate),
                 cancellationToken);
             var artifacts = context.ExecutionMode == AxataSynchronizationJobExecutionMode.Outbox
                 ? new[] { await outboxWriter.WritePayloadAsync(context, preview, cancellationToken) }
@@ -260,7 +265,8 @@ internal sealed class G01InboundAtfImportTaskHandler(
             new AxataG01InboundAtfExecuteRequest(
                 batchSize,
                 ContinueOnError: true,
-                Acknowledge: true),
+                Acknowledge: true,
+                MinimumAxataDate: minimumAxataDate),
             context.RequestedByUserId,
             cancellationToken);
 
@@ -280,4 +286,22 @@ internal sealed class G01InboundAtfImportTaskHandler(
         string.Join(" | ", failures
             .Take(10)
             .Select(failure => $"{failure.OrderDocumentNo ?? "bilinmeyen-belge"}: {failure.ErrorMessage}"));
+
+}
+
+internal static class AxataSynchronizationImportWindow
+{
+    public static DateTime? GetMinimumDate(
+        AxataSynchronizationOptions currentOptions,
+        string taskCode,
+        DateTime? today = null)
+    {
+        if (!currentOptions.Tasks.TryGetValue(taskCode, out var taskOptions) ||
+            taskOptions.ImportLookbackDays <= 0)
+        {
+            return null;
+        }
+
+        return (today ?? DateTime.Today).Date.AddDays(-(taskOptions.ImportLookbackDays - 1));
+    }
 }

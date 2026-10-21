@@ -13,12 +13,14 @@ public interface IAxataG01InboundAtfImportService
 }
 
 public sealed record AxataG01InboundAtfPreviewRequest(
-    int? Take);
+    int? Take,
+    DateTime? MinimumAxataDate = null);
 
 public sealed record AxataG01InboundAtfExecuteRequest(
     int? Take,
     bool ContinueOnError,
-    bool Acknowledge);
+    bool Acknowledge,
+    DateTime? MinimumAxataDate = null);
 
 public sealed record AxataG01InboundAtfPreviewDto(
     string MovementType,

@@ -44,7 +44,8 @@ internal sealed class AxataG01InboundAtfImportService(
     {
         var take = NormalizeTake(request.Take);
         var lines = await FetchPendingLinesAsync(cancellationToken);
-        var documents = lines
+        var eligibleLines = ApplyMinimumAxataDate(lines, request.MinimumAxataDate);
+        var documents = eligibleLines
             .GroupBy(line => line.OrderDocumentNo, StringComparer.OrdinalIgnoreCase)
             .Take(take)
             .Select(group => new G01InboundAtfDocument(group.Key, group.ToArray()))
@@ -55,7 +56,7 @@ internal sealed class AxataG01InboundAtfImportService(
             MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            lines.Count,
+            eligibleLines.Count,
             analyses.Count,
             analyses.Count(analysis => analysis.Dto.CanImport),
             analyses.Sum(analysis => analysis.Lines.Count),
@@ -75,7 +76,8 @@ internal sealed class AxataG01InboundAtfImportService(
     {
         var take = NormalizeTake(request.Take);
         var lines = await FetchPendingLinesAsync(cancellationToken);
-        var documents = lines
+        var eligibleLines = ApplyMinimumAxataDate(lines, request.MinimumAxataDate);
+        var documents = eligibleLines
             .GroupBy(line => line.OrderDocumentNo, StringComparer.OrdinalIgnoreCase)
             .Take(take)
             .Select(group => new G01InboundAtfDocument(group.Key, group.ToArray()))
@@ -91,6 +93,26 @@ internal sealed class AxataG01InboundAtfImportService(
             {
                 if (!analysis.Dto.CanImport)
                 {
+                    if (request.Acknowledge &&
+                        await HasCompleteExistingMovementAsync(analysis, cancellationToken))
+                    {
+                        foreach (var line in analysis.Lines)
+                        {
+                            await AcknowledgeAsync(line.SequenceNo, cancellationToken);
+                        }
+
+                        skippedDocumentCount++;
+                        results.Add(new AxataG01InboundAtfResultDto(
+                            analysis.Document.OrderDocumentNo,
+                            analysis.Dto.DocumentSerie,
+                            analysis.Dto.DocumentOrderNo,
+                            0,
+                            0d,
+                            true,
+                            "Mikro G01 firma mal kabul hareketinin tum AXATA satir izleri dogrulandi; duplicate fis olusturulmadan AXATA statusu tamamlandi."));
+                        continue;
+                    }
+
                     skippedDocumentCount++;
                     var failure = new AxataG01InboundAtfFailureDto(
                         analysis.Document.OrderDocumentNo,
@@ -618,6 +640,26 @@ internal sealed class AxataG01InboundAtfImportService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    private async Task<bool> HasCompleteExistingMovementAsync(
+        G01InboundAtfAnalysis analysis,
+        CancellationToken cancellationToken)
+    {
+        if (analysis.Lines.Count == 0 || string.IsNullOrWhiteSpace(analysis.Dto.DocumentSerie))
+        {
+            return false;
+        }
+
+        var expectedRowKeys = analysis.Lines
+            .Select(line => BuildMovementGroupCode(line.SequenceNo))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingRowKeys = await GetExistingRowKeysAsync(
+            analysis.Lines,
+            [analysis.Dto.DocumentSerie],
+            cancellationToken);
+
+        return existingRowKeys.SetEquals(expectedRowKeys);
+    }
+
     private static IReadOnlyCollection<MatchedG01InboundAtfLine> MatchLines(
         G01InboundAtfDocument document,
         IReadOnlyCollection<SIPARISLER> orderLines)
@@ -1053,6 +1095,25 @@ internal sealed class AxataG01InboundAtfImportService(
 
     private static double GetRemainingQuantity(SIPARISLER orderLine) =>
         (orderLine.sip_miktar ?? 0d) - (orderLine.sip_teslim_miktar ?? 0d);
+
+    private static IReadOnlyCollection<G01InboundAtfLine> ApplyMinimumAxataDate(
+        IReadOnlyCollection<G01InboundAtfLine> lines,
+        DateTime? minimumAxataDate)
+    {
+        if (!minimumAxataDate.HasValue)
+        {
+            return lines;
+        }
+
+        var minimumDate = minimumAxataDate.Value.Date;
+        var maximumDate = DateTime.Today;
+        return lines
+            .Where(line =>
+                line.AxataDate.HasValue &&
+                line.AxataDate.Value.Date >= minimumDate &&
+                line.AxataDate.Value.Date <= maximumDate)
+            .ToArray();
+    }
 
     private static string BuildMovementGroupCode(long sequenceNo) =>
         $"AXATA-G01:{sequenceNo.ToString(CultureInfo.InvariantCulture)}";

@@ -352,3 +352,26 @@ public sealed class ENT013_MST
     public int? S13STAT { get; set; }
     public DateTime? S13RCVDATE { get; set; }
 }
+
+public sealed class ENT016_MST
+{
+    public long S16ID { get; set; }
+    public decimal? S16STAT { get; set; }
+    public string? S16HKOD { get; set; }
+    public string? S16BNUM { get; set; }
+    public string? S16FIRM { get; set; }
+    public decimal? S16ITAR { get; set; }
+}
+
+public sealed class ENT016
+{
+    public long S16SIRA { get; set; }
+    public byte? S16STAT { get; set; }
+    public string? S16HKOD { get; set; }
+    public string? S16BNUM { get; set; }
+    public string? S16KALN { get; set; }
+    public string? S16SKU { get; set; }
+    public string? S16FIRM { get; set; }
+    public decimal? S16MIKT { get; set; }
+    public decimal? S16ITAR { get; set; }
+}

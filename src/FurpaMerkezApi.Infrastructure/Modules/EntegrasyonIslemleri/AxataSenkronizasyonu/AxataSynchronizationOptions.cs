@@ -53,6 +53,8 @@ public sealed class AxataSynchronizationTaskOptions
 
     public int ChangeLookbackMinutes { get; init; } = 10;
 
+    public int ImportLookbackDays { get; init; }
+
     public int? DefaultWarehouseNo { get; init; }
 
     public string? LiveOperationName { get; init; }

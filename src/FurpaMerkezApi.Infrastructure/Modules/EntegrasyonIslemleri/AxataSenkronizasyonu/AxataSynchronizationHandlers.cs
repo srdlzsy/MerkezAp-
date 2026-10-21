@@ -210,6 +210,7 @@ internal sealed class ProductMasterSyncTaskHandler(
 
             var succeededCount = 0;
             var failedCount = 0;
+            var failedResults = new List<AxataProductSynchronizationResultDto>();
             foreach (var productCodeBatch in changedProductCodes.Chunk(GetBatchSize(options.CurrentValue, Code)))
             {
                 var dispatch = await productSynchronizationService.DispatchAsync(
@@ -220,12 +221,13 @@ internal sealed class ProductMasterSyncTaskHandler(
                     cancellationToken);
                 succeededCount += dispatch.SucceededProductCount;
                 failedCount += dispatch.FailedProductCount;
+                failedResults.AddRange(dispatch.Results.Where(result => !result.IsSuccess));
             }
 
             if (failedCount > 0)
             {
                 throw new InvalidOperationException(
-                    $"{failedCount} urun AXATA'ya gonderilemedi. Basarili: {succeededCount}.");
+                    BuildProductFailureMessage(failedCount, succeededCount, failedResults));
             }
 
             return new AxataSynchronizationTaskExecutionResult(
@@ -250,6 +252,34 @@ internal sealed class ProductMasterSyncTaskHandler(
             items.Length,
             $"{items.Length} urun master kaydi hazirlandi.",
             artifacts);
+    }
+
+    internal static string BuildProductFailureMessage(
+        int failedCount,
+        int succeededCount,
+        IReadOnlyCollection<AxataProductSynchronizationResultDto> failedResults)
+    {
+        var details = failedResults
+            .Take(5)
+            .Select(result =>
+            {
+                var message = string.Join(
+                    ' ',
+                    (result.ServiceMessage ?? string.Empty)
+                        .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                if (message.Length > 300)
+                {
+                    message = message[..300];
+                }
+
+                return $"Urun={result.ProductCode}, State={result.ServiceState?.ToString() ?? "-"}, Neden={message}";
+            })
+            .ToArray();
+        var suffix = details.Length == 0
+            ? string.Empty
+            : $" Ilk hatalar: {string.Join(" | ", details)}";
+
+        return $"{failedCount} urun AXATA'ya gonderilemedi. Basarili: {succeededCount}.{suffix}";
     }
 
     private IQueryable<ProductMasterPayloadItem> CreateQuery()

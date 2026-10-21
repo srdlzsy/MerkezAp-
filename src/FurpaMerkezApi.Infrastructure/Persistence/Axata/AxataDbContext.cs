@@ -22,6 +22,10 @@ public sealed class AxataDbContext(DbContextOptions<AxataDbContext> options) : D
 
     public DbSet<ENT013_MST> ENT013_MSTs => Set<ENT013_MST>();
 
+    public DbSet<ENT016_MST> ENT016_MSTs => Set<ENT016_MST>();
+
+    public DbSet<ENT016> ENT016s => Set<ENT016>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureOutboundOrders(modelBuilder);
@@ -32,6 +36,35 @@ public sealed class AxataDbContext(DbContextOptions<AxataDbContext> options) : D
         ConfigureInboundAtfDetails(modelBuilder);
         ConfigureInboundOrders(modelBuilder);
         ConfigureInboundOrderHeaders(modelBuilder);
+        ConfigureInboundDeliveries(modelBuilder);
+        ConfigureInboundDeliveryLines(modelBuilder);
+    }
+
+    private static void ConfigureInboundDeliveries(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ENT016_MST>();
+        entity.ToTable("ENT016_MST");
+        entity.HasKey(item => item.S16ID);
+        entity.Property(item => item.S16ID).ValueGeneratedOnAdd();
+        ConfigureMaxLength(entity, 3, nameof(ENT016_MST.S16HKOD));
+        ConfigureMaxLength(entity, 50, nameof(ENT016_MST.S16FIRM));
+        ConfigureMaxLength(entity, 50, nameof(ENT016_MST.S16BNUM));
+        ConfigurePrecision(entity, 1, 0, nameof(ENT016_MST.S16STAT));
+        ConfigurePrecision(entity, 8, 0, nameof(ENT016_MST.S16ITAR));
+    }
+
+    private static void ConfigureInboundDeliveryLines(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ENT016>();
+        entity.ToTable("ENT016");
+        entity.HasKey(item => item.S16SIRA);
+        entity.Property(item => item.S16SIRA).ValueGeneratedOnAdd();
+        ConfigureMaxLength(entity, 3, nameof(ENT016.S16HKOD));
+        ConfigureMaxLength(entity, 50, nameof(ENT016.S16FIRM));
+        ConfigureMaxLength(entity, 50, nameof(ENT016.S16KALN), nameof(ENT016.S16SKU));
+        ConfigureMaxLength(entity, 50, nameof(ENT016.S16BNUM));
+        ConfigurePrecision(entity, 15, 3, nameof(ENT016.S16MIKT));
+        ConfigurePrecision(entity, 8, 0, nameof(ENT016.S16ITAR));
     }
 
     private static void ConfigureOutboundOrders(ModelBuilder modelBuilder)

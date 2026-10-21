@@ -352,21 +352,27 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingOutboundDeliveriesAsync(C01MovementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingOutboundDeliveriesAsync(
+            C01MovementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeC01DocumentsAsync(selectedDocuments, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             C01MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            documents.Count,
+            eligibleDocuments.Count,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
             analyses.Select(analysis => analysis.ImportDto).ToArray(),
             [
-                "AXATA C01 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur.",
+                axataDbContext is null || !request.MinimumAxataDate.HasValue
+                    ? "AXATA C01 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur."
+                    : $"AXATA C01 teslimatlar AXATA SQL ENT006/ENT007 tablolarindan Status=0 ve {request.MinimumAxataDate.Value:yyyy-MM-dd} sonrasi olarak okunur.",
                 "CanImport=true olan belgelerde AXATA teslimat satirlari Mikro siparis satirlariyla guvenli eslesmistir ve henuz fis linki yoktur.",
                 "Mikro fis linki zaten varsa tekrar fis uretilmez; execute sirasinda uygun durumda sadece AXATA ack yapilabilir."
             ]);
@@ -378,8 +384,12 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingOutboundDeliveriesAsync(C01MovementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingOutboundDeliveriesAsync(
+            C01MovementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeC01DocumentsAsync(selectedDocuments, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -425,6 +435,18 @@ internal sealed class AxataOutboundDeliveryImportService(
                         shipmentResponse.DocumentDate,
                         shipmentResponse.DocumentNo));
 
+                    continue;
+                }
+
+                if (request.Acknowledge &&
+                    IsPendingStatus(analysis.Document.Status) &&
+                    IsCancelledOutboundDelivery(analysis.Document))
+                {
+                    await AcknowledgeOutboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+                    skippedDocumentCount++;
+                    results.Add(CreateTerminalOutboundAcknowledgementResult(
+                        analysis.Document,
+                        "AXATA C01 sevki iptal veya sifir miktarli oldugu icin Mikro fis uretilmeden tamamlandi."));
                     continue;
                 }
 
@@ -628,21 +650,27 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingOutboundDeliveriesAsync(C02MovementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingOutboundDeliveriesAsync(
+            C02MovementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeC02DocumentsAsync(selectedDocuments, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             C02MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            documents.Count,
+            eligibleDocuments.Count,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
             analyses.Select(analysis => analysis.ImportDto).ToArray(),
             [
-                "AXATA C02 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur.",
+                axataDbContext is null || !request.MinimumAxataDate.HasValue
+                    ? "AXATA C02 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur."
+                    : $"AXATA C02 teslimatlar AXATA SQL ENT006/ENT007 tablolarindan Status=0 ve {request.MinimumAxataDate.Value:yyyy-MM-dd} sonrasi olarak okunur.",
                 "CanImport=true olan belgelerde AXATA satirlari Mikro alinan firma siparisi satirlariyla eslesmistir.",
                 "C02 import firma sevki STOK_HAREKETLERI olusturur ve siparis teslim miktarlarini gunceller."
             ]);
@@ -654,8 +682,12 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingOutboundDeliveriesAsync(C02MovementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingOutboundDeliveriesAsync(
+            C02MovementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeC02DocumentsAsync(selectedDocuments, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -667,6 +699,18 @@ internal sealed class AxataOutboundDeliveryImportService(
             {
                 if (!analysis.ImportDto.CanImport)
                 {
+                    if (request.Acknowledge &&
+                        IsPendingStatus(analysis.Document.Status) &&
+                        IsCancelledOutboundDelivery(analysis.Document))
+                    {
+                        await AcknowledgeOutboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+                        skippedDocumentCount++;
+                        results.Add(CreateTerminalOutboundAcknowledgementResult(
+                            analysis.Document,
+                            "AXATA C02 teslimati iptal veya sifir miktarli oldugu icin Mikro fis uretilmeden tamamlandi."));
+                        continue;
+                    }
+
                     skippedDocumentCount++;
                     failures.Add(new AxataOutboundDeliveryImportFailureDto(
                         analysis.Document.AxataSequenceNo,
@@ -764,21 +808,27 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingInboundDeliveriesAsync(G02MovementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingInboundDeliveriesAsync(
+            G02MovementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeG02DocumentsAsync(selectedDocuments, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             G02MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            documents.Count,
+            eligibleDocuments.Count,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
             analyses.Select(analysis => analysis.ImportDto).ToArray(),
             [
-                "AXATA G02 giris teslimatlari getInboundDeliveryListAsync ile Status=0 olarak okunur.",
+                axataDbContext is null || !request.MinimumAxataDate.HasValue
+                    ? "AXATA G02 giris teslimatlari getInboundDeliveryListAsync ile Status=0 olarak okunur."
+                    : $"AXATA G02 giris teslimatlari AXATA SQL ENT016_MST/ENT016 tablolarindan Status=0 ve {request.MinimumAxataDate.Value:yyyy-MM-dd} sonrasi olarak okunur.",
                 "CanImport=true olan belgelerde AXATA kabul satirlari Mikro siparis satiri ve bekleyen sevk fisiyle guvenli eslesmistir.",
                 "Mikro mal kabul zaten yapilmissa duplicate kabul uretilmez; uygun durumda sadece AXATA ENT016_MST ack yapilabilir."
             ]);
@@ -790,8 +840,12 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingInboundDeliveriesAsync(G02MovementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingInboundDeliveriesAsync(
+            G02MovementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeG02DocumentsAsync(selectedDocuments, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -2485,7 +2539,7 @@ internal sealed class AxataOutboundDeliveryImportService(
         }
 
         var parsedDocuments = documents
-            .Where(document => document.DocumentOrderNo.HasValue && !string.IsNullOrWhiteSpace(document.DocumentSerie))
+            .Where(RequiresC02MikroAnalysis)
             .ToArray();
         var orderLines = Array.Empty<SIPARISLER>();
 
@@ -3138,15 +3192,19 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingOutboundDeliveriesAsync(movementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingOutboundDeliveriesAsync(
+            movementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeLegacyOutboundDocumentsAsync(selectedDocuments, movementType, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             movementType,
             PendingStatus,
             DateTime.UtcNow,
-            documents.Count,
+            eligibleDocuments.Count,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
@@ -3165,8 +3223,12 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         var take = NormalizeTake(request.Take);
-        var documents = await FetchPendingOutboundDeliveriesAsync(movementType, cancellationToken);
-        var selectedDocuments = documents.Take(take).ToArray();
+        var documents = await FetchPendingOutboundDeliveriesAsync(
+            movementType,
+            request.MinimumAxataDate,
+            cancellationToken);
+        var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
+        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
         var analyses = await AnalyzeLegacyOutboundDocumentsAsync(selectedDocuments, movementType, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -3178,6 +3240,18 @@ internal sealed class AxataOutboundDeliveryImportService(
             {
                 if (!analysis.ImportDto.CanImport)
                 {
+                    if (request.Acknowledge &&
+                        IsPendingStatus(analysis.Document.Status) &&
+                        IsCancelledOutboundDelivery(analysis.Document))
+                    {
+                        await AcknowledgeOutboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+                        skippedDocumentCount++;
+                        results.Add(CreateTerminalOutboundAcknowledgementResult(
+                            analysis.Document,
+                            $"AXATA {movementType} teslimati iptal veya sifir miktarli oldugu icin Mikro hareketi uretilmeden tamamlandi."));
+                        continue;
+                    }
+
                     skippedDocumentCount++;
                     failures.Add(new AxataOutboundDeliveryImportFailureDto(
                         analysis.Document.AxataSequenceNo,
@@ -4688,10 +4762,177 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken) =>
         await FetchOutboundDeliveriesAsync(movementType, PendingStatus, null, cancellationToken);
 
+    private async Task<IReadOnlyCollection<AxataOutboundDeliveryDocument>> FetchPendingOutboundDeliveriesAsync(
+        string movementType,
+        DateTime? minimumAxataDate,
+        CancellationToken cancellationToken)
+    {
+        if (minimumAxataDate.HasValue && axataDbContext is not null)
+        {
+            try
+            {
+                return await FetchOutboundDeliveriesFromAxataDbForAuditAsync(
+                    movementType,
+                    [PendingStatus],
+                    minimumAxataDate.Value.Date,
+                    DateTime.Today,
+                    Array.Empty<int>(),
+                    null,
+                    null,
+                    cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "AXATA {MovementType} recent delivery SQL fetch failed; WCF fallback will be used.",
+                    movementType);
+            }
+        }
+
+        return await FetchPendingOutboundDeliveriesAsync(movementType, cancellationToken);
+    }
+
     private async Task<IReadOnlyCollection<AxataOutboundDeliveryDocument>> FetchPendingInboundDeliveriesAsync(
         string movementType,
         CancellationToken cancellationToken) =>
         await FetchInboundDeliveriesAsync(movementType, PendingStatus, null, cancellationToken);
+
+    private async Task<IReadOnlyCollection<AxataOutboundDeliveryDocument>> FetchPendingInboundDeliveriesAsync(
+        string movementType,
+        DateTime? minimumAxataDate,
+        CancellationToken cancellationToken)
+    {
+        if (minimumAxataDate.HasValue && axataDbContext is not null)
+        {
+            try
+            {
+                return await FetchPendingInboundDeliveriesFromAxataDbAsync(
+                    movementType,
+                    minimumAxataDate.Value.Date,
+                    cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "AXATA {MovementType} recent inbound delivery SQL fetch failed; WCF fallback will be used.",
+                    movementType);
+            }
+        }
+
+        return await FetchPendingInboundDeliveriesAsync(movementType, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<AxataOutboundDeliveryDocument>> FetchPendingInboundDeliveriesFromAxataDbAsync(
+        string movementType,
+        DateTime minimumAxataDate,
+        CancellationToken cancellationToken)
+    {
+        if (axataDbContext is null)
+        {
+            return Array.Empty<AxataOutboundDeliveryDocument>();
+        }
+
+        var minimumDateKey = ToAxataDateKey(minimumAxataDate);
+        var maximumDateKey = ToAxataDateKey(DateTime.Today);
+        var headers = await axataDbContext.ENT016_MSTs
+            .AsNoTracking()
+            .Where(header =>
+                header.S16HKOD == movementType &&
+                header.S16STAT.HasValue &&
+                header.S16STAT.Value == 0m &&
+                header.S16ITAR.HasValue &&
+                header.S16ITAR.Value >= minimumDateKey &&
+                header.S16ITAR.Value <= maximumDateKey)
+            .OrderBy(header => header.S16ID)
+            .Select(header => new AxataInboundDeliveryHeaderRow(
+                header.S16ID,
+                header.S16STAT,
+                header.S16HKOD,
+                header.S16BNUM,
+                header.S16FIRM,
+                header.S16ITAR))
+            .ToListAsync(cancellationToken);
+
+        if (headers.Count == 0)
+        {
+            return Array.Empty<AxataOutboundDeliveryDocument>();
+        }
+
+        var deliveryNos = headers
+            .Select(header => NormalizeQueryValue(header.AxataDeliveryNo))
+            .Where(deliveryNo => !string.IsNullOrWhiteSpace(deliveryNo))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var lineRows = deliveryNos.Length == 0
+            ? []
+            : await axataDbContext.ENT016s
+                .AsNoTracking()
+                .Where(line =>
+                    line.S16HKOD == movementType &&
+                    line.S16BNUM != null &&
+                    deliveryNos.Contains(line.S16BNUM.Trim()))
+                .Select(line => new AxataInboundDeliveryLineRow(
+                    line.S16BNUM ?? string.Empty,
+                    line.S16KALN,
+                    line.S16SKU,
+                    line.S16FIRM,
+                    line.S16MIKT,
+                    line.S16ITAR))
+                .ToListAsync(cancellationToken);
+
+        var linesByDeliveryNo = lineRows
+            .Where(line => !string.IsNullOrWhiteSpace(line.AxataDeliveryNo))
+            .GroupBy(line => line.AxataDeliveryNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Where(line => !string.IsNullOrWhiteSpace(line.LineNo) && !string.IsNullOrWhiteSpace(line.StockCode))
+                    .Select(line => new AxataOutboundDeliveryLine(
+                        ParseInt(line.LineNo ?? string.Empty) ?? 0,
+                        line.StockCode!.Trim(),
+                        line.Quantity.HasValue ? (double)line.Quantity.Value : 0d))
+                    .ToArray() as IReadOnlyCollection<AxataOutboundDeliveryLine>,
+                StringComparer.OrdinalIgnoreCase);
+
+        var firstLineByDeliveryNo = lineRows
+            .Where(line => !string.IsNullOrWhiteSpace(line.AxataDeliveryNo))
+            .GroupBy(line => line.AxataDeliveryNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        return headers
+            .Where(header => !string.IsNullOrWhiteSpace(header.AxataDeliveryNo))
+            .Select(header =>
+            {
+                var axataDeliveryNo = header.AxataDeliveryNo!.Trim();
+                var firstLine = firstLineByDeliveryNo.GetValueOrDefault(axataDeliveryNo);
+                var (documentSerie, documentOrderNo) = ParseAxataDeliveryNo(axataDeliveryNo);
+                var sourceCode = FirstNonEmpty(header.SourceWarehouseNo, firstLine?.SourceWarehouseNo);
+
+                return new AxataOutboundDeliveryDocument(
+                    header.AxataSequenceNo,
+                    axataDeliveryNo,
+                    documentSerie,
+                    documentOrderNo,
+                    FirstNonEmpty(header.MovementType, movementType),
+                    FirstNonEmpty(FormatDecimal(header.Status), PendingStatus),
+                    string.Empty,
+                    string.Empty,
+                    ParseInt(sourceCode) ?? 0,
+                    0,
+                    ParseDate(FirstNonEmpty(
+                        FormatDecimal(header.AxataDateKey),
+                        FormatDecimal(firstLine?.AxataDateKey))),
+                    linesByDeliveryNo.GetValueOrDefault(axataDeliveryNo) ?? Array.Empty<AxataOutboundDeliveryLine>())
+                {
+                    SourceCode = NormalizeQueryValue(sourceCode)
+                };
+            })
+            .OrderBy(document => document.AxataSequenceNo)
+            .ToArray();
+    }
 
     private async Task<IReadOnlyCollection<AxataOutboundDeliveryDocument>> FetchInboundDeliveriesAsync(
         string movementType,
@@ -4861,11 +5102,6 @@ internal sealed class AxataOutboundDeliveryImportService(
         CancellationToken cancellationToken)
     {
         if (axataDbContext is null)
-        {
-            return Array.Empty<AxataOutboundDeliveryDocument>();
-        }
-
-        if (sourceWarehouseNos.Count == 0)
         {
             return Array.Empty<AxataOutboundDeliveryDocument>();
         }
@@ -5739,6 +5975,46 @@ internal sealed class AxataOutboundDeliveryImportService(
         (string.Equals(document.ShipmentState, "3", StringComparison.OrdinalIgnoreCase) &&
          !HasPositiveAxataQuantity(document));
 
+    internal static bool RequiresC02MikroAnalysis(AxataOutboundDeliveryDocument document) =>
+        !IsCancelledOutboundDelivery(document) &&
+        document.DocumentOrderNo.HasValue &&
+        !string.IsNullOrWhiteSpace(document.DocumentSerie);
+
+    private static IReadOnlyCollection<AxataOutboundDeliveryDocument> ApplyMinimumAxataDate(
+        IReadOnlyCollection<AxataOutboundDeliveryDocument> documents,
+        DateTime? minimumAxataDate)
+    {
+        if (!minimumAxataDate.HasValue)
+        {
+            return documents;
+        }
+
+        var minimumDate = minimumAxataDate.Value.Date;
+        var maximumDate = DateTime.Today;
+        return documents
+            .Where(document =>
+                document.AxataDate.HasValue &&
+                document.AxataDate.Value.Date >= minimumDate &&
+                document.AxataDate.Value.Date <= maximumDate)
+            .ToArray();
+    }
+
+    private static AxataOutboundDeliveryImportResultDto CreateTerminalOutboundAcknowledgementResult(
+        AxataOutboundDeliveryDocument document,
+        string message) =>
+        new(
+            document.AxataSequenceNo,
+            document.AxataDeliveryNo,
+            document.DocumentSerie,
+            document.DocumentOrderNo ?? 0,
+            string.Empty,
+            0,
+            0,
+            0d,
+            true,
+            message,
+            document.AxataDate);
+
     private static bool IsAxataCompletedC01ShipmentMissingMikro(C01DeliveryAnalysis analysis) =>
         analysis.Document.MovementType.Equals(C01MovementType, StringComparison.OrdinalIgnoreCase) &&
         IsCompletedStatus(analysis.Document.Status) &&
@@ -6008,6 +6284,22 @@ internal sealed record AxataAuditOutboundDeliveryLineRow(
     string? LineNo,
     string? StockCode,
     decimal? Quantity);
+
+internal sealed record AxataInboundDeliveryHeaderRow(
+    long AxataSequenceNo,
+    decimal? Status,
+    string? MovementType,
+    string? AxataDeliveryNo,
+    string? SourceWarehouseNo,
+    decimal? AxataDateKey);
+
+internal sealed record AxataInboundDeliveryLineRow(
+    string AxataDeliveryNo,
+    string? LineNo,
+    string? StockCode,
+    string? SourceWarehouseNo,
+    decimal? Quantity,
+    decimal? AxataDateKey);
 
 internal sealed record AxataOutboundDeliveryDocument(
     long AxataSequenceNo,
