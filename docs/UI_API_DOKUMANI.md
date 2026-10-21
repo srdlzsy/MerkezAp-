@@ -4159,7 +4159,7 @@ warehouseNo          opsiyonel; `green-grocer.reports.all-warehouses` yoksa back
 typeCode             opsiyonel; 10/meyve, 11/sebze, 12/yesillik, 23/sarf/manav-sarf/ambalaj veya all/tum/tumu
 search               opsiyonel; urun kodu, urun adi, sube adi veya evrak serisinde arar
 includeLazyBranches  opsiyonel; default true, siparis girmeyen subeleri de dondurur
-take                 opsiyonel; default 1000, max 5000
+take                 opsiyonel; default 1000, max 5000. Sube/evrak ve yesillik raporlarinda satir degil tam evrak sayisina uygulanir; secilen evrakin urun satirlari kesilmez.
 ```
 
 ### Manav Kasa Profil ve Cozumleme
@@ -4944,6 +4944,8 @@ Response item:
 Alias:
 
 `GET /api/green-grocer/reports/sube?date=2026-06-04&warehouseNo=110`
+
+`take` siniri evrak anahtarina (`branchNo + documentSerie + documentOrderNo`) uygulanir. Bir evrak limite girdiyse o evrakin tum urun satirlari response'a eklenir; cok satirli ilk subeler sonraki subeleri eksik gosterecek sekilde satir bazli kirpma yapilmaz. Yesillik raporu da ayni tam-evrak kuralini kullanir.
 
 Response:
 
@@ -15990,6 +15992,7 @@ Onemli not:
 - Backend `cashRegisterNo` degerini `cashNo` ile Furpa/Mikro kasa tanimlarindan dogrular. Alan eski istemcilerden gelmezse ayni eslemeyi `cashNo` uzerinden kendisi cozer.
 - Cozulen `cashRegisterNo` `PAV` ile basliyorsa yeni kasa kabul edilir ve olusturulan tum `CARI_HESAP_HAREKETLERI` satirlarina `cha_special1 = "1"` yazilir. Eski kasalarda alan bos kalir. UI `cha_special1` veya ayrica yeni-kasa bayragi gondermez.
 - Icmal detaylari sonradan guncellenip CARI hareketleri yeniden kuruldugunda mevcut yeni/eski kasa isareti korunur.
+- Angular create ekraninda `cashRegisterNo` degeri `PAV` ile baslamayan eski kasalarda `zTotalValue` elle degistirilemez. Kasa veya `zReportNo` degistiginde onceki deger temizlenir; UI `z-rapor-toplam` endpointinden guncel degeri okur ve bu okuma tamamlanmadan create istegi gondermez. `PAV` ile baslayan yeni kasalarda manuel Z toplami girisi acik kalir.
 - `total` UI tarafinda hesaplanip gonderilmek zorunda degildir; kasa/Z fark uyumu icin backend legacy belge toplamlarini kendi hesaplar. UI tercihen `0` gondermelidir.
 - legacy CARI/Z fark toplaminda `paymentTypeNo < 100` odemeler + backend'in banknotlardan urettigi nakit toplam + `storeExpenses` toplami sayilir; `paymentTypeNo = 100` Gider Pusulasi bu toplamdan haric tutulur
 - create response icindeki `total`, ekranda gosterilen tahsilat toplamindan farkli olabilir; bu alan CARI/Z fark uyumu icin kullanilan legacy belge toplamidir. Liste, detay ve yazdirma ekranlari satir tutarlarindan kendi toplamlarini hesaplamalidir.

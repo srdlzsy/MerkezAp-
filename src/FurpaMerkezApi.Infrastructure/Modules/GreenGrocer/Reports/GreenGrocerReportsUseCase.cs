@@ -99,14 +99,22 @@ public sealed class GreenGrocerReportsUseCase(
             ? await ListLazyBranchesAsync(items, normalized, cancellationToken)
             : [];
 
+        var orderedItems = items
+            .OrderBy(item => item.Branch.WarehouseName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Branch.WarehouseNo)
+            .ThenBy(item => item.DocumentSerie, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.DocumentOrderNo)
+            .ThenBy(item => item.TypeCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Product.DisplayName, StringComparer.OrdinalIgnoreCase);
+
         return new GreenGrocerBranchReportDto(
-            items
-                .OrderBy(item => item.Branch.WarehouseName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(item => item.Branch.WarehouseNo)
-                .ThenBy(item => item.TypeCode, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(item => item.Product.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .Take(normalized.Take)
-                .ToArray(),
+            TakeCompleteDocuments(
+                orderedItems,
+                normalized.Take,
+                item => new GreenGrocerDocumentKey(
+                    item.BranchNo,
+                    item.DocumentSerie,
+                    item.DocumentOrderNo)),
             lazyBranches);
     }
 
@@ -165,9 +173,9 @@ public sealed class GreenGrocerReportsUseCase(
 
         var rows = await query
             .OrderBy(row => row.BranchName)
-            .ThenBy(row => row.ProductName)
+            .ThenBy(row => row.DocumentSerie)
+            .ThenBy(row => row.DocumentOrderNo)
             .ThenBy(row => row.RowNo)
-            .Take(normalized.Take)
             .ToListAsync(cancellationToken);
         var primaryBarcodeByStockCode = await GetPrimaryBarcodeByStockCodeAsync(
             rows.Select(row => row.ProductCode).ToArray(),
@@ -176,7 +184,7 @@ public sealed class GreenGrocerReportsUseCase(
             rows.Select(row => row.LineGuid).ToArray(),
             cancellationToken);
 
-        return rows
+        var items = rows
             .Select(row =>
             {
                 var product = BuildProduct(
@@ -215,6 +223,14 @@ public sealed class GreenGrocerReportsUseCase(
                     caseInfoByLineGuid.GetValueOrDefault(row.LineGuid));
             })
             .ToArray();
+
+        return TakeCompleteDocuments(
+            items,
+            normalized.Take,
+            item => new GreenGrocerDocumentKey(
+                item.BranchNo,
+                item.DocumentSerie,
+                item.DocumentOrderNo));
     }
 
     public async Task<IReadOnlyCollection<GreenGrocerProductReportItemDto>> GetSummaryAsync(
@@ -750,6 +766,23 @@ public sealed class GreenGrocerReportsUseCase(
                 item.DocumentOrderNo))
             .Distinct()
             .Count();
+
+    private static T[] TakeCompleteDocuments<T>(
+        IEnumerable<T> items,
+        int take,
+        Func<T, GreenGrocerDocumentKey> keySelector)
+    {
+        var materializedItems = items.ToArray();
+        var selectedDocuments = materializedItems
+            .Select(keySelector)
+            .Distinct()
+            .Take(take)
+            .ToHashSet();
+
+        return materializedItems
+            .Where(item => selectedDocuments.Contains(keySelector(item)))
+            .ToArray();
+    }
 
     private static bool CanDelete(DateTime latestCreateDate, DateTime now) =>
         (now - latestCreateDate).TotalHours < DeleteWindowHours;
