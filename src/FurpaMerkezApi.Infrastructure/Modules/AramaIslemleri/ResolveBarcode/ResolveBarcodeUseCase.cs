@@ -45,42 +45,48 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         string? resolutionSource = null;
         var matchedUnitPointer = 1;
         string? matchedBarcode = null;
+        BarcodeStockReferenceMatch? stockSeed = null;
 
         if (barcodeMatch is null)
         {
-            var partialMatches = await FindPartialBarcodeRowsAsync(lookup, cancellationToken);
-            var distinctStockCodes = partialMatches
-                .Select(row => NormalizeOrNull(row.StockCode))
-                .OfType<string>()
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
+            stockSeed = await FindStockSeedAsync(lookupCandidates, cancellationToken);
 
-            if (distinctStockCodes.Length == 1)
+            if (stockSeed is null)
             {
-                barcodeMatch = partialMatches
-                    .FirstOrDefault(row => string.Equals(
-                        NormalizeOrNull(row.StockCode),
-                        distinctStockCodes[0],
-                        StringComparison.Ordinal));
-                warnings.Add("Barkod tam bulunamadi; girilen son hane bilgisiyle eslesen barkod kullanildi.");
-            }
-            else if (distinctStockCodes.Length > 1)
-            {
-                errors.Add("Girilen barkod sonu birden fazla stoga denk geldi. Tam barkod okutulmali veya yazilmalidir.");
-                return CreateMissingResponse(
-                    lookup,
-                    request.WarehouseNo,
-                    screenCode,
-                    operationType,
-                    targetWarehouseNo,
-                    supplierCode,
-                    "ambiguous-partial-barcode",
-                    null,
-                    null,
-                    null,
-                    "Girilen barkod sonu birden fazla stoga denk geldi.",
-                    warnings,
-                    errors);
+                var partialMatches = await FindPartialBarcodeRowsAsync(lookup, cancellationToken);
+                var distinctStockCodes = partialMatches
+                    .Select(row => NormalizeOrNull(row.StockCode))
+                    .OfType<string>()
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+
+                if (distinctStockCodes.Length == 1)
+                {
+                    barcodeMatch = partialMatches
+                        .FirstOrDefault(row => string.Equals(
+                            NormalizeOrNull(row.StockCode),
+                            distinctStockCodes[0],
+                            StringComparison.Ordinal));
+                    warnings.Add("Barkod tam bulunamadi; girilen son hane bilgisiyle eslesen barkod kullanildi.");
+                }
+                else if (distinctStockCodes.Length > 1)
+                {
+                    errors.Add("Girilen barkod sonu birden fazla stoga denk geldi. Tam barkod okutulmali veya yazilmalidir.");
+                    return CreateMissingResponse(
+                        lookup,
+                        request.WarehouseNo,
+                        screenCode,
+                        operationType,
+                        targetWarehouseNo,
+                        supplierCode,
+                        "ambiguous-partial-barcode",
+                        null,
+                        null,
+                        null,
+                        "Girilen barkod sonu birden fazla stoga denk geldi.",
+                        warnings,
+                        errors);
+                }
             }
         }
 
@@ -96,7 +102,6 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         }
         else
         {
-            var stockSeed = await FindStockSeedAsync(lookupCandidates, cancellationToken);
             if (stockSeed is null)
             {
                 errors.Add("Barkod veya stok referansi sistemde bulunamadi.");
@@ -273,9 +278,12 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var shouldCheckPurchaseRequirement = BarcodeResolutionOperationRules.ShouldCheckPurchaseRequirement(
             operationType,
             supplierCode);
-        var shouldEnforcePurchaseRequirement = BarcodeResolutionOperationRules.ShouldEnforcePurchaseRequirement(operationType);
+        var shouldEnforcePurchaseRequirement = BarcodeResolutionOperationRules.ShouldEnforcePurchaseRequirement(
+            operationType,
+            supplierCode);
         var hasPurchaseRequirement = await EvaluatePurchaseRequirementAsync(
             stock.StockCode,
+            request.WarehouseNo,
             supplierCode,
             shouldCheckPurchaseRequirement,
             cancellationToken);
@@ -434,30 +442,21 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<StockSeed?> FindStockSeedAsync(
+    private async Task<BarcodeStockReferenceMatch?> FindStockSeedAsync(
         IReadOnlyCollection<string> lookupCandidates,
         CancellationToken cancellationToken)
     {
-        var row = await mikroDbContext.STOKLARs
+        var rows = await mikroDbContext.STOKLARs
             .AsNoTracking()
             .Where(stock =>
                 lookupCandidates.Contains(stock.sto_kod) ||
                 lookupCandidates.Contains(stock.sto_kuresel_urun_numarasi))
-            .Select(stock => new
-            {
+            .Select(stock => new BarcodeStockReference(
                 stock.sto_kod,
-                stock.sto_kuresel_urun_numarasi
-            })
-            .FirstOrDefaultAsync(cancellationToken);
+                stock.sto_kuresel_urun_numarasi))
+            .ToListAsync(cancellationToken);
 
-        if (row is null)
-        {
-            return null;
-        }
-
-        return lookupCandidates.Contains(row.sto_kod, StringComparer.Ordinal)
-            ? new StockSeed(row.sto_kod, "stock-code", row.sto_kod)
-            : new StockSeed(row.sto_kod, "gtin", row.sto_kuresel_urun_numarasi);
+        return BarcodeResolutionLookupRules.SelectStockReference(rows, lookupCandidates);
     }
 
     private async Task<TargetWarehouseEvaluation> EvaluateTargetWarehouseAsync(
@@ -513,6 +512,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
     private async Task<bool?> EvaluatePurchaseRequirementAsync(
         string stockCode,
+        int warehouseNo,
         string? supplierCode,
         bool forceAnySupplierCheck,
         CancellationToken cancellationToken)
@@ -537,9 +537,38 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 SELECT CASE WHEN EXISTS
                 (
                     SELECT 1
-                    FROM dbo.SATINALMA_SARTLARI WITH (NOLOCK)
-                    WHERE sas_stok_kod = @stockCode
-                      AND (@supplierCode IS NULL OR sas_cari_kod = @supplierCode)
+                    FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                    LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS warehouseDetail WITH (NOLOCK)
+                        ON warehouseDetail.sdp_depo_kod = stock.sto_kod
+                       AND warehouseDetail.sdp_depo_no = @warehouseNo
+                    WHERE stock.sto_kod = @stockCode
+                      AND
+                      (
+                          (
+                              @supplierCode IS NOT NULL
+                              AND
+                              (
+                                  LTRIM(RTRIM(ISNULL(stock.sto_sat_cari_kod, N''))) = @supplierCode
+                                  OR LTRIM(RTRIM(ISNULL(warehouseDetail.sdp_sat_cari_kod, N''))) = @supplierCode
+                              )
+                          )
+                          OR EXISTS
+                          (
+                              SELECT 1
+                              FROM dbo.SATINALMA_SARTLARI AS purchaseTerm WITH (NOLOCK)
+                              WHERE purchaseTerm.sas_stok_kod = stock.sto_kod
+                                AND ISNULL(purchaseTerm.sas_iptal, 0) = 0
+                                AND (@supplierCode IS NULL OR purchaseTerm.sas_cari_kod = @supplierCode)
+                                AND (purchaseTerm.sas_depo_no IS NULL OR purchaseTerm.sas_depo_no IN (0, @warehouseNo))
+                                AND (purchaseTerm.sas_basla_tarih IS NULL OR purchaseTerm.sas_basla_tarih <= GETDATE())
+                                AND
+                                (
+                                    purchaseTerm.sas_bitis_tarih IS NULL
+                                    OR purchaseTerm.sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                                    OR purchaseTerm.sas_bitis_tarih >= CONVERT(date, GETDATE())
+                                )
+                          )
+                      )
                 )
                 THEN 1 ELSE 0 END;
                 """;
@@ -547,6 +576,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             command.CommandTimeout = 300;
 
             AddParameter(command, "@stockCode", stockCode, DbType.String);
+            AddParameter(command, "@warehouseNo", warehouseNo, DbType.Int32);
             AddParameter(command, "@supplierCode", supplierCode, DbType.String);
 
             var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -1068,11 +1098,6 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         bool IsMaster,
         byte? ContentCode);
 
-    private sealed record StockSeed(
-        string StockCode,
-        string Source,
-        string? MatchedReference);
-
     private sealed record StockSnapshot(
         string StockCode,
         string? StockName,
@@ -1136,9 +1161,55 @@ internal static class BarcodeResolutionOperationRules
     internal static bool ShouldCheckPurchaseRequirement(string? operationType, string? supplierCode) =>
         supplierCode is not null || operationType is "receiving" or "order";
 
-    internal static bool ShouldEnforcePurchaseRequirement(string? operationType) =>
-        operationType is "receiving" or "order";
+    internal static bool ShouldEnforcePurchaseRequirement(string? operationType, string? supplierCode) =>
+        operationType is "receiving" or "order" ||
+        (operationType == "return" && supplierCode is not null);
 
     internal static bool ShouldEnforceSalesBlock(string? operationType) =>
         operationType is "return" or "waste";
+}
+
+internal sealed record BarcodeStockReference(
+    string StockCode,
+    string? GlobalTradeItemNo);
+
+internal sealed record BarcodeStockReferenceMatch(
+    string StockCode,
+    string Source,
+    string? MatchedReference);
+
+internal static class BarcodeResolutionLookupRules
+{
+    internal static BarcodeStockReferenceMatch? SelectStockReference(
+        IReadOnlyCollection<BarcodeStockReference> stockReferences,
+        IReadOnlyCollection<string> lookupCandidates)
+    {
+        foreach (var candidate in lookupCandidates)
+        {
+            var stockCodeMatch = stockReferences.FirstOrDefault(reference =>
+                string.Equals(reference.StockCode, candidate, StringComparison.Ordinal));
+            if (stockCodeMatch is not null)
+            {
+                return new BarcodeStockReferenceMatch(
+                    stockCodeMatch.StockCode,
+                    "stock-code",
+                    stockCodeMatch.StockCode);
+            }
+        }
+
+        foreach (var candidate in lookupCandidates)
+        {
+            var gtinMatch = stockReferences.FirstOrDefault(reference =>
+                string.Equals(reference.GlobalTradeItemNo, candidate, StringComparison.Ordinal));
+            if (gtinMatch is not null)
+            {
+                return new BarcodeStockReferenceMatch(
+                    gtinMatch.StockCode,
+                    "gtin",
+                    gtinMatch.GlobalTradeItemNo);
+            }
+        }
+
+        return null;
+    }
 }

@@ -7,6 +7,7 @@ using FurpaMerkezApi.WebApi.Filters;
 using FurpaMerkezApi.WebApi.HealthChecks;
 using FurpaMerkezApi.WebApi.Logging;
 using FurpaMerkezApi.WebApi.Middleware;
+using FurpaMerkezApi.WebApi.Security;
 using FurpaMerkezApi.WebApi.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -75,7 +76,28 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
                 FormatModelStateErrors(context.ModelState));
         }
 
-        return defaultFactory(context);
+        var result = defaultFactory(context);
+        if (result is ObjectResult { Value: ValidationProblemDetails problemDetails })
+        {
+            problemDetails.Title = "Gecersiz istek";
+            problemDetails.Detail = "Eksik veya hatali alanlari kontrol edip yeniden deneyin.";
+            problemDetails.Instance = context.HttpContext.Request.Path;
+
+            foreach (var field in problemDetails.Errors.Keys.ToArray())
+            {
+                problemDetails.Errors[field] = problemDetails.Errors[field]
+                    .Select(message => LocalizeModelValidationMessage(field, message))
+                    .ToArray();
+            }
+
+            var correlationId = RequestCorrelation.GetCurrent(context.HttpContext);
+            if (!string.IsNullOrWhiteSpace(correlationId))
+            {
+                problemDetails.Extensions["correlationId"] = correlationId;
+            }
+        }
+
+        return result;
     };
 });
 builder.Services.AddHealthChecks()
@@ -287,7 +309,32 @@ static string FormatModelStateErrors(ModelStateDictionary modelState)
 static string ResolveModelStateErrorMessage(ModelError error) =>
     !string.IsNullOrWhiteSpace(error.ErrorMessage)
         ? error.ErrorMessage
-        : error.Exception?.Message ?? "Invalid value.";
+        : error.Exception?.Message ?? "Gecersiz deger.";
+
+static string LocalizeModelValidationMessage(string field, string message)
+{
+    if (string.IsNullOrWhiteSpace(message))
+    {
+        return $"{field} alani gecersiz.";
+    }
+
+    var normalized = message.ToLowerInvariant();
+    if (normalized.Contains(" is required") ||
+        normalized.Contains("the value '' is invalid") ||
+        normalized.Contains("a non-empty request body is required"))
+    {
+        return $"{field} alani zorunludur.";
+    }
+
+    if (normalized.Contains("could not be converted") ||
+        normalized.Contains("is not valid for") ||
+        normalized.Contains("invalid value"))
+    {
+        return $"{field} alani beklenen formatta degil.";
+    }
+
+    return message;
+}
 
 static string ResolveDatabaseName(string? connectionString)
 {

@@ -88,7 +88,10 @@ public sealed class ExceptionHandlingMiddleware(
         catch (TimeoutException exception)
         {
             logger.LogWarning(exception, "An upstream timeout occurred.");
-            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status504GatewayTimeout, exception.Message);
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status504GatewayTimeout,
+                "Islem zamaninda tamamlanamadi. Lutfen kisa bir sure sonra tekrar deneyin.");
         }
         catch (TaskCanceledException exception) when (!httpContext.RequestAborted.IsCancellationRequested)
         {
@@ -114,7 +117,7 @@ public sealed class ExceptionHandlingMiddleware(
             await WriteProblemDetailsAsync(
                 httpContext,
                 StatusCodes.Status500InternalServerError,
-                "An unexpected error occurred while processing the request.");
+                "Islem sirasinda beklenmeyen bir hata olustu. Lutfen tekrar deneyin; sorun surerse destek kodunu yetkiliye iletin.");
         }
     }
 
@@ -138,7 +141,7 @@ public sealed class ExceptionHandlingMiddleware(
         {
             Status = statusCode,
             Title = GetTitle(statusCode),
-            Detail = detail,
+            Detail = GetUserFacingDetail(statusCode, detail),
             Instance = httpContext.Request.Path
         };
 
@@ -173,16 +176,81 @@ public sealed class ExceptionHandlingMiddleware(
     private static string GetTitle(int statusCode) =>
         statusCode switch
         {
-            StatusCodes.Status400BadRequest => "Bad Request",
-            StatusCodes.Status401Unauthorized => "Unauthorized",
-            StatusCodes.Status403Forbidden => "Forbidden",
-            StatusCodes.Status409Conflict => "Conflict",
-            StatusCodes.Status404NotFound => "Not Found",
-            StatusCodes.Status502BadGateway => "Bad Gateway",
-            StatusCodes.Status503ServiceUnavailable => "Service Unavailable",
-            StatusCodes.Status504GatewayTimeout => "Gateway Timeout",
-            _ => "Internal Server Error"
+            StatusCodes.Status400BadRequest => "Gecersiz istek",
+            StatusCodes.Status401Unauthorized => "Oturum gecersiz",
+            StatusCodes.Status403Forbidden => "Yetki yetersiz",
+            StatusCodes.Status404NotFound => "Kayit bulunamadi",
+            StatusCodes.Status409Conflict => "Islem cakismasi",
+            StatusCodes.Status502BadGateway => "Dis servis hatasi",
+            StatusCodes.Status503ServiceUnavailable => "Servis gecici olarak kullanilamiyor",
+            StatusCodes.Status504GatewayTimeout => "Islem zaman asimina ugradi",
+            _ => "Sunucu hatasi"
         };
+
+    private static string GetUserFacingDetail(int statusCode, string detail)
+    {
+        if (!LooksTechnicalOrEnglish(detail))
+        {
+            return detail;
+        }
+
+        return statusCode switch
+        {
+            StatusCodes.Status400BadRequest =>
+                "Gonderilen bilgiler gecersiz. Eksik veya hatali alanlari kontrol edin.",
+            StatusCodes.Status401Unauthorized =>
+                "Oturumunuz gecersiz veya suresi dolmus. Lutfen tekrar giris yapin.",
+            StatusCodes.Status403Forbidden =>
+                "Bu islemi yapmak icin yetkiniz bulunmuyor.",
+            StatusCodes.Status404NotFound =>
+                "Aradiginiz kayit bulunamadi. Listeyi yenileyip tekrar kontrol edin.",
+            StatusCodes.Status409Conflict =>
+                "Islem mevcut bir kayitla veya devam eden baska bir islemle cakisti. Ekrani yenileyip tekrar kontrol edin.",
+            StatusCodes.Status502BadGateway =>
+                "Bagli dis servisten gecerli yanit alinamadi. Lutfen kisa bir sure sonra tekrar deneyin.",
+            StatusCodes.Status503ServiceUnavailable =>
+                "Sunucu veya veritabani gecici olarak kullanilamiyor. Lutfen kisa bir sure sonra tekrar deneyin.",
+            StatusCodes.Status504GatewayTimeout =>
+                "Islem zamaninda tamamlanamadi. Lutfen kisa bir sure sonra tekrar deneyin.",
+            _ =>
+                "Islem sirasinda beklenmeyen bir hata olustu. Lutfen tekrar deneyin; sorun surerse destek kodunu yetkiliye iletin."
+        };
+    }
+
+    private static bool LooksTechnicalOrEnglish(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return true;
+        }
+
+        var normalized = detail.ToLowerInvariant();
+        string[] markers =
+        [
+            " is required",
+            " was not found",
+            " must be ",
+            " can not ",
+            " cannot ",
+            " could not ",
+            " does not ",
+            " did not ",
+            " already exists",
+            " at least ",
+            " invalid ",
+            " is invalid",
+            "invalid or expired",
+            " failed",
+            " unexpected error",
+            "execution strategy",
+            "user-initiated transaction",
+            "null reference",
+            "null value",
+            "stack trace"
+        ];
+
+        return markers.Any(normalized.Contains);
+    }
 
     private static string BuildUpstreamErrorDetail(string prefix, Exception exception)
     {

@@ -53,7 +53,14 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true,
-            verifyCompletedWithRecovery: true);
+            verifyCompletedWithRecovery: true,
+            validateBeforeReservation: innerCancellationToken =>
+                CompanyProductCompatibilityValidator.ValidateAsync(
+                    mikroWriteDbContext,
+                    request.WarehouseNo,
+                    request.CustomerCode,
+                    request.Lines.Select(line => line.StockCode),
+                    innerCancellationToken));
     }
 
     public Task<OfflineSyncStatusDto<CreateIssuedCompanyOrderResponse>> GetOfflineSyncStatusAsync(

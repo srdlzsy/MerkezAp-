@@ -40,7 +40,7 @@ Timeout ve tekrar deneme notu:
 - Mikro API create cevabi tek basina basari kaniti degildir. Backend olusan aktif Mikro satirlarini stok, miktar, depo, satir sayisi ve akisa ozel trace/link alanlariyla DB'den geri okumadan create islemini tamamlanmis saymaz. Mikro API yazma audit rezervasyonu acildiktan sonra upstream POST ve onu izleyen readback kullanicinin HTTP baglantisindan bagimsiz devam eder; `HttpClient` ve readback'in kendi sure sinirlari yine uygulanir. Normal basarida kisa readback uygulanir; timeout, baglanti kopmasi veya duplicate cevabinda ayni belge 180 saniyeye kadar readback ile aranir ve ikinci create yazisi uretilmez.
 - Mikro API'de guvenilir bir karsiligi bulunmayan yardimci/ozel tablo insertleri bu profile zorlanmaz. Kasa sayimi alt tablolari, cihaz/terminal tanimlari ve AXATA C04 legacy tablo yazimi gibi akislar kontrollu DB yolu ile devam eder.
 - Terminal, mobil ve web istemcileri liste isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Terminalde kritik create timeout'u `5` dakikadir; bu sabit bekleme degil, geciken/sonucu belirsiz islem icin ust sinirdir. Normal `200/201` cevabi beklemeden ekrana doner. Terminal ortak API istemcisi belirsiz POST cevabinda ilk istege yaklasik `4 dakika 30 saniye`, ardindan ayni request kimliginin status GET kontrollerine kalan sureyi ayirir. Status sorgulari yeni Mikro create yazisi baslatmaz.
-- Terminalin kritik create formlari sonucu ayni ekranda bekler. `Completed` ve `result` gelince normal basari gibi form kapanir. Bes dakika icinde sonuc kesinlesmezse snapshot ve `clientRequestId` korunur, form acik kalir ve normal Offline/Bulut listesine zorla tasinmaz. `RetrySameRequest` karari olmadan ikinci Mikro yazisi baslatilmaz; bu karar gelirse terminal ayni snapshot/id ile en fazla bir otomatik POST yapar.
+- Terminalin kritik create formlari sonucu ayni ekranda bekler. `Completed` ve `result` gelince normal basari gibi form kapanir. Bes dakika icinde sonuc kesinlesmezse kullanici daha fazla bekletilmez; snapshot ve `clientRequestId` korunur, form serbest birakilir ve Offline/Bulut ekrani zorla acilmaz. `RetrySameRequest` karari olmadan ikinci Mikro yazisi baslatilmaz; bu karar gelirse terminal ayni snapshot/id ile en fazla bir otomatik POST yapar.
 - Ilk 5 dakikalik POST/status penceresi sonunda backend `SAFE_WRITE_RETRY_ALLOWED` verirse ikinci ve son otomatik deneme kendi en fazla 5 dakikalik penceresiyle baslar. Ikinci denemede ayni karar tekrar gelirse ucuncu POST atilmaz; terminal sahip-kapsamli `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` endpointiyle kesin belge-yok kaydini kapatir ve yerel pending kaydi temizler.
 - POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; once ayni `clientRequestId` icin status/readback yapmali ve yalniz backend `recommendedAction=RetrySameRequest` derse saklanan ayni body ile bir kez otomatik tekrar etmelidir. Ikinci denemede ayni karar tekrar gelirse otomatik dongu kesin belge-yok kaydini kapatarak sonlanir.
 - Terminal uygulamasi veya modul ekrani yeniden acildiginda saklanan pending kayit yalniz yerelden okunur. Ekran acilisi kendiliginden create POST, status GET veya `yeniden-dogrula` istegi baslatmaz.
@@ -1220,7 +1220,7 @@ Yetki ve kapsam:
 
 ## Mobil Offline ve Guvenli Retry Kurallari
 
-Bu bolum mobil uygulamanin offline iken olusturdugu fisleri internet geldiginde guvenli sekilde backend'e gondermesi icin create retry kurallarini anlatir.
+Bu bolum mobil uygulamanin offline iken olusturdugu fisleri kullanicinin acik `Kaydet` aksiyonuyla guvenli sekilde backend'e gondermesi icin create retry kurallarini anlatir. Internetin geri gelmesi tek basina otomatik create POST sebebi degildir.
 
 Terminal uygulama ekibi icin uygulanabilir kisa durum makinesi ve kabul kriterleri: [Terminal Guvenli Create Akisi](TERMINAL_GUVENLI_CREATE_AKISI.md).
 
@@ -1228,7 +1228,12 @@ Create miktar guvenligi:
 
 - Belge/stok hareketi olusturan create akislarindaki gercek satir miktari ust siniri `100000` degeridir. Depo/firma siparisi, sevk, iade, firma/depo mal kabul, sayim, zayiat, masraf, virman, manav duzeltmesi ve bunlari kullanan AXATA/manual create yollari ayni siniri uygular.
 - `100000` kabul edilir; daha buyuk miktar `400 Bad Request` doner. Barkodun miktar alanina okutulmasi gibi uc degerlerde guvenli yazma rezervasyonu ve Mikro yazimi baslamaz.
-- UI miktar inputuna `max=100000` uygulamali ve alan hatasini formda gostermelidir. Bu `400` sonucu belirsiz create degildir; pending/retry akisina alinmaz, ayni form kullanici duzeltmesine acik kalir.
+- UI miktar inputuna `max=100000` uygulamali ve alan hatasini formda gostermelidir. Bu `400` sonucu belirsiz create degildir; pending/retry/status/dogrulama akisina alinmaz, ayni form veya gonderilmemis cihaz taslagi kullanici duzeltmesine acik kalir.
+- Terminalde herhangi bir create POST'u `400 Bad Request` donerse Mikro yaziminin baslamadigi kabul edilir. Guvenli-yazma pending snapshot'i temizlenir; yalniz duzenlenebilir form taslagi korunur ve `hasBeenSubmitted=false` davranisi uygulanir.
+- API `ProblemDetails.title` alanini Turkce dondurur. Turkce ve kullaniciya anlamli `detail` korunur; SQL execution strategy, stack trace ve benzeri teknik/Ingilizce detaylar HTTP durumuna uygun Turkce yonlendirmeyle degistirilir. `correlationId` destek kodu olarak korunur.
+- Terminal hata gosteriminde API baslik ve detayini ikinci kez guvenli hale getirir. Eski API, ters proxy veya istemci kutuphanesinden gelen `Bad Request`, `Conflict`, HTML hata govdesi, `Null check operator` ve benzeri teknik metinler son kullaniciya gosterilmez.
+- Offline Firma Mal Kabul ve Offline Sayim ekranlarinda `400` alan kart status kontrolune sokulmaz. Guvenli-yazma metadata'si ve bekleme zamani temizlenir; kullaniciya `Durumu Kontrol Et`, `Dogrula` veya guvenli `Tekrar Dene` yerine yalniz hatayi duzeltip normal `Kaydet` aksiyonu sunulur.
+- Gonderilmemis bu taslaklar uygulama acilisinda, odaga donuste veya ag geri geldiginde otomatik GET/POST uretmez. Yeni create istegi yalniz kullanicinin `Kaydet` aksiyonuyla baslar.
 - Bu sinir fiyat, tutar, rapor filtresi ve stok goruntuleme degerlerine uygulanmaz; yalniz create ile yazilan miktar alanlarina uygulanir.
 
 ### Terminal Icin Nihai Kullanici Akisi
@@ -1371,7 +1376,7 @@ UI hata ve ekran kilidi karar matrisi:
 | `400` validasyon | Alan hatasini goster, kullanicinin formu duzeltmesine izin ver. Mikro yazimi baslamamistir. | Form duzeltilebilir; global kilit yoktur. | Genelde gerekmez. |
 | `401` | Taslagi ve ayni `clientRequestId` degerini yerelde koruyup yeniden login iste. | Oturum disinda kalir; taslak silinmez. | Tekrarlayan auth sorunu varsa destek gerekir. |
 | `403` | Yetki/depo kapsami hatasini goster; otomatik retry yapma. | Sadece yetkisiz aksiyon kapatilir. | Yetki atamasi gerekiyorsa yoneticiye yonlendirilir. |
-| Status endpointinde `404` | Backend rezervasyonu bulunamadi. Arka plan senkronu saklanan ayni snapshot/id ile create POST'u bir kez yeniden gonderebilir; yeni id uretmez. Kullanici `Durumu Kontrol Et` aksiyonuyla sorguladiysa GET sessizce POST'a donusmez; kayit yerel, gonderilmemis taslaga doner ve UI `Tekrar Dene`/`Sil` gosterir. Yeniden gonderimden sonra da rezervasyon olusmazsa ayni yerel duruma donulur ve status dongusu durur. | Yalniz bu taslak yeniden denenir; yerel retry durumundaki sonraki POST ancak acik kullanici aksiyonuyla baslar. | Normalde destek gerekmez. Ayni body sunucuya ulasmasina ragmen tekrar tekrar rezervasyon olusmuyorsa ag/API erisimi incelenir. |
+| Status endpointinde `404` | Backend rezervasyonu bulunamadi. Foreground create akisi ayni snapshot/id ile en fazla bir kez kontrollu otomatik deneme yapabilir. `Durumu Kontrol Et` salt GET kalir ve kaydi gonderilmemis yerel taslaga cevirir. Arka plan yeni create POST'u uretmez; sonraki POST yalniz kullanicinin ayni taslakta `Kaydet` demesiyle, ayni id/body kullanilarak baslar. | Yalniz bu taslak bekler; status ve POST ayni anda veya sinirsiz dongude calismaz. | Normalde destek gerekmez. Ayni body tekrar tekrar sunucuya ulasamiyorsa ag/API erisimi incelenir. |
 | HTTP `0`, `500`, `502`, `503`, `504` | Sonucu belirsiz kabul et; snapshot/id'yi koru ve once status/readback akisini calistir. | Yalniz bu taslak pending kalir. | Gecici hatada hemen gerekmez; art arda surerse correlation bilgileriyle destek gerekir. |
 
 UI `Destek Gerekli` durumunda dahi tam ekran engelleyici modal veya modul seviyesinde kalici kilit kullanmamalidir. Kayit bazli panelde en az `operationCode`, `clientRequestId`/`relatedClientRequestId`, `warehouseNo`, `errorCode`, `correlationId` ve son kontrol zamanini gostermeli; kullanici listeyi inceleyebilmeli ve farkli bir bagimsiz taslak acabilmelidir.
@@ -5217,7 +5222,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; once tam barkod arar; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
+barcode        opsiyonel; once tam barkod, sonra tam stok kodu/GTIN arar; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir; bu exact aramalar sonuc vermezse 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
@@ -5242,7 +5247,7 @@ Kural:
 - `sourceWarehouseNo` verildiginde yalniz secilen kaynak depoyla eslesen `Warehouse` ve o depoyu iceren `Mixed` urunler kalir. Yalniz firma satin alma baglantisi bulunan `Company` ve kaynak tanimi olmayan `Unassigned` urunler depo siparisi arama sonucuna girmez.
 - Kaynak depo filtresi sonuc limiti uygulandiktan sonra UI tarafinda yapilmaz. Backend firma urunlerini sonuc sayacina dahil etmeden atar; boylece kalabalik marka aramalarinda gercek depo urunleri ilk `take` sinirinin disinda kalmaz.
 - Barkod okutulduysa UI mumkunse degeri `barcode` alaninda gondermelidir. 27/29 terazi barkodunda backend ilk 7 haneyi arar; sonuc bulunamazsa ayni urun/PLU kismi icin `27`/`29` alternatif prefix'ini de dener. Ornek: `2700740000008` okutulursa `2700740`, sonra `2900740`, sonra orijinal barkod denenir.
-- Kullanici barkodu elle ve eksik yazarsa, en az 6 rakamlik degerlerde backend once tam barkod dener; sonuc yoksa `BARKOD_TANIMLARI.bar_kodu` son hanelerine gore arama yapar. Ornek `barcode=321158` istegi `...321158` ile biten barkodlari bulabilir. Bu fallback birden fazla urun dondurebilir; UI liste olarak gostermelidir.
+- Kullanici barkodu elle ve eksik yazarsa, en az 6 rakamlik degerlerde backend once tam barkod ve tam stok kodu/GTIN arar; bunlarin hicbiri sistemde yoksa `BARKOD_TANIMLARI.bar_kodu` son hanelerine gore arama yapar. Ornek `barcode=321158` istegi ancak `321158` tam stok/barkod referansi degilse `...321158` ile biten barkodlari bulabilir. Bu fallback birden fazla urun dondurebilir; UI liste olarak gostermelidir.
 - Genel arama kutusunda kullanici sadece numerik metin yazarsa backend ayni degeri tam stok kodu ve tam barkod olarak arar. Iki arama farkli urunlere denk gelirse ikisini de dondurur; tam stok kodu eslesmesi ilk sirada olur. UI bu durumda kullaniciya secim yaptirmalidir.
 - Tam stok kodu ve tam barkod ayni urune denk gelirse urun stok koduna gore tekillestirilir ve bir kez doner.
 - Barkod son hane fallback'i yalnizca tam stok kodu ve tam barkod aramalarinin ikisi de sonuc vermediyse calisir. Ornek: `stockName=026883` tam stok kodu olarak bulunursa `...026883` ile biten baska barkodlar listeye eklenmez.
@@ -5351,7 +5356,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; once tam barkod arar; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
+barcode        opsiyonel; once tam barkod, sonra tam stok kodu/GTIN arar; 27/29 ile baslayan 13 haneli terazi barkoduysa arama barkodu ilk 7 haneye normalize edilir; exact sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 companyCode    opsiyonel; secilen firma/cari kodu filtresi
@@ -5392,7 +5397,7 @@ Query:
 
 ```text
 warehouseNo    opsiyonel; verilmezse JWT icindeki depo kullanilir
-barcode        opsiyonel; once tam barkod arar; 27/29 terazi barkodunda arama barkodu normalize edilir; sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
+barcode        opsiyonel; once tam barkod, sonra tam stok kodu/GTIN arar; 27/29 terazi barkodunda arama barkodu normalize edilir; exact sonuc yoksa 6+ rakamda barkod son hane fallback'i calisir
 stockCode      opsiyonel; stok kodu ile exact arama
 stockName      opsiyonel; stok adinda contains arama, en az 2 karakter
 includeDelisted opsiyonel; default true. true ise pasif veya DLS prefixli urunler de doner; false ise bu urunler listeden gizlenir
@@ -5535,8 +5540,8 @@ Onemli not:
 - Endpoint once 13 haneli terazi barkodunu normalize eder. `27` veya `29` ile baslayan EAN-13 barkodlarda ilk 7 hane urun barkodu kabul edilir; 8-12. haneler KG miktari olarak `embeddedQuantity` alanina yazilir.
 - Ornek: `2700174041103` okutulursa `lookupBarcode = 2700174`, `embeddedQuantity = 4.11`, `embeddedQuantityUnit = KG` doner.
 - Endpoint normalize edilen barkodu `BARKOD_TANIMLARI` tablosunda exact arar. Terazi barkodunda sonuc bulunamazsa ayni urun/PLU kismi icin `27`/`29` alternatif prefix'i denenir. Ornek: `2700740000008` icin `2700740`, sonra `2900740`, sonra orijinal barkod aranir.
+- Cozumleme sirasi tam barkod, tam stok kodu, tam GTIN ve en son kismi barkod seklindedir. Girilen deger gercek bir stok koduysa baska bir urunun uzun barkodu ayni rakamlarla bitse bile o urune gecilmez.
 - Tam barkod ve stok/GTIN eslesmesi bulunamazsa, en az 6 rakamlik girislerde barkod son hane fallback'i denenir. Bu fallback tek stoga denk gelirse barkod cozumlenir ve `warnings` icinde kismi barkodla eslesme uyarisi gelir. Birden fazla stoga denk gelirse yanlis urun secmemek icin `isFound=false`, `resolutionSource=ambiguous-partial-barcode` ve tam barkod isteme hatasi doner.
-- Barkod bulunamazsa barkodu stok kodu veya global urun numarasi gibi degerlerle eslestirmeyi dener.
 - `resolutionSource` alani eslestirmenin `variable-weight`, `barcode`, `stock-code`, `gtin` veya `not-found` kaynakli oldugunu anlatir.
 - `barcodeKind` alani okutulan barkodun `variable-weight`, `product`, `case`, `alternative`, `stock-code` veya `gtin` gibi pratik tipini verir.
 - `caseBarcode`, `unitsPerCase` ve `matchedUnitsPerCase` alanlari koli/master barkod tespitinde kullanilir.
@@ -5547,7 +5552,8 @@ Onemli not:
 - `isAllowedForTargetWarehouse` hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kod listesine gore hesaplanir.
 - `operationType=shipment` icin hedef depo model kod sonucu bilgi olarak donebilir; fakat hedef depo model kodu sevkte `isUsableInOperation=false` yapmaz.
 - `operationType=shipment` icin `isSalesBlocked=true` bilgi/uyari olarak doner; pasif/DLS disinda tek basina satira eklemeyi bloklamaz.
-- `hasPurchaseRequirement` tedarikci/companyCode verilirse veya operasyon `receiving`/`order` ise `SATINALMA_SARTLARI` kontrol sonucudur. Bu sonuc sadece mal kabul/siparis operasyonunda satira ekleme kararina dahil edilir.
+- `hasPurchaseRequirement`, `supplierCode/companyCode` verilirse veya operasyon `receiving`/`order` ise cari-stok uyum sonucudur. Secili cari icin stok kartindaki varsayilan tedarikci, secili depodaki stok-depo tedarikcisi veya depo/tarih kapsamindaki aktif `SATINALMA_SARTLARI` kaydindan biri yeterlidir.
+- `operationType=receiving` ve `operationType=order` icin bu uyum satira ekleme kararina zorunlu olarak girer. `operationType=return` da `supplierCode/companyCode` gonderildiginde ayni zorunlu kontrolu uygular; firma iadesine baska carinin urunu eklenemez.
 - `operationType=shipment` icin sirf `targetWarehouseNo` geldi diye satinalma sarti kontrolu calismaz ve satira ekleme bloklanmaz.
 - `salesPrice` ve `priceTypeCode` secili depodaki fiyat satirindan gelir.
 - `isUsableInOperation`, `operationDecision`, `warnings` ve `errors` UI'in tek karar noktasi olmalidir.
@@ -5623,6 +5629,8 @@ UI kullanim notu:
 - Kamera ile tek barkod okutulan ekranlarda once bu endpoint cagrilmalidir.
 - UI barkodun urun/stok/ad/tipi tahminini frontend'de yapmamalidir; okutulan degeri aynen bu endpoint'e gondermelidir.
 - Satira ekleme karari icin ana alan `isUsableInOperation` olmalidir. `false` ise `operationDecision` ve `errors` kullaniciya gosterilmelidir. Sevkte `isSalesBlocked` tek basina engel gibi yorumlanmamalidir.
+- Firma mal kabul, verilen firma siparisi ve firma iadesi create endpointleri body'deki tum stoklari rezervasyon acmadan once ayni cari-stok kuraliyla tekrar dogrular. Terminal kontrolu atlanmis olsa bile uyumsuz urun `400 Bad Request` doner ve Mikro yazimi baslamaz.
+- Firma mal kabulde cari seciliyken urun arama API'si kullanilamiyorsa terminal genel offline urun katalogundan satir eklememelidir; yerel katalog cari-stok iliskisini tasimadigi icin online dogrulama gerekir.
 - `salesPrice` satis fiyatidir; firma mal kabul body fiyatina basilmaz. `purchasePrice` sadece `supplierCode/companyCode` verilirse dolabilir. Mal kabulde e-belge `netUnitPrice` yoksa ve barkod cozumleme `purchasePrice` donduruyorsa UI `unitPrice` icin sadece `purchasePrice` kullanmalidir. `purchasePrice` yoksa kullaniciya fiyat alani actirmadan `unitPrice=0` gonderilmelidir.
 - Terazi barkodunda satir miktari icin `embeddedQuantity` kullanilabilir; bos ise varsayilan miktar UI tarafinda `1` kabul edilebilir.
 - Koli ici gosterim icin `unitMultiplier > 1` ise `KOLI ici 12 ADET` gibi gosterim yapilabilir.
@@ -8608,10 +8616,10 @@ Firma mal kabul UI akisi:
 - Siparisli ve siparissiz satirlar ayni fis icinde birlikte gidebilir. UI satirda siparis bagli mi bilgisini gostermeli, ama request'te sadece `orderGuid` dolu/bos olarak gondermelidir.
 - Siparis kalanindan fazla kabul varsayilan olarak engellenmelidir. Yetkili kullanici fazla kabul etmeyi secerek `allowOrderOverReceiving = true` gonderirse backend kalan kadar siparisli, fazla miktari siparissiz hareket olarak boler.
 - Mobil offline akista taslak ilk olusturulurken tek bir `clientRequestId` uretilmeli ve cihazdaki local kayitla birlikte saklanmalidir.
-- Kullanici ayni taslagi tekrar gonderirse ayni `clientRequestId` ile POST tekrar edilmelidir.
-- POST timeout olursa UI hemen yeni GUID uretmemeli; once ayni `clientRequestId` ile retry yapmali, hala emin degilse `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}` ile son durumu sorgulamalidir.
+- Gonderilmemis taslak internet geldigi, uygulama acildigi veya ekran yenilendigi icin otomatik POST edilmemelidir. `Kaydet`/`Tekrar Dene` ayni taslagi ve ayni `clientRequestId` degerini gonderir.
+- POST timeout olursa UI hemen yeni GUID veya ikinci create uretmemeli; once `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}` ile son durumu sorgulamalidir.
 - `409 Conflict` ve mesaj "different request payload" anlamina geliyorsa UI bu taslagi yeni bir islem gibi ele alip yeni `clientRequestId` uretmelidir.
-- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI kullaniciya "islem halen isleniyor" bilgisi verip status endpoint'ini poll edebilir.
+- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI kullaniciya "islem halen isleniyor" bilgisi verir. Surekli polling yapmaz; uygulama odaga geldiginde sinirli status GET veya kullanicinin `Durumu Kontrol Et` aksiyonu kullanilir.
 - Kaydet butonu `POST /api/mal-kabul-islemleri/firma-mal-kabulleri` endpoint'ine gider.
 - Basarili response sonrasi UI olusan `documentSerie` ve `documentOrderNo` ile detay ekranina gecebilir veya listeyi yenileyebilir.
 - Response'ta `autoCreatedReturnLineCount > 0` ise UI olusan firma iade evragini `autoCreatedReturnDocumentSerie` + `autoCreatedReturnDocumentOrderNo` ile linklemeli ve durumunu `returnEDespatchStatus = GonderimBekliyor` olarak gostermelidir.
@@ -10704,11 +10712,12 @@ Sayim sonucu offline UI akisi:
 
 - Mobil uygulama local veritabaninda sayim taslagini `pending-sync` durumda tutmali ve daha ilk kayitta bir `clientRequestId` uretmelidir.
 - Kullanici offline iken satir ekleme, miktar guncelleme ve taslak kaydetme tamamen cihazda yapilabilir.
-- Senkron zamani geldiginde `POST /api/stok-islemleri/sayim-sonuclari` ayni `clientRequestId` ile gonderilmelidir.
-- POST timeout olursa UI hemen yeni GUID uretmemeli; once ayni `clientRequestId` ile retry yapmali, sonuc yine belirsizse `GET /api/stok-islemleri/sayim-sonuclari/offline-sync/{clientRequestId}` cagirip kesin durumu gormelidir.
+- Gonderilmemis taslak internet geldigi veya uygulama acildigi icin otomatik POST edilmez. Kullanici `Kaydet` dediginde `POST /api/stok-islemleri/sayim-sonuclari` ayni `clientRequestId` ile gonderilir.
+- POST timeout olursa UI hemen yeni GUID veya ikinci create uretmez; once `GET /api/stok-islemleri/sayim-sonuclari/offline-sync/{clientRequestId}` cagirip kesin durumu kontrol eder.
 - `409 Conflict` ve mesaj "different request payload" anlamina geliyorsa kullanici taslagi degistirmistir; UI yeni senkron denemesi icin yeni `clientRequestId` uretmelidir.
-- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI gecici bekleme/guncelleme durumu gostermeli ve status endpoint'ini poll etmelidir.
-- `status = Completed` alindiginda local taslak artik server'da fis oldugu icin kapatilabilir; response icindeki `documentNo` ve `documentDate` ile detay ekranina gidilebilir.
+- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI gecici bekleme durumu gosterir; surekli polling yapmaz. Uygulama odaga geldiginde sinirli status GET veya kullanicinin `Durumu Kontrol Et` aksiyonu kullanilir.
+- Terminal uygulama genelinde periyodik offline timer calistirmaz. Uygulama acilisinda/odaga donuste yalniz daha once gonderilmis belirsiz kayitlardan firma mal kabul icin en fazla bir, sayim icin en fazla bir status GET yapilir; gonderilmemis taslaklara dokunulmaz.
+- `status = Completed` alindiginda local taslak tamamlanma isaretiyle kapatilir; response icindeki `documentNo` ve `documentDate` ile detay ekranina gidilebilir. Bu isaret gec gelen yerel autosave'in taslagi yeniden olusturmasini engeller.
 
 ### Stok Anomali Merkezi
 

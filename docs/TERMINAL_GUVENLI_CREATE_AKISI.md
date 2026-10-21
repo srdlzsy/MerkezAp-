@@ -61,9 +61,10 @@ Kaydet sirasinda:
 Basarida:
 
 - `result.documentSerie` ve `result.documentOrderNo` gosterilir.
-- Yerel pending kayit atomik olarak silinir.
+- Yerel pending kayit tamamlandi olarak isaretlenir ve create taslagi silinir. Ayni `clientRequestId` ile gec gelen/eski bir yerel kopya yeniden bekleyen islem olarak acilamaz; tamamlanma isareti 30 gun korunur.
 - `Tamam` ve `Yeni Evrak` aksiyonlari acilir.
 - Recovery ile bulunan mevcut evrak da normal basari gibi gosterilir; ikinci evrak yazilmaz.
+- Create business response'u basarili geldikten sonraki liste yenileme ayri ve ikincil bir islemdir. Liste yenileme veya response parse hatasi create sonucunu geriye donuk basarisiza ceviremez ve ikinci POST baslatamaz.
 
 ## Karar Tablosu
 
@@ -93,6 +94,13 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 - Mikro yazimi baslamamistir.
 - Ayni form acik ve duzenlenebilir kalir.
 - Alan hatasi ilgili input yaninda gosterilir.
+- `400 Bad Request` kesin form/istek hatasidir; terminal status endpointi, `yeniden-dogrula` veya guvenli tekrar akisini cagiramaz.
+- Bu kayit pending/guvenli-yazma listesinde tutulmaz. Yalniz kullanicinin duzenleyebilecegi cihaz taslagi korunur; taslak `hasBeenSubmitted=false` kabul edilir.
+- API hata basliklarini Turkce dondurur. Mevcut Turkce is kurali mesaji korunur; SQL execution strategy, stack trace veya Ingilizce framework mesaji kullaniciya aciklanmaz.
+- Terminal eski bir API/proxy cevabinda Ingilizce veya teknik mesaj alsa bile HTTP durumuna gore Turkce yonlendirme gosterir. `400` alanlari duzeltmeyi, `401` yeniden girisi, `403` yetkiyi, `404` listeyi yenilemeyi, `409` cakisan islemi kontrol etmeyi, `5xx` ise kisa sure sonra yeniden denemeyi anlatir.
+- Beklenmeyen terminal calisma zamani hatalarinda `Null check operator`, stack trace veya HTML proxy govdesi ekrana basilmaz. Kullaniciya form bilgisinin korundugu soylenir; teknik inceleme icin varsa destek kodu gosterilmeye devam eder.
+- Daha once Offline Firma Mal Kabul veya Offline Sayim listesinden gonderilmeye calisilan taslak `400` alirsa gonderim metadata'si temizlenir. Kartta `Durumu Kontrol Et`, `Dogrula` veya `Tekrar Dene` yerine yalniz normal `Kaydet` aksiyonu bulunur.
+- Uygulama acilisi, odaga donus ve agin geri gelmesi bu taslak icin status GET veya create POST uretmez. Kullanici hatali alani duzeltip `Kaydet` demeden sunucuya yeni istek gitmez.
 - Create satirlarindaki gercek miktar alanlari en fazla `100000` olabilir. Barkod veya baska uzun bir sayi miktar alanina okutulursa API guvenli yazma rezervasyonu ya da Mikro yazimi baslatmadan `400 Bad Request` doner.
 - UI miktar alaninda `100000` ustunu yerelde de engeller; yine de backend kontrolu asil guvenlik siniridir.
 - Merkez depo siparisinde `outWarehouseNo=50` ve stok kartindaki koli katsayisi `1`den buyukse miktar koli katinda olmalidir. Ornek: koli ici `9` ise `9`, `18`, `27` gecerlidir; `10` gecersizdir.
@@ -114,11 +122,11 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 ### 404 Status
 
 - Backend rezervasyonu bulunamamistir; request body sunucuya hic ulasmamis olabilir.
-- Arka plan senkronunda saklanan ayni snapshot ve ayni `clientRequestId` ile create POST bir kez yeniden gonderilir.
-- Kullanici Offline Firma Mal Kabul ekraninda `Durumu Kontrol Et` ile bu `404` cevabini alirsa kontrol aksiyonu POST'a donusmez. Kayit yerel taslaga cevrilir ve kullaniciya `Tekrar Dene` ile `Sil` sunulur.
+- Foreground firma mal kabul akisinda saklanan ayni snapshot ve ayni `clientRequestId` ile create POST kullaniciya buton gostermeden bir kez yeniden gonderilir.
+- Kullanici Offline Firma Mal Kabul ekraninda `Durumu Kontrol Et` ile bu `404` cevabini alirsa kontrol aksiyonu POST'a donusmez. Kayit yerel, gonderilmemis taslak durumuna cevrilir. Terminal arka planda yeni create POST'u uretmez; kullanici ayni taslakta `Kaydet`/`Tekrar Dene` dediginde ayni snapshot ve ayni `clientRequestId` ile tek deneme baslar.
 - Yeni GUID uretilmez.
-- Bu yeniden gonderimden sonra status endpointi yine `404` donerse terminal kaydi `sunucuda isleniyor` durumunda tutmaz ve status sorgusunu donguye sokmaz. Kayit sunucuya ulasmamis yerel taslaga geri cevrilir.
-- Bu yerel taslak arka planda tekrar tekrar POST edilmez. Ekranda `Tekrar Dene` ve `Sil` aksiyonlari acilir; `Durumu Kontrol Et` kaldirilir. Kullanici `Tekrar Dene` dediginde ayni body ve ayni `clientRequestId` ile yeni bir kullanici denemesi baslar.
+- Yeniden gonderimden sonra status endpointi yine `404` donerse terminal kaydi `sunucuda isleniyor` durumunda tutmaz ve status sorgusunu donguye sokmaz. Kayit gonderilmemis yerel taslaga doner; arka plan POST uretmez.
+- Kullanici uygulamayi acip kapatsa da ayni body ve ayni `clientRequestId` korunur; yeni evrak veya yeni istek kimligi uretilmez.
 - Daha once `retryable=false` veri butunlugu karari verilmis bir kaydin status endpointi `404` donerse bu guvenlik karari kaldirilmaz ve otomatik POST baslatilmaz.
 
 ### 409
@@ -138,17 +146,18 @@ Ham `errorCode`, `retryable`, `clientRequestId` ve `correlationId` ana kullanici
 - Once status GET yapilir.
 - Status da gecici hata verirse artan bekleme uygulanir.
 
-## Polling
+## Durum Kontrolu ve Terminal Yuku
 
-- Ilk kontrol `retryAfterSeconds` kadar sonra yapilir; verilmezse 5 saniye kullanilir.
-- Taze `Processing` kaydinin status GET'i Mikro readback baslatmaz; yalniz Auth DB'deki mevcut durumu okur.
-- Gecici hatalarda 5, 10, 20 ve en fazla 30 saniye beklenir.
-- Onceki istek bitmeden yenisi baslatilmaz.
-- Ekran gorunurken ayni evrak icin tek polling dongusu bulunur.
-- Kullanici ekrandan ayrilinca sik polling durur; pending kayit silinmez.
-- Uygulama odaga geldiginde veya bekleyen islemler acildiginda tek status kontrolu yapilir.
-- `Completed`, `NeedsReview`, `RestoreOriginalRequest` ve `ClearCancelled` son durumlarinda polling durur.
-- `RecheckExisting` otomatik sonsuz dongu degildir. Bir salt-okuma kontrolunden sonra `NeedsReview` gelirse kullaniciya ayni buton tekrar tekrar sunulmaz.
+- Terminalde 5 saniyelik veya baska bir periyodik offline senkronizasyon timer'i calismaz.
+- Gonderilmemis yerel taslak uygulama acilisinda, odaga donuste veya ag geri geldiginde otomatik POST edilmez. POST yalniz kullanicinin `Kaydet` veya `Tekrar Dene` aksiyonuyla baslar.
+- Uygulama ilk acildiginda veya yeniden odaga geldiginde yalniz daha once POST edilmis ve sonucu belirsiz kayitlar icin status GET yapilabilir. Tek calismada firma mal kabulden en fazla bir ve sayimdan en fazla bir kayit kontrol edilir.
+- Ayni kayit 45 saniyeden once yeniden kontrol edilmez; response'taki `retryAfterSeconds`/`retryNotBefore` daha uzunsa bu sureye uyulur.
+- Bu pasif kontrol yalniz status GET'tir. Create POST veya `yeniden-dogrula` POST'u uretmez.
+- `Durumu Kontrol Et` status GET yapar. `Mikro Kaydini Dogrula` ise kullanicinin acik aksiyonuyla salt-okuma `yeniden-dogrula` endpointini cagirabilir; yeni evrak olusturmaz.
+- Onceki istek bitmeden ayni servis calismasi yeniden baslatilmaz. Offline ekranlar kendi kendine periyodik yenilenmez.
+- `Completed` veya `ClearCancelled` sonucu yerel kaydi tamamlanma isaretiyle temizler. Gec gelen autosave ayni kaydi yeniden canlandiramaz.
+- `RetrySameRequest` veya status `404` kaydi gonderilmemis taslaga cevirir. Terminal kullanici aksiyonu olmadan yeniden POST yapmaz.
+- `NeedsReview` ve `RestoreOriginalRequest` kayitlari otomatik donguye alinmaz.
 
 ## Yeniden Dogrulama
 
@@ -186,8 +195,8 @@ Guvenlik ve davranis:
 - Create isteginin toplam istemci siniri 5 dakikadir. Ilk POST'a en fazla yaklasik 4 dakika 30 saniye ayrilir; kalan sure status GET kontrolleri icindir. Bu 5 dakika sabit bekleme degil, yalniz geciken/sonucu belirsiz islem icin ust sinirdir.
 - Backend ilk pencerenin sonunda `SAFE_WRITE_RETRY_ALLOWED` ile belgenin hic olusmadigini kesinlestirirse terminal ayni snapshot/id icin ikinci ve son otomatik denemeyi baslatir. Bu son deneme kendi en fazla 5 dakikalik POST/status penceresine sahiptir; ucuncu otomatik deneme yoktur.
 - Status `Completed` ve `result` dondururse bu normal basari cevabi gibi forma iletilir, pending snapshot temizlenir ve form kapanir. Status `RetrySameRequest` derse terminal ayni snapshot ve ayni `clientRequestId` ile bir kez otomatik POST yapar. Ikinci denemede ayni karar tekrar gelirse terminal `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` cagirir; backend yalniz kayit ayni kullanici/depo kapsaminda ve halen `SAFE_WRITE_RETRY_ALLOWED` ise `Cancelled` yapar. Ucuncu create atilmaz, yerel pending temizlenir ve normal form taslagi korunur.
-- Uygulama veya modul yeniden acildiginda yerel pending kayit yalniz okunur. Ekran acilisi create POST, status GET veya `yeniden-dogrula` baslatmaz; boylece eski kayit her acilista yeni Snackbar/uyari dongusu uretmez.
-- Bes dakikada sonuc kesinlesmezse form kapanmaz ve Bulut/Offline ekranina atilmaz. Ayni formdaki kayit ve `clientRequestId` korunur; sonraki kullanici denemesi backend kararina baglidir ve `RetrySameRequest` olmadan ikinci Mikro yazisi baslatilmaz.
+- Modul veya offline liste ekrani acildiginda yerel kayit yalniz okunur; ekran acilisi create POST, status GET veya `yeniden-dogrula` baslatmaz. Uygulama kabugunun ilk acilis/odaga donus kontrolu ayri olarak yukaridaki akis basina bir GET sinirina tabidir.
+- Bes dakikada sonuc kesinlesmezse kullanici formda bekletilmez: form kapatilir ve guvenli snapshot cihazda kalir. Terminal surekli arka plan dongusu calistirmaz. Sonraki uygulama odaklanmasinda sinirli status GET veya kullanicinin `Durumu Kontrol Et` aksiyonu sonucu kesinlestirir. Kesin basari gelince pending snapshot ve form taslagi temizlenir; bekleyen deneme kullanicinin yeni evrak kaydetmesini engellemez.
 - Bu kurallar cok sayida terminalin ayni evrak icin paralel 180 saniyelik sorgular acmasini engeller.
 
 Firma mal kabul icin eski operasyon-ozel endpoint de ayni amacla kullanilabilir:
@@ -237,3 +246,7 @@ green-grocer.operations.adjustment.apply
 - Iptal sonucu basarili evrak gibi gosterilmez.
 - Teknik kararlar mesaj metniyle degil `recommendedAction` ile verilir.
 - Yazimin baslamadigi kesin seri/sira ve resmi belge cakismalari Offline/Bulut sayacini artirmaz.
+- Firma mal kabul, verilen firma siparisi ve firma iadesi create islemlerinde stok-cari uyumu rezervasyondan once backend tarafinda yeniden dogrulanir. Uyumsuz stok `400` ile ayni formda duzeltilir; Mikro yazimi ve guvenli yazma rezervasyonu baslamaz.
+- Cari baglamli firma urun seciminde API erisilemiyorsa genel yerel urun katalogu uyumluymus gibi kullanilmaz. Cari-stok iliskisi online dogrulanmadan yeni satir eklenmez.
+- Offline Firma Mal Kabul ve Offline Sayim ekraninda `Kaydet` create POST, `Durumu Kontrol Et` ise yalniz status/readback GET anlamina gelir. Uygulama acilisi, agin geri gelmesi veya sayfaya giris gonderilmemis taslagi kendiliginden POST etmez.
+- Daha once sunucuya ulasmis belirsiz kayitlar arka planda yalniz status/readback ile uzlastirilir. `Completed` veya `Cancelled` kesin sonucunda yerel kayit tamamlanma isaretiyle kapatilir; gec kalan autosave ayni kaydi tekrar taslak olarak diriltemez.

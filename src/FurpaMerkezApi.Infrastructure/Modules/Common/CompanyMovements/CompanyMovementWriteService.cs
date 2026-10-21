@@ -45,6 +45,14 @@ public sealed class CompanyMovementWriteService(
     {
         request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
         Validate(request);
+        Func<CancellationToken, Task>? validateBeforeReservation = kind == CompanyMovementKind.PurchaseReturn
+            ? innerCancellationToken => CompanyProductCompatibilityValidator.ValidateAsync(
+                mikroWriteDbContext,
+                request.WarehouseNo,
+                request.CustomerCode,
+                request.Lines.Select(line => line.StockCode),
+                innerCancellationToken)
+            : null;
 
         return await OfflineCreateGuard.ExecuteAsync(
             mobileOfflineSyncService,
@@ -57,7 +65,8 @@ public sealed class CompanyMovementWriteService(
             innerCancellationToken => ExecuteRoutedAsync(request, kind, innerCancellationToken),
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true,
-            verifyCompletedWithRecovery: true);
+            verifyCompletedWithRecovery: true,
+            validateBeforeReservation: validateBeforeReservation);
     }
 
     public Task<OfflineSyncStatusDto<CreateCompanyMovementResponse>> GetOfflineSyncStatusAsync(

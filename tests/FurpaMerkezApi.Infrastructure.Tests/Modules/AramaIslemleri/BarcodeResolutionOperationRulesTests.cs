@@ -45,6 +45,25 @@ public sealed class BarcodeResolutionOperationRulesTests
 
         Assert.True(result);
     }
+
+    [Theory]
+    [InlineData("receiving", null, true)]
+    [InlineData("order", null, true)]
+    [InlineData("return", "CR001", true)]
+    [InlineData("return", null, false)]
+    [InlineData("shipment", "CR001", false)]
+    public void ShouldEnforcePurchaseRequirement_UsesOperationAndSelectedCompany(
+        string? operationType,
+        string? supplierCode,
+        bool expected)
+    {
+        var result = BarcodeResolutionOperationRules.ShouldEnforcePurchaseRequirement(
+            operationType,
+            supplierCode);
+
+        Assert.Equal(expected, result);
+    }
+
     [Fact]
     public void ShouldEnforceSalesBlock_ReturnsFalse_ForShipment()
     {
@@ -61,5 +80,33 @@ public sealed class BarcodeResolutionOperationRulesTests
         var result = BarcodeResolutionOperationRules.ShouldEnforceSalesBlock(operationType);
 
         Assert.True(result);
+    }
+
+    [Fact]
+    public void SelectStockReference_PrefersExactStockCode_OverAnotherStocksGtin()
+    {
+        BarcodeStockReference[] references =
+        [
+            new("015708", null),
+            new("013891", "015708")
+        ];
+
+        var result = BarcodeResolutionLookupRules.SelectStockReference(references, ["015708"]);
+
+        Assert.NotNull(result);
+        Assert.Equal("015708", result.StockCode);
+        Assert.Equal("stock-code", result.Source);
+    }
+
+    [Fact]
+    public void SelectStockReference_UsesGtin_WhenExactStockCodeDoesNotExist()
+    {
+        BarcodeStockReference[] references = [new("013891", "8693395015708")];
+
+        var result = BarcodeResolutionLookupRules.SelectStockReference(references, ["8693395015708"]);
+
+        Assert.NotNull(result);
+        Assert.Equal("013891", result.StockCode);
+        Assert.Equal("gtin", result.Source);
     }
 }

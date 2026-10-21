@@ -279,6 +279,32 @@ public sealed class SearchProductsUseCase(
             return Array.Empty<ProductLookupItemDto>();
         }
 
+        var exactReferences = BarcodeLookupNormalizer.GetLookupCandidates(barcodeLookup);
+        foreach (var exactStockReference in exactReferences)
+        {
+            var exactStockProducts = await ReadProductsAsync(
+                connection,
+                warehouseNo,
+                null,
+                exactStockReference,
+                stockName,
+                supplierCode,
+                take,
+                barcodeLookup,
+                sourceWarehouseStockCodes,
+                cancellationToken);
+
+            if (exactStockProducts.Count > 0)
+            {
+                return exactStockProducts;
+            }
+        }
+
+        if (await HasExactBarcodeOrStockReferenceAsync(connection, exactReferences, cancellationToken))
+        {
+            return Array.Empty<ProductLookupItemDto>();
+        }
+
         return await ReadProductsByPartialBarcodeSuffixAsync(
             connection,
             warehouseNo,
@@ -289,6 +315,54 @@ public sealed class SearchProductsUseCase(
             take,
             sourceWarehouseStockCodes,
             cancellationToken);
+    }
+
+    private static async Task<bool> HasExactBarcodeOrStockReferenceAsync(
+        DbConnection connection,
+        IReadOnlyCollection<string> references,
+        CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand();
+        var referenceParameters = references
+            .Select((reference, index) =>
+            {
+                var parameterName = $"@exactReference{index}";
+                AddParameter(command, parameterName, reference);
+                return parameterName;
+            })
+            .ToArray();
+
+        command.CommandText = $"""
+            WITH LookupReference AS
+            (
+                SELECT Reference
+                FROM (VALUES {string.Join(", ", referenceParameters.Select(parameter => $"({parameter})"))})
+                    AS lookup(Reference)
+            )
+            SELECT CASE WHEN
+                EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                    INNER JOIN LookupReference AS lookup
+                        ON lookup.Reference = LTRIM(RTRIM(barcode.bar_kodu))
+                    WHERE ISNULL(barcode.bar_iptal, 0) <> 1
+                )
+                OR EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                    INNER JOIN LookupReference AS lookup
+                        ON lookup.Reference = LTRIM(RTRIM(stock.sto_kod))
+                        OR lookup.Reference = LTRIM(RTRIM(ISNULL(stock.sto_kuresel_urun_numarasi, N'')))
+                )
+            THEN 1 ELSE 0 END;
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 300;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is not null && result is not DBNull && Convert.ToInt32(result) == 1;
     }
 
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByPartialBarcodeSuffixAsync(

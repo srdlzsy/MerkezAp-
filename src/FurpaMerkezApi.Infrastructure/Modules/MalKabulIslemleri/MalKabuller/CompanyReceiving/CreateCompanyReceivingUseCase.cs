@@ -81,8 +81,16 @@ public sealed class CreateCompanyReceivingUseCase(
                 verifyCompletedWithRecovery: true,
                 recentCompletedDuplicateWindow: OfflineCreateGuard.RecentCompletedDuplicateWindow,
                 forceCreateNew: request.ForceCreateNew,
-                validateBeforeReservation: innerCancellationToken =>
-                    ValidateDocumentAvailabilityBeforeReservationAsync(request, innerCancellationToken));
+                validateBeforeReservation: async innerCancellationToken =>
+                {
+                    await CompanyProductCompatibilityValidator.ValidateAsync(
+                        mikroDbContext,
+                        request.WarehouseNo,
+                        request.CustomerCode,
+                        request.Lines.Select(line => line.StockCode),
+                        innerCancellationToken);
+                    await ValidateDocumentAvailabilityBeforeReservationAsync(request, innerCancellationToken);
+                });
 
             if (acquireResult.State == MobileOfflineSyncAcquireState.Completed)
             {

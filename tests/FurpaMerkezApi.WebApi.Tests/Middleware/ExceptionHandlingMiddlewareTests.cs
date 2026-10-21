@@ -57,10 +57,35 @@ public sealed class ExceptionHandlingMiddlewareTests
         context.Response.Body.Position = 0;
         using var body = await JsonDocument.ParseAsync(context.Response.Body);
         var root = body.RootElement;
+        Assert.Equal("Islem cakismasi", root.GetProperty("title").GetString());
         Assert.Equal(errorCode, root.GetProperty("errorCode").GetString());
         Assert.Equal(retryable, root.GetProperty("retryable").GetBoolean());
         Assert.Equal(expectedDetail, root.GetProperty("detail").GetString());
         Assert.Equal(expectedRecoveryState, root.GetProperty("recoveryState").GetString());
         Assert.Equal(expectedRecommendedAction, root.GetProperty("recommendedAction").GetString());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HidesTechnicalConflictBehindTurkishMessage()
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new InvalidOperationException(
+                "The configured execution strategy does not support user-initiated transactions."),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/test";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        Assert.Equal("Islem cakismasi", root.GetProperty("title").GetString());
+        Assert.Equal(
+            "Islem mevcut bir kayitla veya devam eden baska bir islemle cakisti. Ekrani yenileyip tekrar kontrol edin.",
+            root.GetProperty("detail").GetString());
+        Assert.DoesNotContain("execution strategy", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
 }
