@@ -126568,6 +126568,12 @@
             "type": "integer",
             "format": "int32"
           },
+          "cashRegisterNo": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string",
+            "nullable": true
+          },
           "zReportNo": {
             "maximum": 2147483647,
             "minimum": 0,

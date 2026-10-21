@@ -10322,6 +10322,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `banknoteMovements` | FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari.CreateBanknoteMovementHttpRequest[] | Hayir | nullable |
 | `cashNo` | integer (int32) | Evet | min=1; max=2147483647 |
+| `cashRegisterNo` | string | Hayir | minLength=0; maxLength=40; nullable |
 | `cashierNo` | integer (int32) | Evet | min=1; max=2147483647 |
 | `giftCheckMovements` | FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari.CreateGiftCheckMovementHttpRequest[] | Hayir | nullable |
 | `managerNo` | integer (int32) | Evet | min=1; max=2147483647 |

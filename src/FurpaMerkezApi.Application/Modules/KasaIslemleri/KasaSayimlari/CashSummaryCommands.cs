@@ -3,6 +3,7 @@ namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 public sealed record CreateCashSummaryRequest(
     int WarehouseNo,
     int CashNo,
+    string? CashRegisterNo,
     int ZReportNo,
     int CashierNo,
     int ManagerNo,

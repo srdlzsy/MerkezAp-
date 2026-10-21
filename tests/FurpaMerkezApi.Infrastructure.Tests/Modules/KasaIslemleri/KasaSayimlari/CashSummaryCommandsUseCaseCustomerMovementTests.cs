@@ -113,6 +113,26 @@ public sealed class CashSummaryCommandsUseCaseCustomerMovementTests
     }
 
     [Fact]
+    public void CreateMovements_MarksAllCustomerMovementsForNewCashRegister()
+    {
+        var movements = CashSummaryCustomerMovementFactory.CreateMovements(
+                CreateHeader(),
+                new[]
+                {
+                    new CashSummaryCustomerMovementLine(3, "0004", 100)
+                },
+                zTotalValue: 100,
+                documentTotal: 100,
+                customerMovementDocumentOrderNo: 1,
+                new DateTime(2026, 10, 21),
+                isNewCashRegister: true)
+            .ToArray();
+
+        Assert.NotEmpty(movements);
+        Assert.All(movements, movement => Assert.Equal("1", movement.cha_special1));
+    }
+
+    [Fact]
     public void CreateMovements_KeepsNegativePaymentLineOnItsOwnAccount()
     {
         var movements = CashSummaryCustomerMovementFactory.CreateMovements(

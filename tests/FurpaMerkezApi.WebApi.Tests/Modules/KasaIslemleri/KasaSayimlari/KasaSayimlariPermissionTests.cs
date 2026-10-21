@@ -77,6 +77,22 @@ public sealed class KasaSayimlariPermissionTests
     }
 
     [Fact]
+    public async Task Create_ForwardsSelectedCashRegisterNo()
+    {
+        var commandsUseCase = new CapturingCashSummaryCommandsUseCase();
+        var controller = CreateController(
+            new CapturingCashSummaryQueriesUseCase(),
+            commandsUseCase,
+            currentWarehouseNo: 50);
+
+        await controller.Create(
+            CreateValidCreateRequest(cashRegisterNo: "PAV210009468"),
+            CancellationToken.None);
+
+        Assert.Equal("PAV210009468", commandsUseCase.LastCreateRequest?.CashRegisterNo);
+    }
+
+    [Fact]
     public async Task Create_UsesSelectedWarehouse_WhenUserCanAccessAllWarehouses()
     {
         var commandsUseCase = new CapturingCashSummaryCommandsUseCase();
@@ -262,11 +278,14 @@ public sealed class KasaSayimlariPermissionTests
         Assert.Equal(116, commandsUseCase.LastDeleteRequest?.WarehouseNo);
     }
 
-    private static CreateCashSummaryHttpRequest CreateValidCreateRequest(int? warehouseNo = null) =>
+    private static CreateCashSummaryHttpRequest CreateValidCreateRequest(
+        int? warehouseNo = null,
+        string? cashRegisterNo = null) =>
         new()
         {
             WarehouseNo = warehouseNo,
             CashNo = 1,
+            CashRegisterNo = cashRegisterNo,
             ZReportNo = 125,
             CashierNo = 1001,
             ManagerNo = 1002,

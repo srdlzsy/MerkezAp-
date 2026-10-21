@@ -4,6 +4,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Commands;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Files;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari;
+using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari.Comm
 
 public sealed class CashSummaryCommandsUseCase(
     MikroWriteDbContext mikroWriteDbContext,
+    FurpaDbContext furpaDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IGetCashSummaryZReportTotalUseCase getCashSummaryZReportTotalUseCase)
     : ICashSummaryCommandsUseCase
@@ -37,6 +39,10 @@ public sealed class CashSummaryCommandsUseCase(
         var now = DateTime.Now;
         var summaryDate = request.SummaryDate.Date;
         var documentSerie = BuildDocumentSerie(request.WarehouseNo, request.CashNo);
+        var isNewCashRegister = await ResolveIsNewCashRegisterAsync(
+            request.CashNo,
+            request.CashRegisterNo,
+            cancellationToken);
         var banknoteLines = request.BanknoteMovements
             .Where(ShouldWriteBanknoteLine)
             .ToArray();
@@ -95,7 +101,8 @@ public sealed class CashSummaryCommandsUseCase(
                     request.ZTotalValue,
                     documentTotal,
                     customerMovementDocumentOrderNo,
-                    now)
+                    now,
+                    isNewCashRegister)
                     .ToArray();
 
                 await mikroWriteDbContext.Summaries.AddRangeAsync(summaryLines, cancellationToken);
@@ -495,6 +502,9 @@ public sealed class CashSummaryCommandsUseCase(
         var zTotalValue = CashSummaryCustomerMovementFactory.ResolveExistingZTotalValue(
             existingCustomerMovements,
             header.WarehouseNo);
+        var isNewCashRegister = existingCustomerMovements.Count > 0
+            ? existingCustomerMovements.Any(item => item.cha_special1 == "1")
+            : await ResolveIsNewCashRegisterAsync(header.CashNo, null, cancellationToken);
 
         if (IsZero(zTotalValue))
         {
@@ -508,11 +518,55 @@ public sealed class CashSummaryCommandsUseCase(
                 zTotalValue,
                 totalAmount,
                 customerMovementDocumentOrderNo,
-                now)
+                now,
+                isNewCashRegister)
             .ToArray();
 
         mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.RemoveRange(existingCustomerMovements);
         await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AddRangeAsync(newCustomerMovements, cancellationToken);
+    }
+
+    private async Task<bool> ResolveIsNewCashRegisterAsync(
+        int cashNo,
+        string? requestedCashRegisterNo,
+        CancellationToken cancellationToken)
+    {
+        var normalizedRequestedNo = requestedCashRegisterNo?.Trim();
+        var furpaCashRegisterNos = await furpaDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo == cashNo && item.CashRegisterNo != null)
+            .OrderBy(item => item.Id)
+            .Select(item => item.CashRegisterNo)
+            .ToArrayAsync(cancellationToken);
+        var mikroCashRegisterNos = await mikroWriteDbContext.CashRegisterDetails
+            .AsNoTracking()
+            .Where(item => item.CashNo == cashNo && item.CashRegisterNo != null)
+            .OrderBy(item => item.Id)
+            .Select(item => item.CashRegisterNo)
+            .ToArrayAsync(cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(normalizedRequestedNo))
+        {
+            var belongsToCash = furpaCashRegisterNos
+                                    .Concat(mikroCashRegisterNos)
+                                    .Any(item => string.Equals(
+                                        normalizedRequestedNo,
+                                        item?.Trim(),
+                                        StringComparison.OrdinalIgnoreCase));
+
+            if (!belongsToCash)
+            {
+                throw new ArgumentException(
+                    $"Secilen terminal numarasi ({normalizedRequestedNo}) kasa {cashNo} ile eslesmiyor.",
+                    nameof(requestedCashRegisterNo));
+            }
+        }
+
+        var resolvedCashRegisterNo = normalizedRequestedNo ??
+                                     furpaCashRegisterNos.FirstOrDefault()?.Trim() ??
+                                     mikroCashRegisterNos.FirstOrDefault()?.Trim();
+
+        return resolvedCashRegisterNo?.StartsWith("PAV", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private async Task<List<CARI_HESAP_HAREKETLERI>> GetCustomerMovementsForCashSummaryAsync(

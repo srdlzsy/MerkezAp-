@@ -330,6 +330,7 @@ public sealed class KasaSayimlariController(
             new CreateCashSummaryRequest(
                 warehouseNo,
                 request.CashNo!.Value,
+                request.CashRegisterNo,
                 request.ZReportNo!.Value,
                 request.CashierNo!.Value,
                 request.ManagerNo!.Value,
@@ -790,6 +791,9 @@ public sealed class CreateCashSummaryHttpRequest
     [Required]
     [Range(1, int.MaxValue)]
     public int? CashNo { get; init; }
+
+    [StringLength(40)]
+    public string? CashRegisterNo { get; init; }
 
     [Required]
     [Range(0, int.MaxValue)]

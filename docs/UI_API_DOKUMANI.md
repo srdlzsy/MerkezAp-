@@ -15986,6 +15986,10 @@ Onemli not:
 - `documentSerie` backend tarafinda legacy kasa icmal formatinda `F{islemDepoNo}.{cashNo}` olarak uretilir
 - `documentOrderNo` ayni seri icin mevcut maksimum degerin bir fazlasi olarak uretilir
 - `zReportNo` Z rapor numarasidir; `zTotalValue` Z rapor tutaridir
+- UI secilen kasanin detayinda gelen finans/terminal grup numarasini `cashRegisterNo` alaninda gondermelidir. Ornek: `PAV210009468`.
+- Backend `cashRegisterNo` degerini `cashNo` ile Furpa/Mikro kasa tanimlarindan dogrular. Alan eski istemcilerden gelmezse ayni eslemeyi `cashNo` uzerinden kendisi cozer.
+- Cozulen `cashRegisterNo` `PAV` ile basliyorsa yeni kasa kabul edilir ve olusturulan tum `CARI_HESAP_HAREKETLERI` satirlarina `cha_special1 = "1"` yazilir. Eski kasalarda alan bos kalir. UI `cha_special1` veya ayrica yeni-kasa bayragi gondermez.
+- Icmal detaylari sonradan guncellenip CARI hareketleri yeniden kuruldugunda mevcut yeni/eski kasa isareti korunur.
 - `total` UI tarafinda hesaplanip gonderilmek zorunda degildir; kasa/Z fark uyumu icin backend legacy belge toplamlarini kendi hesaplar. UI tercihen `0` gondermelidir.
 - legacy CARI/Z fark toplaminda `paymentTypeNo < 100` odemeler + backend'in banknotlardan urettigi nakit toplam + `storeExpenses` toplami sayilir; `paymentTypeNo = 100` Gider Pusulasi bu toplamdan haric tutulur
 - create response icindeki `total`, ekranda gosterilen tahsilat toplamindan farkli olabilir; bu alan CARI/Z fark uyumu icin kullanilan legacy belge toplamidir. Liste, detay ve yazdirma ekranlari satir tutarlarindan kendi toplamlarini hesaplamalidir.
@@ -16014,6 +16018,7 @@ Request:
 {
   "warehouseNo": 110,
   "cashNo": 1,
+  "cashRegisterNo": "PAV210009468",
   "zReportNo": 125,
   "cashierNo": 1001,
   "managerNo": 1002,
@@ -25318,7 +25323,7 @@ Bu bolum insan tarafindan okunacak ozet katalogdur. Tam ve surumlenmis alan, tip
 - `BankPaymentTypeHttpRequest`: `CashRegisterNo`
 - `ZReportValueHttpRequest`: `WarehouseNo`, `DocumentSerie` (opsiyonel), `ZReportNo`, `CashNo`
 - `CreateBanknoteTrackHttpRequest`: `WarehouseNo`, `BanknoteTrackDate`, `TotalAmount`, `DeliveryTotalAmount`, `Deliverer`, `Receiver`
-- `CreateCashSummaryHttpRequest`: `WarehouseNo`, `CashNo`, `ZReportNo`, `CashierNo`, `ManagerNo`, `ZTotalValue`, `Total`, `SummaryDate`, `GiftCheckMovements`, `BanknoteMovements`, `PaymentTypes`, `StoreExpenses`
+- `CreateCashSummaryHttpRequest`: `WarehouseNo`, `CashNo`, `CashRegisterNo`, `ZReportNo`, `CashierNo`, `ManagerNo`, `ZTotalValue`, `Total`, `SummaryDate`, `GiftCheckMovements`, `BanknoteMovements`, `PaymentTypes`, `StoreExpenses`
 - `CreateGiftCheckMovementHttpRequest`: `GiftCheckType`, `Quantity`, `Total`, `Value`
 - `CreateBanknoteMovementHttpRequest`: `BanknoteType`, `Quantity`, `Total`, `Value`
 - `CreatePaymentTypeHttpRequest`: `PaymentName`, `PaymentTypeNo`, `AccountCode`, `TerminalId`, `SlipNumber`, `AmountValue`
@@ -35769,6 +35774,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `banknoteMovements` | FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari.CreateBanknoteMovementHttpRequest[] | Hayir | nullable |
 | `cashNo` | integer (int32) | Evet | min=1; max=2147483647 |
+| `cashRegisterNo` | string | Hayir | minLength=0; maxLength=40; nullable |
 | `cashierNo` | integer (int32) | Evet | min=1; max=2147483647 |
 | `giftCheckMovements` | FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari.CreateGiftCheckMovementHttpRequest[] | Hayir | nullable |
 | `managerNo` | integer (int32) | Evet | min=1; max=2147483647 |

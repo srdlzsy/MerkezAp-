@@ -38,7 +38,8 @@ internal static class CashSummaryCustomerMovementFactory
         double zTotalValue,
         double documentTotal,
         int customerMovementDocumentOrderNo,
-        DateTime now)
+        DateTime now,
+        bool isNewCashRegister = false)
     {
         var movementLines = paymentLines
             .Concat(CreateZReportLines(header.WarehouseNo, zTotalValue, documentTotal))
@@ -55,7 +56,8 @@ internal static class CashSummaryCustomerMovementFactory
                 customerMovementDocumentOrderNo,
                 rowNo,
                 description,
-                now));
+                now,
+                isNewCashRegister));
         }
 
         return movements;
@@ -103,7 +105,8 @@ internal static class CashSummaryCustomerMovementFactory
         int customerMovementDocumentOrderNo,
         int rowNo,
         string description,
-        DateTime now)
+        DateTime now,
+        bool isNewCashRegister)
     {
         var warehouseCode = header.WarehouseNo.ToString();
         var isNegativeSyntheticDifference = line.PaymentTypeNo >= 100 && line.Amount <= NegativeDifferenceThreshold;
@@ -126,7 +129,7 @@ internal static class CashSummaryCustomerMovementFactory
             cha_create_date = now,
             cha_lastup_user = MikroUserNo,
             cha_lastup_date = now,
-            cha_special1 = string.Empty,
+            cha_special1 = isNewCashRegister ? "1" : string.Empty,
             cha_special2 = string.Empty,
             cha_special3 = string.Empty,
             cha_firmano = 0,
