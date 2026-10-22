@@ -103,9 +103,19 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         var lines = request.Lines.ToArray();
         var traceKey = ResolveOfflineTraceKey(request.ClientRequestId);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+        var executionAttempt = 0;
 
         var documentOrderNo = await executionStrategy.ExecuteAsync(async () =>
         {
+            if (executionAttempt++ > 0)
+            {
+                var recovered = await TryRecoverOfflineResponseAsync(request, cancellationToken);
+                if (recovered is not null)
+                {
+                    return recovered.DocumentOrderNo;
+                }
+            }
+
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,

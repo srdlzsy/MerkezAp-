@@ -35,8 +35,25 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<CashRegisterTerminalDto>>> Terminals(
         [Range(1, int.MaxValue)] int cashNo,
+        [FromQuery, Range(1, int.MaxValue)] int? branchNo,
         CancellationToken cancellationToken) =>
-        Ok(await ayarlarService.ListCashRegisterTerminalsAsync(cashNo, cancellationToken));
+        Ok(await ayarlarService.ListCashRegisterTerminalsAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, ListPolicy),
+            cashNo,
+            cancellationToken));
+
+    [HttpGet("terminaller/konum")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterTerminalLocationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CashRegisterTerminalLocationDto>>> TerminalLocations(
+        [FromQuery, Required(AllowEmptyStrings = false), StringLength(40)] string terminalNo,
+        [FromQuery, Range(1, int.MaxValue)] int? branchNo,
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.FindCashRegisterTerminalLocationsAsync(
+            terminalNo,
+            User.ResolveWarehouseScopeForPolicy(branchNo, ListPolicy),
+            cancellationToken));
 
     [HttpPost("subeler/{branchNo:int}/kasalar/{cashNo:int}/terminaller")]
     [Authorize(Policy = CreatePolicy)]
@@ -77,6 +94,46 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
             terminalId,
             ToTerminalRequest(request),
             cancellationToken));
+
+    [HttpPut("subeler/{branchNo:int}/kasalar/{cashNo:int}/tip")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(CashRegistryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CashRegistryDto>> UpdateCashRegisterType(
+        [Range(1, int.MaxValue)] int branchNo,
+        [Range(1, int.MaxValue)] int cashNo,
+        [FromBody] UpdateCashRegisterTypeHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.UpdateCashRegisterTypeAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, UpdatePolicy),
+            cashNo,
+            new UpdateCashRegisterTypeRequest(request.CashType!.Value),
+            cancellationToken));
+
+    [HttpPut("subeler/{branchNo:int}/kasalar/{cashNo:int}/terminal-gruplari/{terminalNo}/tasi")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterTerminalDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<IReadOnlyCollection<CashRegisterTerminalDto>>> MoveTerminalGroup(
+        [Range(1, int.MaxValue)] int branchNo,
+        [Range(1, int.MaxValue)] int cashNo,
+        [StringLength(40, MinimumLength = 1)] string terminalNo,
+        [FromBody] MoveCashRegisterTerminalGroupHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var sourceBranchNo = User.ResolveWarehouseNoForPolicy(branchNo, UpdatePolicy);
+        var targetBranchNo = User.ResolveWarehouseNoForPolicy(request.TargetBranchNo, UpdatePolicy);
+
+        return Ok(await ayarlarService.MoveCashRegisterTerminalGroupAsync(
+            sourceBranchNo,
+            cashNo,
+            terminalNo,
+            new MoveCashRegisterTerminalGroupRequest(targetBranchNo, request.TargetCashNo!.Value),
+            cancellationToken));
+    }
 
     [HttpGet("mevcut-sube/mesaj-durumlari")]
     [Authorize(Policy = ListPolicy)]
@@ -210,4 +267,22 @@ public sealed class CreateCashRegisterTerminalHttpRequest
     [Required(AllowEmptyStrings = false)]
     [StringLength(40)]
     public string? MerchantNo { get; init; }
+}
+
+public sealed class MoveCashRegisterTerminalGroupHttpRequest
+{
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? TargetBranchNo { get; init; }
+
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? TargetCashNo { get; init; }
+}
+
+public sealed class UpdateCashRegisterTypeHttpRequest
+{
+    [Required]
+    [Range(0, byte.MaxValue)]
+    public byte? CashType { get; init; }
 }

@@ -25,14 +25,14 @@ public static class SettingsTypeCatalog
         new(
             0,
             "standard-pos-cash-register",
-            "Standart POS Kasasi",
-            "Subenin POSKON/MESAJ dosya islemlerine dahil edilen standart satis kasasi.",
+            "Standart Kasa",
+            "Subenin POSKON/MESAJ dosya islemlerine dahil edilen ana fiziksel kasasidir. Banka veya POS terminali degildir; terminal bilgileri ayri tanimlanir.",
             true),
         new(
             1,
             "additional-pos-cash-register",
-            "Ek POS Kasasi",
-            "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+            "Ek Kasa",
+            "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
             true)
     ];
 

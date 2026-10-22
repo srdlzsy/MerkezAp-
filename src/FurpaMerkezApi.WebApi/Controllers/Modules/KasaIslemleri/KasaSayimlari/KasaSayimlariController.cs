@@ -200,6 +200,7 @@ public sealed class KasaSayimlariController(
     [ProducesResponseType(typeof(CashRegisterDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CashRegisterDetailDto>> GetCashRegisterDetail(
         [FromQuery] CashRegisterLookupHttpRequest request,
         CancellationToken cancellationToken)
@@ -207,7 +208,8 @@ public sealed class KasaSayimlariController(
         var response = await cashSummaryLookupsUseCase.GetCashRegisterDetailAsync(
             new CashRegisterLookupRequest(
                 request.CashNo,
-                request.CashRegisterNo),
+                request.CashRegisterNo,
+                User.ResolveWarehouseNoForPolicy(request.BranchNo, EntryListPolicy)),
             cancellationToken);
 
         if (response is null)
@@ -256,7 +258,10 @@ public sealed class KasaSayimlariController(
         CancellationToken cancellationToken)
     {
         var response = await cashSummaryLookupsUseCase.ListBankPaymentTypesAsync(
-            new BankPaymentTypeRequest(request.CashRegisterNo!),
+            new BankPaymentTypeRequest(
+                request.CashRegisterNo,
+                User.ResolveWarehouseNoForPolicy(request.BranchNo, EntryListPolicy),
+                request.CashNo),
             cancellationToken);
 
         return Ok(response);
@@ -416,6 +421,32 @@ public sealed class KasaSayimlariController(
                         line.TerminalId ?? string.Empty,
                         line.Description ?? string.Empty))
                     .ToArray()),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpPut("{documentSerie}/{documentOrderNo:int}/baslik")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(UpdateCashSummaryHeaderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<UpdateCashSummaryHeaderResponse>> UpdateHeader(
+        string documentSerie,
+        int documentOrderNo,
+        [FromBody] UpdateCashSummaryHeaderHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var warehouseNo = ResolveDocumentWarehouseNo(request.WarehouseNo, documentSerie, UpdatePolicy);
+        var response = await cashSummaryCommandsUseCase.UpdateHeaderAsync(
+            new UpdateCashSummaryHeaderRequest(
+                warehouseNo,
+                documentSerie,
+                documentOrderNo,
+                request.ZReportNo!.Value,
+                request.ZTotalValue!.Value,
+                request.SummaryDate!.Value),
             cancellationToken);
 
         return Ok(response);
@@ -746,6 +777,9 @@ public sealed class CashRegistryHttpRequest
 public sealed class CashRegisterLookupHttpRequest
 {
     [Range(1, int.MaxValue)]
+    public int? BranchNo { get; init; }
+
+    [Range(1, int.MaxValue)]
     public int? CashNo { get; init; }
 
     [StringLength(40)]
@@ -761,9 +795,14 @@ public sealed class CashierSearchHttpRequest
 
 public sealed class BankPaymentTypeHttpRequest
 {
-    [Required]
     [StringLength(40)]
     public string? CashRegisterNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? BranchNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? CashNo { get; init; }
 }
 
 public sealed class ZReportValueHttpRequest
@@ -900,6 +939,23 @@ public sealed class UpdateCashSummaryDetailsHttpRequest
     [MinLength(1)]
     public IReadOnlyCollection<UpdateCashSummaryDetailLineHttpRequest> Details { get; init; } =
         Array.Empty<UpdateCashSummaryDetailLineHttpRequest>();
+}
+
+public sealed class UpdateCashSummaryHeaderHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int? ZReportNo { get; init; }
+
+    [Required]
+    [Range(0, double.MaxValue)]
+    public double? ZTotalValue { get; init; }
+
+    [Required]
+    public DateTime? SummaryDate { get; init; }
 }
 
 public sealed class UpdateCashSummaryDetailLineHttpRequest

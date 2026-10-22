@@ -73,14 +73,7 @@ internal static class IssuedCompanyOrderRecoveryMatcher
                 !NearlyEquals(actual.UnitPrice, expected.UnitPrice) ||
                 !NearlyEquals(actual.Quantity, expected.Quantity) ||
                 !NearlyEquals(actual.Amount, expected.Quantity * expected.UnitPrice) ||
-                actual.UnitPointer != expected.UnitPointer ||
-                !TextEquals(actual.Description1, Normalize(expected.Description1 ?? request.Description1, 50)) ||
-                !TextEquals(actual.Description2, Normalize(expected.Description2 ?? request.Description2, 50)) ||
-                !TextEquals(actual.CustomerResponsibilityCenter, Normalize(expected.CustomerResponsibilityCenter, 25)) ||
-                !TextEquals(actual.ProductResponsibilityCenter, Normalize(expected.ProductResponsibilityCenter, 25)) ||
-                !TextEquals(actual.ProjectCode, Normalize(expected.ProjectCode, 25)) ||
-                !TextEquals(actual.PackageCode, Normalize(expected.PackageCode, 25)) ||
-                !NearlyEquals(actual.RecommendedQuantity, expected.RecommendedQuantity ?? 0d))
+                actual.UnitPointer != expected.UnitPointer)
             {
                 return IssuedCompanyOrderMatch.Mismatch;
             }

@@ -70,11 +70,7 @@ internal static class IssuedWarehouseOrderRecoveryMatcher
                 !NearlyEquals(actual.Quantity, expected.Quantity) ||
                 !NearlyEquals(actual.UnitPrice, expected.UnitPrice) ||
                 !NearlyEquals(actual.Amount, expected.Quantity * expected.UnitPrice) ||
-                actual.UnitPointer != expected.UnitPointer ||
-                !TextEquals(actual.PackageCode, expected.PackageCode) ||
-                !TextEquals(actual.ProjectCode, expected.ProjectCode) ||
-                !TextEquals(actual.ResponsibilityCenter, expected.ResponsibilityCenter) ||
-                !NearlyEquals(actual.RecommendedQuantity, expected.RecommendedQuantity ?? 0d))
+                actual.UnitPointer != expected.UnitPointer)
             {
                 return IssuedWarehouseOrderMatch.Mismatch;
             }

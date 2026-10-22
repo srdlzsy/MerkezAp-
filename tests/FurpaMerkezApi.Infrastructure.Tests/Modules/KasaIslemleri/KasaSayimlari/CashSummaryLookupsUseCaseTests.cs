@@ -195,7 +195,7 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
-    public async Task ListBankPaymentTypesAsync_FallsBackToFurpaWhenMikroHasNoTerminal()
+    public async Task ListBankPaymentTypesAsync_IgnoresFurpaWhenMikroHasNoTerminal()
     {
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
@@ -217,13 +217,11 @@ public sealed class CashSummaryLookupsUseCaseTests
             new BankPaymentTypeRequest("PAV210010590"),
             CancellationToken.None);
 
-        Assert.Equal(
-            new[] { "Is Bankasi:S0Q1FF05:108.01.003", "TEB:PSB47068:108.01.004" },
-            result.Select(item => $"{item.PaymentName}:{item.TerminalId}:{item.AccountCode}").ToArray());
+        Assert.Empty(result);
     }
 
     [Fact]
-    public async Task ListBankPaymentTypesAsync_MergesUniqueTerminalsAndPrefersFurpaForDuplicates()
+    public async Task ListBankPaymentTypesAsync_UsesOnlyMikroTerminalRows()
     {
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
@@ -253,13 +251,7 @@ public sealed class CashSummaryLookupsUseCaseTests
             CancellationToken.None);
 
         Assert.Equal(
-            new[]
-            {
-                "Is Bankasi:S028AL09:0004",
-                "TEB:PS373078:0007",
-                "Yapi Kredi:00C9814B:0011",
-                "Ziraat Bankasi:2547147:0019"
-            },
+            new[] { "Is Bankasi:SO28AL09:0004", "TEB:PS373078:0007" },
             result.Select(item => $"{item.PaymentName}:{item.TerminalId}:{item.AccountCode}").ToArray());
     }
 
@@ -287,12 +279,55 @@ public sealed class CashSummaryLookupsUseCaseTests
             CancellationToken.None);
 
         Assert.Equal(
-            new[] { "Akbank:F-T01:0001", "Akbank:F-T02:0001" },
+            new[] { "Akbank:M-T01:0001", "Akbank:M-T02:0001" },
             result.Select(item => $"{item.PaymentName}:{item.TerminalId}:{item.AccountCode}").ToArray());
     }
 
     [Fact]
-    public async Task GetCashRegisterDetailAsync_PrefersFurpaWhenLookingUpByCashNo()
+    public async Task ListBankPaymentTypesAsync_FiltersByPhysicalCashAndBranch()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        mikroDbContext.PaymentTypes.AddRange(
+            CreatePaymentType(1, "Akbank", "0001"),
+            CreatePaymentType(2, "TEB", "0002"),
+            CreatePaymentType(3, "Is Bankasi", "0003"));
+        mikroDbContext.CashRegisterDetails.AddRange(
+            CreateMikroCashRegisterDetail(1, "PAV-COMMON", "Akbank", "T-129-A", cashNo: 103),
+            CreateMikroCashRegisterDetail(2, "PAV-COMMON", "TEB", "T-130-B", cashNo: 104),
+            CreateMikroCashRegisterDetail(3, "PAV-OTHER", "Is Bankasi", "T-129-C", cashNo: 103));
+        mikroDbContext.CashRegisterBranches.AddRange(
+            new CashRegisterBranchEntity { Id = 1, BranchNo = 129, CashRegisterNo = "PAV-COMMON" },
+            new CashRegisterBranchEntity { Id = 2, BranchNo = 130, CashRegisterNo = "PAV-COMMON" },
+            new CashRegisterBranchEntity { Id = 3, BranchNo = 129, CashRegisterNo = "PAV-OTHER" });
+        await mikroDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var result = await useCase.ListBankPaymentTypesAsync(
+            new BankPaymentTypeRequest(null, BranchNo: 129, CashNo: 103),
+            CancellationToken.None);
+
+        Assert.Equal(
+            new[] { "Akbank:T-129-A", "Is Bankasi:T-129-C" },
+            result.Select(item => $"{item.PaymentName}:{item.TerminalId}").ToArray());
+    }
+
+    [Fact]
+    public async Task ListBankPaymentTypesAsync_RequiresBranchWhenFilteringByPhysicalCash()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => useCase.ListBankPaymentTypesAsync(
+            new BankPaymentTypeRequest(null, CashNo: 103),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetCashRegisterDetailAsync_UsesMikroWhenLookingUpByCashNo()
     {
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
@@ -326,9 +361,35 @@ public sealed class CashSummaryLookupsUseCaseTests
             CancellationToken.None);
 
         Assert.NotNull(result);
-        Assert.Equal(3528, result.Id);
-        Assert.Equal("PAV210010590", result.CashRegisterNo);
-        Assert.Equal("S0Q1FF05", result.TerminalId);
+        Assert.Equal(41, result.Id);
+        Assert.Equal("UB0016026618", result.CashRegisterNo);
+        Assert.Equal("01106322", result.TerminalId);
+    }
+
+    [Fact]
+    public async Task GetCashRegisterDetailAsync_RejectsMultipleFinanceNumbersForPhysicalCash()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        mikroDbContext.CashRegisterDetails.AddRange(
+            CreateMikroCashRegisterDetail(41, "PAV210000001", "Akbank", "T001", cashNo: 103),
+            CreateMikroCashRegisterDetail(42, "PAV210000002", "TEB", "T002", cashNo: 103));
+        mikroDbContext.CashRegisterBranches.AddRange(
+            new CashRegisterBranchEntity { Id = 41, BranchNo = 129, CashRegisterNo = "PAV210000001" },
+            new CashRegisterBranchEntity { Id = 42, BranchNo = 129, CashRegisterNo = "PAV210000002" });
+        await mikroDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            useCase.GetCashRegisterDetailAsync(
+                new CashRegisterLookupRequest(103, null, BranchNo: 129),
+                CancellationToken.None));
+
+        Assert.Contains("birden fazla finans/PAV numarasi", exception.Message);
+        Assert.Contains("PAV210000001", exception.Message);
+        Assert.Contains("PAV210000002", exception.Message);
     }
 
     [Fact]
@@ -365,7 +426,7 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
-    public async Task GetCashRegisterDetailAsync_FallsBackToFurpaWhenMikroHasNoCashRegisterNo()
+    public async Task GetCashRegisterDetailAsync_DoesNotFallBackToFurpa()
     {
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
@@ -384,10 +445,7 @@ public sealed class CashSummaryLookupsUseCaseTests
             new CashRegisterLookupRequest(null, "PAV210010590"),
             CancellationToken.None);
 
-        Assert.NotNull(result);
-        Assert.Equal(3528, result.Id);
-        Assert.Equal("PAV210010590", result.CashRegisterNo);
-        Assert.Equal("S0Q1FF05", result.TerminalId);
+        Assert.Null(result);
     }
 
     [Fact]
@@ -455,7 +513,8 @@ public sealed class CashSummaryLookupsUseCaseTests
         string cashRegisterNo,
         string bank,
         string terminalId,
-        string merchantNo = "") =>
+        string merchantNo = "",
+        int? cashNo = null) =>
         new()
         {
             Id = id,
@@ -463,7 +522,7 @@ public sealed class CashSummaryLookupsUseCaseTests
             Bank = bank,
             TerminalId = terminalId,
             MerchantNo = merchantNo,
-            CashNo = null
+            CashNo = cashNo
         };
 
     private static MikroDbContext CreateMikroDbContext()

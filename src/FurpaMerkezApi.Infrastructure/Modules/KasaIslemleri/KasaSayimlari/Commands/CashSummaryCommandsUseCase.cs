@@ -231,6 +231,120 @@ public sealed class CashSummaryCommandsUseCase(
         });
     }
 
+    public async Task<UpdateCashSummaryHeaderResponse> UpdateHeaderAsync(
+        UpdateCashSummaryHeaderRequest request,
+        CancellationToken cancellationToken)
+    {
+        Validate(request);
+
+        await using var writeLock = await AcquireWriteLockAsync(cancellationToken);
+        var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            mikroWriteDbContext.ChangeTracker.Clear();
+            await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            try
+            {
+                var summaries = await mikroWriteDbContext.Summaries
+                    .Where(item =>
+                        item.WarehouseNo == request.WarehouseNo &&
+                        item.DocumentSerie == request.DocumentSerie &&
+                        item.DocumentOrderNo == request.DocumentOrderNo)
+                    .OrderBy(item => item.Id)
+                    .ToListAsync(cancellationToken);
+
+                if (summaries.Count == 0)
+                {
+                    throw new KeyNotFoundException("Icmal kaydi bulunamadi.");
+                }
+
+                var header = summaries[0];
+                var summaryDate = request.SummaryDate.Date;
+                var nextDate = summaryDate.AddDays(1);
+                var duplicateExists = await mikroWriteDbContext.Summaries
+                    .AsNoTracking()
+                    .AnyAsync(
+                        item =>
+                            item.WarehouseNo == request.WarehouseNo &&
+                            item.CashNo == header.CashNo &&
+                            item.ZReportNo == request.ZReportNo &&
+                            item.SummaryDate >= summaryDate &&
+                            item.SummaryDate < nextDate &&
+                            (item.DocumentSerie != request.DocumentSerie ||
+                             item.DocumentOrderNo != request.DocumentOrderNo),
+                        cancellationToken);
+                if (duplicateExists)
+                {
+                    throw new InvalidOperationException(
+                        $"Kasa {header.CashNo} icin {summaryDate:dd.MM.yyyy} tarihli Z {request.ZReportNo} numarali baska bir icmal zaten var.");
+                }
+
+                var banknotes = await mikroWriteDbContext.BanknoteMovements
+                    .Where(item =>
+                        item.WarehouseNo == request.WarehouseNo &&
+                        item.DocumentSerie == request.DocumentSerie &&
+                        item.DocumentOrderNo == request.DocumentOrderNo)
+                    .ToListAsync(cancellationToken);
+                var giftChecks = await mikroWriteDbContext.GiftCheckMovements
+                    .Where(item =>
+                        item.WarehouseNo == request.WarehouseNo &&
+                        item.DocumentSerie == request.DocumentSerie &&
+                        item.DocumentOrderNo == request.DocumentOrderNo)
+                    .ToListAsync(cancellationToken);
+                var now = DateTime.Now;
+
+                foreach (var summary in summaries)
+                {
+                    summary.ZReportNo = request.ZReportNo;
+                    summary.SummaryDate = summaryDate;
+                    summary.UpdateUser = MikroUserNo;
+                    summary.UpdateDate = now;
+                }
+
+                foreach (var banknote in banknotes)
+                {
+                    banknote.SummaryDate = summaryDate;
+                    banknote.UpdateUser = MikroUserNo;
+                    banknote.UpdateDate = now;
+                }
+
+                foreach (var giftCheck in giftChecks)
+                {
+                    giftCheck.SummaryDate = summaryDate;
+                }
+
+                await RebuildCustomerMovementsAsync(
+                    header,
+                    summaries,
+                    header.Total,
+                    now,
+                    cancellationToken,
+                    request.ZTotalValue);
+                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return new UpdateCashSummaryHeaderResponse(
+                    request.DocumentSerie,
+                    request.DocumentOrderNo,
+                    request.ZReportNo,
+                    Math.Round(request.ZTotalValue, 2),
+                    summaryDate,
+                    summaries.Count,
+                    banknotes.Count,
+                    giftChecks.Count);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        });
+    }
+
     public async Task<UpdateCashSummaryBanknotesResponse> UpdateBanknotesAsync(
         UpdateCashSummaryBanknotesRequest request,
         CancellationToken cancellationToken)
@@ -487,7 +601,8 @@ public sealed class CashSummaryCommandsUseCase(
         IReadOnlyCollection<SummaryEntity> summaries,
         double totalAmount,
         DateTime now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        double? zTotalValueOverride = null)
     {
         var existingCustomerMovements = await GetCustomerMovementsForCashSummaryAsync(
             header.DocumentSerie,
@@ -499,14 +614,15 @@ public sealed class CashSummaryCommandsUseCase(
             .FirstOrDefault(item => item.HasValue);
         var customerMovementDocumentOrderNo = existingCustomerMovementDocumentOrderNo ??
                                               await GetNextCustomerMovementDocumentOrderNoAsync(cancellationToken);
-        var zTotalValue = CashSummaryCustomerMovementFactory.ResolveExistingZTotalValue(
-            existingCustomerMovements,
-            header.WarehouseNo);
+        var zTotalValue = zTotalValueOverride ??
+                          CashSummaryCustomerMovementFactory.ResolveExistingZTotalValue(
+                              existingCustomerMovements,
+                              header.WarehouseNo);
         var isNewCashRegister = existingCustomerMovements.Count > 0
             ? existingCustomerMovements.Any(item => item.cha_special1 == "1")
             : await ResolveIsNewCashRegisterAsync(header.CashNo, null, cancellationToken);
 
-        if (IsZero(zTotalValue))
+        if (!zTotalValueOverride.HasValue && IsZero(zTotalValue))
         {
             zTotalValue = await ResolveZReportTotalValueAsync(header, cancellationToken);
         }
@@ -1169,6 +1285,34 @@ public sealed class CashSummaryCommandsUseCase(
         if (request.Details.Count == 0)
         {
             throw new ArgumentException("At least one detail line is required.", nameof(request.Details));
+        }
+    }
+
+    private static void Validate(UpdateCashSummaryHeaderRequest request)
+    {
+        if (request.WarehouseNo <= 0)
+        {
+            throw new ArgumentException("Depo numarasi sifirdan buyuk olmalidir.", nameof(request.WarehouseNo));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.DocumentSerie))
+        {
+            throw new ArgumentException("Evrak serisi zorunludur.", nameof(request.DocumentSerie));
+        }
+
+        if (request.DocumentOrderNo < 0 || request.ZReportNo < 0)
+        {
+            throw new ArgumentException("Evrak sira ve Z rapor numarasi negatif olamaz.");
+        }
+
+        if (request.SummaryDate == default)
+        {
+            throw new ArgumentException("Icmal tarihi zorunludur.", nameof(request.SummaryDate));
+        }
+
+        if (!double.IsFinite(request.ZTotalValue) || request.ZTotalValue < 0d)
+        {
+            throw new ArgumentException("Z rapor toplami sifir veya pozitif gecerli bir tutar olmalidir.", nameof(request.ZTotalValue));
         }
     }
 

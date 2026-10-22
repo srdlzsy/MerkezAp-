@@ -39,7 +39,14 @@ public interface IAyarlarService
         CreateCashRegisterRequest request,
         CancellationToken cancellationToken);
 
+    Task<CashRegistryDto> UpdateCashRegisterTypeAsync(
+        int branchNo,
+        int cashNo,
+        UpdateCashRegisterTypeRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<CashRegisterTerminalDto>> ListCashRegisterTerminalsAsync(
+        int branchNo,
         int cashNo,
         CancellationToken cancellationToken);
 
@@ -54,6 +61,18 @@ public interface IAyarlarService
         int cashNo,
         int terminalId,
         CreateCashRegisterTerminalRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CashRegisterTerminalLocationDto>> FindCashRegisterTerminalLocationsAsync(
+        string terminalNo,
+        int? branchNo,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CashRegisterTerminalDto>> MoveCashRegisterTerminalGroupAsync(
+        int sourceBranchNo,
+        int sourceCashNo,
+        string terminalNo,
+        MoveCashRegisterTerminalGroupRequest request,
         CancellationToken cancellationToken);
 
     Task DeleteCashRegisterAsync(int branchNo, int cashNo, CancellationToken cancellationToken);

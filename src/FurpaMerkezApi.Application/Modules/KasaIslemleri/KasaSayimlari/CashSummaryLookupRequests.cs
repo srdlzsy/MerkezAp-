@@ -12,10 +12,13 @@ public sealed record CashRegistryRequest(
 
 public sealed record CashRegisterLookupRequest(
     int? CashNo,
-    string? CashRegisterNo = null);
+    string? CashRegisterNo = null,
+    int? BranchNo = null);
 
 public sealed record BankPaymentTypeRequest(
-    string CashRegisterNo);
+    string? CashRegisterNo,
+    int? BranchNo = null,
+    int? CashNo = null);
 
 public sealed record ZReportValueRequest(
     int WarehouseNo,

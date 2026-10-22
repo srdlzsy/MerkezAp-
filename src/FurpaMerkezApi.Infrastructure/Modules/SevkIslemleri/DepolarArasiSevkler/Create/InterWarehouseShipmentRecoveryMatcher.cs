@@ -62,13 +62,6 @@ internal static class InterWarehouseShipmentRecoveryMatcher
             if (!TextEquals(actualRow.StockCode, expectedLine.StockCode)) mismatches.Add(prefix + "stockCode");
             if (!NearlyEquals(actualRow.Quantity, expectedLine.Quantity)) mismatches.Add(prefix + "quantity");
             if (actualRow.UnitPointer != expectedLine.UnitPointer) mismatches.Add(prefix + "unitPointer");
-            if (!NearlyEquals(actualRow.Amount, expectedLine.Quantity * expectedLine.UnitPrice)) mismatches.Add(prefix + "amount");
-            if (!DescriptionMatches(actualRow.Description, expectedLine.Description ?? request.Description)) mismatches.Add(prefix + "description");
-            if (!TextEquals(actualRow.PartyCode, expectedLine.PartyCode)) mismatches.Add(prefix + "partyCode");
-            if (actualRow.LotNo != expectedLine.LotNo) mismatches.Add(prefix + "lotNo");
-            if (!TextEquals(actualRow.ProjectCode, expectedLine.ProjectCode)) mismatches.Add(prefix + "projectCode");
-            if (!TextEquals(actualRow.CustomerResponsibilityCenter, expectedLine.CustomerResponsibilityCenter)) mismatches.Add(prefix + "customerResponsibilityCenter");
-            if (!TextEquals(actualRow.ProductResponsibilityCenter, expectedLine.ProductResponsibilityCenter)) mismatches.Add(prefix + "productResponsibilityCenter");
             if (!string.IsNullOrEmpty(expectedTraceKey) && !TextEquals(actualRow.TraceKey, expectedTraceKey)) mismatches.Add(prefix + "traceKey");
         }
 
@@ -105,19 +98,9 @@ internal static class InterWarehouseShipmentRecoveryMatcher
 
             var expectedLine = expectedLines[rowNo];
             var actualRow = matchingRows[0];
-            var expectedAmount = expectedLine.Quantity * expectedLine.UnitPrice;
-            var expectedDescription = expectedLine.Description ?? request.Description;
-
             if (!TextEquals(actualRow.StockCode, expectedLine.StockCode) ||
                 !NearlyEquals(actualRow.Quantity, expectedLine.Quantity) ||
                 actualRow.UnitPointer != expectedLine.UnitPointer ||
-                !NearlyEquals(actualRow.Amount, expectedAmount) ||
-                !DescriptionMatches(actualRow.Description, expectedDescription) ||
-                !TextEquals(actualRow.PartyCode, expectedLine.PartyCode) ||
-                actualRow.LotNo != expectedLine.LotNo ||
-                !TextEquals(actualRow.ProjectCode, expectedLine.ProjectCode) ||
-                !TextEquals(actualRow.CustomerResponsibilityCenter, expectedLine.CustomerResponsibilityCenter) ||
-                !TextEquals(actualRow.ProductResponsibilityCenter, expectedLine.ProductResponsibilityCenter) ||
                 (!string.IsNullOrEmpty(expectedTraceKey) && !TextEquals(actualRow.TraceKey, expectedTraceKey)))
             {
                 return false;
@@ -132,20 +115,6 @@ internal static class InterWarehouseShipmentRecoveryMatcher
 
     private static bool TextEquals(string? actual, string? expected) =>
         string.Equals(NormalizeText(actual), NormalizeText(expected), StringComparison.OrdinalIgnoreCase);
-
-    private static bool DescriptionMatches(string? actual, string? expected)
-    {
-        if (TextEquals(actual, expected))
-        {
-            return true;
-        }
-
-        // Mikro writes the automatically generated warehouse-order line GUID into
-        // sth_aciklama when the request did not provide a line/document description.
-        return string.IsNullOrWhiteSpace(expected) &&
-               Guid.TryParse(NormalizeText(actual), out var generatedOrderLineGuid) &&
-               generatedOrderLineGuid != Guid.Empty;
-    }
 
     private static string NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();

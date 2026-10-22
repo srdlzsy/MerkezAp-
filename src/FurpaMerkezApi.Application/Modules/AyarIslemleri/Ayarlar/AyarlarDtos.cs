@@ -103,6 +103,8 @@ public sealed record CreateCashRegisterRequest(
     byte CashType,
     IReadOnlyCollection<CreateCashRegisterTerminalRequest> Terminals);
 
+public sealed record UpdateCashRegisterTypeRequest(byte CashType);
+
 public sealed record CreateCashRegisterTerminalRequest(
     string TerminalNo,
     string Bank,
@@ -124,6 +126,17 @@ public sealed record CashRegisterTerminalDto(
     string TerminalId,
     string MerchantNo,
     int? CashNo);
+
+public sealed record CashRegisterTerminalLocationDto(
+    string TerminalNo,
+    int BranchNo,
+    int CashNo,
+    int BankRowCount,
+    IReadOnlyCollection<string> Banks);
+
+public sealed record MoveCashRegisterTerminalGroupRequest(
+    int TargetBranchNo,
+    int TargetCashNo);
 
 public sealed record CashRegisterMessageStatusDto(
     int BranchNo,

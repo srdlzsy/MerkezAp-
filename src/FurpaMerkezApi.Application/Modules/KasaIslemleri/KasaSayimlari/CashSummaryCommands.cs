@@ -46,6 +46,14 @@ public sealed record UpdateCashSummaryDetailsRequest(
     int DocumentOrderNo,
     IReadOnlyCollection<UpdateCashSummaryDetailLineRequest> Details);
 
+public sealed record UpdateCashSummaryHeaderRequest(
+    int WarehouseNo,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    int ZReportNo,
+    double ZTotalValue,
+    DateTime SummaryDate);
+
 public sealed record UpdateCashSummaryDetailLineRequest(
     string TypeName,
     int PaymentTypeId,
@@ -98,6 +106,16 @@ public sealed record UpdateCashSummaryDetailsResponse(
     int DocumentOrderNo,
     int UpdatedLineCount,
     double TotalAmount);
+
+public sealed record UpdateCashSummaryHeaderResponse(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    int ZReportNo,
+    double ZTotalValue,
+    DateTime SummaryDate,
+    int UpdatedSummaryLineCount,
+    int UpdatedBanknoteLineCount,
+    int UpdatedGiftCheckLineCount);
 
 public sealed record UpdateCashSummaryBanknotesResponse(
     string DocumentSerie,

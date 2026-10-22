@@ -10,6 +10,10 @@ public interface ICashSummaryCommandsUseCase
         UpdateCashSummaryDetailsRequest request,
         CancellationToken cancellationToken);
 
+    Task<UpdateCashSummaryHeaderResponse> UpdateHeaderAsync(
+        UpdateCashSummaryHeaderRequest request,
+        CancellationToken cancellationToken);
+
     Task<UpdateCashSummaryBanknotesResponse> UpdateBanknotesAsync(
         UpdateCashSummaryBanknotesRequest request,
         CancellationToken cancellationToken);

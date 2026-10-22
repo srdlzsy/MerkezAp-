@@ -699,7 +699,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 expectedLines,
                 recoveredLines);
             logger.LogError(
-                "Inter warehouse shipment trace was found in Mikro but its document content did not match the stored request. ClientRequestId={ClientRequestId}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, ExpectedLineCount={ExpectedLineCount}, ActualLineCount={ActualLineCount}, MismatchFields={MismatchFields}",
+                "Inter warehouse shipment trace was found in Mikro but its core document content did not match the stored request. ClientRequestId={ClientRequestId}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, ExpectedLineCount={ExpectedLineCount}, ActualLineCount={ActualLineCount}, MismatchFields={MismatchFields}",
                 request.ClientRequestId,
                 request.SourceWarehouseNo,
                 request.TargetWarehouseNo,
@@ -709,7 +709,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
             throw new OperationConflictException(
                 OperationConflictErrorCodes.MikroDocumentContentMismatch,
-                "Mikro contains rows with this request trace, but their content does not match the stored shipment request. Do not create another shipment.",
+                "Mikro'da bu istek iziyle bir evrak bulundu ancak stok, miktar, birim veya satir bilgileri gonderilen sevkle tam eslesmiyor. Yeni sevk olusturulmadi.",
                 retryable: false);
         }
 

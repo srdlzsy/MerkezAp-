@@ -103,7 +103,7 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
     }
 
     [Fact]
-    public void Matches_AcceptsGeneratedWarehouseOrderGuidAsEmptyDescription()
+    public void Matches_AcceptsFieldsNormalizedByMikroWhenCoreIdentityMatches()
     {
         var clientRequestId = Guid.Parse("a94669b8-b916-474a-9830-bbf87cc9f408");
         var request = CreateRequest(clientRequestId) with
@@ -114,8 +114,21 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
                 .ToArray()
         };
         var rows = CreateMatchingRows(MobileOfflineSyncService.ToTraceKey(clientRequestId));
-        rows[0] = rows[0] with { Description = "bcddffbf-eb56-4701-877c-641eeba08855" };
-        rows[1] = rows[1] with { Description = "9400e969-3098-4cf8-81e5-80817c15dc75" };
+        rows[0] = rows[0] with
+        {
+            Amount = 0d,
+            Description = "bcddffbf-eb56-4701-877c-641eeba08855",
+            PartyCode = "MIKRO-NORMALIZED",
+            LotNo = 99,
+            ProjectCode = "MIKRO",
+            CustomerResponsibilityCenter = "AUTO",
+            ProductResponsibilityCenter = "AUTO"
+        };
+        rows[1] = rows[1] with
+        {
+            Amount = 999d,
+            Description = "9400e969-3098-4cf8-81e5-80817c15dc75"
+        };
 
         var matches = InterWarehouseShipmentRecoveryMatcher.Matches(
             request,
@@ -126,7 +139,7 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
     }
 
     [Fact]
-    public void Matches_RejectsArbitraryGeneratedDescriptionWhenRequestWasEmpty()
+    public void Matches_RejectsDifferentStockEvenWhenOptionalFieldsMatch()
     {
         var request = CreateRequest(null) with
         {
@@ -136,8 +149,7 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
                 .ToArray()
         };
         var rows = CreateMatchingRows(string.Empty);
-        rows[0] = rows[0] with { Description = "unexpected text" };
-        rows[1] = rows[1] with { Description = string.Empty };
+        rows[0] = rows[0] with { StockCode = "DIFFERENT" };
 
         var matches = InterWarehouseShipmentRecoveryMatcher.Matches(
             request,

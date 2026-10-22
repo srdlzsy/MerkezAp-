@@ -43,6 +43,7 @@ public sealed class KasaSayimlariPermissionTests
     [Theory]
     [InlineData(nameof(KasaSayimlariController.Create), "kasa-islemleri.icmal-kaydi-girisi.create")]
     [InlineData(nameof(KasaSayimlariController.UpdateDetails), "kasa-islemleri.kasa-sayimlari.update")]
+    [InlineData(nameof(KasaSayimlariController.UpdateHeader), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.UpdateBanknotes), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.UpdateGiftChecks), "kasa-islemleri.kasa-sayimlari.update")]
     [InlineData(nameof(KasaSayimlariController.Delete), "kasa-islemleri.kasa-sayimlari.delete")]
@@ -233,6 +234,17 @@ public sealed class KasaSayimlariPermissionTests
             },
             CancellationToken.None);
 
+        await controller.UpdateHeader(
+            "F116.54",
+            2490,
+            new UpdateCashSummaryHeaderHttpRequest
+            {
+                ZReportNo = 120,
+                ZTotalValue = 10_000,
+                SummaryDate = new DateTime(2026, 10, 22)
+            },
+            CancellationToken.None);
+
         await controller.UpdateBanknotes(
             "F116.54",
             2490,
@@ -273,6 +285,7 @@ public sealed class KasaSayimlariPermissionTests
         await controller.Delete("F116.57", 1456, warehouseNo: 1, CancellationToken.None);
 
         Assert.Equal(116, commandsUseCase.LastUpdateDetailsRequest?.WarehouseNo);
+        Assert.Equal(116, commandsUseCase.LastUpdateHeaderRequest?.WarehouseNo);
         Assert.Equal(116, commandsUseCase.LastUpdateBanknotesRequest?.WarehouseNo);
         Assert.Equal(116, commandsUseCase.LastUpdateGiftChecksRequest?.WarehouseNo);
         Assert.Equal(116, commandsUseCase.LastDeleteRequest?.WarehouseNo);
@@ -433,6 +446,8 @@ public sealed class KasaSayimlariPermissionTests
 
         public UpdateCashSummaryDetailsRequest? LastUpdateDetailsRequest { get; private set; }
 
+        public UpdateCashSummaryHeaderRequest? LastUpdateHeaderRequest { get; private set; }
+
         public UpdateCashSummaryBanknotesRequest? LastUpdateBanknotesRequest { get; private set; }
 
         public UpdateCashSummaryGiftChecksRequest? LastUpdateGiftChecksRequest { get; private set; }
@@ -466,6 +481,23 @@ public sealed class KasaSayimlariPermissionTests
                 request.DocumentOrderNo,
                 request.Details.Count,
                 request.Details.Sum(line => line.Amount)));
+        }
+
+        public Task<UpdateCashSummaryHeaderResponse> UpdateHeaderAsync(
+            UpdateCashSummaryHeaderRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastUpdateHeaderRequest = request;
+
+            return Task.FromResult(new UpdateCashSummaryHeaderResponse(
+                request.DocumentSerie,
+                request.DocumentOrderNo,
+                request.ZReportNo,
+                request.ZTotalValue,
+                request.SummaryDate,
+                1,
+                1,
+                1));
         }
 
         public Task<UpdateCashSummaryBanknotesResponse> UpdateBanknotesAsync(

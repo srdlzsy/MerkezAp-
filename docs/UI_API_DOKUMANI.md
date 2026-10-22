@@ -40,10 +40,11 @@ Timeout ve tekrar deneme notu:
 - Mikro API create cevabi tek basina basari kaniti degildir. Backend olusan aktif Mikro satirlarini stok, miktar, depo, satir sayisi ve akisa ozel trace/link alanlariyla DB'den geri okumadan create islemini tamamlanmis saymaz. Mikro API yazma audit rezervasyonu acildiktan sonra upstream POST ve onu izleyen readback kullanicinin HTTP baglantisindan bagimsiz devam eder; `HttpClient` ve readback'in kendi sure sinirlari yine uygulanir. Normal basarida kisa readback uygulanir; timeout, baglanti kopmasi veya duplicate cevabinda ayni belge 180 saniyeye kadar readback ile aranir ve ikinci create yazisi uretilmez.
 - Mikro API'de guvenilir bir karsiligi bulunmayan yardimci/ozel tablo insertleri bu profile zorlanmaz. Kasa sayimi alt tablolari, cihaz/terminal tanimlari ve AXATA C04 legacy tablo yazimi gibi akislar kontrollu DB yolu ile devam eder.
 - Terminal, mobil ve web istemcileri liste isteklerinde HTTP client timeout degerini en az `300` saniye yapmalidir. Terminalde kritik create timeout'u `5` dakikadir; bu sabit bekleme degil, geciken/sonucu belirsiz islem icin ust sinirdir. Normal `200/201` cevabi beklemeden ekrana doner. Terminal ortak API istemcisi belirsiz POST cevabinda ilk istege yaklasik `4 dakika 30 saniye`, ardindan ayni request kimliginin status GET kontrollerine kalan sureyi ayirir. Status sorgulari yeni Mikro create yazisi baslatmaz.
-- Terminalin kritik create formlari sonucu ayni ekranda bekler. `Completed` ve `result` gelince normal basari gibi form kapanir. Bes dakika icinde sonuc kesinlesmezse kullanici daha fazla bekletilmez; snapshot ve `clientRequestId` korunur, form serbest birakilir ve Offline/Bulut ekrani zorla acilmaz. `RetrySameRequest` karari olmadan ikinci Mikro yazisi baslatilmaz; bu karar gelirse terminal ayni snapshot/id ile en fazla bir otomatik POST yapar.
-- Ilk 5 dakikalik POST/status penceresi sonunda backend `SAFE_WRITE_RETRY_ALLOWED` verirse ikinci ve son otomatik deneme kendi en fazla 5 dakikalik penceresiyle baslar. Ikinci denemede ayni karar tekrar gelirse ucuncu POST atilmaz; terminal sahip-kapsamli `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` endpointiyle kesin belge-yok kaydini kapatir ve yerel pending kaydi temizler.
-- POST/create timeout gorurse UI hemen yeni istek kimligi veya farkli body uretmemeli; once ayni `clientRequestId` icin status/readback yapmali ve yalniz backend `recommendedAction=RetrySameRequest` derse saklanan ayni body ile bir kez otomatik tekrar etmelidir. Ikinci denemede ayni karar tekrar gelirse otomatik dongu kesin belge-yok kaydini kapatarak sonlanir.
-- Terminal uygulamasi veya modul ekrani yeniden acildiginda saklanan pending kayit yalniz yerelden okunur. Ekran acilisi kendiliginden create POST, status GET veya `yeniden-dogrula` istegi baslatmaz.
+- Terminalin kritik create formlari sonucu ayni ekranda bekler. `Completed` ve `result` gelince belge numarasini gosterir, pending snapshot ile normal taslagi temizler, formu kapatir ve listeyi yeniler. Bes dakika icinde sonuc kesinlesmezse snapshot ve `clientRequestId` korunur; Offline/Bulut ekrani zorla acilmaz.
+- Terminal create akisi, kullanici Kaydet dediginde bir POST baslatir. API yalnizca `recommendedAction=RetrySameRequest` veya kesin `SAFE_WRITE_RETRY_ALLOWED` / `MIKRO_WRITE_QUEUE_BUSY` karari verdiginde ayni body ve ayni `clientRequestId` ile en fazla bir otomatik POST daha yapar. Belirsiz timeout/500 bu izni vermez.
+- Otomatik guvenli tekrar da tamamlanmazsa POST dongusu durur. Sonuc belirsizse yalniz status GET ile izlenir; API Mikro'da hic yazilmadigini kesinlestirdiyse taslak ayni ekranda korunur ve kullanici Kaydet ile tekrar deneyebilir. Yeni kimlik veya body sessizce uretilmez.
+- POST/create timeout gorurse UI yeni evrak olarak tekrar gondermez. Ayni ekranda ayni `clientRequestId` icin status/readback yapar. `Completed` gelirse belge numarasi gosterilir, yerel kayit temizlenir, form kapanir ve liste yenilenir.
+- Terminal uygulamasi veya modul ekrani yeniden acildiginda saklanan pending kayit yerelden okunur; tamamlanmamis onceki istek icin en fazla bir status GET ile sonuc kontrol edilebilir. Ekran acilisi create POST veya `yeniden-dogrula` baslatmaz.
 
 E-irsaliye alici alias notu:
 
@@ -1256,14 +1257,14 @@ Kaydet butonunun kesin davranisi:
 2. Ayni form acik kalir. POST surerken yalniz bu form kilitlenir ve `Kayit yapiliyor` durumu gorunur; normal basarida form hemen kapanir.
 3. POST `WaitAndCheck`, HTTP 0 veya `5xx` ile belirsiz kalirsa ortak API istemcisi ayni ekranda status GET kontrolu yapar. Bu GET yeni create yazisi baslatmaz ve kullaniciya ikinci evrak olusturmaz.
 4. Status `Completed` ve kesin `result` donerse bu normal basari cevabi gibi forma iletilir, belge seri/sirasi gosterilir ve yerel pending kayit temizlenir.
-5. `RetrySameRequest` donerse ayni body snapshot'i ve ayni `clientRequestId` ile bir kez otomatik POST yapilir. Ikinci denemede ayni karar tekrar donerse ucuncu POST atilmaz; kesin belge-yok sunucu kaydi `vazgec` ile kapatilir, yerel pending temizlenir ve kullanici normal formu yeniden duzenleyebilir.
-6. Kesin validation/is kurali hatasinda ayni form duzeltmeye acilir. Kullanici ekrandan ayrilir veya uygulama kapanirsa belirsiz istegin snapshot/id bilgisi korunur. Sonraki ekran acilisi yalniz yerel kaydi yukler; otomatik POST/status/dogrulama baslatmaz.
+5. `RetrySameRequest` veya `SAFE_WRITE_RETRY_ALLOWED` donerse terminal ayni body ve id ile yalniz bir guvenli POST daha yapar. Tekrar da yazilmayi baslatmazsa otomatik dongu durur; duzenlenebilir taslak ve ayni kimlik korunur.
+6. Kesin validation/is kurali hatasinda ayni form duzeltmeye acilir. Kullanici ekrandan ayrilir veya uygulama kapanirsa belirsiz istegin snapshot/id bilgisi korunur. Sonraki ekran acilisi create POST baslatmaz; gerekirse yalniz bir status GET yapar.
 
 Backend sorumlulugu:
 
 - Request body tamamen alindiktan ve Auth DB rezervasyonu olustuktan sonra backend create islemini istemci baglantisindan bagimsiz, en fazla 4 dakikalik sinirli bir server token'iyle tamamlar.
 - Terminalin ortak API istemcisi su 14 create route'u icin sonucu POST istegi icinde ayni ekranda bekletir: firma mal kabul, sayim sonucu, verilen depo siparisi, iki onerilen siparis donusumu, verilen firma siparisi, depolar arasi sevk, firma sevki, depo iadesi, firma iadesi, zayiat, masraf, virman ve manav duzeltmesi. Angular uygulamasi da ayni kullanici sonucunu kendi interceptor'i ile saglar.
-- Normal create basarisi hemen dondurulur. Belirsiz cevapta terminal toplam 5 dakikalik deadline kullanir; ilk POST'a deadline'dan yaklasik 30 saniye onceye kadar sure tanir, ardindan `offline-sync/{clientRequestId}` status endpointini 3 saniyelik araliklarla GET eder. 5 dakika ust sinirdir, zorunlu bekleme degildir.
+- Normal create basarisi hemen dondurulur. Belirsiz cevapta terminal toplam 5 dakikalik deadline kullanir; ilk POST'a deadline'dan yaklasik 30 saniye onceye kadar sure tanir, ardindan `offline-sync/{clientRequestId}` status endpointini artan araliklarla (yaklasik 3, 6, 12, 24 ve en fazla 30 saniye) GET eder. 5 dakika ust sinirdir, zorunlu bekleme degildir.
 - Ayni `clientRequestId` ile ayni POST taze `Processing` kaydina denk gelirse ikinci Mikro yazisi veya rakip readback baslatilmaz. Backend mevcut sonuca en fazla 15 saniye baglanir; tamamlanirsa ayni business response'u, tamamlanmazsa `WaitAndCheck` kararini doner.
 - `Processing` kaydi 4 dakika 30 saniyeden once sahipsiz kabul edilmez. Bu esik 4 dakikalik server calisma penceresine 30 saniyelik hand-off payi ekler; calisan islem erken ikinci yazima acilmaz.
 - Taze `Processing` kaydinin status GET'i Mikro recovery sorgusu baslatmaz; yalniz Auth DB durumunu dondurur. Readback create sahibinin kendi akisinda, `Failed + retryable=true` kaydinda veya 4 dakika 30 saniyelik lease asildiktan sonra calisir.
@@ -1279,7 +1280,7 @@ UI karar alanlari:
 |---|---|
 | `Completed` | `result` icindeki belgeyi goster, pending snapshot'i sil. |
 | `WaitAndCheck` | Ayni ekranda sonucu kontrol ediyor goster; `retryAfterSeconds` kadar bekleyip status GET yap. Create POST yapma. |
-| `RetrySameRequest` | Saklanan ayni body ve ayni `clientRequestId` ile bir kez otomatik POST dene; yeni GUID/body/seri uretme. Ayni karar ikinci kez gelirse ucuncu POST yapma; `vazgec` ile kesin belge-yok kaydini kapat ve pending'i temizle. |
+| `RetrySameRequest` | Ayni body ve id ile yalniz bir otomatik POST yap. Bu deneme de kesin yazilmazsa donguyu durdur, taslagi koru ve kullanicinin acik Kaydet aksiyonini bekle. |
 | `EditAndRetry` | Yazma baslamamistir; formu duzenlemeye ac ve alan hatasini goster. Offline/Bulut listesine tasima. |
 | `RefreshList` | Ikinci create yapma; listeyi yenileyip mevcut/kapanmis kaydi goster. Offline/Bulut listesine tasima. |
 | `RecheckExisting` | `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/yeniden-dogrula` ile salt-okuma kontrolu yap. Create POST yapma. |
@@ -1325,7 +1326,7 @@ Bu endpointler legacy UI gibi normal online da kullanilabilir. Ancak mobil uygul
 - Request body tamamen alinip `clientRequestId` kaydi Auth DB'de rezerve edildikten sonra create islemi terminalin HTTP baglantisindan ayrilir ve en fazla 4 dakikalik sunucu calisma penceresiyle devam eder. Baglanti acik kalirsa ayni POST kesin business sonucunu bekleyip doner. Terminal baglantiyi kaybederse backend baslamis islemi iptal etmez; UI ayni kimlikle `offline-sync/{clientRequestId}` durumunu sorgular.
 - Taze `Processing` kaydi icin status GET yalniz Auth DB durumunu okur; Mikro recovery/readback sorgusu baslatmaz. Bu kural cok sayida terminalin ayni anda uzun recovery sorgulari acmasini engeller.
 - Baglanti request body tamamen alinmadan koparsa controller ve kalici rezervasyon henuz calismamis olabilir. Bu durumda Mikro yazimi baslamaz; terminal sakladigi ayni payload ve ayni `clientRequestId` ile POST'u yeniden gonderir. UI yalniz HTTP isteginin baslamasini `sunucuda kayit basladi` kaniti olarak gostermemelidir.
-- POST cevabi cihaza ulasmadiysa mobil uygulama once ilgili `offline-sync/{clientRequestId}` status GET'ini cagirir. Yalniz backend `recommendedAction=RetrySameRequest` dondururse ayni snapshot ve ayni kimlikle POST'u en fazla bir kez otomatik tekrarlar.
+- POST cevabi cihaza ulasmadiysa mobil uygulama ayni ekranda ilgili `offline-sync/{clientRequestId}` status GET'ini cagirir. Status sonucu create POST baslatmaz.
 - Desteklenen tum akislar ilgili `offline-sync/{clientRequestId}` endpoint'iyle sorgulanabilir. Durum sorgusu yeni create yazisi baslatmaz; kayitli request snapshot'i ile Mikro readback yapar ve bulunan kesin sonucu kalici kayda isler.
 - Firma mal kabul, verilen depo/firma siparisi, depolar arasi sevk, depo iadesi, firma sevki/iadesi, zayiat, masraf ve virman Mikro API yaziminda timeout/istemci iptali gibi sonucu belirsiz bir hata olursa backend ayni cagrida Mikro DB readback yapar. Normal basarili Mikro cevaplarinda hizli readback penceresi 2,5 saniyedir. Timeout veya duplicate belge cevabinda Mikro satirlari gec gorunebilecegi icin readback, terminalin HTTP request token'ina bagli olmayan sunucu token'iyle en fazla 180 saniye devam eder; terminal ekrani kapansa bile baslamis uzlastirma durmaz. Bu uzun pencere normal basarili isteklere uygulanmaz. Evrak tum satirlari ve beklenen icerigiyle bulunursa cevap basarili doner ve Mikro API audit kaydi `RecoveredAfterUnknown` olur.
 - Verilen depo siparisi readback'i ayrilan seri/sira altindaki satirlarin tamamini stok kodu, miktar, birim, fiyat, hedef/kaynak depo ve temel satir alanlariyla karsilastirir. Eksik satir seti tamamlanana kadar beklenir; farkli veya fazla satir kalici `MIKRO_DOCUMENT_CONTENT_MISMATCH` kabul edilir.
@@ -1347,9 +1348,9 @@ Guvenli create `409 Conflict` response sozlesmesi:
 - `MIKRO_DOCUMENT_INCOMPLETE`, `retryable=true`: Ayni trace'e ait bazi satirlar goruluyor ancak tam satir seti henuz olusmadi. `recommendedAction=WaitAndCheck`; eksik set basari sayilmaz ve ikinci create yazisi baslatilmaz.
 - `MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false`: Girilen belge seri/sira anahtari Mikro'da baska bir firma mal kabul evraki tarafindan kullanilmistir. Bu denemede yazim baslamamistir; `recoveryState=NotStarted`, `recommendedAction=EditAndRetry` doner. Terminal offline snapshot'ini siler, normal form taslagini satirlariyla yeniden acar ve kullanicidan seri/sirayi duzeltmesini ister.
 - `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false`: Ayni cari ve resmi belge numarasiyla firma mal kabul zaten vardir. Bu denemede yazim baslamamistir; `recoveryState=ExistingDocument`, `recommendedAction=RefreshList` doner. Terminal ikinci evrak olusturmaz, offline snapshot'ini siler ve mevcut kaydi gostermek icin listeyi yeniler.
-- `SAFE_WRITE_RETRY_ALLOWED`, `retryable=true`: Salt-okuma incelemesi Mikro'da bu istege ait hic belge olmadigini kesinlestirmistir. `recommendedAction=RetrySameRequest`; sadece bu durumda ayni snapshot/id ile create POST yeniden baslatilabilir. Terminal ayni form islemi icinde bu otomatik tekrari en fazla bir kez yapar. Ikinci deneme de ayni kararla biterse terminal kaydi sahip-kapsamli `vazgec` endpointiyle kapatir; bu endpoint belirsiz, Processing, Completed veya icerik uyusmazligi bulunan kaydi kapatmaz.
-- Giden depolar arasi sevk readback'inde ayni `clientRequestId` trace'iyle Mikro satirlari bulunup icerik eslesmiyorsa bu durum `SAFE_WRITE_RETRY_ALLOWED`/"belge yok" olarak siniflandirilmaz; `MIKRO_DOCUMENT_CONTENT_MISMATCH` doner ve yeni POST engellenir. `SAFE_WRITE_RETRY_ALLOWED` yalniz trace sorgusu hic satir bulmadiginda verilebilir.
-- `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false`: Mikro'da ayni evrak anahtariyla kayit vardir fakat satir icerigi istekle tam eslesmemistir. UI otomatik veya yeni id ile POST yapmamalidir. Firma mal kabulde kaydi olusturan kullanici once `POST .../offline-sync/{clientRequestId}/yeniden-dogrula` ile salt-okuma kontrolunu kendisi baslatabilir; tam eslesme bulunursa kayit otomatik `Completed` olur. Eslesme bulunmazsa yetkili incelemesi gerekir.
+- `SAFE_WRITE_RETRY_ALLOWED`, `retryable=true`: Salt-okuma incelemesi Mikro'da bu istege ait hic belge olmadigini kesinlestirmistir. Terminal ayni body ve id ile yalniz bir guvenli otomatik POST yapar. Deneme de basarisizsa yeni otomatik POST yapmaz; taslak korunur.
+- Giden depolar arasi sevk readback'inde ayni `clientRequestId` trace'i tek bir Mikro evrakina cozulse bile basari icin kaynak/hedef depo, satir sayisi ve sirasi, stok, miktar ve birim gibi temel alanlarin request snapshot'iyla birebir eslesmesi gerekir. Yalniz yardimci Mikro alanlarindaki normalizasyon farklari yok sayilir. Temel icerik farkinda `MIKRO_DOCUMENT_CONTENT_MISMATCH` doner; evrak basarili sayilmaz, terminal taslagi silmez ve ikinci create uretilmez. Ayni trace birden fazla belge basligina cozuluyorsa da basari uydurulmaz. `SAFE_WRITE_RETRY_ALLOWED` yalniz trace sorgusu hic satir bulmadiginda verilebilir.
+- `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false`: Mikro'da ayni evrak anahtariyla kayit vardir fakat temel satir kimligi istekle eslesmemistir. UI otomatik veya yeni id ile POST yapmamalidir. Terminal son kullaniciya tekrar eden `Dogrula` aksiyonu sunmaz ve bu karari kalici cihaz pending dongusune cevirmez; normal duzenlenebilir taslagi korur. `POST .../offline-sync/{clientRequestId}/yeniden-dogrula` salt-okuma endpointi teknik/yonetim incelemesi icin acik kalir.
 - Bu manuel inceleme karari backend'de kalici saklanir. Ayni id tekrar gonderilse bile yeniden create baslatilmaz. Firma mal kabulde kullaniciya acik yeniden dogrulama yalniz mevcut Mikro satirlarini okur; `tekrar-ac` ve `iptal` kararlari yetkili guvenli yazma inceleme akisinda kalir.
 - Firma sevki/iadesi, zayiat/masraf ve virman readback'inde eksik satir seti basari sayilmaz. Eslesen fakat henuz tamamlanmamis set `MIKRO_WRITE_OUTCOME_UNCONFIRMED`, farkli stok/miktar/birim/trace veya fazla satir `MIKRO_DOCUMENT_CONTENT_MISMATCH` doner. Ham Mikro API cevabi tek basina basari kaniti degildir.
 - Verilen firma siparisi, firma sevki/iadesi, depolar arasi sevk, depo iadesi, zayiat/masraf, virman, sayim sonucu, firma mal kabul ve manav MNV duzeltmesi `Database` yazma yolunda transaction commit sonrasi Mikro'dan geri okunur. Belge anahtari, satir sayisi, stok, miktar, birim, tutar ve akisa ozgu trace/baglanti alanlari request snapshot'iyla dogrulanmadan offline kayit `Completed` olmaz; belge akis olayi basari olarak yazilmaz.
@@ -1369,14 +1370,14 @@ UI hata ve ekran kilidi karar matrisi:
 | `MIKRO_DOCUMENT_INCOMPLETE`, `retryable=true` | `Belge satirlari tamamlaniyor` goster ve status sorgusuna devam et. | Yalniz ilgili taslak kilitli kalir. | Normalde destek gerekmez; uzun sure degismezse inceleme gerekir. |
 | `MIKRO_DOCUMENT_IDENTITY_CONFLICT`, `retryable=false` | Offline'a tasima; formu ayni satirlarla yeniden ac ve seri/sira duzeltmesini iste. Duzeltilmis kayit yeni bir `clientRequestId` alir. | Bekleyen/offline kilidi yoktur; normal form taslagi korunur. | Destek gerekmez. |
 | `MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED`, `retryable=false` | Offline'a tasima ve ikinci POST yapma; listeyi yenileyip mevcut evraki goster. | Bekleyen/offline kilidi yoktur. | Mevcut evrak bulunamazsa destek gerekir. |
-| `SAFE_WRITE_RETRY_ALLOWED`, `retryable=true` | Saklanan ayni snapshot ve ayni `clientRequestId` ile POST'u bir kez otomatik yeniden dene. Ikinci ayni kararda ucuncu POST yapma; kesin belge-yok kaydini kapat ve normal form taslagini koru. | Pending kilidi kalkar; kullanici formu kontrol edip yeni bir kaydetme baslatabilir. | Destek gerekmez. |
+| `SAFE_WRITE_RETRY_ALLOWED`, `retryable=true` | Ayni body ve id ile bir kez otomatik POST yap. Tekrar da yazilmadi diye kesinlesirse yeni otomatik POST yapma; kullanici Kaydet dediginde taslak ayni kimlikle denenebilir. | Pending kayit baska evraklari kilitlemez. | Sonuc belirsizse status GET ile izlenir. |
 | `Completed` | `result` icindeki belge seri/sirasini goster; yerel pending snapshot'ini sil ve bu taslagin kilidini ac. | Kilit tamamen kalkar. | Destek gerekmez. |
-| `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false` | Otomatik retry, yeni id ve `forceCreateNew` kapali kalir. `recommendedAction=RecheckExisting` ile salt-okuma yeniden dogrulama sunulur. Tam eslesirse `Completed`, aksi halde inceleme durumu korunur. | Yalniz ilgili kayit `needsReview` olur. Tum modul veya diger kullanicilar kilitlenmez. | Kullanici dogrulamasi sonrasi uyusmazlik suruyorsa belge, istek kimligi ve satir farki yetkili tarafindan incelenmelidir. |
+| `MIKRO_DOCUMENT_CONTENT_MISMATCH`, `retryable=false` | Otomatik retry, yeni id ve `forceCreateNew` kapali kalir. Terminal kullaniciya `Dogrula` dongusu acmaz; create pending kaydini kapatir ve normal form taslagini korur. Salt-okuma yeniden dogrulama teknik/yonetim ekraninda kalir. | Ilgili terminal kaydi global kilit olusturmaz; eski yerel `manualReview`/`recheckExisting` kayitlari ilk okumada temizlenir. | Gercek temel kimlik farki belge, istek kimligi ve satir farklariyla teknik olarak incelenir. |
 | `CLIENT_REQUEST_PAYLOAD_MISMATCH`, `retryable=false` | Ayni kimligin body'sinin degistigini anlat. Once yereldeki orijinal snapshot geri yuklenir; sonuc belirsizken yeni islem acilmaz. | Yalniz cakisan kimlik/taslak kilitlenir. | Orijinal snapshot bulunamiyorsa veya onceki sonuc bilinmiyorsa destek gerekir. |
 | `400` validasyon | Alan hatasini goster, kullanicinin formu duzeltmesine izin ver. Mikro yazimi baslamamistir. | Form duzeltilebilir; global kilit yoktur. | Genelde gerekmez. |
 | `401` | Taslagi ve ayni `clientRequestId` degerini yerelde koruyup yeniden login iste. | Oturum disinda kalir; taslak silinmez. | Tekrarlayan auth sorunu varsa destek gerekir. |
 | `403` | Yetki/depo kapsami hatasini goster; otomatik retry yapma. | Sadece yetkisiz aksiyon kapatilir. | Yetki atamasi gerekiyorsa yoneticiye yonlendirilir. |
-| Status endpointinde `404` | Backend rezervasyonu bulunamadi. Foreground create akisi ayni snapshot/id ile en fazla bir kez kontrollu otomatik deneme yapabilir. `Durumu Kontrol Et` salt GET kalir ve kaydi gonderilmemis yerel taslaga cevirir. Arka plan yeni create POST'u uretmez; sonraki POST yalniz kullanicinin ayni taslakta `Kaydet` demesiyle, ayni id/body kullanilarak baslar. | Yalniz bu taslak bekler; status ve POST ayni anda veya sinirsiz dongude calismaz. | Normalde destek gerekmez. Ayni body tekrar tekrar sunucuya ulasamiyorsa ag/API erisimi incelenir. |
+| Belirsiz foreground POST sonrasi status endpointinde `404` | Auth DB rezervasyonu yoktur ve Mikro yazimi baslamamistir; istemci ayni body/id ile yalniz bir guvenli otomatik POST yapabilir. Pasif ekran-acilis kontrolundeki `404` POST baslatmaz; taslak kullanicinin `Kaydet` aksiyonunu bekler. | Pending kilidi kalkar; diger create'ler acik kalir. | Tek guvenli tekrar da tamamlanmazsa taslak korunur; kullanici ayni kaydi acik `Kaydet` aksiyonuyla tekrar deneyebilir. |
 | HTTP `0`, `500`, `502`, `503`, `504` | Sonucu belirsiz kabul et; snapshot/id'yi koru ve once status/readback akisini calistir. | Yalniz bu taslak pending kalir. | Gecici hatada hemen gerekmez; art arda surerse correlation bilgileriyle destek gerekir. |
 
 UI `Destek Gerekli` durumunda dahi tam ekran engelleyici modal veya modul seviyesinde kalici kilit kullanmamalidir. Kayit bazli panelde en az `operationCode`, `clientRequestId`/`relatedClientRequestId`, `warehouseNo`, `errorCode`, `correlationId` ve son kontrol zamanini gostermeli; kullanici listeyi inceleyebilmeli ve farkli bir bagimsiz taslak acabilmelidir.
@@ -1401,7 +1402,7 @@ UI davranis kurali:
 - UI ilk `Kaydet` aninda `clientRequestId` uretmeli, gonderilen body'nin snapshot'ini bu id ile birlikte saklamalidir.
 - `clientRequestId` form acilisinda veya her render/submit denemesinde yeniden uretilmemelidir. Ayni kaydetme denemesi sonuc kesinlesene kadar ayni id ile yasar.
 - Request devam ederken kaydet butonu ve form alanlari kilitlenmeli, ayni create ekrani sonucu gostermeye devam etmelidir. Form basarili sonuc gelmeden otomatik kapatilmamalidir.
-- Timeout, network kopmasi veya belirsiz sonuc olursa UI once status/readback yapmalidir. Ayni body snapshot'i ile `Tekrar Dene` yalniz `recommendedAction=RetrySameRequest` sonrasinda calisir.
+- Timeout, network kopmasi veya belirsiz sonuc olursa UI once status/readback yapmalidir. Kesin `RetrySameRequest` karari veya belirsiz foreground POST sonrasi status `404` (rezervasyon yok) ayni body/id ile en fazla bir otomatik POST'a izin verir; belirsiz sonuc tek basina POST tekrari izni degildir.
 - Timeout veya 500 cevabi sonrasi UI ayni fis icin yeni `clientRequestId` uretmemelidir. Backend yeni surumde ayni mantiksal payload'in onceki belirsiz kaydini bulursa ikinci yazimi `MIKRO_WRITE_IN_PROGRESS` ile durdurur; yine de UI ilk kimligi ve payload snapshot'ini kalici olarak saklamalidir.
 - Kullanici belirsiz kayit modundayken eski payload ve `clientRequestId` korunmalidir. Sonuc kesinlesmeden ayni fisin yerine yeni id ile kaydetme yapilmaz; form degisikligi pending kaydi dusurmemelidir.
 - Ayni `clientRequestId` ile farkli body gonderilip `CLIENT_REQUEST_PAYLOAD_MISMATCH` donerse UI bunu teknik retry gibi ele almamali; kullaniciya kayit denemesinin iceriginin degistigini anlatmalidir.
@@ -1436,9 +1437,9 @@ Kaydetme akisi:
 4. Request devam ederken Kaydet butonu ve form alanlari kilitlenir.
 5. Basarili response gelirse islem `completed` olur ve pending state temizlenir.
 6. Timeout, HTTP 0, network kopmasi veya belirsiz 500 durumunda `checking` olur; UI status GET baslatir.
-7. `recommendedAction=WaitAndCheck` boyunca yeni POST atilmaz. `RetrySameRequest` gelirse saklanan snapshot ayni `clientRequestId` ile POST edilir.
-8. `RecheckExisting` gelirse ortak `yeniden-dogrula` endpointi cagrilir; bu istek Mikro'ya yazmaz.
-9. `NeedsReview` durumunda snapshot/id korunur, tekrar gonderim kapatilir. Belirsiz veya incelemedeki fis yeni id ile yeniden kaydedilmez.
+7. `recommendedAction=WaitAndCheck` boyunca yeni POST atilmaz. `RetrySameRequest` gelirse API ayni body/id ile en fazla bir guvenli POST daha yapar; tekrar da baslamazsa donguyu kapatir ve taslagi kullanici icin korur.
+8. `RecheckExisting` gelirse terminal kullaniciya `Dogrula` butonu acmaz ve create POST yapmaz. Ortak `yeniden-dogrula` endpointi teknik/yonetim incelemesinde salt-okuma icin kullanilabilir.
+9. `NeedsReview` durumunda tekrar gonderim kapatilir; terminal pending dongusu temizlenir ve duzenlenebilir normal form taslagi korunur.
 ```
 
 Kalici pending state ve uygulama acilisi:
@@ -1447,7 +1448,7 @@ Kalici pending state ve uygulama acilisi:
 - Create istegi `200 OK` donup `documentSerie/documentOrderNo` gibi kesin business sonucunu verdiginde UI once kalici pending kaydi atomik olarak silmeli, sonra listeye yonelmeli veya formu sifirlamalidir. Yalniz ekran state'ini `completed` yapmak yeterli degildir.
 - Terminal yeniden acildiginda yerelde pending kayit varsa UI bunu sonsuza kadar dogrudan `isleniyor` kabul etmemelidir. Saklanan ayni payload ve ayni `clientRequestId` ile bir kez guvenli recovery POST'u yaparak backend sonucunu uzlastirmalidir; yeni GUID veya yeniden olusturulmus body kullanilmamalidir.
 - Recovery POST'u `200 OK` donerse yerel pending kayit silinir, form kilidi kaldirilir ve `Yeni Ekle` yeniden acilir. Response mevcut Mikro evrakini recovery ile bulmus olsa da UI acisindan normal basarili create response'udur.
-- `409` ve `retryable=true` (`MIKRO_WRITE_IN_PROGRESS`, `MIKRO_WRITE_QUEUE_BUSY`, `MIKRO_WRITE_OUTCOME_UNCONFIRMED`) donerse ilgili pending kayit korunur ve o kaydin formu/snapshot'i icin `Tekrar Dene` sunulur. Backend ayni mantiksal payload'in belirsiz kaydi varken farkli `clientRequestId` ile ikinci yazimi da durdurur. Onceki kayit tamamlandiysa son 6 saat icindeki ayni payload varsayilan olarak onceki sonucu oynatir; bagimsiz yeni evrak ancak acik `forceCreateNew` onayiyla acilir. UI pending kaydi ayri bir bekleyen islemler listesinde gosterebilir ve `Yeni Ekle` butonunu sonsuza kadar kapatmamalidir.
+- `409` ve `retryable=true` donerse ilgili pending kayit korunur. `MIKRO_WRITE_IN_PROGRESS` / `MIKRO_WRITE_OUTCOME_UNCONFIRMED` yalniz status GET ile izlenir; `MIKRO_WRITE_QUEUE_BUSY` / kesin `SAFE_WRITE_RETRY_ALLOWED` ayni body/id ile bir otomatik POST'a izin verir. Backend ayni mantiksal payload'in belirsiz kaydi varken farkli `clientRequestId` ile ikinci yazimi da durdurur. Onceki kayit tamamlandiysa son 6 saat icindeki ayni payload varsayilan olarak onceki sonucu oynatir; bagimsiz yeni evrak ancak acik `forceCreateNew` onayiyla acilir. Eski pending kayit sayisi yeni bagimsiz evraklari bloke etmez.
 - Recovery readback sorgusu timeout, SQL baglanti hatasi veya gecici iptal nedeniyle tamamlanamazsa backend kaydi `Processing` durumunda sahipsiz birakmaz; `Failed + MIKRO_WRITE_OUTCOME_UNCONFIRMED + retryable=true` olarak saklar. Durum endpointi `retryAfterSeconds` ile tekrar kontrol zamanini bildirir. Bu siniflandirma ikinci yazmayi otomatik baslatmaz.
 - `Processing` kaydi 4 dakika 30 saniyelik lease suresini asarsa ilgili `offline-sync/{clientRequestId}` durum akisi veya 30 saniyelik arka plan uzlastiricisi readback yapar. Belge bulunursa `Completed`; bulunmadigi kesinlesirse `SAFE_WRITE_RETRY_ALLOWED + RetrySameRequest` olur. Genel `guvenli-yazmalar` liste endpointi salt-okumadir; uzlastirmayi ayri worker yapar.
 - `retryable=false` donerse kayit sessizce silinmez. UI `needsReview` veya duzeltilebilir hata durumuna gecer, hata kodunu gosterir ve ilgili kurala gore kullanici aksiyonu bekler.
@@ -3004,17 +3005,17 @@ Kararlar:
 - `yeniden-dogrula` yalniz operasyonun mevcut recovery/readback sorgusunu calistirir; Mikro'ya create/update/delete yazisi gondermez. Belge request snapshot'iyla tam eslesirse `outcome=Completed` ve kayit `Completed` olur. Belge yoksa `outcome=NotFound`; kayit otomatik tekrar acilmaz. Icerik farkliysa `StillNeedsReview` kalir.
 - `tekrar-ac` once ayni salt-okuma kontrolunu yapar. Belge tam eslesirse tekrar acmak yerine `Completed` yapar. Farkli/eksik belge veya gecici SQL/aglanti hatasi varsa tekrar izni vermez. Yalniz readback basariyla tamamlanip Mikro'da belge bulunmazsa `outcome=RetryAllowed`, `errorCode=SAFE_WRITE_RETRY_ALLOWED`, `retryable=true`, `recommendedAction=RetrySameRequest` olur. Bu kod normal belirsiz sonuctan farklidir ve ortak create korumasi ayni payload/id icin bir sonraki POST'un gercekten baslamasina izin verir.
 - `iptal` Mikro belgesini silmez ve yeni yazma yapmaz. Auth DB kaydini `Cancelled + SAFE_WRITE_CANCELLED` yapar. Terminal sonraki status GET cevabinda `Cancelled` gorunce yerel pending snapshot'ini temizler; bunu basarili Mikro evraki gibi gostermemelidir.
-- `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` normal terminal kullanicisinin yalniz kendi kullanici/depo kapsamindaki `Failed + SAFE_WRITE_RETRY_ALLOWED + retryable=true` kaydini kapatir. Bu endpoint ikinci otomatik deneme de kesin belge-yok karariyla bittiginde kullanilir. `Processing`, sonucu belirsiz, icerik uyusmazligi olan veya tamamlanmis kayitlarda `409` doner; Mikro'ya yazma/silme yapmaz.
+- `POST /api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` yalniz kendi kullanici/depo kapsamindaki `Failed + SAFE_WRITE_RETRY_ALLOWED + retryable=true` kaydini kapatabilen geriye uyumlu bir endpointtir; terminal normal create akisinda kullanilmaz. Ortak istemci yalniz kesin `RetrySameRequest` veya belirsiz foreground POST sonrasi status `404` kararinda ayni body/id ile en fazla bir otomatik POST yapabilir. `Processing`, sonucu belirsiz, icerik uyusmazligi olan veya tamamlanmis kayitlarda `vazgec` `409` doner; Mikro'ya yazma/silme yapmaz.
 - `Completed` kayit iptal edilmez. `Cancelled` kayit yeniden dogrulanmaz veya tekrar acilmaz.
 - Endpoint response'undaki `outcome`: `Completed`, `NotFound`, `Incomplete`, `StillNeedsReview`, `CheckFailed`, `RetryAllowed`, `Cancelled`, `AlreadyCompleted` veya `AlreadyCancelled` olabilir. UI aksiyonunu yine `recommendedAction` belirler.
 
 Terminal davranisi:
 
-1. Normal kullanici `recommendedAction=RecheckExisting` gordugunde ortak veya operasyon-ozel `yeniden-dogrula` endpointini kendisi kullanabilir; bu islem salt-okumadir.
+1. `recommendedAction=RecheckExisting` teknik uzlastirma durumudur. Terminal normal kullaniciya `Dogrula` butonu gostermez; ortak veya operasyon-ozel `yeniden-dogrula` endpointi arka plan uzlastirmasi ya da yonetim incelemesi icin salt-okuma olarak kullanilir.
 2. Sonuc `Completed` ise terminal yerel kaydi temizler ve kesin Mikro belge numarasini gosterir.
 3. Sonuc `Incomplete` veya `CheckFailed` ise create POST yapmadan kontrollu aralikla yeniden kontrol eder.
 4. Sonuc `NotFound` veya kalici `StillNeedsReview` ise kayit bazli inceleme gerekir; kullanici diger islemlerine devam eder.
-5. Yetkili `tekrar-ac` kararini ancak salt-okuma kontrolu belgenin hic olusmadigini kesinlestirdiginde verir. Terminal yalniz `recommendedAction=RetrySameRequest` sonrasinda ayni snapshot/id ile bir kez otomatik POST yapar; ayni karar ikinci kez gelirse `vazgec` ile kesin belge-yok kaydini kapatir ve ucuncu POST yapmaz.
+5. Yetkili `tekrar-ac` karari salt-okuma kontrolu belgenin hic olusmadigini kesinlestirince verilir. Bu karar acik bir foreground create isteginin status kontrolunde donerse terminal ayni body/id ile en fazla bir guvenli POST yapabilir. Offline listedeki pasif status GET tek basina POST baslatmaz; kayit gonderilmemis taslak olarak kalir ve yeni gonderim icin kullanici `Kaydet` der.
 6. Taslak gecersiz veya artik islenmeyecekse yetkili `iptal` kullanir. Terminal `ClearCancelled` sonucunda pending kaydi temizler; yeni evrak olusturuldu mesaji gostermez.
 
 #### Olay Gecmisi Response
@@ -3219,14 +3220,16 @@ Onemli alan ayrimi:
 - `cashFinanceNumber`: kasanin banka/POS/Z raporu tarafindaki finans/terminal grup numarasi. Ornek: `PAV210010584`.
 - `terminalNo`: POS terminal grup numarasi; ayar terminal response'unda `CashRegisterDetails.CashRegisterNo` karsiligi olarak gelir. Yeni UI'da gorunen/anahtar isim icin `cashRegisterNo` alias'i da vardir.
 - `branchNo`: sube/depo no
+- `cashRegisterTypeName` / `cashTypeName`: fiziksel kasanin POSKON/MESAJ sinifidir (`Standart Kasa` veya `Ek Kasa`); banka, POS terminali veya PAV numarasi degildir.
 
 Kasa ve terminal kaynagi:
 
 - Sube kasa listesi `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` tarafinda Furpa `CashRegistryDetails` kaydindan kasa no'yu okur.
-- Ayni response'taki `cashFinanceNumber`, once Furpa `CashRegisterDetails` icindeki `CashNo -> CashRegisterNo` eslesmesinden cozulur; Furpa'da yoksa Mikro `CashRegisterDetails` fallback olarak kullanilir.
-- Kasa/POS terminal listesi `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` tarafinda once Furpa `CashRegisterDetails` kayitlarini dondurur. Furpa'da ilgili `cashNo` icin terminal yoksa Mikro `CashRegisterDetails` fallback olarak kullanilir.
-- Icmal/kasa sayim banka odeme tipi seciminde UI `cashNo` yerine mumkunse `cashFinanceNumber` gondermelidir. Ornek: kasa `130`, finans no `PAV210010584` ise banka odeme tipi endpointi `cashRegisterNo=PAV210010584` ile cagrilir.
-- `cashNo` sadece subedeki kasa numarasidir; banka/POS eslesmesinin guvenilir anahtari `cashFinanceNumber`/terminal `cashRegisterNo` degeridir.
+- Ayni response'taki `cashFinanceNumber`, secili sube ve fiziksel kasa icin Mikro `CashRegisterDetails.CashNo -> CashRegisterNo` ile cozulur. Birden fazla farkli finans/PAV numarasi bulunursa API rastgele ilk kaydi secmez; `409 Conflict` ile cakisan numaralari bildirir ve kasa-POS eslesmesi duzeltilmeden icmal olusturulmaz.
+- POS terminal listesi `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller?branchNo={branchNo}` ile Mikro `CashRegisterDetails` ve `CashRegisterBranches` uzerinden, fiziksel kasa + sube eslesmesiyle okunur. Furpa'dan terminal fallback/merge yapilmaz.
+- Icmal banka secenekleri icin UI `cashNo` ve `branchNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. API yalniz o fiziksel kasa ve subeye bagli Mikro terminallerinin banka odeme tiplerini dondurur. Eski istemciler icin `cashRegisterNo` parametresi geriye uyumludur; yeni UI bu global/finans numarasi yolunu kullanmamalidir.
+- `cashNo` subedeki fiziksel kasadir; `cashFinanceNumber` PAV/finans grup numarasidir. Icmal banka listesini guvenli daraltmak icin esas filtre `branchNo + cashNo` ikilisidir.
+- UI kasa secimini degistirdiginde onceki kasa icin devam eden detay/banka isteklerini gecersiz saymalidir. Gec gelen eski response yeni kasanin banka listesinin ustune yazilmamalidir.
 
 Kasiyer listelerinde sifre donmez. Yeni kasiyer olusturma ve sifre sifirlama response'lari uretilen sifreyi `generatedPassword` alaninda dondurur. Mevcut sifre yalniz `kasiyerler.detail` yetkisiyle secili kasiyer icin `GET /api/ayar-islemleri/kasiyerler/{cashierCode}/sifre` endpointinden okunur.
 
@@ -3238,7 +3241,7 @@ UI icin tip/lookup kullanimi:
 - E-irsaliye gonderme modalinda sofor secimi icin `GET /api/ayar-islemleri/soforler?search=ali&take=20` kullanilir. Secilen kaydin `id` degeri e-irsaliye body icinde `driverId` olarak gonderilebilir; UI isterse `fullName`, `plateNumber` ve `tckn` alanlarini forma otomatik basar.
 - Numeric alanlar geriye uyumluluk icin korunur; response'larda yanina `scalesTypeName`, `cashTypeName`, `cashRegisterTypeName`, `stateName` ve aciklama alanlari eklenir.
 - `ScalesType` desteklenen kesin katalogdur: `0 = CAS 16`, `1 = CAS 500`.
-- `CashType` katalogu UI icin anlamli adlarla doner: `0 = Standart POS Kasasi`, `1 = Ek POS Kasasi`. UI dropdown/liste etiketlerinde numeric degeri degil `name`/`cashTypeName`/`cashRegisterTypeName` alanini gostermelidir.
+- `CashType` katalogu `0 = Standart Kasa`, `1 = Ek Kasa` adlariyla doner. Bunlar fiziksel kasanin POSKON/MESAJ sinifidir; banka/POS terminali degildir. UI dropdown/liste etiketinde adi, yardim metninde aciklamayi gostermelidir.
 - Lookup endpointleri sabit kataloglari ve veritabaninda mevcut tanimsiz degerleri birlikte dondurur; tanimsiz degerlerde `isKnown=false` gelir.
 
 Yetki kodlari:
@@ -3303,11 +3306,14 @@ Endpoint ozeti:
 | `PUT /api/ayar-islemleri/sube-ayarlari/{branchNo}` | body + path | `UpdateBranchSettingsHttpRequest` | `BranchDetailDto` | `sube-ayarlari.update` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | - | - | `CashRegisterSettingsLookupsDto` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` | path | `cashNo: int` | `CashRegisterTerminalDto[]` | `kasa-pos-terminalleri.list` |
+| `GET /api/ayar-islemleri/kasa-pos-terminalleri/terminaller/konum?terminalNo=PAV...` | query | `terminalNo: string`, `branchNo?: int` | `CashRegisterTerminalLocationDto[]` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT | - | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | path | `branchNo: int` | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `POST /api/ayar-islemleri/kasa-pos-terminalleri` | body | `CreateCashRegisterHttpRequest` | `CashRegisterResponse` | `kasa-pos-terminalleri.create` |
 | `POST /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller` | body + path | `CreateCashRegisterTerminalHttpRequest` | `CashRegisterTerminalDto` | `kasa-pos-terminalleri.create` |
 | `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | body + path | `CreateCashRegisterTerminalHttpRequest` | `CashRegisterTerminalDto` | `kasa-pos-terminalleri.update` |
+| `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/tip` | body + path | `UpdateCashRegisterTypeHttpRequest` | `CashRegistryDto` | `kasa-pos-terminalleri.update` |
+| `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminal-gruplari/{terminalNo}/tasi` | body + path | `MoveCashRegisterTerminalGroupHttpRequest` | `CashRegisterTerminalDto[]` | `kasa-pos-terminalleri.update` |
 | `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | path | `branchNo`, `cashNo` | - | `kasa-pos-terminalleri.update` |
 | `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | path | `branchNo`, `cashNo`, `terminalId` | - | `kasa-pos-terminalleri.update` |
 | `GET /api/ayar-islemleri/kasiyerler` | - | - | `CashierDto[]` | `kasiyerler.list` |
@@ -3441,15 +3447,15 @@ Response:
     {
       "value": 0,
       "code": "standard-pos-cash-register",
-      "name": "Standart POS Kasasi",
-      "description": "Subenin POSKON/MESAJ dosya islemlerine dahil edilen standart satis kasasi.",
+      "name": "Standart Kasa",
+      "description": "Subenin POSKON/MESAJ dosya islemlerine dahil edilen ana fiziksel kasasidir. Banka veya POS terminali degildir; terminal bilgileri ayri tanimlanir.",
       "isKnown": true
     },
     {
       "value": 1,
       "code": "additional-pos-cash-register",
-      "name": "Ek POS Kasasi",
-      "description": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+      "name": "Ek Kasa",
+      "description": "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
       "isKnown": true
     }
   ]
@@ -3492,10 +3498,10 @@ Response:
     "cashRegisterNo": 1,
     "cashType": 1,
     "cashRegisterType": 1,
-    "cashTypeName": "Ek POS Kasasi",
-    "cashRegisterTypeName": "Ek POS Kasasi",
-    "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
-    "cashRegisterTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+    "cashTypeName": "Ek Kasa",
+    "cashRegisterTypeName": "Ek Kasa",
+    "cashTypeDescription": "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
+    "cashRegisterTypeDescription": "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
     "cashFinanceNumber": "PAV210010584"
   }
 ]
@@ -3504,8 +3510,8 @@ Response:
 Not:
 
 - `cashNo` / `cashRegisterNo` bu endpointte sube icindeki kasa numarasidir.
-- `cashFinanceNumber` bankalar, Z raporu ve kasa sayim banka odeme tipi lookup'inda kullanilacak asil anahtardir.
-- UI kasa seciminde kullaniciya `Kasa 130 - PAV210010584` gibi gosterebilir; banka odeme tiplerini getirirken `cashFinanceNumber` degerini `cashRegisterNo` query alanina yazmalidir.
+- `cashFinanceNumber` kasa ile PAV/finans terminal grubunu ekranda ayirt etmeye yardim eder.
+- Icmal banka secenekleri icin `branchNo + cashNo` gonderilir; `cashFinanceNumber` query filtresi olarak kullanilmaz.
 
 `POST /api/ayar-islemleri/sube-ayarlari`
 
@@ -3563,15 +3569,15 @@ Response:
     {
       "value": 0,
       "code": "standard-pos-cash-register",
-      "name": "Standart POS Kasasi",
-      "description": "Subenin POSKON/MESAJ dosya islemlerine dahil edilen standart satis kasasi.",
+      "name": "Standart Kasa",
+      "description": "Subenin POSKON/MESAJ dosya islemlerine dahil edilen ana fiziksel kasasidir. Banka veya POS terminali degildir; terminal bilgileri ayri tanimlanir.",
       "isKnown": true
     },
     {
       "value": 1,
       "code": "additional-pos-cash-register",
-      "name": "Ek POS Kasasi",
-      "description": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+      "name": "Ek Kasa",
+      "description": "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
       "isKnown": true
     }
   ],
@@ -3615,8 +3621,8 @@ Response `201 Created`:
   "branchNo": 110,
   "cashNo": 1,
   "cashType": 1,
-  "cashTypeName": "Ek POS Kasasi",
-  "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+  "cashTypeName": "Ek Kasa",
+  "cashTypeDescription": "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
   "terminals": [
     {
       "id": 15,
@@ -3634,17 +3640,70 @@ Response `201 Created`:
 Notlar:
 
 - `branchNo + cashNo` duplicate ise `409 Conflict` doner.
-- Terminal no daha once Mikro `CashRegisterDetails` veya `CashRegisterBranches` icinde varsa `409 Conflict` doner.
+- Terminal no baska bir fiziksel kasa veya subede kullaniliyorsa `409 Conflict` doner. `detail` mesaji numaranin bulundugu sube, kasa ve bankalari belirtir; UI kullaniciyi mevcut kaydi acip `Dogru Kasaya Tasi` islemine yonlendirir.
 - Ayni fiziksel terminal/grup numarasi birden fazla banka satirinda kullanilabilir. Tekrarlanan tam satir (`terminalNo + bank + terminalId + merchantNo`) `409 Conflict` doner.
 - Silme islemleri mutlaka branch-scoped endpointlerle yapilir.
 
-`GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller`
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/terminaller/konum?terminalNo=PAV210009468`
 
-Kasa no'ya bagli terminal detaylarini listeler. Backend once Furpa `CashRegisterDetails` kayitlarini okur; Furpa'da ilgili kasa icin kayit yoksa Mikro `CashRegisterDetails` fallback olarak kullanilir.
+Bir POS/PAV numarasinin hangi sube ve fiziksel kasada kullanildigini, gruptaki banka satiri sayisini ve banka adlarini dondurur. `all-warehouses` yetkisi olmayan kullanici sadece JWT deposundaki eslesmeyi gorebilir. Yetkili kullanici `branchNo` gondermezse tum subelerde arama yapar.
+
+```json
+[
+  {
+    "terminalNo": "PAV210009468",
+    "branchNo": 129,
+    "cashNo": 104,
+    "bankRowCount": 4,
+    "banks": ["Is Bankasi", "TEB", "Yapi Kredi", "Ziraat Bankasi"]
+  }
+]
+```
+
+`PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/129/kasalar/104/terminal-gruplari/PAV210009468/tasi`
+
+Yanlis kasaya baglanan POS/PAV grubunu duzeltir. Tek bir banka satirini degil, ayni `terminalNo` degerini kullanan butun banka satirlarini birlikte tasir; boylece ayni fiziki terminal grubu iki kasaya bolunmez.
+
+```json
+{
+  "targetBranchNo": 129,
+  "targetCashNo": 103
+}
+```
+
+Kurallar:
+
+- Kaynak ve hedef fiziksel kasa tanimlari mevcut olmalidir.
+- Hedef kaynakla ayniysa `400 Bad Request` doner.
+- POS/PAV grubu birden fazla subeye baglanmis veya satirlari birden fazla fiziksel kasaya dagilmis ise otomatik tasima yapilmaz; mevcut konumlar `409 Conflict` mesajinda belirtilir.
+- Farkli subeye tasimada `CashRegisterBranches` eslesmesi de hedef subeye alinir.
+- Basarili response, tasinan tum `CashRegisterTerminalDto` banka satirlarini dondurur.
+
+`PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/129/kasalar/103/tip`
+
+Fiziksel kasanin `Standart Kasa` / `Ek Kasa` sinifini degistirir. POS/PAV ve banka satirlarini silmez veya yeniden olusturmaz.
+
+```json
+{
+  "cashType": 1
+}
+```
+
+UI icin onerilen basit duzeltme akisi:
+
+1. Sube kasalari yuklenir ve fiziksel kasa secilir.
+2. POS/PAV numarasi yazilinca `terminaller/konum` ile mevcut baglanti kontrol edilir.
+3. Numara baska kasadaysa yeni kayit acilmaz; ekranda mevcut sube/kasa gosterilir.
+4. Yetkili hedef sube ve fiziksel kasayi secip `Dogru Kasaya Tasi` komutunu verir.
+5. Tasima sonrasi kaynak ve hedef kasa listeleri yenilenir; banka satirlari tek grupta gorunur.
+
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller?branchNo=129`
+
+Secilen sube ve fiziksel kasaya bagli Mikro POS terminal detaylarini listeler. Backend `CashRegisterDetails.CashNo` ile `CashRegisterBranches.BranchNo + CashRegisterNo` eslesmesini birlikte kontrol eder. Furpa `CashRegisterDetails` terminal fallback'i veya kaynak birlestirmesi yapilmaz. UI terminal listesi icin once sube kasalarini yuklemeli, sonra fiziksel kasayi secmelidir.
 
 Ornek:
 
-`GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/130/terminaller`
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/103/terminaller?branchNo=129`
 
 ```json
 [
@@ -3671,15 +3730,15 @@ Ayni terminal numarasina sahip banka satirlari `id` ile birbirinden ayrilir. UI 
 
 `POST /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller`
 
-Mevcut kasaya tek banka/terminal detay satiri ekler. Body, kasa olusturma istegindeki `CreateCashRegisterTerminalHttpRequest` ile aynidir. Kasa Furpa terminal kayitlarini kullaniyorsa satir Furpa kaynagina, aksi halde Mikro kaynagina ve gerekli terminal-sube eslemesine yazilir.
+Mevcut fiziksel kasaya tek banka/terminal detay satiri Mikro `CashRegisterDetails` tablosuna ekler ve gerekiyorsa `CashRegisterBranches` sube eslemesi olusturur. Furpa `CashRegisterDetails` tablosuna terminal satiri yazilmaz. Body, kasa olusturma istegindeki `CreateCashRegisterTerminalHttpRequest` ile aynidir.
 
 `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
 
-Secili terminal detay satirini gunceller. Terminal grup numarasi degisirse Mikro kaynaginda yeni sube eslemesi olusturulur; eski grup eslemesi yalniz o numarayi kullanan baska banka satiri kalmadiysa kaldirilir.
+Secili Mikro terminal detay satirini gunceller. Terminal grup numarasi degisirse Mikro kaynaginda yeni sube eslemesi olusturulur; eski esleme artik kullanilmiyorsa secili subeden kaldirilir.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}`
 
-Sube kapsaminda kasa kaydini siler. Furpa `CashRegistryDetails` ile Furpa `CashRegisterDetails` kayitlari silinir. Mikro tarafinda ilgili terminal detaylari ve yalniz bu subeye ait branch mappingleri de temizlenir.
+Sube kapsaminda fiziksel kasa kaydini Furpa `CashRegistryDetails` tablosundan siler. Mikro'daki o kasaya ait terminal satirlari ve yalniz bu subeye ait terminal eslemeleri temizlenir; baska subeyle ortak terminal grubu varsa ortak terminal satirlari korunur. Eski Furpa `CashRegisterDetails` kopyalari bu islemde degistirilmez ve API lookup'larinda kullanilmaz.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
 
@@ -3701,8 +3760,8 @@ Response:
     "branchNo": 110,
     "cashNo": 1,
     "cashType": 1,
-    "cashTypeName": "Ek POS Kasasi",
-    "cashTypeDescription": "Subede standart kasa disinda tanimli ek POS kasasi; POSKON/MESAJ ve kasa hareket islemlerinde kasa no ile takip edilir.",
+    "cashTypeName": "Ek Kasa",
+    "cashTypeDescription": "Subede ana kasaya ek olarak tanimli fiziksel kasadir. POSKON/MESAJ ve kasa hareketlerinde kendi kasa numarasiyla izlenir; banka/POS terminali ayri tanimlanir.",
     "state": 0,
     "stateName": "1071 bulundu",
     "filePath": "\\\\192.168.1.5\\POSKON\\MESAJ.001",
@@ -5986,6 +6045,8 @@ Onemli not:
 - Yazma yolu `MikroWriteRouting:IssuedWarehouseOrder` ile secilir. Mevcut Production ayari `Database` degerindedir; `MikroApi` yolu da ayni request ve readback sozlesmesini uygular.
 - `MikroApi` yolunda `/Api/apiMethods/DepolarArasiSiparisKaydetV2` cagrilir; basarili/timeout/duplicate cevabindan sonra Mikro DB satirlari readback ile dogrulanir.
 - `Database` yolunda EF Core `MikroWriteDbContext` ile transaction commit edilir ve commit sonrasinda ayni tam readback yapilir. Iki yolda da belge dogrulanmadan guvenli islem `Completed` olmaz.
+- Readback seri/sira, tarih, giris-cikis depolari, aktif satir sayisi ve satir sirasi, stok kodu, miktar, birim, fiyat/tutar alanlarini kontrol eder. Mikro tarafinda normalize edilebilen paket/proje, sorumluluk merkezi ve tavsiye miktari gibi yardimci metadata tek basina icerik uyusmazligi olusturmaz.
+- Trace readback sorgularini buyuk Mikro tablolarinda hizlandirmak icin onerilen iki hedefli index scripti `docs/SIPARISLER_SAFE_CREATE_READBACK_INDEXLERI.sql` dosyasindadir. Canli index envanteriyle karsilastirilmadan ve dusuk trafik/bakim penceresi secilmeden uygulanmamalidir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri icin test DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - `siparis-islemleri.verilen-depo-siparisleri.all-warehouses` yoksa `inWarehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Bu yetki varsa baska depo adina siparis olusturulacaksa body'de opsiyonel `inWarehouseNo` gonderilebilir.
@@ -6030,6 +6091,8 @@ Request:
 Guvenli tekrar notu:
 
 - `clientRequestId` ilk Kaydet aninda uretilir ve sonuc kesinlesene kadar ayni kalir.
+- Yeni bir form kaydi onceki pending siparisin payload'ini veya `clientRequestId` degerini devralmaz. Her bagimsiz siparis ayri istek kimligiyle saklanir; eski belirsiz kayit yalniz kendi kimligiyle status/readback uzlastirmasina girer.
+- Terminal eski pending depo siparisi icin uygulama/ekran acilisinda tek bir status GET yapabilir. Bu kontrol yeni POST baslatmaz; surekli timer veya kullaniciya tekrar/dogrula dongusu kurulmaz.
 - Belirsiz sonuc `GET /api/siparis-islemleri/verilen-depo-siparisleri/offline-sync/{clientRequestId}` ile sorgulanir.
 - Ayni create, onerilen depo siparisi ekranindan yapildiysa ayni kayit `GET /api/siparis-islemleri/onerilen-depo-siparisleri/offline-sync/{clientRequestId}` route'undan da sorgulanabilir.
 - Son 6 saatte tamamlanmis birebir ayni istek yeni kimlikle tekrar gelirse yeni Mikro siparisi acilmaz; onceki dogrulanmis `documentSerie/documentOrderNo` response'u doner.
@@ -6368,11 +6431,14 @@ Onemli not:
 
 - Yazma yolu `MikroWriteRouting:IssuedCompanyOrder` ile secilir. `Database` dogrudan `MikroWriteDbContext`, `MikroApi` ise `SiparisKaydetV2` kullanir; request modeli degismez.
 - `SIPARISLER` tablosuna `sip_tip = 1`, `sip_cins = 0` olarak verilen firma siparisi yazar.
+- Readback seri/sira, tarih, depo/cari, aktif satir sayisi ve satir sirasi, stok kodu, miktar, birim, fiyat/tutar alanlarini kontrol eder. Aciklama, paket/proje, sorumluluk merkezi ve tavsiye miktari gibi Mikro tarafinda normalize edilebilen yardimci alanlar tek basina icerik uyusmazligi sayilmaz.
+- Trace readback sorgularini buyuk Mikro tablolarinda hizlandirmak icin onerilen iki hedefli index scripti `docs/SIPARISLER_SAFE_CREATE_READBACK_INDEXLERI.sql` dosyasindadir. Canli index envanteriyle karsilastirilmadan ve dusuk trafik/bakim penceresi secilmeden uygulanmamalidir.
 - `documentSerie` backend tarafinda `F{islemDepoNo}` olarak uretilir.
 - `documentOrderNo` ayni seri/tip/cins icin write DB'deki maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - UI ilk Kaydet aninda bir GUID `clientRequestId` uretmeli ve kesin sonuc alana kadar ayni payload ile ayni kimligi kullanmalidir. Timeout veya network kopmasinda yeni kimlik uretmek ayni siparisin ikinci kez olusmasina yol acabilir.
 - `clientRequestId` verildiginde backend istegi Auth DB'de kalici olarak rezerve eder, Mikro satirlarina `FR` izini yazar ve istemci baglantisi kesilse bile yazma/readback islemini sunucu timeoutlariyla tamamlamaya calisir.
 - Ayni `clientRequestId` ve ayni body tekrar gelirse mevcut sonuc dogrulanip dondurulur. Ayni kimlik farkli body ile gelirse `CLIENT_REQUEST_PAYLOAD_MISMATCH`; sonucu henuz kesinlesmemis istek icin `MIKRO_WRITE_IN_PROGRESS` veya `MIKRO_WRITE_OUTCOME_UNCONFIRMED` doner. Bu durumlarda yeni kimlik uretilmez.
+- Terminalde yeni formdan gelen request, eski pending request ile degistirilmez. Bagimsiz yeni create eski kaydi kullanici aksiyonundan bagimsiz tutar; eski kayit icin uygulama acilisinda en fazla bir salt-okuma status GET yapilir, periyodik polling veya otomatik ikinci POST yapilmaz.
 - Belirsiz sonuc `GET /api/siparis-islemleri/verilen-firma-siparisleri/offline-sync/{clientRequestId}` ile sorgulanir. Durum sorgusu yeni siparis yazmaz; saklanan request snapshot'i ve Mikro trace readback ile sonucu uzlastirir.
 - `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. Ilgili siparis menusunde `all-warehouses` yetkisi olan kullanici baska depo adina siparis olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir.
 - Cari bilgisi write DB'de `CARI_HESAPLAR` icinden okunur; `cari_odemeplan_no` -> `sip_opno`, `cari_pasaport_no == "1"` -> `sip_cagrilabilir_fl`.
@@ -8545,7 +8611,7 @@ Request body yoktur. Endpoint yalniz oturumdaki kullanicinin, JWT deposundaki ve
 
 Davranis:
 
-- UI bu aksiyonu `MIKRO_DOCUMENT_CONTENT_MISMATCH` gibi destek/inceleme durumunda `Mikro Kaydini Dogrula` olarak sunabilir.
+- Terminal bu aksiyonu normal kullaniciya `Mikro Kaydini Dogrula` butonu olarak sunmaz. Uygulama acilis/devam akisi en fazla uc salt-okuma yeniden dogrulama dener; kesin sonuc yoksa create POST tekrarlanmaz ve yerel taslak kullaniciyi kilitlemeden korunur.
 - Bulut/Uyumsoft tarafinda `ERS.5530` gibi kaynak evrakin gorunmesi tek basina mal kabulun Mikro'da dogru olustugunu kanitlamaz. Backend Mikro satirlarini `clientRequestId` izi, belge anahtari, cari, depo, stok, birim, satir, miktar ve tutarla kayitli request snapshot'ina gore karsilastirir.
 - Endpoint Mikro'ya create, update veya delete yazisi gondermez; yalniz salt-okuma readback yapar.
 - Tam eslesme bulunursa `outcome=Completed`; response `result` alaninda `CreateCompanyReceivingResponse` gelir. Terminal pending taslagini temizler ve Mikro belge numarasini gosterir.
@@ -8621,7 +8687,7 @@ Firma mal kabul UI akisi:
 - Gonderilmemis taslak internet geldigi, uygulama acildigi veya ekran yenilendigi icin otomatik POST edilmemelidir. `Kaydet`/`Tekrar Dene` ayni taslagi ve ayni `clientRequestId` degerini gonderir.
 - POST timeout olursa UI hemen yeni GUID veya ikinci create uretmemeli; once `GET /api/mal-kabul-islemleri/firma-mal-kabulleri/offline-sync/{clientRequestId}` ile son durumu sorgulamalidir.
 - `409 Conflict` ve mesaj "different request payload" anlamina geliyorsa UI bu taslagi yeni bir islem gibi ele alip yeni `clientRequestId` uretmelidir.
-- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI kullaniciya "islem halen isleniyor" bilgisi verir. Surekli polling yapmaz; uygulama odaga geldiginde sinirli status GET veya kullanicinin `Durumu Kontrol Et` aksiyonu kullanilir.
+- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI kullaniciya "islem halen isleniyor" bilgisi verir. Surekli polling veya manuel `Durumu Kontrol Et` dongusu kurmaz; uygulama odaga geldiginde en fazla bir sinirli status GET yapilir.
 - Kaydet butonu `POST /api/mal-kabul-islemleri/firma-mal-kabulleri` endpoint'ine gider.
 - Basarili response sonrasi UI olusan `documentSerie` ve `documentOrderNo` ile detay ekranina gecebilir veya listeyi yenileyebilir.
 - Response'ta `autoCreatedReturnLineCount > 0` ise UI olusan firma iade evragini `autoCreatedReturnDocumentSerie` + `autoCreatedReturnDocumentOrderNo` ile linklemeli ve durumunu `returnEDespatchStatus = GonderimBekliyor` olarak gostermelidir.
@@ -10717,7 +10783,7 @@ Sayim sonucu offline UI akisi:
 - Gonderilmemis taslak internet geldigi veya uygulama acildigi icin otomatik POST edilmez. Kullanici `Kaydet` dediginde `POST /api/stok-islemleri/sayim-sonuclari` ayni `clientRequestId` ile gonderilir.
 - POST timeout olursa UI hemen yeni GUID veya ikinci create uretmez; once `GET /api/stok-islemleri/sayim-sonuclari/offline-sync/{clientRequestId}` cagirip kesin durumu kontrol eder.
 - `409 Conflict` ve mesaj "different request payload" anlamina geliyorsa kullanici taslagi degistirmistir; UI yeni senkron denemesi icin yeni `clientRequestId` uretmelidir.
-- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI gecici bekleme durumu gosterir; surekli polling yapmaz. Uygulama odaga geldiginde sinirli status GET veya kullanicinin `Durumu Kontrol Et` aksiyonu kullanilir.
+- `409 Conflict` ve mesaj "already being processed" anlamina geliyorsa UI gecici bekleme durumu gosterir; surekli polling veya manuel `Durumu Kontrol Et` dongusu kurmaz. Uygulama odaga geldiginde en fazla bir sinirli status GET yapilir.
 - Terminal uygulama genelinde periyodik offline timer calistirmaz. Uygulama acilisinda/odaga donuste yalniz daha once gonderilmis belirsiz kayitlardan firma mal kabul icin en fazla bir, sayim icin en fazla bir status GET yapilir; gonderilmemis taslaklara dokunulmaz.
 - `status = Completed` alindiginda local taslak tamamlanma isaretiyle kapatilir; response icindeki `documentNo` ve `documentDate` ile detay ekranina gidilebilir. Bu isaret gec gelen yerel autosave'in taslagi yeniden olusturmasini engeller.
 
@@ -15702,16 +15768,16 @@ Route'lar:
 - `GET /api/kasa-islemleri/kasa-sayimlari/kasa-detayi?cashRegisterNo=CR-01`
 - `GET /api/kasa-islemleri/kasa-sayimlari/banknot-tipleri`
 - `GET /api/kasa-islemleri/kasa-sayimlari/hediye-ceki-tipleri`
-- `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashRegisterNo=CR-01`
+- `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/yemek-ceki`
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online`
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/masraf-pusulasi`
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi`
 - `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari`
 
-`odeme-tipleri/banka` eski `Summaries/GetPaymentTypesByBanks` davranisi ile uyumludur. Backend `cashRegisterNo` ile hem Furpa hem Mikro `CashRegisterDetails` satirlarini bulur. Furpa ana kaynak olarak once eklenir; Mikro'daki yalniz Furpa'da karsiligi olmayan terminaller cevaba tamamlanir. Ayni banka terminali iki kaynakta da varsa terminal no veya uye isyeri no ile birebir eslestirilir ve Furpa satiri tek kez kullanilir. Eslesme kaynaklar arasinda bire bir yapildigi icin ayni uye isyeri numarasini kullanan gercekten farkli terminaller kaybolmaz. Bu sayede Mikro'ya ozel TEB gibi bir terminal de, yalniz Furpa'da bulunan Ziraat veya Yapi Kredi gibi terminaller de gorunur; ortak Is Bankasi terminali iki kez donmez. Birlesen satirlardaki `Bank` degeri Mikro `PaymentTypes.PaymentName` alaniyla eslestirilir ve sadece `PaymentGenus = 1` banka odeme tipleri dondurulur. Ayni kasa numarasina bagli gercekten farkli banka/terminal kayitlari response'ta ayri satir doner; UI bunlari tek bankaya dusurmemelidir. `terminalId` ilgili `CashRegisterDetails.TerminalId`, `accountCode` ilgili Mikro `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi icin de `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` kullanilmalidir; boylece buradaki eslestirme kayit sonrasinda dogru calisir.
+`odeme-tipleri/banka` icin yeni UI hem `branchNo` hem fiziksel `cashNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. Backend yalniz Mikro `CashRegisterDetails` satirlarinda `CashNo=103` olan ve `CashRegisterBranches` icinde 129 subesine bagli terminalleri alir; bunlarin `Bank` degerlerini Mikro `PaymentTypes.PaymentName` ile eslestirip yalniz `PaymentGenus=1` banka odeme tiplerini dondurur. Boylesi ayni `cashRegisterNo`/PAV grup numarasi farkli kasalarda veya subelerde kullanilsa da yanlis bankalarin icmale karismasini engeller. Eski istemciler `cashRegisterNo` ile sorgulayabilir; yeni UI bu geriye uyumluluk yolunu kullanmamali. `terminalId` Mikro `CashRegisterDetails.TerminalId`, `accountCode` Mikro `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` listesinden yapilmalidir.
 
-UI kasa seciminde `GET /api/kasa-islemleri/kasa-sayimlari/kasalar?branchNo=...` veya ayar ekranindaki `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` response'undan gelen `cashFinanceNumber` degeri varsa, banka odeme tipi endpointine `cashRegisterNo` olarak bu deger gonderilmelidir. Ornek: kullanici `Kasa 130` secer, satirda `cashFinanceNumber=PAV210010584` varsa cagri `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashRegisterNo=PAV210010584` olmalidir. `cashNo=130` sadece sube icindeki kasa numarasidir.
+UI kasa seciminde fiziksel kasa satirindaki `branchNo` ve `cashNo` degerleri banka odeme tipi endpointine gonderilmelidir. `cashFinanceNumber` ekranda kasa/PAV eslesmesini gostermek icin kullanilabilir; banka listesini sorgulamak icin kullanilmaz.
 
 `odeme-tipleri/yemek-ceki` response'unda yemek ceki tipi adi `paymentName` alanindadir. Backend eski API ile uyumlu olarak `PaymentTypes.PaymentGenus = 2` olan yemek ceki odeme tiplerini listeler ve `accountCode` alanini `PaymentTypes.AccountCode` degeriyle doldurur. UI yemek ceki seciminde gorunen ad olarak `paymentName`, kayit payload'inda odeme tipi olarak `paymentTypeNo` kullanmalidir.
 
@@ -16069,10 +16135,11 @@ Response:
 
 Bu akis Kasa Sayimlari liste ekranindan secilen kayit icindir. Icmal Kaydi Girisi sadece yeni kayit olusturma ekranidir.
 
-Belge uzerindeki odeme/masraf satirlari, fiziksel para detaylari ve hediye ceki detaylarini guncellemek icin ayri endpointler kullanilir.
+Belge uzerindeki tarih/Z bilgileri, odeme/masraf satirlari, fiziksel para detaylari ve hediye ceki detaylarini guncellemek icin ayri endpointler kullanilir.
 
 Route'lar:
 
+- `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/baslik`
 - `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/detaylar`
 - `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/banknot-hareketleri`
 - `PUT /api/kasa-islemleri/kasa-sayimlari/F110.1/12/hediye-ceki-hareketleri`
@@ -16087,11 +16154,15 @@ Legacy uyumluluk route'lari:
 
 Yetki:
 
-- detay, banknot ve hediye ceki update icin `kasa-islemleri.kasa-sayimlari.update`
+- baslik, detay, banknot ve hediye ceki update icin `kasa-islemleri.kasa-sayimlari.update`
 - silme icin `kasa-islemleri.kasa-sayimlari.delete`
 
 Not:
 
+- baslik update ile `summaryDate`, `zReportNo` ve `zTotalValue` birlikte guncellenir
+- tarih tum `Summaries`, `BanknoteMovements` ve `GiftCheckMovements` satirlarina uygulanir; ilgili cari hareketleri yeni tarih ve Z toplami ile ayni transaction icinde yeniden kurulur
+- ayni sube, fiziksel kasa, tarih ve Z numarasiyla baska bir icmal varsa API `409 Conflict` doner ve mevcut kayit degismez
+- evrak serisi, sira numarasi, fiziksel kasa ve sube baslik update ile degistirilemez
 - detay update request'inde `details` listesi zorunludur
 - detay update patch degildir; UI belgede kalmasini istedigi tum odeme/masraf detay satirlarini `details` icinde gondermelidir
 - banka POS, yemek ceki/karti, online odeme, masraf pusulasi ve magaza gideri satirlari ayni `details` listesinde yonetilir
@@ -16114,6 +16185,7 @@ UI bloklarinin update karsiligi:
 
 | UI blogu | Endpoint | Request listesi | Davranis |
 | --- | --- | --- | --- |
+| Baslik | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/baslik` | `summaryDate`, `zReportNo`, `zTotalValue` | Tarih ve Z bilgileri belgeye bagli tum hareketlerle birlikte guncellenir |
 | Nakit Hareketleri | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | `banknoteMovements` | Son banknot listesi gonderilir; yeni deger eklenir, olmayan silinir |
 | Kredi Kartlari | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | POS/banka satirlari son liste olarak gonderilir |
 | Yemek Cekleri/Kartlari | `PUT /api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | `details` | Multinet, Metropol, Sodexo, Ticket, Setcard gibi satirlar eklenir/guncellenir |
@@ -25339,9 +25411,9 @@ Bu bolum insan tarafindan okunacak ozet katalogdur. Tam ve surumlenmis alan, tip
 - `YeniKasaFisDetayHttpRequest`: `Uuid` veya `BusinessDate`, `WarehouseNo`, `CashRegisterNo`, `ReceiptNumber`
 - `CashierPairHttpRequest`: `CashierCode`, `ManagerCode`
 - `CashRegistryHttpRequest`: `BranchNo`
-- `CashRegisterLookupHttpRequest`: `CashNo`, `CashRegisterNo`
+- `CashRegisterLookupHttpRequest`: `CashNo`, `CashRegisterNo`, `BranchNo`
 - `CashierSearchHttpRequest`: `FilterString`
-- `BankPaymentTypeHttpRequest`: `CashRegisterNo`
+- `BankPaymentTypeHttpRequest`: `CashNo`, `BranchNo`, `CashRegisterNo` (geriye uyum)
 - `ZReportValueHttpRequest`: `WarehouseNo`, `DocumentSerie` (opsiyonel), `ZReportNo`, `CashNo`
 - `CreateBanknoteTrackHttpRequest`: `WarehouseNo`, `BanknoteTrackDate`, `TotalAmount`, `DeliveryTotalAmount`, `Deliverer`, `Receiver`
 - `CreateCashSummaryHttpRequest`: `WarehouseNo`, `CashNo`, `CashRegisterNo`, `ZReportNo`, `CashierNo`, `ManagerNo`, `ZTotalValue`, `Total`, `SummaryDate`, `GiftCheckMovements`, `BanknoteMovements`, `PaymentTypes`, `StoreExpenses`
@@ -25523,14 +25595,17 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/ayar-islemleri/cihazlar/tipler` | JWT + ayar-islemleri.cihazlar.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DeviceTypeDto&gt; |
 | DELETE | `/api/ayar-islemleri/cihazlar/{id}` | JWT + ayar-islemleri.cihazlar.update | path: id / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/kasa-pos-terminalleri` | JWT + ayar-islemleri.kasa-pos-terminalleri.create | body: request / CreateCashRegisterHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashRegisterResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
-| GET | `/api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: cashNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterTerminalDto&gt;<br>400: ProblemDetails |
+| GET | `/api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: cashNo / integer (int32) (zorunlu)<br>query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterTerminalDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | JWT + ayar-islemleri.kasa-pos-terminalleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterSettingsLookupsDto |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminal-gruplari/{terminalNo}/tasi` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalNo / string (zorunlu)<br>body: request / MoveCashRegisterTerminalGroupHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterTerminalDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller` | JWT + ayar-islemleri.kasa-pos-terminalleri.create | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | DELETE | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/tip` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>body: request / UpdateCashRegisterTypeHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegistryDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/kasa-pos-terminalleri/terminaller/konum` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | query: terminalNo / string (zorunlu)<br>query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterTerminalLocationDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasiyerler/{cashierCode}` | JWT + ayar-islemleri.kasiyerler.update | path: cashierCode / integer (int32) (zorunlu)<br>body: request / UpdateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashierDto<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -25939,11 +26014,11 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/kasa-sayimlari/banknot-tipleri` | JWT + kasa-islemleri.icmal-kaydi-girisi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BanknoteTypeItemDto&gt; |
 | POST | `/api/kasa-islemleri/kasa-sayimlari/deletesummary` | JWT + kasa-islemleri.kasa-sayimlari.delete | body: request / LegacyDeleteCashSummaryHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DeleteCashSummaryResponse<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/hediye-ceki-tipleri` | JWT + kasa-islemleri.icmal-kaydi-girisi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;GiftCheckTypeItemDto&gt; |
-| GET | `/api/kasa-islemleri/kasa-sayimlari/kasa-detayi` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: CashNo / integer (int32)<br>query: CashRegisterNo / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-sayimlari/kasa-detayi` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: BranchNo / integer (int32)<br>query: CashNo / integer (int32)<br>query: CashRegisterNo / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterDetailDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/kasalar` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegistryItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/kasiyerler` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: FilterString / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierSearchItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/kasiyerler/ikili` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: CashierCode / integer (int32) (zorunlu)<br>query: ManagerCode / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierItemDto&gt;<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: CashRegisterNo / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PaymentTypeItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | JWT + kasa-islemleri.icmal-kaydi-girisi.list | query: CashRegisterNo / string<br>query: BranchNo / integer (int32)<br>query: CashNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PaymentTypeItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi` | JWT + kasa-islemleri.icmal-kaydi-girisi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PaymentTypeItemDto&gt; |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/masraf-pusulasi` | JWT + kasa-islemleri.icmal-kaydi-girisi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PaymentTypeItemDto&gt; |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | JWT + kasa-islemleri.icmal-kaydi-girisi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PaymentTypeItemDto&gt; |
@@ -25958,6 +26033,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashSummaryDetailItemDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BanknoteMovementItemDto&gt;<br>400: ProblemDetails |
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/banknot-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryBanknotesHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryBanknotesResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/baslik` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryHeaderHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryHeaderResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashSummaryDetailItemDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/detaylar` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryDetailsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryDetailsResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;GiftCheckMovementItemDto&gt;<br>400: ProblemDetails |
@@ -26765,6 +26841,16 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `id` | integer (int32) | Hayir |  |
 | `merchantNo` | string | Hayir | nullable |
 | `terminalId` | string | Hayir | nullable |
+| `terminalNo` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashRegisterTerminalLocationDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `bankRowCount` | integer (int32) | Hayir |  |
+| `banks` | string[] | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashNo` | integer (int32) | Hayir |  |
 | `terminalNo` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashRegistryDto
@@ -31384,6 +31470,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalAmount` | number (double) | Hayir |  |
 | `updatedLineCount` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.UpdateCashSummaryHeaderResponse
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `summaryDate` | string (date-time) | Hayir |  |
+| `updatedBanknoteLineCount` | integer (int32) | Hayir |  |
+| `updatedGiftCheckLineCount` | integer (int32) | Hayir |  |
+| `updatedSummaryLineCount` | integer (int32) | Hayir |  |
+| `zReportNo` | integer (int32) | Hayir |  |
+| `zTotalValue` | number (double) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KunyeEtiketYazdirma.KunyeLabelTagDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -34399,6 +34498,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `terminalId` | string | Evet | minLength=0; maxLength=40 |
 | `terminalNo` | string | Evet | minLength=0; maxLength=40 |
 
+### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.KasaPosTerminalleri.MoveCashRegisterTerminalGroupHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `targetBranchNo` | integer (int32) | Evet | min=1; max=2147483647 |
+| `targetCashNo` | integer (int32) | Evet | min=1; max=2147483647 |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.KasaPosTerminalleri.UpdateCashRegisterTypeHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `cashType` | integer (int32) | Evet | min=0; max=255 |
+
 ### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.Kasiyerler.CreateCashierHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -35962,6 +36074,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `giftCheckMovements` | FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari.UpdateCashSummaryGiftCheckLineHttpRequest[] | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaSayimlari.UpdateCashSummaryHeaderHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `summaryDate` | string (date-time) | Evet |  |
+| `warehouseNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
+| `zReportNo` | integer (int32) | Evet | min=0; max=2147483647 |
+| `zTotalValue` | number (double) | Evet | min=0 |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.ManavMalKabulVeEtiket.ManavMalKabulVeEtiketCalculationHttpRequest
 

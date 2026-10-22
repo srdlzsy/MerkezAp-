@@ -174,6 +174,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         var traceParts = ResolveOfflineTraceParts(request.ClientRequestId);
         var totalStopwatch = Stopwatch.StartNew();
         var phaseStartedAt = Stopwatch.GetTimestamp();
+        var executionAttempt = 0;
 
         void LogCreatePhase(string phase, int? documentOrderNo)
         {
@@ -199,6 +200,22 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
 
         var writeResult = await executionStrategy.ExecuteAsync(async () =>
         {
+            if (executionAttempt++ > 0)
+            {
+                var recovered = await TryRecoverOfflineResponseAsync(request, cancellationToken);
+                if (recovered is not null)
+                {
+                    var recoveredLineGuids = await GetOrderLineGuidByRowNoAsync(
+                        recovered.DocumentSerie,
+                        recovered.DocumentOrderNo,
+                        request,
+                        cancellationToken);
+                    return (
+                        DocumentOrderNo: recovered.DocumentOrderNo,
+                        LineGuidByRowNo: recoveredLineGuids);
+                }
+            }
+
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
