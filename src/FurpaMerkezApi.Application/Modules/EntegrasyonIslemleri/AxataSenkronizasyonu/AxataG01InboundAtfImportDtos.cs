@@ -20,7 +20,8 @@ public sealed record AxataG01InboundAtfExecuteRequest(
     int? Take,
     bool ContinueOnError,
     bool Acknowledge,
-    DateTime? MinimumAxataDate = null);
+    DateTime? MinimumAxataDate = null,
+    IReadOnlyCollection<string>? ExcludedOrderDocumentNos = null);
 
 public sealed record AxataG01InboundAtfPreviewDto(
     string MovementType,
@@ -75,4 +76,5 @@ public sealed record AxataG01InboundAtfResultDto(
 
 public sealed record AxataG01InboundAtfFailureDto(
     string? OrderDocumentNo,
-    string ErrorMessage);
+    string ErrorMessage,
+    bool IsInfrastructureFailure = false);

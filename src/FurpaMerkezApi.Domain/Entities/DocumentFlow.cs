@@ -189,5 +189,6 @@ public enum DocumentFlowStep
     MasterDataUpdated = 7,
     PriceUpdated = 8,
     PriceDeleted = 9,
-    AxataOrderSent = 10
+    AxataOrderSent = 10,
+    AxataDocumentImported = 11
 }

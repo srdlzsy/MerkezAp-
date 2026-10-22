@@ -2928,6 +2928,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `errorMessage` | string | Hayir | nullable |
+| `isInfrastructureFailure` | boolean | Hayir |  |
 | `orderDocumentNo` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.AxataG01InboundAtfPreviewDto
@@ -3261,6 +3262,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `axataDeliveryNo` | string | Hayir | nullable |
 | `axataSequenceNo` | integer (int64) | Hayir | nullable |
 | `errorMessage` | string | Hayir | nullable |
+| `isInfrastructureFailure` | boolean | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.AxataOutboundDeliveryImportPreviewDto
 

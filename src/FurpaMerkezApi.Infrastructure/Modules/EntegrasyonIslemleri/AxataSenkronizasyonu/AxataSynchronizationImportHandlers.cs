@@ -7,6 +7,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkro
 internal abstract class AxataOutboundDeliveryImportTaskHandler(
     IAxataOutboundDeliveryImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
     : IAxataSynchronizationTaskHandler
 {
@@ -60,24 +61,48 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
                 artifacts);
         }
 
+        var deferredDocumentKeys = await documentStateService.GetDeferredDocumentKeysAsync(
+            Code,
+            cancellationToken);
+        var excludedSequenceNos = deferredDocumentKeys
+            .Select(key => long.TryParse(key, out var value) ? (long?)value : null)
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .ToArray();
         var result = await ExecuteImportAsync(
             new AxataOutboundDeliveryImportExecuteRequest(
                 batchSize,
                 ContinueOnError: true,
                 Acknowledge: true,
-                MinimumAxataDate: minimumAxataDate),
+                MinimumAxataDate: minimumAxataDate,
+                ExcludedAxataSequenceNos: excludedSequenceNos),
             context.RequestedByUserId,
             cancellationToken);
 
-        if (result.FailedDocumentCount > 0)
+        var infrastructureFailures = result.Failures
+            .Where(failure => failure.IsInfrastructureFailure)
+            .ToArray();
+        var businessFailures = result.Failures
+            .Where(failure => !failure.IsInfrastructureFailure && failure.AxataSequenceNo.HasValue)
+            .Select(failure => new AxataSynchronizationDocumentFailure(
+                failure.AxataSequenceNo!.Value.ToString(),
+                failure.ErrorMessage))
+            .ToArray();
+        await documentStateService.RecordOutcomeAsync(
+            Code,
+            result.Results.Select(item => item.AxataSequenceNo.ToString()),
+            businessFailures,
+            cancellationToken);
+
+        if (infrastructureFailures.Length > 0)
         {
             throw new InvalidOperationException(
-                $"AXATA {MovementType} aktariminda {result.FailedDocumentCount} belge basarisiz oldu. Basarili={result.SucceededDocumentCount}, Atlanan={result.SkippedDocumentCount}. Nedenler: {FormatFailures(result.Failures)}");
+                $"AXATA {MovementType} aktariminda {infrastructureFailures.Length} altyapi hatasi olustu. Basarili={result.SucceededDocumentCount}. Nedenler: {FormatFailures(infrastructureFailures)}");
         }
 
         return new AxataSynchronizationTaskExecutionResult(
             result.SucceededDocumentCount,
-            $"{result.SucceededDocumentCount} AXATA {MovementType} belgesi Mikro'ya aktarildi. Satir={result.CreatedMovementLineCount}, Atlanan={result.SkippedDocumentCount}.",
+            $"{result.SucceededDocumentCount} AXATA {MovementType} belgesi tamamlandi. Satir={result.CreatedMovementLineCount}, Veri bekleyen={businessFailures.Length}, Ertelenen={deferredDocumentKeys.Count}.",
             Array.Empty<AxataSynchronizationJobArtifactDto>());
     }
 
@@ -108,8 +133,9 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
 internal sealed class C01OutboundDeliveryImportTaskHandler(
     IAxataOutboundDeliveryImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
-    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, options)
+    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, documentStateService, options)
 {
     public override string Code => "c01-outbound-delivery-import";
 
@@ -128,8 +154,9 @@ internal sealed class C01OutboundDeliveryImportTaskHandler(
 internal sealed class C02OutboundDeliveryImportTaskHandler(
     IAxataOutboundDeliveryImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
-    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, options)
+    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, documentStateService, options)
 {
     public override string Code => "c02-outbound-delivery-import";
 
@@ -148,8 +175,9 @@ internal sealed class C02OutboundDeliveryImportTaskHandler(
 internal sealed class C03OutboundDeliveryImportTaskHandler(
     IAxataOutboundDeliveryImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
-    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, options)
+    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, documentStateService, options)
 {
     public override string Code => "c03-outbound-delivery-import";
 
@@ -168,8 +196,9 @@ internal sealed class C03OutboundDeliveryImportTaskHandler(
 internal sealed class C04OutboundDeliveryImportTaskHandler(
     IAxataOutboundDeliveryImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
-    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, options)
+    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, documentStateService, options)
 {
     public override string Code => "c04-outbound-delivery-import";
 
@@ -188,8 +217,9 @@ internal sealed class C04OutboundDeliveryImportTaskHandler(
 internal sealed class G02InboundDeliveryImportTaskHandler(
     IAxataOutboundDeliveryImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
-    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, options)
+    : AxataOutboundDeliveryImportTaskHandler(importService, outboxWriter, documentStateService, options)
 {
     public override string Code => "g02-inbound-delivery-import";
 
@@ -208,6 +238,7 @@ internal sealed class G02InboundDeliveryImportTaskHandler(
 internal sealed class G01InboundAtfImportTaskHandler(
     IAxataG01InboundAtfImportService importService,
     AxataSynchronizationOutboxWriter outboxWriter,
+    AxataSynchronizationDocumentStateService documentStateService,
     IOptionsMonitor<AxataSynchronizationOptions> options)
     : IAxataSynchronizationTaskHandler
 {
@@ -261,24 +292,45 @@ internal sealed class G01InboundAtfImportTaskHandler(
                 artifacts);
         }
 
+        var deferredDocumentKeys = await documentStateService.GetDeferredDocumentKeysAsync(
+            Code,
+            cancellationToken);
         var result = await importService.ExecuteAsync(
             new AxataG01InboundAtfExecuteRequest(
                 batchSize,
                 ContinueOnError: true,
                 Acknowledge: true,
-                MinimumAxataDate: minimumAxataDate),
+                MinimumAxataDate: minimumAxataDate,
+                ExcludedOrderDocumentNos: deferredDocumentKeys.ToArray()),
             context.RequestedByUserId,
             cancellationToken);
 
-        if (result.FailedDocumentCount > 0)
+        var infrastructureFailures = result.Failures
+            .Where(failure => failure.IsInfrastructureFailure)
+            .ToArray();
+        var businessFailures = result.Failures
+            .Where(failure =>
+                !failure.IsInfrastructureFailure &&
+                !string.IsNullOrWhiteSpace(failure.OrderDocumentNo))
+            .Select(failure => new AxataSynchronizationDocumentFailure(
+                failure.OrderDocumentNo!,
+                failure.ErrorMessage))
+            .ToArray();
+        await documentStateService.RecordOutcomeAsync(
+            Code,
+            result.Results.Select(item => item.OrderDocumentNo),
+            businessFailures,
+            cancellationToken);
+
+        if (infrastructureFailures.Length > 0)
         {
             throw new InvalidOperationException(
-                $"AXATA G01 aktariminda {result.FailedDocumentCount} belge basarisiz oldu. Basarili={result.SucceededDocumentCount}, Atlanan={result.SkippedDocumentCount}. Nedenler: {FormatFailures(result.Failures)}");
+                $"AXATA G01 aktariminda {infrastructureFailures.Length} altyapi hatasi olustu. Basarili={result.SucceededDocumentCount}. Nedenler: {FormatFailures(infrastructureFailures)}");
         }
 
         return new AxataSynchronizationTaskExecutionResult(
             result.SucceededDocumentCount,
-            $"{result.SucceededDocumentCount} AXATA G01 belgesi Mikro'ya aktarildi. Satir={result.CreatedMovementLineCount}, Atlanan={result.SkippedDocumentCount}.",
+            $"{result.SucceededDocumentCount} AXATA G01 belgesi tamamlandi. Satir={result.CreatedMovementLineCount}, Veri bekleyen={businessFailures.Length}, Ertelenen={deferredDocumentKeys.Count}.",
             Array.Empty<AxataSynchronizationJobArtifactDto>());
     }
 

@@ -29,6 +29,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     ICreateCompanyShipmentUseCase createCompanyShipmentUseCase,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     IDocumentFlowService documentFlowService,
+    AxataImportDocumentFlowRecorder importDocumentFlowRecorder,
     ILogger<AxataOutboundDeliveryImportService> logger,
     AxataDbContext? axataDbContext = null)
     : IAxataOutboundDeliveryImportService,
@@ -389,7 +390,11 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var selectedDocuments = ExcludeDeferredDocuments(
+                eligibleDocuments,
+                request.ExcludedAxataSequenceNos)
+            .Take(take)
+            .ToArray();
         var analyses = await AnalyzeC01DocumentsAsync(selectedDocuments, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -417,7 +422,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                         acknowledged = true;
                     }
 
-                    results.Add(new AxataOutboundDeliveryImportResultDto(
+                    var result = new AxataOutboundDeliveryImportResultDto(
                         analysis.Document.AxataSequenceNo,
                         analysis.Document.AxataDeliveryNo,
                         analysis.Document.DocumentSerie,
@@ -433,7 +438,19 @@ internal sealed class AxataOutboundDeliveryImportService(
                         analysis.Document.AxataDate,
                         shipmentResponse.MovementDate,
                         shipmentResponse.DocumentDate,
-                        shipmentResponse.DocumentNo));
+                        shipmentResponse.DocumentNo);
+                    results.Add(result);
+                    await importDocumentFlowRecorder.RecordAsync(
+                        C01MovementType,
+                        DocumentFlowType.InterWarehouseShipment,
+                        analysis.ImportDto.SourceWarehouseNo,
+                        analysis.ImportDto.TargetWarehouseNo,
+                        result.MovementSerie,
+                        result.MovementOrderNo,
+                        result.AxataDeliveryNo,
+                        result.Message,
+                        requestedByUserId,
+                        cancellationToken);
 
                     continue;
                 }
@@ -485,7 +502,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    exception.Message));
+                    exception.Message,
+                    IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
 
                 if (!request.ContinueOnError)
                 {
@@ -687,7 +705,11 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var selectedDocuments = ExcludeDeferredDocuments(
+                eligibleDocuments,
+                request.ExcludedAxataSequenceNos)
+            .Take(take)
+            .ToArray();
         var analyses = await AnalyzeC02DocumentsAsync(selectedDocuments, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -731,13 +753,25 @@ internal sealed class AxataOutboundDeliveryImportService(
                     requestedByUserId,
                     cancellationToken);
                 results.Add(result);
+                await importDocumentFlowRecorder.RecordAsync(
+                    C02MovementType,
+                    DocumentFlowType.CompanyShipment,
+                    analysis.ImportDto.SourceWarehouseNo,
+                    null,
+                    result.MovementSerie,
+                    result.MovementOrderNo,
+                    result.AxataDeliveryNo,
+                    result.Message,
+                    requestedByUserId,
+                    cancellationToken);
             }
             catch (Exception exception)
             {
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    exception.Message));
+                    exception.Message,
+                    IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
 
                 if (!request.ContinueOnError)
                 {
@@ -845,7 +879,11 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var selectedDocuments = ExcludeDeferredDocuments(
+                eligibleDocuments,
+                request.ExcludedAxataSequenceNos)
+            .Take(take)
+            .ToArray();
         var analyses = await AnalyzeG02DocumentsAsync(selectedDocuments, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -887,7 +925,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    exception.Message));
+                    exception.Message,
+                    IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
 
                 if (!request.ContinueOnError)
                 {
@@ -3228,7 +3267,11 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var selectedDocuments = ExcludeDeferredDocuments(
+                eligibleDocuments,
+                request.ExcludedAxataSequenceNos)
+            .Take(take)
+            .ToArray();
         var analyses = await AnalyzeLegacyOutboundDocumentsAsync(selectedDocuments, movementType, cancellationToken);
         var results = new List<AxataOutboundDeliveryImportResultDto>(analyses.Count);
         var failures = new List<AxataOutboundDeliveryImportFailureDto>();
@@ -3277,7 +3320,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    exception.Message));
+                    exception.Message,
+                    IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
 
                 if (!request.ContinueOnError)
                 {
@@ -3892,7 +3936,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     private void LogG02Success(
         G02DeliveryAnalysis analysis,
         AxataOutboundDeliveryImportResultDto result) =>
-        logger.LogInformation(
+        logger.LogDebug(
             "AXATA G02 belge islendi. SequenceNo={SequenceNo}, AxataDeliveryNo={AxataDeliveryNo}, SourceDocument={SourceDocumentSerie}/{SourceDocumentOrderNo}, MovementDocument={MovementDocumentSerie}/{MovementDocumentOrderNo}, CreatedLineCount={CreatedLineCount}, Acknowledged={Acknowledged}",
             analysis.Document.AxataSequenceNo,
             analysis.Document.AxataDeliveryNo,
@@ -3904,7 +3948,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             result.Acknowledged);
 
     private void LogG02Skipped(G02DeliveryAnalysis analysis, string warning) =>
-        logger.LogWarning(
+        logger.LogDebug(
             "AXATA G02 belge guvenli aktarim kosullarini saglamadigi icin atlandi. SequenceNo={SequenceNo}, AxataDeliveryNo={AxataDeliveryNo}, SourceDocument={SourceDocumentSerie}/{SourceDocumentOrderNo}, Reason={Reason}",
             analysis.Document.AxataSequenceNo,
             analysis.Document.AxataDeliveryNo,
@@ -5997,6 +6041,19 @@ internal sealed class AxataOutboundDeliveryImportService(
                 document.AxataDate.Value.Date >= minimumDate &&
                 document.AxataDate.Value.Date <= maximumDate)
             .ToArray();
+    }
+
+    private static IEnumerable<AxataOutboundDeliveryDocument> ExcludeDeferredDocuments(
+        IEnumerable<AxataOutboundDeliveryDocument> documents,
+        IReadOnlyCollection<long>? excludedAxataSequenceNos)
+    {
+        if (excludedAxataSequenceNos is null || excludedAxataSequenceNos.Count == 0)
+        {
+            return documents;
+        }
+
+        var excluded = excludedAxataSequenceNos.ToHashSet();
+        return documents.Where(document => !excluded.Contains(document.AxataSequenceNo));
     }
 
     private static AxataOutboundDeliveryImportResultDto CreateTerminalOutboundAcknowledgementResult(

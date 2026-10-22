@@ -2,6 +2,7 @@
 using System.ServiceModel;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -19,6 +20,7 @@ internal sealed class AxataG01InboundAtfImportService(
     MikroWriteDbContext mikroWriteDbContext,
     ICreateCompanyReceivingUseCase createCompanyReceivingUseCase,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    AxataImportDocumentFlowRecorder importDocumentFlowRecorder,
     ILogger<AxataG01InboundAtfImportService> logger)
     : IAxataG01InboundAtfImportService
 {
@@ -77,8 +79,11 @@ internal sealed class AxataG01InboundAtfImportService(
         var take = NormalizeTake(request.Take);
         var lines = await FetchPendingLinesAsync(cancellationToken);
         var eligibleLines = ApplyMinimumAxataDate(lines, request.MinimumAxataDate);
+        var excludedDocumentNos = request.ExcludedOrderDocumentNos?
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var documents = eligibleLines
             .GroupBy(line => line.OrderDocumentNo, StringComparer.OrdinalIgnoreCase)
+            .Where(group => excludedDocumentNos is null || !excludedDocumentNos.Contains(group.Key))
             .Take(take)
             .Select(group => new G01InboundAtfDocument(group.Key, group.ToArray()))
             .ToArray();
@@ -118,7 +123,7 @@ internal sealed class AxataG01InboundAtfImportService(
                         analysis.Document.OrderDocumentNo,
                         analysis.Dto.Warning ?? "G01 inbound ATF can not be imported safely.");
                     failures.Add(failure);
-                    logger.LogWarning(
+                    logger.LogDebug(
                         "AXATA G01 belge guvenli aktarim kosullarini saglamadigi icin atlandi. OrderDocumentNo={OrderDocumentNo}, Reason={Reason}",
                         failure.OrderDocumentNo,
                         failure.ErrorMessage);
@@ -131,17 +136,30 @@ internal sealed class AxataG01InboundAtfImportService(
                     continue;
                 }
 
-                results.Add(await ExecuteAnalysisAsync(
+                var result = await ExecuteAnalysisAsync(
                     analysis,
                     requestedByUserId,
                     request.Acknowledge,
-                    cancellationToken));
+                    cancellationToken);
+                results.Add(result);
+                await importDocumentFlowRecorder.RecordAsync(
+                    MovementType,
+                    DocumentFlowType.CompanyReceiving,
+                    analysis.Dto.WarehouseNo,
+                    null,
+                    result.MovementSerie,
+                    result.MovementOrderNo,
+                    result.OrderDocumentNo,
+                    result.Message,
+                    requestedByUserId,
+                    cancellationToken);
             }
             catch (Exception exception)
             {
                 failures.Add(new AxataG01InboundAtfFailureDto(
                     analysis.Document.OrderDocumentNo,
-                    exception.Message));
+                    exception.Message,
+                    IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
                 logger.LogError(
                     exception,
                     "AXATA G01 belge aktarimi hata verdi. OrderDocumentNo={OrderDocumentNo}",

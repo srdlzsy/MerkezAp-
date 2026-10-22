@@ -85,7 +85,8 @@ public sealed record AxataOutboundDeliveryImportExecuteRequest(
     string? DateMode = null,
     DateTime? MovementDate = null,
     DateTime? DocumentDate = null,
-    DateTime? MinimumAxataDate = null);
+    DateTime? MinimumAxataDate = null,
+    IReadOnlyCollection<long>? ExcludedAxataSequenceNos = null);
 
 public sealed record AxataOutboundDeliveryDocumentImportPreviewRequest(
     string DocumentSerie,
@@ -191,4 +192,5 @@ public sealed record AxataOutboundDeliveryImportResultDto(
 public sealed record AxataOutboundDeliveryImportFailureDto(
     long? AxataSequenceNo,
     string? AxataDeliveryNo,
-    string ErrorMessage);
+    string ErrorMessage,
+    bool IsInfrastructureFailure = false);

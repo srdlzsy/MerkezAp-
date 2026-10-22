@@ -726,11 +726,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AxataSynchronizationExecutionCoordinator>();
         services.AddScoped<AxataSynchronizationManualDocumentService>();
         services.AddScoped<AxataSynchronizationOutboxWriter>();
+        services.AddScoped<AxataSynchronizationDocumentStateService>();
         services.AddScoped<AxataSynchronizationLiveTransportService>();
         services.AddScoped<AxataOrderSentFlagService>();
         services.AddScoped<IAxataProductSynchronizationService, AxataProductSynchronizationService>();
         services.AddScoped<AxataOutboundDeliveryImportService>();
         services.AddScoped<AxataOrderDocumentFlowRecorder>();
+        services.AddScoped<AxataImportDocumentFlowRecorder>();
         services.AddScoped<IAxataOutboundDeliveryImportService>(serviceProvider =>
             serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
         services.AddScoped<IAxataG01InboundAtfImportService, AxataG01InboundAtfImportService>();

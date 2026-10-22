@@ -101715,6 +101715,9 @@
           "errorMessage": {
             "type": "string",
             "nullable": true
+          },
+          "isInfrastructureFailure": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -102845,6 +102848,9 @@
           "errorMessage": {
             "type": "string",
             "nullable": true
+          },
+          "isInfrastructureFailure": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

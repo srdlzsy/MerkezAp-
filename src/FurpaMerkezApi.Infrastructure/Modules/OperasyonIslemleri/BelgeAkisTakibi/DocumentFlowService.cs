@@ -202,7 +202,8 @@ public sealed class DocumentFlowService(
         && request.Step is DocumentFlowStep.DocumentCreated
             or DocumentFlowStep.OrderCreated
             or DocumentFlowStep.WarehouseReceivingAccepted
-            or DocumentFlowStep.AxataOrderSent;
+            or DocumentFlowStep.AxataOrderSent
+            or DocumentFlowStep.AxataDocumentImported;
 
     private static DocumentFlowListItemDto ToListItem(DocumentFlow flow) =>
         new(

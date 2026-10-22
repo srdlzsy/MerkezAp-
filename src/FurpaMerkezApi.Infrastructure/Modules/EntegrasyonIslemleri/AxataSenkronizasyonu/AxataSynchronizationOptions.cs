@@ -24,10 +24,17 @@ public sealed class AxataSynchronizationOptions
 
     public string OutboxBasePath { get; init; } = string.Empty;
 
+    public AxataDocumentRetryStateOptions DocumentRetryState { get; init; } = new();
+
     public AxataWarehouseOrderAutomationOptions WarehouseOrderAutomation { get; init; } = new();
 
     public Dictionary<string, AxataSynchronizationTaskOptions> Tasks { get; init; } =
         new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class AxataDocumentRetryStateOptions
+{
+    public bool Enabled { get; init; } = true;
 }
 
 public sealed class AxataWarehouseOrderAutomationOptions

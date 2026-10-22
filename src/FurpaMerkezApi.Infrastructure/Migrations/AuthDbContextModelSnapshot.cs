@@ -5441,6 +5441,59 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.AxataSynchronizationDocumentState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<string>("DocumentKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("document_key");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("int")
+                        .HasColumnName("failure_count");
+
+                    b.Property<DateTime>("FirstFailedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("first_failed_at_utc");
+
+                    b.Property<string>("LastError")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime>("LastFailedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("last_failed_at_utc");
+
+                    b.Property<DateTime>("NextAttemptAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("next_attempt_at_utc");
+
+                    b.Property<string>("TaskCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("task_code");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskCode", "DocumentKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_axata_sync_document_state_task_document");
+
+                    b.HasIndex("TaskCode", "NextAttemptAtUtc")
+                        .HasDatabaseName("ix_axata_sync_document_state_next_attempt");
+
+                    b.ToTable("axata_synchronization_document_states", (string)null);
+                });
+
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.DatabaseMonitoringIncident", b =>
                 {
                     b.Property<Guid>("Id")

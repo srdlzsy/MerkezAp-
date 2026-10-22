@@ -19721,13 +19721,31 @@ Production gecici gorev notu:
 Production AXATA import calisma kurali:
 
 - `c01-outbound-delivery-import`, `c02-outbound-delivery-import`, `g01-inbound-atf-import` ve `g02-inbound-delivery-import` Production profilinde aciktir ve 5 dakikada bir calisir.
+- Basariyla Mikro'ya yazilan veya mevcut Mikro kaydi kesin olarak dogrulanan C01, C02 ve G01 belgeleri Belge Akis Takibi'ne `AxataDocumentImported` adimiyla yazilir. G02 basarisi mevcut `WarehouseReceivingAccepted` adimiyla izlenir. Deneme, erteleme ve basarisiz belge kayitlari Belge Akis Takibi'ne yazilmaz; ekran yalniz gerceklesen belge hareketlerini gosterir.
 - Bu dort gorevde `ImportLookbackDays=14` kullanilir. Zamanlanmis worker bugun dahil son 14 gunluk AXATA kayitlarini isler; daha eski `Status=0` arsiv kayitlari her dongude yeniden taranarak yeni evraklari geciktirmez.
 - C01, C02 ve G02 zamanlanmis okumalarinda `AxataConnection` tanimliysa tarih/durum filtresi dogrudan AXATA SQL tablolarinda uygulanir. WCF, canli import/ack islemi ve SQL baglantisi bulunmayan manuel akislar icin korunur.
 - Eski bir belgenin kurtarilmasi gerekiyorsa belgeye ozel manuel `preview/import/rescue` route'u kullanilir. Manuel route'lar 14 gunluk worker penceresiyle sinirlanmaz.
 - C01/C02 belgesi iptal kodluysa veya sevk durumu iptal olup toplam miktari sifirsa Mikro'da bos fis uretilmez; AXATA kaydi tamamlandi olarak isaretlenir. Bu kayit worker'i surekli `Degraded` durumda tutmaz.
 - G01 icin ayni AXATA satir anahtarlari Mikro'da eksiksiz bulunursa ikinci hareket yazilmaz; yalniz AXATA satirlari tamamlandi olarak isaretlenir.
-- Siparis/satir/miktar eslesmesi gercekten uyusmuyorsa kayit AXATA'da bekler, Mikro'ya tahmini belge yazilmaz ve worker hatasi ayrintili olarak izleme ekraninda gorunur. Diger uygun belgeler ayni batch icinde islenmeye devam eder.
+- Siparis/satir/miktar eslesmesi gercekten uyusmuyorsa kayit AXATA'da bekler ve Mikro'ya tahmini belge yazilmaz. Kalici deneme durumu aciksa ayni bozuk belge 15 dakika, ikinci hatada 1 saat, ucuncu ve sonraki hatalarda 6 saat ertelenir; diger uygun belgeler ayni batch icinde islenmeye devam eder. Bu is verisi sorunu worker'i durmus veya `Unhealthy` yapmaz. Baglanti, timeout ve veritabani gibi altyapi hatalari ise job hatasi olarak izlenmeye devam eder.
 - Mikro yazisi veya mevcut Mikro kaydinin kesin readback dogrulamasi tamamlanmadan AXATA `Status=1` ack yapilmaz.
+
+AXATA belge deneme durumu konfigurasyonu:
+
+```json
+{
+  "AxataSynchronization": {
+    "DocumentRetryState": {
+      "Enabled": true
+    }
+  }
+}
+```
+
+- `DocumentRetryState:Enabled=true`: veri uyumsuzlugu nedeniyle tamamlanamayan C01, C02, C03, C04, G01 ve G02 belge anahtarlari Auth DB `axata_synchronization_document_states` tablosunda kalici tutulur. API yeniden baslasa da erteleme suresi korunur; belge basarili oldugunda durum satiri silinir.
+- `DocumentRetryState:Enabled=false`: worker bu tabloyu hic okumaz ve tabloya yazmaz. Importlar normal scheduler araliginda yeniden denenir. Migration uygulanmadan bu mod kullanilabilir, ancak ayni hatali belgeyi seyrek deneme korumasi devre disi kalir.
+- Bu anahtar yalniz belge deneme/erteleme tablosunu kontrol eder. Basarili belgelerin Belge Akis Takibi kaydi ve AXATA/Mikro is akisinin asil yazmalari bu ayardan etkilenmez.
+- Ozellik acilmadan once Auth DB migration `20261022055621_AddAxataSynchronizationDocumentStates` uygulanmalidir. Ayar degisikligi sonraki worker scope'unda okunur; uygulamayi yeniden baslatmak zorunlu degildir.
 
 Execution mode:
 
@@ -28383,6 +28401,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `errorMessage` | string | Hayir | nullable |
+| `isInfrastructureFailure` | boolean | Hayir |  |
 | `orderDocumentNo` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.AxataG01InboundAtfPreviewDto
@@ -28716,6 +28735,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `axataDeliveryNo` | string | Hayir | nullable |
 | `axataSequenceNo` | integer (int64) | Hayir | nullable |
 | `errorMessage` | string | Hayir | nullable |
+| `isInfrastructureFailure` | boolean | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu.AxataOutboundDeliveryImportPreviewDto
 

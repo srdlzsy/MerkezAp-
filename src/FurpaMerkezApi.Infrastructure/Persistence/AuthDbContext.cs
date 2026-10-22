@@ -61,6 +61,9 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     public DbSet<GreenGrocerOrderLineSnapshot> GreenGrocerOrderLineSnapshots =>
         Set<GreenGrocerOrderLineSnapshot>();
 
+    public DbSet<AxataSynchronizationDocumentState> AxataSynchronizationDocumentStates =>
+        Set<AxataSynchronizationDocumentState>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(
