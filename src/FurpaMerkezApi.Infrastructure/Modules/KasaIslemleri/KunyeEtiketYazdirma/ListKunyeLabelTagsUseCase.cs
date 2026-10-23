@@ -96,7 +96,7 @@ public sealed class ListKunyeLabelTagsUseCase(MikroDbContext mikroDbContext)
                     sk.BuyingPrice,
                     sk.ShippingDate,
                     COALESCE(sk.Manufacturer, '') AS Manufacturer,
-                    COALESCE(sk.ProductUnit, '') AS ProductUnit
+                    COALESCE(s.sto_birim1_ad, '') AS ProductUnit
                 FROM [dbo].[STOKLAR] s WITH (NOLOCK)
                 INNER JOIN [KUNYENET].[dbo].[MuhStok] ms WITH (NOLOCK)
                     ON ms.StokKodu = s.sto_kod
