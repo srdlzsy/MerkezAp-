@@ -20873,6 +20873,10 @@ Entegrasyon modulu notlari:
 - `warehouse-inbound-order-sync` icin `warehouseNo` AXATA hedef/giris depodur; aday liste, task preview, execute ve dispatch ayni `ssip_girdepo` evrenine bakar
 - `company-receiving-sync` ismine ragmen firma mal kabul fisini degil, `SIPARISLER.sip_tip=1` verilen firma/satinalma siparisini AXATA `G01` inbound order olarak gonderir
 - Zamanli/live C01/C02/G01/G02 dispatch task'lari `Special1=1` olan kaynak siparisleri tekrar aday yapmaz; AXATA basarili donerse kaynak siparis satirlari `Special1=1` olarak isaretlenir
+- `issued-warehouse-order-sync` C01 aday taramasi yalniz belge tarihine bakmaz. Belge tarihi onceki gunde kalmis olsa bile son `DefaultLookbackDays` icinde Mikro'ya olusturulan veya guncellenen aktif siparisler de taranir. Production penceresi 7 gundur; gece yarisi sonrasinda olusturulan onceki tarihli siparisler bu nedenle atlanmaz.
+- C01 taramasi evragi tum aktif satirlariyla ele alir. Satirlarin bir kismi `ssip_special1=1` olsa bile eksik satirli payload uretilmez; AXATA'da ayni C01 belge numarasi bulunursa ikinci kez gonderim yapilmadan tum Mikro satirlarinin gonderim bayragi uzlastirilir.
+- Ayni C01 evragi icin API process'leri AXATA SQL application lock kullanir. Kilit icinde AXATA `ENT000` yeniden kontrol edilir; belge varsa WCF dispatch atlanir. WCF sonucu belirsiz olsa da belge AXATA'da bulunursa basari kurtarilir ve yalniz Mikro bayragi tamamlanir.
+- Bir C01 evrakinin veri veya altyapi hatasi diger adaylari durdurmaz. Miktari `0` veya daha dusuk, `100000` uzeri, sayisal olmayan ya da stok kodu bos satir AXATA'ya gonderilmez. Veri hatalari kalici deneme tablosuyla ertelenir; diger saglam siparisler ayni worker turunda islenmeye devam eder.
 - `firm-master-sync` ve `product-master-sync` depo bagimsiz task'lardir
 - `manual/tasks/{taskCode}/documents/*` endpoint'leri yalnizca evrak bazli task'larda kullanilmalidir
 - `manual/tasks/{taskCode}/documents/dispatch*` endpoint'leri yalnizca AXATA'ya canli gonderim icindir; `Outbox` yerine kullanilir

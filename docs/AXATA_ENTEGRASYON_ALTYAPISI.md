@@ -127,6 +127,10 @@ Desteklenen task'lar:
 - API icinde bu task, shared depo siparisi executor'ini AXATA perspektifiyle kullanir.
 - Bu nedenle manuel aday listesi, genel preview, queue execute ve dispatch ayni `ssip_cikdepo = warehouseNo` evrenine bakar.
 - `warehouseNo=50` icin hedef depo 150 olan `O150.5219` gibi evraklar beklenen adaylardir.
+- Aday taramasi belge tarihine ek olarak Mikro `create/last update` zamanini da dikkate alir. Production `DefaultLookbackDays=7` oldugu icin gece yarisi sonrasinda olusturulan ancak belge tarihi onceki gunde kalan siparis atlanmaz.
+- Evrak satirlari tek tek filtrelenmez; tum aktif satirlar gruplanir ve belge tamamen `ssip_special1=1` ise adaydan cikarilir. Kismi bayrakli evrak eksik payload ile AXATA'ya gonderilmez.
+- AXATA `ENT000` icinde ayni belge numarali C01 zaten varsa tekrar WCF yazisi uretilmez; Mikro gonderim bayragi uzlastirilir. Ayni belge icin SQL application lock, eszamanli API instance'larinin cift gonderimini engeller.
+- Tek evrak hatasi batch'i kesmez. Gecersiz miktar/stok verisi olan belge kontrollu ertelenir, sonraki saglam belgeler islenir. Altyapi hatalari tum adaylar denendikten sonra job hatasi olarak raporlanir.
 
 `warehouse-inbound-order-sync` icin ozel not:
 

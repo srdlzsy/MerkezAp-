@@ -30,20 +30,19 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
         var baseQuery = mikroDbContext.DEPOLAR_ARASI_SIPARISLERs
             .AsNoTracking()
             .Where(order =>
-                order.ssip_tarih.HasValue &&
-                order.ssip_tarih.Value >= startDate &&
-                order.ssip_tarih.Value < endDateExclusive);
+                order.ssip_iptal != true &&
+                ((order.ssip_tarih.HasValue &&
+                  order.ssip_tarih.Value >= startDate &&
+                  order.ssip_tarih.Value < endDateExclusive) ||
+                 (request.ExcludeAxataSent &&
+                  ((order.ssip_create_date >= startDate && order.ssip_create_date < endDateExclusive) ||
+                   (order.ssip_lastup_date >= startDate && order.ssip_lastup_date < endDateExclusive)))));
 
         if (request.WarehouseNo.HasValue)
         {
             baseQuery = isIssued
                 ? baseQuery.Where(order => order.ssip_girdepo == request.WarehouseNo.Value)
                 : baseQuery.Where(order => order.ssip_cikdepo == request.WarehouseNo.Value);
-        }
-
-        if (request.ExcludeAxataSent)
-        {
-            baseQuery = baseQuery.Where(order => order.ssip_special1 != "1");
         }
 
         var query =
@@ -77,6 +76,7 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
                 grouped.Key.OutWarehouseNo,
                 grouped.Key.OutWarehouseName,
                 LineCount = grouped.Count(),
+                AxataSentLineCount = grouped.Count(item => item.order.ssip_special1 == "1"),
                 TotalQuantity = grouped.Sum(item => item.order.ssip_miktar ?? 0d),
                 TotalAmount = grouped.Sum(item => item.order.ssip_tutar ?? 0d),
                 DeliveryDate = grouped.Max(item => item.order.ssip_teslim_tarih)
@@ -85,6 +85,7 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
         var documents = await query.ToListAsync(cancellationToken);
 
         return documents
+            .Where(document => !request.ExcludeAxataSent || document.AxataSentLineCount < document.LineCount)
             .Select(document =>
             {
                 var warehouseNo = isIssued ? (document.InWarehouseNo ?? 0) : (document.OutWarehouseNo ?? 0);

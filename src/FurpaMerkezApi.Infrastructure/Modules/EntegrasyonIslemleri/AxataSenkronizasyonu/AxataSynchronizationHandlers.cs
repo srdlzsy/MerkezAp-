@@ -8,6 +8,7 @@ using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
@@ -371,7 +372,9 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
     AxataOrderSentFlagService sentFlagService,
-    AxataOrderDocumentFlowRecorder documentFlowRecorder)
+    AxataOrderDocumentFlowRecorder documentFlowRecorder,
+    AxataSynchronizationDocumentStateService documentStateService,
+    ILogger<IssuedWarehouseOrderSyncTaskHandler> logger)
     : IAxataSynchronizationTaskHandler
 {
     private const WarehouseOrderListDirection AxataWarehouseOrderDirection = WarehouseOrderListDirection.Received;
@@ -428,62 +431,119 @@ internal sealed class IssuedWarehouseOrderSyncTaskHandler(
             request,
             AxataWarehouseOrderDirection,
             cancellationToken);
+        var deferredDocumentKeys = context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live
+            ? await documentStateService.GetDeferredDocumentKeysAsync(Code, cancellationToken)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var payloadDocuments = new List<object>(documents.Count);
+        var succeededDocumentKeys = new List<string>();
+        var businessFailures = new List<AxataSynchronizationDocumentFailure>();
+        var infrastructureFailures = new List<string>();
 
         foreach (var document in documents)
         {
-            var detail = await detailQueryExecutor.ExecuteAsync(
-                new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
-                AxataWarehouseOrderDirection,
-                cancellationToken);
-
-            if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
+            var documentReference = $"{document.DocumentSerie}.{document.DocumentOrderNo}";
+            if (deferredDocumentKeys.Contains(documentReference))
             {
-                var dispatch = await liveTransportService.DispatchWarehouseOrderAsync(
-                    context,
-                    detail,
-                    cancellationToken);
-                if (!dispatch.IsSuccess)
-                {
-                    throw new InvalidOperationException(
-                        $"AXATA C01 cikis siparisi gonderilemedi. Belge={document.DocumentSerie}.{document.DocumentOrderNo}, State={dispatch.ServiceState}, Message={dispatch.ServiceMessage}");
-                }
-
-                var markResult = await sentFlagService.MarkWarehouseOrderAsSentAsync(
-                    new WarehouseOrderDetailRequest(warehouseNo, document.DocumentSerie, document.DocumentOrderNo),
-                    AxataWarehouseOrderDirection,
-                    cancellationToken);
-
-                if (markResult.LineCount > 0)
-                {
-                    await documentFlowRecorder.RecordWarehouseOrderSentAsync(
-                        detail,
-                        "C01",
-                        context.RequestedByUserId,
-                        cancellationToken);
-                }
-
-                payloadDocuments.Add(new
-                {
-                    document = $"{document.DocumentSerie}.{document.DocumentOrderNo}",
-                    dispatch.OperationName,
-                    dispatch.ServiceState,
-                    dispatch.ServiceMessage,
-                    sentFlagLineCount = markResult.LineCount,
-                    sentFlagWriteChannel = markResult.WriteChannel
-                });
                 continue;
             }
 
-            payloadDocuments.Add(AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail));
+            try
+            {
+                var detailRequest = new WarehouseOrderDetailRequest(
+                    warehouseNo,
+                    document.DocumentSerie,
+                    document.DocumentOrderNo);
+                var detail = await detailQueryExecutor.ExecuteAsync(
+                    detailRequest,
+                    AxataWarehouseOrderDirection,
+                    cancellationToken);
+
+                if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
+                {
+                    var dispatch = await liveTransportService.DispatchWarehouseOrderAsync(
+                        context,
+                        detail,
+                        cancellationToken);
+                    if (!dispatch.IsSuccess)
+                    {
+                        throw new InvalidOperationException(
+                            $"AXATA C01 cikis siparisi gonderilemedi. Belge={document.DocumentSerie}.{document.DocumentOrderNo}, State={dispatch.ServiceState}, Message={dispatch.ServiceMessage}");
+                    }
+
+                    var markResult = await sentFlagService.MarkWarehouseOrderAsSentAsync(
+                        detailRequest,
+                        AxataWarehouseOrderDirection,
+                        cancellationToken);
+
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordWarehouseOrderSentAsync(
+                            detail,
+                            "C01",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
+
+                    payloadDocuments.Add(new
+                    {
+                        document = documentReference,
+                        dispatch.OperationName,
+                        dispatch.ServiceState,
+                        dispatch.ServiceMessage,
+                        sentFlagLineCount = markResult.LineCount,
+                        sentFlagWriteChannel = markResult.WriteChannel
+                    });
+                    succeededDocumentKeys.Add(documentReference);
+                    continue;
+                }
+
+                payloadDocuments.Add(AxataSynchronizationPayloadFactory.BuildWarehouseOrderDocument(detail));
+            }
+            catch (AxataOutboundOrderValidationException exception)
+            {
+                businessFailures.Add(new AxataSynchronizationDocumentFailure(
+                    documentReference,
+                    exception.Message));
+                logger.LogWarning(
+                    exception,
+                    "AXATA C01 warehouse order {DocumentReference} has invalid business data. Remaining documents will continue.",
+                    documentReference);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                infrastructureFailures.Add($"{documentReference}: {exception.Message}");
+                logger.LogError(
+                    exception,
+                    "AXATA C01 warehouse order {DocumentReference} failed. Remaining documents will continue.",
+                    documentReference);
+            }
+        }
+
+        if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
+        {
+            await documentStateService.RecordOutcomeAsync(
+                Code,
+                succeededDocumentKeys,
+                businessFailures,
+                cancellationToken);
+        }
+
+        if (infrastructureFailures.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"AXATA C01 taramasi {payloadDocuments.Count} basarili, {infrastructureFailures.Count} altyapi hatali evrakla tamamlandi. Ilk hata: {infrastructureFailures[0]}");
         }
 
         if (context.ExecutionMode == AxataSynchronizationJobExecutionMode.Live)
         {
             return new AxataSynchronizationTaskExecutionResult(
                 payloadDocuments.Count,
-                $"{payloadDocuments.Count} verilen depo siparisi AXATA C01 outbound order olarak canli gonderildi.",
+                $"{payloadDocuments.Count} verilen depo siparisi AXATA C01 olarak tamamlandi. Veri bekleyen={businessFailures.Count}, ertelenen={deferredDocumentKeys.Count}.",
                 Array.Empty<AxataSynchronizationJobArtifactDto>());
         }
 
