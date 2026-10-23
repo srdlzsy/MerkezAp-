@@ -4,6 +4,7 @@ Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu ic
 
 Son hedefli kontrol: 2026-10-20. Kayitli 761 method/route ve 694 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
+Kasa, POS/PAV, banka katalogu ve icmal ekraninin veri kaynaklari icin: [Kasa, POS, Banka ve Icmal Veri Akisi](KASA_POS_BANKA_ICMAL_VERI_AKISI.md).
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
 
 ## Genel Bilgiler
