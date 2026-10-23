@@ -53,6 +53,22 @@ public sealed class ReceivedWarehouseOrderBulkPrintTests
         Assert.Contains("Stok Kodu", pdf.GetPage(2).Text);
     }
 
+    [Fact]
+    public void Render_FitsFortySingleLineItemsOnFirstPage()
+    {
+        var renderer = new ReceivedWarehouseOrderPdfRenderer();
+        var pdfBytes = renderer.Render(
+        [
+            CreateDocument("F50", 1004, "010001", "URUN", itemCount: 40)
+        ]);
+
+        using var pdf = PdfDocument.Open(pdfBytes);
+
+        Assert.True(pdf.NumberOfPages > 1);
+        Assert.Contains("URUN 40", pdf.GetPage(1).Text);
+        Assert.DoesNotContain(" - DEVAM", pdf.GetPage(1).Text);
+    }
+
     private static WarehouseOrderDetailDto CreateDocument(
         string documentSerie,
         int documentOrderNo,

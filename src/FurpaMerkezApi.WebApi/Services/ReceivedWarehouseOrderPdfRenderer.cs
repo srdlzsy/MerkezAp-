@@ -12,8 +12,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     private const double FooterHeight = 24d;
     private const double HeaderHeight = 126d;
     private const double TableHeaderHeight = 24d;
-    private const double MinimumRowHeight = 22d;
-    private const double CellPadding = 4d;
+    private const double MinimumRowHeight = 16d;
+    private const double CellPadding = 3d;
 
     private static readonly XColor BorderColor = XColor.FromArgb(25, 25, 25);
     private static readonly XColor LightHeaderColor = XColor.FromArgb(238, 238, 238);
@@ -201,10 +201,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             (item.LineNo + 1).ToString(CultureInfo.InvariantCulture),
             item.StockCode,
             FormatProduct(item),
-            FormatNumber(item.Quantity),
-            item.UnitName,
-            FormatNumber(item.DeliveredQuantity),
-            FormatNumber(item.RemainingQuantity)
+            FormatNumber(item.Quantity)
         };
 
         var x = PageMargin;
@@ -219,9 +216,9 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             graphics.DrawRectangle(new XPen(BorderColor, 0.45d), x, y, column.Width, height);
             var textRect = new XRect(
                 x + CellPadding,
-                y + 4d,
+                y + 2d,
                 column.Width - (2 * CellPadding),
-                height - 6d);
+                height - 4d);
 
             if (index == 2)
             {
@@ -232,7 +229,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
                         lines[lineIndex],
                         bodyFont,
                         XBrushes.Black,
-                        new XRect(textRect.X, textRect.Y + (lineIndex * 10d), textRect.Width, 10d),
+                        new XRect(textRect.X, textRect.Y + (lineIndex * 8d), textRect.Width, 8d),
                         XStringFormats.TopLeft);
                 }
             }
@@ -257,12 +254,6 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         DrawTotalCell(graphics, x, y, firstThreeColumnsWidth, $"Toplam {header.LineCount} kalem");
         x += firstThreeColumnsWidth;
         DrawTotalCell(graphics, x, y, Columns[3].Width, FormatNumber(header.TotalQuantity));
-        x += Columns[3].Width;
-        DrawTotalCell(graphics, x, y, Columns[4].Width, string.Empty);
-        x += Columns[4].Width;
-        DrawTotalCell(graphics, x, y, Columns[5].Width, FormatNumber(header.TotalDeliveredQuantity));
-        x += Columns[5].Width;
-        DrawTotalCell(graphics, x, y, Columns[6].Width, FormatNumber(header.TotalRemainingQuantity));
     }
 
     private void DrawTotalCell(XGraphics graphics, double x, double y, double width, string value)
@@ -299,7 +290,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     private double CalculateRowHeight(WarehouseOrderLineItemDto item)
     {
         var productLines = EstimateLineCount(FormatProduct(item), Columns[2].Width, 47d);
-        return Math.Max(MinimumRowHeight, 8d + (productLines * 10d));
+        return Math.Max(MinimumRowHeight, 4d + (productLines * 8d));
     }
 
     private static string FormatProduct(WarehouseOrderLineItemDto item) =>
@@ -396,11 +387,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     [
         new("No", 25d, XStringFormats.Center),
         new("Stok Kodu", 66d, XStringFormats.CenterLeft),
-        new("Urun", 212d, XStringFormats.CenterLeft),
-        new("Siparis", 54d, XStringFormats.CenterRight),
-        new("Birim", 45d, XStringFormats.Center),
-        new("Teslim", 54d, XStringFormats.CenterRight),
-        new("Kalan", 54d, XStringFormats.CenterRight)
+        new("Urun", 365d, XStringFormats.CenterLeft),
+        new("Siparis", 54d, XStringFormats.CenterRight)
     ];
 
     private sealed record Column(string Title, double Width, XStringFormat Alignment);
