@@ -60,6 +60,59 @@ public sealed class CompanyMovementDetailQueryExecutorTests
         Assert.Equal(uuid, result.Header.Description);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ReturnsItemsInLineNumberOrder()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        var documentDate = new DateTime(2026, 10, 10);
+
+        mikroDbContext.STOK_HAREKETLERIs.AddRange(
+            CreateMovement(2, documentDate, null, null),
+            CreateMovement(0, documentDate, null, null),
+            CreateMovement(1, documentDate, null, null));
+        await mikroDbContext.SaveChangesAsync();
+
+        var executor = new CompanyMovementDetailQueryExecutor(mikroDbContext);
+        var result = await executor.ExecuteAsync(
+            new CompanyMovementDetailRequest(155, "F155", 4502),
+            CompanyMovementKind.PurchaseReturn,
+            CancellationToken.None);
+
+        Assert.Equal(new[] { 0, 1, 2 }, result.Items.Select(item => item.LineNo).ToArray());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReversesItemsForIncomingCompanyReceiving()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        var documentDate = new DateTime(2026, 10, 10);
+        var rows = new[]
+        {
+            CreateMovement(0, documentDate, null, null),
+            CreateMovement(1, documentDate, null, null),
+            CreateMovement(2, documentDate, null, null)
+        };
+
+        foreach (var row in rows)
+        {
+            row.sth_evraktip = 13;
+            row.sth_tip = 0;
+            row.sth_normal_iade = 0;
+            row.sth_giris_depo_no = 101;
+        }
+
+        mikroDbContext.STOK_HAREKETLERIs.AddRange(rows);
+        await mikroDbContext.SaveChangesAsync();
+
+        var executor = new CompanyMovementDetailQueryExecutor(mikroDbContext);
+        var result = await executor.ExecuteAsync(
+            new CompanyMovementDetailRequest(101, "F155", 4502),
+            CompanyMovementKind.IncomingShipment,
+            CancellationToken.None);
+
+        Assert.Equal(new[] { 2, 1, 0 }, result.Items.Select(item => item.LineNo).ToArray());
+    }
+
     private static STOK_HAREKETLERI CreateMovement(
         int lineNo,
         DateTime documentDate,

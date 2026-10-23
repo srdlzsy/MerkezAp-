@@ -95,6 +95,7 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_HareketGrupKodu2,
                 movement.sth_HareketGrupKodu3,
                 movement.sth_aciklama,
+                movement.sth_Guid,
                 movement.sth_satirno,
                 movement.sth_stok_kod,
                 StockName = stock.sto_isim,
@@ -124,6 +125,12 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_proje_kodu,
                 movement.sth_sip_uid
             }).ToListAsync(cancellationToken);
+
+        rows = rows
+            .OrderBy(row => row.sth_satirno ?? int.MaxValue)
+            .ThenBy(row => row.sth_stok_kod)
+            .ThenBy(row => row.sth_Guid)
+            .ToList();
 
         if (rows.Count == 0)
         {
@@ -185,6 +192,11 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                     row.sth_sip_uid);
             })
             .ToArray();
+
+        if (kind == CompanyMovementKind.IncomingShipment)
+        {
+            Array.Reverse(items);
+        }
 
         var warehouseNo = kind == CompanyMovementKind.IncomingShipment
             ? firstRow.sth_giris_depo_no ?? request.WarehouseNo
