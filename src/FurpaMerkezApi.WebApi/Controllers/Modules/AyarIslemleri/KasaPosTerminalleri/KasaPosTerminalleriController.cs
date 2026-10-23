@@ -55,6 +55,17 @@ public sealed class KasaPosTerminalleriController(IAyarlarService ayarlarService
             User.ResolveWarehouseScopeForPolicy(branchNo, ListPolicy),
             cancellationToken));
 
+    [HttpGet("tanim-sorunlari")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CashRegisterDefinitionIssueDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CashRegisterDefinitionIssueDto>>> DefinitionIssues(
+        [FromQuery, Range(1, int.MaxValue)] int? branchNo,
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.ListCashRegisterDefinitionIssuesAsync(
+            User.ResolveWarehouseNoForPolicy(branchNo, ListPolicy),
+            cancellationToken));
+
     [HttpPost("subeler/{branchNo:int}/kasalar/{cashNo:int}/terminaller")]
     [Authorize(Policy = CreatePolicy)]
     [ProducesResponseType(typeof(CashRegisterTerminalDto), StatusCodes.Status201Created)]

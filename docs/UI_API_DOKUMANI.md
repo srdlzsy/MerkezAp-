@@ -2583,9 +2583,9 @@ Bu modul eski `SettingsController` islevlerini yeni API mimarisine uygun olarak 
 
 Veri kaynaklari:
 
-- Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `Cashiers`, `KASIYER_TANIMLARI`
+- Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `CashRegisterDetails`, `Cashiers`, `KASIYER_TANIMLARI`
 - FurpaB2B DB: `Bultens`, `Users`, `UserAccounts`
-- Mikro write DB: `CashRegisterDetails`, `CashRegisterBranches`
+- Mikro DB: terminal banka adlarinin eslestirildigi `PaymentTypes` odeme tipi katalogu
 - Auth DB: `despatch_drivers`
 - Auth DB: `database_monitoring_incidents`, `database_session_termination_audits`
 - Auth DB: `terminal_installations`
@@ -3225,9 +3225,9 @@ Onemli alan ayrimi:
 Kasa ve terminal kaynagi:
 
 - Sube kasa listesi `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` tarafinda Furpa `CashRegistryDetails` kaydindan kasa no'yu okur.
-- Ayni response'taki `cashFinanceNumber`, secili sube ve fiziksel kasa icin Mikro `CashRegisterDetails.CashNo -> CashRegisterNo` ile cozulur. Birden fazla farkli finans/PAV numarasi bulunursa API rastgele ilk kaydi secmez; `409 Conflict` ile cakisan numaralari bildirir ve kasa-POS eslesmesi duzeltilmeden icmal olusturulmaz.
-- POS terminal listesi `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller?branchNo={branchNo}` ile Mikro `CashRegisterDetails` ve `CashRegisterBranches` uzerinden, fiziksel kasa + sube eslesmesiyle okunur. Furpa'dan terminal fallback/merge yapilmaz.
-- Icmal banka secenekleri icin UI `cashNo` ve `branchNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. API yalniz o fiziksel kasa ve subeye bagli Mikro terminallerinin banka odeme tiplerini dondurur. Eski istemciler icin `cashRegisterNo` parametresi geriye uyumludur; yeni UI bu global/finans numarasi yolunu kullanmamalidir.
+- Ayni response'taki `cashFinanceNumber`, secili sube ve fiziksel kasa icin Furpa `CashRegisterDetails.CashNo -> CashRegisterNo` ile cozulur. Birden fazla farkli finans/PAV numarasi bulunursa API rastgele ilk kaydi secmez; `409 Conflict` ile cakisan numaralari bildirir ve kasa-POS eslesmesi duzeltilmeden icmal olusturulmaz.
+- POS terminal listesi `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller?branchNo={branchNo}` ile Furpa `CashRegisterDetails` ve `CashRegistryDetails` uzerinden, fiziksel kasa + sube eslesmesiyle okunur. Mikro'dan terminal fallback/merge yapilmaz.
+- Icmal banka secenekleri icin UI `cashNo` ve `branchNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. API o fiziksel kasanin Furpa `CashRegisterDetails` terminal bankalarini Mikro `PaymentTypes` kataloguyla eslestirir. Eski istemciler icin `cashRegisterNo` parametresi geriye uyumludur; yeni UI bu global/finans numarasi yolunu kullanmamalidir.
 - `cashNo` subedeki fiziksel kasadir; `cashFinanceNumber` PAV/finans grup numarasidir. Icmal banka listesini guvenli daraltmak icin esas filtre `branchNo + cashNo` ikilisidir.
 - UI kasa secimini degistirdiginde onceki kasa icin devam eden detay/banka isteklerini gecersiz saymalidir. Gec gelen eski response yeni kasanin banka listesinin ustune yazilmamalidir.
 
@@ -3307,6 +3307,7 @@ Endpoint ozeti:
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` | - | - | `CashRegisterSettingsLookupsDto` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller` | path | `cashNo: int` | `CashRegisterTerminalDto[]` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/terminaller/konum?terminalNo=PAV...` | query | `terminalNo: string`, `branchNo?: int` | `CashRegisterTerminalLocationDto[]` | `kasa-pos-terminalleri.list` |
+| `GET /api/ayar-islemleri/kasa-pos-terminalleri/tanim-sorunlari?branchNo=110` | query | `branchNo?: int` | `CashRegisterDefinitionIssueDto[]` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari` | JWT | - | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `GET /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | path | `branchNo: int` | `CashRegisterMessageStatusDto[]` | `kasa-pos-terminalleri.list` |
 | `POST /api/ayar-islemleri/kasa-pos-terminalleri` | body | `CreateCashRegisterHttpRequest` | `CashRegisterResponse` | `kasa-pos-terminalleri.create` |
@@ -3559,7 +3560,7 @@ Body `CreateBranchSettingsHttpRequest` ile ayni sube alanlarini alir; `cashRegis
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler`
 
-Kasa/POS terminal ekleme formundaki kasa tipi ve banka/odeme tipi secimlerinin dropdown kaynagidir. UI terminal bankasini serbest metin gibi yazdirmamali; `terminalBanks[].displayName` gorunen etiket, `terminalBanks[].paymentName` kayit body icindeki `bank` alanidir.
+Kasa/POS terminal ekleme formundaki kasa tipi ve banka/odeme tipi secimlerinin dropdown kaynagidir. UI terminal bankasini serbest metin gibi yazdirmamali; `terminalBanks[].displayName` gorunen etiket, `terminalBanks[].paymentName` kayit body icindeki `bank` alanidir. API create/update sirasinda da banka adini Mikro `PaymentTypes` (`PaymentGenus=1`) kataloguna gore dogrular ve katalogdaki kesin yazimla kaydeder. Katalogda bulunmayan banka `400 Bad Request` ile reddedilir.
 
 Response:
 
@@ -3594,7 +3595,7 @@ Response:
 
 `POST /api/ayar-islemleri/kasa-pos-terminalleri`
 
-Yeni kasa tanimi, Furpa tarafinda kasa kaydi ve Mikro tarafinda terminal kayitlarini olusturur.
+Yeni kasa tanimi, Furpa `CashRegistryDetails` tablosunda fiziksel kasa kaydini ve Furpa `CashRegisterDetails` tablosunda POS/PAV banka satirlarini tek Furpa transaction'i icinde olusturur. Mikro `PaymentTypes` yalniz banka/odeme katalogu olarak okunur; bu endpoint Mikro `CashRegisterDetails`, `CashRegisterBranches` veya `PaymentTypes` tablolarina yazmaz.
 
 Body:
 
@@ -3640,6 +3641,7 @@ Response `201 Created`:
 Notlar:
 
 - `branchNo + cashNo` duplicate ise `409 Conflict` doner.
+- Her `bank` degeri Mikro `PaymentTypes.PaymentName` katalogunda `PaymentGenus=1` olarak bulunmalidir. API buyuk/kucuk harf farkini kabul eder fakat Furpa'ya katalogdaki kesin adi yazar. Eslesmeyen banka `400 Bad Request` doner.
 - Terminal no baska bir fiziksel kasa veya subede kullaniliyorsa `409 Conflict` doner. `detail` mesaji numaranin bulundugu sube, kasa ve bankalari belirtir; UI kullaniciyi mevcut kaydi acip `Dogru Kasaya Tasi` islemine yonlendirir.
 - Ayni fiziksel terminal/grup numarasi birden fazla banka satirinda kullanilabilir. Tekrarlanan tam satir (`terminalNo + bank + terminalId + merchantNo`) `409 Conflict` doner.
 - Silme islemleri mutlaka branch-scoped endpointlerle yapilir.
@@ -3676,7 +3678,7 @@ Kurallar:
 - Kaynak ve hedef fiziksel kasa tanimlari mevcut olmalidir.
 - Hedef kaynakla ayniysa `400 Bad Request` doner.
 - POS/PAV grubu birden fazla subeye baglanmis veya satirlari birden fazla fiziksel kasaya dagilmis ise otomatik tasima yapilmaz; mevcut konumlar `409 Conflict` mesajinda belirtilir.
-- Farkli subeye tasimada `CashRegisterBranches` eslesmesi de hedef subeye alinir.
+- Farkli subeye tasimada terminal grubunun Furpa `CashRegisterDetails.CashNo` degeri hedef fiziksel kasaya alinir; sube kapsamı hedef kasanin Furpa `CashRegistryDetails` kaydindan cozulur.
 - Basarili response, tasinan tum `CashRegisterTerminalDto` banka satirlarini dondurur.
 
 `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/129/kasalar/103/tip`
@@ -3697,9 +3699,37 @@ UI icin onerilen basit duzeltme akisi:
 4. Yetkili hedef sube ve fiziksel kasayi secip `Dogru Kasaya Tasi` komutunu verir.
 5. Tasima sonrasi kaynak ve hedef kasa listeleri yenilenir; banka satirlari tek grupta gorunur.
 
+`GET /api/ayar-islemleri/kasa-pos-terminalleri/tanim-sorunlari?branchNo=129`
+
+Secili subedeki eski veya eksik kasa/POS tanimlarini salt okunur olarak denetler. Endpoint veri degistirmez. `all-warehouses` yetkisi olmayan kullanicida JWT deposu uygulanir. UI normal kayitlari gostermek yerine yalniz donen sorunlari kisa bir duzeltme listesinde sunmalidir.
+
+Kontrol kodlari:
+
+- `MISSING_TERMINAL_GROUP`: Fiziksel kasa var, POS/PAV banka satiri yok.
+- `MULTIPLE_TERMINAL_GROUPS`: Ayni fiziksel kasa birden fazla PAV/finans numarasina bagli.
+- `INCOMPLETE_TERMINAL_ROW`: PAV, banka, terminal ID veya merchant alanlarindan biri bos.
+- `UNKNOWN_BANK`: Furpa banka adi Mikro `PaymentTypes` katalogunda yok.
+- `TERMINAL_GROUP_SHARED`: Ayni PAV grubu birden fazla fiziksel kasaya bagli.
+
+Response ornegi:
+
+```json
+[
+  {
+    "code": "UNKNOWN_BANK",
+    "severity": "error",
+    "branchNo": 129,
+    "cashNo": 103,
+    "terminalNo": "PAV210009468",
+    "bank": "Eski Banka",
+    "message": "Eski Banka bankasi Mikro odeme tipi katalogunda bulunamadi. Terminal satirini gecerli bir banka secerek guncelleyin."
+  }
+]
+```
+
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller?branchNo=129`
 
-Secilen sube ve fiziksel kasaya bagli Mikro POS terminal detaylarini listeler. Backend `CashRegisterDetails.CashNo` ile `CashRegisterBranches.BranchNo + CashRegisterNo` eslesmesini birlikte kontrol eder. Furpa `CashRegisterDetails` terminal fallback'i veya kaynak birlestirmesi yapilmaz. UI terminal listesi icin once sube kasalarini yuklemeli, sonra fiziksel kasayi secmelidir.
+Secilen sube ve fiziksel kasaya bagli Furpa POS terminal detaylarini listeler. Backend `CashRegisterDetails.CashNo` ile `CashRegistryDetails.BranchNo + CashRegisterNo` eslesmesini birlikte kontrol eder. Mikro `CashRegisterDetails` terminal fallback'i veya kaynak birlestirmesi yapilmaz. UI terminal listesi icin once sube kasalarini yuklemeli, sonra fiziksel kasayi secmelidir.
 
 Ornek:
 
@@ -3730,19 +3760,19 @@ Ayni terminal numarasina sahip banka satirlari `id` ile birbirinden ayrilir. UI 
 
 `POST /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller`
 
-Mevcut fiziksel kasaya tek banka/terminal detay satiri Mikro `CashRegisterDetails` tablosuna ekler ve gerekiyorsa `CashRegisterBranches` sube eslemesi olusturur. Furpa `CashRegisterDetails` tablosuna terminal satiri yazilmaz. Body, kasa olusturma istegindeki `CreateCashRegisterTerminalHttpRequest` ile aynidir.
+Mevcut fiziksel kasaya tek banka/terminal detay satiri Furpa `CashRegisterDetails` tablosuna ekler. Sube kapsami fiziksel kasanin Furpa `CashRegistryDetails` kaydiyla belirlenir. Body, kasa olusturma istegindeki `CreateCashRegisterTerminalHttpRequest` ile aynidir.
 
 `PUT /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
 
-Secili Mikro terminal detay satirini gunceller. Terminal grup numarasi degisirse Mikro kaynaginda yeni sube eslemesi olusturulur; eski esleme artik kullanilmiyorsa secili subeden kaldirilir.
+Secili Furpa terminal detay satirini gunceller. Ayni PAV/terminal numarasina ait birden fazla banka satiri varsa grup numarasi tek satirdan degistirilemez; grup tasima endpointi kullanilir.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}`
 
-Sube kapsaminda fiziksel kasa kaydini Furpa `CashRegistryDetails` tablosundan siler. Mikro'daki o kasaya ait terminal satirlari ve yalniz bu subeye ait terminal eslemeleri temizlenir; baska subeyle ortak terminal grubu varsa ortak terminal satirlari korunur. Eski Furpa `CashRegisterDetails` kopyalari bu islemde degistirilmez ve API lookup'larinda kullanilmaz.
+Sube kapsaminda fiziksel kasa kaydini Furpa `CashRegistryDetails` tablosundan siler. Fiziksel kasa baska bir sube kaydinca kullanilmiyorsa Furpa `CashRegisterDetails` terminal satirlari da temizlenir; ortak kullanim varsa terminal satirlari korunur.
 
 `DELETE /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}`
 
-Secili kasa icindeki tek terminal detay satirini `terminalId` ile siler; ayni terminal numarasina ait diger banka satirlari korunur. Mikro terminal-sube eslemesi de ancak ayni terminal numarasini kullanan son detay satiri silindiginde kaldirilir.
+Secili kasa icindeki tek Furpa terminal detay satirini `terminalId` ile siler; ayni terminal numarasina ait diger banka satirlari korunur.
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/mevcut-sube/mesaj-durumlari`
 
@@ -6826,6 +6856,7 @@ Kurallar:
 - Backend secilen evraklari ve satirlarini toplu Mikro sorgusuyla okur; UI'nin her evrak icin ayri detay istegi atmasi gerekmez.
 - Response JSON degildir. `Content-Type: application/pdf` ve `Content-Disposition: inline` ile tek PDF doner.
 - Baskida A4 dikey sayfa, yaklasik 15 mm kenar boslugu ve `Times New Roman` kullanilir. Bu duzen eski operasyon baskilarindaki sade siyah-beyaz tablo yapisiyla uyumludur.
+- Tablo kompakt tutulur ve `No`, `Stok Kodu`, `Urun` ve `Siparis` kolonlarini icerir; `Birim`, `Teslim` ve `Kalan` kolonlari yazdirilmaz.
 - Her siparis yeni PDF sayfasindan baslar. Uzun siparisler devam sayfasina tasar; tablo basligi tekrar yazilir.
 
 UI akisi:
@@ -15775,7 +15806,7 @@ Route'lar:
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi`
 - `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari`
 
-`odeme-tipleri/banka` icin yeni UI hem `branchNo` hem fiziksel `cashNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. Backend yalniz Mikro `CashRegisterDetails` satirlarinda `CashNo=103` olan ve `CashRegisterBranches` icinde 129 subesine bagli terminalleri alir; bunlarin `Bank` degerlerini Mikro `PaymentTypes.PaymentName` ile eslestirip yalniz `PaymentGenus=1` banka odeme tiplerini dondurur. Boylesi ayni `cashRegisterNo`/PAV grup numarasi farkli kasalarda veya subelerde kullanilsa da yanlis bankalarin icmale karismasini engeller. Eski istemciler `cashRegisterNo` ile sorgulayabilir; yeni UI bu geriye uyumluluk yolunu kullanmamali. `terminalId` Mikro `CashRegisterDetails.TerminalId`, `accountCode` Mikro `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` listesinden yapilmalidir.
+`odeme-tipleri/banka` icin yeni UI hem `branchNo` hem fiziksel `cashNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. Backend once Furpa `CashRegistryDetails` ile fiziksel kasanin subeye ait oldugunu dogrular, sonra Furpa `CashRegisterDetails` icindeki terminal banka satirlarini alir. Banka adlari Mikro `PaymentTypes.PaymentName` ile eslestirilir ve yalniz `PaymentGenus=1` odeme tipleri dondurulur. Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` terminal kaynagi olarak kullanilmaz. Eski istemciler `cashRegisterNo` ile sorgulayabilir; yeni UI bu geriye uyumluluk yolunu kullanmamali. `terminalId` Furpa `CashRegisterDetails.TerminalId`, `accountCode` Mikro `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` listesinden yapilmalidir.
 
 UI kasa seciminde fiziksel kasa satirindaki `branchNo` ve `cashNo` degerleri banka odeme tipi endpointine gonderilmelidir. `cashFinanceNumber` ekranda kasa/PAV eslesmesini gostermek icin kullanilabilir; banka listesini sorgulamak icin kullanilmaz.
 
@@ -25605,6 +25636,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/tip` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>body: request / UpdateCashRegisterTypeHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegistryDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/kasa-pos-terminalleri/tanim-sorunlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterDefinitionIssueDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/terminaller/konum` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | query: terminalNo / string (zorunlu)<br>query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterTerminalLocationDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
@@ -26799,6 +26831,18 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `cashTypes` | FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.SettingsTypeOptionDto[] | Hayir | nullable |
 | `scalesTypes` | FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.SettingsTypeOptionDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashRegisterDefinitionIssueDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `bank` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashNo` | integer (int32) | Hayir |  |
+| `code` | string | Hayir | nullable |
+| `message` | string | Hayir | nullable |
+| `severity` | string | Hayir | nullable |
+| `terminalNo` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashRegisterMessageStatusDto
 

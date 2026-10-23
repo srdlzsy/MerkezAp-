@@ -134,6 +134,15 @@ public sealed record CashRegisterTerminalLocationDto(
     int BankRowCount,
     IReadOnlyCollection<string> Banks);
 
+public sealed record CashRegisterDefinitionIssueDto(
+    string Code,
+    string Severity,
+    int BranchNo,
+    int CashNo,
+    string? TerminalNo,
+    string? Bank,
+    string Message);
+
 public sealed record MoveCashRegisterTerminalGroupRequest(
     int TargetBranchNo,
     int TargetCashNo);

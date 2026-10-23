@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 765. Model sayisi: 699.
+Endpoint sayisi (method + route): 766. Model sayisi: 700.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -60,6 +60,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller/{terminalId}` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>path: terminalId / integer (int32) (zorunlu)<br>body: request / CreateCashRegisterTerminalHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegisterTerminalDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/tip` | JWT + ayar-islemleri.kasa-pos-terminalleri.update | path: branchNo / integer (int32) (zorunlu)<br>path: cashNo / integer (int32) (zorunlu)<br>body: request / UpdateCashRegisterTypeHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashRegistryDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/mesaj-durumlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterMessageStatusDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/kasa-pos-terminalleri/tanim-sorunlari` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterDefinitionIssueDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasa-pos-terminalleri/terminaller/konum` | JWT + ayar-islemleri.kasa-pos-terminalleri.list | query: terminalNo / string (zorunlu)<br>query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashRegisterTerminalLocationDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashierDto&gt; |
 | POST | `/api/ayar-islemleri/kasiyerler` | JWT + ayar-islemleri.kasiyerler.create | body: request / CreateCashierHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CashierPasswordMutationDto<br>400: ProblemDetails |
@@ -1254,6 +1255,18 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `cashTypes` | FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.SettingsTypeOptionDto[] | Hayir | nullable |
 | `scalesTypes` | FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.SettingsTypeOptionDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashRegisterDefinitionIssueDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `bank` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashNo` | integer (int32) | Hayir |  |
+| `code` | string | Hayir | nullable |
+| `message` | string | Hayir | nullable |
+| `severity` | string | Hayir | nullable |
+| `terminalNo` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.CashRegisterMessageStatusDto
 

@@ -86,7 +86,7 @@ public sealed class CashSummaryLookupsUseCase(
         if (!string.IsNullOrWhiteSpace(request.CashRegisterNo))
         {
             var cashRegisterNo = request.CashRegisterNo.Trim();
-            detail = await GetMikroCashRegisterDetailByRegisterNoAsync(
+            detail = await GetFurpaCashRegisterDetailByRegisterNoAsync(
                 cashRegisterNo,
                 request.BranchNo,
                 cancellationToken);
@@ -94,7 +94,7 @@ public sealed class CashSummaryLookupsUseCase(
         else
         {
             var cashNo = request.CashNo!.Value;
-            detail = await GetMikroCashRegisterDetailByCashNoAsync(
+            detail = await GetFurpaCashRegisterDetailByCashNoAsync(
                 cashNo,
                 request.BranchNo,
                 cancellationToken);
@@ -172,18 +172,18 @@ public sealed class CashSummaryLookupsUseCase(
             throw new ArgumentException("Cash no or cash register no must be provided.");
         }
 
-        var mikroTerminals = request.CashNo.HasValue
-            ? await ListMikroCashRegisterDetailsByCashNoAsync(
+        var terminals = request.CashNo.HasValue
+            ? await ListFurpaCashRegisterDetailsByCashNoAsync(
                 request.CashNo.Value,
                 request.BranchNo!.Value,
                 request.CashRegisterNo,
                 cancellationToken)
-            : await ListMikroCashRegisterDetailsByRegisterNoAsync(
+            : await ListFurpaCashRegisterDetailsByRegisterNoAsync(
                 request.CashRegisterNo!.Trim(),
                 request.BranchNo,
                 cancellationToken);
 
-        var terminalBanks = mikroTerminals
+        var terminalBanks = terminals
             .Select(item => item.Bank)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Select(item => item.Trim())
@@ -211,7 +211,7 @@ public sealed class CashSummaryLookupsUseCase(
             item => item.PaymentName.Trim(),
             StringComparer.OrdinalIgnoreCase);
 
-        var paymentTypes = mikroTerminals
+        var paymentTypes = terminals
             .Where(item => !string.IsNullOrWhiteSpace(item.Bank))
             .SelectMany(
                 cashRegister => paymentTypesByName[cashRegister.Bank.Trim()],
@@ -301,7 +301,7 @@ public sealed class CashSummaryLookupsUseCase(
     public async Task<IReadOnlyCollection<CashRegisterDetailDto>> ListOnlineCashRegistersAsync(
         CancellationToken cancellationToken)
     {
-        var mikroRows = await mikroDbContext.CashRegisterDetails
+        var rows = await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item => item.Bank != null && item.Bank.ToLower().Contains("online"))
             .OrderBy(item => item.CashRegisterNo)
@@ -314,7 +314,7 @@ public sealed class CashSummaryLookupsUseCase(
                 item.CashNo))
             .ToArrayAsync(cancellationToken);
 
-        return mikroRows
+        return rows
             .Select(ToCashRegisterDetailDto)
             .ToArray();
     }
@@ -415,16 +415,17 @@ public sealed class CashSummaryLookupsUseCase(
         }
     }
 
-    private async Task<CashRegisterTerminalSource?> GetMikroCashRegisterDetailByRegisterNoAsync(
+    private async Task<CashRegisterTerminalSource?> GetFurpaCashRegisterDetailByRegisterNoAsync(
         string cashRegisterNo,
         int? branchNo,
         CancellationToken cancellationToken) =>
-        await mikroDbContext.CashRegisterDetails
+        await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item =>
                 item.CashRegisterNo == cashRegisterNo &&
-                (!branchNo.HasValue || mikroDbContext.CashRegisterBranches.Any(mapping =>
-                    mapping.BranchNo == branchNo.Value && mapping.CashRegisterNo == item.CashRegisterNo)))
+                (!branchNo.HasValue || furpaDbContext.CashRegistryDetails.Any(mapping =>
+                    mapping.BranchNo == branchNo.Value &&
+                    mapping.CashRegisterNo == item.CashNo)))
             .OrderBy(item => item.Id)
             .Select(item => new CashRegisterTerminalSource(
                 item.Id,
@@ -435,17 +436,18 @@ public sealed class CashSummaryLookupsUseCase(
                 item.CashNo))
             .FirstOrDefaultAsync(cancellationToken);
 
-    private async Task<CashRegisterTerminalSource?> GetMikroCashRegisterDetailByCashNoAsync(
+    private async Task<CashRegisterTerminalSource?> GetFurpaCashRegisterDetailByCashNoAsync(
         int cashNo,
         int? branchNo,
         CancellationToken cancellationToken)
     {
-        var details = await mikroDbContext.CashRegisterDetails
+        var details = await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item =>
                 item.CashNo == cashNo &&
-                (!branchNo.HasValue || mikroDbContext.CashRegisterBranches.Any(mapping =>
-                    mapping.BranchNo == branchNo.Value && mapping.CashRegisterNo == item.CashRegisterNo)))
+                (!branchNo.HasValue || furpaDbContext.CashRegistryDetails.Any(mapping =>
+                    mapping.BranchNo == branchNo.Value &&
+                    mapping.CashRegisterNo == item.CashNo)))
             .OrderBy(item => item.Id)
             .Select(item => new CashRegisterTerminalSource(
                 item.Id,
@@ -474,16 +476,16 @@ public sealed class CashSummaryLookupsUseCase(
         return details.FirstOrDefault();
     }
 
-    private async Task<CashRegisterTerminalSource[]> ListMikroCashRegisterDetailsByRegisterNoAsync(
+    private async Task<CashRegisterTerminalSource[]> ListFurpaCashRegisterDetailsByRegisterNoAsync(
         string cashRegisterNo,
         int? branchNo,
         CancellationToken cancellationToken) =>
-        await mikroDbContext.CashRegisterDetails
+        await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item =>
                 item.CashRegisterNo == cashRegisterNo &&
-                (!branchNo.HasValue || mikroDbContext.CashRegisterBranches.Any(mapping =>
-                    mapping.BranchNo == branchNo.Value && mapping.CashRegisterNo == item.CashRegisterNo)))
+                (!branchNo.HasValue || furpaDbContext.CashRegistryDetails.Any(mapping =>
+                    mapping.BranchNo == branchNo.Value && mapping.CashRegisterNo == item.CashNo)))
             .OrderBy(item => item.Id)
             .Select(item => new CashRegisterTerminalSource(
                 item.Id,
@@ -494,18 +496,18 @@ public sealed class CashSummaryLookupsUseCase(
                 item.CashNo))
             .ToArrayAsync(cancellationToken);
 
-    private async Task<CashRegisterTerminalSource[]> ListMikroCashRegisterDetailsByCashNoAsync(
+    private async Task<CashRegisterTerminalSource[]> ListFurpaCashRegisterDetailsByCashNoAsync(
         int cashNo,
         int branchNo,
         string? cashRegisterNo,
         CancellationToken cancellationToken) =>
-        await mikroDbContext.CashRegisterDetails
+        await furpaDbContext.CashRegisterDetails
             .AsNoTracking()
             .Where(item =>
                 item.CashNo == cashNo &&
                 (string.IsNullOrWhiteSpace(cashRegisterNo) || item.CashRegisterNo == cashRegisterNo.Trim()) &&
-                mikroDbContext.CashRegisterBranches.Any(mapping =>
-                    mapping.BranchNo == branchNo && mapping.CashRegisterNo == item.CashRegisterNo))
+                furpaDbContext.CashRegistryDetails.Any(mapping =>
+                    mapping.BranchNo == branchNo && mapping.CashRegisterNo == item.CashNo))
             .OrderBy(item => item.Id)
             .Select(item => new CashRegisterTerminalSource(
                 item.Id,

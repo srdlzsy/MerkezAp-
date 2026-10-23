@@ -654,21 +654,13 @@ public sealed class CashSummaryCommandsUseCase(
             .OrderBy(item => item.Id)
             .Select(item => item.CashRegisterNo)
             .ToArrayAsync(cancellationToken);
-        var mikroCashRegisterNos = await mikroWriteDbContext.CashRegisterDetails
-            .AsNoTracking()
-            .Where(item => item.CashNo == cashNo && item.CashRegisterNo != null)
-            .OrderBy(item => item.Id)
-            .Select(item => item.CashRegisterNo)
-            .ToArrayAsync(cancellationToken);
-
         if (!string.IsNullOrWhiteSpace(normalizedRequestedNo))
         {
             var belongsToCash = furpaCashRegisterNos
-                                    .Concat(mikroCashRegisterNos)
-                                    .Any(item => string.Equals(
-                                        normalizedRequestedNo,
-                                        item?.Trim(),
-                                        StringComparison.OrdinalIgnoreCase));
+                .Any(item => string.Equals(
+                    normalizedRequestedNo,
+                    item?.Trim(),
+                    StringComparison.OrdinalIgnoreCase));
 
             if (!belongsToCash)
             {
@@ -679,8 +671,7 @@ public sealed class CashSummaryCommandsUseCase(
         }
 
         var resolvedCashRegisterNo = normalizedRequestedNo ??
-                                     furpaCashRegisterNos.FirstOrDefault()?.Trim() ??
-                                     mikroCashRegisterNos.FirstOrDefault()?.Trim();
+                                     furpaCashRegisterNos.FirstOrDefault()?.Trim();
 
         return resolvedCashRegisterNo?.StartsWith("PAV", StringComparison.OrdinalIgnoreCase) == true;
     }

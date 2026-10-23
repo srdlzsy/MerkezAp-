@@ -68,6 +68,10 @@ public interface IAyarlarService
         int? branchNo,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<CashRegisterDefinitionIssueDto>> ListCashRegisterDefinitionIssuesAsync(
+        int branchNo,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<CashRegisterTerminalDto>> MoveCashRegisterTerminalGroupAsync(
         int sourceBranchNo,
         int sourceCashNo,
