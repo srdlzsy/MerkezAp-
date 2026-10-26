@@ -85,7 +85,10 @@ public sealed class InventoryCountWriteService(
 
             try
             {
-                var documentNo = await GetNextDocumentNoAsync(request.WarehouseNo, cancellationToken);
+                var documentNo = await GetNextDocumentNoAsync(
+                    request.WarehouseNo,
+                    documentDate,
+                    cancellationToken);
                 var results = lines
                     .Select((line, rowNo) => CreateResult(
                         request.WarehouseNo,
@@ -226,10 +229,16 @@ public sealed class InventoryCountWriteService(
             cancellationToken,
             verifyCompletedWithRecovery: true);
 
-    private async Task<int> GetNextDocumentNoAsync(int warehouseNo, CancellationToken cancellationToken)
+    internal async Task<int> GetNextDocumentNoAsync(
+        int warehouseNo,
+        DateTime documentDate,
+        CancellationToken cancellationToken)
     {
+        var normalizedDocumentDate = documentDate.Date;
         var currentMax = await mikroWriteDbContext.SAYIM_SONUCLARIs
-            .Where(item => item.sym_depono == warehouseNo)
+            .Where(item =>
+                item.sym_depono == warehouseNo &&
+                item.sym_tarihi == normalizedDocumentDate)
             .MaxAsync(item => item.sym_evrakno, cancellationToken);
 
         return currentMax.HasValue ? currentMax.Value + 1 : 1;
@@ -409,7 +418,10 @@ public sealed class InventoryCountWriteService(
     {
         var rows = await mikroWriteDbContext.SAYIM_SONUCLARIs
             .AsNoTracking()
-            .Where(item => item.sym_depono == request.WarehouseNo && item.sym_evrakno == documentNo)
+            .Where(item =>
+                item.sym_depono == request.WarehouseNo &&
+                item.sym_tarihi == (request.DocumentDate ?? DateTime.Today).Date &&
+                item.sym_evrakno == documentNo)
             .ToListAsync(cancellationToken);
         return BuildVerifiedInventoryCountResponse(request, name, barcodeLookup, rows, writeConnectionName);
     }

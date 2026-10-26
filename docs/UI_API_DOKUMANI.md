@@ -10707,11 +10707,12 @@ Onemli not:
 - `*.all-warehouses` yoksa `warehouseNo` sorulmaz; backend JWT icindeki kullanici deposunu kullanir. `stok-islemleri.sayim-sonuclari.all-warehouses` yetkisi olan kullanici baska depo adina sayim sonucu olusturacaksa body'de opsiyonel `warehouseNo` gonderebilir
 - Mobil offline pilotta request'e `clientRequestId` eklenmelidir.
 - backend `SAYIM_SONUCLARI` tablosuna yeni satirlar yazar
-- `documentNo` ayni depo icin `sym_evrakno` maksimum degerinin bir fazlasi olarak uretilir
+- `documentNo`, ayni `documentDate + warehouseNo` kapsami icindeki `sym_evrakno` maksimum degerinin bir fazlasi olarak uretilir; o tarih ve depoda kayit yoksa `1` olur. Baska tarihlerdeki veya baska depolardaki sayim numaralari bu sirayi etkilemez
 - `name` alani `sym_parti_kodu` kolonuna yazilir
 - satirda `barcode` bos gelirse backend `BARKOD_TANIMLARI` tablosundan stok koduna gore barkod bulmaya calisir
 - eski yapiya gore `sym_fileid = 28`, `sym_create_user = 39`, `sym_lastup_user = 39` degerleri kullanilir
 - Mobil retry icin backend `clientRequestId` izini `FR` prefixli trace olarak `SAYIM_SONUCLARI.sym_serino` alanina yazar ve ayni istek tekrar geldiginde bu iz uzerinden sonucu toparlayabilir.
+- Kayit sonrasi readback dogrulamasi `documentDate + warehouseNo + documentNo` kapsami ile yapilir; farkli tarihlerde tekrar kullanilabilen ayni evrak numaralari birbirine karistirilmaz.
 - Ayni `clientRequestId` ile ayni payload tekrar gonderilirse backend ayni business response'u dondurmeye calisir.
 - Ayni `clientRequestId` ile farkli payload gonderilirse `409 Conflict` doner.
 - Ayni `clientRequestId` halen isleniyorsa `409 Conflict` doner.
