@@ -102,6 +102,7 @@ Bu tablo su anlama gelir:
 - C01/C02/G01/G02 siparis dispatch task'lari zamanli/canli calismada `Special1=1` olan kaynak siparis satirlarini tekrar aday yapmaz; AXATA basarili donerse kaynak sipariste `Special1=1` bayragi atilir.
 - C01 ve C02 siparis dispatch taramalari belge tarihinin yaninda Mikro olusturma/son guncelleme tarihini de dikkate alir. Boylece eski is tarihli fakat bugun yazilan siparis aday listesinden kacmaz.
 - C01, C02, G01 ve G02 dispatch belge bazinda yalitilir: tek belgenin hatasi ayni turdaki diger belgelerin gonderimini durdurmaz. Veri sorunu olan belge kontrollu aralikla yeniden denenirken saglam belgeler devam eder. Ayni hareket kodu ve belge AXATA `ENT000` icinde varsa ikinci WCF gonderimi yapilmaz; yalniz Mikro gonderim bayragi uzlastirilir.
+- Operasyonel siparis, sevk ve mal kabul gorevleri firma/urun master gorevlerinden once calistirilir. Tek bir AXATA isi `JobTimeoutMinutes` suresini asarsa basarisiz kapatilir; boylece siradaki C01, C02, G01 ve G02 belgeleri saatlerce beklemez. Varsayilan ve production degeri 10 dakikadir.
 - C01/C02/C03/C4/G01/G02/DynamicCensus import tarafinda eski worker'a gore daha guvenli sira vardir: once Mikro yazilir, sonra istenirse AXATA ack atilir.
 - Manuel body endpointleri kaldirilmamistir; operasyonel kurtarma ve elle gelen AXATA body verisi icin kullanilmaya devam eder.
 

@@ -76,7 +76,10 @@ internal sealed class AxataSynchronizationWorker(
                     workItem.RequestedByUserId,
                     workItem.CreatedAtUtc);
 
-                var executionTask = coordinator.ExecuteAsync(context, stoppingToken);
+                using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                var timeoutMinutes = Math.Clamp(options.CurrentValue.JobTimeoutMinutes, 1, 60);
+                executionCancellation.CancelAfter(TimeSpan.FromMinutes(timeoutMinutes));
+                var executionTask = coordinator.ExecuteAsync(context, executionCancellation.Token);
                 while (!executionTask.IsCompleted)
                 {
                     // Keep the scoped services alive until the running task observes shutdown
@@ -101,6 +104,22 @@ internal sealed class AxataSynchronizationWorker(
                 runtimeMonitor.ReportSuccess(
                     WorkerRuntimeMonitor.AxataWorkerCode,
                     $"{workItem.TaskName} tamamlandi (Job: {workItem.JobId})",
+                    queue.GetBacklogSnapshot());
+            }
+            catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+            {
+                var timeoutMinutes = Math.Clamp(options.CurrentValue.JobTimeoutMinutes, 1, 60);
+                var message = $"AXATA gorevi {timeoutMinutes} dakikalik calisma suresini asti ve siradaki belgelerin beklememesi icin durduruldu.";
+                queue.MarkFailed(workItem.JobId, message);
+                logger.LogError(
+                    "AXATA synchronization job {JobId} timed out for task {TaskCode} after {TimeoutMinutes} minutes.",
+                    workItem.JobId,
+                    workItem.TaskCode,
+                    timeoutMinutes);
+                runtimeMonitor.ReportFailure(
+                    WorkerRuntimeMonitor.AxataWorkerCode,
+                    $"{workItem.TaskName} zaman asimina ugradi (Job: {workItem.JobId})",
+                    new TimeoutException(message),
                     queue.GetBacklogSnapshot());
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

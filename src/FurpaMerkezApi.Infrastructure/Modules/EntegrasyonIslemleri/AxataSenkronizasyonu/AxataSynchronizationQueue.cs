@@ -13,7 +13,8 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
     private readonly ConcurrentDictionary<Guid, AxataSynchronizationJobRecord> jobs = new();
     private readonly object enqueueSyncRoot = new();
     private readonly SemaphoreSlim signal = new(0);
-    private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> pending = new();
+    private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> priorityPending = new();
+    private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> backgroundPending = new();
     private int pendingCount;
     private int runningCount;
 
@@ -53,7 +54,7 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
                 createdAtUtc);
 
             jobs[jobId] = record;
-            pending.Enqueue(new AxataSynchronizationJobWorkItem(
+            var workItem = new AxataSynchronizationJobWorkItem(
                 jobId,
                 definition.Code,
                 definition.Name,
@@ -61,7 +62,8 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
                 triggerSource,
                 warehouseNo,
                 requestedByUserId,
-                createdAtUtc));
+                createdAtUtc);
+            ResolveQueue(definition.Code, triggerSource).Enqueue(workItem);
             Interlocked.Increment(ref pendingCount);
             signal.Release();
 
@@ -73,7 +75,8 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
     {
         await signal.WaitAsync(cancellationToken);
 
-        if (pending.TryDequeue(out var workItem))
+        if (priorityPending.TryDequeue(out var workItem) ||
+            backgroundPending.TryDequeue(out workItem))
         {
             Interlocked.Decrement(ref pendingCount);
             return workItem;
@@ -148,7 +151,7 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
 
     internal WorkerBacklogSnapshot GetBacklogSnapshot()
     {
-        DateTime? oldestQueuedAtUtc = pending.TryPeek(out var oldest) ? oldest.CreatedAtUtc : null;
+        var oldestQueuedAtUtc = GetOldestQueuedAtUtc();
         var snapshots = jobs.Values
             .Select(record => record.ToRuntimeSnapshot())
             .ToArray();
@@ -182,6 +185,36 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
         jobs.TryGetValue(jobId, out var record)
             ? record
             : throw new KeyNotFoundException($"AXATA synchronization job '{jobId}' was not found.");
+
+    private ConcurrentQueue<AxataSynchronizationJobWorkItem> ResolveQueue(
+        string taskCode,
+        AxataSynchronizationJobTriggerSource triggerSource) =>
+        triggerSource == AxataSynchronizationJobTriggerSource.Manual ||
+        AxataSynchronizationCatalog.IsOperationalTask(taskCode)
+            ? priorityPending
+            : backgroundPending;
+
+    private DateTime? GetOldestQueuedAtUtc()
+    {
+        DateTime? priorityCreatedAt = priorityPending.TryPeek(out var priority)
+            ? priority.CreatedAtUtc
+            : null;
+        DateTime? backgroundCreatedAt = backgroundPending.TryPeek(out var background)
+            ? background.CreatedAtUtc
+            : null;
+
+        if (!priorityCreatedAt.HasValue)
+        {
+            return backgroundCreatedAt;
+        }
+
+        if (!backgroundCreatedAt.HasValue)
+        {
+            return priorityCreatedAt;
+        }
+
+        return priorityCreatedAt < backgroundCreatedAt ? priorityCreatedAt : backgroundCreatedAt;
+    }
 
     private void RemoveOldCompletedJobs()
     {

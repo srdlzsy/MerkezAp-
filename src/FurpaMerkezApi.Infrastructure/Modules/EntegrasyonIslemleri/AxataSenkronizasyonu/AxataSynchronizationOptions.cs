@@ -22,6 +22,8 @@ public sealed class AxataSynchronizationOptions
 
     public int EndpointProbeTimeoutSeconds { get; init; } = 5;
 
+    public int JobTimeoutMinutes { get; init; } = 10;
+
     public string OutboxBasePath { get; init; } = string.Empty;
 
     public AxataDocumentRetryStateOptions DocumentRetryState { get; init; } = new();

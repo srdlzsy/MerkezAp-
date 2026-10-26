@@ -83,7 +83,8 @@ internal sealed class AxataSynchronizationScheduler(
 
         var now = clock.UtcNow;
 
-        foreach (var definition in AxataSynchronizationCatalog.Definitions)
+        foreach (var definition in AxataSynchronizationCatalog.Definitions
+                     .OrderBy(definition => AxataSynchronizationCatalog.GetSchedulingPriority(definition.Code)))
         {
             var taskOptions = ResolveTaskOptions(currentOptions, definition.Code);
 

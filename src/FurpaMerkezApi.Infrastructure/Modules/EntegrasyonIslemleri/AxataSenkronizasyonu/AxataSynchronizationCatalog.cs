@@ -114,6 +114,13 @@ internal static class AxataSynchronizationCatalog
         Definitions.FirstOrDefault(
             definition => string.Equals(definition.Code, taskCode, StringComparison.OrdinalIgnoreCase))
         ?? throw new KeyNotFoundException($"AXATA synchronization task '{taskCode}' was not found.");
+
+    public static bool IsOperationalTask(string taskCode) =>
+        !string.Equals(taskCode, "firm-master-sync", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(taskCode, "product-master-sync", StringComparison.OrdinalIgnoreCase);
+
+    public static int GetSchedulingPriority(string taskCode) =>
+        IsOperationalTask(taskCode) ? 0 : 1;
 }
 
 internal sealed record AxataSynchronizationTaskDefinition(

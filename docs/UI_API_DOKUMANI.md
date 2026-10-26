@@ -20889,6 +20889,7 @@ Entegrasyon modulu notlari:
 
 - worker ve scheduler backend tarafinda hosted service olarak calisir
 - scheduler config ile kapali acilabilir; UI bunu overview ekraninda gostermelidir
+- Siparis, sevk ve mal kabul gibi operasyonel AXATA gorevleri firma/urun master gorevlerinden once kuyruklanir ve calistirilir. Manuel baslatilan gorevler de onceliklidir. Bir gorev `AxataSynchronization.JobTimeoutMinutes` suresini asarsa basarisiz kapatilir ve kuyruk siradaki belgeyle devam eder; production degeri 10 dakikadir.
 - `preview` endpoint'i canli veriyi okur, test/mock veri kullanmaz
 - `issued-warehouse-order-sync`, `warehouse-inbound-order-sync`, `company-receiving-sync` ve `inventory-count-sync` task'larinda `warehouseNo` gerekir
 - `issued-warehouse-order-sync` icin `warehouseNo` AXATA kaynak/cikis depodur; aday liste, task preview, execute ve dispatch ayni `ssip_cikdepo` evrenine bakar

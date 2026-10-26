@@ -34,6 +34,14 @@ public sealed class AxataSynchronizationQueueTests
     }
 
     [Fact]
+    public void Catalog_AssignsOperationalDocumentsHigherSchedulingPriorityThanMasters()
+    {
+        Assert.True(
+            AxataSynchronizationCatalog.GetSchedulingPriority("received-company-order-sync") <
+            AxataSynchronizationCatalog.GetSchedulingPriority("product-master-sync"));
+    }
+
+    [Fact]
     public async Task BacklogSnapshot_TracksQueuedAndRunningJobs()
     {
         var createdAtUtc = new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc);
@@ -96,6 +104,56 @@ public sealed class AxataSynchronizationQueueTests
             Guid.NewGuid()));
 
         Assert.Contains("already has an active job", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Dequeue_PrioritizesOperationalDocumentOverBackgroundMaster()
+    {
+        var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));
+        var master = AxataSynchronizationCatalog.GetRequired("product-master-sync");
+        var document = AxataSynchronizationCatalog.GetRequired("received-company-order-sync");
+
+        queue.Enqueue(
+            master,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+        queue.Enqueue(
+            document,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+
+        var first = await queue.DequeueAsync(CancellationToken.None);
+
+        Assert.Equal("received-company-order-sync", first.TaskCode);
+    }
+
+    [Fact]
+    public async Task Dequeue_PrioritizesManualJobOverScheduledBackgroundMaster()
+    {
+        var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));
+        var scheduledMaster = AxataSynchronizationCatalog.GetRequired("product-master-sync");
+        var manualMaster = AxataSynchronizationCatalog.GetRequired("firm-master-sync");
+
+        queue.Enqueue(
+            scheduledMaster,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+        queue.Enqueue(
+            manualMaster,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Manual,
+            null,
+            Guid.NewGuid());
+
+        var first = await queue.DequeueAsync(CancellationToken.None);
+
+        Assert.Equal("firm-master-sync", first.TaskCode);
     }
 
     [Fact]
