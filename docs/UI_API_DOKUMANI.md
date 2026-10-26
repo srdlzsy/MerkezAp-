@@ -2,7 +2,7 @@
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
-Son hedefli kontrol: 2026-10-20. Kayitli 761 method/route ve 694 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
+Son hedefli kontrol: 2026-10-23. Kayitli 767 method/route ve 702 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
 Kasa, POS/PAV, banka katalogu ve icmal ekraninin veri kaynaklari icin: [Kasa, POS, Banka ve Icmal Veri Akisi](KASA_POS_BANKA_ICMAL_VERI_AKISI.md).
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
@@ -5466,6 +5466,8 @@ UI kullanim notu:
 
 - Sol menu altinda `AramaIslemleri > FiyatGor` gibi ayri bir hizli ekran olarak sunulabilir.
 - Barkod okutma ekraninda pratik yol `barkodlar/{barcode}/fiyat` alias'idir.
+- El terminalinde barkod sonucu geldikten sonra arama alani otomatik temizlenmeli ve barkod odagi korunmalidir. Kullanici onceki barkodu elle silmeden pes pese urun okutabilmelidir.
+- Bir onceki arama gec tamamlanirsa yeni okutulan barkodun sonucunu ezmemelidir; UI yalniz son arama isteginin sonucunu ekrana basmalidir.
 - Terazi barkodunda response icindeki `requestedBarcode`, `lookupBarcode`, `embeddedQuantity` ve `embeddedQuantityUnit` alanlari UI'a okutulan barkod ile arama barkodunu ayirmak icin gelir.
 - El terminali offline kullanacaksa bu endpoint online anlik sorgu icin kalmali; offline veri hazirligi `Mobil Urun-Fiyat Katalog Sync` endpoint'iyle yapilmalidir.
 
@@ -6204,12 +6206,22 @@ Not:
 - Acik gelen depo siparisleri, `SuggestedWarehouseOrders:OpenIncomingOrderDeduction`
   ayari acik ve kaynak depo `TrustedSourceWarehouseNos` icindeyse ihtiyactan dusulur.
 - Kaynak depoda elde olmayan miktar onerilmez.
-- Oneri minimum stok esigine gore tetiklenir; `needQuantity` minimum stok acigidir.
-- `unitMultiplier` 1'den buyukse `suggestedOrderQuantity` koli katina yukari yuvarlanir.
+- Oneri, eski sistemle uyumlu olarak `recommendedDay` gunluk hedef stoga gore tetiklenir. `needQuantity`, onerilen gun stogu eksi hedef depo stogu ve guvenilir acik siparis miktaridir.
+- `unitMultiplier` 1'den buyukse eski sistemdeki gibi en yakin koli katina yuvarlanir. Hedef depoda stok sifirsa en az bir koli; koli tanimi yoksa en az bir ana birim onerilir.
 - `unitMultiplier`, UI'in koli ici miktar icin kullanacagi standart alandir.
 - `maxDay` doluysa onerilen miktar maksimum stok seviyesini asmadan sinirlanir; koli kati korunur.
 - Kaynak stok siniri devreye girerse son miktar yine koli kati korunarak asagi kirpilir.
 - Kaynak depo model kodlari bos ise backend `400 ProblemDetails` dondurebilir.
+
+Analizli liste:
+
+`GET /api/siparis-islemleri/onerilen-depo-siparisleri/analiz?SourceWarehouseNo=50`
+
+- Liste endpointiyle ayni filtreleri ve ayni hesaplama kurallarini kullanir.
+- `items` siparise onerilen satirlardir; mevcut liste endpointi geriye uyum icin yalniz bu diziyi donmeye devam eder.
+- `candidateCount` degerlendirilen urun sayisi, `suggestedCount` onerilen urun sayisidir.
+- `exclusions`, elenen urunleri neden kodu, kullaniciya gosterilecek Turkce etiket ve adet olarak ozetler.
+- Nedenler; ana barkod eksigi, acik siparisin ihtiyaci karsilamasi, hedef stok yeterliligi, azami stok siniri, kaynak stok yoklugu ve koli/limit kisitidir. Performans icin analiz yalniz secilen donemde tuketimi olan gercek adaylari degerlendirir.
 
 Liste satiri modeli:
 
@@ -7833,8 +7845,10 @@ Onemli not:
 - Kullanici listedeki satira tikladiginda veya ustten seri/sira girerek devam ettiginde ayni endpoint cagrilabilir.
 - Sadece bekleyen evraklar doner; daha once kabul edilmis bir sevk/iade icin `404` doner.
 - Response modeli `WarehouseShippingDetailDto` ile aynidir.
+- `items` urun adina gore Turkce A-Z sirali doner; ayni urun adinda orijinal `lineNo` sirasi korunur.
 - `header.isReturn = false` normal gelen depo sevkini, `header.isReturn = true` gelen depo iadesini ifade eder.
 - UI `items[].movementGuid` alanini kabul request'ine tasimalidir.
+- A4 depo mal kabul baskisinda satir araligi, hucre boslugu ve imza alani yogun baski profiliyle daraltilmalidir; ekrandaki veri ve satir kimlikleri degistirilmemelidir.
 
 ### Depo Mal Kabul Icin E-Irsaliye ETTN Cozumleme
 
@@ -15673,7 +15687,7 @@ UI kullanim notu:
 
 Gunluk banknot teslim/toplam kayitlarini Kasa Islemleri altindaki ayri menu route'undan getirir.
 
-`GET /api/kasa-islemleri/banknot-takipleri?dateToGet=2026-04-24&warehouseNo=110`
+`GET /api/kasa-islemleri/banknot-takipleri?dateToGet=2026-04-24&warehouseNo=110&search=teslim`
 
 Yetki:
 
@@ -15689,6 +15703,8 @@ Not:
 - `kasa-islemleri.banknot-takipleri.all-warehouses` yoksa UI `warehouseNo` gondermez; backend JWT icindeki kullanici deposunu uygular
 - `kasa-islemleri.banknot-takipleri.all-warehouses` varsa `warehouseNo` bos/null gonderilirse tum depolar listelenir; belirli depo icin ilgili depo no gonderilir
 - `warehouseNo = 1` artik tum depolar anlami tasimaz; gercekten 1 no'lu depo filtresi olarak yorumlanir
+- `search` opsiyoneldir ve en fazla 100 karakterdir; kayit GUID'i, depo no/adi, teslim eden ve teslim alan alanlarinda arar
+- UI, tarih ve depo filtresinin yaninda belirgin `Kod / Kisi Ara` alani gostermeli; arama metni bosken gunun tum kayitlari gelmelidir
 - response modeli `BanknoteTrackDto` doner ve `banknoteTrackId` alanini GUID olarak icerir
 - bu route'da `differenceAmount`, eski kodla uyumlu olarak `deliveryTotalAmount - totalAmount` hesaplanir
 - Banknot takip kaydini guncelleme/silme ihtiyaci Mikro Evrak Duzenleme modulunden yapilir: `PUT/DELETE /api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}`
@@ -26000,9 +26016,9 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | POST | `/api/integrations/axata-sync/tasks/{taskCode}/execute` | JWT + entegrasyon-islemleri.axata-senkronizasyonu.create | path: taskCode / string (zorunlu)<br>body: request / AxataSynchronizationExecuteTaskHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>202: AxataSynchronizationJobDto<br>400: ProblemDetails |
 | GET | `/api/integrations/axata-sync/tasks/{taskCode}/preview` | JWT + entegrasyon-islemleri.axata-senkronizasyonu.detail | path: taskCode / string (zorunlu)<br>query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataSynchronizationPreviewDto<br>400: ProblemDetails |
 | GET | `/api/integrations/axata-sync/workbench` | JWT + entegrasyon-islemleri.axata-senkronizasyonu.list | query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32)<br>query: DocumentSerie / string<br>query: DocumentOrderNo / integer (int32)<br>query: Statuses / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataSynchronizationWorkbenchDto<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/banknot-takipleri` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BanknoteTrackDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/banknot-takipleri` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Search / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BanknoteTrackDto&gt;<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/banknot-takipleri` | JWT + kasa-islemleri.banknot-takipleri.create | body: request / CreateBanknoteTrackHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CreateBanknoteTrackResponse<br>201: CreateBanknoteTrackResponse<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/banknot-takipleri/sayim-toplami` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDailySummaryTotalDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/banknot-takipleri/sayim-toplami` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Search / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDailySummaryTotalDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/banknot-takipleri/{banknoteTrackId}` | JWT + kasa-islemleri.banknot-takipleri.detail | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/kasa-islemleri/birlik-kart-sorgulama/detay` | JWT + kasa-islemleri.birlik-kart-sorgulama.detail | body: request / BirlikKartDetayRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BirlikKartDetayResponse<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/birlik-kart-sorgulama/guncelle` | JWT + kasa-islemleri.birlik-kart-sorgulama.update | body: request / BirlikKartSorgulamaGuncelleRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BirlikKartGuncelleResponse<br>400: ProblemDetails |
@@ -26297,6 +26313,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/siparis-islemleri/alinan-firma-siparisleri/{documentSerie}/{documentOrderNo}` | JWT + siparis-islemleri.alinan-firma-siparisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/siparis-islemleri/alinan-firma-siparisleri/{id}` | JWT + siparis-islemleri.alinan-firma-siparisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/siparis-islemleri/onerilen-depo-siparisleri` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list | query: TargetWarehouseNo / integer (int32)<br>query: SourceWarehouseNo / integer (int32)<br>query: LookbackDays / integer (int32)<br>query: FallbackRecommendedDay / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SuggestedWarehouseOrderListItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/siparis-islemleri/onerilen-depo-siparisleri/analiz` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list | query: TargetWarehouseNo / integer (int32)<br>query: SourceWarehouseNo / integer (int32)<br>query: LookbackDays / integer (int32)<br>query: FallbackRecommendedDay / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SuggestedWarehouseOrderAnalysisDto<br>400: ProblemDetails |
 | POST | `/api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order` | JWT + siparis-islemleri.onerilen-depo-siparisleri.create | body: request / ConvertSuggestedWarehouseOrderHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateIssuedWarehouseOrderResponse<br>400: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/siparis-islemleri/onerilen-depo-siparisleri/kaynak-depo-urunleri` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list | query: sourceWarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SuggestedWarehouseSourceProductDto&gt;<br>400: ProblemDetails |
 | GET | `/api/siparis-islemleri/onerilen-depo-siparisleri/manav` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SuggestedWarehouseSourceProductDto&gt;<br>400: ProblemDetails |
@@ -33966,6 +33983,23 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalQuantity` | number (double) | Hayir |  |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderAnalysisDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `candidateCount` | integer (int32) | Hayir |  |
+| `exclusions` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderExclusionSummaryDto[] | Hayir | nullable |
+| `items` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.SuggestedWarehouseOrderListItemDto[] | Hayir | nullable |
+| `suggestedCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderExclusionSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `code` | string | Hayir | nullable |
+| `count` | integer (int32) | Hayir |  |
+| `label` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.SourceProducts.SuggestedWarehouseSourceProductDto
 

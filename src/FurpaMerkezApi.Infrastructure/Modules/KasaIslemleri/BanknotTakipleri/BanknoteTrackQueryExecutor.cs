@@ -14,6 +14,8 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
     {
         Validate(request);
         var (date, nextDate) = NormalizeDateRange(request.DateToGet);
+        var search = string.IsNullOrWhiteSpace(request.Search) ? null : request.Search.Trim();
+        var searchPattern = search is null ? null : $"%{search}%";
 
         const string sql = """
             SELECT
@@ -31,6 +33,14 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
             WHERE t.BanknoteTrackDate >= @date
               AND t.BanknoteTrackDate < @nextDate
               AND (@warehouseNo IS NULL OR t.WarehouseNo = @warehouseNo)
+              AND (
+                  @searchPattern IS NULL
+                  OR CONVERT(nvarchar(36), t.Id) LIKE @searchPattern
+                  OR CONVERT(nvarchar(20), t.WarehouseNo) LIKE @searchPattern
+                  OR COALESCE(w.dep_adi, '') LIKE @searchPattern
+                  OR COALESCE(t.Deliverer, '') LIKE @searchPattern
+                  OR COALESCE(t.Receiver, '') LIKE @searchPattern
+              )
             ORDER BY
                 t.BanknoteTrackDate,
                 t.WarehouseNo,
@@ -44,6 +54,7 @@ public sealed class BanknoteTrackQueryExecutor(MikroDbContext mikroDbContext)
                 AddParameter(command, "@date", date);
                 AddParameter(command, "@nextDate", nextDate);
                 AddParameter(command, "@warehouseNo", request.WarehouseNo);
+                AddParameter(command, "@searchPattern", searchPattern);
             },
             Map,
             cancellationToken);

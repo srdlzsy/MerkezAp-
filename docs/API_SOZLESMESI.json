@@ -19646,6 +19646,15 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Search",
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -19906,6 +19915,15 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Search",
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "minLength": 0,
+              "type": "string"
             }
           }
         ],
@@ -64275,6 +64293,145 @@
                   "items": {
                     "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.SuggestedWarehouseOrderListItemDto"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "siparis-islemleri.onerilen-depo-siparisleri.list"
+        ]
+      }
+    },
+    "/api/siparis-islemleri/onerilen-depo-siparisleri/analiz": {
+      "get": {
+        "tags": [
+          "OnerilenDepoSiparisleri"
+        ],
+        "parameters": [
+          {
+            "name": "TargetWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "SourceWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "LookbackDays",
+            "in": "query",
+            "schema": {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "FallbackRecommendedDay",
+            "in": "query",
+            "schema": {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderAnalysisDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderAnalysisDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderAnalysisDto"
                 }
               }
             }
@@ -119932,6 +120089,52 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderAnalysisDto": {
+        "type": "object",
+        "properties": {
+          "candidateCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "suggestedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.SuggestedWarehouseOrderListItemDto"
+            },
+            "nullable": true
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderExclusionSummaryDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderExclusionSummaryDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

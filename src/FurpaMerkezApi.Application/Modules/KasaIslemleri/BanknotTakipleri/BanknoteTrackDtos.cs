@@ -2,7 +2,8 @@ namespace FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
 
 public sealed record BanknoteTrackListRequest(
     DateTime DateToGet,
-    int? WarehouseNo);
+    int? WarehouseNo,
+    string? Search);
 
 public sealed record BanknoteTrackDetailRequest(
     Guid BanknoteTrackId,

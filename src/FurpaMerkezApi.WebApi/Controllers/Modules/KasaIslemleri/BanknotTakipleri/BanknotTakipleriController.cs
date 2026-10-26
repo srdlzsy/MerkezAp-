@@ -41,7 +41,8 @@ public sealed class BanknotTakipleriController(
         var response = await listBanknoteTracksUseCase.ExecuteAsync(
             new BanknoteTrackListRequest(
                 request.DateToGet!.Value,
-                warehouseNo),
+                warehouseNo,
+                request.Search),
             cancellationToken);
 
         return Ok(response);
@@ -120,6 +121,9 @@ public sealed class BanknoteTrackDateHttpRequest
 
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
+
+    [StringLength(100)]
+    public string? Search { get; init; }
 }
 
 public sealed class CreateBanknoteTrackHttpRequest

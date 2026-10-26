@@ -49,6 +49,25 @@ public sealed class OnerilenDepoSiparisleriController(
                 request.FallbackRecommendedDay),
             cancellationToken));
     }
+
+    [HttpGet("analiz")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(SuggestedWarehouseOrderAnalysisDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<SuggestedWarehouseOrderAnalysisDto>> Analyze(
+        [FromQuery] SuggestedWarehouseOrderListHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var targetWarehouseNo = User.ResolveWarehouseNoForPolicy(request.TargetWarehouseNo, ListPolicy);
+
+        return Ok(await listSuggestedWarehouseOrdersUseCase.ExecuteAnalysisAsync(
+            new SuggestedWarehouseOrderListRequest(
+                targetWarehouseNo,
+                request.SourceWarehouseNo,
+                request.LookbackDays,
+                request.FallbackRecommendedDay),
+            cancellationToken));
+    }
  
     [HttpGet("kaynak-depo-urunleri")]
     [Authorize(Policy = ListPolicy)]

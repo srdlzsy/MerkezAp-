@@ -7,4 +7,8 @@ public interface IListSuggestedWarehouseOrdersUseCase
     Task<IReadOnlyCollection<SuggestedWarehouseOrderListItemDto>> ExecuteAsync(
         SuggestedWarehouseOrderListRequest request,
         CancellationToken cancellationToken);
+
+    Task<SuggestedWarehouseOrderAnalysisDto> ExecuteAnalysisAsync(
+        SuggestedWarehouseOrderListRequest request,
+        CancellationToken cancellationToken);
 }

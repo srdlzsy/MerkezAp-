@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 766. Model sayisi: 700.
+Endpoint sayisi (method + route): 767. Model sayisi: 702.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -419,9 +419,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/integrations/axata-sync/tasks/{taskCode}/execute` | JWT + entegrasyon-islemleri.axata-senkronizasyonu.create | path: taskCode / string (zorunlu)<br>body: request / AxataSynchronizationExecuteTaskHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>202: AxataSynchronizationJobDto<br>400: ProblemDetails |
 | GET | `/api/integrations/axata-sync/tasks/{taskCode}/preview` | JWT + entegrasyon-islemleri.axata-senkronizasyonu.detail | path: taskCode / string (zorunlu)<br>query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataSynchronizationPreviewDto<br>400: ProblemDetails |
 | GET | `/api/integrations/axata-sync/workbench` | JWT + entegrasyon-islemleri.axata-senkronizasyonu.list | query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32)<br>query: DocumentSerie / string<br>query: DocumentOrderNo / integer (int32)<br>query: Statuses / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataSynchronizationWorkbenchDto<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/banknot-takipleri` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BanknoteTrackDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/banknot-takipleri` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Search / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BanknoteTrackDto&gt;<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/banknot-takipleri` | JWT + kasa-islemleri.banknot-takipleri.create | body: request / CreateBanknoteTrackHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CreateBanknoteTrackResponse<br>201: CreateBanknoteTrackResponse<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/banknot-takipleri/sayim-toplami` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDailySummaryTotalDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/banknot-takipleri/sayim-toplami` | JWT + kasa-islemleri.banknot-takipleri.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Search / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDailySummaryTotalDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/banknot-takipleri/{banknoteTrackId}` | JWT + kasa-islemleri.banknot-takipleri.detail | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | POST | `/api/kasa-islemleri/birlik-kart-sorgulama/detay` | JWT + kasa-islemleri.birlik-kart-sorgulama.detail | body: request / BirlikKartDetayRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BirlikKartDetayResponse<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/birlik-kart-sorgulama/guncelle` | JWT + kasa-islemleri.birlik-kart-sorgulama.update | body: request / BirlikKartSorgulamaGuncelleRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BirlikKartGuncelleResponse<br>400: ProblemDetails |
@@ -716,6 +716,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/siparis-islemleri/alinan-firma-siparisleri/{documentSerie}/{documentOrderNo}` | JWT + siparis-islemleri.alinan-firma-siparisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/siparis-islemleri/alinan-firma-siparisleri/{id}` | JWT + siparis-islemleri.alinan-firma-siparisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/siparis-islemleri/onerilen-depo-siparisleri` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list | query: TargetWarehouseNo / integer (int32)<br>query: SourceWarehouseNo / integer (int32)<br>query: LookbackDays / integer (int32)<br>query: FallbackRecommendedDay / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SuggestedWarehouseOrderListItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/siparis-islemleri/onerilen-depo-siparisleri/analiz` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list | query: TargetWarehouseNo / integer (int32)<br>query: SourceWarehouseNo / integer (int32)<br>query: LookbackDays / integer (int32)<br>query: FallbackRecommendedDay / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SuggestedWarehouseOrderAnalysisDto<br>400: ProblemDetails |
 | POST | `/api/siparis-islemleri/onerilen-depo-siparisleri/convert-to-order` | JWT + siparis-islemleri.onerilen-depo-siparisleri.create | body: request / ConvertSuggestedWarehouseOrderHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateIssuedWarehouseOrderResponse<br>400: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/siparis-islemleri/onerilen-depo-siparisleri/kaynak-depo-urunleri` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list | query: sourceWarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SuggestedWarehouseSourceProductDto&gt;<br>400: ProblemDetails |
 | GET | `/api/siparis-islemleri/onerilen-depo-siparisleri/manav` | JWT + siparis-islemleri.onerilen-depo-siparisleri.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SuggestedWarehouseSourceProductDto&gt;<br>400: ProblemDetails |
@@ -8385,6 +8386,23 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalQuantity` | number (double) | Hayir |  |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderAnalysisDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `candidateCount` | integer (int32) | Hayir |  |
+| `exclusions` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderExclusionSummaryDto[] | Hayir | nullable |
+| `items` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.SuggestedWarehouseOrderListItemDto[] | Hayir | nullable |
+| `suggestedCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.List.SuggestedWarehouseOrderExclusionSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `code` | string | Hayir | nullable |
+| `count` | integer (int32) | Hayir |  |
+| `label` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisleri.SourceProducts.SuggestedWarehouseSourceProductDto
 

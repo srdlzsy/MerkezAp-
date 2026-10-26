@@ -16,6 +16,11 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
 {
     public async Task<IReadOnlyCollection<SuggestedWarehouseOrderListItemDto>> ExecuteAsync(
         SuggestedWarehouseOrderListRequest request,
+        CancellationToken cancellationToken) =>
+        (await ExecuteAnalysisAsync(request, cancellationToken)).Items;
+
+    public async Task<SuggestedWarehouseOrderAnalysisDto> ExecuteAnalysisAsync(
+        SuggestedWarehouseOrderListRequest request,
         CancellationToken cancellationToken)
     {
         Validate(request);
@@ -191,8 +196,21 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
                 calc.RecommendedDay,
                 calc.sto_max_stok_belirleme_gun AS MaxDay,
                 recommended.RecommendedStockQuantity,
-                threshold.MinimumNeedQuantity AS NeedQuantity,
-                recommended.SuggestedOrderQuantity
+                threshold.RecommendedNeedQuantity AS NeedQuantity,
+                recommended.SuggestedOrderQuantity,
+                CASE
+                    WHEN ISNULL(calc.bar_kodu, '') = '' THEN 'BARCODE_MISSING'
+                    WHEN threshold.RecommendedNeedQuantity <= 0
+                         AND calc.OpenOrderQuantity > 0
+                         AND calc.TargetOnHand < targetQuantity.RecommendedStockQuantity
+                        THEN 'OPEN_ORDER_COVERS_NEED'
+                    WHEN threshold.RecommendedNeedQuantity <= 0 THEN 'TARGET_STOCK_SUFFICIENT'
+                    WHEN threshold.MaximumAllowedQuantity IS NOT NULL AND threshold.MaximumAllowedQuantity <= 0
+                        THEN 'MAXIMUM_STOCK_REACHED'
+                    WHEN calc.SourceOnHand <= 0 THEN 'SOURCE_STOCK_UNAVAILABLE'
+                    WHEN recommended.SuggestedOrderQuantity <= 0 THEN 'PACKAGE_OR_LIMIT'
+                    ELSE ''
+                END AS ExclusionReason
             FROM Calculated AS calc
             CROSS APPLY (
                 SELECT
@@ -211,7 +229,7 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
             ) AS targetQuantity
             CROSS APPLY (
                 SELECT
-                    targetQuantity.MinimumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS MinimumNeedQuantity,
+                    targetQuantity.RecommendedStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity AS RecommendedNeedQuantity,
                     CASE
                         WHEN targetQuantity.MaximumStockQuantity IS NULL THEN NULL
                         ELSE targetQuantity.MaximumStockQuantity - calc.TargetOnHand - calc.OpenOrderQuantity
@@ -220,10 +238,18 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
             CROSS APPLY (
                 SELECT
                     CASE
-                        WHEN threshold.MinimumNeedQuantity <= 0 THEN 0
+                        WHEN threshold.RecommendedNeedQuantity <= 0 THEN 0
                         WHEN targetQuantity.PackageQuantity > 0
-                            THEN CEILING(threshold.MinimumNeedQuantity / targetQuantity.PackageQuantity) * targetQuantity.PackageQuantity
-                        ELSE threshold.MinimumNeedQuantity
+                            THEN CASE
+                                WHEN calc.TargetOnHand <= 0 THEN targetQuantity.PackageQuantity
+                                ELSE CASE
+                                    WHEN ROUND(threshold.RecommendedNeedQuantity / targetQuantity.PackageQuantity, 0) < 1 THEN targetQuantity.PackageQuantity
+                                    ELSE ROUND(threshold.RecommendedNeedQuantity / targetQuantity.PackageQuantity, 0) * targetQuantity.PackageQuantity
+                                END
+                            END
+                        WHEN calc.TargetOnHand <= 0 THEN 1
+                        WHEN ROUND(threshold.RecommendedNeedQuantity, 0) < 1 THEN 1
+                        ELSE ROUND(threshold.RecommendedNeedQuantity, 0)
                     END AS RoundedOrderQuantity
             ) AS roundedOrder
             CROSS APPLY (
@@ -257,13 +283,10 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
                     END AS SuggestedOrderQuantity,
                     targetQuantity.RecommendedStockQuantity
             ) AS recommended
-            WHERE calc.SalesQuantity > 0
-              AND ISNULL(calc.bar_kodu, '') <> ''
-              AND recommended.SuggestedOrderQuantity > 0
-            ORDER BY SuggestedOrderQuantity DESC, calc.sto_isim;
+            ORDER BY ExclusionReason, SuggestedOrderQuantity DESC, calc.sto_isim;
             """;
 
-        return await ExecuteReaderAsync(
+        var candidates = await ExecuteReaderAsync(
             sql,
             command =>
             {
@@ -273,8 +296,25 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
                 AddParameter(command, "@fallbackRecommendedDay", request.FallbackRecommendedDay, DbType.Int32);
                 AddParameter(command, "@deductOpenIncomingOrders", deductOpenIncomingOrders, DbType.Boolean);
             },
-            ReadItem,
+            ReadCandidate,
             cancellationToken);
+
+        var items = candidates
+            .Where(candidate => string.IsNullOrEmpty(candidate.ExclusionReason))
+            .Select(candidate => candidate.Item)
+            .ToArray();
+        var exclusions = candidates
+            .Where(candidate => !string.IsNullOrEmpty(candidate.ExclusionReason))
+            .GroupBy(candidate => candidate.ExclusionReason, StringComparer.Ordinal)
+            .Select(group => new SuggestedWarehouseOrderExclusionSummaryDto(
+                group.Key,
+                ResolveExclusionLabel(group.Key),
+                group.Count()))
+            .OrderByDescending(item => item.Count)
+            .ThenBy(item => item.Label, StringComparer.Ordinal)
+            .ToArray();
+
+        return new SuggestedWarehouseOrderAnalysisDto(candidates.Count, items.Length, items, exclusions);
     }
 
     private bool ShouldDeductOpenIncomingOrders(int sourceWarehouseNo)
@@ -330,8 +370,9 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
         return items;
     }
 
-    private static SuggestedWarehouseOrderListItemDto ReadItem(DbDataReader reader) =>
+    private static SuggestedWarehouseOrderCandidate ReadCandidate(DbDataReader reader) =>
         new(
+            new SuggestedWarehouseOrderListItemDto(
             ReadString(reader, "StockCode"),
             ReadString(reader, "StockName"),
             ReadString(reader, "ModelCode"),
@@ -346,7 +387,19 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
             ReadDouble(reader, "MaxDay"),
             ReadDouble(reader, "RecommendedStockQuantity"),
             ReadDouble(reader, "NeedQuantity"),
-            ReadDouble(reader, "SuggestedOrderQuantity"));
+            ReadDouble(reader, "SuggestedOrderQuantity")),
+            ReadString(reader, "ExclusionReason"));
+
+    private static string ResolveExclusionLabel(string code) => code switch
+    {
+        "BARCODE_MISSING" => "Ana barkod tanimsiz",
+        "OPEN_ORDER_COVERS_NEED" => "Acik siparis ihtiyaci karsiliyor",
+        "TARGET_STOCK_SUFFICIENT" => "Hedef depo stogu yeterli",
+        "MAXIMUM_STOCK_REACHED" => "Azami stok sinirina ulasilmis",
+        "SOURCE_STOCK_UNAVAILABLE" => "Kaynak depoda stok yok",
+        "PACKAGE_OR_LIMIT" => "Koli veya stok siniri nedeniyle miktar yok",
+        _ => "Diger"
+    };
 
     private static void Validate(SuggestedWarehouseOrderListRequest request)
     {
@@ -394,4 +447,8 @@ public sealed class ListSuggestedWarehouseOrdersUseCase(
 
     private static bool IsBusinessRuleSqlException(SqlException exception) =>
         exception.Number is 50001 or 50002;
+
+    private sealed record SuggestedWarehouseOrderCandidate(
+        SuggestedWarehouseOrderListItemDto Item,
+        string ExclusionReason);
 }
