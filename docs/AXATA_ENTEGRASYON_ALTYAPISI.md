@@ -100,6 +100,8 @@ Bu tablo su anlama gelir:
 
 - API, eski worker'in ana canli akislari icin API icinden preview/import/dispatch saglar.
 - C01/C02/G01/G02 siparis dispatch task'lari zamanli/canli calismada `Special1=1` olan kaynak siparis satirlarini tekrar aday yapmaz; AXATA basarili donerse kaynak sipariste `Special1=1` bayragi atilir.
+- C01 ve C02 siparis dispatch taramalari belge tarihinin yaninda Mikro olusturma/son guncelleme tarihini de dikkate alir. Boylece eski is tarihli fakat bugun yazilan siparis aday listesinden kacmaz.
+- C01, C02, G01 ve G02 dispatch belge bazinda yalitilir: tek belgenin hatasi ayni turdaki diger belgelerin gonderimini durdurmaz. Veri sorunu olan belge kontrollu aralikla yeniden denenirken saglam belgeler devam eder. Ayni hareket kodu ve belge AXATA `ENT000` icinde varsa ikinci WCF gonderimi yapilmaz; yalniz Mikro gonderim bayragi uzlastirilir.
 - C01/C02/C03/C4/G01/G02/DynamicCensus import tarafinda eski worker'a gore daha guvenli sira vardir: once Mikro yazilir, sonra istenirse AXATA ack atilir.
 - Manuel body endpointleri kaldirilmamistir; operasyonel kurtarma ve elle gelen AXATA body verisi icin kullanilmaya devam eder.
 
@@ -138,6 +140,22 @@ Desteklenen task'lar:
 - API icinde bu task, shared depo siparisi executor'ini `WarehouseOrderListDirection.Issued` ile kullanir.
 - Bu nedenle manuel aday listesi, preview, outbox execute ve dispatch ayni `ssip_girdepo = warehouseNo` evrenine bakar.
 - `warehouseNo=50` icin kaynak/cikis deposu sube olan, merkez depoya gelen depolar arasi siparisler beklenen adaylardir.
+
+### Subeden Merkez Depoya Sevk/Iade Akisi
+
+Sube hedef depo `50` olacak sekilde depo sevki veya depo iadesi olusturdugunda AXATA'da dogrudan tamamlanmis mal kabul olusmaz. Akis iki yonlu ve iki asamalidir:
+
+1. Create servisi Mikro'da sevk/iade `STOK_HAREKETLERI` satirlarini olusturur.
+2. `WarehouseOrderAutomation` aciksa ayni transaction icinde merkez depo giris siparisi `DEPOLAR_ARASI_SIPARISLER` tablosuna `F50.{sira}` olarak yazilir. Sipariste `ssip_girdepo=50`, `ssip_cikdepo=sube` olur.
+3. Sevk/iade satiri ile otomatik siparis satiri `STOK_HAREKETLERI_EK.sth_subesip_uid` uzerinden baglanir. Hareket, siparis ve baglanti birlikte commit edilir; biri yazilamazsa tum transaction geri alinir.
+4. `warehouse-inbound-order-sync` bu `F50` siparisini AXATA'ya `G02` giris siparisi olarak gonderir. AXATA tarafinda baslik `ENT013_MST`, satirlar `ENT013` kaydidir.
+5. AXATA siparisi kabul ettikten sonra Mikro siparis satirlari `ssip_special1=1` yapilir. Ayni G02 belgesi AXATA'da zaten varsa ikinci kez gonderilmez; mevcut AXATA kaydi okunur ve yalniz Mikro bayragi uzlastirilir.
+6. Merkez depo fiziksel kabul yaptiginda AXATA `ENT016_MST/ENT016` G02 teslimat kaydi olusur.
+7. `g02-inbound-delivery-import` mevcut Mikro bekleyen sevk/iade fisini kabul eder, gercek kabul miktarlarini ve bagli siparisin `ssip_teslim_miktar`/`ssip_kapat_fl` alanlarini gunceller; bundan sonra AXATA kaydini tamamlandi olarak isaretler.
+
+Normal sevk ile depo iadesinin AXATA giris yonu aynidir. Mikro hareketinde normal sevk `sth_normal_iade=0`, depo iadesi `sth_normal_iade=1` olarak ayrilir. `C03` bu terminal create akisinin devam adimi degildir; AXATA kaynakli ayri/legacy depo iadesi importudur.
+
+UI/terminal bu otomasyonu kullaniciya ikinci bir kaydetme isi olarak gostermemelidir. Kullanici yalniz sevk veya iadeyi kaydeder; `F50` siparisinin uretilmesi, G02 dispatch ve sonraki mal kabul worker sorumlulugudur. Belge Akis Takibi'nde bu adimlar izlenebilir, ancak normal islem icin manuel dispatch butonu gerekmez.
 
 ### AXATA -> Mikro
 
@@ -752,6 +770,7 @@ Davranis:
 - Mevcut calisma profilinde tum `MikroWriteRouting` rotalari `Database` degerindedir. Worker insert, update, isaretleme ve silme islemlerinde dogrudan Mikro DB transaction yolunu kullanir; Mikro API yolu kodda desteklenmeye devam eder ancak konfigurasyonla yeniden acilmadikca calismaz.
 - Firma ve urun master gorevleri her turda tum katalogu gondermez. `ChangeLookbackMinutes` icinde yeni veya degismis kayitlari secer; urun aktarimi `BatchSize` kadar kodu bir sorgu paketinde isler.
 - C02 firma siparisleri eski worker ile ayni bicimde tum depolardan taranir. C01, G01 ve G02 siparis gorevleri merkez depo `50` kapsaminda calisir.
+- C02 firma sevki, C03 depo iadesi ve C4 firma iadesi Mikro stok hareketi sira numarasi `sth_evraktip + sth_evrakno_seri` benzersiz evreninden uretilir; hareket/iade turune gore tekrar eden sira olusturulmaz.
 - AXATA'dan Mikro'ya donuslerde yalniz bekleyen durumdaki kayitlar okunur. Mikro yazimi basarili olduktan sonra AXATA status alani tamamlandi olarak isaretlenir; Mikro yazimi veya eslesme basarisizsa acknowledge yapilmaz ve kayit sonraki tur icin bekler.
 
 ### Eski Worker'dan Gecis

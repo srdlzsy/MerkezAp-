@@ -155,7 +155,7 @@ public sealed class CompanyMovementWriteService(
                 var customer = await GetCustomerAsync(customerCode, cancellationToken);
                 LogCreatePhase("customer-lookup", lines.Length);
                 var customerAddressNo = ResolveCustomerAddressNo(customer);
-                var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);
+                var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
                 LogCreatePhase("next-document-order-no", lines.Length);
                 var movements = lines
                     .Select((line, rowNo) => CreateMovement(
@@ -263,7 +263,7 @@ public sealed class CompanyMovementWriteService(
             cancellationToken);
         var customer = await GetCustomerAsync(customerCode, cancellationToken);
         var customerAddressNo = ResolveCustomerAddressNo(customer);
-        var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, returnType, cancellationToken);
+        var documentOrderNo = await GetNextDocumentOrderNoAsync(documentSerie, cancellationToken);
         var lineTaxInfos = await LoadLineTaxInfosAsync(lines, kind, cancellationToken);
         var payload = CompanyMovementIrsaliyeMikroApiPayloadFactory.Create(
             request,
@@ -579,14 +579,11 @@ public sealed class CompanyMovementWriteService(
 
     private async Task<int> GetNextDocumentOrderNoAsync(
         string documentSerie,
-        byte returnType,
         CancellationToken cancellationToken)
     {
         var currentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
             .Where(movement =>
                 movement.sth_evraktip == CompanyDispatchDocumentType &&
-                movement.sth_tip == OutgoingMovementType &&
-                movement.sth_normal_iade == returnType &&
                 movement.sth_evrakno_seri == documentSerie)
             .MaxAsync(movement => movement.sth_evrakno_sira, cancellationToken);
 

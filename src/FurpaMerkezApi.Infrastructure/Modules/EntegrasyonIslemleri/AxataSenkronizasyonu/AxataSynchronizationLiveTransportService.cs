@@ -117,13 +117,15 @@ internal sealed class AxataSynchronizationLiveTransportService(
         var payload = BuildOutboundOrderPayload(detail);
 
         return await ExecuteWithOutboundOrderLockAsync(
+            payload.MovementCode,
             payload.DocumentNumber,
             async () =>
             {
                 var existingOrder = await GetAxataOutboundOrderPresenceAsync(
                     payload.DocumentNumber,
+                    payload.MovementCode,
                     cancellationToken);
-                if (existingOrder.HeaderExists)
+                if (existingOrder.HeaderExists && existingOrder.LineCount > 0)
                 {
                     logger.LogWarning(
                         "AXATA C01 order {DocumentNumber} already exists. Duplicate dispatch was skipped and Mikro sent flag will be reconciled.",
@@ -131,10 +133,10 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     return BuildExistingOutboundOrderResult(configuration, payload);
                 }
 
-                if (existingOrder.LineCount > 0)
+                if (existingOrder.HeaderExists || existingOrder.LineCount > 0)
                 {
                     throw new AxataOutboundOrderValidationException(
-                        $"AXATA C01 belgesi icin basliksiz/eslesmeyen {existingOrder.LineCount} satir bulundu. Belge={payload.DocumentNumber}. Yeni gonderim yapilmadi; AXATA ENT000/ENT001 kaydi incelenmelidir.");
+                        $"AXATA C01 belgesi eksik/eslesmeyen durumda. Belge={payload.DocumentNumber}, Baslik={existingOrder.HeaderExists}, Satir={existingOrder.LineCount}. Yeni gonderim yapilmadi; AXATA ENT000/ENT001 kaydi incelenmelidir.");
                 }
 
                 ValidateOutboundOrderPayload(payload);
@@ -149,7 +151,10 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
 
                     if (!serviceResponse.IsSuccess &&
-                        await RecoverExistingOutboundOrderAsync(payload.DocumentNumber, cancellationToken))
+                        await RecoverExistingOutboundOrderAsync(
+                            payload.DocumentNumber,
+                            payload.MovementCode,
+                            cancellationToken))
                     {
                         logger.LogWarning(
                             "AXATA C01 dispatch for {DocumentNumber} returned State={State}, but the order was found in AXATA. Mikro sent flag will be reconciled.",
@@ -178,7 +183,10 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 }
                 catch (Exception exception)
                 {
-                    if (await RecoverExistingOutboundOrderAsync(payload.DocumentNumber, cancellationToken))
+                    if (await RecoverExistingOutboundOrderAsync(
+                            payload.DocumentNumber,
+                            payload.MovementCode,
+                            cancellationToken))
                     {
                         logger.LogWarning(
                             exception,
@@ -198,7 +206,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
         if (payload.Lines.Count == 0)
         {
             throw new AxataOutboundOrderValidationException(
-                $"AXATA C01 belgesi satirsiz gonderilemez. Belge={payload.DocumentNumber}");
+                $"AXATA {payload.MovementCode} belgesi satirsiz gonderilemez. Belge={payload.DocumentNumber}");
         }
 
         var invalidLine = payload.Lines.FirstOrDefault(line =>
@@ -209,27 +217,32 @@ internal sealed class AxataSynchronizationLiveTransportService(
         if (invalidLine is not null)
         {
             throw new AxataOutboundOrderValidationException(
-                $"AXATA C01 satiri gecersiz. Belge={payload.DocumentNumber}, Satir={invalidLine.S01KALN}, Stok={invalidLine.S01SKU}, Miktar={invalidLine.S01MIKT:0.###}. Miktar 0'dan buyuk ve {MaximumOutboundLineQuantity:0} veya daha az olmalidir.");
+                $"AXATA {payload.MovementCode} satiri gecersiz. Belge={payload.DocumentNumber}, Satir={invalidLine.S01KALN}, Stok={invalidLine.S01SKU}, Miktar={invalidLine.S01MIKT:0.###}. Miktar 0'dan buyuk ve {MaximumOutboundLineQuantity:0} veya daha az olmalidir.");
         }
     }
 
     private async Task<bool> AxataOutboundOrderExistsAsync(
         string documentNumber,
+        string movementCode,
         CancellationToken cancellationToken) =>
         await axataDbContext.ENT000s
             .AsNoTracking()
             .AnyAsync(header =>
                 header.S00TESN != null &&
                 header.S00TESN.Trim() == documentNumber &&
-                ((header.S00HTP1 != null && header.S00HTP1.Trim() == DefaultOutboundMovementCode) ||
-                 (header.S00HTP2 != null && header.S00HTP2.Trim() == DefaultOutboundMovementCode)),
+                ((header.S00HTP1 != null && header.S00HTP1.Trim() == movementCode) ||
+                 (header.S00HTP2 != null && header.S00HTP2.Trim() == movementCode)),
                 cancellationToken);
 
     private async Task<AxataOutboundOrderPresence> GetAxataOutboundOrderPresenceAsync(
         string documentNumber,
+        string movementCode,
         CancellationToken cancellationToken)
     {
-        var headerExists = await AxataOutboundOrderExistsAsync(documentNumber, cancellationToken);
+        var headerExists = await AxataOutboundOrderExistsAsync(
+            documentNumber,
+            movementCode,
+            cancellationToken);
         var lineCount = await axataDbContext.ENT001s
             .AsNoTracking()
             .CountAsync(line =>
@@ -242,11 +255,16 @@ internal sealed class AxataSynchronizationLiveTransportService(
 
     private async Task<bool> RecoverExistingOutboundOrderAsync(
         string documentNumber,
+        string movementCode,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            if (await AxataOutboundOrderExistsAsync(documentNumber, cancellationToken))
+            var presence = await GetAxataOutboundOrderPresenceAsync(
+                documentNumber,
+                movementCode,
+                cancellationToken);
+            if (presence.HeaderExists && presence.LineCount > 0)
             {
                 return true;
             }
@@ -274,14 +292,15 @@ internal sealed class AxataSynchronizationLiveTransportService(
             AxataSynchronizationPayloadFactory.Serialize(new
             {
                 state = 1,
-                message = "Existing AXATA C01 order was reconciled without another dispatch."
+                message = $"Existing AXATA {payload.MovementCode} order was reconciled without another dispatch."
             }),
             [
                 $"{payload.DocumentNumber} AXATA ENT000 tarafinda zaten bulundugu icin ikinci kez gonderilmedi.",
-                "Mikro ssip_special1 bayragi cagiran servis tarafindan yeniden uzlastirilacak."
+                "Mikro gonderim bayragi cagiran servis tarafindan yeniden uzlastirilacak."
             ]);
 
     private async Task<T> ExecuteWithOutboundOrderLockAsync<T>(
+        string movementCode,
         string documentNumber,
         Func<Task<T>> action,
         CancellationToken cancellationToken)
@@ -293,7 +312,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
             await axataDbContext.Database.OpenConnectionAsync(cancellationToken);
         }
 
-        var resource = $"FurpaMerkezApi:AXATA:C01:{documentNumber}";
+        var resource = $"FurpaMerkezApi:AXATA:{movementCode}:{documentNumber}";
         try
         {
             await using var acquireCommand = connection.CreateCommand();
@@ -312,7 +331,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
             if (lockResult < 0)
             {
                 throw new TimeoutException(
-                    $"AXATA C01 belge kilidi alinamadi. Belge={documentNumber}, Sonuc={lockResult}");
+                    $"AXATA {movementCode} belge kilidi alinamadi. Belge={documentNumber}, Sonuc={lockResult}");
             }
 
             try
@@ -347,27 +366,91 @@ internal sealed class AxataSynchronizationLiveTransportService(
         var configuration = GetRequiredConfiguration();
         var operationName = ResolveOperationName(context.Definition.Code, DefaultOutboundOperationName);
         var payload = BuildCustomerOutboundOrderPayload(detail);
-        var response = await AddOutboundOrderAsync(
-            configuration,
-            operationName,
-            payload,
-            cancellationToken);
-        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
 
-        return new AxataLiveDispatchResult(
-            operationName,
-            configuration.MainEndpointUrl,
-            serviceResponse.IsSuccess,
-            serviceResponse.State,
-            serviceResponse.Message,
-            AxataSynchronizationPayloadFactory.Serialize(payload),
-            AxataSynchronizationPayloadFactory.Serialize(payload),
-            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
-            [
-                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
-                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
-                $"C02 alici/musteri kodu {detail.Header.CustomerCode} olarak gonderildi."
-            ]);
+        return await ExecuteWithOutboundOrderLockAsync(
+            payload.MovementCode,
+            payload.DocumentNumber,
+            async () =>
+            {
+                var existingOrder = await GetAxataOutboundOrderPresenceAsync(
+                    payload.DocumentNumber,
+                    payload.MovementCode,
+                    cancellationToken);
+                if (existingOrder.HeaderExists && existingOrder.LineCount > 0)
+                {
+                    logger.LogWarning(
+                        "AXATA C02 order {DocumentNumber} already exists. Duplicate dispatch was skipped and Mikro sent flag will be reconciled.",
+                        payload.DocumentNumber);
+                    return BuildExistingOutboundOrderResult(configuration, payload);
+                }
+
+                if (existingOrder.HeaderExists || existingOrder.LineCount > 0)
+                {
+                    throw new AxataOutboundOrderValidationException(
+                        $"AXATA C02 belgesi eksik/eslesmeyen durumda. Belge={payload.DocumentNumber}, Baslik={existingOrder.HeaderExists}, Satir={existingOrder.LineCount}. Yeni gonderim yapilmadi; AXATA ENT000/ENT001 kaydi incelenmelidir.");
+                }
+
+                ValidateOutboundOrderPayload(payload);
+
+                try
+                {
+                    var response = await AddOutboundOrderAsync(
+                        configuration,
+                        operationName,
+                        payload,
+                        cancellationToken);
+                    var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
+
+                    if (!serviceResponse.IsSuccess &&
+                        await RecoverExistingOutboundOrderAsync(
+                            payload.DocumentNumber,
+                            payload.MovementCode,
+                            cancellationToken))
+                    {
+                        logger.LogWarning(
+                            "AXATA C02 dispatch for {DocumentNumber} returned State={State}, but the order was found in AXATA. Mikro sent flag will be reconciled.",
+                            payload.DocumentNumber,
+                            response.State);
+                        return BuildExistingOutboundOrderResult(configuration, payload);
+                    }
+
+                    return new AxataLiveDispatchResult(
+                        operationName,
+                        configuration.MainEndpointUrl,
+                        serviceResponse.IsSuccess,
+                        serviceResponse.State,
+                        serviceResponse.Message,
+                        AxataSynchronizationPayloadFactory.Serialize(payload),
+                        AxataSynchronizationPayloadFactory.Serialize(payload),
+                        SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
+                        [
+                            $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
+                            $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
+                            $"C02 alici/musteri kodu {detail.Header.CustomerCode} olarak gonderildi."
+                        ]);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    if (await RecoverExistingOutboundOrderAsync(
+                            payload.DocumentNumber,
+                            payload.MovementCode,
+                            cancellationToken))
+                    {
+                        logger.LogWarning(
+                            exception,
+                            "AXATA C02 dispatch for {DocumentNumber} returned an uncertain result, but the order was found in AXATA. Mikro sent flag will be reconciled.",
+                            payload.DocumentNumber);
+                        return BuildExistingOutboundOrderResult(configuration, payload);
+                    }
+
+                    throw;
+                }
+            },
+            cancellationToken);
     }
 
     public async Task<AxataLiveDispatchResult> DispatchCompanyReceivingAsync(
@@ -378,27 +461,13 @@ internal sealed class AxataSynchronizationLiveTransportService(
         var configuration = GetRequiredConfiguration();
         var operationName = ResolveOperationName(context.Definition.Code, DefaultInboundOperationName);
         var payload = BuildInboundOrderPayload(detail);
-        var response = await AddInboundOrderAsync(
+
+        return await DispatchInboundOrderAsync(
             configuration,
             operationName,
             payload,
+            $"G01 satici/tedarikci kodu {detail.Header.CustomerCode} olarak gonderildi.",
             cancellationToken);
-        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
-
-        return new AxataLiveDispatchResult(
-            operationName,
-            configuration.MainEndpointUrl,
-            serviceResponse.IsSuccess,
-            serviceResponse.State,
-            serviceResponse.Message,
-            AxataSynchronizationPayloadFactory.Serialize(payload),
-            AxataSynchronizationPayloadFactory.Serialize(payload),
-            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
-            [
-                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
-                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
-                $"G01 satici/tedarikci kodu {detail.Header.CustomerCode} olarak gonderildi."
-            ]);
     }
 
     public async Task<AxataLiveDispatchResult> DispatchWarehouseInboundOrderAsync(
@@ -409,28 +478,208 @@ internal sealed class AxataSynchronizationLiveTransportService(
         var configuration = GetRequiredConfiguration();
         var operationName = ResolveOperationName(context.Definition.Code, DefaultInboundOperationName);
         var payload = BuildWarehouseInboundOrderPayload(detail);
-        var response = await AddInboundOrderAsync(
+
+        return await DispatchInboundOrderAsync(
             configuration,
             operationName,
             payload,
+            $"G02 firma/depo kodu kaynak depo {detail.Header.OutWarehouseNo} olarak gonderildi.",
             cancellationToken);
-        var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
-
-        return new AxataLiveDispatchResult(
-            operationName,
-            configuration.MainEndpointUrl,
-            serviceResponse.IsSuccess,
-            serviceResponse.State,
-            serviceResponse.Message,
-            AxataSynchronizationPayloadFactory.Serialize(payload),
-            AxataSynchronizationPayloadFactory.Serialize(payload),
-            SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
-            [
-                $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
-                $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
-                $"G02 firma/depo kodu kaynak depo {detail.Header.OutWarehouseNo} olarak gonderildi."
-            ]);
     }
+
+    private async Task<AxataLiveDispatchResult> DispatchInboundOrderAsync(
+        AxataSynchronizationLiveTransportConfiguration configuration,
+        string operationName,
+        AxataLegacyInboundOrderPayload payload,
+        string detailNote,
+        CancellationToken cancellationToken) =>
+        await ExecuteWithOutboundOrderLockAsync(
+            payload.MovementCode,
+            payload.DocumentNumber,
+            async () =>
+            {
+                var existingOrder = await GetAxataInboundOrderPresenceAsync(
+                    payload.DocumentNumber,
+                    payload.MovementCode,
+                    cancellationToken);
+                if (existingOrder.HeaderExists && existingOrder.LineCount > 0)
+                {
+                    logger.LogWarning(
+                        "AXATA {MovementCode} inbound order {DocumentNumber} already exists. Duplicate dispatch was skipped and Mikro sent flag will be reconciled.",
+                        payload.MovementCode,
+                        payload.DocumentNumber);
+                    return BuildExistingInboundOrderResult(configuration, payload);
+                }
+
+                if (existingOrder.HeaderExists || existingOrder.LineCount > 0)
+                {
+                    throw new AxataOutboundOrderValidationException(
+                        $"AXATA {payload.MovementCode} belgesi eksik/eslesmeyen durumda. Belge={payload.DocumentNumber}, Baslik={existingOrder.HeaderExists}, Satir={existingOrder.LineCount}. Yeni gonderim yapilmadi; AXATA ENT013_MST/ENT013 kaydi incelenmelidir.");
+                }
+
+                ValidateInboundOrderPayload(payload);
+
+                try
+                {
+                    var response = await AddInboundOrderAsync(
+                        configuration,
+                        operationName,
+                        payload,
+                        cancellationToken);
+                    var serviceResponse = ToServiceResponse(response.State, response.Message, operationName);
+
+                    if (!serviceResponse.IsSuccess &&
+                        await RecoverExistingInboundOrderAsync(
+                            payload.DocumentNumber,
+                            payload.MovementCode,
+                            cancellationToken))
+                    {
+                        logger.LogWarning(
+                            "AXATA {MovementCode} dispatch for {DocumentNumber} returned State={State}, but the inbound order was found in AXATA. Mikro sent flag will be reconciled.",
+                            payload.MovementCode,
+                            payload.DocumentNumber,
+                            response.State);
+                        return BuildExistingInboundOrderResult(configuration, payload);
+                    }
+
+                    return new AxataLiveDispatchResult(
+                        operationName,
+                        configuration.MainEndpointUrl,
+                        serviceResponse.IsSuccess,
+                        serviceResponse.State,
+                        serviceResponse.Message,
+                        AxataSynchronizationPayloadFactory.Serialize(payload),
+                        AxataSynchronizationPayloadFactory.Serialize(payload),
+                        SerializeResponsePayload(operationName, response.State, response.Message, response.ProcessResults),
+                        [
+                            $"Task icin yapilandirilmis AXATA operasyonu `{operationName}` WCF client ile gonderildi.",
+                            $"Hareket kodu {payload.MovementCode} ve belge {payload.DocumentNumber} kullanildi.",
+                            detailNote
+                        ]);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    if (await RecoverExistingInboundOrderAsync(
+                            payload.DocumentNumber,
+                            payload.MovementCode,
+                            cancellationToken))
+                    {
+                        logger.LogWarning(
+                            exception,
+                            "AXATA {MovementCode} dispatch for {DocumentNumber} returned an uncertain result, but the inbound order was found in AXATA. Mikro sent flag will be reconciled.",
+                            payload.MovementCode,
+                            payload.DocumentNumber);
+                        return BuildExistingInboundOrderResult(configuration, payload);
+                    }
+
+                    throw;
+                }
+            },
+            cancellationToken);
+
+    private static void ValidateInboundOrderPayload(AxataLegacyInboundOrderPayload payload)
+    {
+        if (payload.Lines.Count == 0)
+        {
+            throw new AxataOutboundOrderValidationException(
+                $"AXATA {payload.MovementCode} belgesi satirsiz gonderilemez. Belge={payload.DocumentNumber}");
+        }
+
+        var invalidLine = payload.Lines.FirstOrDefault(line =>
+            string.IsNullOrWhiteSpace(line.S13SKU) ||
+            !double.IsFinite(line.S13MIKT) ||
+            line.S13MIKT <= 0d ||
+            line.S13MIKT > MaximumOutboundLineQuantity);
+        if (invalidLine is not null)
+        {
+            throw new AxataOutboundOrderValidationException(
+                $"AXATA {payload.MovementCode} satiri gecersiz. Belge={payload.DocumentNumber}, Satir={invalidLine.S13KALN}, Stok={invalidLine.S13SKU}, Miktar={invalidLine.S13MIKT:0.###}. Miktar 0'dan buyuk ve {MaximumOutboundLineQuantity:0} veya daha az olmalidir.");
+        }
+    }
+
+    private async Task<AxataOutboundOrderPresence> GetAxataInboundOrderPresenceAsync(
+        string documentNumber,
+        string movementCode,
+        CancellationToken cancellationToken)
+    {
+        var headerExists = await AxataInboundOrderExistsAsync(
+            documentNumber,
+            movementCode,
+            cancellationToken);
+        var lineCount = await axataDbContext.ENT013s
+            .AsNoTracking()
+            .CountAsync(line =>
+                line.S13BNUM != null &&
+                line.S13BNUM.Trim() == documentNumber &&
+                line.S13HKOD != null &&
+                line.S13HKOD.Trim() == movementCode,
+                cancellationToken);
+
+        return new AxataOutboundOrderPresence(headerExists, lineCount);
+    }
+
+    private async Task<bool> AxataInboundOrderExistsAsync(
+        string documentNumber,
+        string movementCode,
+        CancellationToken cancellationToken) =>
+        await axataDbContext.ENT013_MSTs
+            .AsNoTracking()
+            .AnyAsync(header =>
+                header.S13BNUM != null &&
+                header.S13BNUM.Trim() == documentNumber &&
+                header.S13HKOD != null &&
+                header.S13HKOD.Trim() == movementCode,
+                cancellationToken);
+
+    private async Task<bool> RecoverExistingInboundOrderAsync(
+        string documentNumber,
+        string movementCode,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var presence = await GetAxataInboundOrderPresenceAsync(
+                documentNumber,
+                movementCode,
+                cancellationToken);
+            if (presence.HeaderExists && presence.LineCount > 0)
+            {
+                return true;
+            }
+
+            if (attempt < 3)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+        }
+
+        return false;
+    }
+
+    private static AxataLiveDispatchResult BuildExistingInboundOrderResult(
+        AxataSynchronizationLiveTransportConfiguration configuration,
+        AxataLegacyInboundOrderPayload payload) =>
+        new(
+            "reconcileExistingInboundOrder",
+            configuration.MainEndpointUrl,
+            true,
+            1,
+            "Belge AXATA'da zaten bulundu; tekrar gonderilmedi.",
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            AxataSynchronizationPayloadFactory.Serialize(payload),
+            AxataSynchronizationPayloadFactory.Serialize(new
+            {
+                state = 1,
+                message = $"Existing AXATA {payload.MovementCode} inbound order was reconciled without another dispatch."
+            }),
+            [
+                $"{payload.DocumentNumber} AXATA ENT013_MST tarafinda zaten bulundugu icin ikinci kez gonderilmedi.",
+                "Mikro gonderim bayragi cagiran servis tarafindan yeniden uzlastirilacak."
+            ]);
 
     private AxataSynchronizationLiveTransportConfiguration GetRequiredConfiguration()
     {
@@ -512,13 +761,13 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 movementCode),
             detail.Items
                 .OrderBy(item => item.LineNo)
-                .Where(item => item.RemainingQuantity > 0d || item.Quantity > 0d)
+                .Where(item => item.RemainingQuantity > 0d)
                 .Select(item => new AxataLegacyOutboundOrderLine(
                     DefaultBranchCode,
                     documentNumber,
                     item.LineNo,
                     item.StockCode,
-                    item.RemainingQuantity > 0d ? item.RemainingQuantity : item.Quantity,
+                    item.RemainingQuantity,
                     depotCode))
                 .ToArray());
     }

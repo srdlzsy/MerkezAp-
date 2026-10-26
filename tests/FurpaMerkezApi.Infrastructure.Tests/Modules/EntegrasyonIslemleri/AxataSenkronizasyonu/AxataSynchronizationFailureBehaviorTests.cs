@@ -46,4 +46,17 @@ public sealed class AxataSynchronizationFailureBehaviorTests
         Assert.Contains("State=12", message);
         Assert.Contains("Barkod bilgisi gecersiz.", message);
     }
+
+    [Fact]
+    public void FormatExceptionMessage_IncludesInnerDatabaseReason()
+    {
+        var exception = new InvalidOperationException(
+            "An error occurred while saving the entity changes.",
+            new InvalidOperationException("The INSERT statement conflicted with a constraint."));
+
+        var message = AxataImportFailureClassifier.FormatExceptionMessage(exception);
+
+        Assert.Contains("An error occurred while saving the entity changes.", message);
+        Assert.Contains("The INSERT statement conflicted with a constraint.", message);
+    }
 }

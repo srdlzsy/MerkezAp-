@@ -32,9 +32,15 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
         var onlyOpen = request.OnlyOpen;
         var orders = mikroDbContext.SIPARISLERs.AsNoTracking()
             .Where(order =>
-                order.sip_tarih.HasValue &&
-                order.sip_tarih.Value >= startDate &&
-                order.sip_tarih.Value < endDateExclusive &&
+                ((order.sip_tarih.HasValue &&
+                  order.sip_tarih.Value >= startDate &&
+                  order.sip_tarih.Value < endDateExclusive) ||
+                 (request.ExcludeAxataSent &&
+                  ((order.sip_create_date >= startDate &&
+                    order.sip_create_date < endDateExclusive) ||
+                   (order.sip_lastup_date.HasValue &&
+                    order.sip_lastup_date.Value >= startDate &&
+                    order.sip_lastup_date.Value < endDateExclusive)))) &&
                 (!request.WarehouseNo.HasValue || order.sip_depono == request.WarehouseNo.Value) &&
                 order.sip_cins == 0 &&
                 order.sip_tip == orderType);

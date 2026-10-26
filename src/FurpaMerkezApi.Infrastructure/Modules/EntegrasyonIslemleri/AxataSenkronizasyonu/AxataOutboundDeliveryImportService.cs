@@ -767,10 +767,17 @@ internal sealed class AxataOutboundDeliveryImportService(
             }
             catch (Exception exception)
             {
+                var errorMessage = AxataImportFailureClassifier.FormatExceptionMessage(exception);
+                logger.LogError(
+                    exception,
+                    "AXATA {MovementType} import failed for document {AxataDeliveryNo} (sequence {AxataSequenceNo}).",
+                    C02MovementType,
+                    analysis.Document.AxataDeliveryNo,
+                    analysis.Document.AxataSequenceNo);
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
                     analysis.Document.AxataDeliveryNo,
-                    exception.Message,
+                    errorMessage,
                     IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
 
                 if (!request.ContinueOnError)
@@ -2914,10 +2921,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                     }
 
                     var documentOrderNo = await GetNextMovementDocumentOrderNoAsync(
-                        CompanyShipmentMovementType,
                         CompanyShipmentDocumentType,
                         documentSerie,
-                        NormalMovement,
                         cancellationToken);
                     var stockWeights = await GetStockUnitWeightsAsync(
                         analysis.MatchedLines.Select(line => line.AxataLine.StockCode).ToArray(),
@@ -3570,10 +3575,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                     }
 
                     var documentOrderNo = await GetNextMovementDocumentOrderNoAsync(
-                        movementByte,
                         documentType,
                         documentSerie,
-                        normalReturn,
                         cancellationToken);
                     var stockWeights = await GetStockUnitWeightsAsync(
                         analysis.PositiveLines.Select(line => line.StockCode).ToArray(),
@@ -5631,17 +5634,13 @@ internal sealed class AxataOutboundDeliveryImportService(
         ?? Array.Empty<AxataOutboundDeliveryLine>();
 
     private async Task<int> GetNextMovementDocumentOrderNoAsync(
-        byte movementType,
         byte documentType,
         string documentSerie,
-        byte normalReturn,
         CancellationToken cancellationToken)
     {
         var currentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
             .Where(movement =>
-                movement.sth_tip == movementType &&
                 movement.sth_evraktip == documentType &&
-                movement.sth_normal_iade == normalReturn &&
                 movement.sth_evrakno_seri == documentSerie)
             .MaxAsync(movement => movement.sth_evrakno_sira, cancellationToken);
 
