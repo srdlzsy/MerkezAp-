@@ -42,6 +42,16 @@ public sealed class AxataSynchronizationQueueTests
     }
 
     [Fact]
+    public void Catalog_AssignsOrderDispatchHigherPriorityThanHeavyImports()
+    {
+        Assert.True(
+            AxataSynchronizationCatalog.GetSchedulingPriority("received-company-order-sync") <
+            AxataSynchronizationCatalog.GetSchedulingPriority("c02-outbound-delivery-import"));
+        Assert.True(AxataSynchronizationCatalog.IsOrderDispatchTask("received-company-order-sync"));
+        Assert.False(AxataSynchronizationCatalog.IsOrderDispatchTask("c02-outbound-delivery-import"));
+    }
+
+    [Fact]
     public async Task BacklogSnapshot_TracksQueuedAndRunningJobs()
     {
         var createdAtUtc = new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc);
@@ -59,7 +69,7 @@ public sealed class AxataSynchronizationQueueTests
         Assert.Equal(0, queued.RunningCount);
         Assert.Equal(createdAtUtc, queued.OldestQueuedAtUtc);
 
-        var workItem = await queue.DequeueAsync(CancellationToken.None);
+        var workItem = await queue.DequeueGeneralAsync(CancellationToken.None);
         queue.MarkRunning(workItem.JobId);
         var running = queue.GetBacklogSnapshot();
         Assert.Equal(0, running.QueuedCount);
@@ -107,7 +117,7 @@ public sealed class AxataSynchronizationQueueTests
     }
 
     [Fact]
-    public async Task Dequeue_PrioritizesOperationalDocumentOverBackgroundMaster()
+    public async Task OrderDispatchLane_DoesNotWaitForBackgroundMaster()
     {
         var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));
         var master = AxataSynchronizationCatalog.GetRequired("product-master-sync");
@@ -126,9 +136,36 @@ public sealed class AxataSynchronizationQueueTests
             null,
             Guid.Empty);
 
-        var first = await queue.DequeueAsync(CancellationToken.None);
+        var first = await queue.DequeueOrderDispatchAsync(CancellationToken.None);
+        var general = await queue.DequeueGeneralAsync(CancellationToken.None);
 
         Assert.Equal("received-company-order-sync", first.TaskCode);
+        Assert.Equal("product-master-sync", general.TaskCode);
+    }
+
+    [Fact]
+    public async Task GeneralLane_PrioritizesOperationalImportOverBackgroundMaster()
+    {
+        var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));
+        var master = AxataSynchronizationCatalog.GetRequired("product-master-sync");
+        var import = AxataSynchronizationCatalog.GetRequired("c02-outbound-delivery-import");
+
+        queue.Enqueue(
+            master,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+        queue.Enqueue(
+            import,
+            AxataSynchronizationJobExecutionMode.Live,
+            AxataSynchronizationJobTriggerSource.Scheduled,
+            null,
+            Guid.Empty);
+
+        var first = await queue.DequeueGeneralAsync(CancellationToken.None);
+
+        Assert.Equal("c02-outbound-delivery-import", first.TaskCode);
     }
 
     [Fact]
@@ -151,7 +188,7 @@ public sealed class AxataSynchronizationQueueTests
             null,
             Guid.NewGuid());
 
-        var first = await queue.DequeueAsync(CancellationToken.None);
+        var first = await queue.DequeueGeneralAsync(CancellationToken.None);
 
         Assert.Equal("firm-master-sync", first.TaskCode);
     }
@@ -168,7 +205,7 @@ public sealed class AxataSynchronizationQueueTests
             AxataSynchronizationJobTriggerSource.Scheduled,
             null,
             Guid.Empty);
-        var failedWorkItem = await queue.DequeueAsync(CancellationToken.None);
+        var failedWorkItem = await queue.DequeueGeneralAsync(CancellationToken.None);
         queue.MarkRunning(failedWorkItem.JobId);
         queue.MarkFailed(failedWorkItem.JobId, "G02 belge eslesmedi.");
 
@@ -178,7 +215,7 @@ public sealed class AxataSynchronizationQueueTests
             AxataSynchronizationJobTriggerSource.Scheduled,
             null,
             Guid.Empty);
-        var successfulWorkItem = await queue.DequeueAsync(CancellationToken.None);
+        var successfulWorkItem = await queue.DequeueGeneralAsync(CancellationToken.None);
         queue.MarkRunning(successfulWorkItem.JobId);
         queue.MarkSucceeded(
             successfulWorkItem.JobId,

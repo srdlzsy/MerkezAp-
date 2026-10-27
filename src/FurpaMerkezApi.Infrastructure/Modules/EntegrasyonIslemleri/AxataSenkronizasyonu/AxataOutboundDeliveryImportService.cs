@@ -358,14 +358,17 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var readyDocuments = eligibleDocuments
+            .Where(IsOutboundDeliveryReadyForProcessing)
+            .ToArray();
+        var selectedDocuments = readyDocuments.Take(take).ToArray();
         var analyses = await AnalyzeC01DocumentsAsync(selectedDocuments, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             C01MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            eligibleDocuments.Count,
+            readyDocuments.Length,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
@@ -374,6 +377,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 axataDbContext is null || !request.MinimumAxataDate.HasValue
                     ? "AXATA C01 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur."
                     : $"AXATA C01 teslimatlar AXATA SQL ENT006/ENT007 tablolarindan Status=0 ve {request.MinimumAxataDate.Value:yyyy-MM-dd} sonrasi olarak okunur.",
+                $"Henuz teslimat satiri olusmamis {eligibleDocuments.Count - readyDocuments.Length} AXATA basligi hazir olmadigi icin listeye alinmadi.",
                 "CanImport=true olan belgelerde AXATA teslimat satirlari Mikro siparis satirlariyla guvenli eslesmistir ve henuz fis linki yoktur.",
                 "Mikro fis linki zaten varsa tekrar fis uretilmez; execute sirasinda uygun durumda sadece AXATA ack yapilabilir."
             ]);
@@ -391,7 +395,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
         var selectedDocuments = ExcludeDeferredDocuments(
-                eligibleDocuments,
+                eligibleDocuments.Where(IsOutboundDeliveryReadyForProcessing),
                 request.ExcludedAxataSequenceNos)
             .Take(take)
             .ToArray();
@@ -673,14 +677,17 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var readyDocuments = eligibleDocuments
+            .Where(IsOutboundDeliveryReadyForProcessing)
+            .ToArray();
+        var selectedDocuments = readyDocuments.Take(take).ToArray();
         var analyses = await AnalyzeC02DocumentsAsync(selectedDocuments, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             C02MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            eligibleDocuments.Count,
+            readyDocuments.Length,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
@@ -689,6 +696,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 axataDbContext is null || !request.MinimumAxataDate.HasValue
                     ? "AXATA C02 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur."
                     : $"AXATA C02 teslimatlar AXATA SQL ENT006/ENT007 tablolarindan Status=0 ve {request.MinimumAxataDate.Value:yyyy-MM-dd} sonrasi olarak okunur.",
+                $"Henuz ENT007 satiri olusmamis {eligibleDocuments.Count - readyDocuments.Length} AXATA teslimat basligi hazir olmadigi icin listeye alinmadi.",
                 "CanImport=true olan belgelerde AXATA satirlari Mikro alinan firma siparisi satirlariyla eslesmistir.",
                 "C02 import firma sevki STOK_HAREKETLERI olusturur ve siparis teslim miktarlarini gunceller."
             ]);
@@ -706,7 +714,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
         var selectedDocuments = ExcludeDeferredDocuments(
-                eligibleDocuments,
+                eligibleDocuments.Where(IsOutboundDeliveryReadyForProcessing),
                 request.ExcludedAxataSequenceNos)
             .Take(take)
             .ToArray();
@@ -854,14 +862,17 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var readyDocuments = eligibleDocuments
+            .Where(HasPositiveAxataQuantity)
+            .ToArray();
+        var selectedDocuments = readyDocuments.Take(take).ToArray();
         var analyses = await AnalyzeG02DocumentsAsync(selectedDocuments, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             G02MovementType,
             PendingStatus,
             DateTime.UtcNow,
-            eligibleDocuments.Count,
+            readyDocuments.Length,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
@@ -870,6 +881,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 axataDbContext is null || !request.MinimumAxataDate.HasValue
                     ? "AXATA G02 giris teslimatlari getInboundDeliveryListAsync ile Status=0 olarak okunur."
                     : $"AXATA G02 giris teslimatlari AXATA SQL ENT016_MST/ENT016 tablolarindan Status=0 ve {request.MinimumAxataDate.Value:yyyy-MM-dd} sonrasi olarak okunur.",
+                $"Henuz kabul satiri olusmamis {eligibleDocuments.Count - readyDocuments.Length} AXATA basligi hazir olmadigi icin listeye alinmadi.",
                 "CanImport=true olan belgelerde AXATA kabul satirlari Mikro siparis satiri ve bekleyen sevk fisiyle guvenli eslesmistir.",
                 "Mikro mal kabul zaten yapilmissa duplicate kabul uretilmez; uygun durumda sadece AXATA ENT016_MST ack yapilabilir."
             ]);
@@ -887,7 +899,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
         var selectedDocuments = ExcludeDeferredDocuments(
-                eligibleDocuments,
+                eligibleDocuments.Where(HasPositiveAxataQuantity),
                 request.ExcludedAxataSequenceNos)
             .Take(take)
             .ToArray();
@@ -3241,20 +3253,24 @@ internal sealed class AxataOutboundDeliveryImportService(
             request.MinimumAxataDate,
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
-        var selectedDocuments = eligibleDocuments.Take(take).ToArray();
+        var readyDocuments = eligibleDocuments
+            .Where(IsOutboundDeliveryReadyForProcessing)
+            .ToArray();
+        var selectedDocuments = readyDocuments.Take(take).ToArray();
         var analyses = await AnalyzeLegacyOutboundDocumentsAsync(selectedDocuments, movementType, cancellationToken);
 
         return new AxataOutboundDeliveryImportPreviewDto(
             movementType,
             PendingStatus,
             DateTime.UtcNow,
-            eligibleDocuments.Count,
+            readyDocuments.Length,
             analyses.Count,
             selectedDocuments.Sum(document => document.Lines.Count),
             selectedDocuments.Sum(document => document.Lines.Sum(line => line.Quantity)),
             analyses.Select(analysis => analysis.ImportDto).ToArray(),
             [
                 $"AXATA {movementType} teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur.",
+                $"Henuz teslimat satiri olusmamis {eligibleDocuments.Count - readyDocuments.Length} AXATA basligi hazir olmadigi icin listeye alinmadi.",
                 handlingNote,
                 "Ayni AXATA belge aciklamasiyla Mikro hareketi varsa duplicate yazim engellenir."
             ]);
@@ -3273,7 +3289,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             cancellationToken);
         var eligibleDocuments = ApplyMinimumAxataDate(documents, request.MinimumAxataDate);
         var selectedDocuments = ExcludeDeferredDocuments(
-                eligibleDocuments,
+                eligibleDocuments.Where(IsOutboundDeliveryReadyForProcessing),
                 request.ExcludedAxataSequenceNos)
             .Take(take)
             .ToArray();
@@ -6017,6 +6033,9 @@ internal sealed class AxataOutboundDeliveryImportService(
         !string.IsNullOrWhiteSpace(document.CancellationCode) ||
         (string.Equals(document.ShipmentState, "3", StringComparison.OrdinalIgnoreCase) &&
          !HasPositiveAxataQuantity(document));
+
+    internal static bool IsOutboundDeliveryReadyForProcessing(AxataOutboundDeliveryDocument document) =>
+        IsCancelledOutboundDelivery(document) || HasPositiveAxataQuantity(document);
 
     internal static bool RequiresC02MikroAnalysis(AxataOutboundDeliveryDocument document) =>
         !IsCancelledOutboundDelivery(document) &&

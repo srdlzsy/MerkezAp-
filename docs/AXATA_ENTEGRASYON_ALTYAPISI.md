@@ -102,8 +102,10 @@ Bu tablo su anlama gelir:
 - C01/C02/G01/G02 siparis dispatch task'lari zamanli/canli calismada `Special1=1` olan kaynak siparis satirlarini tekrar aday yapmaz; AXATA basarili donerse kaynak sipariste `Special1=1` bayragi atilir.
 - C01 ve C02 siparis dispatch taramalari belge tarihinin yaninda Mikro olusturma/son guncelleme tarihini de dikkate alir. Boylece eski is tarihli fakat bugun yazilan siparis aday listesinden kacmaz.
 - C01, C02, G01 ve G02 dispatch belge bazinda yalitilir: tek belgenin hatasi ayni turdaki diger belgelerin gonderimini durdurmaz. Veri sorunu olan belge kontrollu aralikla yeniden denenirken saglam belgeler devam eder. Ayni hareket kodu ve belge AXATA `ENT000` icinde varsa ikinci WCF gonderimi yapilmaz; yalniz Mikro gonderim bayragi uzlastirilir.
-- Operasyonel siparis, sevk ve mal kabul gorevleri firma/urun master gorevlerinden once calistirilir. Tek bir AXATA isi `JobTimeoutMinutes` suresini asarsa basarisiz kapatilir; boylece siradaki C01, C02, G01 ve G02 belgeleri saatlerce beklemez. Varsayilan ve production degeri 10 dakikadir.
+- Worker iki bagimsiz isleme hatti kullanir. C01/C02/G01/G02 siparis gonderimleri kendi hattinda; sevk/mal kabul donusleri ile firma/urun master gorevleri genel hatta calisir. Boylece agir bir C01/C02/G01/G02 donus veya master sorgusu yeni siparislerin AXATA'ya gonderilmesini bekletmez.
+- Genel hatta sevk ve mal kabul donusleri firma/urun master gorevlerinden once calistirilir. Tek bir AXATA isi `JobTimeoutMinutes` suresini asarsa basarisiz kapatilir; boylece ayni hattaki siradaki belgeler saatlerce beklemez. Varsayilan ve production degeri 10 dakikadir.
 - C01/C02/C03/C4/G01/G02/DynamicCensus import tarafinda eski worker'a gore daha guvenli sira vardir: once Mikro yazilir, sonra istenirse AXATA ack atilir.
+- C01/C02/C03/C4 ve G02 listelerinde AXATA basligi olusmus fakat teslimat satiri/miktari henuz olusmamis kayitlar batch kotasini tuketmez ve hata sayilmaz. Satirlar olustugunda sonraki turda otomatik islenir. Iptal edilmis outbound belgeler, bos olsalar bile AXATA tamamlanma onayi icin islenmeye devam eder.
 - Manuel body endpointleri kaldirilmamistir; operasyonel kurtarma ve elle gelen AXATA body verisi icin kullanilmaya devam eder.
 
 ## Yonalimlar
@@ -254,9 +256,9 @@ Ana servisler:
 - `AxataSynchronizationService`
   - Overview, preview, job queue ve manual document operasyonlarini koordine eder.
 - `AxataSynchronizationQueue`
-  - In-memory job queue.
+  - Siparis dispatch ve genel aktarim icin birbirinden bagimsiz in-memory kuyruklar.
 - `AxataSynchronizationWorker`
-  - Queue'daki job'lari calistiran hosted service.
+  - Siparis dispatch hatti ile genel aktarim hattini eszamanli calistiran hosted service.
 - `AxataSynchronizationScheduler`
   - Config ile acilan periyodik task tetikleyici. Zamanlanmis isler, kullanici
     oturumuna bagli olmayan sabit servis kimligiyle kuyruga girer; boylece
@@ -771,8 +773,10 @@ Davranis:
 - Mevcut calisma profilinde tum `MikroWriteRouting` rotalari `Database` degerindedir. Worker insert, update, isaretleme ve silme islemlerinde dogrudan Mikro DB transaction yolunu kullanir; Mikro API yolu kodda desteklenmeye devam eder ancak konfigurasyonla yeniden acilmadikca calismaz.
 - Firma ve urun master gorevleri her turda tum katalogu gondermez. `ChangeLookbackMinutes` icinde yeni veya degismis kayitlari secer; urun aktarimi `BatchSize` kadar kodu bir sorgu paketinde isler.
 - C02 firma siparisleri eski worker ile ayni bicimde tum depolardan taranir. C01, G01 ve G02 siparis gorevleri merkez depo `50` kapsaminda calisir.
+- C01/C02/G01/G02 siparis gonderimleri agir AXATA -> Mikro import ve master gorevlerinden ayri worker hattinda calisir. Scheduler ayni task icin ikinci aktif job olusturmaz; belge bazli idempotency kontrolleri korunur.
 - C02 firma sevki, C03 depo iadesi ve C4 firma iadesi Mikro stok hareketi sira numarasi `sth_evraktip + sth_evrakno_seri` benzersiz evreninden uretilir; hareket/iade turune gore tekrar eden sira olusturulmaz.
 - AXATA'dan Mikro'ya donuslerde yalniz bekleyen durumdaki kayitlar okunur. Mikro yazimi basarili olduktan sonra AXATA status alani tamamlandi olarak isaretlenir; Mikro yazimi veya eslesme basarisizsa acknowledge yapilmaz ve kayit sonraki tur icin bekler.
+- Yalniz basligi bulunan C01/C02/C03/C4/G02 kayitlari hazir belge sayilmaz. Bunlar hata/deferred kaydi olusturmaz ve gercek satirli belgelerin `BatchSize` sinirinin disinda kalmasina neden olmaz.
 
 ### Eski Worker'dan Gecis
 

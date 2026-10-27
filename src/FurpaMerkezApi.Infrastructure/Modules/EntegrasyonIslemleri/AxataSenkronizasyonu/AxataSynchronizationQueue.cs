@@ -12,8 +12,10 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
     private const int MaxRetainedJobCount = 500;
     private readonly ConcurrentDictionary<Guid, AxataSynchronizationJobRecord> jobs = new();
     private readonly object enqueueSyncRoot = new();
-    private readonly SemaphoreSlim signal = new(0);
-    private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> priorityPending = new();
+    private readonly SemaphoreSlim orderDispatchSignal = new(0);
+    private readonly SemaphoreSlim generalSignal = new(0);
+    private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> orderDispatchPending = new();
+    private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> operationalPending = new();
     private readonly ConcurrentQueue<AxataSynchronizationJobWorkItem> backgroundPending = new();
     private int pendingCount;
     private int runningCount;
@@ -63,26 +65,42 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
                 warehouseNo,
                 requestedByUserId,
                 createdAtUtc);
-            ResolveQueue(definition.Code, triggerSource).Enqueue(workItem);
+            var queueLane = ResolveQueueLane(definition.Code);
+            ResolveQueue(queueLane, triggerSource).Enqueue(workItem);
             Interlocked.Increment(ref pendingCount);
-            signal.Release();
+            ResolveSignal(queueLane).Release();
 
             return record.ToSummary();
         }
     }
 
-    public async ValueTask<AxataSynchronizationJobWorkItem> DequeueAsync(CancellationToken cancellationToken)
+    public async ValueTask<AxataSynchronizationJobWorkItem> DequeueOrderDispatchAsync(
+        CancellationToken cancellationToken)
     {
-        await signal.WaitAsync(cancellationToken);
+        await orderDispatchSignal.WaitAsync(cancellationToken);
 
-        if (priorityPending.TryDequeue(out var workItem) ||
+        if (orderDispatchPending.TryDequeue(out var workItem))
+        {
+            Interlocked.Decrement(ref pendingCount);
+            return workItem;
+        }
+
+        throw new InvalidOperationException("AXATA order dispatch queue signal was received without any job.");
+    }
+
+    public async ValueTask<AxataSynchronizationJobWorkItem> DequeueGeneralAsync(
+        CancellationToken cancellationToken)
+    {
+        await generalSignal.WaitAsync(cancellationToken);
+
+        if (operationalPending.TryDequeue(out var workItem) ||
             backgroundPending.TryDequeue(out workItem))
         {
             Interlocked.Decrement(ref pendingCount);
             return workItem;
         }
 
-        throw new InvalidOperationException("AXATA synchronization queue signal was received without any job.");
+        throw new InvalidOperationException("AXATA general queue signal was received without any job.");
     }
 
     public AxataSynchronizationJobDetailDto Get(Guid jobId) =>
@@ -187,33 +205,38 @@ internal sealed class AxataSynchronizationQueue(IClock clock)
             : throw new KeyNotFoundException($"AXATA synchronization job '{jobId}' was not found.");
 
     private ConcurrentQueue<AxataSynchronizationJobWorkItem> ResolveQueue(
-        string taskCode,
+        AxataSynchronizationQueueLane queueLane,
         AxataSynchronizationJobTriggerSource triggerSource) =>
-        triggerSource == AxataSynchronizationJobTriggerSource.Manual ||
-        AxataSynchronizationCatalog.IsOperationalTask(taskCode)
-            ? priorityPending
-            : backgroundPending;
+        queueLane == AxataSynchronizationQueueLane.OrderDispatch
+            ? orderDispatchPending
+            : triggerSource == AxataSynchronizationJobTriggerSource.Manual ||
+              queueLane == AxataSynchronizationQueueLane.Operational
+                ? operationalPending
+                : backgroundPending;
+
+    private static AxataSynchronizationQueueLane ResolveQueueLane(
+        string taskCode) =>
+        AxataSynchronizationCatalog.IsOrderDispatchTask(taskCode)
+            ? AxataSynchronizationQueueLane.OrderDispatch
+            : AxataSynchronizationCatalog.IsOperationalTask(taskCode)
+                ? AxataSynchronizationQueueLane.Operational
+                : AxataSynchronizationQueueLane.Background;
+
+    private SemaphoreSlim ResolveSignal(AxataSynchronizationQueueLane queueLane) =>
+        queueLane == AxataSynchronizationQueueLane.OrderDispatch
+            ? orderDispatchSignal
+            : generalSignal;
 
     private DateTime? GetOldestQueuedAtUtc()
     {
-        DateTime? priorityCreatedAt = priorityPending.TryPeek(out var priority)
-            ? priority.CreatedAtUtc
-            : null;
-        DateTime? backgroundCreatedAt = backgroundPending.TryPeek(out var background)
-            ? background.CreatedAtUtc
-            : null;
-
-        if (!priorityCreatedAt.HasValue)
-        {
-            return backgroundCreatedAt;
-        }
-
-        if (!backgroundCreatedAt.HasValue)
-        {
-            return priorityCreatedAt;
-        }
-
-        return priorityCreatedAt < backgroundCreatedAt ? priorityCreatedAt : backgroundCreatedAt;
+        return new DateTime?[]
+            {
+                orderDispatchPending.TryPeek(out var orderDispatch) ? orderDispatch.CreatedAtUtc : null,
+                operationalPending.TryPeek(out var operational) ? operational.CreatedAtUtc : null,
+                backgroundPending.TryPeek(out var background) ? background.CreatedAtUtc : null
+            }
+            .Where(value => value.HasValue)
+            .Min();
     }
 
     private void RemoveOldCompletedJobs()
@@ -343,6 +366,13 @@ internal sealed record AxataSynchronizationJobWorkItem(
     int? WarehouseNo,
     Guid RequestedByUserId,
     DateTime CreatedAtUtc);
+
+internal enum AxataSynchronizationQueueLane
+{
+    OrderDispatch = 1,
+    Operational = 2,
+    Background = 3
+}
 
 internal enum AxataSynchronizationJobStatus
 {

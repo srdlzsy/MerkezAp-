@@ -119,8 +119,18 @@ internal static class AxataSynchronizationCatalog
         !string.Equals(taskCode, "firm-master-sync", StringComparison.OrdinalIgnoreCase) &&
         !string.Equals(taskCode, "product-master-sync", StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsOrderDispatchTask(string taskCode) =>
+        string.Equals(taskCode, "issued-warehouse-order-sync", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(taskCode, "received-company-order-sync", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(taskCode, "warehouse-inbound-order-sync", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(taskCode, "company-receiving-sync", StringComparison.OrdinalIgnoreCase);
+
     public static int GetSchedulingPriority(string taskCode) =>
-        IsOperationalTask(taskCode) ? 0 : 1;
+        IsOrderDispatchTask(taskCode)
+            ? 0
+            : IsOperationalTask(taskCode)
+                ? 1
+                : 2;
 }
 
 internal sealed record AxataSynchronizationTaskDefinition(

@@ -24,6 +24,47 @@ public sealed class AxataSynchronizationFailureBehaviorTests
             Array.Empty<AxataOutboundDeliveryLine>());
 
         Assert.False(AxataOutboundDeliveryImportService.RequiresC02MikroAnalysis(document));
+        Assert.True(AxataOutboundDeliveryImportService.IsOutboundDeliveryReadyForProcessing(document));
+    }
+
+    [Fact]
+    public void HeaderOnlyC02Document_IsNotReadyAndDoesNotBlockRealDeliveries()
+    {
+        var document = new AxataOutboundDeliveryDocument(
+            262270,
+            "A.1930",
+            "A",
+            1930,
+            "C02",
+            "0",
+            string.Empty,
+            string.Empty,
+            12120063,
+            12120063,
+            DateTime.Today,
+            Array.Empty<AxataOutboundDeliveryLine>());
+
+        Assert.False(AxataOutboundDeliveryImportService.IsOutboundDeliveryReadyForProcessing(document));
+    }
+
+    [Fact]
+    public void C02DocumentWithPositiveLine_IsReadyForProcessing()
+    {
+        var document = new AxataOutboundDeliveryDocument(
+            262280,
+            "A.1936",
+            "A",
+            1936,
+            "C02",
+            "0",
+            string.Empty,
+            string.Empty,
+            12120063,
+            12120063,
+            DateTime.Today,
+            [new AxataOutboundDeliveryLine(0, "007921", 757d)]);
+
+        Assert.True(AxataOutboundDeliveryImportService.IsOutboundDeliveryReadyForProcessing(document));
     }
 
     [Fact]
