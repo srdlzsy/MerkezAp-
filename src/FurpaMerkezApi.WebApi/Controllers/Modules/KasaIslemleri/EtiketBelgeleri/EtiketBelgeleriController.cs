@@ -19,6 +19,7 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.EtiketBelgeler
 public sealed class EtiketBelgeleriController(
     IListLabelDocumentsUseCase listLabelDocumentsUseCase,
     IGetLabelDocumentProductsUseCase getLabelDocumentProductsUseCase,
+    IGetLabelProductUseCase getLabelProductUseCase,
     ICreateLabelDocumentUseCase createLabelDocumentUseCase,
     IListLabelPriceChangedProductsUseCase listLabelPriceChangedProductsUseCase,
     IListLabelActivePromotionProductsUseCase listLabelActivePromotionProductsUseCase,
@@ -87,6 +88,31 @@ public sealed class EtiketBelgeleriController(
             cancellationToken);
 
         return Ok(response);
+    }
+
+    [HttpGet("urun-detayi")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(LabelDocumentProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<LabelDocumentProductDto>> ProductDetail(
+        [FromQuery, Range(1, int.MaxValue)] int? warehouseNo,
+        [FromQuery, Required, StringLength(25)] string productCode,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, DetailPolicy);
+        var response = await getLabelProductUseCase.ExecuteAsync(
+            new LabelProductDetailRequest(resolvedWarehouseNo, productCode),
+            cancellationToken);
+
+        return response is null
+            ? NotFound(new ProblemDetails
+            {
+                Title = "Urun bulunamadi",
+                Detail = $"{productCode.Trim()} kodlu urun icin etiket bilgisi bulunamadi.",
+                Status = StatusCodes.Status404NotFound
+            })
+            : Ok(response);
     }
 
     [HttpGet("etiketler")]

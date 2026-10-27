@@ -4983,6 +4983,7 @@ Alias:
 Amac:
 
 - `DEPOLAR_ARASI_SIPARISLER` kayitlarini `STOKLAR.sto_model_kodu in ('10','11','12','23')` filtresiyle urun/tip bazinda toplar.
+- Sonuclar `Meyve (10) -> Sebze (11) -> Yesillik (12) -> Manav Sarf (23)` sirasinda gelir; her tip kendi icinde urun adina gore alfabetik siralanir.
 
 Response item:
 
@@ -5036,6 +5037,8 @@ Alias:
 `GET /api/green-grocer/reports/sube?date=2026-06-04&warehouseNo=110`
 
 `take` siniri evrak anahtarina (`branchNo + documentSerie + documentOrderNo`) uygulanir. Bir evrak limite girdiyse o evrakin tum urun satirlari response'a eklenir; cok satirli ilk subeler sonraki subeleri eksik gosterecek sekilde satir bazli kirpma yapilmaz. Yesillik raporu da ayni tam-evrak kuralini kullanir.
+
+Her sube/evrak icindeki satirlar `Meyve -> Sebze -> Yesillik -> Manav Sarf` ve ardindan urun adi sirasindadir. UI bu sirayi miktara veya Mikro satir numarasina gore yeniden bozmamalidir.
 
 Response:
 
@@ -5124,6 +5127,7 @@ Alias:
 Amac:
 
 - Urunleri toplam miktar ve sube/evrak kirilimiyle dondurur.
+- Urunler `Meyve -> Sebze -> Yesillik -> Manav Sarf` ve her tip icinde urun adi sirasinda gelir.
 - `branches` kiriliminda `latestCreateDate` ve `canDelete` alanlari bulunur; UI sil butonunu `canDelete=true` ve kullanicida `green-grocer.reports.update` yetkisi varsa gostermelidir.
 - `caseInfo` doluysa rapor satiri siparis anindaki kasa/koli snapshot'ini de icerir. `quantity` ve `caseInfo.estimatedQuantity` Mikro'ya yazilan KG/ADET toplamidir; `caseInfo.inputQuantity` subenin girdigi kasa/koli toplamidir.
 
@@ -11098,6 +11102,15 @@ Not:
 - `promotion` alani, urunun PLU numarasi icin secili depoda aktif Birlik Premium Kart/Furpara promosyonu varsa dolar; promosyon yoksa `null` gelir
 - Promosyon sorgusu urun basina ayri istekle degil, belgedeki tum PLU numaralari icin tek toplu Mayday sorgusuyla yapilir
 - response satir sirasi Furpa `LabelDocumentDetails.DetailId` sirasi ile gelir; bu sira pratikte create anindaki insert sirasi kabul edilir
+
+### Manuel Etiket Urun Detayi
+
+`GET /api/kasa-islemleri/etiket-belgeleri/urun-detayi?warehouseNo=110&productCode=016222`
+
+Manuel etiket listesine eklenen tek urunun etiket verisini belge olusturmadan cozer. Response
+`LabelDocumentProductDto` modelidir; guncel fiyat, onceki fiyat ve varsa aktif `promotion`
+bilgisi birlikte gelir. UI genel urun aramasindaki satis fiyatini dogrudan etikete cevirmemeli;
+urun secildikten sonra bu endpoint ile fiyat ve indirim bilgisini kesinlestirmelidir.
 - UI yazdirirken response'u urun adi, stok kodu veya fiyata gore yeniden siralamamali; gelen sirayi korumalidir
 
 Response:

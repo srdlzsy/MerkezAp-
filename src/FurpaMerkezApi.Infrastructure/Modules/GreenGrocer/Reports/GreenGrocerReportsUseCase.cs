@@ -17,6 +17,9 @@ public sealed class GreenGrocerReportsUseCase(
     private const int MaxTake = 5000;
     private const int DashboardTopProductTake = 10;
 
+    private static readonly StringComparer TurkishTextComparer =
+        StringComparer.Create(CultureInfo.GetCultureInfo("tr-TR"), ignoreCase: true);
+
     private static readonly string[] GreenGrocerTypeCodes = ["10", "11", "12", "23"];
 
     private static readonly IReadOnlyCollection<GreenGrocerTypeOptionDto> TypeOptions =
@@ -104,8 +107,9 @@ public sealed class GreenGrocerReportsUseCase(
             .ThenBy(item => item.Branch.WarehouseNo)
             .ThenBy(item => item.DocumentSerie, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.DocumentOrderNo)
-            .ThenBy(item => item.TypeCode, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.Product.DisplayName, StringComparer.OrdinalIgnoreCase);
+            .ThenBy(item => GetTypeSortOrder(item.TypeCode))
+            .ThenBy(item => item.Product.DisplayName, TurkishTextComparer)
+            .ThenBy(item => item.Product.StockCode, StringComparer.OrdinalIgnoreCase);
 
         return new GreenGrocerBranchReportDto(
             TakeCompleteDocuments(
@@ -225,7 +229,13 @@ public sealed class GreenGrocerReportsUseCase(
             .ToArray();
 
         return TakeCompleteDocuments(
-            items,
+            items
+                .OrderBy(item => item.Branch.WarehouseName, TurkishTextComparer)
+                .ThenBy(item => item.Branch.WarehouseNo)
+                .ThenBy(item => item.DocumentSerie, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.DocumentOrderNo)
+                .ThenBy(item => item.Product.DisplayName, TurkishTextComparer)
+                .ThenBy(item => item.Product.StockCode, StringComparer.OrdinalIgnoreCase),
             normalized.Take,
             item => new GreenGrocerDocumentKey(
                 item.BranchNo,
@@ -241,8 +251,9 @@ public sealed class GreenGrocerReportsUseCase(
         var branchItems = await ListBranchItemsAsync(normalized, cancellationToken);
 
         return BuildProductSummary(branchItems)
-            .OrderBy(item => item.TypeCode, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.ProductName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => GetTypeSortOrder(item.TypeCode))
+            .ThenBy(item => item.ProductName, TurkishTextComparer)
+            .ThenBy(item => item.ProductCode, StringComparer.OrdinalIgnoreCase)
             .Take(normalized.Take)
             .ToArray();
     }
@@ -256,8 +267,9 @@ public sealed class GreenGrocerReportsUseCase(
 
         return branchItems
             .GroupBy(item => item.Product)
-            .OrderBy(group => group.Key.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(group => group.Key.ModelCode, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => GetTypeSortOrder(group.Key.ModelCode))
+            .ThenBy(group => group.Key.DisplayName, TurkishTextComparer)
+            .ThenBy(group => group.Key.StockCode, StringComparer.OrdinalIgnoreCase)
             .Select(group => new GreenGrocerProductReportGroupDto(
                 group.Key.ModelCode,
                 group.Key.ModelName,
@@ -703,6 +715,15 @@ public sealed class GreenGrocerReportsUseCase(
         TypeOptions.FirstOrDefault(item => item.TypeCode == typeCode)?.TypeName
         ?? typeCode
         ?? string.Empty;
+
+    private static int GetTypeSortOrder(string? typeCode) => typeCode switch
+    {
+        "10" => 0,
+        "11" => 1,
+        "12" => 2,
+        "23" => 3,
+        _ => 4
+    };
 
     private static GreenGrocerReportProductDto BuildProduct(
         string? stockCode,

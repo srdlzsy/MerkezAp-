@@ -713,6 +713,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICreateBanknoteTrackUseCase, CreateBanknoteTrackUseCase>();
         services.AddScoped<IListLabelDocumentsUseCase, ListLabelDocumentsUseCase>();
         services.AddScoped<IGetLabelDocumentProductsUseCase, GetLabelDocumentProductsUseCase>();
+        services.AddScoped<IGetLabelProductUseCase, GetLabelProductUseCase>();
         services.AddScoped<ICreateLabelDocumentUseCase, CreateLabelDocumentUseCase>();
         services.AddScoped<IListLabelPriceChangedProductsUseCase, ListLabelPriceChangedProductsUseCase>();
         services.AddScoped<IListLabelActivePromotionProductsUseCase, ListLabelActivePromotionProductsUseCase>();

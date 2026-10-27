@@ -52,6 +52,35 @@ public sealed class GreenGrocerReportsUseCaseTests
         });
     }
 
+    [Fact]
+    public async Task Reports_OrderProductsByMeyveSebzeYesillikThenName()
+    {
+        await using var mikroDb = CreateMikroDbContext();
+        await using var authDb = CreateAuthDbContext();
+        mikroDb.DEPOLARs.Add(CreateBranch(101, "A SUBESI"));
+        mikroDb.STOKLARs.AddRange(
+            CreateProduct("YSL-1", "MAYDANOZ", "12"),
+            CreateProduct("SBZ-1", "DOMATES", "11"),
+            CreateProduct("MYV-2", "ELMA", "10"),
+            CreateProduct("MYV-1", "ARMUT", "10"));
+        mikroDb.DEPOLAR_ARASI_SIPARISLERs.AddRange(
+            CreateOrder(101, "F101", 1, 0, "YSL-1"),
+            CreateOrder(101, "F101", 1, 1, "SBZ-1"),
+            CreateOrder(101, "F101", 1, 2, "MYV-2"),
+            CreateOrder(101, "F101", 1, 3, "MYV-1"));
+        await mikroDb.SaveChangesAsync();
+        var useCase = new GreenGrocerReportsUseCase(mikroDb, authDb);
+        var request = new GreenGrocerReportDateRequest(new DateTime(2026, 10, 20));
+
+        var branch = await useCase.GetByBranchAsync(request, CancellationToken.None);
+        var products = await useCase.GetByProductAsync(request, CancellationToken.None);
+
+        Assert.Equal(["10", "10", "11", "12"], branch.Items.Select(item => item.TypeCode));
+        Assert.Equal(["ARMUT", "ELMA", "DOMATES", "MAYDANOZ"], branch.Items.Select(item => item.ProductName));
+        Assert.Equal(["10", "10", "11", "12"], products.Select(item => item.TypeCode));
+        Assert.Equal(["ARMUT", "ELMA", "DOMATES", "MAYDANOZ"], products.Select(item => item.ProductName));
+    }
+
     private static void SeedReportData(MikroDbContext dbContext)
     {
         dbContext.DEPOLARs.AddRange(
@@ -75,13 +104,16 @@ public sealed class GreenGrocerReportsUseCaseTests
         dep_create_date = DateTime.UtcNow
     };
 
-    private static STOKLAR CreateProduct(string stockCode, string stockName) => new()
+    private static STOKLAR CreateProduct(
+        string stockCode,
+        string stockName,
+        string modelCode = "12") => new()
     {
         sto_Guid = Guid.NewGuid(),
         sto_kod = stockCode,
         sto_isim = stockName,
         sto_kisa_ismi = stockName,
-        sto_model_kodu = "12",
+        sto_model_kodu = modelCode,
         sto_birim1_ad = "ADET",
         sto_create_date = DateTime.UtcNow
     };

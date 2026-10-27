@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.EtiketBelgeleri;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri;
+using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.EtiketBelgeleri.Detail;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -76,6 +77,28 @@ public sealed class LabelProductPromotionTests
         Assert.Equal(100d, product.Price);
         Assert.Equal("Shopigo", product.Promotion.Source);
         Assert.Equal(80d, product.Promotion.PromotionPrice);
+    }
+
+    [Fact]
+    public async Task ManualLabelProduct_ResolvesPriceChangeAndPromotionFromLabelSource()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = new DateTime(2026, 10, 27, 10, 0, 0);
+        AddProduct(dbContext, "STK001", 101, 100d, now);
+        await dbContext.SaveChangesAsync();
+
+        var promotionLookup = new RecordingPromotionLookup();
+        var useCase = new GetLabelProductUseCase(
+            new LabelProductQueryExecutor(dbContext, promotionLookup));
+
+        var product = await useCase.ExecuteAsync(
+            new LabelProductDetailRequest(149, " STK001 "),
+            CancellationToken.None);
+
+        Assert.NotNull(product);
+        Assert.Equal(110d, product.OldPrice);
+        Assert.Equal(100d, product.Price);
+        Assert.Equal(80d, product.Promotion?.EffectiveUnitPrice);
     }
 
     private static void AddProduct(
