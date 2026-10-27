@@ -23,9 +23,15 @@ internal sealed class AxataSynchronizationWorker(
             isCritical: true,
             staleAfter: TimeSpan.FromSeconds(60));
 
-        await Task.WhenAll(
-            RunLaneAsync(isOrderDispatchLane: true, stoppingToken),
-            RunLaneAsync(isOrderDispatchLane: false, stoppingToken));
+        var orderDispatchWorkerCount = Math.Clamp(
+            options.CurrentValue.OrderDispatchWorkerCount,
+            1,
+            AxataSynchronizationCatalog.OrderDispatchTaskCount);
+        var workers = Enumerable.Range(0, orderDispatchWorkerCount)
+            .Select(_ => RunLaneAsync(isOrderDispatchLane: true, stoppingToken))
+            .Append(RunLaneAsync(isOrderDispatchLane: false, stoppingToken));
+
+        await Task.WhenAll(workers);
     }
 
     private async Task RunLaneAsync(

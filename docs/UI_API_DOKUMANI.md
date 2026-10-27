@@ -13186,7 +13186,8 @@ Onemli not:
 - `documentOrderNo` ayni seri, evrak tipi ve iade tipi icin write DB'deki mevcut maksimum sira okunarak uretilir; ilk evrak `0`, sonraki evraklar `1, 2...` seklinde gider.
 - Plaka, sofor adi ve TCKN bu create request'inde gonderilmez. E-irsaliye gonderiminde manuel akista bu alanlar zorunludur; kayitli sofor secilirse `driverId` yeterlidir.
 - `deliverer` teslim eden, `receiver` teslim alan bilgisidir. Opsiyoneldir; gonderilirse Mikro `STOK_HAREKETLERI.sth_HareketGrupKodu2` ve `sth_HareketGrupKodu3` alanlarina yazilir.
-- Request/response modeli firma giden sevk create ile aynidir; tek fark kaydin `returnType = 1` olarak yazilmasidir.
+- Firma iadesinde fiyat ve tutar kullanilmaz. Backend istemciden gelen `lines[].unitPrice` degerini dikkate almadan `0` olarak normalize eder; Mikro birim fiyat, satir tutari, vergi tutari ve response `totalAmount` sifir olur. Angular ve terminal de firma iade satirlarinda satis fiyati gostermemeli ve `unitPrice=0` gondermelidir.
+- Request/response modeli firma giden sevk create ile aynidir; firma iadesi `returnType = 1` ve sifir fiyat/tutarla yazilir.
 
 Request:
 
@@ -13204,7 +13205,7 @@ Request:
     {
       "stockCode": "015792",
       "quantity": 5,
-      "unitPrice": 125,
+      "unitPrice": 0,
       "unitPointer": 1,
       "description": "",
       "partyCode": "",
@@ -13230,7 +13231,7 @@ Response:
   "customerCode": "120.01.001",
   "lineCount": 1,
   "totalQuantity": 5,
-  "totalAmount": 625,
+  "totalAmount": 0,
   "writeConnectionName": "testMikroConnection"
 }
 ```
@@ -19265,7 +19266,7 @@ Mikro evrak duzenleme kaynakli akislar:
 #### Belge Akis Liste
 
 ```http
-GET /api/operasyon-islemleri/belge-akis-takibi?warehouseNo=1&startDate=2026-07-01&endDate=2026-07-01&documentType=CompanyShipment&status=Failed&search=FRM2026000000101&take=100
+GET /api/operasyon-islemleri/belge-akis-takibi?warehouseNo=1&startDate=2026-07-01&endDate=2026-07-01&documentType=CompanyShipment&status=Failed&search=FRM2026000000101&skip=0&take=100
 ```
 
 Query alanlari:
@@ -19276,7 +19277,10 @@ Query alanlari:
 - `documentType`: opsiyonel enum.
 - `status`: opsiyonel enum.
 - `search`: opsiyonel. `documentSerie`, `documentNo`, `externalDocumentNo`, `externalUuid` icinde arar.
+- `skip`: 0 veya daha buyuk, varsayilan `0`. Sonraki sayfalari okumak icin onceki sayfalarda donen kayit sayisi kadar artirilir.
 - `take`: 1-500 arasi, varsayilan `100`.
+
+Liste `updatedAtUtc DESC, id DESC` sirasiyla kararlı sayfalanir. UI ilk 500 kaydi getirir; `totalCount` daha buyukse "Daha Eski Kayitlari Yukle" aksiyonu `skip` degerini artirarak kalan kayitlari ayni listeye ekler.
 
 Response:
 
@@ -19847,7 +19851,7 @@ Production gecici gorev notu:
 Production AXATA import calisma kurali:
 
 - `c01-outbound-delivery-import`, `c02-outbound-delivery-import`, `g01-inbound-atf-import` ve `g02-inbound-delivery-import` Production profilinde aciktir ve 5 dakikada bir calisir.
-- Basariyla Mikro'ya yazilan veya mevcut Mikro kaydi kesin olarak dogrulanan C01, C02 ve G01 belgeleri Belge Akis Takibi'ne `AxataDocumentImported` adimiyla yazilir. G02 basarisi mevcut `WarehouseReceivingAccepted` adimiyla izlenir. Deneme, erteleme ve basarisiz belge kayitlari Belge Akis Takibi'ne yazilmaz; ekran yalniz gerceklesen belge hareketlerini gosterir.
+- Basariyla AXATA'ya gonderilip Mikro gonderim bayragi dogrulanan C01, C02, G01 ve G02 siparisleri Belge Akis Takibi'ne `AxataOrderSent` adimiyla yazilir. Basariyla Mikro'ya yazilan veya mevcut Mikro kaydi kesin olarak dogrulanan C01, C02, C03, C4 ve G01 belgeleri `AxataDocumentImported`, G02 kabul basarisi ise `WarehouseReceivingAccepted` adimiyla izlenir. Deneme, erteleme ve basarisiz belge kayitlari basarili belge gibi akisa yazilmaz.
 - Bu dort gorevde `ImportLookbackDays=14` kullanilir. Zamanlanmis worker bugun dahil son 14 gunluk AXATA kayitlarini isler; daha eski `Status=0` arsiv kayitlari her dongude yeniden taranarak yeni evraklari geciktirmez.
 - C01, C02 ve G02 zamanlanmis okumalarinda `AxataConnection` tanimliysa tarih/durum filtresi dogrudan AXATA SQL tablolarinda uygulanir. WCF, canli import/ack islemi ve SQL baglantisi bulunmayan manuel akislar icin korunur.
 - Eski bir belgenin kurtarilmasi gerekiyorsa belgeye ozel manuel `preview/import/rescue` route'u kullanilir. Manuel route'lar 14 gunluk worker penceresiyle sinirlanmaz.
@@ -25527,7 +25531,7 @@ Bu bolum insan tarafindan okunacak ozet katalogdur. Tam ve surumlenmis alan, tip
 - `SaveAuthorizationFileHttpRequest`: `Id`, `UpdateDate`, `Name`, `Z`, `R`, `X`
 - `GET /api/operations/scalesfile`, `productbarcodeplunofile`, `productbarcodeplonofile`, `cashierfile`, `promofile`, `customerfile` ve `einvoicevnofile` endpointleri body almaz; opsiyonel `warehouseNo` query parametresi yalniz `operasyon-islemleri.operations.all-warehouses` yetkili depo secimi icindir.
 - `POST /api/operations/saveauthorizationfile` ve `POST /api/operations/authorization-files` body modeli tek obje degil, `IReadOnlyCollection<SaveAuthorizationFileHttpRequest>` dizisidir.
-- `DocumentFlowListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `DocumentType`, `Status`, `Search`, `Take`
+- `DocumentFlowListHttpRequest`: `WarehouseNo`, `StartDate`, `EndDate`, `DocumentType`, `Status`, `Search`, `Skip`, `Take`
 - `GET /api/operasyon-islemleri/belge-akis-takibi` body almaz; filtreleri query parametresi olarak alir.
 - `GET /api/operasyon-islemleri/belge-akis-takibi/{id}` body almaz; `id` belge akis kaydinin `Guid` degeridir.
 
@@ -26180,7 +26184,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` | JWT | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/yeniden-dogrula` | JWT | path: clientRequestId / string (uuid) (zorunlu)<br>body: request / RecheckMobileSafeWriteHttpRequest (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mobile-sync/urun-fiyat-katalogu` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileProductPriceCatalogResponse<br>400: ProblemDetails<br>403: ProblemDetails |
-| GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |
+| GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: Search / string<br>query: Skip / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/belge-akis-takibi/{id}` | JWT + operasyon-islemleri.belge-akis-takibi.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowDetailDto<br>404: ProblemDetails |
 | GET | `/api/operasyon-islemleri/depo-operasyon-paneli` | JWT + operasyon-islemleri.depo-operasyon-paneli.all-warehouses + operasyon-islemleri.depo-operasyon-paneli.list | query: date / string (date) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOperationsDashboardDto |
 | GET | `/api/operasyon-islemleri/firma-evrak-takibi` | JWT + operasyon-islemleri.firma-evrak-takibi.list | query: Date / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyDocumentTrackingDto<br>400: ProblemDetails |

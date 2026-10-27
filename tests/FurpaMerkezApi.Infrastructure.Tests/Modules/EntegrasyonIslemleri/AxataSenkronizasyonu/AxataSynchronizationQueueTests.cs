@@ -52,6 +52,44 @@ public sealed class AxataSynchronizationQueueTests
     }
 
     [Fact]
+    public void Catalog_ReportsAllIndependentOrderDispatchFlows()
+    {
+        Assert.Equal(4, AxataSynchronizationCatalog.OrderDispatchTaskCount);
+    }
+
+    [Fact]
+    public async Task OrderDispatchLane_AllowsIndependentFlowsToBeConsumedWithoutSerialBlocking()
+    {
+        var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));
+        var expectedTaskCodes = new[]
+        {
+            "issued-warehouse-order-sync",
+            "received-company-order-sync",
+            "warehouse-inbound-order-sync",
+            "company-receiving-sync"
+        };
+
+        foreach (var taskCode in expectedTaskCodes)
+        {
+            queue.Enqueue(
+                AxataSynchronizationCatalog.GetRequired(taskCode),
+                AxataSynchronizationJobExecutionMode.Live,
+                AxataSynchronizationJobTriggerSource.Scheduled,
+                null,
+                Guid.Empty);
+        }
+
+        var consumed = new List<string>();
+        for (var index = 0; index < expectedTaskCodes.Length; index++)
+        {
+            var workItem = await queue.DequeueOrderDispatchAsync(CancellationToken.None);
+            consumed.Add(workItem.TaskCode);
+        }
+
+        Assert.Equal(expectedTaskCodes, consumed);
+    }
+
+    [Fact]
     public async Task BacklogSnapshot_TracksQueuedAndRunningJobs()
     {
         var createdAtUtc = new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc);

@@ -594,6 +594,14 @@ internal sealed class AxataSynchronizationManualDocumentService(
                         detailRequest,
                         AxataReceivedCompanyOrderDirection,
                         cancellationToken);
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordCompanyOrderSentAsync(
+                            detail,
+                            "C02",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
                     notes.Add(markResult.LineCount > 0
                         ? $"{markResult.LineCount} Mikro siparis satirinda sip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
                         : "UYARI: AXATA Success dondu ancak Mikro sip_special1 bayragi icin eslesen C02 satiri bulunamadi.");
@@ -622,6 +630,14 @@ internal sealed class AxataSynchronizationManualDocumentService(
                         detailRequest,
                         AxataIssuedCompanyOrderDirection,
                         cancellationToken);
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordCompanyOrderSentAsync(
+                            detail,
+                            "G01",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
                     notes.Add(markResult.LineCount > 0
                         ? $"{markResult.LineCount} Mikro siparis satirinda sip_special1=1 olarak isaretlendi ({markResult.WriteChannel})."
                         : "UYARI: AXATA Success dondu ancak Mikro sip_special1 bayragi icin eslesen G01 satiri bulunamadi.");

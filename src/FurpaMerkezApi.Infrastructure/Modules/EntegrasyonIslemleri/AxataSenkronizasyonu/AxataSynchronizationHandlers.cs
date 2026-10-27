@@ -600,6 +600,7 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
     AxataOrderSentFlagService sentFlagService,
+    AxataOrderDocumentFlowRecorder documentFlowRecorder,
     AxataSynchronizationDocumentStateService documentStateService,
     ILogger<ReceivedCompanyOrderSyncTaskHandler> logger)
     : IAxataSynchronizationTaskHandler
@@ -702,6 +703,15 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
                         detailRequest,
                         AxataCompanyOrderDirection,
                         cancellationToken);
+
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordCompanyOrderSentAsync(
+                            detail,
+                            "C02",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
 
                     payloadDocuments.Add(new
                     {
@@ -1046,6 +1056,7 @@ internal sealed class CompanyReceivingSyncTaskHandler(
     AxataSynchronizationOutboxWriter outboxWriter,
     AxataSynchronizationLiveTransportService liveTransportService,
     AxataOrderSentFlagService sentFlagService,
+    AxataOrderDocumentFlowRecorder documentFlowRecorder,
     AxataSynchronizationDocumentStateService documentStateService,
     ILogger<CompanyReceivingSyncTaskHandler> logger)
     : IAxataSynchronizationTaskHandler
@@ -1148,6 +1159,15 @@ internal sealed class CompanyReceivingSyncTaskHandler(
                         detailRequest,
                         AxataCompanyOrderDirection,
                         cancellationToken);
+
+                    if (markResult.LineCount > 0)
+                    {
+                        await documentFlowRecorder.RecordCompanyOrderSentAsync(
+                            detail,
+                            "G01",
+                            context.RequestedByUserId,
+                            cancellationToken);
+                    }
 
                     payloadDocuments.Add(new
                     {

@@ -169,7 +169,9 @@ public enum DocumentFlowType
     OutageReceipt = 15,
     ExpenseReceipt = 16,
     Virman = 17,
-    InventoryCount = 18
+    InventoryCount = 18,
+    ReceivedCompanyOrder = 19,
+    ReceivedWarehouseOrder = 20
 }
 
 public enum DocumentFlowStatus

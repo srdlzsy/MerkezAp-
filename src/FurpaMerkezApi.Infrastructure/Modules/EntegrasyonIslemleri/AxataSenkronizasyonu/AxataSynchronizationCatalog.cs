@@ -2,6 +2,9 @@
 
 internal static class AxataSynchronizationCatalog
 {
+    public static int OrderDispatchTaskCount => Definitions.Count(definition =>
+        IsOrderDispatchTask(definition.Code));
+
     public static IReadOnlyCollection<AxataSynchronizationTaskDefinition> Definitions { get; } =
     [
         new(

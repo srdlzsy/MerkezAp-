@@ -14,6 +14,8 @@ Bir gorevin otomatik calismasi icin su ayarlarin birlikte acik olmasi gerekir:
 
 `IntervalMinutes=5`, gorevin yaklasik bes dakikada bir planlanmasi anlamina gelir. Ayni gorev halen calisiyorsa ikinci bir kopyasi kuyruga alinmaz.
 
+Mikro -> AXATA siparis gorevleri (`C01`, `C02`, `G01`, `G02`) varsayilan olarak dort ayri tuketiciyle calisir. Bir siparis akisi uzadiginda diger hareket turleri onu beklemez. Tuketici sayisi `AxataSynchronization:OrderDispatchWorkerCount` ayariyla degistirilebilir.
+
 ## Mikro'dan AXATA'ya Giden Gorevler
 
 | Gorev kodu | Hareket | Ne ise yarar? |
@@ -27,6 +29,8 @@ Bir gorevin otomatik calismasi icin su ayarlarin birlikte acik olmasi gerekir:
 
 Siparis AXATA'ya basariyla ulastiginda Mikro kaynak satirlari gonderildi olarak isaretlenir. Ayni belge AXATA'da zaten varsa ikinci siparis olusturulmaz; Mikro bayragi mevcut AXATA kaydiyla uzlastirilir.
 
+Basarili C01, C02, G01 ve G02 siparis gonderimleri Belge Akis Takibine `AXATA Siparisi Gonderildi` adimiyla yazilir. Kaynak ve hedef depolar fiziksel hareket yonunde kaydedilir.
+
 ## AXATA'dan Mikro'ya Gelen Gorevler
 
 | Gorev kodu | Hareket | Ne ise yarar? |
@@ -39,6 +43,8 @@ Siparis AXATA'ya basariyla ulastiginda Mikro kaynak satirlari gonderildi olarak 
 | `g02-inbound-delivery-import` | G02 | AXATA depo mal kabulunu Mikro'daki ilgili bekleyen sevk ve siparisle eslestirerek kabul eder. |
 
 Mikro yazimi tamamlanmadan AXATA belgesi tamamlandi olarak isaretlenmez. AXATA'da sadece basligi bulunan, henuz satiri veya miktari olusmamis belgeler hata sayilmaz ve batch kotasini tuketmez; satirlari hazir olunca sonraki turda otomatik islenir.
+
+Basarili C01, C02, C03, C4, G01 ve G02 Mikro belge islemleri Belge Akis Takibine AXATA dis belge numarasiyla yazilir.
 
 ## Sayim Gorevi
 
@@ -61,7 +67,8 @@ Production davranisi:
 
 ## Kuyruk ve Hata Davranisi
 
-- C01, C02, G01 ve G02 siparis gonderimleri ayri ve oncelikli worker hattinda calisir.
+- C01, C02, G01 ve G02 siparis gonderimleri oncelikli kuyrukta ve birbirini beklemeyen ayri tuketicilerde calisir.
+- Ayni gorevin ikinci kopyasi aktifken kuyruga alinmaz; belge bazli SQL kilidi ve AXATA readback kontrolu cift gonderimi engeller.
 - Sevk/mal kabul donusleri genel hatta, firma ve urun master gorevlerinden once calisir.
 - Bir belgenin veri hatasi ayni gorevdeki diger belgeleri durdurmaz.
 - Gecici altyapi veya baglanti hatasi sonraki zamanlanmis turda yeniden denenir.

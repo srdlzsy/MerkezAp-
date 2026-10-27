@@ -212,6 +212,47 @@ public sealed class DocumentFlowServiceTests
             item => Assert.Contains("G02", item.Message, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ListAsync_ReturnsStablePagesWithoutHidingTotalCount()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 10, 27, 8, 0, 0, DateTimeKind.Utc));
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+
+        for (var orderNo = 1; orderNo <= 3; orderNo++)
+        {
+            await service.RecordAsync(
+                new RecordDocumentFlowRequest(
+                    $"IssuedWarehouseOrder:50:F50:{orderNo}",
+                    DocumentFlowType.IssuedWarehouseOrder,
+                    50,
+                    100 + orderNo,
+                    "F50",
+                    orderNo,
+                    DocumentFlowStep.AxataOrderSent,
+                    DocumentFlowStatus.Succeeded,
+                    "AXATA siparisi gonderildi."),
+                CancellationToken.None);
+            clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        }
+
+        var firstPage = await service.ListAsync(
+            new DocumentFlowListRequest(null, null, null, null, null, null, Skip: 0, Take: 2),
+            CancellationToken.None);
+        var secondPage = await service.ListAsync(
+            new DocumentFlowListRequest(null, null, null, null, null, null, Skip: 2, Take: 2),
+            CancellationToken.None);
+
+        Assert.Equal(3, firstPage.TotalCount);
+        Assert.Equal(3, secondPage.TotalCount);
+        Assert.Equal([3, 2], firstPage.Items.Select(item => item.DocumentOrderNo));
+        Assert.Equal([1], secondPage.Items.Select(item => item.DocumentOrderNo));
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()

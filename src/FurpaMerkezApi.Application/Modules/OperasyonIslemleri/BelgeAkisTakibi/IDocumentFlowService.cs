@@ -25,6 +25,7 @@ public sealed record DocumentFlowListRequest(
     DocumentFlowType? DocumentType,
     DocumentFlowStatus? Status,
     string? Search,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record DocumentFlowListResponse(

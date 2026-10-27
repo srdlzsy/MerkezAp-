@@ -48,6 +48,7 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
                 request.DocumentType,
                 request.Status,
                 request.Search,
+                request.Skip,
                 request.Take),
             cancellationToken));
     }
@@ -83,6 +84,9 @@ public sealed class DocumentFlowListHttpRequest
 
     [StringLength(100)]
     public string? Search { get; init; }
+
+    [Range(0, int.MaxValue)]
+    public int Skip { get; init; }
 
     [Range(1, 500)]
     public int Take { get; init; } = 100;

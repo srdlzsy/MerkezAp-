@@ -19,6 +19,7 @@ public sealed class DocumentFlowService(
         DocumentFlowListRequest request,
         CancellationToken cancellationToken)
     {
+        var skip = Math.Max(request.Skip, 0);
         var take = Math.Clamp(request.Take, 1, 500);
         var query = authDbContext.DocumentFlows.AsNoTracking();
 
@@ -65,6 +66,8 @@ public sealed class DocumentFlowService(
         var totalCount = await query.CountAsync(cancellationToken);
         var flows = await query
             .OrderByDescending(flow => flow.UpdatedAtUtc)
+            .ThenByDescending(flow => flow.Id)
+            .Skip(skip)
             .Take(take)
             .ToListAsync(cancellationToken);
 

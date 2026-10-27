@@ -24,6 +24,8 @@ public sealed class AxataSynchronizationOptions
 
     public int JobTimeoutMinutes { get; init; } = 10;
 
+    public int OrderDispatchWorkerCount { get; init; } = 4;
+
     public string OutboxBasePath { get; init; } = string.Empty;
 
     public AxataDocumentRetryStateOptions DocumentRetryState { get; init; } = new();

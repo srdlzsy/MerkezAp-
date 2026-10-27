@@ -3335,6 +3335,22 @@ internal sealed class AxataOutboundDeliveryImportService(
                     request.Acknowledge,
                     cancellationToken);
                 results.Add(result);
+                var documentType = movementType.Equals(
+                    C04LegacyMovementType,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? DocumentFlowType.InterWarehouseShipment
+                    : DocumentFlowType.CompanyReturn;
+                await importDocumentFlowRecorder.RecordAsync(
+                    movementType,
+                    documentType,
+                    analysis.ImportDto.SourceWarehouseNo,
+                    analysis.ImportDto.TargetWarehouseNo,
+                    result.MovementSerie,
+                    result.MovementOrderNo,
+                    result.AxataDeliveryNo,
+                    result.Message,
+                    requestedByUserId,
+                    cancellationToken);
             }
             catch (Exception exception)
             {
@@ -3948,7 +3964,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                 DocumentFlowStep.WarehouseReceivingAccepted,
                 DocumentFlowStatus.Succeeded,
                 $"AXATA G02: {acceptanceState}; {acknowledgementState}. AXATA belge: {axataDeliveryNo}.",
-                ChangedByUserId: requestedByUserId == Guid.Empty ? null : requestedByUserId),
+                ChangedByUserId: requestedByUserId == Guid.Empty ? null : requestedByUserId,
+                ExternalDocumentNo: axataDeliveryNo),
             cancellationToken);
     }
 

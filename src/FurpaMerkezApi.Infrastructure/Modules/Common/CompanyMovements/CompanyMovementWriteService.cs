@@ -43,7 +43,10 @@ public sealed class CompanyMovementWriteService(
         CompanyMovementKind kind,
         CancellationToken cancellationToken)
     {
-        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
+        request = NormalizeRequestForKind(request, kind) with
+        {
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid()
+        };
         Validate(request);
         Func<CancellationToken, Task>? validateBeforeReservation = kind == CompanyMovementKind.PurchaseReturn
             ? innerCancellationToken => CompanyProductCompatibilityValidator.ValidateAsync(
@@ -79,11 +82,31 @@ public sealed class CompanyMovementWriteService(
             requestedByUserId,
             clientRequestId,
             (storedRequestPayload, innerCancellationToken) => TryRecoverOfflineResponseAsync(
-                MobileOfflineSyncService.DeserializeRequest<CreateCompanyMovementRequest>(storedRequestPayload),
+                NormalizeRequestForKind(
+                    MobileOfflineSyncService.DeserializeRequest<CreateCompanyMovementRequest>(storedRequestPayload),
+                    kind),
                 kind,
                 innerCancellationToken),
             cancellationToken,
             verifyCompletedWithRecovery: true);
+
+    internal static CreateCompanyMovementRequest NormalizeRequestForKind(
+        CreateCompanyMovementRequest request,
+        CompanyMovementKind kind)
+    {
+        if (kind != CompanyMovementKind.PurchaseReturn ||
+            request.Lines.All(line => line.UnitPrice == 0d))
+        {
+            return request;
+        }
+
+        return request with
+        {
+            Lines = request.Lines
+                .Select(line => line with { UnitPrice = 0d })
+                .ToArray()
+        };
+    }
 
     private Task<CreateCompanyMovementResponse> ExecuteRoutedAsync(
         CreateCompanyMovementRequest request,
