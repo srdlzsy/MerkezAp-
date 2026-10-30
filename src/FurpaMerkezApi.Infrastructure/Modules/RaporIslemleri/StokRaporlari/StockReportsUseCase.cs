@@ -1256,6 +1256,168 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<CategorySalesAnalysisItemDto>> GetCategorySalesAnalysisAsync(
+        CategorySalesAnalysisRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (startDate, endDateExclusive) = NormalizeDateRange(request.StartDate, request.EndDate);
+        var categoryCode = NormalizeOrNull(request.CategoryCode);
+        if (categoryCode is null)
+        {
+            throw new ArgumentException("Category code is required.", nameof(request.CategoryCode));
+        }
+
+        const string sql = """
+            SELECT TOP (@take)
+                stock.sto_kod AS StockCode,
+                COALESCE(stock.sto_isim, '') AS StockName,
+                COALESCE(stock.sto_kategori_kodu, '') AS CategoryCode,
+                COALESCE(category.ktg_isim, '') AS CategoryName,
+                COALESCE(stock.sto_marka_kodu, '') AS SupplierCode,
+                COALESCE(stock.sto_uretici_kodu, '') AS ManufacturerCode,
+                COALESCE(manufacturer.urt_ismi, stock.sto_uretici_kodu, '') AS ManufacturerName,
+                SUM(CASE WHEN COALESCE(movement.sth_normal_iade, 0) = 1 THEN -COALESCE(movement.sth_miktar, 0) ELSE COALESCE(movement.sth_miktar, 0) END) AS Quantity,
+                SUM((CASE WHEN COALESCE(movement.sth_normal_iade, 0) = 1 THEN -1 ELSE 1 END) *
+                    (COALESCE(movement.sth_tutar, 0) + COALESCE(movement.sth_vergi, 0)
+                     - COALESCE(movement.sth_iskonto1, 0) - COALESCE(movement.sth_iskonto2, 0)
+                     - COALESCE(movement.sth_iskonto3, 0) - COALESCE(movement.sth_iskonto4, 0)
+                     - COALESCE(movement.sth_iskonto5, 0) - COALESCE(movement.sth_iskonto6, 0))) AS TotalAmount
+            FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+            INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = movement.sth_stok_kod
+            LEFT JOIN dbo.STOK_KATEGORILERI AS category WITH (NOLOCK) ON category.ktg_kod = stock.sto_kategori_kodu
+            LEFT JOIN dbo.STOK_URETICILERI AS manufacturer WITH (NOLOCK) ON manufacturer.urt_kod = stock.sto_uretici_kodu
+            WHERE COALESCE(movement.sth_iptal, 0) = 0
+              AND movement.sth_tarih >= @startDate AND movement.sth_tarih < @endDateExclusive
+              AND movement.sth_tip = 1 AND movement.sth_cins = 1
+              AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo)
+              AND (@categoryCode IS NULL OR stock.sto_kategori_kodu LIKE @categoryCode + '%')
+            GROUP BY stock.sto_kod, stock.sto_isim, stock.sto_kategori_kodu, category.ktg_isim,
+                     stock.sto_marka_kodu, stock.sto_uretici_kodu, manufacturer.urt_ismi
+            ORDER BY ManufacturerName, StockName
+            OPTION (RECOMPILE);
+            """;
+
+        return await ExecuteReaderAsync(sql, command =>
+        {
+            AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
+            AddParameter(command, "@startDate", startDate, DbType.DateTime);
+            AddParameter(command, "@endDateExclusive", endDateExclusive, DbType.DateTime);
+            AddParameter(command, "@categoryCode", categoryCode, DbType.String);
+            AddParameter(command, "@take", NormalizeTake(request.Take), DbType.Int32);
+        }, ReadCategorySalesAnalysis, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<BranchPriceDifferenceItemDto>> GetBranchPriceDifferencesAsync(
+        BranchPriceDifferenceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var search = ToLike(NormalizeOrNull(request.Search));
+        const string sql = """
+            SELECT TOP (@take)
+                branchPrice.sfiyat_deposirano AS WarehouseNo,
+                COALESCE(warehouse.dep_adi, '') AS WarehouseName,
+                stock.sto_kod AS StockCode,
+                COALESCE(stock.sto_isim, '') AS StockName,
+                COALESCE(branchPrice.sfiyat_fiyati, 0) AS BranchPrice,
+                COALESCE(mainPrice.sfiyat_fiyati, 0) AS MainWarehousePrice
+            FROM dbo.STOK_SATIS_FIYAT_LISTELERI AS branchPrice WITH (NOLOCK)
+            INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = branchPrice.sfiyat_stokkod
+            INNER JOIN dbo.DEPOLAR AS warehouse WITH (NOLOCK) ON warehouse.dep_no = branchPrice.sfiyat_deposirano
+            INNER JOIN dbo.STOK_SATIS_FIYAT_LISTELERI AS mainPrice WITH (NOLOCK)
+                ON mainPrice.sfiyat_stokkod = branchPrice.sfiyat_stokkod
+               AND mainPrice.sfiyat_deposirano = 0
+               AND COALESCE(mainPrice.sfiyat_listesirano, 0) = COALESCE(branchPrice.sfiyat_listesirano, 0)
+               AND COALESCE(mainPrice.sfiyat_birim_pntr, 1) = COALESCE(branchPrice.sfiyat_birim_pntr, 1)
+               AND COALESCE(mainPrice.sfiyat_odemeplan, 0) = COALESCE(branchPrice.sfiyat_odemeplan, 0)
+               AND COALESCE(mainPrice.sfiyat_doviz, 0) = COALESCE(branchPrice.sfiyat_doviz, 0)
+               AND COALESCE(mainPrice.sfiyat_iptal, 0) = 0
+            WHERE COALESCE(branchPrice.sfiyat_iptal, 0) = 0
+              AND branchPrice.sfiyat_deposirano BETWEEN 100 AND 300
+              AND (@warehouseNo IS NULL OR branchPrice.sfiyat_deposirano = @warehouseNo)
+              AND (@search IS NULL OR stock.sto_kod LIKE @search OR stock.sto_isim LIKE @search)
+              AND ROUND(COALESCE(branchPrice.sfiyat_fiyati, 0), 2) <> ROUND(COALESCE(mainPrice.sfiyat_fiyati, 0), 2)
+            ORDER BY ABS(COALESCE(branchPrice.sfiyat_fiyati, 0) - COALESCE(mainPrice.sfiyat_fiyati, 0)) DESC,
+                     stock.sto_kod, branchPrice.sfiyat_deposirano
+            OPTION (RECOMPILE);
+            """;
+
+        return await ExecuteReaderAsync(sql, command =>
+        {
+            AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
+            AddParameter(command, "@search", search, DbType.String);
+            AddParameter(command, "@take", NormalizeTake(request.Take), DbType.Int32);
+        }, ReadBranchPriceDifference, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<ManufacturerSeasonalSalesItemDto>> GetManufacturerSeasonalSalesAsync(
+        ManufacturerSeasonalSalesRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.PastYear is < 2000 or > 2100 || request.PresentYear is < 2000 or > 2100 || request.PastYear == request.PresentYear)
+        {
+            throw new ArgumentException("Comparison years must be different and between 2000 and 2100.");
+        }
+
+        var manufacturerCode = NormalizeOrNull(request.ManufacturerCode);
+        if (manufacturerCode is null)
+        {
+            throw new ArgumentException("Manufacturer code is required.", nameof(request.ManufacturerCode));
+        }
+        const string sql = """
+            ;WITH ProductRows AS (
+                SELECT TOP (@take)
+                    stock.sto_kod AS StockCode,
+                    COALESCE(stock.sto_isim, '') AS StockName,
+                    COALESCE(stock.sto_uretici_kodu, '') AS ManufacturerCode,
+                    COALESCE(manufacturer.urt_ismi, stock.sto_uretici_kodu, '') AS ManufacturerName
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK) ON stock.sto_kod = movement.sth_stok_kod
+                LEFT JOIN dbo.STOK_URETICILERI AS manufacturer WITH (NOLOCK) ON manufacturer.urt_kod = stock.sto_uretici_kodu
+                WHERE COALESCE(movement.sth_iptal, 0) = 0 AND movement.sth_tip = 1 AND movement.sth_cins = 1
+                  AND YEAR(movement.sth_tarih) IN (@pastYear, @presentYear)
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo)
+                  AND (@manufacturerCode IS NULL OR stock.sto_uretici_kodu = @manufacturerCode)
+                GROUP BY stock.sto_kod, stock.sto_isim, stock.sto_uretici_kodu, manufacturer.urt_ismi
+                ORDER BY stock.sto_isim
+            ), Months AS (
+                SELECT month.MonthNo, month.MonthName
+                FROM (VALUES (1,N'Ocak'),(2,N'Subat'),(3,N'Mart'),(4,N'Nisan'),(5,N'Mayis'),(6,N'Haziran'),
+                             (7,N'Temmuz'),(8,N'Agustos'),(9,N'Eylul'),(10,N'Ekim'),(11,N'Kasim'),(12,N'Aralik')) month(MonthNo, MonthName)
+            ), Sales AS (
+                SELECT movement.sth_stok_kod AS StockCode, YEAR(movement.sth_tarih) AS SalesYear,
+                       MONTH(movement.sth_tarih) AS SalesMonth,
+                       SUM((CASE WHEN COALESCE(movement.sth_normal_iade, 0) = 1 THEN -1 ELSE 1 END) *
+                           (COALESCE(movement.sth_tutar, 0) - COALESCE(movement.sth_iskonto1, 0) - COALESCE(movement.sth_iskonto2, 0)
+                            - COALESCE(movement.sth_iskonto3, 0) - COALESCE(movement.sth_iskonto4, 0)
+                            - COALESCE(movement.sth_iskonto5, 0) - COALESCE(movement.sth_iskonto6, 0))) AS Amount
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
+                INNER JOIN ProductRows AS product ON product.StockCode = movement.sth_stok_kod
+                WHERE COALESCE(movement.sth_iptal, 0) = 0 AND movement.sth_tip = 1 AND movement.sth_cins = 1
+                  AND YEAR(movement.sth_tarih) IN (@pastYear, @presentYear)
+                  AND (@warehouseNo IS NULL OR movement.sth_cikis_depo_no = @warehouseNo)
+                GROUP BY movement.sth_stok_kod, YEAR(movement.sth_tarih), MONTH(movement.sth_tarih)
+            )
+            SELECT product.StockCode, product.StockName, product.ManufacturerCode, product.ManufacturerName,
+                   month.MonthNo AS [Month], month.MonthName,
+                   COALESCE(past.Amount, 0) AS PastAmount, COALESCE(present.Amount, 0) AS PresentAmount
+            FROM ProductRows AS product CROSS JOIN Months AS month
+            LEFT JOIN Sales AS past ON past.StockCode = product.StockCode AND past.SalesYear = @pastYear AND past.SalesMonth = month.MonthNo
+            LEFT JOIN Sales AS present ON present.StockCode = product.StockCode AND present.SalesYear = @presentYear AND present.SalesMonth = month.MonthNo
+            WHERE COALESCE(past.Amount, 0) <> 0 OR COALESCE(present.Amount, 0) <> 0
+            ORDER BY product.ManufacturerName, product.StockName, month.MonthNo
+            OPTION (RECOMPILE);
+            """;
+
+        return await ExecuteReaderAsync(sql, command =>
+        {
+            AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
+            AddParameter(command, "@pastYear", request.PastYear, DbType.Int32);
+            AddParameter(command, "@presentYear", request.PresentYear, DbType.Int32);
+            AddParameter(command, "@manufacturerCode", manufacturerCode, DbType.String);
+            AddParameter(command, "@take", NormalizeTake(request.Take), DbType.Int32);
+        }, ReadManufacturerSeasonalSales, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ProfitabilityReportItemDto>> GetProfitabilityAsync(
         ProfitabilityReportRequest request,
         CancellationToken cancellationToken)
@@ -1277,12 +1439,16 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                     WHEN @scope = 'supplier' THEN COALESCE(supplier.cari_unvan1, '')
                     WHEN @scope = 'product-manager' THEN COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '')
                     WHEN @scope = 'stock' THEN COALESCE(stock.sto_isim, '')
-                    WHEN @scope = 'category' THEN COALESCE(stock.sto_kategori_kodu, '')
-                    ELSE COALESCE(stock.sto_uretici_kodu, '')
+                    WHEN @scope = 'category' THEN COALESCE(category.ktg_isim, stock.sto_kategori_kodu, '')
+                    ELSE COALESCE(manufacturer.urt_ismi, stock.sto_uretici_kodu, '')
                 END AS GroupName,
                 SUM(COALESCE(movement.sth_miktar, 0)) AS SalesQuantity,
-                SUM(COALESCE(movement.sth_tutar, 0)) AS SalesAmount,
-                SUM(ABS(COALESCE(movement.sth_maliyet_ana, 0))) AS CostAmount
+                SUM(COALESCE(movement.sth_tutar, 0) + COALESCE(movement.sth_vergi, 0)
+                    - COALESCE(movement.sth_iskonto1, 0) - COALESCE(movement.sth_iskonto2, 0)
+                    - COALESCE(movement.sth_iskonto3, 0) - COALESCE(movement.sth_iskonto4, 0)
+                    - COALESCE(movement.sth_iskonto5, 0) - COALESCE(movement.sth_iskonto6, 0)) AS SalesAmount,
+                SUM(COALESCE(movement.sth_miktar, 0) * COALESCE(purchaseTerm.UnitCost, lastPurchase.UnitCost,
+                    ABS(COALESCE(movement.sth_maliyet_ana, 0)) / NULLIF(ABS(COALESCE(movement.sth_miktar, 0)), 0), 0)) AS CostAmount
             FROM dbo.STOK_HAREKETLERI AS movement WITH (NOLOCK)
             INNER JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
                 ON stock.sto_kod = movement.sth_stok_kod
@@ -1293,6 +1459,36 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                 ON supplier.cari_kod = COALESCE(NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''), NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), ''))
             LEFT JOIN dbo.CARI_PERSONEL_TANIMLARI AS personnel WITH (NOLOCK)
                 ON personnel.cari_per_kod = COALESCE(NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''), NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), ''))
+            LEFT JOIN dbo.STOK_KATEGORILERI AS category WITH (NOLOCK)
+                ON category.ktg_kod = stock.sto_kategori_kodu
+            LEFT JOIN dbo.STOK_URETICILERI AS manufacturer WITH (NOLOCK)
+                ON manufacturer.urt_kod = stock.sto_uretici_kodu
+            OUTER APPLY (
+                SELECT TOP (1) term.sas_net_alis_kdvli AS UnitCost
+                FROM dbo.SATINALMA_SARTLARI AS term WITH (NOLOCK)
+                WHERE term.sas_stok_kod = movement.sth_stok_kod
+                  AND COALESCE(term.sas_net_alis_kdvli, 0) > 0
+                  AND (term.sas_basla_tarih IS NULL OR term.sas_basla_tarih <= movement.sth_tarih)
+                  AND (term.sas_bitis_tarih IS NULL OR term.sas_bitis_tarih <= CONVERT(date, '19000101', 112) OR term.sas_bitis_tarih >= movement.sth_tarih)
+                ORDER BY CASE WHEN term.sas_cari_kod = COALESCE(NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''), NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), '')) THEN 0 ELSE 1 END,
+                         term.sas_basla_tarih DESC, term.sas_create_date DESC
+            ) AS purchaseTerm
+            OUTER APPLY (
+                SELECT TOP (1)
+                    (COALESCE(purchase.sth_tutar, 0) + COALESCE(purchase.sth_vergi, 0)
+                     - COALESCE(purchase.sth_iskonto1, 0) - COALESCE(purchase.sth_iskonto2, 0)
+                     - COALESCE(purchase.sth_iskonto3, 0) - COALESCE(purchase.sth_iskonto4, 0)
+                     - COALESCE(purchase.sth_iskonto5, 0) - COALESCE(purchase.sth_iskonto6, 0))
+                     / NULLIF(ABS(COALESCE(purchase.sth_miktar, 0)), 0) AS UnitCost
+                FROM dbo.STOK_HAREKETLERI AS purchase WITH (NOLOCK)
+                WHERE purchase.sth_stok_kod = movement.sth_stok_kod
+                  AND COALESCE(purchase.sth_iptal, 0) = 0
+                  AND purchase.sth_tip = 0 AND purchase.sth_evraktip = 3
+                  AND COALESCE(purchase.sth_normal_iade, 0) = 0
+                  AND COALESCE(purchase.sth_miktar, 0) <> 0
+                  AND purchase.sth_tarih <= movement.sth_tarih
+                ORDER BY purchase.sth_tarih DESC, purchase.sth_create_date DESC
+            ) AS lastPurchase
             WHERE COALESCE(movement.sth_iptal, 0) = 0
               AND movement.sth_tarih >= @startDate
               AND movement.sth_tarih < @endDateExclusive
@@ -1306,7 +1502,7 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                     OR (@scope = 'producer' AND stock.sto_uretici_kodu = @filterValue)
                     OR (@scope = 'supplier' AND COALESCE(NULLIF(LTRIM(RTRIM(detail.sdp_sat_cari_kod)), ''), NULLIF(LTRIM(RTRIM(stock.sto_sat_cari_kod)), '')) = @filterValue)
                     OR (@scope = 'product-manager' AND COALESCE(NULLIF(LTRIM(RTRIM(detail.sdp_UrunSorumlusuKodu)), ''), NULLIF(LTRIM(RTRIM(stock.sto_urun_sorkod)), '')) = @filterValue)
-                    OR (@scope = 'category' AND stock.sto_kategori_kodu = @filterValue)
+                    OR (@scope = 'category' AND stock.sto_kategori_kodu LIKE @filterValue + '%')
                     OR (@scope = 'stock' AND stock.sto_kod = @filterValue)
               )
             GROUP BY
@@ -1321,8 +1517,8 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
                     WHEN @scope = 'supplier' THEN COALESCE(supplier.cari_unvan1, '')
                     WHEN @scope = 'product-manager' THEN COALESCE(NULLIF(CONCAT(personnel.cari_per_adi, ' ', personnel.cari_per_soyadi), ' '), '')
                     WHEN @scope = 'stock' THEN COALESCE(stock.sto_isim, '')
-                    WHEN @scope = 'category' THEN COALESCE(stock.sto_kategori_kodu, '')
-                    ELSE COALESCE(stock.sto_uretici_kodu, '')
+                    WHEN @scope = 'category' THEN COALESCE(category.ktg_isim, stock.sto_kategori_kodu, '')
+                    ELSE COALESCE(manufacturer.urt_ismi, stock.sto_uretici_kodu, '')
                 END
             ORDER BY SalesAmount DESC;
             """;
@@ -2033,6 +2229,54 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
             costAmount,
             profitAmount,
             Percent(profitAmount, salesAmount));
+    }
+
+    private static CategorySalesAnalysisItemDto ReadCategorySalesAnalysis(DbDataReader reader) =>
+        new(
+            ReadString(reader, "StockCode"),
+            ReadString(reader, "StockName"),
+            ReadString(reader, "CategoryCode"),
+            ReadString(reader, "CategoryName"),
+            ReadString(reader, "SupplierCode"),
+            ReadString(reader, "ManufacturerCode"),
+            ReadString(reader, "ManufacturerName"),
+            Round(ReadDouble(reader, "Quantity")),
+            Round(ReadDouble(reader, "TotalAmount")));
+
+    private static BranchPriceDifferenceItemDto ReadBranchPriceDifference(DbDataReader reader)
+    {
+        var branchPrice = Round(ReadDouble(reader, "BranchPrice"));
+        var mainPrice = Round(ReadDouble(reader, "MainWarehousePrice"));
+        var difference = Round(branchPrice - mainPrice);
+
+        return new BranchPriceDifferenceItemDto(
+            ReadInt(reader, "WarehouseNo"),
+            ReadString(reader, "WarehouseName"),
+            ReadString(reader, "StockCode"),
+            ReadString(reader, "StockName"),
+            branchPrice,
+            mainPrice,
+            difference,
+            Percent(difference, mainPrice));
+    }
+
+    private static ManufacturerSeasonalSalesItemDto ReadManufacturerSeasonalSales(DbDataReader reader)
+    {
+        var pastAmount = Round(ReadDouble(reader, "PastAmount"));
+        var presentAmount = Round(ReadDouble(reader, "PresentAmount"));
+        var difference = Round(presentAmount - pastAmount);
+
+        return new ManufacturerSeasonalSalesItemDto(
+            ReadString(reader, "StockCode"),
+            ReadString(reader, "StockName"),
+            ReadString(reader, "ManufacturerCode"),
+            ReadString(reader, "ManufacturerName"),
+            ReadInt(reader, "Month"),
+            ReadString(reader, "MonthName"),
+            pastAmount,
+            presentAmount,
+            difference,
+            Percent(difference, pastAmount));
     }
 
     private static CountingComparisonReportItemDto ReadCountingComparison(DbDataReader reader)

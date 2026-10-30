@@ -69,6 +69,37 @@ public sealed class ReceivedWarehouseOrderBulkPrintTests
         Assert.DoesNotContain(" - DEVAM", pdf.GetPage(1).Text);
     }
 
+    [Fact]
+    public void Render_GreenGrocerDocument_UsesNarrowLeftTableAndTurkishAlphabeticalProductOrder()
+    {
+        var renderer = new ReceivedWarehouseOrderPdfRenderer();
+        var baseDocument = CreateDocument("F56", 1005, "010001", "URUN");
+        var document = baseDocument with
+        {
+            Header = baseDocument.Header with
+            {
+                OutWarehouseNo = 56,
+                OutWarehouseName = "MANAV DEPO"
+            },
+            Items =
+            [
+                CreateItem(0, "010003", "Zeytin"),
+                CreateItem(1, "010001", "Armut"),
+                CreateItem(2, "010002", "Çilek")
+            ]
+        };
+
+        var pdfBytes = renderer.Render([document]);
+
+        using var pdf = PdfDocument.Open(pdfBytes);
+        var text = pdf.GetPage(1).Text;
+
+        Assert.True(text.IndexOf("Armut", StringComparison.Ordinal) < text.IndexOf("Çilek", StringComparison.Ordinal));
+        Assert.True(text.IndexOf("Çilek", StringComparison.Ordinal) < text.IndexOf("Zeytin", StringComparison.Ordinal));
+        Assert.Equal(340d, ReceivedWarehouseOrderPdfRenderer.ResolveTableWidth(56));
+        Assert.Equal(510d, ReceivedWarehouseOrderPdfRenderer.ResolveTableWidth(50));
+    }
+
     private static WarehouseOrderDetailDto CreateDocument(
         string documentSerie,
         int documentOrderNo,
@@ -118,4 +149,22 @@ public sealed class ReceivedWarehouseOrderBulkPrintTests
 
         return new WarehouseOrderDetailDto(header, items);
     }
+
+    private static WarehouseOrderLineItemDto CreateItem(int lineNo, string stockCode, string stockName) =>
+        new(
+            Guid.NewGuid(),
+            lineNo,
+            stockCode,
+            stockName,
+            "ADET",
+            1,
+            10,
+            2,
+            8,
+            0,
+            0,
+            false,
+            string.Empty,
+            string.Empty,
+            string.Empty);
 }

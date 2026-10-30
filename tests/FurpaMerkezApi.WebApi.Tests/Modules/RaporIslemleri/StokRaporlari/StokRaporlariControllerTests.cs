@@ -244,6 +244,21 @@ public sealed class StokRaporlariControllerTests
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyCollection<ProfitabilityReportItemDto>>([]);
 
+        public Task<IReadOnlyCollection<CategorySalesAnalysisItemDto>> GetCategorySalesAnalysisAsync(
+            CategorySalesAnalysisRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<CategorySalesAnalysisItemDto>>([]);
+
+        public Task<IReadOnlyCollection<BranchPriceDifferenceItemDto>> GetBranchPriceDifferencesAsync(
+            BranchPriceDifferenceRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<BranchPriceDifferenceItemDto>>([]);
+
+        public Task<IReadOnlyCollection<ManufacturerSeasonalSalesItemDto>> GetManufacturerSeasonalSalesAsync(
+            ManufacturerSeasonalSalesRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<ManufacturerSeasonalSalesItemDto>>([]);
+
         public Task<IReadOnlyCollection<CountingComparisonReportItemDto>> GetCountingComparisonAsync(
             CountingComparisonReportRequest request,
             CancellationToken cancellationToken) =>

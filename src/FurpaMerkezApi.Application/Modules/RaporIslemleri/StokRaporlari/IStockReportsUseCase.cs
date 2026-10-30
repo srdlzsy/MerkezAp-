@@ -54,6 +54,18 @@ public interface IStockReportsUseCase
         ProfitabilityReportRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<CategorySalesAnalysisItemDto>> GetCategorySalesAnalysisAsync(
+        CategorySalesAnalysisRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<BranchPriceDifferenceItemDto>> GetBranchPriceDifferencesAsync(
+        BranchPriceDifferenceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<ManufacturerSeasonalSalesItemDto>> GetManufacturerSeasonalSalesAsync(
+        ManufacturerSeasonalSalesRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<CountingComparisonReportItemDto>> GetCountingComparisonAsync(
         CountingComparisonReportRequest request,
         CancellationToken cancellationToken);

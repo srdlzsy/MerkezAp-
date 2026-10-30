@@ -101,6 +101,25 @@ public sealed record ProfitabilityReportRequest(
     string? FilterValue,
     int Take);
 
+public sealed record CategorySalesAnalysisRequest(
+    int? WarehouseNo,
+    DateTime StartDate,
+    DateTime EndDate,
+    string? CategoryCode,
+    int Take);
+
+public sealed record BranchPriceDifferenceRequest(
+    int? WarehouseNo,
+    string? Search,
+    int Take);
+
+public sealed record ManufacturerSeasonalSalesRequest(
+    int? WarehouseNo,
+    int PastYear,
+    int PresentYear,
+    string? ManufacturerCode,
+    int Take);
+
 public sealed record CountingComparisonReportRequest(
     int WarehouseNo,
     DateTime CountDate,
@@ -316,6 +335,39 @@ public sealed record ProfitabilityReportItemDto(
     double CostAmount,
     double ProfitAmount,
     double ProfitPercent);
+
+public sealed record CategorySalesAnalysisItemDto(
+    string StockCode,
+    string StockName,
+    string CategoryCode,
+    string CategoryName,
+    string SupplierCode,
+    string ManufacturerCode,
+    string ManufacturerName,
+    double Quantity,
+    double TotalAmount);
+
+public sealed record BranchPriceDifferenceItemDto(
+    int WarehouseNo,
+    string WarehouseName,
+    string StockCode,
+    string StockName,
+    double BranchPrice,
+    double MainWarehousePrice,
+    double DifferenceAmount,
+    double DifferencePercent);
+
+public sealed record ManufacturerSeasonalSalesItemDto(
+    string StockCode,
+    string StockName,
+    string ManufacturerCode,
+    string ManufacturerName,
+    int Month,
+    string MonthName,
+    double PastAmount,
+    double PresentAmount,
+    double DifferenceAmount,
+    double ChangePercent);
 
 public sealed record CountingComparisonReportItemDto(
     int WarehouseNo,

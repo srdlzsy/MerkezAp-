@@ -14,9 +14,12 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     private const double TableHeaderHeight = 24d;
     private const double MinimumRowHeight = 16d;
     private const double CellPadding = 3d;
+    private const int GreenGrocerWarehouseNo = 56;
 
     private static readonly XColor BorderColor = XColor.FromArgb(25, 25, 25);
     private static readonly XColor LightHeaderColor = XColor.FromArgb(238, 238, 238);
+    private static readonly StringComparer TurkishTextComparer =
+        StringComparer.Create(CultureInfo.GetCultureInfo("tr-TR"), ignoreCase: true);
 
     static ReceivedWarehouseOrderPdfRenderer()
     {
@@ -58,16 +61,31 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         var pageState = CreatePage(pdf, document, ++documentPageNo, continuation: false);
         var rowIndex = 0;
 
-        foreach (var item in document.Items.OrderBy(item => item.LineNo))
+        var items = IsGreenGrocerDocument(document.Header)
+            ? document.Items
+                .OrderBy(item => item.StockName, TurkishTextComparer)
+                .ThenBy(item => item.StockCode, TurkishTextComparer)
+                .ThenBy(item => item.LineNo)
+            : document.Items.OrderBy(item => item.LineNo);
+
+        foreach (var item in items)
         {
-            var rowHeight = CalculateRowHeight(item);
+            var rowHeight = CalculateRowHeight(item, pageState.Columns);
             if (pageState.Y + rowHeight > pageState.ContentBottom)
             {
                 pageState.Dispose();
                 pageState = CreatePage(pdf, document, ++documentPageNo, continuation: true);
             }
 
-            DrawRow(pageState.Graphics, pageState.Y, rowHeight, item, rowIndex++ % 2 == 1);
+            DrawRow(
+                pageState.Graphics,
+                pageState.Y,
+                rowHeight,
+                item,
+                rowIndex + 1,
+                rowIndex % 2 == 1,
+                pageState.Columns);
+            rowIndex++;
             pageState.Y += rowHeight;
         }
 
@@ -79,9 +97,9 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             pageState = CreatePage(pdf, document, ++documentPageNo, continuation: true);
         }
 
-        DrawTotals(pageState.Graphics, pageState.Y, document.Header);
+        DrawTotals(pageState.Graphics, pageState.Y, document.Header, pageState.Columns);
         pageState.Y += totalsHeight;
-        DrawSignatures(pageState.Graphics, pageState.Y);
+        DrawSignatures(pageState.Graphics, pageState.Y, pageState.Columns);
         pageState.Dispose();
     }
 
@@ -97,9 +115,10 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         var graphics = XGraphics.FromPdfPage(page);
         var pageWidth = page.Width.Point;
         var pageHeight = page.Height.Point;
+        var columns = ResolveColumns(document.Header);
 
         DrawDocumentHeader(graphics, pageWidth, document.Header, continuation);
-        DrawTableHeader(graphics, HeaderHeight);
+        DrawTableHeader(graphics, HeaderHeight, columns);
         graphics.DrawString(
             $"Evrak sayfasi: {documentPageNo}",
             smallFont,
@@ -116,7 +135,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         return new PageState(
             graphics,
             HeaderHeight + TableHeaderHeight,
-            pageHeight - FooterHeight - 4d);
+            pageHeight - FooterHeight - 4d,
+            columns);
     }
 
     private void DrawDocumentHeader(
@@ -172,10 +192,10 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             XStringFormats.CenterRight);
     }
 
-    private void DrawTableHeader(XGraphics graphics, double y)
+    private void DrawTableHeader(XGraphics graphics, double y, IReadOnlyList<Column> columns)
     {
         var x = PageMargin;
-        foreach (var column in Columns)
+        foreach (var column in columns)
         {
             graphics.DrawRectangle(new XSolidBrush(LightHeaderColor), x, y, column.Width, TableHeaderHeight);
             graphics.DrawRectangle(new XPen(BorderColor, 0.7d), x, y, column.Width, TableHeaderHeight);
@@ -194,20 +214,22 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         double y,
         double height,
         WarehouseOrderLineItemDto item,
-        bool alternate)
+        int displayLineNo,
+        bool alternate,
+        IReadOnlyList<Column> columns)
     {
         var values = new[]
         {
-            (item.LineNo + 1).ToString(CultureInfo.InvariantCulture),
+            displayLineNo.ToString(CultureInfo.InvariantCulture),
             item.StockCode,
             FormatProduct(item),
             FormatNumber(item.Quantity)
         };
 
         var x = PageMargin;
-        for (var index = 0; index < Columns.Length; index++)
+        for (var index = 0; index < columns.Count; index++)
         {
-            var column = Columns[index];
+            var column = columns[index];
             if (alternate)
             {
                 graphics.DrawRectangle(XBrushes.WhiteSmoke, x, y, column.Width, height);
@@ -247,13 +269,17 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         }
     }
 
-    private void DrawTotals(XGraphics graphics, double y, WarehouseOrderHeaderDto header)
+    private void DrawTotals(
+        XGraphics graphics,
+        double y,
+        WarehouseOrderHeaderDto header,
+        IReadOnlyList<Column> columns)
     {
-        var firstThreeColumnsWidth = Columns.Take(3).Sum(column => column.Width);
+        var firstThreeColumnsWidth = columns.Take(3).Sum(column => column.Width);
         var x = PageMargin;
         DrawTotalCell(graphics, x, y, firstThreeColumnsWidth, $"Toplam {header.LineCount} kalem");
         x += firstThreeColumnsWidth;
-        DrawTotalCell(graphics, x, y, Columns[3].Width, FormatNumber(header.TotalQuantity));
+        DrawTotalCell(graphics, x, y, columns[3].Width, FormatNumber(header.TotalQuantity));
     }
 
     private void DrawTotalCell(XGraphics graphics, double x, double y, double width, string value)
@@ -268,9 +294,9 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             XStringFormats.CenterRight);
     }
 
-    private void DrawSignatures(XGraphics graphics, double y)
+    private void DrawSignatures(XGraphics graphics, double y, IReadOnlyList<Column> columns)
     {
-        var contentWidth = Columns.Sum(column => column.Width);
+        var contentWidth = columns.Sum(column => column.Width);
         var boxWidth = contentWidth / 3d;
         var labels = new[] { "Hazirlayan", "Kontrol Eden", "Teslim Alan" };
 
@@ -287,9 +313,9 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         }
     }
 
-    private double CalculateRowHeight(WarehouseOrderLineItemDto item)
+    private double CalculateRowHeight(WarehouseOrderLineItemDto item, IReadOnlyList<Column> columns)
     {
-        var productLines = EstimateLineCount(FormatProduct(item), Columns[2].Width, 47d);
+        var productLines = EstimateLineCount(FormatProduct(item), columns[2].Width, 47d);
         return Math.Max(MinimumRowHeight, 4d + (productLines * 8d));
     }
 
@@ -383,7 +409,19 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
     private static string EmptyAsDash(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
 
-    private static readonly Column[] Columns =
+    internal static double ResolveTableWidth(int outWarehouseNo) =>
+        ResolveColumns(outWarehouseNo).Sum(column => column.Width);
+
+    private static bool IsGreenGrocerDocument(WarehouseOrderHeaderDto header) =>
+        header.OutWarehouseNo == GreenGrocerWarehouseNo;
+
+    private static IReadOnlyList<Column> ResolveColumns(WarehouseOrderHeaderDto header) =>
+        ResolveColumns(header.OutWarehouseNo);
+
+    private static IReadOnlyList<Column> ResolveColumns(int outWarehouseNo) =>
+        outWarehouseNo == GreenGrocerWarehouseNo ? GreenGrocerColumns : DefaultColumns;
+
+    private static readonly Column[] DefaultColumns =
     [
         new("No", 25d, XStringFormats.Center),
         new("Stok Kodu", 66d, XStringFormats.CenterLeft),
@@ -391,13 +429,26 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         new("Siparis", 54d, XStringFormats.CenterRight)
     ];
 
+    private static readonly Column[] GreenGrocerColumns =
+    [
+        new("No", 22d, XStringFormats.Center),
+        new("Stok Kodu", 58d, XStringFormats.CenterLeft),
+        new("Urun", 210d, XStringFormats.CenterLeft),
+        new("Siparis", 50d, XStringFormats.CenterRight)
+    ];
+
     private sealed record Column(string Title, double Width, XStringFormat Alignment);
 
-    private sealed class PageState(XGraphics graphics, double y, double contentBottom) : IDisposable
+    private sealed class PageState(
+        XGraphics graphics,
+        double y,
+        double contentBottom,
+        IReadOnlyList<Column> columns) : IDisposable
     {
         public XGraphics Graphics { get; } = graphics;
         public double Y { get; set; } = y;
         public double ContentBottom { get; } = contentBottom;
+        public IReadOnlyList<Column> Columns { get; } = columns;
 
         public void Dispose() => Graphics.Dispose();
     }

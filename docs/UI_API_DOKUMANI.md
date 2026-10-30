@@ -26059,6 +26059,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/etiket-belgeleri/get-by-date-for-label` | JWT + kasa-islemleri.etiket-belgeleri.list | query: WarehouseNo / integer (int32)<br>query: DateTimeFilter / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelPriceChangedProductDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri/son` | JWT + kasa-islemleri.etiket-belgeleri.list | query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelDocumentListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri/tumu` | JWT + kasa-islemleri.etiket-belgeleri.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelDocumentListItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/etiket-belgeleri/urun-detayi` | JWT + kasa-islemleri.etiket-belgeleri.detail | query: warehouseNo / integer (int32)<br>query: productCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: LabelDocumentProductDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/etiket-belgeleri/{documentId}` | JWT + kasa-islemleri.etiket-belgeleri.detail | path: documentId / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelDocumentProductDto&gt;<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/kasa-islemleri/etiket-belgeleri/{id}` | JWT + kasa-islemleri.etiket-belgeleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | POST | `/api/kasa-islemleri/kasa-ciro-aktarimi/metin/aktar` | JWT + kasa-islemleri.kasa-ciro-aktarimi.create | body: request / KasaCiroImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaCiroImportResultDto<br>400: ProblemDetails |
@@ -26274,6 +26275,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/rapor-islemleri/stok-raporlari/hareketler` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: StockCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockMovementReportItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/iadeler/subeler` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: StockCode / string (zorunlu)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ReturnBranchReportItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/karlilik` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: Scope / string<br>query: FilterValue / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ProfitabilityReportItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/stok-raporlari/kategori-satis-analizi` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: CategoryCode / string (zorunlu)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CategorySalesAnalysisItemDto&gt; |
 | GET | `/api/rapor-islemleri/stok-raporlari/kategori-secenekleri` | JWT + rapor-islemleri.stok-raporlari.list | query: Search / string<br>query: OnlyActive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockCategoryOptionDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/kategori-son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: CategoryCode / string (zorunlu)<br>query: Search / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/satislar/satmayan-urunler` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: ProductManagerCode / string<br>query: IncludeDls / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;NotSoldProductReportItemDto&gt;<br>400: ProblemDetails |
@@ -26282,7 +26284,9 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/rapor-islemleri/stok-raporlari/sayim-karsilastirma` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: CountDate / string (date-time) (zorunlu)<br>query: DocumentNo / integer (int32)<br>query: PackageCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CountingComparisonReportItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: Search / string<br>query: SupplierCode / string<br>query: CategoryCode / string<br>query: ProducerCode / string<br>query: ProductManagerCode / string<br>query: ModelCode / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/stok-kartlari` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: ProductManagerCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockCardDetailDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/stok-raporlari/sube-fiyat-farklari` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BranchPriceDifferenceItemDto&gt; |
 | GET | `/api/rapor-islemleri/stok-raporlari/tedarikci-son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: SupplierCode / string (zorunlu)<br>query: Search / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/stok-raporlari/uretici-sezonsal-satis` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: PastYear / integer (int32)<br>query: PresentYear / integer (int32)<br>query: ManufacturerCode / string (zorunlu)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ManufacturerSeasonalSalesItemDto&gt; |
 | GET | `/api/rapor-islemleri/stok-raporlari/uretici-son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: ProducerCode / string (zorunlu)<br>query: Search / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/urun-ara` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: ProductManagerCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockCardDetailDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/urun-depo-durum` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: StockCodeOrBarcode / string (zorunlu)<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductWarehouseStockDto&gt;<br>400: ProblemDetails |
@@ -33185,6 +33189,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `terminalId` | string | Hayir | nullable |
 | `zNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchPriceDifferenceItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchPrice` | number (double) | Hayir |  |
+| `differenceAmount` | number (double) | Hayir |  |
+| `differencePercent` | number (double) | Hayir |  |
+| `mainWarehousePrice` | number (double) | Hayir |  |
+| `stockCode` | string | Hayir | nullable |
+| `stockName` | string | Hayir | nullable |
+| `warehouseName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchSalesReportItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -33198,6 +33215,20 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `taxAmount` | number (double) | Hayir |  |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.CategorySalesAnalysisItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `categoryCode` | string | Hayir | nullable |
+| `categoryName` | string | Hayir | nullable |
+| `manufacturerCode` | string | Hayir | nullable |
+| `manufacturerName` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `stockCode` | string | Hayir | nullable |
+| `stockName` | string | Hayir | nullable |
+| `supplierCode` | string | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.CountingComparisonReportItemDto
 
@@ -33216,6 +33247,21 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `unitName` | string | Hayir | nullable |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.ManufacturerSeasonalSalesItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `changePercent` | number (double) | Hayir |  |
+| `differenceAmount` | number (double) | Hayir |  |
+| `manufacturerCode` | string | Hayir | nullable |
+| `manufacturerName` | string | Hayir | nullable |
+| `month` | integer (int32) | Hayir |  |
+| `monthName` | string | Hayir | nullable |
+| `pastAmount` | number (double) | Hayir |  |
+| `presentAmount` | number (double) | Hayir |  |
+| `stockCode` | string | Hayir | nullable |
+| `stockName` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.MovementInOutComparisonDto
 

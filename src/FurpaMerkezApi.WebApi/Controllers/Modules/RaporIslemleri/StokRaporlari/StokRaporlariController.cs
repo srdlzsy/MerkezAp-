@@ -352,6 +352,49 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
                 request.Take),
             cancellationToken));
 
+    [HttpGet("kategori-satis-analizi")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CategorySalesAnalysisItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<CategorySalesAnalysisItemDto>>> CategorySalesAnalysis(
+        [FromQuery] CategorySalesAnalysisHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetCategorySalesAnalysisAsync(
+            new CategorySalesAnalysisRequest(
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
+                request.StartDate!.Value,
+                request.EndDate!.Value,
+                request.CategoryCode,
+                request.Take),
+            cancellationToken));
+
+    [HttpGet("sube-fiyat-farklari")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<BranchPriceDifferenceItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<BranchPriceDifferenceItemDto>>> BranchPriceDifferences(
+        [FromQuery] BranchPriceDifferenceHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetBranchPriceDifferencesAsync(
+            new BranchPriceDifferenceRequest(
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
+                request.Search,
+                request.Take),
+            cancellationToken));
+
+    [HttpGet("uretici-sezonsal-satis")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ManufacturerSeasonalSalesItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<ManufacturerSeasonalSalesItemDto>>> ManufacturerSeasonalSales(
+        [FromQuery] ManufacturerSeasonalSalesHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetManufacturerSeasonalSalesAsync(
+            new ManufacturerSeasonalSalesRequest(
+                User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
+                request.PastYear,
+                request.PresentYear,
+                request.ManufacturerCode,
+                request.Take),
+            cancellationToken));
+
     [HttpGet("sayim-karsilastirma")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<CountingComparisonReportItemDto>), StatusCodes.Status200OK)]
@@ -668,6 +711,56 @@ public sealed class ProfitabilityReportHttpRequest
 
     [StringLength(100)]
     public string? FilterValue { get; init; }
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 250;
+}
+
+public sealed class CategorySalesAnalysisHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    public DateTime? StartDate { get; init; }
+
+    [Required]
+    public DateTime? EndDate { get; init; }
+
+    [Required]
+    [StringLength(25)]
+    public string? CategoryCode { get; init; }
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 250;
+}
+
+public sealed class BranchPriceDifferenceHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [StringLength(100)]
+    public string? Search { get; init; }
+
+    [Range(1, 1000)]
+    public int Take { get; init; } = 250;
+}
+
+public sealed class ManufacturerSeasonalSalesHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Range(2000, 2100)]
+    public int PastYear { get; init; } = DateTime.Today.Year - 1;
+
+    [Range(2000, 2100)]
+    public int PresentYear { get; init; } = DateTime.Today.Year;
+
+    [Required]
+    [StringLength(25)]
+    public string? ManufacturerCode { get; init; }
 
     [Range(1, 1000)]
     public int Take { get; init; } = 250;
