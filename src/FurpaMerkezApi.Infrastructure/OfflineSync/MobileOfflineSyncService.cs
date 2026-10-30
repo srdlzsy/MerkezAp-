@@ -710,7 +710,10 @@ public sealed class MobileOfflineSyncService(
                 item.WarehouseNo == warehouseNo &&
                 item.ClientRequestId != normalizedClientRequestId &&
                 (item.Status == MobileOfflineSyncRequestStatus.Processing ||
-                 (item.Status == MobileOfflineSyncRequestStatus.Failed && item.Retryable == true)))
+                 (item.Status == MobileOfflineSyncRequestStatus.Failed &&
+                  item.Retryable == true &&
+                  item.ErrorCode != OperationConflictErrorCodes.SafeWriteRetryAllowed &&
+                  item.ErrorCode != OperationConflictErrorCodes.MikroWriteQueueBusy)))
             .OrderByDescending(item => item.UpdatedAtUtc ?? item.CreatedAtUtc)
             .ToArrayAsync(cancellationToken);
 

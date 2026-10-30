@@ -942,6 +942,62 @@ public sealed class MobileOfflineSyncServiceTests
             (await db.MobileOfflineSyncRequests.SingleAsync()).Status);
     }
 
+    [Theory]
+    [InlineData(OperationConflictErrorCodes.SafeWriteRetryAllowed)]
+    [InlineData(OperationConflictErrorCodes.MikroWriteQueueBusy)]
+    public async Task ProvenNotStartedFailure_AllowsLegacyDraftToUseNewIdentity(string errorCode)
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var oldId = Guid.NewGuid();
+        var newId = Guid.NewGuid();
+        var payload = new TestRequest(56, 2);
+
+        await AcquireAsync(service, user, oldId, payload);
+        await service.MarkFailedAsync(
+            "shipment.create",
+            user,
+            oldId,
+            "Mikro write was proven not to have started.",
+            CancellationToken.None,
+            errorCode,
+            retryable: true);
+
+        var result = await AcquireAsync(service, user, newId, payload);
+
+        Assert.Equal(MobileOfflineSyncAcquireState.Proceed, result.State);
+        Assert.Equal(2, await db.MobileOfflineSyncRequests.CountAsync());
+    }
+
+    [Fact]
+    public async Task UnconfirmedFailure_BlocksLegacyDraftFromUsingNewIdentity()
+    {
+        await using var db = CreateDbContext();
+        var service = new MobileOfflineSyncService(db, new MutableClock(Now));
+        var user = Guid.NewGuid();
+        var oldId = Guid.NewGuid();
+        var newId = Guid.NewGuid();
+        var payload = new TestRequest(56, 2);
+
+        await AcquireAsync(service, user, oldId, payload);
+        await service.MarkFailedAsync(
+            "shipment.create",
+            user,
+            oldId,
+            "Write outcome is unconfirmed.",
+            CancellationToken.None,
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            retryable: true);
+
+        var exception = await Assert.ThrowsAsync<OperationConflictException>(() =>
+            AcquireAsync(service, user, newId, payload));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteInProgress, exception.ErrorCode);
+        Assert.Equal(oldId, exception.RelatedClientRequestId);
+        Assert.Single(await db.MobileOfflineSyncRequests.ToArrayAsync());
+    }
+
     [Fact]
     public async Task ConcurrentFailedRetries_OnlyOneAcquiresExecution()
     {

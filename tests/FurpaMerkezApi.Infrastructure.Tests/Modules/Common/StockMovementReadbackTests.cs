@@ -44,7 +44,18 @@ public sealed class StockMovementReadbackTests
         {
             var request = StockMovementRecoveryMatcherTests.CompanyRequest with { RequestedByUserId = user };
             var isReturn = operation == "return";
-            foreach (var row in rows) { row.sth_cins = isReturn ? (byte)0 : (byte)1; row.sth_normal_iade = isReturn ? (byte)1 : (byte)0; }
+            request = CompanyMovementWriteService.NormalizeRequestForKind(
+                request,
+                isReturn ? CompanyMovementKind.PurchaseReturn : CompanyMovementKind.OutgoingShipment);
+            foreach (var row in rows)
+            {
+                row.sth_cins = isReturn ? (byte)0 : (byte)1;
+                row.sth_normal_iade = isReturn ? (byte)1 : (byte)0;
+                if (isReturn)
+                {
+                    row.sth_tutar = 0d;
+                }
+            }
             await Reserve(sync, isReturn ? "iade-islemleri.firma-iadeleri.create" : "sevk-islemleri.giden-firma-sevkleri.create", user, id, request);
             var service = new CompanyMovementWriteService(
                 mikro,
