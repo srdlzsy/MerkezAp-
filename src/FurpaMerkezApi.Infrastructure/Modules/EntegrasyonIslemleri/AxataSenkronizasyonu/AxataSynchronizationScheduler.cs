@@ -87,13 +87,17 @@ internal sealed class AxataSynchronizationScheduler(
                      .OrderBy(definition => AxataSynchronizationCatalog.GetSchedulingPriority(definition.Code)))
         {
             var taskOptions = ResolveTaskOptions(currentOptions, definition.Code);
+            var warehouseNo = AxataSynchronizationCatalog.ResolveScheduledWarehouseNo(
+                definition,
+                taskOptions.DefaultWarehouseNo);
 
             if (!taskOptions.Enabled || !taskOptions.ScheduleEnabled)
             {
                 continue;
             }
 
-            if (definition.RequiresWarehouseNo && taskOptions.DefaultWarehouseNo is null or <= 0)
+            if (AxataSynchronizationCatalog.RequiresScheduledWarehouseNo(definition) &&
+                taskOptions.DefaultWarehouseNo is null or <= 0)
             {
                 logger.LogWarning(
                     "Scheduled AXATA synchronization task {TaskCode} is enabled but DefaultWarehouseNo is missing.",
@@ -108,7 +112,7 @@ internal sealed class AxataSynchronizationScheduler(
                 continue;
             }
 
-            if (queue.HasActiveJob(definition.Code, taskOptions.DefaultWarehouseNo))
+            if (queue.HasActiveJob(definition.Code, warehouseNo))
             {
                 nextRunByTask[definition.Code] = now.AddMinutes(Math.Max(1, taskOptions.IntervalMinutes));
                 continue;
@@ -120,10 +124,10 @@ internal sealed class AxataSynchronizationScheduler(
                     definition,
                     ResolveScheduledExecutionMode(taskOptions),
                     AxataSynchronizationJobTriggerSource.Scheduled,
-                    taskOptions.DefaultWarehouseNo,
+                    warehouseNo,
                     ScheduledWorkerUserId);
             }
-            catch (InvalidOperationException) when (queue.HasActiveJob(definition.Code, taskOptions.DefaultWarehouseNo))
+            catch (InvalidOperationException) when (queue.HasActiveJob(definition.Code, warehouseNo))
             {
                 nextRunByTask[definition.Code] = now.AddMinutes(Math.Max(1, taskOptions.IntervalMinutes));
                 continue;
@@ -132,7 +136,7 @@ internal sealed class AxataSynchronizationScheduler(
             logger.LogInformation(
                 "Scheduled AXATA synchronization job queued for task {TaskCode} and warehouse {WarehouseNo}.",
                 definition.Code,
-                taskOptions.DefaultWarehouseNo);
+                warehouseNo);
 
             nextRunByTask[definition.Code] = now.AddMinutes(Math.Max(1, taskOptions.IntervalMinutes));
         }

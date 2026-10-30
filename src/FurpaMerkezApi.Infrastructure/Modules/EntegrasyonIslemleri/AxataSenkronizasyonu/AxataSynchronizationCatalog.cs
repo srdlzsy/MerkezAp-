@@ -134,6 +134,18 @@ internal static class AxataSynchronizationCatalog
             : IsOperationalTask(taskCode)
                 ? 1
                 : 2;
+
+    public static int? ResolveScheduledWarehouseNo(
+        AxataSynchronizationTaskDefinition definition,
+        int? configuredWarehouseNo) =>
+        RequiresScheduledWarehouseNo(definition) ? configuredWarehouseNo : null;
+
+    public static bool RequiresScheduledWarehouseNo(AxataSynchronizationTaskDefinition definition) =>
+        definition.RequiresWarehouseNo ||
+        string.Equals(
+            definition.Code,
+            "received-company-order-sync",
+            StringComparison.OrdinalIgnoreCase);
 }
 
 internal sealed record AxataSynchronizationTaskDefinition(

@@ -58,6 +58,26 @@ public sealed class AxataSynchronizationQueueTests
     }
 
     [Fact]
+    public void Catalog_PreservesCentralWarehouseForReceivedCompanyOrderTask()
+    {
+        var definition = AxataSynchronizationCatalog.GetRequired("received-company-order-sync");
+
+        var warehouseNo = AxataSynchronizationCatalog.ResolveScheduledWarehouseNo(definition, 50);
+
+        Assert.Equal(50, warehouseNo);
+    }
+
+    [Fact]
+    public void Catalog_PreservesConfiguredWarehouseForWarehouseScopedTask()
+    {
+        var definition = AxataSynchronizationCatalog.GetRequired("issued-warehouse-order-sync");
+
+        var warehouseNo = AxataSynchronizationCatalog.ResolveScheduledWarehouseNo(definition, 50);
+
+        Assert.Equal(50, warehouseNo);
+    }
+
+    [Fact]
     public async Task OrderDispatchLane_AllowsIndependentFlowsToBeConsumedWithoutSerialBlocking()
     {
         var queue = new AxataSynchronizationQueue(new FixedClock(DateTime.UtcNow));

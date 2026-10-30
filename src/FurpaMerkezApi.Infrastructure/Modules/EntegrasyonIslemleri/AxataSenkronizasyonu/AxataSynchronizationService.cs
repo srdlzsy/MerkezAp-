@@ -34,7 +34,9 @@ internal sealed class AxataSynchronizationService(
                     taskOptions.Enabled,
                     taskOptions.ScheduleEnabled,
                     Math.Max(1, taskOptions.IntervalMinutes),
-                    taskOptions.DefaultWarehouseNo,
+                    AxataSynchronizationCatalog.ResolveScheduledWarehouseNo(
+                        definition,
+                        taskOptions.DefaultWarehouseNo),
                     definition.SourceSystem,
                     definition.TargetSystem,
                     SupportsManualDocuments(definition.Code),
