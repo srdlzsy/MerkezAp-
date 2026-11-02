@@ -1293,7 +1293,7 @@ public sealed class EDespatchService(
         }
 
         await CompanyEDespatchCreateGuard.EnsureCompleteAsync(
-            authDbContext, request, document.TrackedMovements, cancellationToken);
+            authDbContext, request, document.TrackedMovements, logger, cancellationToken);
 
         var now = DateTime.Now;
         var sourceWarehouse = await LoadWarehouseAsync(
@@ -1479,7 +1479,8 @@ public sealed class EDespatchService(
         }
 
         if (traceKeys.Length != 1 ||
-            document.TrackedMovements.Any(movement => movement.sth_eticaret_kanal_kodu != traceKeys[0]) ||
+            document.TrackedMovements.Where(m => m.sth_eticaret_kanal_kodu?.StartsWith("FR", StringComparison.Ordinal) == true)
+                .Any(movement => movement.sth_eticaret_kanal_kodu != traceKeys[0]) ||
             !TryParseOfflineTraceKey(traceKeys[0]!, out var clientRequestId))
         {
             throw new InvalidOperationException(

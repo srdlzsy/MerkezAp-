@@ -7,6 +7,7 @@ using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.Services;
 
@@ -18,8 +19,12 @@ internal static class CompanyEDespatchCreateGuard
     private const string AutoReturnCreatedStatus = "IadeOlusturuldu";
     private const double QuantityTolerance = 0.0001d;
 
+    internal static Task EnsureCompleteAsync(AuthDbContext db, SendEDespatchRequest request,
+        IReadOnlyCollection<STOK_HAREKETLERI> rows, CancellationToken cancellationToken) =>
+        EnsureCompleteAsync(db, request, rows, null, cancellationToken);
+
     internal static async Task EnsureCompleteAsync(AuthDbContext db, SendEDespatchRequest request,
-        IReadOnlyCollection<STOK_HAREKETLERI> rows, CancellationToken cancellationToken)
+        IReadOnlyCollection<STOK_HAREKETLERI> rows, ILogger? logger, CancellationToken cancellationToken)
     {
         var traces = rows.Select(row => row.sth_eticaret_kanal_kodu)
             .Where(trace => trace?.StartsWith("FR", StringComparison.Ordinal) == true)
@@ -28,7 +33,11 @@ internal static class CompanyEDespatchCreateGuard
         // and snapshot are still validated by the send pipeline.
         if (traces.Length == 0) return;
 
-        if (traces.Length != 1 || rows.Any(row => row.sth_eticaret_kanal_kodu != traces[0]) ||
+        // If multiple distinct FR trace keys exist, rows from different requests were mixed.
+        // Traced rows must share the same trace key. Rows added directly in Mikro Desktop (null/empty trace) are allowed.
+        if (traces.Length != 1 ||
+            rows.Where(row => row.sth_eticaret_kanal_kodu?.StartsWith("FR", StringComparison.Ordinal) == true)
+                .Any(row => row.sth_eticaret_kanal_kodu != traces[0]) ||
             !EDespatchService.TryParseOfflineTraceKey(traces[0]!, out var requestId))
             throw StockMovementRecoveryMatcher.ContentMismatch();
 
@@ -51,11 +60,11 @@ internal static class CompanyEDespatchCreateGuard
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
             if (create.OperationCode == CompanyReceivingCreateOperation)
             {
-                EnsureAutomaticReceivingReturn(create, requestId, request, rows, options);
+                EnsureAutomaticReceivingReturn(create, requestId, request, rows, logger, options);
                 return;
             }
 
-            EnsureDirectCompanyMovement(create, requestId, request, rows, isReturn, options);
+            EnsureDirectCompanyMovement(create, requestId, request, rows, isReturn, logger, options);
         }
         catch (JsonException)
         {
@@ -69,6 +78,7 @@ internal static class CompanyEDespatchCreateGuard
         SendEDespatchRequest request,
         IReadOnlyCollection<STOK_HAREKETLERI> rows,
         bool isReturn,
+        ILogger? logger,
         JsonSerializerOptions options)
     {
         var original = JsonSerializer.Deserialize<CreateCompanyMovementRequest>(create.RequestPayload ?? "null", options);
@@ -77,12 +87,22 @@ internal static class CompanyEDespatchCreateGuard
             original.WarehouseNo != request.WarehouseNo || response is null ||
             response.DocumentSerie != request.DocumentSerie || response.DocumentOrderNo != request.DocumentOrderNo ||
             response.WarehouseNo != request.WarehouseNo || response.LineCount != original.Lines.Count ||
-            rows.Any(row => row.sth_evrakno_seri != request.DocumentSerie || row.sth_evrakno_sira != request.DocumentOrderNo))
+            rows.Count == 0 ||
+            rows.Any(row => row.sth_evrakno_seri != request.DocumentSerie || row.sth_evrakno_sira != request.DocumentOrderNo ||
+                            row.sth_iptal == true || row.sth_cikis_depo_no != request.WarehouseNo))
             throw StockMovementRecoveryMatcher.ContentMismatch();
 
-        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(StockMovementRecoveryMatcher.Company(
-                original, isReturn ? (byte)0 : (byte)1, isReturn ? (byte)1 : (byte)0, rows)))
-            throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
+        // Model 1 (ERP Priority):
+        // The initial creation succeeded completely (create.Status == Completed && response.LineCount == original.Lines.Count).
+        // Any subsequent line additions, deletions, or quantity modifications directly in Mikro Desktop
+        // are intentional ERP revisions. Current Mikro document rows are accepted as the source of truth for the e-despatch.
+        var match = StockMovementRecoveryMatcher.Company(original, isReturn ? (byte)0 : (byte)1, isReturn ? (byte)1 : (byte)0, rows);
+        if (match != StockMovementMatch.Complete)
+        {
+            logger?.LogInformation(
+                "E-despatch document {DocumentSerie}/{DocumentOrderNo} was revised in Mikro (Original lines: {OriginalCount}, Mikro lines: {MikroCount}). Proceeding with current Mikro document.",
+                request.DocumentSerie, request.DocumentOrderNo, original.Lines.Count, rows.Count);
+        }
     }
 
     private static void EnsureAutomaticReceivingReturn(
@@ -90,6 +110,7 @@ internal static class CompanyEDespatchCreateGuard
         Guid requestId,
         SendEDespatchRequest request,
         IReadOnlyCollection<STOK_HAREKETLERI> rows,
+        ILogger? logger,
         JsonSerializerOptions options)
     {
         if (request.DocumentType != EDespatchDocumentType.CompanyReturn)
@@ -104,58 +125,33 @@ internal static class CompanyEDespatchCreateGuard
             response.DocumentSerie != original.DocumentSerie || response.DocumentOrderNo != original.DocumentOrderNo ||
             response.AutoCreatedReturnDocumentSerie != request.DocumentSerie ||
             response.AutoCreatedReturnDocumentOrderNo != request.DocumentOrderNo ||
-            rows.Any(row => row.sth_evrakno_seri != request.DocumentSerie || row.sth_evrakno_sira != request.DocumentOrderNo))
+            rows.Count == 0 ||
+            rows.Any(row => row.sth_evrakno_seri != request.DocumentSerie || row.sth_evrakno_sira != request.DocumentOrderNo ||
+                            row.sth_iptal == true || row.sth_cikis_depo_no != request.WarehouseNo))
             throw StockMovementRecoveryMatcher.ContentMismatch();
 
         var returnResults = response.Lines
             .Where(line => line.ReturnMovementGuid.HasValue)
             .ToArray();
-        if (returnResults.Length == 0 || returnResults.Length != rows.Count ||
+        if (returnResults.Length == 0 ||
             response.AutoCreatedReturnLineCount != returnResults.Length ||
             returnResults.Select(line => line.ReturnMovementGuid).Distinct().Count() != returnResults.Length ||
             returnResults.Select(line => line.SourceLineNo).Distinct().Count() != returnResults.Length ||
-            !NearlyEquals(response.TotalReturnedQuantity, returnResults.Sum(line => line.ReturnQuantity)))
+            !NearlyEquals(response.TotalReturnedQuantity, returnResults.Sum(line => line.ReturnQuantity)) ||
+            returnResults.Any(result => result.SourceLineNo < 0 || result.SourceLineNo >= original.Lines.Count ||
+                result.ReturnQuantity <= QuantityTolerance || result.ReturnStatus != AutoReturnCreatedStatus ||
+                result.ReturnDocumentSerie != request.DocumentSerie || result.ReturnDocumentOrderNo != request.DocumentOrderNo))
             throw StockMovementRecoveryMatcher.ContentMismatch();
 
-        var expectedLines = new List<CreateCompanyMovementLineRequest>(rows.Count);
-        foreach (var row in rows.OrderBy(row => row.sth_satirno))
+        // Model 1 (ERP Priority):
+        // The auto-return was generated successfully during receiving.
+        // Subsequent additions, deletions or quantity modifications in Mikro Desktop are intentional ERP revisions.
+        if (rows.Count != returnResults.Length)
         {
-            var result = returnResults.SingleOrDefault(line => line.ReturnMovementGuid == row.sth_Guid);
-            if (result is null || result.SourceLineNo < 0 || result.SourceLineNo >= original.Lines.Count ||
-                result.ReturnQuantity <= QuantityTolerance || result.ReturnStatus != AutoReturnCreatedStatus ||
-                result.ReturnDocumentSerie != request.DocumentSerie || result.ReturnDocumentOrderNo != request.DocumentOrderNo)
-                throw StockMovementRecoveryMatcher.ContentMismatch();
-
-            var source = original.Lines.ElementAt(result.SourceLineNo);
-            if (!TextEquals(result.StockCode, source.StockCode))
-                throw StockMovementRecoveryMatcher.ContentMismatch();
-
-            expectedLines.Add(new CreateCompanyMovementLineRequest(
-                source.StockCode,
-                result.ReturnQuantity,
-                source.UnitPrice,
-                source.UnitPointer,
-                source.Description,
-                Truncate(source.PartyCode, 25),
-                source.LotNo,
-                Truncate(source.ProjectCode, 25),
-                Truncate(source.CustomerResponsibilityCenter, 25),
-                Truncate(source.ProductResponsibilityCenter, 25)));
+            logger?.LogInformation(
+                "Auto-created return document {DocumentSerie}/{DocumentOrderNo} was revised in Mikro (Original lines: {OriginalCount}, Mikro lines: {MikroCount}). Proceeding with current Mikro document.",
+                request.DocumentSerie, request.DocumentOrderNo, returnResults.Length, rows.Count);
         }
-
-        var expected = new CreateCompanyMovementRequest(
-            original.WarehouseNo,
-            original.CustomerCode,
-            original.MovementDate,
-            original.DocumentDate,
-            null,
-            original.Description,
-            expectedLines,
-            ClientRequestId: original.ClientRequestId,
-            RequestedByUserId: original.RequestedByUserId);
-        if (!StockMovementRecoveryMatcher.IsCompleteOrThrow(
-                StockMovementRecoveryMatcher.Company(expected, 0, 1, rows)))
-            throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private static bool NearlyEquals(double actual, double expected) =>
@@ -164,11 +160,4 @@ internal static class CompanyEDespatchCreateGuard
     private static bool TextEquals(string? actual, string? expected) =>
         string.Equals(actual?.Trim() ?? string.Empty, expected?.Trim() ?? string.Empty,
             StringComparison.OrdinalIgnoreCase);
-
-    private static string? Truncate(string? value, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return value;
-        var normalized = value.Trim();
-        return normalized.Length <= maxLength ? normalized : normalized[..maxLength];
-    }
 }

@@ -55,7 +55,7 @@ public sealed class CompanyEDespatchCreateGuardTests
         if (scenario == "mixed-trace") rows[0].sth_eticaret_kanal_kodu = "";
         var send = new SendEDespatchRequest(isReturn ? EDespatchDocumentType.CompanyReturn : EDespatchDocumentType.OutgoingCompanyShipment, 56, "F56", 123, "", "", "");
 
-        if (scenario is "complete" or "return-complete")
+        if (scenario is "complete" or "return-complete" or "partial" or "return-partial" or "changed-stock" or "mixed-trace")
             await CompanyEDespatchCreateGuard.EnsureCompleteAsync(db, send, rows, CancellationToken.None);
         else
             await Assert.ThrowsAsync<OperationConflictException>(() =>
@@ -186,10 +186,79 @@ public sealed class CompanyEDespatchCreateGuardTests
         var send = new SendEDespatchRequest(
             EDespatchDocumentType.CompanyReturn, 56, "F56", 123, string.Empty, string.Empty, string.Empty);
 
-        if (scenario == "complete")
+        if (scenario is "complete" or "changed-quantity" or "changed-guid")
             await CompanyEDespatchCreateGuard.EnsureCompleteAsync(db, send, [row], CancellationToken.None);
         else
             await Assert.ThrowsAsync<OperationConflictException>(() =>
                 CompanyEDespatchCreateGuard.EnsureCompleteAsync(db, send, [row], CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ConsciouslyAddedLinesInMikroDesktop_AllowsEDespatch()
+    {
+        // Reproduces the exact case of F115 / 5274:
+        // 5 lines were created originally by the mobile terminal with trace key.
+        // A 6th line was added directly in Mikro Desktop with sth_eticaret_kanal_kodu = null.
+        await using var db = new AuthDbContext(new DbContextOptionsBuilder<AuthDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+
+        var original = StockMovementRecoveryMatcherTests.CompanyRequest with { WarehouseNo = 115 };
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var record = new MobileOfflineSyncRequest(
+            Guid.NewGuid(),
+            "iade-islemleri.firma-iadeleri.create",
+            Guid.NewGuid(),
+            115,
+            original.ClientRequestId!.Value.ToString("D"),
+            "hash",
+            JsonSerializer.Serialize(original, options),
+            DateTime.UtcNow);
+        var response = new CreateCompanyMovementResponse(
+            "F115", 5274, DateTime.Today, DateTime.Today, "", 115, "320.01", 2, 5, 50, "Test");
+        record.MarkCompleted(JsonSerializer.Serialize(response, options), DateTime.UtcNow);
+        db.MobileOfflineSyncRequests.Add(record);
+        await db.SaveChangesAsync();
+
+        var originalRow1 = StockMovementRecoveryMatcherTests.Row();
+        originalRow1.sth_cikis_depo_no = 115;
+        originalRow1.sth_evrakno_seri = "F115";
+        originalRow1.sth_evrakno_sira = 5274;
+        originalRow1.sth_cins = 0;
+        originalRow1.sth_normal_iade = 1;
+
+        var originalRow2 = StockMovementRecoveryMatcherTests.Row(1);
+        originalRow2.sth_cikis_depo_no = 115;
+        originalRow2.sth_evrakno_seri = "F115";
+        originalRow2.sth_evrakno_sira = 5274;
+        originalRow2.sth_cins = 0;
+        originalRow2.sth_normal_iade = 1;
+
+        // Line 3 added in Mikro Desktop manually (no FR trace key)
+        var manuallyAddedRow = new STOK_HAREKETLERI
+        {
+            sth_Guid = Guid.NewGuid(),
+            sth_iptal = false,
+            sth_evraktip = 1,
+            sth_tip = 1,
+            sth_cins = 0,
+            sth_normal_iade = 1,
+            sth_evrakno_seri = "F115",
+            sth_evrakno_sira = 5274,
+            sth_satirno = 2,
+            sth_stok_kod = "024046",
+            sth_cari_kodu = "320.01",
+            sth_miktar = 2,
+            sth_birim_pntr = 1,
+            sth_tutar = 0,
+            sth_cikis_depo_no = 115,
+            sth_eticaret_kanal_kodu = null
+        };
+
+        var send = new SendEDespatchRequest(
+            EDespatchDocumentType.CompanyReturn, 115, "F115", 5274, "", "", "");
+
+        // Should NOT throw ContentMismatch - Model 1 accepts the revised Mikro document
+        await CompanyEDespatchCreateGuard.EnsureCompleteAsync(
+            db, send, [originalRow1, originalRow2, manuallyAddedRow], CancellationToken.None);
     }
 }
