@@ -80,6 +80,10 @@ public interface IMikroDocumentEditingService
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<StockMovementDocumentDto>> FindStockMovementDocumentsAsync(
+        StockMovementDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
     Task<StockMovementDocumentUpdateResponse> UpdateStockMovementDocumentAsync(
         UpdateStockMovementDocumentRequest request,
         CancellationToken cancellationToken);

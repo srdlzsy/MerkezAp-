@@ -421,6 +421,15 @@ public sealed class MikroEvrakDuzenlemeController(
         CancellationToken cancellationToken) =>
         Ok(await service.GetStockMovementDocumentAsync(request.ToApplicationRequest(), cancellationToken));
 
+    [HttpGet("stok-hareketleri/eslesmeler")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<StockMovementDocumentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<StockMovementDocumentDto>>> FindStockMovementDocuments(
+        [FromQuery] StockMovementDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.FindStockMovementDocumentsAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpPut("stok-hareketleri")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(StockMovementDocumentUpdateResponse), StatusCodes.Status200OK)]

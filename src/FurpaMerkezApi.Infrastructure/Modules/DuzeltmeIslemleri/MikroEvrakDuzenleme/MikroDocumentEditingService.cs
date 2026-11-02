@@ -997,6 +997,37 @@ public sealed partial class MikroDocumentEditingService(
         return await MapStockMovementDocumentAsync(mikroDbContext, rows, cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<StockMovementDocumentDto>> FindStockMovementDocumentsAsync(
+        StockMovementDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateStockMovementLookup(request);
+
+        var rows = await CreateStockMovementQuery(
+                mikroDbContext.STOK_HAREKETLERIs.AsNoTracking(),
+                request)
+            .OrderBy(movement => movement.sth_create_date)
+            .ThenBy(movement => movement.sth_satirno)
+            .ThenBy(movement => movement.sth_stok_kod)
+            .ToArrayAsync(cancellationToken);
+
+        var documents = new List<StockMovementDocumentDto>();
+        foreach (var documentRows in GroupStockMovementDocuments(rows))
+        {
+            documents.Add(await MapStockMovementDocumentAsync(
+                mikroDbContext,
+                documentRows,
+                cancellationToken));
+        }
+
+        return documents
+            .OrderByDescending(document => document.Header.MovementDate)
+            .ThenBy(document => document.Header.DocumentType)
+            .ThenBy(document => document.Header.MovementKind)
+            .ThenBy(document => document.Header.NormalReturn)
+            .ToArray();
+    }
+
     public async Task<StockMovementDocumentUpdateResponse> UpdateStockMovementDocumentAsync(
         UpdateStockMovementDocumentRequest request,
         CancellationToken cancellationToken)
@@ -3783,6 +3814,24 @@ public sealed partial class MikroDocumentEditingService(
                 "More than one stock movement document matched. Add documentType, movementKind or normalReturn filters.");
         }
     }
+
+    internal static IReadOnlyCollection<IReadOnlyCollection<STOK_HAREKETLERI>> GroupStockMovementDocuments(
+        IEnumerable<STOK_HAREKETLERI> rows) =>
+        rows
+            .GroupBy(row => new
+            {
+                row.sth_evrakno_seri,
+                row.sth_evrakno_sira,
+                row.sth_evraktip,
+                row.sth_cins,
+                row.sth_normal_iade
+            })
+            .Select(group => (IReadOnlyCollection<STOK_HAREKETLERI>)group
+                .OrderBy(row => row.sth_satirno)
+                .ThenBy(row => row.sth_stok_kod)
+                .ThenBy(row => row.sth_Guid)
+                .ToArray())
+            .ToArray();
 
     private static void EnsureSingleCustomerMovementDocument(IReadOnlyCollection<CARI_HESAP_HAREKETLERI> rows)
     {
