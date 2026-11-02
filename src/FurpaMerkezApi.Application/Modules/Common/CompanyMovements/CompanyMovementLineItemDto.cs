@@ -19,4 +19,12 @@ public sealed record CompanyMovementLineItemDto(
     string PartyCode,
     int LotNo,
     string ProjectCode,
-    Guid? OrderGuid);
+    Guid? OrderGuid,
+    double? DispatchQuantity = null,
+    double? PhysicalAcceptedQuantity = null,
+    double? ReturnQuantity = null,
+    string? ReturnStatus = null,
+    Guid? ReturnMovementGuid = null,
+    string? ReturnDocumentSerie = null,
+    int? ReturnDocumentOrderNo = null,
+    string? ReturnEDespatchStatus = null);

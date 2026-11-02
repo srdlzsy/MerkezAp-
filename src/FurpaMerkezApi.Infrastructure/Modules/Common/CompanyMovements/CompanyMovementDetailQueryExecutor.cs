@@ -95,6 +95,7 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                 movement.sth_HareketGrupKodu2,
                 movement.sth_HareketGrupKodu3,
                 movement.sth_aciklama,
+                movement.sth_eticaret_kanal_kodu,
                 movement.sth_Guid,
                 movement.sth_satirno,
                 movement.sth_stok_kod,
@@ -162,6 +163,24 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
         var firstRow = rows[0];
         var normalizedDocumentSerie = firstRow.sth_evrakno_seri ?? documentSerie;
         var normalizedDocumentOrderNo = firstRow.sth_evrakno_sira ?? request.DocumentOrderNo;
+        var receivingMovements = rows
+            .Select(row => new ReceivingMovementReference(
+                row.sth_Guid,
+                row.sth_satirno ?? 0,
+                row.sth_stok_kod ?? string.Empty,
+                row.sth_miktar ?? 0d,
+                row.sth_eticaret_kanal_kodu ?? string.Empty))
+            .ToArray();
+        var autoReturnRows = kind == CompanyMovementKind.IncomingShipment
+            ? await LoadAutomaticReturnRowsAsync(
+                receivingMovements,
+                request.WarehouseNo,
+                normalizedDocumentSerie,
+                normalizedDocumentOrderNo,
+                firstRow.sth_cari_kodu,
+                cancellationToken)
+            : [];
+        var returnByMovementGuid = MatchAutomaticReturns(receivingMovements, autoReturnRows);
 
         var items = rows
             .Select(row =>
@@ -169,6 +188,8 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                 var unitPointer = NormalizeUnitPointer(row.sth_birim_pntr);
                 var quantity = row.sth_miktar ?? 0d;
                 var lineAmount = row.sth_tutar ?? 0d;
+                returnByMovementGuid.TryGetValue(row.sth_Guid, out var automaticReturn);
+                var returnQuantity = automaticReturn?.Quantity ?? 0d;
 
                 return new CompanyMovementLineItemDto(
                     row.sth_satirno ?? 0,
@@ -189,7 +210,17 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                     row.sth_parti_kodu ?? string.Empty,
                     row.sth_lot_no ?? 0,
                     row.sth_proje_kodu ?? string.Empty,
-                    row.sth_sip_uid);
+                    row.sth_sip_uid,
+                    kind == CompanyMovementKind.IncomingShipment ? quantity : null,
+                    kind == CompanyMovementKind.IncomingShipment ? Math.Max(0d, quantity - returnQuantity) : null,
+                    kind == CompanyMovementKind.IncomingShipment ? returnQuantity : null,
+                    kind == CompanyMovementKind.IncomingShipment
+                        ? automaticReturn?.ReturnStatus ?? "Yok"
+                        : null,
+                    automaticReturn?.MovementGuid,
+                    automaticReturn?.DocumentSerie,
+                    automaticReturn?.DocumentOrderNo,
+                    automaticReturn?.EDespatchStatus);
             })
             .ToArray();
 
@@ -231,7 +262,16 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
             firstRow.sth_aciklama ?? string.Empty,
             items.Length,
             items.Sum(item => item.Quantity),
-            items.Sum(item => item.LineAmount));
+            items.Sum(item => item.LineAmount),
+            kind == CompanyMovementKind.IncomingShipment ? items.Sum(item => item.DispatchQuantity ?? 0d) : null,
+            kind == CompanyMovementKind.IncomingShipment ? items.Sum(item => item.PhysicalAcceptedQuantity ?? 0d) : null,
+            kind == CompanyMovementKind.IncomingShipment ? items.Sum(item => item.ReturnQuantity ?? 0d) : null,
+            kind == CompanyMovementKind.IncomingShipment ? autoReturnRows.Count : null,
+            ResolveSingleReturnDocumentSerie(autoReturnRows),
+            ResolveSingleReturnDocumentOrderNo(autoReturnRows),
+            kind == CompanyMovementKind.IncomingShipment
+                ? ResolveReturnEDespatchStatus(autoReturnRows)
+                : null);
 
         return new CompanyMovementDetailDto(header, items);
     }
@@ -301,4 +341,212 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
 
     private static string FirstNonEmpty(IEnumerable<string?> values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private async Task<IReadOnlyCollection<AutomaticReturnRow>> LoadAutomaticReturnRowsAsync(
+        IReadOnlyCollection<ReceivingMovementReference> receivingMovements,
+        int warehouseNo,
+        string documentSerie,
+        int documentOrderNo,
+        string? customerCode,
+        CancellationToken cancellationToken)
+    {
+        var traceKeys = receivingMovements
+            .Select(movement => movement.TraceKey)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var descriptionPrefix = $"AUTO IADE {documentSerie}/{documentOrderNo} S";
+        var query = mikroDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == CompanyDispatchDocumentType &&
+                movement.sth_tip == OutgoingMovementType &&
+                movement.sth_normal_iade == ReturnMovement &&
+                movement.sth_cikis_depo_no == warehouseNo &&
+                movement.sth_cari_kodu == customerCode);
+
+        query = traceKeys.Length > 0
+            ? query.Where(movement => traceKeys.Contains(movement.sth_eticaret_kanal_kodu!))
+            : query.Where(movement =>
+                movement.sth_aciklama != null &&
+                movement.sth_aciklama.StartsWith(descriptionPrefix));
+
+        var rows = await query
+            .OrderBy(movement => movement.sth_evrakno_seri)
+            .ThenBy(movement => movement.sth_evrakno_sira)
+            .ThenBy(movement => movement.sth_satirno)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(row => new AutomaticReturnRow(
+                row.sth_Guid,
+                row.sth_stok_kod ?? string.Empty,
+                row.sth_miktar ?? 0d,
+                row.sth_evrakno_seri ?? string.Empty,
+                row.sth_evrakno_sira ?? 0,
+                row.sth_aciklama ?? string.Empty,
+                row.sth_belge_no ?? string.Empty,
+                row.sth_eticaret_kanal_kodu ?? string.Empty,
+                TryParseSourceLineNo(row.sth_aciklama, descriptionPrefix)))
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<Guid, AutomaticReturnMatch> MatchAutomaticReturns(
+        IReadOnlyCollection<ReceivingMovementReference> receivingMovements,
+        IReadOnlyCollection<AutomaticReturnRow> returnRows)
+    {
+        const double tolerance = 0.000001d;
+        var matches = new Dictionary<Guid, AutomaticReturnMatch>();
+
+        foreach (var returnRow in returnRows)
+        {
+            var remaining = returnRow.Quantity;
+            var candidates = receivingMovements
+                .Where(movement =>
+                    string.Equals(movement.StockCode, returnRow.StockCode, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(returnRow.TraceKey) ||
+                     string.Equals(movement.TraceKey, returnRow.TraceKey, StringComparison.Ordinal)))
+                .OrderBy(movement =>
+                    returnRow.SourceLineNo.HasValue && movement.LineNo == returnRow.SourceLineNo.Value ? 0 : 1)
+                .ThenBy(movement => movement.LineNo)
+                .ThenBy(movement => movement.MovementGuid)
+                .ToArray();
+
+            foreach (var candidate in candidates)
+            {
+                if (remaining <= tolerance)
+                {
+                    break;
+                }
+
+                matches.TryGetValue(candidate.MovementGuid, out var currentMatch);
+                var available = Math.Max(0d, candidate.Quantity - (currentMatch?.Quantity ?? 0d));
+                if (available <= tolerance)
+                {
+                    continue;
+                }
+
+                var allocated = Math.Min(available, remaining);
+                var nextMatch = currentMatch ?? new AutomaticReturnMatch();
+                nextMatch.Add(returnRow, allocated);
+                matches[candidate.MovementGuid] = nextMatch;
+                remaining -= allocated;
+            }
+
+            if (remaining > tolerance)
+            {
+                throw new InvalidOperationException(
+                    $"Automatic return quantity could not be matched to company receiving lines: {returnRow.DocumentSerie}/{returnRow.DocumentOrderNo}.");
+            }
+        }
+
+        return matches;
+    }
+
+    private static int? TryParseSourceLineNo(string? description, string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(description) ||
+            !description.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return int.TryParse(description[prefix.Length..].Trim(), out var sourceLineNo)
+            ? sourceLineNo
+            : null;
+    }
+
+    private static string? ResolveSingleReturnDocumentSerie(
+        IReadOnlyCollection<AutomaticReturnRow> returnRows)
+    {
+        var values = returnRows
+            .Select(row => row.DocumentSerie)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return values.Length == 1 ? values[0] : null;
+    }
+
+    private static int? ResolveSingleReturnDocumentOrderNo(
+        IReadOnlyCollection<AutomaticReturnRow> returnRows)
+    {
+        var values = returnRows
+            .Select(row => row.DocumentOrderNo)
+            .Distinct()
+            .ToArray();
+        return values.Length == 1 ? values[0] : null;
+    }
+
+    private static string ResolveReturnEDespatchStatus(
+        IReadOnlyCollection<AutomaticReturnRow> returnRows)
+    {
+        if (returnRows.Count == 0)
+        {
+            return "Yok";
+        }
+
+        return ResolveEDespatchStatus(returnRows.Select(ResolveRowEDespatchStatus));
+    }
+
+    private static string ResolveRowEDespatchStatus(AutomaticReturnRow row)
+    {
+        var hasDocumentNo = row.DocumentNo.StartsWith("FRM", StringComparison.OrdinalIgnoreCase);
+        var hasUuid = Guid.TryParse(row.Description, out _);
+        if (hasDocumentNo && hasUuid)
+        {
+            return "Gonderildi";
+        }
+
+        return hasDocumentNo || hasUuid ? "KontrolGerekli" : "GonderimBekliyor";
+    }
+
+    private static string ResolveEDespatchStatus(IEnumerable<string> statuses)
+    {
+        var values = statuses.Distinct(StringComparer.Ordinal).ToArray();
+        if (values.Length == 1)
+        {
+            return values[0];
+        }
+
+        return values.Length == 0 ? "Yok" : "KontrolGerekli";
+    }
+
+    private sealed record ReceivingMovementReference(
+        Guid MovementGuid,
+        int LineNo,
+        string StockCode,
+        double Quantity,
+        string TraceKey);
+
+    private sealed record AutomaticReturnRow(
+        Guid MovementGuid,
+        string StockCode,
+        double Quantity,
+        string DocumentSerie,
+        int DocumentOrderNo,
+        string Description,
+        string DocumentNo,
+        string TraceKey,
+        int? SourceLineNo);
+
+    private sealed class AutomaticReturnMatch
+    {
+        private readonly List<string> eDespatchStatuses = [];
+
+        internal double Quantity { get; private set; }
+        internal Guid? MovementGuid { get; private set; }
+        internal string? DocumentSerie { get; private set; }
+        internal int? DocumentOrderNo { get; private set; }
+        internal string ReturnStatus => "IadeOlusturuldu";
+        internal string EDespatchStatus => ResolveEDespatchStatus(eDespatchStatuses);
+
+        internal void Add(AutomaticReturnRow row, double quantity)
+        {
+            Quantity += quantity;
+            MovementGuid ??= row.MovementGuid;
+            DocumentSerie ??= row.DocumentSerie;
+            DocumentOrderNo ??= row.DocumentOrderNo;
+            eDespatchStatuses.Add(ResolveRowEDespatchStatus(row));
+        }
+    }
 }

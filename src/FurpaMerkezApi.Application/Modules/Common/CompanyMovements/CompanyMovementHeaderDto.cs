@@ -26,4 +26,11 @@ public sealed record CompanyMovementHeaderDto(
     string Description,
     int LineCount,
     double TotalQuantity,
-    double TotalAmount);
+    double TotalAmount,
+    double? TotalDispatchQuantity = null,
+    double? TotalNetAcceptedQuantity = null,
+    double? TotalReturnedQuantity = null,
+    int? AutoCreatedReturnLineCount = null,
+    string? AutoCreatedReturnDocumentSerie = null,
+    int? AutoCreatedReturnDocumentOrderNo = null,
+    string? ReturnEDespatchStatus = null);

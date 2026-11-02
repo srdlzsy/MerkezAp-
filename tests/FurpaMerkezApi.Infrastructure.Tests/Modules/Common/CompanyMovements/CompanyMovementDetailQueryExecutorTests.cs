@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
 using FurpaMerkezApi.Infrastructure.Modules.Common.CompanyMovements;
+using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
@@ -111,6 +112,68 @@ public sealed class CompanyMovementDetailQueryExecutorTests
             CancellationToken.None);
 
         Assert.Equal(new[] { 2, 1, 0 }, result.Items.Select(item => item.LineNo).ToArray());
+        Assert.All(result.Items, item =>
+        {
+            Assert.Equal(item.Quantity, item.DispatchQuantity);
+            Assert.Equal(item.Quantity, item.PhysicalAcceptedQuantity);
+            Assert.Equal(0d, item.ReturnQuantity);
+            Assert.Equal("Yok", item.ReturnStatus);
+        });
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsPhysicalAcceptanceAndAutomaticReturnFromMikroMovements()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        var documentDate = new DateTime(2026, 11, 2);
+        var clientRequestId = Guid.NewGuid();
+        var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
+        var movement = CreateMovement(0, documentDate, null, null);
+        movement.sth_evraktip = 13;
+        movement.sth_tip = 0;
+        movement.sth_normal_iade = 0;
+        movement.sth_giris_depo_no = 143;
+        movement.sth_evrakno_seri = "CGF";
+        movement.sth_evrakno_sira = 1037;
+        movement.sth_stok_kod = "023667";
+        movement.sth_miktar = 2d;
+        movement.sth_tutar = 131.44d;
+        movement.sth_eticaret_kanal_kodu = traceKey;
+        var returnMovementGuid = Guid.NewGuid();
+        var returnMovement = CreateMovement(0, documentDate, null, null);
+        returnMovement.sth_Guid = returnMovementGuid;
+        returnMovement.sth_evraktip = 1;
+        returnMovement.sth_tip = 1;
+        returnMovement.sth_normal_iade = 1;
+        returnMovement.sth_cikis_depo_no = 143;
+        returnMovement.sth_evrakno_seri = "F143";
+        returnMovement.sth_evrakno_sira = 4661;
+        returnMovement.sth_stok_kod = "023667";
+        returnMovement.sth_miktar = 2d;
+        returnMovement.sth_tutar = 131.44d;
+        returnMovement.sth_aciklama = "AUTO IADE CGF/1037 S0";
+        returnMovement.sth_eticaret_kanal_kodu = traceKey;
+        mikroDbContext.STOK_HAREKETLERIs.AddRange(movement, returnMovement);
+        await mikroDbContext.SaveChangesAsync();
+
+        var executor = new CompanyMovementDetailQueryExecutor(mikroDbContext);
+        var result = await executor.ExecuteAsync(
+            new CompanyMovementDetailRequest(143, "CGF", 1037),
+            CompanyMovementKind.IncomingShipment,
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(2d, item.DispatchQuantity);
+        Assert.Equal(0d, item.PhysicalAcceptedQuantity);
+        Assert.Equal(2d, item.ReturnQuantity);
+        Assert.Equal("IadeOlusturuldu", item.ReturnStatus);
+        Assert.Equal(returnMovementGuid, item.ReturnMovementGuid);
+        Assert.Equal("F143", item.ReturnDocumentSerie);
+        Assert.Equal(4661, item.ReturnDocumentOrderNo);
+        Assert.Equal(2d, result.Header.TotalDispatchQuantity);
+        Assert.Equal(0d, result.Header.TotalNetAcceptedQuantity);
+        Assert.Equal(2d, result.Header.TotalReturnedQuantity);
+        Assert.Equal("GonderimBekliyor", result.Header.ReturnEDespatchStatus);
     }
 
     private static STOK_HAREKETLERI CreateMovement(
@@ -148,4 +211,5 @@ public sealed class CompanyMovementDetailQueryExecutorTests
 
         return new MikroDbContext(options);
     }
+
 }
