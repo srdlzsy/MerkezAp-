@@ -66,19 +66,9 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 grouped.Key.sth_cari_kodu,
                 sth_giris_depo_no = kind == CompanyMovementKind.IncomingShipment
                     ? grouped.Key.AuthoritativeWarehouseNo
-                    : grouped
-                        .OrderBy(item => item.sth_satirno)
-                        .ThenBy(item => item.sth_create_date)
-                        .ThenBy(item => item.sth_Guid)
-                        .Select(item => item.sth_giris_depo_no)
-                        .FirstOrDefault(),
+                    : grouped.Max(item => item.sth_giris_depo_no),
                 sth_cikis_depo_no = kind == CompanyMovementKind.IncomingShipment
-                    ? grouped
-                        .OrderBy(item => item.sth_satirno)
-                        .ThenBy(item => item.sth_create_date)
-                        .ThenBy(item => item.sth_Guid)
-                        .Select(item => item.sth_cikis_depo_no)
-                        .FirstOrDefault()
+                    ? grouped.Max(item => item.sth_cikis_depo_no)
                     : grouped.Key.AuthoritativeWarehouseNo,
                 grouped.Key.sth_evraktip,
                 grouped.Key.sth_tip,
