@@ -46,7 +46,7 @@ internal static class CompanyMovementIrsaliyeMikroApiPayloadFactory
                     NormalizeText(customerCode, 25),
                     line.Quantity,
                     0d,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     amount,
                     taxInfo.TaxPointer,
                     CompanyMovementWriteService.CalculateTaxAmount(amount, taxInfo.TaxRatePercent),

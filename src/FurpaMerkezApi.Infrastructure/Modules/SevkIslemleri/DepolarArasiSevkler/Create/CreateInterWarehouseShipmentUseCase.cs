@@ -57,7 +57,13 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CreateInterWarehouseShipmentRequest request,
         CancellationToken cancellationToken)
     {
-        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
+        request = request with
+        {
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid(),
+            Lines = (request.Lines ?? [])
+                .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
+                .ToArray()
+        };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(
@@ -1743,7 +1749,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             sth_stok_doviz_kuru = 1d,
             sth_miktar = line.Quantity,
             sth_miktar2 = 0d,
-            sth_birim_pntr = Convert.ToByte(line.UnitPointer),
+            sth_birim_pntr = MikroUnitPointers.Primary,
             sth_tutar = amount,
             sth_iskonto1 = 0d,
             sth_iskonto2 = 0d,

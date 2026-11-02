@@ -20,7 +20,8 @@ public sealed class StockMovementMikroApiPayloadFactoryTests
             [
                 new CreateStockReceiptLineRequest(
                     "008373",
-                    0.48d)
+                    0.48d,
+                    UnitPointer: 24)
             ]);
         var line = new StockReceiptLineWithAmount(request.Lines.Single(), 70.296d);
 
@@ -43,6 +44,7 @@ public sealed class StockMovementMikroApiPayloadFactoryTests
 
         Assert.Equal(70.296d, payloadLine.sth_tutar);
         Assert.Equal("0032", payloadLine.sth_isemri_gider_kodu);
+        Assert.Equal(1, payloadLine.sth_birim_pntr);
     }
 
     [Theory]

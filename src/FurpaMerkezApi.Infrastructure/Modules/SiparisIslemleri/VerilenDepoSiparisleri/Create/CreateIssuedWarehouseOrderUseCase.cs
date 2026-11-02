@@ -43,7 +43,13 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         CreateIssuedWarehouseOrderRequest request,
         CancellationToken cancellationToken)
     {
-        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
+        request = request with
+        {
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid(),
+            Lines = (request.Lines ?? [])
+                .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
+                .ToArray()
+        };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(
@@ -847,7 +853,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             ssip_girdepo = request.InWarehouseNo,
             ssip_cikdepo = request.OutWarehouseNo,
             ssip_kapat_fl = false,
-            ssip_birim_pntr = Convert.ToByte(line.UnitPointer),
+            ssip_birim_pntr = MikroUnitPointers.Primary,
             ssip_fiyat_liste_no = 0,
             ssip_stal_uid = Guid.Empty,
             ssip_paket_kod = NormalizeText(line.PackageCode),

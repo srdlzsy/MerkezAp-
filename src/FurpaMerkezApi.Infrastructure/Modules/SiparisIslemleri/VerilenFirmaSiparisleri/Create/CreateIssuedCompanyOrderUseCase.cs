@@ -35,7 +35,13 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         CreateIssuedCompanyOrderRequest request,
         CancellationToken cancellationToken)
     {
-        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
+        request = request with
+        {
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid(),
+            Lines = (request.Lines ?? [])
+                .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
+                .ToArray()
+        };
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(
@@ -522,7 +528,7 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             sip_stok_kod = line.StockCode.Trim(),
             sip_b_fiyat = unitPrice,
             sip_miktar = line.Quantity,
-            sip_birim_pntr = Convert.ToByte(line.UnitPointer),
+            sip_birim_pntr = MikroUnitPointers.Primary,
             sip_teslim_miktar = 0d,
             sip_tutar = amount,
             sip_iskonto_1 = 0d,

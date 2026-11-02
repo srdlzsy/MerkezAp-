@@ -45,7 +45,10 @@ public sealed class CompanyMovementWriteService(
     {
         request = NormalizeRequestForKind(request, kind) with
         {
-            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid()
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid(),
+            Lines = (request.Lines ?? [])
+                .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
+                .ToArray()
         };
         Validate(request);
         Func<CancellationToken, Task>? validateBeforeReservation = kind == CompanyMovementKind.PurchaseReturn
@@ -777,7 +780,7 @@ public sealed class CompanyMovementWriteService(
             sth_stok_doviz_kuru = 1d,
             sth_miktar = line.Quantity,
             sth_miktar2 = 0d,
-            sth_birim_pntr = Convert.ToByte(line.UnitPointer),
+            sth_birim_pntr = MikroUnitPointers.Primary,
             sth_tutar = amount,
             sth_iskonto1 = 0d,
             sth_iskonto2 = 0d,

@@ -1,5 +1,6 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 
@@ -44,7 +45,7 @@ internal static class InterWarehouseShipmentMikroApiPayloadFactory
                     string.Empty,
                     line.Quantity,
                     0d,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     amount,
                     0,
                     0d,

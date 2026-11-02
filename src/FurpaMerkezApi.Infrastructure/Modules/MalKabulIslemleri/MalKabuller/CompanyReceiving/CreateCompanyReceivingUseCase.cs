@@ -57,7 +57,13 @@ public sealed class CreateCompanyReceivingUseCase(
         CreateCompanyReceivingRequest request,
         CancellationToken cancellationToken)
     {
-        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
+        request = request with
+        {
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid(),
+            Lines = (request.Lines ?? [])
+                .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
+                .ToArray()
+        };
         Validate(request);
         var writeMode = mikroWriteRoutingOptions.CurrentValue.CompanyReceiving;
         using var durableExecutionTimeout = DurableCreateExecution.CreateTimeout();
@@ -1918,7 +1924,7 @@ public sealed class CreateCompanyReceivingUseCase(
             sth_stok_doviz_kuru = 1d,
             sth_miktar = acceptedQuantity,
             sth_miktar2 = 0d,
-            sth_birim_pntr = Convert.ToByte(line.UnitPointer),
+            sth_birim_pntr = MikroUnitPointers.Primary,
             sth_tutar = amount,
             sth_iskonto1 = 0d,
             sth_iskonto2 = 0d,
@@ -2083,7 +2089,7 @@ public sealed class CreateCompanyReceivingUseCase(
             sth_stok_doviz_kuru = 1d,
             sth_miktar = returnQuantity,
             sth_miktar2 = 0d,
-            sth_birim_pntr = Convert.ToByte(line.UnitPointer),
+            sth_birim_pntr = MikroUnitPointers.Primary,
             sth_tutar = amount,
             sth_iskonto1 = 0d,
             sth_iskonto2 = 0d,

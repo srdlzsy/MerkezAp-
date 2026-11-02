@@ -1,5 +1,6 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 
@@ -39,7 +40,7 @@ internal static class IssuedWarehouseOrderMikroApiPayloadFactory
                     request.InWarehouseNo,
                     request.OutWarehouseNo,
                     NormalizeText(line.Description ?? request.Description, 50),
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     NormalizeText(line.PackageCode, 25),
                     NormalizeText(line.ProjectCode, 25),
                     NormalizeText(line.ResponsibilityCenter, 25),

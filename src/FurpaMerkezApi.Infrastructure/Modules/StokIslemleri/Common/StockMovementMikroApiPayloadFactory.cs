@@ -1,6 +1,7 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.Virmanlar;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 
@@ -52,7 +53,7 @@ internal static class StockMovementMikroApiPayloadFactory
                     NormalizeText(workOrderExpenseCode, 25),
                     line.Quantity,
                     0d,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     pricedLine.LineAmount,
                     0,
                     0d,
@@ -113,7 +114,7 @@ internal static class StockMovementMikroApiPayloadFactory
                     string.Empty,
                     line.Quantity,
                     0d,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     0d,
                     0,
                     0d,

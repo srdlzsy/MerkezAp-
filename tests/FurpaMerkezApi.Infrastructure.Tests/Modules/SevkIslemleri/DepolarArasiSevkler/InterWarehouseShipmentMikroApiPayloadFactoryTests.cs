@@ -25,6 +25,7 @@ public sealed class InterWarehouseShipmentMikroApiPayloadFactoryTests
         var line = payload.evraklar.Single().satirlar.Single();
 
         Assert.Equal(warehouseOrderLineGuid, line.sth_subesip_uid);
+        Assert.Equal(1, line.sth_birim_pntr);
     }
 
     [Fact]

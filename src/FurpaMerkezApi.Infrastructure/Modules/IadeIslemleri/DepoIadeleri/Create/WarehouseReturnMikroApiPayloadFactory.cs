@@ -1,5 +1,6 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.IadeIslemleri.DepoIadeleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.IadeIslemleri.DepoIadeleri.Create;
 
@@ -45,7 +46,7 @@ internal static class WarehouseReturnMikroApiPayloadFactory
                     string.Empty,
                     line.Quantity,
                     0d,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     amount,
                     0,
                     0d,

@@ -49,6 +49,16 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
     }
 
     [Fact]
+    public void Create_NormalizesPackageMultiplierToPrimaryUnitPointer()
+    {
+        var payload = CreatePayload(null, unitPointer: 24);
+
+        var line = payload.evraklar.Single().satirlar.Single();
+
+        Assert.Equal(1, line.sth_birim_pntr);
+    }
+
+    [Fact]
     public void ResolveStockTaxPointer_ReturnsRetailPointerForPurchaseReturns()
     {
         var taxPointer = CompanyMovementWriteService.ResolveStockTaxPointer(
@@ -63,7 +73,8 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
         Guid? orderLineGuid,
         string? deliverer = null,
         string? receiver = null,
-        byte movementGenre = 0)
+        byte movementGenre = 0,
+        int unitPointer = 1)
     {
         var request = new CreateCompanyMovementRequest(
             50,
@@ -77,7 +88,7 @@ public sealed class CompanyMovementIrsaliyeMikroApiPayloadFactoryTests
                     "001",
                     10d,
                     2d,
-                    1,
+                    unitPointer,
                     OrderLineGuid: orderLineGuid)
             ],
             deliverer,

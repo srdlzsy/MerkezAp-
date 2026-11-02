@@ -49,7 +49,15 @@ public sealed class IssuedCompanyOrderRecoveryMatcherTests
     public void MikroApiPayload_WritesClientRequestTraceToEveryLine()
     {
         var clientRequestId = Guid.Parse("33b460c0-a1c3-4f11-a2c6-26c355704ac8");
-        var request = Request() with { ClientRequestId = clientRequestId };
+        var request = Request() with
+        {
+            ClientRequestId = clientRequestId,
+            Lines =
+            [
+                new CreateIssuedCompanyOrderLineRequest("STOK-1", 2d, UnitPrice: 10d),
+                new CreateIssuedCompanyOrderLineRequest("STOK-2", 24d, UnitPrice: 10d, UnitPointer: 12)
+            ]
+        };
         var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId);
 
         var payload = IssuedCompanyOrderMikroApiPayloadFactory.Create(
@@ -66,6 +74,7 @@ public sealed class IssuedCompanyOrderRecoveryMatcherTests
         var lines = Assert.Single(payload.evraklar).satirlar;
         Assert.NotEmpty(lines);
         Assert.All(lines, line => Assert.Equal(traceKey, line.sip_eticaret_kanal_kodu));
+        Assert.All(lines, line => Assert.Equal(1, line.sip_birim_pntr));
         Assert.Equal(24, traceKey.Length);
     }
 

@@ -1,5 +1,6 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.StokIslemleri.SayimSonuclari;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.StokIslemleri.Common;
 
@@ -31,7 +32,7 @@ internal static class InventoryCountMikroApiPayloadFactory
                     0d,
                     0d,
                     0d,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     barcode,
                     0,
                     0,

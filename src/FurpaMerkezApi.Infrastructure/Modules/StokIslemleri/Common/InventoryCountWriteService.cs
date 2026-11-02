@@ -31,7 +31,13 @@ public sealed class InventoryCountWriteService(
         CreateInventoryCountRequest request,
         CancellationToken cancellationToken)
     {
-        request = request with { ClientRequestId = request.ClientRequestId ?? Guid.NewGuid() };
+        request = request with
+        {
+            ClientRequestId = request.ClientRequestId ?? Guid.NewGuid(),
+            Lines = (request.Lines ?? [])
+                .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
+                .ToArray()
+        };
         Validate(request);
         return await OfflineCreateGuard.ExecuteAsync(
             mobileOfflineSyncService,
@@ -323,7 +329,7 @@ public sealed class InventoryCountWriteService(
             sym_miktar3 = 0d,
             sym_miktar4 = 0d,
             sym_miktar5 = 0d,
-            sym_birim_pntr = Convert.ToByte(line.UnitPointer),
+            sym_birim_pntr = MikroUnitPointers.Primary,
             sym_barkod = barcode,
             sym_renkno = 0,
             sym_bedenno = 0,

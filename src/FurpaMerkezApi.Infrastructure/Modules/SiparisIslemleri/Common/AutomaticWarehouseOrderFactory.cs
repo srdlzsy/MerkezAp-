@@ -1,3 +1,4 @@
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
@@ -65,7 +66,7 @@ internal static class AutomaticWarehouseOrderFactory
             ssip_girdepo = inWarehouseNo,
             ssip_cikdepo = outWarehouseNo,
             ssip_kapat_fl = false,
-            ssip_birim_pntr = Convert.ToByte(unitPointer),
+            ssip_birim_pntr = MikroUnitPointers.Primary,
             ssip_fiyat_liste_no = 0,
             ssip_stal_uid = Guid.Empty,
             ssip_paket_kod = string.Empty,

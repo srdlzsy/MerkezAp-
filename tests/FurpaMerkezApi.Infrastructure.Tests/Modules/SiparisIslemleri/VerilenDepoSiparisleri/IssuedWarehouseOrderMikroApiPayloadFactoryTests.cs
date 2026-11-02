@@ -15,7 +15,7 @@ public sealed class IssuedWarehouseOrderMikroApiPayloadFactoryTests
             new DateTime(2026, 10, 15),
             new DateTime(2026, 10, 15),
             null,
-            [new CreateIssuedWarehouseOrderLineRequest("000001", 2)],
+            [new CreateIssuedWarehouseOrderLineRequest("000001", 24, UnitPointer: 12)],
             Guid.NewGuid(),
             Guid.NewGuid());
 
@@ -34,5 +34,6 @@ public sealed class IssuedWarehouseOrderMikroApiPayloadFactoryTests
         Assert.Equal("FR12", line.ssip_special1);
         Assert.Equal("3456", line.ssip_special2);
         Assert.Equal("7890", line.ssip_special3);
+        Assert.Equal(1, line.ssip_birim_pntr);
     }
 }

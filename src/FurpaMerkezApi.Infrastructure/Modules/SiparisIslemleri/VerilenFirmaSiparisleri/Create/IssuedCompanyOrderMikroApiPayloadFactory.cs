@@ -1,5 +1,6 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 
@@ -42,7 +43,7 @@ internal static class IssuedCompanyOrderMikroApiPayloadFactory
                     NormalizeText(line.StockCode, 25),
                     unitPrice,
                     quantity,
-                    line.UnitPointer,
+                    MikroUnitPointers.Primary,
                     0d,
                     amount,
                     2,
