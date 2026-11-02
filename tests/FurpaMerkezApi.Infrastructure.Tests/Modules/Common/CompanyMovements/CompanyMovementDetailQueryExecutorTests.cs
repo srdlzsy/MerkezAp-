@@ -122,6 +122,45 @@ public sealed class CompanyMovementDetailQueryExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ReturnsIncomingDocumentWhenOutputWarehouseDiffersBetweenLines()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        var documentDate = new DateTime(2026, 10, 28);
+        var rows = new[]
+        {
+            CreateMovement(0, documentDate, null, null),
+            CreateMovement(9, documentDate, null, null)
+        };
+
+        foreach (var row in rows)
+        {
+            row.sth_evraktip = 13;
+            row.sth_tip = 0;
+            row.sth_normal_iade = 0;
+            row.sth_evrakno_seri = "G3";
+            row.sth_evrakno_sira = 2262;
+            row.sth_giris_depo_no = 129;
+            row.sth_cikis_depo_no = 129;
+        }
+
+        rows[1].sth_cikis_depo_no = 1;
+        rows[1].sth_create_date = new DateTime(2026, 11, 2, 12, 13, 39);
+        mikroDbContext.STOK_HAREKETLERIs.AddRange(rows);
+        await mikroDbContext.SaveChangesAsync();
+
+        var executor = new CompanyMovementDetailQueryExecutor(mikroDbContext);
+        var result = await executor.ExecuteAsync(
+            new CompanyMovementDetailRequest(129, "G3", 2262),
+            CompanyMovementKind.IncomingShipment,
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Header.LineCount);
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal(129, result.Header.InputWarehouseNo);
+        Assert.Equal(129, result.Header.OutputWarehouseNo);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ReturnsPhysicalAcceptanceAndAutomaticReturnFromMikroMovements()
     {
         await using var mikroDbContext = CreateMikroDbContext();

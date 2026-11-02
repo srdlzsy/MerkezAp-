@@ -112,6 +112,58 @@ public sealed class CompanyMovementListQueryExecutorTests
         Assert.Equal(string.Empty, item.Description);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_GroupsIncomingShipmentWhenOutputWarehouseDiffersBetweenLines()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        var documentDate = new DateTime(2026, 10, 28);
+
+        mikroDbContext.CARI_HESAPLARs.Add(new CARI_HESAPLAR
+        {
+            cari_Guid = Guid.NewGuid(),
+            cari_create_date = documentDate,
+            cari_kod = "32002141",
+            cari_unvan1 = "TEST FIRMA"
+        });
+        mikroDbContext.DEPOLARs.AddRange(
+            new DEPOLAR
+            {
+                dep_Guid = Guid.NewGuid(),
+                dep_create_date = documentDate,
+                dep_no = 129,
+                dep_adi = "GUZELYALI"
+            },
+            new DEPOLAR
+            {
+                dep_Guid = Guid.NewGuid(),
+                dep_create_date = documentDate,
+                dep_no = 1,
+                dep_adi = "MERKEZ OFIS"
+            });
+
+        var firstLine = CreateIncomingMovement(0, "088896", 2d, 129, documentDate);
+        var addedLine = CreateIncomingMovement(9, "013271", 1d, 1, documentDate);
+        addedLine.sth_create_date = new DateTime(2026, 11, 2, 12, 13, 39);
+        mikroDbContext.STOK_HAREKETLERIs.AddRange(firstLine, addedLine);
+        await mikroDbContext.SaveChangesAsync();
+
+        var executor = new CompanyMovementListQueryExecutor(mikroDbContext);
+        var request = new CompanyMovementListRequest(129, documentDate, documentDate);
+
+        var result = await executor.ExecuteAsync(
+            request,
+            CompanyMovementKind.IncomingShipment,
+            CancellationToken.None);
+
+        var item = Assert.Single(result);
+        Assert.Equal("G3", item.DocumentSerie);
+        Assert.Equal(2262, item.DocumentOrderNo);
+        Assert.Equal(2, item.LineCount);
+        Assert.Equal(3d, item.TotalQuantity);
+        Assert.Equal(129, item.InputWarehouseNo);
+        Assert.Equal(129, item.OutputWarehouseNo);
+    }
+
     private static STOK_HAREKETLERI CreatePurchaseReturnMovement(
         int lineNo,
         string description,
@@ -139,6 +191,32 @@ public sealed class CompanyMovementListQueryExecutorTests
             sth_aciklama = description
         };
     }
+
+    private static STOK_HAREKETLERI CreateIncomingMovement(
+        int lineNo,
+        string stockCode,
+        double quantity,
+        int outputWarehouseNo,
+        DateTime documentDate) =>
+        new()
+        {
+            sth_Guid = Guid.NewGuid(),
+            sth_create_date = documentDate.AddHours(13).AddMilliseconds(lineNo),
+            sth_tarih = documentDate,
+            sth_belge_tarih = documentDate,
+            sth_evraktip = 13,
+            sth_tip = 0,
+            sth_normal_iade = 0,
+            sth_evrakno_seri = "G3",
+            sth_evrakno_sira = 2262,
+            sth_satirno = lineNo,
+            sth_stok_kod = stockCode,
+            sth_miktar = quantity,
+            sth_tutar = quantity * 10d,
+            sth_cari_kodu = "32002141",
+            sth_giris_depo_no = 129,
+            sth_cikis_depo_no = outputWarehouseNo
+        };
 
     private static MikroDbContext CreateMikroDbContext()
     {

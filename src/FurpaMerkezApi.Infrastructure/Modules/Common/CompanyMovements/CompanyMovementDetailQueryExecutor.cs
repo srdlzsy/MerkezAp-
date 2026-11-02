@@ -145,8 +145,9 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
                 row.sth_evrakno_seri,
                 row.sth_evrakno_sira,
                 row.sth_cari_kodu,
-                row.sth_giris_depo_no,
-                row.sth_cikis_depo_no,
+                AuthoritativeWarehouseNo = kind == CompanyMovementKind.IncomingShipment
+                    ? row.sth_giris_depo_no
+                    : row.sth_cikis_depo_no,
                 row.sth_evraktip,
                 row.sth_tip,
                 row.sth_normal_iade

@@ -47,8 +47,9 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 movement.sth_evrakno_seri,
                 movement.sth_evrakno_sira,
                 movement.sth_cari_kodu,
-                movement.sth_giris_depo_no,
-                movement.sth_cikis_depo_no,
+                AuthoritativeWarehouseNo = kind == CompanyMovementKind.IncomingShipment
+                    ? movement.sth_giris_depo_no
+                    : movement.sth_cikis_depo_no,
                 movement.sth_evraktip,
                 movement.sth_tip,
                 movement.sth_normal_iade
@@ -63,8 +64,22 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 grouped.Key.sth_evrakno_seri,
                 grouped.Key.sth_evrakno_sira,
                 grouped.Key.sth_cari_kodu,
-                grouped.Key.sth_giris_depo_no,
-                grouped.Key.sth_cikis_depo_no,
+                sth_giris_depo_no = kind == CompanyMovementKind.IncomingShipment
+                    ? grouped.Key.AuthoritativeWarehouseNo
+                    : grouped
+                        .OrderBy(item => item.sth_satirno)
+                        .ThenBy(item => item.sth_create_date)
+                        .ThenBy(item => item.sth_Guid)
+                        .Select(item => item.sth_giris_depo_no)
+                        .FirstOrDefault(),
+                sth_cikis_depo_no = kind == CompanyMovementKind.IncomingShipment
+                    ? grouped
+                        .OrderBy(item => item.sth_satirno)
+                        .ThenBy(item => item.sth_create_date)
+                        .ThenBy(item => item.sth_Guid)
+                        .Select(item => item.sth_cikis_depo_no)
+                        .FirstOrDefault()
+                    : grouped.Key.AuthoritativeWarehouseNo,
                 grouped.Key.sth_evraktip,
                 grouped.Key.sth_tip,
                 grouped.Key.sth_normal_iade,
