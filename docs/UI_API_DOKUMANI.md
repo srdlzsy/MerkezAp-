@@ -25744,6 +25744,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockMovementDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateStockMovementDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockMovementDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri/eslesmeler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockMovementDocumentDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list | query: SearchText / string<br>query: IncludePassive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockCardListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: stockCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockCardDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-kartlari/{stockCode}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | path: stockCode / string (zorunlu)<br>body: request / StockCardPatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockCardUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -27438,6 +27439,9 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `autoCreatedReturnDocumentOrderNo` | integer (int32) | Hayir | nullable |
+| `autoCreatedReturnDocumentSerie` | string | Hayir | nullable |
+| `autoCreatedReturnLineCount` | integer (int32) | Hayir | nullable |
 | `customerAddress` | string | Hayir | nullable |
 | `customerCode` | string | Hayir | nullable |
 | `customerDisplayName` | string | Hayir | nullable |
@@ -27459,9 +27463,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `outputWarehouseName` | string | Hayir | nullable |
 | `outputWarehouseNo` | integer (int32) | Hayir |  |
 | `receiver` | string | Hayir | nullable |
+| `returnEDespatchStatus` | string | Hayir | nullable |
 | `returnType` | integer (int32) | Hayir |  |
 | `totalAmount` | number (double) | Hayir |  |
+| `totalDispatchQuantity` | number (double) | Hayir | nullable |
+| `totalNetAcceptedQuantity` | number (double) | Hayir | nullable |
 | `totalQuantity` | number (double) | Hayir |  |
+| `totalReturnedQuantity` | number (double) | Hayir | nullable |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
@@ -27471,6 +27479,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `description` | string | Hayir | nullable |
 | `discountAmount` | number (double) | Hayir |  |
+| `dispatchQuantity` | number (double) | Hayir | nullable |
 | `expenseAmount` | number (double) | Hayir |  |
 | `grossWeight` | number (double) | Hayir |  |
 | `lineAmount` | number (double) | Hayir |  |
@@ -27479,8 +27488,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `netWeight` | number (double) | Hayir |  |
 | `orderGuid` | string (uuid) | Hayir | nullable |
 | `partyCode` | string | Hayir | nullable |
+| `physicalAcceptedQuantity` | number (double) | Hayir | nullable |
 | `projectCode` | string | Hayir | nullable |
 | `quantity` | number (double) | Hayir |  |
+| `returnDocumentOrderNo` | integer (int32) | Hayir | nullable |
+| `returnDocumentSerie` | string | Hayir | nullable |
+| `returnEDespatchStatus` | string | Hayir | nullable |
+| `returnMovementGuid` | string (uuid) | Hayir | nullable |
+| `returnQuantity` | number (double) | Hayir | nullable |
+| `returnStatus` | string | Hayir | nullable |
 | `secondaryQuantity` | number (double) | Hayir |  |
 | `stockCode` | string | Hayir | nullable |
 | `stockName` | string | Hayir | nullable |

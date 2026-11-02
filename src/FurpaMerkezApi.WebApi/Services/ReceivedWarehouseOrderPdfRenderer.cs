@@ -57,11 +57,12 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
 
     private void RenderDocument(PdfDocument pdf, WarehouseOrderDetailDto document)
     {
+        var isGreenGrocerDocument = IsGreenGrocerDocument(document.Header);
         var documentPageNo = 0;
         var pageState = CreatePage(pdf, document, ++documentPageNo, continuation: false);
         var rowIndex = 0;
 
-        var items = IsGreenGrocerDocument(document.Header)
+        var items = isGreenGrocerDocument
             ? document.Items
                 .OrderBy(item => item.StockName, TurkishTextComparer)
                 .ThenBy(item => item.StockCode, TurkishTextComparer)
@@ -70,7 +71,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
 
         foreach (var item in items)
         {
-            var rowHeight = CalculateRowHeight(item, pageState.Columns);
+            var rowHeight = CalculateRowHeight(item, pageState.Columns, isGreenGrocerDocument);
             if (pageState.Y + rowHeight > pageState.ContentBottom)
             {
                 pageState.Dispose();
@@ -84,7 +85,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
                 item,
                 rowIndex + 1,
                 rowIndex % 2 == 1,
-                pageState.Columns);
+                pageState.Columns,
+                isGreenGrocerDocument);
             rowIndex++;
             pageState.Y += rowHeight;
         }
@@ -216,13 +218,14 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         WarehouseOrderLineItemDto item,
         int displayLineNo,
         bool alternate,
-        IReadOnlyList<Column> columns)
+        IReadOnlyList<Column> columns,
+        bool isGreenGrocerDocument)
     {
         var values = new[]
         {
             displayLineNo.ToString(CultureInfo.InvariantCulture),
             item.StockCode,
-            FormatProduct(item),
+            FormatProduct(item, isGreenGrocerDocument),
             FormatNumber(item.Quantity)
         };
 
@@ -244,7 +247,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
 
             if (index == 2)
             {
-                var lines = WrapText(graphics, values[index], bodyFont, textRect.Width, 3);
+                var maxLines = isGreenGrocerDocument ? 1 : 3;
+                var lines = WrapText(graphics, values[index], bodyFont, textRect.Width, maxLines);
                 for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
                 {
                     graphics.DrawString(
@@ -313,26 +317,38 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         }
     }
 
-    private double CalculateRowHeight(WarehouseOrderLineItemDto item, IReadOnlyList<Column> columns)
+    private double CalculateRowHeight(
+        WarehouseOrderLineItemDto item,
+        IReadOnlyList<Column> columns,
+        bool isGreenGrocerDocument)
     {
-        var productLines = EstimateLineCount(FormatProduct(item), columns[2].Width, 47d);
+        var productLines = EstimateLineCount(
+            FormatProduct(item, isGreenGrocerDocument),
+            columns[2].Width,
+            47d,
+            isGreenGrocerDocument);
         return Math.Max(MinimumRowHeight, 4d + (productLines * 8d));
     }
 
-    private static string FormatProduct(WarehouseOrderLineItemDto item) =>
-        string.IsNullOrWhiteSpace(item.Description)
+    private static string FormatProduct(WarehouseOrderLineItemDto item, bool isGreenGrocerDocument) =>
+        isGreenGrocerDocument || string.IsNullOrWhiteSpace(item.Description)
             ? item.StockName
             : $"{item.StockName} - {item.Description}";
 
-    private static int EstimateLineCount(string? value, double columnWidth, double averageCharacterWidth)
+    private static int EstimateLineCount(
+        string? value,
+        double columnWidth,
+        double averageCharacterWidth,
+        bool isGreenGrocerDocument = false)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return 1;
         }
 
+        var maxLines = isGreenGrocerDocument ? 1 : 3;
         var charactersPerLine = Math.Max(8, (int)((columnWidth - (2 * CellPadding)) / averageCharacterWidth * 8d));
-        return Math.Min(3, (int)Math.Ceiling(value.Trim().Length / (double)charactersPerLine));
+        return Math.Min(maxLines, (int)Math.Ceiling(value.Trim().Length / (double)charactersPerLine));
     }
 
     private static IReadOnlyList<string> WrapText(

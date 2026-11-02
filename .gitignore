@@ -12,6 +12,7 @@ artifacts/
 *.user
 *.suo
 tmp_*
+tmp/
 AppDataKeys/
 src/**/AppDataKeys/
 **/appsettings.Local.json
