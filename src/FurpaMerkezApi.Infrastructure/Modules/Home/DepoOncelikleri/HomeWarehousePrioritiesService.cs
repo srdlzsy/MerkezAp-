@@ -16,6 +16,7 @@ public sealed class HomeWarehousePrioritiesService(
     private const string Warning = "warning";
     private const string Info = "info";
     private const string Healthy = "healthy";
+    private static readonly DateOnly OperationalDataStartDate = new(2026, 11, 1);
 
     public async Task<HomeWarehousePrioritiesDto> GetAsync(
         HomeWarehousePrioritiesRequest request,
@@ -33,9 +34,18 @@ public sealed class HomeWarehousePrioritiesService(
 
         var startUtc = ToUtc(request.Date);
         var endUtc = ToUtc(request.Date.AddDays(1));
+        var operationalDataStartUtc = ToUtc(OperationalDataStartDate);
         var warehouseName = await ResolveWarehouseNameAsync(request, cancellationToken);
-        var flowSummary = await LoadFlowSummaryAsync(request.WarehouseNo, startUtc, endUtc, cancellationToken);
-        var stockAnomalySummary = await LoadStockAnomalySummaryAsync(request.WarehouseNo, cancellationToken);
+        var flowSummary = await LoadFlowSummaryAsync(
+            request.WarehouseNo,
+            startUtc,
+            endUtc,
+            operationalDataStartUtc,
+            cancellationToken);
+        var stockAnomalySummary = await LoadStockAnomalySummaryAsync(
+            request.WarehouseNo,
+            operationalDataStartUtc,
+            cancellationToken);
         var myOpenFeedbackCount = await authDbContext.FeedbackItems
             .AsNoTracking()
             .Where(item => item.CreatedByUserId == request.UserId)
@@ -84,6 +94,7 @@ public sealed class HomeWarehousePrioritiesService(
         int? warehouseNo,
         DateTime startUtc,
         DateTime endUtc,
+        DateTime operationalDataStartUtc,
         CancellationToken cancellationToken)
     {
         var hasWarehouseNo = warehouseNo.HasValue;
@@ -91,6 +102,7 @@ public sealed class HomeWarehousePrioritiesService(
 
         var query = authDbContext.DocumentFlows
             .AsNoTracking()
+            .Where(flow => flow.CreatedAtUtc >= operationalDataStartUtc)
             .Where(flow =>
                 ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
                   flow.DocumentType == DocumentFlowType.InterWarehouseShipment) &&
@@ -141,6 +153,7 @@ public sealed class HomeWarehousePrioritiesService(
 
     private async Task<StockAnomalySummary> LoadStockAnomalySummaryAsync(
         int? warehouseNo,
+        DateTime operationalDataStartUtc,
         CancellationToken cancellationToken)
     {
         var hasWarehouseNo = warehouseNo.HasValue;
@@ -148,7 +161,9 @@ public sealed class HomeWarehousePrioritiesService(
 
         var query = authDbContext.StockAnomalies
             .AsNoTracking()
-            .Where(anomaly => anomaly.Status == StockAnomalyStatus.Open);
+            .Where(anomaly =>
+                anomaly.Status == StockAnomalyStatus.Open &&
+                anomaly.FirstDetectedAtUtc >= operationalDataStartUtc);
 
         if (hasWarehouseNo)
         {

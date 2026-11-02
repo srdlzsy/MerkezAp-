@@ -12,11 +12,12 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.Home.DepoOncelikleri;
 public sealed class HomeWarehousePrioritiesServiceTests
 {
     [Fact]
-    public async Task GetAsync_CountsStockAnomaliesByPrimaryWarehouseOnly()
+    public async Task GetAsync_CountsOperationalDataFromNovemberFirstByPrimaryWarehouseOnly()
     {
         await using var authDbContext = CreateAuthDbContext();
         await using var mikroDbContext = CreateMikroDbContext();
-        var now = new DateTime(2026, 7, 28, 8, 0, 0, DateTimeKind.Utc);
+        var now = new DateTime(2026, 11, 2, 8, 0, 0, DateTimeKind.Utc);
+        var beforeOperationalStart = new DateTime(2026, 10, 31, 20, 0, 0, DateTimeKind.Utc);
         var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
         authDbContext.StockAnomalies.Add(CreateAnomaly(
@@ -44,6 +45,20 @@ public sealed class HomeWarehousePrioritiesServiceTests
             relatedWarehouseNo: null,
             now,
             StockAnomalyStatus.Acknowledged));
+        authDbContext.StockAnomalies.Add(CreateAnomaly(
+            "old-critical-53",
+            StockAnomalySeverity.Critical,
+            warehouseNo: 53,
+            relatedWarehouseNo: null,
+            beforeOperationalStart));
+        authDbContext.DocumentFlows.Add(CreatePendingReceivingFlow(
+            "old-flow",
+            targetWarehouseNo: 53,
+            beforeOperationalStart));
+        authDbContext.DocumentFlows.Add(CreatePendingReceivingFlow(
+            "current-flow",
+            targetWarehouseNo: 53,
+            now));
         await authDbContext.SaveChangesAsync();
 
         var service = new HomeWarehousePrioritiesService(
@@ -53,7 +68,7 @@ public sealed class HomeWarehousePrioritiesServiceTests
 
         var result = await service.GetAsync(
             new HomeWarehousePrioritiesRequest(
-                new DateOnly(2026, 7, 28),
+                new DateOnly(2026, 11, 2),
                 WarehouseNo: 53,
                 WarehouseName: "ET-SARKUTERI DEPO",
                 UserId: userId),
@@ -62,6 +77,7 @@ public sealed class HomeWarehousePrioritiesServiceTests
         Assert.Equal(2, result.Metrics.Single(metric => metric.Code == "openStockAnomaly").Value);
         Assert.Equal(1, result.Priorities.Single(priority => priority.Code == "criticalStockAnomaly").Count);
         Assert.Equal(1, result.Priorities.Single(priority => priority.Code == "highStockAnomaly").Count);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
     }
 
     private static AuthDbContext CreateAuthDbContext()
@@ -127,6 +143,20 @@ public sealed class HomeWarehousePrioritiesServiceTests
 
         return anomaly;
     }
+
+    private static DocumentFlow CreatePendingReceivingFlow(
+        string flowKey,
+        int targetWarehouseNo,
+        DateTime createdAtUtc) =>
+        new(
+            Guid.NewGuid(),
+            flowKey,
+            DocumentFlowType.InterWarehouseShipment,
+            sourceWarehouseNo: 50,
+            targetWarehouseNo,
+            documentSerie: "F53",
+            documentOrderNo: 1,
+            createdAtUtc);
 
     private sealed class FixedClock(DateTime utcNow) : IClock
     {
