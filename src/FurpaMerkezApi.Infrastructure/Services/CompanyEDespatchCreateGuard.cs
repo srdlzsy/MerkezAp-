@@ -89,7 +89,10 @@ internal static class CompanyEDespatchCreateGuard
             response.WarehouseNo != request.WarehouseNo || response.LineCount != original.Lines.Count ||
             rows.Count == 0 ||
             rows.Any(row => row.sth_evrakno_seri != request.DocumentSerie || row.sth_evrakno_sira != request.DocumentOrderNo ||
-                            row.sth_iptal == true || row.sth_cikis_depo_no != request.WarehouseNo))
+                            row.sth_iptal == true || row.sth_evraktip != 1 || row.sth_tip != 1 ||
+                            row.sth_cins != (isReturn ? 0 : 1) || row.sth_normal_iade != (isReturn ? 1 : 0) ||
+                            row.sth_cikis_depo_no != request.WarehouseNo ||
+                            !TextEquals(row.sth_cari_kodu, original.CustomerCode)))
             throw StockMovementRecoveryMatcher.ContentMismatch();
 
         // Model 1 (ERP Priority):
@@ -127,7 +130,10 @@ internal static class CompanyEDespatchCreateGuard
             response.AutoCreatedReturnDocumentOrderNo != request.DocumentOrderNo ||
             rows.Count == 0 ||
             rows.Any(row => row.sth_evrakno_seri != request.DocumentSerie || row.sth_evrakno_sira != request.DocumentOrderNo ||
-                            row.sth_iptal == true || row.sth_cikis_depo_no != request.WarehouseNo))
+                            row.sth_iptal == true || row.sth_evraktip != 1 || row.sth_tip != 1 ||
+                            row.sth_cins != 0 || row.sth_normal_iade != 1 ||
+                            row.sth_cikis_depo_no != request.WarehouseNo ||
+                            !TextEquals(row.sth_cari_kodu, original.CustomerCode)))
             throw StockMovementRecoveryMatcher.ContentMismatch();
 
         var returnResults = response.Lines

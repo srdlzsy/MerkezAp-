@@ -66,9 +66,9 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                 grouped.Key.sth_cari_kodu,
                 sth_giris_depo_no = kind == CompanyMovementKind.IncomingShipment
                     ? grouped.Key.AuthoritativeWarehouseNo
-                    : grouped.Max(item => item.sth_giris_depo_no),
+                    : (int?)null,
                 sth_cikis_depo_no = kind == CompanyMovementKind.IncomingShipment
-                    ? grouped.Max(item => item.sth_cikis_depo_no)
+                    ? (int?)null
                     : grouped.Key.AuthoritativeWarehouseNo,
                 grouped.Key.sth_evraktip,
                 grouped.Key.sth_tip,
@@ -118,15 +118,91 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
 
         var documents = await ExecuteReadOnlyListAsync(query, cancellationToken);
 
+        // The opposite warehouse is display metadata. Mikro Desktop can append a line with a
+        // different value, but the document header must continue to reflect the first movement.
+        // Resolve it in one narrow, linear query instead of a correlated subquery per document.
+        var movementWarehouseRows = await ExecuteReadOnlyListAsync(
+            movements.Select(movement => new
+            {
+                movement.sth_belge_tarih,
+                movement.sth_tarih,
+                movement.sth_belge_no,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_cari_kodu,
+                AuthoritativeWarehouseNo = kind == CompanyMovementKind.IncomingShipment
+                    ? movement.sth_giris_depo_no
+                    : movement.sth_cikis_depo_no,
+                movement.sth_evraktip,
+                movement.sth_tip,
+                movement.sth_normal_iade,
+                movement.sth_satirno,
+                movement.sth_create_date,
+                movement.sth_Guid,
+                movement.sth_giris_depo_no,
+                movement.sth_cikis_depo_no
+            }),
+            cancellationToken);
+        var firstWarehouseByDocument = movementWarehouseRows
+            .GroupBy(item => new DocumentIdentity(
+                item.sth_belge_tarih,
+                item.sth_tarih,
+                item.sth_belge_no,
+                item.sth_evrakno_seri,
+                item.sth_evrakno_sira,
+                item.sth_cari_kodu,
+                item.AuthoritativeWarehouseNo,
+                item.sth_evraktip,
+                item.sth_tip,
+                item.sth_normal_iade))
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(item => item.sth_satirno)
+                    .ThenBy(item => item.sth_create_date)
+                    .ThenBy(item => item.sth_Guid)
+                    .Select(item => new WarehousePair(item.sth_giris_depo_no, item.sth_cikis_depo_no))
+                    .First());
+        var warehouseNames = (await ExecuteReadOnlyListAsync(
+                mikroDbContext.DEPOLARs.AsNoTracking().Select(warehouse => new
+                {
+                    warehouse.dep_no,
+                    warehouse.dep_adi
+                }),
+                cancellationToken))
+            .Where(warehouse => warehouse.dep_no.HasValue)
+            .GroupBy(warehouse => warehouse.dep_no)
+            .ToDictionary(
+                group => group.Key!.Value,
+                group => group.Select(warehouse => warehouse.dep_adi).FirstOrDefault() ?? string.Empty);
+
         return documents
             .Select(document =>
             {
+                var identity = new DocumentIdentity(
+                    document.sth_belge_tarih,
+                    document.sth_tarih,
+                    document.sth_belge_no,
+                    document.sth_evrakno_seri,
+                    document.sth_evrakno_sira,
+                    document.sth_cari_kodu,
+                    kind == CompanyMovementKind.IncomingShipment
+                        ? document.sth_giris_depo_no
+                        : document.sth_cikis_depo_no,
+                    document.sth_evraktip,
+                    document.sth_tip,
+                    document.sth_normal_iade);
+                firstWarehouseByDocument.TryGetValue(identity, out var firstWarehouses);
+                var inputWarehouseNo = firstWarehouses?.InputWarehouseNo ?? document.sth_giris_depo_no;
+                var outputWarehouseNo = firstWarehouses?.OutputWarehouseNo ?? document.sth_cikis_depo_no;
+                var inputWarehouseName = WarehouseName(warehouseNames, inputWarehouseNo, document.InputWarehouseName);
+                var outputWarehouseName = WarehouseName(warehouseNames, outputWarehouseNo, document.OutputWarehouseName);
                 var warehouseNo = kind == CompanyMovementKind.IncomingShipment
-                    ? document.sth_giris_depo_no ?? request.WarehouseNo ?? 0
-                    : document.sth_cikis_depo_no ?? request.WarehouseNo ?? 0;
+                    ? inputWarehouseNo ?? request.WarehouseNo ?? 0
+                    : outputWarehouseNo ?? request.WarehouseNo ?? 0;
                 var warehouseName = kind == CompanyMovementKind.IncomingShipment
-                    ? document.InputWarehouseName ?? string.Empty
-                    : document.OutputWarehouseName ?? string.Empty;
+                    ? inputWarehouseName
+                    : outputWarehouseName;
 
                 return new CompanyMovementListItemDto(
                     document.sth_belge_tarih,
@@ -141,10 +217,10 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                     JoinNonEmpty(document.CustomerName, document.CustomerTitle),
                     warehouseNo,
                     warehouseName,
-                    document.sth_giris_depo_no ?? 0,
-                    document.InputWarehouseName ?? string.Empty,
-                    document.sth_cikis_depo_no ?? 0,
-                    document.OutputWarehouseName ?? string.Empty,
+                    inputWarehouseNo ?? 0,
+                    inputWarehouseName,
+                    outputWarehouseNo ?? 0,
+                    outputWarehouseName,
                     document.sth_evraktip ?? 0,
                     document.sth_tip ?? 0,
                     document.sth_normal_iade ?? 0,
@@ -155,6 +231,14 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
             })
             .ToArray();
     }
+
+    private static string WarehouseName(
+        IReadOnlyDictionary<int, string> warehouseNames,
+        int? warehouseNo,
+        string? fallback) =>
+        warehouseNo.HasValue && warehouseNames.TryGetValue(warehouseNo.Value, out var name)
+            ? name
+            : fallback ?? string.Empty;
 
     private IQueryable<STOK_HAREKETLERI> CreateFilteredMovementQuery(
         int? warehouseNo,
@@ -229,4 +313,18 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
 
     private bool IsSqlServerProvider() =>
         mikroDbContext.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
+
+    private sealed record DocumentIdentity(
+        DateTime? DocumentDate,
+        DateTime? MovementDate,
+        string? DocumentNo,
+        string? DocumentSerie,
+        int? DocumentOrderNo,
+        string? CustomerCode,
+        int? AuthoritativeWarehouseNo,
+        byte? DocumentType,
+        byte? MovementType,
+        byte? ReturnType);
+
+    private sealed record WarehousePair(int? InputWarehouseNo, int? OutputWarehouseNo);
 }

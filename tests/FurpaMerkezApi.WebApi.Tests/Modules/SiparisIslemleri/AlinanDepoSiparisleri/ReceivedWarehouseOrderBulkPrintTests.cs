@@ -96,6 +96,10 @@ public sealed class ReceivedWarehouseOrderBulkPrintTests
 
         Assert.True(text.IndexOf("Armut", StringComparison.Ordinal) < text.IndexOf("Çilek", StringComparison.Ordinal));
         Assert.True(text.IndexOf("Çilek", StringComparison.Ordinal) < text.IndexOf("Zeytin", StringComparison.Ordinal));
+        Assert.DoesNotContain("Test aciklamasi", text);
+        Assert.DoesNotContain("Belge no:", text);
+        Assert.DoesNotContain("Yazdirma:", text);
+        Assert.DoesNotContain("Evrak sayfasi:", text);
         Assert.Equal(340d, ReceivedWarehouseOrderPdfRenderer.ResolveTableWidth(56));
         Assert.Equal(510d, ReceivedWarehouseOrderPdfRenderer.ResolveTableWidth(50));
     }

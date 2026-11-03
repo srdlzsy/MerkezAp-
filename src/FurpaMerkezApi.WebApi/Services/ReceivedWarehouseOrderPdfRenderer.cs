@@ -119,20 +119,24 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         var pageHeight = page.Height.Point;
         var columns = ResolveColumns(document.Header);
 
-        DrawDocumentHeader(graphics, pageWidth, document.Header, continuation);
+        var isGreenGrocerDocument = IsGreenGrocerDocument(document.Header);
+        DrawDocumentHeader(graphics, pageWidth, document.Header, continuation, isGreenGrocerDocument);
         DrawTableHeader(graphics, HeaderHeight, columns);
-        graphics.DrawString(
-            $"Evrak sayfasi: {documentPageNo}",
-            smallFont,
-            XBrushes.Black,
-            new XRect(PageMargin, pageHeight - FooterHeight, pageWidth - (2 * PageMargin), 12d),
-            XStringFormats.CenterRight);
-        graphics.DrawString(
-            $"Yazdirma: {DateTime.Now:dd.MM.yyyy HH:mm}",
-            smallFont,
-            XBrushes.Black,
-            new XRect(PageMargin, pageHeight - FooterHeight, pageWidth - (2 * PageMargin), 12d),
-            XStringFormats.CenterLeft);
+        if (!isGreenGrocerDocument)
+        {
+            graphics.DrawString(
+                $"Evrak sayfasi: {documentPageNo}",
+                smallFont,
+                XBrushes.Black,
+                new XRect(PageMargin, pageHeight - FooterHeight, pageWidth - (2 * PageMargin), 12d),
+                XStringFormats.CenterRight);
+            graphics.DrawString(
+                $"Yazdirma: {DateTime.Now:dd.MM.yyyy HH:mm}",
+                smallFont,
+                XBrushes.Black,
+                new XRect(PageMargin, pageHeight - FooterHeight, pageWidth - (2 * PageMargin), 12d),
+                XStringFormats.CenterLeft);
+        }
 
         return new PageState(
             graphics,
@@ -145,7 +149,8 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         XGraphics graphics,
         double pageWidth,
         WarehouseOrderHeaderDto header,
-        bool continuation)
+        bool continuation,
+        bool isGreenGrocerDocument)
     {
         var contentWidth = pageWidth - (2 * PageMargin);
         graphics.DrawString(
@@ -186,12 +191,15 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             XBrushes.Black,
             new XRect(PageMargin, 110d, contentWidth * 0.7d, 14d),
             XStringFormats.CenterLeft);
-        graphics.DrawString(
-            $"Belge no: {EmptyAsDash(header.DocumentNumber)}",
-            bodyFont,
-            XBrushes.Black,
-            new XRect(PageMargin + (contentWidth * 0.7d), 110d, contentWidth * 0.3d, 14d),
-            XStringFormats.CenterRight);
+        if (!isGreenGrocerDocument)
+        {
+            graphics.DrawString(
+                $"Belge no: {EmptyAsDash(header.DocumentNumber)}",
+                bodyFont,
+                XBrushes.Black,
+                new XRect(PageMargin + (contentWidth * 0.7d), 110d, contentWidth * 0.3d, 14d),
+                XStringFormats.CenterRight);
+        }
     }
 
     private void DrawTableHeader(XGraphics graphics, double y, IReadOnlyList<Column> columns)

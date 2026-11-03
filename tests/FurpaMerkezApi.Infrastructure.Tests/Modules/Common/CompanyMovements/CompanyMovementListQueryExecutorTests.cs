@@ -139,10 +139,17 @@ public sealed class CompanyMovementListQueryExecutorTests
                 dep_create_date = documentDate,
                 dep_no = 1,
                 dep_adi = "MERKEZ OFIS"
+            },
+            new DEPOLAR
+            {
+                dep_Guid = Guid.NewGuid(),
+                dep_create_date = documentDate,
+                dep_no = 200,
+                dep_adi = "SONRADAN EKLENEN SATIR DEPOSU"
             });
 
         var firstLine = CreateIncomingMovement(0, "088896", 2d, 129, documentDate);
-        var addedLine = CreateIncomingMovement(9, "013271", 1d, 1, documentDate);
+        var addedLine = CreateIncomingMovement(9, "013271", 1d, 200, documentDate);
         addedLine.sth_create_date = new DateTime(2026, 11, 2, 12, 13, 39);
         mikroDbContext.STOK_HAREKETLERIs.AddRange(firstLine, addedLine);
         await mikroDbContext.SaveChangesAsync();

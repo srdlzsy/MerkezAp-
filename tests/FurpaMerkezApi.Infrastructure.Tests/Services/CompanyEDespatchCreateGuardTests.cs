@@ -261,4 +261,43 @@ public sealed class CompanyEDespatchCreateGuardTests
         await CompanyEDespatchCreateGuard.EnsureCompleteAsync(
             db, send, [originalRow1, originalRow2, manuallyAddedRow], CancellationToken.None);
     }
+
+    [Fact]
+    public async Task ConsciouslyAddedLineForAnotherCustomer_IsRejected()
+    {
+        await using var db = new AuthDbContext(new DbContextOptionsBuilder<AuthDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var original = StockMovementRecoveryMatcherTests.CompanyRequest;
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var record = new MobileOfflineSyncRequest(
+            Guid.NewGuid(),
+            "sevk-islemleri.giden-firma-sevkleri.create",
+            Guid.NewGuid(),
+            56,
+            original.ClientRequestId!.Value.ToString("D"),
+            "hash",
+            JsonSerializer.Serialize(original, options),
+            DateTime.UtcNow);
+        record.MarkCompleted(
+            JsonSerializer.Serialize(
+                new CreateCompanyMovementResponse(
+                    "F56", 123, DateTime.Today, DateTime.Today, "", 56, "320.01", 2, 5, 50, "Test"),
+                options),
+            DateTime.UtcNow);
+        db.MobileOfflineSyncRequests.Add(record);
+        await db.SaveChangesAsync();
+
+        var rows = new[] { StockMovementRecoveryMatcherTests.Row(), StockMovementRecoveryMatcherTests.Row(1) };
+        var otherCustomerRow = StockMovementRecoveryMatcherTests.Row(2);
+        otherCustomerRow.sth_stok_kod = "C";
+        otherCustomerRow.sth_cari_kodu = "OTHER";
+        otherCustomerRow.sth_eticaret_kanal_kodu = null;
+
+        await Assert.ThrowsAsync<OperationConflictException>(() =>
+            CompanyEDespatchCreateGuard.EnsureCompleteAsync(
+                db,
+                new(EDespatchDocumentType.OutgoingCompanyShipment, 56, "F56", 123, "", "", ""),
+                [.. rows, otherCustomerRow],
+                CancellationToken.None));
+    }
 }
