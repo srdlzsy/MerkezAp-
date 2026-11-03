@@ -83,7 +83,7 @@ public sealed class CompanyMovementDetailQueryExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ReversesItemsForIncomingCompanyReceiving()
+    public async Task ExecuteAsync_ReturnsIncomingCompanyReceivingItemsInLineNumberOrder()
     {
         await using var mikroDbContext = CreateMikroDbContext();
         var documentDate = new DateTime(2026, 10, 10);
@@ -111,7 +111,7 @@ public sealed class CompanyMovementDetailQueryExecutorTests
             CompanyMovementKind.IncomingShipment,
             CancellationToken.None);
 
-        Assert.Equal(new[] { 2, 1, 0 }, result.Items.Select(item => item.LineNo).ToArray());
+        Assert.Equal(new[] { 0, 1, 2 }, result.Items.Select(item => item.LineNo).ToArray());
         Assert.All(result.Items, item =>
         {
             Assert.Equal(item.Quantity, item.DispatchQuantity);

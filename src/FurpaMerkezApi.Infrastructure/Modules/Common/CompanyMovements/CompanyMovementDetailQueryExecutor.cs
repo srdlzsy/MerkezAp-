@@ -225,11 +225,6 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
             })
             .ToArray();
 
-        if (kind == CompanyMovementKind.IncomingShipment)
-        {
-            Array.Reverse(items);
-        }
-
         var warehouseNo = kind == CompanyMovementKind.IncomingShipment
             ? firstRow.sth_giris_depo_no ?? request.WarehouseNo
             : firstRow.sth_cikis_depo_no ?? request.WarehouseNo;
