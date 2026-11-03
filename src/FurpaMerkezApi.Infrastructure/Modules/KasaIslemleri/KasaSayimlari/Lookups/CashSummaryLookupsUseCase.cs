@@ -206,13 +206,13 @@ public sealed class CashSummaryLookupsUseCase(
             .Where(item =>
                 item.PaymentGenus == 1 &&
                 (terminalPaymentTypeNos.Contains(item.PaymentTypeNo) ||
-                 legacyTerminalBanks.Contains(item.PaymentName)))
+                 (item.PaymentName != null && legacyTerminalBanks.Contains(item.PaymentName))))
             .Select(item => new
             {
-                item.PaymentName,
+                PaymentName = item.PaymentName ?? string.Empty,
                 item.PaymentTypeNo,
                 item.PaymentGenus,
-                item.AccountCode
+                AccountCode = item.AccountCode ?? string.Empty
             })
             .ToArrayAsync(cancellationToken);
 

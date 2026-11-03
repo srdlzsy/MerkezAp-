@@ -124,6 +124,30 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
+    public async Task ListStoreExpensePaymentTypesAsync_HandlesNullableCatalogText()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        furpaDbContext.PaymentTypes.Add(new()
+        {
+            PaymentTypeNo = 110,
+            PaymentName = null,
+            PaymentGenus = 4,
+            AccountCode = null
+        });
+        await furpaDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+        var result = await useCase.ListStoreExpensePaymentTypesAsync(CancellationToken.None);
+        var item = Assert.Single(result);
+
+        Assert.Equal(string.Empty, item.PaymentName);
+        Assert.Equal(string.Empty, item.AccountCode);
+        Assert.Equal(110, item.PaymentTypeNo);
+    }
+
+    [Fact]
     public async Task ListBankPaymentTypesAsync_ReturnsAllBankTerminalsForCashRegister()
     {
         await using var mikroDbContext = CreateMikroDbContext();

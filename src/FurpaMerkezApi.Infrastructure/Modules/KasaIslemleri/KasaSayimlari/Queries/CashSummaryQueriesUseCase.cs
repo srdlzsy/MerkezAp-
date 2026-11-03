@@ -233,6 +233,12 @@ public sealed class CashSummaryQueriesUseCase(
         var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item => paymentTypeNos.Contains(item.PaymentTypeNo))
+            .Select(item => new
+            {
+                item.PaymentTypeNo,
+                PaymentName = item.PaymentName ?? string.Empty,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
             .ToDictionaryAsync(item => item.PaymentTypeNo, cancellationToken);
 
         return rows

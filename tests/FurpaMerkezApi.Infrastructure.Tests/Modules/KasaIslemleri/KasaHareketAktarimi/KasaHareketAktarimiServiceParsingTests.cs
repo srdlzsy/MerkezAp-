@@ -106,6 +106,40 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal(40m, invoiceDiscount);
     }
 
+    [Fact]
+    public void NormalizeCashRegisterNosCombinesSingleAndMultipleSelections()
+    {
+        var method = typeof(KasaHareketAktarimiService).GetMethod(
+            "NormalizeCashRegisterNos",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+        var result = Assert.IsType<int[]>(method!.Invoke(null, new object?[] { 52, new[] { 51, 52, 53 } }));
+
+        Assert.Equal([51, 52, 53], result);
+    }
+
+    [Fact]
+    public void CreateSalesComparisonRowUsesLegacyReconciliationFormulas()
+    {
+        var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
+            new DateTime(2026, 11, 3),
+            116,
+            "Test Sube",
+            stockMovementAmount: 1_000m,
+            currentAccountAmount: 990m,
+            transferredAmount: 1_020m,
+            expenseReceiptAmount: 30m,
+            zReportAmount: 960m,
+            tolerance: 0.01m);
+
+        Assert.Equal(990m, row.ExpenseExcludedAmount);
+        Assert.Equal(10m, row.ZReportTransferDifference);
+        Assert.Equal(20m, row.TransferredTurnoverDifference);
+        Assert.Equal(10m, row.CurrentStockDifference);
+        Assert.True(row.HasDifference);
+    }
+
     private static int InvokeTaxRate(int taxCode, DateTime receiptDate)
     {
         var method = typeof(KasaHareketAktarimiService).GetMethod(

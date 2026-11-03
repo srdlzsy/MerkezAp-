@@ -25799,6 +25799,8 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/manual-shipped` | JWT + entegrasyon-islemleri.trendyol-go.update | path: packageId / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/mark-alternative` | JWT + entegrasyon-islemleri.trendyol-go.update | path: packageId / string (zorunlu)<br>body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/picked` | JWT + entegrasyon-islemleri.trendyol-go.update | path: packageId / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: JsonElement<br>204: bildirilmemis |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/direct-dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoDirectPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoDirectPriceStockDispatchResult |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/direct-preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: mode / string<br>query: sinceDate / string (date-time)<br>query: onlyFlaggedChanged / boolean<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoDirectPriceStockPreview |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string | 401: ProblemDetails<br>403: ProblemDetails |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -26080,7 +26082,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashTurnoverListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/detay` | JWT + kasa-islemleri.kasa-cirolari.detail | query: WarehouseNo / integer (int32)<br>query: BusinessDate / string (date-time) (zorunlu)<br>query: ShiftNo / integer (int32) (zorunlu)<br>query: CashierCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/ozet` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverOverviewDto<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/durum` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketTransferStatusDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/durum` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: CashRegisterNos / integer (int32)[] | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketTransferStatusDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: Tolerance / number (double) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketCashSummaryComparisonDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) (zorunlu)<br>query: CashRegisterNo / integer (int32) (zorunlu)<br>query: ReceiptTake / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDetailDto<br>400: ProblemDetails |
@@ -26092,6 +26094,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/rapor` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;KasaHareketReportRowDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/rapor/ozet` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketReportSummaryDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/satis-karsilastirma` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketSalesComparisonDto<br>400: ProblemDetails |
 | DELETE | `/api/kasa-islemleri/kasa-hareket-aktarimi/staging` | JWT + kasa-islemleri.kasa-hareket-aktarimi.update | body: request / KasaHareketDeleteStagingHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/subeler` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;KasaHareketBranchDto&gt; |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/subeler/{branchNo}/kasalar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;KasaHareketCashRegisterDto&gt;<br>400: ProblemDetails |
@@ -29810,6 +29813,53 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `supplierId` | integer (int64) | Hayir |  |
 | `upstreamStatusCode` | integer (int32) | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockDispatchResult
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `storeResults` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectStoreDispatchResult[] | Hayir | nullable |
+| `targetStoresCount` | integer (int32) | Hayir |  |
+| `totalItemsDispatched` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `priceChangedFlag` | boolean | Hayir |  |
+| `priceLastUpDate` | string (date-time) | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `quantity` | integer (int32) | Hayir |  |
+| `sellingPrice` | number (double) | Hayir |  |
+| `stockCode` | string | Hayir | nullable |
+| `unitPointer` | integer (int32) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockPreview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockItem[] | Hayir | nullable |
+| `mode` | string | Hayir | nullable |
+| `sinceDate` | string (date-time) | Hayir | nullable |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `totalCount` | integer (int32) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectStoreDispatchResult
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchCount` | integer (int32) | Hayir |  |
+| `batchRequestIds` | string[] | Hayir | nullable |
+| `errorMessage` | string | Hayir | nullable |
+| `itemCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `success` | boolean | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoStoreMappingDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -31362,6 +31412,51 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalDifference` | number (double) | Hayir |  |
 | `totalExpense` | number (double) | Hayir |  |
 | `totalNetAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSalesComparisonDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSalesComparisonRowDto[] | Hayir | nullable |
+| `summary` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSalesComparisonSummaryDto | Hayir |  |
+| `tolerance` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSalesComparisonRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `currentAccountAmount` | number (double) | Hayir |  |
+| `currentStockDifference` | number (double) | Hayir |  |
+| `date` | string (date-time) | Hayir |  |
+| `expenseExcludedAmount` | number (double) | Hayir |  |
+| `expenseReceiptAmount` | number (double) | Hayir |  |
+| `hasDifference` | boolean | Hayir |  |
+| `stockMovementAmount` | number (double) | Hayir |  |
+| `transferredAmount` | number (double) | Hayir |  |
+| `transferredTurnoverDifference` | number (double) | Hayir |  |
+| `zReportAmount` | number (double) | Hayir |  |
+| `zReportTransferDifference` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSalesComparisonSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `differenceCount` | integer (int32) | Hayir |  |
+| `rowCount` | integer (int32) | Hayir |  |
+| `totalCurrentAccountAmount` | number (double) | Hayir |  |
+| `totalCurrentStockDifference` | number (double) | Hayir |  |
+| `totalExcess` | number (double) | Hayir |  |
+| `totalExpenseReceiptAmount` | number (double) | Hayir |  |
+| `totalShortage` | number (double) | Hayir |  |
+| `totalStockMovementAmount` | number (double) | Hayir |  |
+| `totalTransferredAmount` | number (double) | Hayir |  |
+| `totalTransferredTurnoverDifference` | number (double) | Hayir |  |
+| `totalZReportAmount` | number (double) | Hayir |  |
+| `totalZReportTransferDifference` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto
 
@@ -35823,6 +35918,17 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `previewHash` | string | Evet | minLength=1 |
 | `sendAll` | boolean | Hayir |  |
 | `storeId` | integer (int64) | Hayir | min=1 |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockDispatchHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `allStores` | boolean | Hayir |  |
+| `barcodes` | string[] | Hayir | nullable |
+| `mode` | string | Hayir | pattern=^(?i:all\|changed)$; nullable |
+| `onlyFlaggedChanged` | boolean | Hayir | nullable |
+| `sinceDate` | string (date-time) | Hayir | nullable |
+| `storeIds` | integer (int64)[] | Hayir | nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoInvoiceHttpRequest
 

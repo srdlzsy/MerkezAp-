@@ -46,12 +46,17 @@ public sealed record KasaHareketTransferStatusRequest(
     DateTime StartDate,
     DateTime EndDate,
     int? BranchNo,
-    int? CashRegisterNo);
+    int? CashRegisterNo,
+    IReadOnlyCollection<int>? CashRegisterNos = null);
 
 public sealed record KasaHareketReportRequest(
     DateTime Date,
     int? BranchNo,
     int? CashRegisterNo);
+
+public sealed record KasaHareketSalesComparisonRequest(
+    DateTime Date,
+    int? BranchNo);
 
 public sealed record KasaHareketCashSummaryComparisonRequest(
     DateTime Date,
@@ -123,6 +128,42 @@ public sealed record KasaHareketReportSummaryDto(
     decimal TotalExpense,
     decimal TotalCheckAmount,
     decimal TotalDifference);
+
+public sealed record KasaHareketSalesComparisonDto(
+    DateTime Date,
+    int? BranchNo,
+    decimal Tolerance,
+    KasaHareketSalesComparisonSummaryDto Summary,
+    IReadOnlyCollection<KasaHareketSalesComparisonRowDto> Rows);
+
+public sealed record KasaHareketSalesComparisonSummaryDto(
+    int RowCount,
+    int DifferenceCount,
+    decimal TotalStockMovementAmount,
+    decimal TotalCurrentAccountAmount,
+    decimal TotalTransferredAmount,
+    decimal TotalExpenseReceiptAmount,
+    decimal TotalZReportAmount,
+    decimal TotalZReportTransferDifference,
+    decimal TotalTransferredTurnoverDifference,
+    decimal TotalCurrentStockDifference,
+    decimal TotalShortage,
+    decimal TotalExcess);
+
+public sealed record KasaHareketSalesComparisonRowDto(
+    DateTime Date,
+    int BranchNo,
+    string BranchName,
+    decimal StockMovementAmount,
+    decimal CurrentAccountAmount,
+    decimal TransferredAmount,
+    decimal ExpenseExcludedAmount,
+    decimal ExpenseReceiptAmount,
+    decimal ZReportAmount,
+    decimal ZReportTransferDifference,
+    decimal TransferredTurnoverDifference,
+    decimal CurrentStockDifference,
+    bool HasDifference);
 
 public sealed record KasaHareketCashSummaryComparisonDto(
     DateTime Date,

@@ -249,6 +249,38 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DirectDispatchRequest_ThrowsWhenNoStoresAndNotAllStores()
+    {
+        var request = new TrendyolGoDirectPriceStockDispatchRequest(
+            StoreIds: [],
+            AllStores: false,
+            Mode: "changed");
+
+        Assert.False(request.AllStores);
+        Assert.Empty(request.StoreIds!);
+    }
+
+    [Fact]
+    public void DirectPriceStockItem_NormalizesValuesCorrectly()
+    {
+        var item = new TrendyolGoDirectPriceStockItem(
+            Barcode: "8690000000001",
+            StockCode: "STK001",
+            ProductName: "Test Urun",
+            SellingPrice: 49.90m,
+            Quantity: 12,
+            PriceChangedFlag: true,
+            PriceLastUpDate: DateTime.UtcNow,
+            WarehouseNo: 103,
+            UnitPointer: 1);
+
+        Assert.Equal("8690000000001", item.Barcode);
+        Assert.Equal(49.90m, item.SellingPrice);
+        Assert.Equal(12, item.Quantity);
+        Assert.True(item.PriceChangedFlag);
+    }
+
     private static TrendyolGoPriceStockRow[] CreateDispatchRows() =>
     [
         new("ready", "001", "Ready Product", 10m, 1, 11m, 2, "Ready", null),

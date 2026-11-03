@@ -129,6 +129,56 @@ public sealed class DocumentFlowServiceTests
     }
 
     [Fact]
+    public async Task RecordManyAsync_AppendsCreatedEventAfterDocumentWasDeleted()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 11, 3, 7, 0, 0, DateTimeKind.Utc));
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+        const string flowKey = "StockMovementDocument:116:POS:20261103:X:410";
+
+        RecordDocumentFlowRequest CreateRequest(DocumentFlowStep step, string message) => new(
+            flowKey,
+            DocumentFlowType.StockMovementDocument,
+            116,
+            null,
+            "X",
+            410,
+            step,
+            DocumentFlowStatus.Succeeded,
+            message);
+
+        await service.RecordManyAsync(
+            [CreateRequest(DocumentFlowStep.DocumentCreated, "POS evragi olusturuldu.")],
+            CancellationToken.None);
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordManyAsync(
+            [CreateRequest(DocumentFlowStep.DocumentDeleted, "POS evragi silindi.")],
+            CancellationToken.None);
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await service.RecordManyAsync(
+            [CreateRequest(DocumentFlowStep.DocumentCreated, "POS evragi yeniden olusturuldu.")],
+            CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var flow = await dbContext.DocumentFlows
+            .Include(item => item.Events)
+            .SingleAsync(item => item.FlowKey == flowKey);
+
+        Assert.Equal(DocumentFlowStep.DocumentCreated, flow.CurrentStep);
+        Assert.Equal(
+            [
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStep.DocumentDeleted,
+                DocumentFlowStep.DocumentCreated
+            ],
+            flow.Events.OrderBy(item => item.OccurredAtUtc).Select(item => item.Step));
+    }
+
+    [Fact]
     public async Task RecordAsync_DoesNotAppendDuplicateSuccessfulWarehouseReceivingAcceptedEvent()
     {
         await using var dbContext = CreateDbContext();

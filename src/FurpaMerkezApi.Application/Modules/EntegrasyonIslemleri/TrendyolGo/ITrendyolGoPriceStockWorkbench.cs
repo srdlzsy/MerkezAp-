@@ -12,6 +12,14 @@ public interface ITrendyolGoPriceStockWorkbench
     Task<TrendyolGoPriceStockDispatch> DispatchAsync(
         long storeId, string previewHash, TrendyolGoPriceStockDispatchMode mode,
         IReadOnlyCollection<string> barcodes, CancellationToken cancellationToken);
+
+    Task<TrendyolGoDirectPriceStockPreview> DirectPreviewAsync(
+        TrendyolGoDirectPriceStockQueryRequest request,
+        CancellationToken cancellationToken);
+
+    Task<TrendyolGoDirectPriceStockDispatchResult> DirectDispatchAsync(
+        TrendyolGoDirectPriceStockDispatchRequest request,
+        CancellationToken cancellationToken);
 }
 
 public enum TrendyolGoPriceStockDispatchMode
@@ -45,3 +53,54 @@ public sealed record TrendyolGoPriceStockRow(
 public sealed record TrendyolGoPriceStockDispatch(
     long StoreId, int WarehouseNo, string Mode, int SentCount, int BatchCount,
     IReadOnlyCollection<JsonElement?> UpstreamResponses);
+
+public sealed record TrendyolGoDirectPriceStockQueryRequest(
+    long StoreId,
+    string Mode = "changed",
+    DateTime? SinceDate = null,
+    bool? OnlyFlaggedChanged = null,
+    string? Search = null,
+    int Take = 500);
+
+public sealed record TrendyolGoDirectPriceStockItem(
+    string Barcode,
+    string StockCode,
+    string ProductName,
+    decimal SellingPrice,
+    int Quantity,
+    bool PriceChangedFlag,
+    DateTime? PriceLastUpDate,
+    int WarehouseNo,
+    int UnitPointer = 1);
+
+public sealed record TrendyolGoDirectPriceStockPreview(
+    long StoreId,
+    int WarehouseNo,
+    string StoreName,
+    string Mode,
+    DateTime? SinceDate,
+    int TotalCount,
+    IReadOnlyCollection<TrendyolGoDirectPriceStockItem> Items);
+
+public sealed record TrendyolGoDirectPriceStockDispatchRequest(
+    IReadOnlyCollection<long>? StoreIds = null,
+    bool AllStores = false,
+    string Mode = "changed",
+    DateTime? SinceDate = null,
+    bool? OnlyFlaggedChanged = null,
+    IReadOnlyCollection<string>? Barcodes = null);
+
+public sealed record TrendyolGoDirectStoreDispatchResult(
+    long StoreId,
+    int WarehouseNo,
+    string StoreName,
+    int ItemCount,
+    int BatchCount,
+    bool Success,
+    string? ErrorMessage,
+    IReadOnlyCollection<string> BatchRequestIds);
+
+public sealed record TrendyolGoDirectPriceStockDispatchResult(
+    int TargetStoresCount,
+    int TotalItemsDispatched,
+    IReadOnlyCollection<TrendyolGoDirectStoreDispatchResult> StoreResults);

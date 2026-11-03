@@ -48,6 +48,10 @@ public interface IKasaHareketAktarimiService
         KasaHareketReportRequest request,
         CancellationToken cancellationToken);
 
+    Task<KasaHareketSalesComparisonDto> GetSalesComparisonAsync(
+        KasaHareketSalesComparisonRequest request,
+        CancellationToken cancellationToken);
+
     Task<KasaHareketCashSummaryComparisonDto> GetCashSummaryComparisonAsync(
         KasaHareketCashSummaryComparisonRequest request,
         CancellationToken cancellationToken);

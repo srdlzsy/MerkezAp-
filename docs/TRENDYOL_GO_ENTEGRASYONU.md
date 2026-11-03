@@ -69,7 +69,8 @@ Tum route'lar `/api/entegrasyon-islemleri/trendyol-go` kokunun altindadir. Tam q
 | Durum/magaza | `GET /` veya `/status`, `/stores`, `/connection-test?storeId=` | - |
 | Siparis | `GET /orders`, `/orders/by-number/{orderNumber}`, `/orders/{orderId}/invoice-amount`, `/packages/by-ids?id=...` | `PUT /packages/{packageId}/picked`, `/invoiced`, `/items/unsupplied`, `/mark-alternative`, `/manual-shipped`, `/manual-delivered` |
 | Urun | `GET /brands`, `/products`, `/products/batch-requests/{batchRequestId}` | `POST /products`, `PUT /products`, `POST /products/price-and-inventory`, `PUT /products/sale-on`, `/sale-off`, `POST /products/seller-attributes` |
-| Mikro fiyat/stok | `GET /price-stock/preview?storeId=&view=actionable` | `POST /price-stock/preview/refresh?storeId=`, `POST /price-stock/dispatch` |
+| Mikro fiyat/stok (Snapshot) | `GET /price-stock/preview?storeId=&view=actionable` | `POST /price-stock/preview/refresh?storeId=`, `POST /price-stock/dispatch` |
+| Mikro fiyat/stok (Dogrudan / Hizli) | `GET /price-stock/direct-preview?storeId=&mode=changed` | `POST /price-stock/direct-dispatch` |
 | Mikro urun katalogu | `GET /catalog/preview?storeId=&view=actionable` | `POST /catalog/dispatch` |
 | Fatura linki | - | `POST /invoice-links` |
 | Iade | `GET /claims`, `/claims/{claimId}/items/objectionable` | `PUT /claims/{claimId}/accept`, `/reject`, `POST /claims/{claimId}/items/objections` |

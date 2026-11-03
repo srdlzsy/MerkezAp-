@@ -136,7 +136,8 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
                 request.StartDate!.Value,
                 request.EndDate!.Value,
                 branchNo,
-                request.CashRegisterNo),
+                request.CashRegisterNo,
+                request.CashRegisterNos),
             cancellationToken));
     }
 
@@ -165,6 +166,20 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
         var branchNo = User.ResolveWarehouseScopeForPolicy(request.BranchNo, DetailPolicy);
         return Ok(await service.GetReportSummaryAsync(
             new KasaHareketReportRequest(request.Date!.Value, branchNo, request.CashRegisterNo),
+            cancellationToken));
+    }
+
+    [HttpGet("satis-karsilastirma")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(KasaHareketSalesComparisonDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<KasaHareketSalesComparisonDto>> SalesComparison(
+        [FromQuery] KasaHareketSalesComparisonHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var branchNo = User.ResolveWarehouseScopeForPolicy(request.BranchNo, ListPolicy);
+        return Ok(await service.GetSalesComparisonAsync(
+            new KasaHareketSalesComparisonRequest(request.Date!.Value, branchNo),
             cancellationToken));
     }
 
@@ -411,6 +426,8 @@ public sealed class KasaHareketTransferStatusHttpRequest
 
     [Range(0, 999)]
     public int? CashRegisterNo { get; init; }
+
+    public IReadOnlyCollection<int>? CashRegisterNos { get; init; }
 }
 
 public sealed class KasaHareketReportHttpRequest
@@ -423,6 +440,15 @@ public sealed class KasaHareketReportHttpRequest
 
     [Range(0, 999)]
     public int? CashRegisterNo { get; init; }
+}
+
+public sealed class KasaHareketSalesComparisonHttpRequest
+{
+    [Required]
+    public DateTime? Date { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? BranchNo { get; init; }
 }
 
 public sealed class KasaHareketCashSummaryComparisonHttpRequest

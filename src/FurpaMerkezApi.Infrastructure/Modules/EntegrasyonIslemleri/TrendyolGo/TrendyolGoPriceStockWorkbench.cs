@@ -141,6 +141,323 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             storeId, snapshot.WarehouseNo, ToWireValue(mode),
             selected.Length, responses.Count, responses);
     }
+
+    public async Task<TrendyolGoDirectPriceStockPreview> DirectPreviewAsync(
+        TrendyolGoDirectPriceStockQueryRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var store = GetConfiguredStore(request.StoreId);
+        var config = options.CurrentValue;
+
+        var items = await QueryDirectMikroProductsAsync(
+            store.WarehouseNo,
+            request.Mode,
+            request.SinceDate,
+            request.OnlyFlaggedChanged,
+            request.Search,
+            request.Take,
+            barcodes: null,
+            config.PriceListNo,
+            config.PaymentPlanNo,
+            cancellationToken);
+
+        return new TrendyolGoDirectPriceStockPreview(
+            store.StoreId,
+            store.WarehouseNo,
+            store.StoreName,
+            request.Mode.Trim().ToLowerInvariant(),
+            request.SinceDate,
+            items.Count,
+            items);
+    }
+
+    public async Task<TrendyolGoDirectPriceStockDispatchResult> DirectDispatchAsync(
+        TrendyolGoDirectPriceStockDispatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var config = options.CurrentValue;
+        var configuredStores = config.Stores;
+
+        IReadOnlyList<TrendyolGoStoreMappingOptions> targetStores;
+        if (request.AllStores)
+        {
+            targetStores = configuredStores;
+        }
+        else if (request.StoreIds is { Count: > 0 } storeIds)
+        {
+            targetStores = configuredStores.Where(s => storeIds.Contains(s.StoreId)).ToList();
+            if (targetStores.Count == 0)
+            {
+                throw new ArgumentException("No valid configured stores found for the provided store IDs.");
+            }
+        }
+        else
+        {
+            throw new ArgumentException("Either AllStores must be true or at least one StoreId must be provided.");
+        }
+
+        var storeResults = new List<TrendyolGoDirectStoreDispatchResult>();
+        var totalItemsDispatched = 0;
+
+        foreach (var store in targetStores)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var items = await QueryDirectMikroProductsAsync(
+                    store.WarehouseNo,
+                    request.Mode,
+                    request.SinceDate,
+                    request.OnlyFlaggedChanged,
+                    search: null,
+                    take: 0,
+                    request.Barcodes,
+                    config.PriceListNo,
+                    config.PaymentPlanNo,
+                    cancellationToken);
+
+                if (items.Count == 0)
+                {
+                    storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
+                        store.StoreId, store.WarehouseNo, store.StoreName,
+                        0, 0, true, "Gonderilecek uygun fiyat/stok kalemi bulunamadi.", []));
+                    continue;
+                }
+
+                var distinctItems = items.DistinctBy(i => i.Barcode, StringComparer.Ordinal).ToArray();
+                var batchRequestIds = new List<string>();
+                var chunks = distinctItems.Chunk(1000).ToArray();
+
+                foreach (var chunk in chunks)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var payload = JsonSerializer.SerializeToElement(new
+                    {
+                        items = chunk.Select(item => new
+                        {
+                            barcode = item.Barcode,
+                            sellingPrice = item.SellingPrice,
+                            quantity = item.Quantity,
+                            storeId = store.StoreId
+                        }).ToArray()
+                    });
+
+                    var response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
+                    if (response.HasValue &&
+                        response.Value.TryGetProperty("batchRequestId", out var batchIdProp) &&
+                        batchIdProp.ValueKind == JsonValueKind.String)
+                    {
+                        var batchId = batchIdProp.GetString();
+                        if (!string.IsNullOrWhiteSpace(batchId))
+                        {
+                            batchRequestIds.Add(batchId);
+                        }
+                    }
+
+                    if (config.BranchPosPriceSync.Enabled)
+                    {
+                        var branchPosItems = chunk.Select(item => new BranchPosPriceItem(
+                            item.StockCode,
+                            item.SellingPrice,
+                            item.UnitPointer,
+                            "",
+                            0, 0, 0,
+                            item.PriceLastUpDate,
+                            null,
+                            config.PriceListNo)).ToArray();
+
+                        await branchPosPriceSync.EnqueueAsync(
+                            store.StoreId, store.WarehouseNo, branchPosItems, cancellationToken);
+                    }
+                }
+
+                totalItemsDispatched += distinctItems.Length;
+                storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
+                    store.StoreId, store.WarehouseNo, store.StoreName,
+                    distinctItems.Length, chunks.Length, true, null, batchRequestIds));
+            }
+            catch (Exception ex)
+            {
+                storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
+                    store.StoreId, store.WarehouseNo, store.StoreName,
+                    0, 0, false, ex.Message, []));
+            }
+        }
+
+        return new TrendyolGoDirectPriceStockDispatchResult(
+            targetStores.Count,
+            totalItemsDispatched,
+            storeResults);
+    }
+
+    private async Task<IReadOnlyList<TrendyolGoDirectPriceStockItem>> QueryDirectMikroProductsAsync(
+        int warehouseNo,
+        string mode,
+        DateTime? sinceDate,
+        bool? onlyFlaggedChanged,
+        string? search,
+        int take,
+        IReadOnlyCollection<string>? barcodes,
+        int priceListNo,
+        int paymentPlanNo,
+        CancellationToken cancellationToken)
+    {
+        var isAllMode = string.Equals(mode?.Trim(), "all", StringComparison.OrdinalIgnoreCase);
+        var flaggedOnly = onlyFlaggedChanged == true;
+
+        await mikroReadGate.WaitAsync(cancellationToken);
+        try
+        {
+            var connection = mikroDbContext.Database.GetDbConnection();
+            var closeConnection = connection.State == ConnectionState.Closed;
+            if (closeConnection)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            try
+            {
+                using var command = connection.CreateCommand();
+                command.CommandType = CommandType.Text;
+                command.CommandTimeout = 300;
+
+                var whereClauses = new List<string>
+                {
+                    "COALESCE(stock.sto_iptal, 0) = 0",
+                    "COALESCE(stock.sto_pasif_fl, 0) = 0",
+                    "COALESCE(stock.sto_satis_dursun, 0) = 0",
+                    "COALESCE(detail.sdp_Pasif_fl, 0) = 0",
+                    "COALESCE(detail.sdp_satisdursun, 0) = 0",
+                    "COALESCE(priceRow.sfiyat_iptal, 0) = 0",
+                    "priceRow.sfiyat_fiyati > 0"
+                };
+
+                if (!isAllMode)
+                {
+                    if (flaggedOnly)
+                    {
+                        whereClauses.Add("COALESCE(priceRow.sfiyat_degisti, 0) = 1");
+                    }
+                    else if (sinceDate.HasValue)
+                    {
+                        whereClauses.Add("(priceRow.sfiyat_lastup_date >= @sinceDate OR priceRow.sfiyat_create_date >= @sinceDate OR COALESCE(priceRow.sfiyat_degisti, 0) = 1)");
+                        AddParameter(command, "@sinceDate", sinceDate.Value);
+                    }
+                    else
+                    {
+                        whereClauses.Add("(COALESCE(priceRow.sfiyat_degisti, 0) = 1 OR priceRow.sfiyat_lastup_date >= CAST(GETDATE() AS date))");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    whereClauses.Add("(barcode.Barcode LIKE @searchPattern OR stock.sto_kod LIKE @searchPattern OR stock.sto_isim LIKE @searchPattern)");
+                    AddParameter(command, "@searchPattern", $"%{search.Trim()}%");
+                }
+
+                if (barcodes is { Count: > 0 })
+                {
+                    var barcodeList = barcodes.Where(b => !string.IsNullOrWhiteSpace(b)).Distinct().ToArray();
+                    if (barcodeList.Length > 0)
+                    {
+                        var paramNames = barcodeList.Select((_, idx) => $"@bc{idx}").ToArray();
+                        whereClauses.Add($"barcode.Barcode IN ({string.Join(",", paramNames)})");
+                        for (var i = 0; i < barcodeList.Length; i++)
+                        {
+                            AddParameter(command, $"@bc{i}", barcodeList[i]);
+                        }
+                    }
+                }
+
+                var topClause = take > 0 ? $"TOP ({take})" : "";
+
+                command.CommandText = $"""
+                    SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+                    WITH RankedBarcodes AS
+                    (
+                        SELECT bar_stokkodu AS StockCode,
+                               bar_kodu AS Barcode,
+                               bar_birimpntr AS UnitPointer,
+                               ROW_NUMBER() OVER
+                               (
+                                   PARTITION BY bar_stokkodu
+                                   ORDER BY COALESCE(bar_master, 0) DESC,
+                                            COALESCE(bar_lastup_date, bar_create_date) DESC,
+                                            bar_kodu ASC
+                               ) AS RowNo
+                        FROM dbo.BARKOD_TANIMLARI WITH (NOLOCK)
+                        WHERE COALESCE(bar_iptal, 0) = 0
+                          AND NULLIF(LTRIM(RTRIM(bar_kodu)), '') IS NOT NULL
+                    )
+                    SELECT {topClause}
+                        barcode.Barcode AS Barcode,
+                        stock.sto_kod AS StockCode,
+                        stock.sto_isim AS ProductName,
+                        COALESCE(barcode.UnitPointer, 1) AS UnitPointer,
+                        priceRow.sfiyat_fiyati AS SellingPrice,
+                        COALESCE(priceRow.sfiyat_degisti, 0) AS PriceChanged,
+                        COALESCE(priceRow.sfiyat_lastup_date, priceRow.sfiyat_create_date) AS PriceLastUpDate,
+                        CASE WHEN stock.sto_kod IS NULL THEN 0
+                             ELSE dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, CONVERT(date, GETDATE())) END AS Quantity
+                    FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                    INNER JOIN RankedBarcodes AS barcode
+                        ON barcode.StockCode = stock.sto_kod AND barcode.RowNo = 1
+                    INNER JOIN dbo.STOK_SATIS_FIYAT_LISTELERI AS priceRow WITH (NOLOCK)
+                        ON priceRow.sfiyat_stokkod = stock.sto_kod
+                       AND priceRow.sfiyat_deposirano = @warehouseNo
+                       AND priceRow.sfiyat_listesirano = @priceListNo
+                       AND priceRow.sfiyat_odemeplan = @paymentPlanNo
+                       AND priceRow.sfiyat_birim_pntr = COALESCE(barcode.UnitPointer, 1)
+                    LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS detail WITH (NOLOCK)
+                        ON detail.sdp_depo_kod = stock.sto_kod
+                       AND detail.sdp_depo_no = @warehouseNo
+                    WHERE {string.Join(" AND ", whereClauses)}
+                    ORDER BY COALESCE(priceRow.sfiyat_lastup_date, priceRow.sfiyat_create_date) DESC, stock.sto_kod ASC;
+                    """;
+
+                AddParameter(command, "@warehouseNo", warehouseNo);
+                AddParameter(command, "@priceListNo", priceListNo);
+                AddParameter(command, "@paymentPlanNo", paymentPlanNo);
+
+                var items = new List<TrendyolGoDirectPriceStockItem>();
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var rawQuantity = reader["Quantity"] is DBNull ? 0m : Convert.ToDecimal(reader["Quantity"], CultureInfo.InvariantCulture);
+                    var normalizedQuantity = (int)Math.Clamp(decimal.Floor(rawQuantity), 0, int.MaxValue);
+
+                    items.Add(new TrendyolGoDirectPriceStockItem(
+                        Barcode: Convert.ToString(reader["Barcode"], CultureInfo.InvariantCulture) ?? string.Empty,
+                        StockCode: Convert.ToString(reader["StockCode"], CultureInfo.InvariantCulture) ?? string.Empty,
+                        ProductName: Convert.ToString(reader["ProductName"], CultureInfo.InvariantCulture) ?? string.Empty,
+                        SellingPrice: Convert.ToDecimal(reader["SellingPrice"], CultureInfo.InvariantCulture),
+                        Quantity: normalizedQuantity,
+                        PriceChangedFlag: Convert.ToInt32(reader["PriceChanged"], CultureInfo.InvariantCulture) != 0,
+                        PriceLastUpDate: reader["PriceLastUpDate"] is DBNull ? null : Convert.ToDateTime(reader["PriceLastUpDate"], CultureInfo.InvariantCulture),
+                        WarehouseNo: warehouseNo,
+                        UnitPointer: Convert.ToInt32(reader["UnitPointer"], CultureInfo.InvariantCulture)));
+                }
+
+                return items;
+            }
+            finally
+            {
+                if (closeConnection)
+                {
+                    await connection.CloseAsync();
+                }
+            }
+        }
+        finally
+        {
+            mikroReadGate.Release();
+        }
+    }
     private async Task<CatalogPage> LoadCatalogPageAsync(
         long storeId, int page, int size, CancellationToken cancellationToken)
     {

@@ -1597,7 +1597,7 @@ public sealed class AyarlarService(
             .Where(item => item.PaymentGenus == 1 && item.PaymentName != null && item.PaymentName != string.Empty)
             .OrderBy(item => item.PaymentTypeNo)
             .Select(item => new TerminalBankCatalogItem(
-                item.PaymentName,
+                item.PaymentName ?? string.Empty,
                 item.PaymentTypeNo,
                 item.AccountCode ?? string.Empty))
             .ToArrayAsync(cancellationToken);

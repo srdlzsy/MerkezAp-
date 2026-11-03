@@ -3,6 +3,8 @@ using System.Data.Common;
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +15,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaHareketAktarim
 public sealed class KasaHareketAktarimiService(
     FurpaDbContext furpaDbContext,
     MikroDbContext mikroDbContext,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    IDocumentFlowService documentFlowService)
     : IKasaHareketAktarimiService
 {
     private const string DefaultFileRootPath = @"\\10.0.0.55\kasa\";
@@ -146,11 +149,28 @@ public sealed class KasaHareketAktarimiService(
     {
         ValidateDate(request.Date, nameof(request.Date));
 
+        var before = await GetMikroPosDocumentsAsync(
+            request.Date.Date,
+            request.Date.Date,
+            request.BranchNo,
+            cancellationToken);
+
         var message = await ExecuteProcedureAsync(
             "StokHareketYaz",
             cancellationToken,
             ("@Tarih", request.Date.Date),
             ("@Sube", request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty));
+
+        var after = await GetMikroPosDocumentsAsync(
+            request.Date.Date,
+            request.Date.Date,
+            request.BranchNo,
+            cancellationToken);
+        await RecordMikroDocumentChangesAsync(
+            FindDocumentDifference(after, before),
+            DocumentFlowStep.DocumentCreated,
+            "Kasa hareket aktarimi ile Mikro POS evragi olusturuldu.",
+            cancellationToken);
 
         return new KasaHareketProcedureResultDto(
             "StokHareketYaz",
@@ -174,6 +194,13 @@ public sealed class KasaHareketAktarimiService(
 
         var branchParam = request.BranchNo.Value.ToString(CultureInfo.InvariantCulture);
 
+        var requestedEndDate = request.EndDate?.Date ?? request.Date.Date;
+        var before = await GetMikroPosDocumentsAsync(
+            request.Date.Date,
+            requestedEndDate,
+            request.BranchNo,
+            cancellationToken);
+
         if (request.EndDate.HasValue && request.EndDate.Value.Date != request.Date.Date)
         {
             var (startDate, endDate) = NormalizeDateRange(request.Date, request.EndDate.Value);
@@ -183,6 +210,17 @@ public sealed class KasaHareketAktarimiService(
                 ("@Tarih1", startDate),
                 ("@Tarih2", endDate),
                 ("@Sube", branchParam));
+
+            var after = await GetMikroPosDocumentsAsync(
+                startDate,
+                endDate,
+                request.BranchNo,
+                cancellationToken);
+            await RecordMikroDocumentChangesAsync(
+                FindDocumentDifference(before, after),
+                DocumentFlowStep.DocumentDeleted,
+                "Kasa hareket geri alma islemi ile Mikro POS evragi silindi.",
+                cancellationToken);
 
             return new KasaHareketProcedureResultDto(
                 "StokHareketSilTarihAralikli",
@@ -198,6 +236,17 @@ public sealed class KasaHareketAktarimiService(
             ("@Tarih", request.Date.Date),
             ("@Sube", branchParam));
 
+        var remaining = await GetMikroPosDocumentsAsync(
+            request.Date.Date,
+            request.Date.Date,
+            request.BranchNo,
+            cancellationToken);
+        await RecordMikroDocumentChangesAsync(
+            FindDocumentDifference(before, remaining),
+            DocumentFlowStep.DocumentDeleted,
+            "Kasa hareket geri alma islemi ile Mikro POS evragi silindi.",
+            cancellationToken);
+
         return new KasaHareketProcedureResultDto(
             "StokHareketSil",
             message,
@@ -212,11 +261,28 @@ public sealed class KasaHareketAktarimiService(
     {
         var (startDate, endDate) = NormalizeDateRange(request.StartDate, request.EndDate);
 
+        var before = await GetMikroPosDocumentsAsync(
+            startDate,
+            endDate,
+            null,
+            cancellationToken);
+
         var message = await ExecuteProcedureAsync(
             "StokHareketYaz2",
             cancellationToken,
             ("@StartDate", startDate),
             ("@EndDate", endDate));
+
+        var after = await GetMikroPosDocumentsAsync(
+            startDate,
+            endDate,
+            null,
+            cancellationToken);
+        await RecordMikroDocumentChangesAsync(
+            FindDocumentDifference(after, before),
+            DocumentFlowStep.DocumentCreated,
+            "Tarih aralikli kasa hareket aktarimi ile Mikro POS evragi olusturuldu.",
+            cancellationToken);
 
         return new KasaHareketProcedureResultDto(
             "StokHareketYaz2",
@@ -236,10 +302,10 @@ public sealed class KasaHareketAktarimiService(
             throw new ArgumentException("Sube numarasi sifirdan buyuk olmalidir.", nameof(request.BranchNo));
         }
 
-        if (request.CashRegisterNo is < 0)
-        {
-            throw new ArgumentException("Kasa numarasi negatif olamaz.", nameof(request.CashRegisterNo));
-        }
+        var cashRegisterNos = NormalizeCashRegisterNos(request.CashRegisterNo, request.CashRegisterNos);
+        var cashRegisterNosParameter = cashRegisterNos.Length == 0
+            ? null
+            : string.Join(',', cashRegisterNos);
 
         const string sql = """
             SELECT
@@ -254,13 +320,31 @@ public sealed class KasaHareketAktarimiService(
                     WHERE canceled.Tarih >= @startDate
                       AND canceled.Tarih < @endDateExclusive
                       AND (@branchNo IS NULL OR TRY_CONVERT(int, canceled.Sube) = @branchNo)
-                      AND (@cashRegisterNo IS NULL OR TRY_CONVERT(int, canceled.KasaNo) = @cashRegisterNo)
+                      AND
+                      (
+                          @cashRegisterNos IS NULL
+                          OR EXISTS
+                          (
+                              SELECT 1
+                              FROM STRING_SPLIT(@cashRegisterNos, ',') AS selectedCashRegister
+                              WHERE TRY_CONVERT(int, selectedCashRegister.[value]) = TRY_CONVERT(int, canceled.KasaNo)
+                          )
+                      )
                 ) AS CanceledReceiptCount
             FROM dbo.PosFaturas AS invoice WITH (NOLOCK)
             WHERE invoice.Tarih >= @startDate
               AND invoice.Tarih < @endDateExclusive
               AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
-              AND (@cashRegisterNo IS NULL OR TRY_CONVERT(int, invoice.KasaNo) = @cashRegisterNo);
+              AND
+              (
+                  @cashRegisterNos IS NULL
+                  OR EXISTS
+                  (
+                      SELECT 1
+                      FROM STRING_SPLIT(@cashRegisterNos, ',') AS selectedCashRegister
+                      WHERE TRY_CONVERT(int, selectedCashRegister.[value]) = TRY_CONVERT(int, invoice.KasaNo)
+                  )
+              );
             """;
 
         var rows = await ExecuteReaderAsync(
@@ -271,7 +355,7 @@ public sealed class KasaHareketAktarimiService(
                 AddParameter(command, "@startDate", startDate);
                 AddParameter(command, "@endDateExclusive", endDate.AddDays(1));
                 AddParameter(command, "@branchNo", request.BranchNo);
-                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+                AddParameter(command, "@cashRegisterNos", cashRegisterNosParameter);
             },
             reader => new
             {
@@ -287,7 +371,7 @@ public sealed class KasaHareketAktarimiService(
             startDate,
             endDate,
             request.BranchNo,
-            request.CashRegisterNo,
+            cashRegisterNos.Length == 1 ? cashRegisterNos[0] : null,
             row?.Total ?? 0,
             row?.Transferred ?? 0,
             row?.Pending ?? 0,
@@ -411,6 +495,193 @@ public sealed class KasaHareketAktarimiService(
             Round(rows.Sum(row => row.Expense)),
             Round(rows.Sum(row => row.CheckAmount)),
             Round(rows.Sum(row => row.Difference)));
+    }
+
+    public async Task<KasaHareketSalesComparisonDto> GetSalesComparisonAsync(
+        KasaHareketSalesComparisonRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateDate(request.Date, nameof(request.Date));
+        if (request.BranchNo is <= 0)
+        {
+            throw new ArgumentException("Sube numarasi sifirdan buyuk olmalidir.", nameof(request.BranchNo));
+        }
+
+        var businessDate = request.Date.Date;
+        var nextDate = businessDate.AddDays(1);
+        const decimal tolerance = 0.01m;
+
+        const string mikroSql = """
+            WITH StockTotals AS (
+                SELECT
+                    ISNULL(movement.sth_cikis_depo_no, 0) AS BranchNo,
+                    SUM(
+                        ISNULL(movement.sth_tutar, 0)
+                      - ISNULL(movement.sth_iskonto1, 0)
+                      - ISNULL(movement.sth_iskonto2, 0)
+                      - ISNULL(movement.sth_iskonto3, 0)
+                      - ISNULL(movement.sth_iskonto4, 0)
+                      - ISNULL(movement.sth_iskonto5, 0)
+                      - ISNULL(movement.sth_iskonto6, 0)
+                      + ISNULL(movement.sth_vergi, 0)) AS StockMovementAmount
+                FROM dbo.STOK_HAREKETLERI AS movement WITH (READUNCOMMITTED)
+                WHERE movement.sth_tarih = @date
+                  AND movement.sth_tip = 1
+                  AND movement.sth_cins = 1
+                  AND movement.sth_evraktip IN (1, 4)
+                  AND movement.sth_normal_iade = 0
+                  AND ISNULL(movement.sth_evrakno_seri, '') NOT LIKE 'PSF%'
+                  AND (@branchNo IS NULL OR movement.sth_cikis_depo_no = @branchNo)
+                GROUP BY movement.sth_cikis_depo_no
+            ),
+            CurrentTotals AS (
+                SELECT
+                    CONVERT(int, movement.cha_create_user) AS BranchNo,
+                    SUM(ISNULL(movement.cha_meblag, 0)) AS CurrentAccountAmount
+                FROM dbo.CARI_HESAP_HAREKETLERI AS movement WITH (READUNCOMMITTED)
+                WHERE movement.cha_tarihi = @date
+                  AND movement.cha_evrak_tip = 63
+                  AND movement.cha_pos_hareketi IN (0, 1)
+                  AND ISNULL(movement.cha_evrakno_seri, '') NOT LIKE 'PSF%'
+                  AND (@branchNo IS NULL OR movement.cha_create_user = @branchNo)
+                GROUP BY movement.cha_create_user
+            ),
+            ZReportTotals AS (
+                SELECT
+                    TRY_CONVERT(int, movement.cha_kod) AS BranchNo,
+                    SUM(ISNULL(movement.cha_meblag, 0)) AS ZReportAmount
+                FROM dbo.CARI_HESAP_HAREKETLERI AS movement WITH (READUNCOMMITTED)
+                WHERE movement.cha_tarihi = @date
+                  AND movement.cha_tip = 1
+                  AND movement.cha_cinsi = 5
+                  AND movement.cha_evrakno_seri = 'X'
+                  AND NULLIF(LTRIM(RTRIM(ISNULL(movement.cha_special1, ''))), '') IS NULL
+                  AND TRY_CONVERT(int, movement.cha_kod) IS NOT NULL
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, movement.cha_kod) = @branchNo)
+                GROUP BY TRY_CONVERT(int, movement.cha_kod)
+            ),
+            Branches AS (
+                SELECT BranchNo FROM StockTotals
+                UNION
+                SELECT BranchNo FROM CurrentTotals
+                UNION
+                SELECT BranchNo FROM ZReportTotals
+            )
+            SELECT
+                branch.BranchNo,
+                ISNULL(stock.StockMovementAmount, 0) AS StockMovementAmount,
+                ISNULL(currentTotal.CurrentAccountAmount, 0) AS CurrentAccountAmount,
+                ISNULL(zReport.ZReportAmount, 0) AS ZReportAmount
+            FROM Branches AS branch
+            LEFT JOIN StockTotals AS stock ON stock.BranchNo = branch.BranchNo
+            LEFT JOIN CurrentTotals AS currentTotal ON currentTotal.BranchNo = branch.BranchNo
+            LEFT JOIN ZReportTotals AS zReport ON zReport.BranchNo = branch.BranchNo
+            WHERE branch.BranchNo > 100
+            ORDER BY branch.BranchNo
+            OPTION (RECOMPILE);
+            """;
+
+        var mikroRows = await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            mikroSql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+            },
+            reader => new SalesComparisonMikroSqlRow(
+                ReadInt(reader, "BranchNo"),
+                ReadDecimal(reader, "StockMovementAmount"),
+                ReadDecimal(reader, "CurrentAccountAmount"),
+                ReadDecimal(reader, "ZReportAmount")),
+            cancellationToken);
+
+        const string furpaSql = """
+            SELECT
+                TRY_CONVERT(int, invoice.Sube) AS BranchNo,
+                SUM(CASE
+                    WHEN ISNULL(invoice.BelgeTuru, 0) <> 4
+                        THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                    ELSE 0
+                END) AS TransferredAmount,
+                SUM(CASE
+                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4
+                        THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                    ELSE 0
+                END) AS ExpenseReceiptAmount
+            FROM dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
+            WHERE invoice.Tarih >= @date
+              AND invoice.Tarih < @nextDate
+              AND TRY_CONVERT(int, invoice.Sube) IS NOT NULL
+              AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
+            GROUP BY TRY_CONVERT(int, invoice.Sube)
+            ORDER BY BranchNo;
+            """;
+
+        var furpaRows = await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            furpaSql,
+            command =>
+            {
+                AddParameter(command, "@date", businessDate);
+                AddParameter(command, "@nextDate", nextDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+            },
+            reader => new SalesComparisonFurpaSqlRow(
+                ReadInt(reader, "BranchNo"),
+                ReadDecimal(reader, "TransferredAmount"),
+                ReadDecimal(reader, "ExpenseReceiptAmount")),
+            cancellationToken);
+
+        var mikroByBranch = mikroRows.ToDictionary(item => item.BranchNo);
+        var furpaByBranch = furpaRows.ToDictionary(item => item.BranchNo);
+        var branchNos = mikroByBranch.Keys
+            .Concat(furpaByBranch.Keys)
+            .Where(item => item > 100)
+            .Distinct()
+            .OrderBy(item => item)
+            .ToArray();
+        var branchNames = await GetBranchNamesAsync(branchNos, cancellationToken);
+
+        var rows = branchNos.Select(branchNo =>
+        {
+            mikroByBranch.TryGetValue(branchNo, out var mikro);
+            furpaByBranch.TryGetValue(branchNo, out var furpa);
+
+            return CreateSalesComparisonRow(
+                businessDate,
+                branchNo,
+                branchNames.GetValueOrDefault(branchNo, string.Empty),
+                mikro?.StockMovementAmount ?? 0m,
+                mikro?.CurrentAccountAmount ?? 0m,
+                furpa?.TransferredAmount ?? 0m,
+                furpa?.ExpenseReceiptAmount ?? 0m,
+                mikro?.ZReportAmount ?? 0m,
+                tolerance);
+        }).ToArray();
+
+        var summary = new KasaHareketSalesComparisonSummaryDto(
+            rows.Length,
+            rows.Count(item => item.HasDifference),
+            Round(rows.Sum(item => item.StockMovementAmount)),
+            Round(rows.Sum(item => item.CurrentAccountAmount)),
+            Round(rows.Sum(item => item.TransferredAmount)),
+            Round(rows.Sum(item => item.ExpenseReceiptAmount)),
+            Round(rows.Sum(item => item.ZReportAmount)),
+            Round(rows.Sum(item => item.ZReportTransferDifference)),
+            Round(rows.Sum(item => item.TransferredTurnoverDifference)),
+            Round(rows.Sum(item => item.CurrentStockDifference)),
+            Round(rows.Where(item => item.ZReportTransferDifference < -tolerance)
+                .Sum(item => item.ZReportTransferDifference)),
+            Round(rows.Where(item => item.ZReportTransferDifference > tolerance)
+                .Sum(item => item.ZReportTransferDifference)));
+
+        return new KasaHareketSalesComparisonDto(
+            businessDate,
+            request.BranchNo,
+            tolerance,
+            summary,
+            rows);
     }
 
     public async Task<KasaHareketCashSummaryComparisonDto> GetCashSummaryComparisonAsync(
@@ -868,6 +1139,12 @@ public sealed class KasaHareketAktarimiService(
         var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item => paymentTypeNos.Contains(item.PaymentTypeNo))
+            .Select(item => new
+            {
+                item.PaymentTypeNo,
+                PaymentName = item.PaymentName ?? string.Empty,
+                AccountCode = item.AccountCode ?? string.Empty
+            })
             .ToDictionaryAsync(item => item.PaymentTypeNo, cancellationToken);
 
         return rows
@@ -2124,6 +2401,92 @@ public sealed class KasaHareketAktarimiService(
             ("@CreateDate", promotion.CreateDate));
     }
 
+    private async Task<IReadOnlyCollection<MikroPosDocumentSnapshot>> GetMikroPosDocumentsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        int? branchNo,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                CAST(movement.sth_tarih AS date) AS DocumentDate,
+                ISNULL(movement.sth_cikis_depo_no, 0) AS BranchNo,
+                LTRIM(RTRIM(ISNULL(movement.sth_evrakno_seri, ''))) AS DocumentSerie,
+                ISNULL(movement.sth_evrakno_sira, 0) AS DocumentOrderNo,
+                COUNT_BIG(*) AS LineCount
+            FROM dbo.STOK_HAREKETLERI AS movement WITH (READUNCOMMITTED)
+            WHERE movement.sth_tarih >= @startDate
+              AND movement.sth_tarih < @endDateExclusive
+              AND movement.sth_pos_satis = 1
+              AND movement.sth_cikis_depo_no > 100
+              AND NULLIF(LTRIM(RTRIM(ISNULL(movement.sth_evrakno_seri, ''))), '') IS NOT NULL
+              AND ISNULL(movement.sth_evrakno_sira, 0) > 0
+              AND (@branchNo IS NULL OR movement.sth_cikis_depo_no = @branchNo)
+            GROUP BY
+                CAST(movement.sth_tarih AS date),
+                movement.sth_cikis_depo_no,
+                LTRIM(RTRIM(ISNULL(movement.sth_evrakno_seri, ''))),
+                movement.sth_evrakno_sira;
+            """;
+
+        return await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate.Date);
+                AddParameter(command, "@endDateExclusive", endDate.Date.AddDays(1));
+                AddParameter(command, "@branchNo", branchNo);
+            },
+            reader => new MikroPosDocumentSnapshot(
+                new MikroPosDocumentKey(
+                    ReadDateTime(reader, "DocumentDate").Date,
+                    ReadInt(reader, "BranchNo"),
+                    ReadString(reader, "DocumentSerie"),
+                    ReadInt(reader, "DocumentOrderNo")),
+                checked((int)ReadInt64(reader, "LineCount"))),
+            cancellationToken);
+    }
+
+    private async Task RecordMikroDocumentChangesAsync(
+        IReadOnlyCollection<MikroPosDocumentSnapshot> documents,
+        DocumentFlowStep step,
+        string operationMessage,
+        CancellationToken cancellationToken)
+    {
+        var requests = documents.OrderBy(item => item.Key.BranchNo)
+            .ThenBy(item => item.Key.Date)
+            .ThenBy(item => item.Key.DocumentSerie)
+            .ThenBy(item => item.Key.DocumentOrderNo)
+            .Select(document =>
+            {
+                var key = document.Key;
+                var documentNo = $"{key.DocumentSerie}/{key.DocumentOrderNo}";
+                var message = $"{operationMessage} Tarih: {key.Date:dd.MM.yyyy}, " +
+                              $"sube: {key.BranchNo}, evrak: {documentNo}, " +
+                              $"satir: {document.LineCount}.";
+
+                return new RecordDocumentFlowRequest(
+                    DocumentFlowKeys.CreateEntity(
+                        DocumentFlowType.StockMovementDocument,
+                        key.BranchNo,
+                        "POS",
+                        $"{key.Date:yyyyMMdd}:{key.DocumentSerie}:{key.DocumentOrderNo}"),
+                    DocumentFlowType.StockMovementDocument,
+                    key.BranchNo,
+                    null,
+                    key.DocumentSerie,
+                    key.DocumentOrderNo,
+                    step,
+                    DocumentFlowStatus.Succeeded,
+                    message,
+                    DocumentNo: documentNo);
+            })
+            .ToArray();
+
+        await documentFlowService.RecordManyAsync(requests, cancellationToken);
+    }
+
     private async Task<string> ExecuteProcedureAsync(
         string procedureName,
         CancellationToken cancellationToken,
@@ -2541,6 +2904,48 @@ public sealed class KasaHareketAktarimiService(
     private static decimal Round(decimal value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
+    internal static KasaHareketSalesComparisonRowDto CreateSalesComparisonRow(
+        DateTime date,
+        int branchNo,
+        string branchName,
+        decimal stockMovementAmount,
+        decimal currentAccountAmount,
+        decimal transferredAmount,
+        decimal expenseReceiptAmount,
+        decimal zReportAmount,
+        decimal tolerance)
+    {
+        stockMovementAmount = Round(stockMovementAmount);
+        currentAccountAmount = Round(currentAccountAmount);
+        transferredAmount = Round(transferredAmount);
+        expenseReceiptAmount = Round(expenseReceiptAmount);
+        zReportAmount = Round(zReportAmount);
+
+        var expenseExcludedAmount = Round(transferredAmount - expenseReceiptAmount);
+        var zReportTransferDifference = Round(
+            stockMovementAmount - (zReportAmount + expenseReceiptAmount));
+        var transferredTurnoverDifference = Round(transferredAmount - stockMovementAmount);
+        var currentStockDifference = Round(stockMovementAmount - currentAccountAmount);
+        var hasDifference = Math.Abs(zReportTransferDifference) > tolerance
+                            || Math.Abs(transferredTurnoverDifference) > tolerance
+                            || Math.Abs(currentStockDifference) > tolerance;
+
+        return new KasaHareketSalesComparisonRowDto(
+            date.Date,
+            branchNo,
+            branchName,
+            stockMovementAmount,
+            currentAccountAmount,
+            transferredAmount,
+            expenseExcludedAmount,
+            expenseReceiptAmount,
+            zReportAmount,
+            zReportTransferDifference,
+            transferredTurnoverDifference,
+            currentStockDifference,
+            hasDifference);
+    }
+
     private static IReadOnlyCollection<DateTime> EnumerateDates(DateTime startDate, DateTime endDate)
     {
         var dates = new List<DateTime>();
@@ -2566,6 +2971,41 @@ public sealed class KasaHareketAktarimiService(
         }
 
         return (normalizedStartDate, normalizedEndDate);
+    }
+
+    private static int[] NormalizeCashRegisterNos(
+        int? cashRegisterNo,
+        IReadOnlyCollection<int>? cashRegisterNos)
+    {
+        var normalized = new HashSet<int>();
+
+        if (cashRegisterNo.HasValue)
+        {
+            normalized.Add(cashRegisterNo.Value);
+        }
+
+        if (cashRegisterNos is not null)
+        {
+            foreach (var selectedCashRegisterNo in cashRegisterNos)
+            {
+                normalized.Add(selectedCashRegisterNo);
+            }
+        }
+
+        if (normalized.Any(item => item < 0))
+        {
+            throw new ArgumentException("Kasa numarasi negatif olamaz.", nameof(cashRegisterNos));
+        }
+
+        return normalized.OrderBy(item => item).ToArray();
+    }
+
+    private static MikroPosDocumentSnapshot[] FindDocumentDifference(
+        IReadOnlyCollection<MikroPosDocumentSnapshot> source,
+        IReadOnlyCollection<MikroPosDocumentSnapshot> comparison)
+    {
+        var comparisonKeys = comparison.Select(item => item.Key).ToHashSet();
+        return source.Where(item => !comparisonKeys.Contains(item.Key)).ToArray();
     }
 
     private static void ValidateDate(DateTime date, string parameterName)
@@ -3125,6 +3565,27 @@ public sealed class KasaHareketAktarimiService(
         decimal Expense,
         decimal CheckAmount,
         decimal Difference);
+
+    private sealed record SalesComparisonMikroSqlRow(
+        int BranchNo,
+        decimal StockMovementAmount,
+        decimal CurrentAccountAmount,
+        decimal ZReportAmount);
+
+    private sealed record SalesComparisonFurpaSqlRow(
+        int BranchNo,
+        decimal TransferredAmount,
+        decimal ExpenseReceiptAmount);
+
+    private sealed record MikroPosDocumentKey(
+        DateTime Date,
+        int BranchNo,
+        string DocumentSerie,
+        int DocumentOrderNo);
+
+    private sealed record MikroPosDocumentSnapshot(
+        MikroPosDocumentKey Key,
+        int LineCount);
 
     private sealed record CashSummarySqlRow(
         DateTime Date,

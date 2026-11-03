@@ -160,6 +160,29 @@ public sealed class TrendyolGoController(
             request.StoreId, request.PreviewHash, request.ResolveMode(),
             request.Barcodes, cancellationToken));
 
+    [HttpGet("price-stock/direct-preview")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(TrendyolGoDirectPriceStockPreview), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoDirectPriceStockPreview>> PreviewDirectPriceStock(
+        [FromQuery, Range(1, long.MaxValue)] long storeId,
+        [FromQuery, RegularExpression("^(?i:all|changed)$")] string mode = "changed",
+        [FromQuery] DateTime? sinceDate = null,
+        [FromQuery] bool? onlyFlaggedChanged = null,
+        [FromQuery, MaxLength(100)] string? search = null,
+        [FromQuery, Range(1, 5000)] int take = 500,
+        CancellationToken cancellationToken = default) =>
+        Ok(await priceStockWorkbench.DirectPreviewAsync(
+            new TrendyolGoDirectPriceStockQueryRequest(storeId, mode, sinceDate, onlyFlaggedChanged, search, take),
+            cancellationToken));
+
+    [HttpPost("price-stock/direct-dispatch")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoDirectPriceStockDispatchResult), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoDirectPriceStockDispatchResult>> DispatchDirectPriceStock(
+        [FromBody] TrendyolGoDirectPriceStockDispatchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await priceStockWorkbench.DirectDispatchAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpGet("catalog/preview")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(TrendyolGoCatalogPreview), StatusCodes.Status200OK)]
@@ -439,4 +462,24 @@ public sealed class TrendyolGoCatalogDispatchHttpRequest
 
     [MaxLength(10000)]
     public string[] Barcodes { get; init; } = [];
+}
+
+public sealed class TrendyolGoDirectPriceStockDispatchHttpRequest
+{
+    public long[] StoreIds { get; init; } = [];
+
+    public bool AllStores { get; init; }
+
+    [RegularExpression("^(?i:all|changed)$")]
+    public string Mode { get; init; } = "changed";
+
+    public DateTime? SinceDate { get; init; }
+
+    public bool? OnlyFlaggedChanged { get; init; }
+
+    [MaxLength(10000)]
+    public string[] Barcodes { get; init; } = [];
+
+    public TrendyolGoDirectPriceStockDispatchRequest ToApplicationRequest() =>
+        new(StoreIds, AllStores, Mode, SinceDate, OnlyFlaggedChanged, Barcodes);
 }

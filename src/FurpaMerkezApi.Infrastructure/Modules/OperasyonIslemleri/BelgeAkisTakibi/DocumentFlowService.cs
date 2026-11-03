@@ -152,6 +152,69 @@ public sealed class DocumentFlowService(
         }
     }
 
+    public async Task RecordManyAsync(
+        IReadOnlyCollection<RecordDocumentFlowRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        if (!trackingOptions.CurrentValue.Enabled || requests.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var flowKeys = requests.Select(item => item.FlowKey).Distinct().ToArray();
+            var existingFlows = await authDbContext.DocumentFlows
+                .Include(item => item.Events)
+                .Where(item => flowKeys.Contains(item.FlowKey))
+                .ToDictionaryAsync(item => item.FlowKey, cancellationToken);
+
+            foreach (var request in requests)
+            {
+                if (!existingFlows.TryGetValue(request.FlowKey, out var flow))
+                {
+                    flow = new DocumentFlow(
+                        Guid.NewGuid(),
+                        request.FlowKey,
+                        request.DocumentType,
+                        request.SourceWarehouseNo,
+                        request.TargetWarehouseNo,
+                        request.DocumentSerie,
+                        request.DocumentOrderNo,
+                        clock.UtcNow);
+                    authDbContext.DocumentFlows.Add(flow);
+                    existingFlows.Add(request.FlowKey, flow);
+                }
+                else if (ShouldSkipSuccessfulEvent(flow, request))
+                {
+                    continue;
+                }
+
+                var flowEvent = flow.Record(
+                    request.Step,
+                    request.Status,
+                    request.Message,
+                    request.Error,
+                    request.ChangedByUserId,
+                    clock.UtcNow,
+                    request.DocumentNo,
+                    request.ExternalDocumentNo,
+                    request.ExternalUuid,
+                    request.TargetWarehouseNo);
+                authDbContext.DocumentFlowEvents.Add(flowEvent);
+            }
+
+            await authDbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Batch document flow tracking failed. RequestCount={RequestCount}",
+                requests.Count);
+        }
+    }
+
     private async Task RecordCoreAsync(
         RecordDocumentFlowRequest request,
         CancellationToken cancellationToken)
@@ -172,7 +235,8 @@ public sealed class DocumentFlowService(
                 clock.UtcNow);
             authDbContext.DocumentFlows.Add(flow);
         }
-        else if (IsIdempotentSuccessfulStep(request)
+        else if (flow.CurrentStep != DocumentFlowStep.DocumentDeleted
+                 && IsIdempotentSuccessfulStep(request)
                  && await authDbContext.DocumentFlowEvents.AnyAsync(
                      item => item.DocumentFlowId == flow.Id
                          && item.Step == request.Step
@@ -199,6 +263,17 @@ public sealed class DocumentFlowService(
 
         await authDbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private static bool ShouldSkipSuccessfulEvent(
+        DocumentFlow flow,
+        RecordDocumentFlowRequest request) =>
+        flow.CurrentStep != DocumentFlowStep.DocumentDeleted
+        && IsIdempotentSuccessfulStep(request)
+        && flow.Events.Any(item =>
+            item.Step == request.Step
+            && item.Status == DocumentFlowStatus.Succeeded
+            && (request.Step != DocumentFlowStep.AxataOrderSent
+                || item.Message == request.Message));
 
     private static bool IsIdempotentSuccessfulStep(RecordDocumentFlowRequest request) =>
         request.Status == DocumentFlowStatus.Succeeded

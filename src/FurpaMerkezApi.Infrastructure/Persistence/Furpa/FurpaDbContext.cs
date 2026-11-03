@@ -136,8 +136,8 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
             entity.Property(item => item.Id).ValueGeneratedOnAdd();
             entity.Property(item => item.CreateDate).HasColumnType("datetime");
             entity.Property(item => item.UpdateDate).HasColumnType("datetime");
-            entity.Property(item => item.PaymentName).HasMaxLength(100);
-            entity.Property(item => item.AccountCode).HasMaxLength(20);
+            entity.Property(item => item.PaymentName).HasMaxLength(100).IsRequired(false);
+            entity.Property(item => item.AccountCode).HasMaxLength(20).IsRequired(false);
             entity.HasAlternateKey(item => item.PaymentTypeNo)
                 .HasName("UQ_PaymentTypes_PaymentTypeNo");
         });

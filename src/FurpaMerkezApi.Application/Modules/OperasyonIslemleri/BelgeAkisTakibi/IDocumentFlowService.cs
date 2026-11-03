@@ -16,6 +16,16 @@ public interface IDocumentFlowService
     Task RecordAsync(
         RecordDocumentFlowRequest request,
         CancellationToken cancellationToken);
+
+    async Task RecordManyAsync(
+        IReadOnlyCollection<RecordDocumentFlowRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        foreach (var request in requests)
+        {
+            await RecordAsync(request, cancellationToken);
+        }
+    }
 }
 
 public sealed record DocumentFlowListRequest(

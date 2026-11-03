@@ -14,9 +14,9 @@ public sealed class PaymentTypeDefinitionEntity
 
     public int PaymentTypeNo { get; set; }
 
-    public string PaymentName { get; set; } = string.Empty;
+    public string? PaymentName { get; set; }
 
     public int PaymentGenus { get; set; }
 
-    public string AccountCode { get; set; } = string.Empty;
+    public string? AccountCode { get; set; }
 }
