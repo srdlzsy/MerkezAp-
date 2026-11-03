@@ -25512,7 +25512,7 @@ Bu bolum insan tarafindan okunacak ozet katalogdur. Tam ve surumlenmis alan, tip
 - `KasaHareketImportHttpRequest`: `StartDate`, `EndDate`, `Branches`, `CashRegisters`, `FileRootPath`, `SkipExisting`, `DryRun`
 - `KasaHareketScheduledImportHttpRequest`: `Date`, `AddDay`, `FileRootPath`, `SkipExisting`, `DryRun`
 - `KasaHareketDeleteStagingHttpRequest`: `Date`, `BranchNo`, `CashRegisterNo`
-- `KasaHareketMikroTransferHttpRequest`: `Date`, `BranchNo`
+- `KasaHareketMikroTransferHttpRequest`: `Date`, `BranchNo`, `EndDate`
 - `KasaHareketMikroTransferRangeHttpRequest`: `StartDate`, `EndDate`
 - `KasaHareketReportHttpRequest`: `Date`, `BranchNo`, `CashRegisterNo`
 
@@ -36052,6 +36052,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `branchNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
 | `date` | string (date-time) | Evet |  |
+| `endDate` | string (date-time) | Hayir | nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketMikroTransferRangeHttpRequest
 

@@ -166,11 +166,31 @@ public sealed class KasaHareketAktarimiService(
     {
         ValidateDate(request.Date, nameof(request.Date));
 
+        var branchParam = request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+        if (request.EndDate.HasValue && request.EndDate.Value.Date != request.Date.Date)
+        {
+            var (startDate, endDate) = NormalizeDateRange(request.Date, request.EndDate.Value);
+            var rangeMessage = await ExecuteProcedureAsync(
+                "StokHareketSilTarihAralikli",
+                cancellationToken,
+                ("@Tarih1", startDate),
+                ("@Tarih2", endDate),
+                ("@Sube", branchParam));
+
+            return new KasaHareketProcedureResultDto(
+                "StokHareketSilTarihAralikli",
+                rangeMessage,
+                startDate,
+                request.BranchNo,
+                null);
+        }
+
         var message = await ExecuteProcedureAsync(
             "StokHareketSil",
             cancellationToken,
             ("@Tarih", request.Date.Date),
-            ("@Sube", request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty));
+            ("@Sube", branchParam));
 
         return new KasaHareketProcedureResultDto(
             "StokHareketSil",
@@ -1446,7 +1466,7 @@ public sealed class KasaHareketAktarimiService(
             Quantity = quantity,
             GrossAmount = grossAmount,
             UnitPrice = quantity == 0m ? 0m : Round(grossAmount / quantity),
-            TaxRate = MapTaxRate(ParseInt(SafeSubstring(amountToken, 0, Math.Min(2, amountToken.Length)))),
+            TaxRate = MapTaxRate(ParseInt(SafeSubstring(amountToken, 0, Math.Min(2, amountToken.Length))), receipt.Date),
             Status = code == "IPT" ? (byte)1 : (byte)0,
             CashRegisterNo = receipt.CashRegisterNo,
             BranchNo = receipt.BranchNo,
@@ -1500,24 +1520,54 @@ public sealed class KasaHareketAktarimiService(
             return;
         }
 
-        var targetLine = state.LastLine ?? receipt.Lines.LastOrDefault();
+        var discountToken = Token(tokens, 4);
+        var isInvoiceDiscount = discountToken.StartsWith("TOP", StringComparison.OrdinalIgnoreCase);
 
-        if (targetLine is not null)
+        if (!isInvoiceDiscount)
         {
-            ApplyLineDiscount(targetLine, discount);
+            var targetLine = state.LastLine ?? receipt.Lines.LastOrDefault();
+            if (targetLine is not null)
+            {
+                ApplyLineDiscount(targetLine, discount);
+                receipt.InvoiceDiscount += discount;
+                return;
+            }
+        }
+
+        var candidateLines = receipt.Lines.Where(l => l.Status == 0 && l.GrossAmount > 0m).ToList();
+        if (candidateLines.Count == 0)
+        {
+            candidateLines = receipt.Lines.Where(l => l.GrossAmount > 0m).ToList();
+        }
+
+        var totalGross = candidateLines.Sum(l => l.GrossAmount);
+        if (candidateLines.Count == 0 || totalGross <= 0m)
+        {
+            var fallbackLine = state.LastLine ?? receipt.Lines.LastOrDefault();
+            if (fallbackLine is not null)
+            {
+                ApplyLineDiscount(fallbackLine, discount);
+            }
             receipt.InvoiceDiscount += discount;
             return;
         }
 
-        var total = receipt.Lines.Sum(item => item.GrossAmount);
-        if (total == 0m)
+        var distributedDiscount = 0m;
+        for (var i = 0; i < candidateLines.Count; i++)
         {
-            return;
-        }
+            var line = candidateLines[i];
+            decimal lineDiscount;
 
-        foreach (var line in receipt.Lines)
-        {
-            var lineDiscount = Round(discount * line.GrossAmount / total);
+            if (i == candidateLines.Count - 1)
+            {
+                lineDiscount = discount - distributedDiscount;
+            }
+            else
+            {
+                lineDiscount = Round(discount * line.GrossAmount / totalGross);
+                distributedDiscount += lineDiscount;
+            }
+
             ApplyLineDiscount(line, lineDiscount);
         }
 
@@ -2215,10 +2265,12 @@ public sealed class KasaHareketAktarimiService(
 
             switch (line.TaxRate)
             {
+                case 20:
                 case 18:
                     receipt.TaxBase18 += netAmount * factor;
                     receipt.TaxTotal18 += taxAmount * factor;
                     break;
+                case 10:
                 case 8:
                     receipt.TaxBase08 += netAmount * factor;
                     receipt.TaxTotal08 += taxAmount * factor;
@@ -2295,15 +2347,20 @@ public sealed class KasaHareketAktarimiService(
             _ => 0
         };
 
-    private static int MapTaxRate(int taxCode) =>
-        taxCode switch
+    private static readonly DateTime VatRateChangeDate = new(2023, 7, 10);
+
+    private static int MapTaxRate(int taxCode, DateTime receiptDate = default)
+    {
+        var isPostReform = receiptDate == default || receiptDate.Date >= VatRateChangeDate;
+        return taxCode switch
         {
-            1 => 18,
-            2 => 8,
+            1 => isPostReform ? 20 : 18,
+            2 => isPostReform ? 10 : 8,
             3 => 1,
             4 => 0,
             _ => 0
         };
+    }
 
     private static DateTime ParseDate(string value)
     {

@@ -10426,6 +10426,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `branchNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
 | `date` | string (date-time) | Evet |  |
+| `endDate` | string (date-time) | Hayir | nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketMikroTransferRangeHttpRequest
 

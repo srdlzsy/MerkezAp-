@@ -97,7 +97,7 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
         [FromBody] KasaHareketMikroTransferHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.TransferMovementsToMikroAsync(
-            new KasaHareketMikroTransferRequest(request.Date!.Value, request.BranchNo),
+            new KasaHareketMikroTransferRequest(request.Date!.Value, request.BranchNo, request.EndDate),
             cancellationToken));
 
     [HttpDelete("mikro")]
@@ -108,7 +108,7 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
         [FromBody] KasaHareketMikroTransferHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.DeleteMovementsFromMikroAsync(
-            new KasaHareketMikroTransferRequest(request.Date!.Value, request.BranchNo),
+            new KasaHareketMikroTransferRequest(request.Date!.Value, request.BranchNo, request.EndDate),
             cancellationToken));
 
     [HttpPost("mikro/aralik-aktar")]
@@ -364,6 +364,8 @@ public sealed class KasaHareketMikroTransferHttpRequest
 {
     [Required]
     public DateTime? Date { get; init; }
+
+    public DateTime? EndDate { get; init; }
 
     [Range(1, int.MaxValue)]
     public int? BranchNo { get; init; }

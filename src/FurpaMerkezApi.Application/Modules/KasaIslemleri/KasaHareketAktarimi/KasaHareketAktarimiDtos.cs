@@ -35,7 +35,8 @@ public sealed record KasaHareketDeleteStagingRequest(
 
 public sealed record KasaHareketMikroTransferRequest(
     DateTime Date,
-    int? BranchNo);
+    int? BranchNo,
+    DateTime? EndDate = null);
 
 public sealed record KasaHareketMikroTransferRangeRequest(
     DateTime StartDate,
