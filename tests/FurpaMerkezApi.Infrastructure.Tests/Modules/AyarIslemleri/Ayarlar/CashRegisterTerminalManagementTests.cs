@@ -473,7 +473,7 @@ public sealed class CashRegisterTerminalManagementTests
     }
 
     private static AyarlarService CreateService(TestContexts contexts) =>
-        new(contexts.Furpa, contexts.FurpaB2B, contexts.MikroWrite);
+        new(contexts.Furpa, contexts.FurpaB2B);
 
     private static async Task SeedCashRegisterAsync(TestContexts contexts)
     {
@@ -519,13 +519,13 @@ public sealed class CashRegisterTerminalManagementTests
                 .UseInMemoryDatabase($"terminal-mikro-{suffix}")
                 .Options));
 
-        contexts.MikroWrite.PaymentTypes.AddRange(
-            new PaymentTypeEntity { PaymentTypeNo = 1, PaymentName = "Akbank", PaymentGenus = 1, AccountCode = "0001" },
-            new PaymentTypeEntity { PaymentTypeNo = 4, PaymentName = "TEB", PaymentGenus = 1, AccountCode = "0007" },
-            new PaymentTypeEntity { PaymentTypeNo = 5, PaymentName = "Is Bankasi", PaymentGenus = 1, AccountCode = "0004" },
-            new PaymentTypeEntity { PaymentTypeNo = 6, PaymentName = "Yapi Kredi", PaymentGenus = 1, AccountCode = "0011" },
-            new PaymentTypeEntity { PaymentTypeNo = 7, PaymentName = "Halkbank", PaymentGenus = 1, AccountCode = "0012" });
-        contexts.MikroWrite.SaveChanges();
+        contexts.Furpa.PaymentTypes.AddRange(
+            new PaymentTypeDefinitionEntity { PaymentTypeNo = 1, PaymentName = "Akbank", PaymentGenus = 1, AccountCode = "0001" },
+            new PaymentTypeDefinitionEntity { PaymentTypeNo = 4, PaymentName = "TEB", PaymentGenus = 1, AccountCode = "0007" },
+            new PaymentTypeDefinitionEntity { PaymentTypeNo = 5, PaymentName = "Is Bankasi", PaymentGenus = 1, AccountCode = "0004" },
+            new PaymentTypeDefinitionEntity { PaymentTypeNo = 6, PaymentName = "Yapi Kredi", PaymentGenus = 1, AccountCode = "0011" },
+            new PaymentTypeDefinitionEntity { PaymentTypeNo = 7, PaymentName = "Halkbank", PaymentGenus = 1, AccountCode = "0012" });
+        contexts.Furpa.SaveChanges();
 
         return contexts;
     }

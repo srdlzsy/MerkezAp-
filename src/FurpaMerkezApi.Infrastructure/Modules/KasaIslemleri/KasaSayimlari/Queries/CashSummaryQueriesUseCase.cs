@@ -2,12 +2,15 @@ using System.Data;
 using System.Data.Common;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Queries;
+using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaSayimlari.Queries;
 
-public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
+public sealed class CashSummaryQueriesUseCase(
+    MikroDbContext mikroDbContext,
+    FurpaDbContext furpaDbContext)
     : ICashSummaryQueriesUseCase
 {
     public async Task<IReadOnlyCollection<CashSummaryReportItemDto>> GetReportAsync(
@@ -191,18 +194,12 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
 
         const string sql = """
             SELECT
-                CASE
-                    WHEN s.PaymentTypeID = 500 THEN N'Nakit'
-                    ELSE COALESCE(pt.PaymentName, '')
-                END AS TypeName,
                 s.PaymentTypeID AS PaymentTypeId,
-                COALESCE(pt.AccountCode, '') AS AccountCode,
                 s.SlipNumber,
                 s.Amount,
                 COALESCE(s.TerminalId, '') AS TerminalId,
                 COALESCE(s.Description, '') AS Description
             FROM Summaries s
-            LEFT JOIN PaymentTypes pt ON s.PaymentTypeID = pt.PaymentTypeNo
             WHERE s.BranchNo = @warehouseNo
               AND s.DocumentSerie = @documentSerie
               AND s.DocumentOrderNo = @documentOrderNo
@@ -213,7 +210,7 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
                 s.Id;
             """;
 
-        return await ExecuteReaderAsync(
+        var rows = await ExecuteReaderAsync(
             sql,
             command =>
             {
@@ -221,19 +218,42 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
                 AddParameter(command, "@documentSerie", request.DocumentSerie);
                 AddParameter(command, "@documentOrderNo", request.DocumentOrderNo);
             },
-            reader => new CashSummaryDetailItemDto(
-                ReadString(reader, "TypeName"),
-                ReadString(reader, "TypeName"),
+            reader => new CashSummaryDetailSource(
                 ReadInt(reader, "PaymentTypeId"),
-                ReadInt(reader, "PaymentTypeId"),
-                ReadString(reader, "AccountCode"),
                 ReadString(reader, "TerminalId"),
-                ResolveDetailSource(ReadInt(reader, "PaymentTypeId")),
-                ResolveDetailCategory(ReadInt(reader, "PaymentTypeId")),
                 ReadInt(reader, "SlipNumber"),
                 Round(ReadDouble(reader, "Amount")),
                 ReadString(reader, "Description")),
             cancellationToken);
+
+        var paymentTypeNos = rows
+            .Select(item => item.PaymentTypeId)
+            .Distinct()
+            .ToArray();
+        var paymentTypes = await furpaDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item => paymentTypeNos.Contains(item.PaymentTypeNo))
+            .ToDictionaryAsync(item => item.PaymentTypeNo, cancellationToken);
+
+        return rows
+            .Select(item =>
+            {
+                paymentTypes.TryGetValue(item.PaymentTypeId, out var paymentType);
+                var paymentName = paymentType?.PaymentName ?? string.Empty;
+                return new CashSummaryDetailItemDto(
+                    paymentName,
+                    paymentName,
+                    item.PaymentTypeId,
+                    item.PaymentTypeId,
+                    paymentType?.AccountCode ?? string.Empty,
+                    item.TerminalId,
+                    ResolveDetailSource(item.PaymentTypeId),
+                    ResolveDetailCategory(item.PaymentTypeId),
+                    item.SlipNumber,
+                    item.Amount,
+                    item.Description);
+            })
+            .ToArray();
     }
 
     public async Task<CashSummaryZReportTotalDto?> GetZReportTotalAsync(
@@ -492,4 +512,11 @@ public sealed class CashSummaryQueriesUseCase(MikroDbContext mikroDbContext)
 
     private static double Round(double value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private sealed record CashSummaryDetailSource(
+        int PaymentTypeId,
+        string TerminalId,
+        int SlipNumber,
+        double Amount,
+        string Description);
 }

@@ -13,4 +13,6 @@ public sealed class CashRegisterDetailEntity
     public string? MerchantNo { get; set; }
 
     public int? CashNo { get; set; }
+
+    public int? PaymentTypeNo { get; set; }
 }

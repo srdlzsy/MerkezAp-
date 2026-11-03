@@ -183,27 +183,36 @@ public sealed class CashSummaryLookupsUseCase(
                 request.BranchNo,
                 cancellationToken);
 
-        var terminalBanks = terminals
+        var terminalPaymentTypeNos = terminals
+            .Where(item => item.PaymentTypeNo.HasValue)
+            .Select(item => item.PaymentTypeNo!.Value)
+            .Distinct()
+            .ToArray();
+        var legacyTerminalBanks = terminals
+            .Where(item => !item.PaymentTypeNo.HasValue)
             .Select(item => item.Bank)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Select(item => item.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        if (terminalBanks.Length == 0)
+        if (terminalPaymentTypeNos.Length == 0 && legacyTerminalBanks.Length == 0)
         {
             return [];
         }
 
-        var paymentTypeRows = await mikroDbContext.PaymentTypes
+        var paymentTypeRows = await furpaDbContext.PaymentTypes
             .AsNoTracking()
-            .Where(item => item.PaymentGenus == 1 && terminalBanks.Contains(item.PaymentName ?? string.Empty))
+            .Where(item =>
+                item.PaymentGenus == 1 &&
+                (terminalPaymentTypeNos.Contains(item.PaymentTypeNo) ||
+                 legacyTerminalBanks.Contains(item.PaymentName)))
             .Select(item => new
             {
-                PaymentName = item.PaymentName ?? string.Empty,
+                item.PaymentName,
                 item.PaymentTypeNo,
                 item.PaymentGenus,
-                AccountCode = item.AccountCode ?? string.Empty
+                item.AccountCode
             })
             .ToArrayAsync(cancellationToken);
 
@@ -212,9 +221,11 @@ public sealed class CashSummaryLookupsUseCase(
             StringComparer.OrdinalIgnoreCase);
 
         var paymentTypes = terminals
-            .Where(item => !string.IsNullOrWhiteSpace(item.Bank))
+            .Where(item => item.PaymentTypeNo.HasValue || !string.IsNullOrWhiteSpace(item.Bank))
             .SelectMany(
-                cashRegister => paymentTypesByName[cashRegister.Bank.Trim()],
+                cashRegister => cashRegister.PaymentTypeNo.HasValue
+                    ? paymentTypeRows.Where(item => item.PaymentTypeNo == cashRegister.PaymentTypeNo.Value)
+                    : paymentTypesByName[cashRegister.Bank.Trim()],
                 (cashRegister, paymentType) => new
                 {
                     paymentType.PaymentName,
@@ -246,7 +257,7 @@ public sealed class CashSummaryLookupsUseCase(
     public async Task<IReadOnlyCollection<PaymentTypeItemDto>> ListOnlineSalesPaymentTypesAsync(
         CancellationToken cancellationToken)
     {
-        var paymentTypes = await mikroDbContext.PaymentTypes
+        var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item =>
                 item.PaymentGenus == 5 ||
@@ -311,7 +322,8 @@ public sealed class CashSummaryLookupsUseCase(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .ToArrayAsync(cancellationToken);
 
         return rows
@@ -323,7 +335,7 @@ public sealed class CashSummaryLookupsUseCase(
         Func<string?, bool> predicate,
         CancellationToken cancellationToken)
     {
-        var paymentTypes = await mikroDbContext.PaymentTypes
+        var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .OrderBy(item => item.PaymentName)
             .Select(item => new
@@ -352,7 +364,7 @@ public sealed class CashSummaryLookupsUseCase(
         int paymentGenus,
         CancellationToken cancellationToken)
     {
-        var paymentTypes = await mikroDbContext.PaymentTypes
+        var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item => item.PaymentGenus == paymentGenus)
             .OrderBy(item => item.PaymentName)
@@ -382,7 +394,7 @@ public sealed class CashSummaryLookupsUseCase(
         int end,
         CancellationToken cancellationToken)
     {
-        var paymentTypes = await mikroDbContext.PaymentTypes
+        var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item => item.PaymentTypeNo >= start && item.PaymentTypeNo <= end)
             .OrderBy(item => item.PaymentTypeNo)
@@ -433,7 +445,8 @@ public sealed class CashSummaryLookupsUseCase(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .FirstOrDefaultAsync(cancellationToken);
 
     private async Task<CashRegisterTerminalSource?> GetFurpaCashRegisterDetailByCashNoAsync(
@@ -455,7 +468,8 @@ public sealed class CashSummaryLookupsUseCase(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .ToArrayAsync(cancellationToken);
 
         var financeNumbers = details
@@ -493,7 +507,8 @@ public sealed class CashSummaryLookupsUseCase(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .ToArrayAsync(cancellationToken);
 
     private async Task<CashRegisterTerminalSource[]> ListFurpaCashRegisterDetailsByCashNoAsync(
@@ -515,7 +530,8 @@ public sealed class CashSummaryLookupsUseCase(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .ToArrayAsync(cancellationToken);
 
     private static CashRegisterDetailDto ToCashRegisterDetailDto(CashRegisterTerminalSource item) =>
@@ -533,5 +549,6 @@ public sealed class CashSummaryLookupsUseCase(
         string Bank,
         string TerminalId,
         string MerchantNo,
-        int? CashNo);
+        int? CashNo,
+        int? PaymentTypeNo);
 }

@@ -9,8 +9,6 @@ using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models;
 using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B;
 using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B.Models;
-using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
-using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
 using FurpaCashRegisterDetailEntity = FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models.CashRegisterDetailEntity;
 
@@ -18,8 +16,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
 
 public sealed class AyarlarService(
     FurpaDbContext furpaDbContext,
-    FurpaB2BDbContext furpaB2BDbContext,
-    MikroWriteDbContext mikroWriteDbContext)
+    FurpaB2BDbContext furpaB2BDbContext)
     : IAyarlarService
 {
     private const int DevicePingTimeoutMilliseconds = 1000;
@@ -374,7 +371,8 @@ public sealed class AyarlarService(
                         Bank = item.Bank,
                         TerminalId = item.TerminalId,
                         MerchantNo = item.MerchantNo,
-                        CashNo = request.CashNo
+                        CashNo = request.CashNo,
+                        PaymentTypeNo = item.PaymentTypeNo
                     })
                     .ToArray();
 
@@ -480,7 +478,8 @@ public sealed class AyarlarService(
             Bank = terminal.Bank,
             TerminalId = terminal.TerminalId,
             MerchantNo = terminal.MerchantNo,
-            CashNo = cashNo
+            CashNo = cashNo,
+            PaymentTypeNo = terminal.PaymentTypeNo
         };
 
         await furpaDbContext.CashRegisterDetails.AddAsync(entity, cancellationToken);
@@ -1324,7 +1323,7 @@ public sealed class AyarlarService(
     private async Task<IReadOnlyCollection<TerminalBankOptionDto>> ListTerminalBankOptionsAsync(
         CancellationToken cancellationToken)
     {
-        var paymentTypes = await mikroWriteDbContext.PaymentTypes
+        var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item => item.PaymentGenus == 1)
             .OrderBy(item => item.PaymentName)
@@ -1574,7 +1573,7 @@ public sealed class AyarlarService(
     {
         var bankCatalog = await ListTerminalBankCatalogAsync(cancellationToken);
         return terminals
-            .Select(item => item with { Bank = ResolveCanonicalBankName(item.Bank, bankCatalog) })
+            .Select(item => ApplyCanonicalPaymentType(item, bankCatalog))
             .ToArray();
     }
 
@@ -1583,12 +1582,12 @@ public sealed class AyarlarService(
         CancellationToken cancellationToken)
     {
         var bankCatalog = await ListTerminalBankCatalogAsync(cancellationToken);
-        return terminal with { Bank = ResolveCanonicalBankName(terminal.Bank, bankCatalog) };
+        return ApplyCanonicalPaymentType(terminal, bankCatalog);
     }
 
     private async Task<IReadOnlyCollection<TerminalBankCatalogItem>> ListTerminalBankCatalogAsync(
         CancellationToken cancellationToken) =>
-        await mikroWriteDbContext.PaymentTypes
+        await furpaDbContext.PaymentTypes
             .AsNoTracking()
             .Where(item => item.PaymentGenus == 1 && item.PaymentName != null && item.PaymentName != string.Empty)
             .OrderBy(item => item.PaymentTypeNo)
@@ -1598,22 +1597,26 @@ public sealed class AyarlarService(
                 item.AccountCode ?? string.Empty))
             .ToArrayAsync(cancellationToken);
 
-    private static string ResolveCanonicalBankName(
-        string bank,
+    private static NormalizedTerminalRequest ApplyCanonicalPaymentType(
+        NormalizedTerminalRequest terminal,
         IReadOnlyCollection<TerminalBankCatalogItem> bankCatalog)
     {
-        var normalizedBank = NormalizeCatalogKey(bank);
+        var normalizedBank = NormalizeCatalogKey(terminal.Bank);
         var match = bankCatalog.FirstOrDefault(
             item => NormalizeCatalogKey(item.PaymentName) == normalizedBank);
 
         if (match is null)
         {
             throw new ArgumentException(
-                $"'{bank}' bankasi Mikro PaymentTypes odeme katalogunda bulunamadi. Bankayi listeden secin.",
-                nameof(bank));
+                $"'{terminal.Bank}' bankasi Furpa PaymentTypes odeme katalogunda bulunamadi. Bankayi listeden secin.",
+                nameof(terminal.Bank));
         }
 
-        return match.PaymentName.Trim();
+        return terminal with
+        {
+            Bank = match.PaymentName.Trim(),
+            PaymentTypeNo = match.PaymentTypeNo
+        };
     }
 
     private static string NormalizeCatalogKey(string value) =>
@@ -1628,7 +1631,8 @@ public sealed class AyarlarService(
             NormalizeText(terminal.TerminalNo, 40, nameof(terminal.TerminalNo)),
             NormalizeText(terminal.Bank, 100, nameof(terminal.Bank)),
             NormalizeText(terminal.TerminalId, 40, nameof(terminal.TerminalId)),
-            NormalizeText(terminal.MerchantNo, 40, nameof(terminal.MerchantNo)));
+            NormalizeText(terminal.MerchantNo, 40, nameof(terminal.MerchantNo)),
+            null);
 
     private async Task EnsureCashRegisterExistsAsync(
         int branchNo,
@@ -1792,6 +1796,7 @@ public sealed class AyarlarService(
         entity.Bank = terminal.Bank;
         entity.TerminalId = terminal.TerminalId;
         entity.MerchantNo = terminal.MerchantNo;
+        entity.PaymentTypeNo = terminal.PaymentTypeNo;
     }
 
     private static string NormalizeIpAddress(string value)
@@ -1990,7 +1995,8 @@ public sealed class AyarlarService(
         string TerminalNo,
         string Bank,
         string TerminalId,
-        string MerchantNo);
+        string MerchantNo,
+        int? PaymentTypeNo);
 
     private sealed record TerminalBankCatalogItem(
         string PaymentName,

@@ -15,6 +15,142 @@ Bu dokuman; sube ayarlarindaki fiziksel kasa tanimlarinin, POS/PAV terminal sati
 
 Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` tablolari bu akislar icin terminal kaynagi veya fallback degildir. Eski kayitlar yeni ayar ve icmal ekranini etkilemez.
 
+## Tam Kaynak Matrisi
+
+### Veritabani ve Dosya Sinirlari
+
+| Katman | Context / Kaynak | Ne Icin Kullaniliyor | Yetki |
+|---|---|---|---|
+| Furpa ayar veritabani | `FurpaDbContext` | Sube, fiziksel kasa, POS terminali, banka etiketi ve kasiyer tanimlari | Okuma / yazma |
+| Mikro veritabani | `MikroDbContext` / `MikroWriteDbContext` | Odeme kataloglari, banknot/cek tanimlari, icmal belgeleri ve muhasebe hareketleri | Okuma / yazma |
+| POS klasoru | `BranchDetails.BranchIpAddress` + `PoskonFolderPath` | Kasanin `ZRAPxxxx.xxx` dosyasindan NET CIRO okumak | Salt okunur dosya |
+| Eski POS muhasebe entegrasyonu | Mikro `ZReport*`, `CashRegisterBranches` ve fatura tablolari | POS muhasebe aktarimi; kasa/POS ayar ekraninin veya icmal dropdown'larinin kaynagi degildir | Ayri modul |
+
+### Furpa Ayar Tablolari
+
+| Tablo | Anahtar | Kullanilan Alanlar | Icmaldeki Anlami | Islem |
+|---|---|---|---|---|
+| `CashRegistryDetails` | `DetailId` | `BranchNo`, `CashRegisterNo`, `CashRegisterType` | Subeye bagli fiziksel kasa numarasi ve kasa tipi | Okuma / yazma |
+| `CashRegisterDetails` | `Id` | `CashRegisterNo`, `Bank`, `TerminalId`, `MerchantNo`, `CashNo` | Finans/PAV numarasi, banka etiketi, terminal ve uye isyeri numarasi; `CashNo` ile fiziksel kasaya baglanir | Okuma / yazma |
+| `BranchDetails` | `BranchNo` | `BranchIpAddress`, `PosGenelFolderPath`, `PoskonFolderPath`, `BranchScalesFolderPath`, `ScalesType` | Sube ve POS dosya yolu bilgileri | Okuma / yazma |
+| `Cashiers` | `CashierId` | `CashierCode`, `CashierName`, `CashierPassword`, `CashierAuthorization`, `CashierState` | Icmalde secilen kasiyer/mudur katalog bilgisi | Okuma / yazma |
+| `KASIYER_TANIMLARI` | Kasiyer kaydi | Kasiyer kodu ve tanim alanlari | Kasiyer olusturma/guncellemede uyumluluk icin senkronlanan tablo; icmal lookup'i dogrudan `Cashiers` okur | Yazma esitlemesi |
+
+### Mikro Katalog ve Referans Tablolari
+
+| Tablo | Anahtar | Kullanilan Alanlar | Filtre / Kullanim |
+|---|---|---|---|
+| `PaymentTypes` | `PaymentTypeNo` | `PaymentName`, `PaymentGenus`, `AccountCode` | Banka: `PaymentGenus=1`; yemek ceki: `2`; online: `5` veya adinda `online`; magaza gideri: `110-113` |
+| `BanknoteTypes` | `BanknoteType` | `Value` | Banknot adet ve tutar satirlarinin kupur katalogu |
+| `GiftCheckTypes` | `GiftCheckType` | `Value` | Hediye ceki adet ve tutar satirlarinin katalogu |
+| `DEPOLAR` | `dep_no` | `dep_adi` | Icmal liste/raporunda `BranchNo` icin sube/depo adi |
+
+`PaymentTypes` katalogu POS cihazinin hangi kasaya bagli oldugunu tutmaz. Kasa-terminal iliskisi Furpa `CashRegisterDetails` tablosundan gelir; Mikro katalogu yalniz odeme tipi, banka adi ve muhasebe hesap kodunu tamamlar.
+
+Icmal rapor sorgusundaki kolonlar su sabit odeme tipi numaralarina gore hesaplanir:
+
+| Rapor Kolonu | `PaymentTypeID` |
+|---|---:|
+| Akbank / Halkbank / Is Bankasi / TEB / Yapi Kredi / Ziraat | `1 / 2 / 3 / 4 / 5 / 6` |
+| Sodexo POS / Sodexo Kupon / Ticket POS / Ticket Kupon | `50 / 51 / 52 / 53` |
+| Multinet / Setcard / Metropol | `54 / 55 / 56` |
+| Masraf pusulasi | `100` |
+| Magaza masrafi | `110-113` |
+| Nakit | `500` |
+
+Bu nedenle `PaymentTypes` tablosuna yeni bir banka veya yemek ceki eklemek lookup listesine kaydi getirebilir; ancak sabit kolonlu icmal raporuna yeni kolon/kategori eklemek icin rapor sorgusunun da guncellenmesi gerekir.
+
+### Icmalin Kalici Yazildigi Mikro Tablolari
+
+| Tablo | Belge Baglantisi | Fiziksel Olarak Yazilan Temel Alanlar | Rol |
+|---|---|---|---|
+| `Summaries` | `BranchNo + DocumentSerie + DocumentOrderNo` | `Id`, `CreateUser`, `DocumentSerie`, `DocumentOrderNo`, `PaymentTypeID`, `SummaryDate`, `BranchNo`, `CashNo`, `ZReportNo`, `CashierNo`, `ManagerNo`, `SlipNumber`, `Amount`, `TerminalId`, `Description`, `CreateDate`, `UpdateUser`, `UpdateDate` | Icmal odeme kalemlerini satir bazinda tutan ana tablo |
+| `BanknoteMovements` | Ayni seri/sira ve sube | `DocumentSerie`, `DocumentOrderNo`, `BanknoteTypeID`, `BranchNo`, `CashNo`, `Quantity`, `Total` ve audit alanlari | Banknot kupur adetleri ve toplamlar |
+| `GiftCheckMovements` | Ayni seri/sira ve sube | `DocumentSerie`, `DocumentOrderNo`, `GiftCheckTypeID`, `BranchNo`, `CashNo`, `Quantity`, `Total`, `CreateDate` | Hediye ceki adetleri ve toplamlar |
+| `CARI_HESAP_HAREKETLERI` | `cha_aciklama = DocumentSerie.DocumentOrderNo` | `cha_evrak_tip`, `cha_tip`, `cha_cinsi`, `cha_kod`, `cha_meblag`, `cha_srmrkkodu`, `cha_special1`, tarih ve belge alanlari | Icmalin banka, nakit, Z toplam ve Z fark muhasebe hareketleri |
+
+`Summaries` entity'sinde gorulen bazi alanlar fiziksel kolon degildir ve EF tarafinda `Ignore` edilmistir:
+
+| Hesaplanan Alan | Gercek Kaynak |
+|---|---|
+| `TypeName` | `Summaries.PaymentTypeID -> PaymentTypes.PaymentTypeNo -> PaymentName` |
+| `AccountCode` | `PaymentTypes.AccountCode` |
+| `Total` | `Summaries.Amount` veya ilgili hareket tablosundaki `Total` |
+| `StoreExpenseType` | `PaymentTypeID` ve kategori kurallari |
+| Banknot `Value` | `BanknoteMovements.BanknoteTypeID -> BanknoteTypes.BanknoteType -> Value` |
+| Hediye ceki `Value` | `GiftCheckMovements.GiftCheckTypeID -> GiftCheckTypes.GiftCheckType -> Value` |
+
+### Create Istegi Alanlarinin Hedefi
+
+| API Alani | Kontrol Edilen Kaynak | Yazildigi Yer |
+|---|---|---|
+| `warehouseNo` | Furpa `CashRegistryDetails.BranchNo`; Mikro `DEPOLAR.dep_no` rapor adi icin | `Summaries.BranchNo`, banknot/cek `BranchNo`, muhasebe sorumluluk merkezi |
+| `cashNo` | Furpa `CashRegistryDetails.CashRegisterNo` | `Summaries.CashNo`, banknot/cek `CashNo` |
+| `cashRegisterNo` | Furpa `CashRegisterDetails.CashRegisterNo`; ayni satirin `CashNo` baglantisi dogrulanir | Yeni/eski kasa kararinda kullanilir; `PAV` ise yeni kasa kabul edilir |
+| `terminalId` | Furpa `CashRegisterDetails.TerminalId` | Ilgili `Summaries.TerminalId` |
+| `paymentTypeId` | Mikro `PaymentTypes.PaymentTypeNo` | `Summaries.PaymentTypeID`, muhasebe hesap secimi |
+| `amount` | Istek govdesi | `Summaries.Amount`, muhasebe `cha_meblag` |
+| `zReportNo` | Istek ve POS dosyasi | `Summaries.ZReportNo`; `ZRAP{zNo:0000}.{cashNo:000}` dosyasi okunur |
+| `cashierNo`, `managerNo` | Furpa kasiyer katalogu | `Summaries.CashierNo`, `Summaries.ManagerNo` |
+| Banknot/cek adetleri | Mikro kupur katalogu ile dogrulanir | `BanknoteMovements`, `GiftCheckMovements` |
+
+Belge serisi API tarafinda `F{warehouseNo}.{cashNo}` olarak uretilir. Sira numarasi bu seri icin `Summaries.DocumentOrderNo` azamisinin bir fazlasidir ve ilk belge `1` ile baslar.
+
+### Muhasebe Hareketi Kurallari
+
+| Hareket | Dahili Odeme Tipi | Hesap / Kod | Borc-Alacak Kurali |
+|---|---:|---|---|
+| Banka / yemek ceki satiri | `PaymentTypes.PaymentTypeNo` | `PaymentTypes.AccountCode` | Normal odeme hareketi |
+| Nakit toplam | `200` | `0002` | Nakit muhasebe hareketi |
+| Z farki | `300` | `0002` | Z fark hareketi |
+| Z toplam | `400` | Sube/depo numarasi | Karsi Z toplam hareketi |
+| `Summaries` nakit gorunum satiri | `500` | Fiziksel odeme katalogu degil | Liste/rapor icin ozel nakit satiri |
+
+Muhasebe satirlari `cha_evrak_tip=60`, `cha_fileid=51`, `cha_cinsi=5`, seri `X` ve aciklama olarak icmalin `seri.sira` degeriyle olusur. Iliskili finans numarasi `PAV` ile basliyorsa `cha_special1='1'` yazilir.
+
+### Endpointten Kaynaga Izleme
+
+| Endpoint / Islem | Birinci Kaynak | Tamamlayici Kaynak | Sonuc |
+|---|---|---|---|
+| `GET /api/ayarlar/kasa-pos-terminalleri` | Furpa `CashRegistryDetails` | Furpa `CashRegisterDetails` | Fiziksel kasa ve bagli POS satirlari |
+| `GET /api/ayarlar/kasa-pos-terminalleri/banka-secenekleri` | Mikro `PaymentTypes` | `PaymentGenus=1` | Banka secenekleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/kasalar` | Furpa `CashRegistryDetails` | Sube filtresi | Fiziksel kasa listesi |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | Furpa `CashRegisterDetails` | Mikro `PaymentTypes` | Kasaya bagli banka/POS terminal secenekleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/yemek-ceki` | Mikro `PaymentTypes` | `PaymentGenus=2` | Yemek ceki secenekleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | Mikro `PaymentTypes` | `PaymentGenus=5` veya adinda `online` | Online odeme tipleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari` | Furpa `CashRegisterDetails` | Banka adinda `online` | Online POS/kasa detaylari |
+| `GET /api/kasa-islemleri/kasa-sayimlari/banknot-tipleri` | Mikro `BanknoteTypes` | - | Banknot kupurleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/hediye-ceki-tipleri` | Mikro `GiftCheckTypes` | - | Hediye ceki kupurleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam` | Furpa `BranchDetails` | POS `ZRAP` dosyasi | NET CIRO / Z toplam |
+| Icmal create/update | Furpa kasa-POS baglantisi | Mikro odeme kataloglari | Dort Mikro hareket tablosuna transaction ile kayit |
+| Icmal liste/rapor/detay | Mikro `Summaries` | `DEPOLAR`, `PaymentTypes`, banknot/cek kataloglari | Ekran ve rapor DTO'lari |
+
+### Bu Modulden Ayri Olan POS Muhasebe Kaynaklari
+
+| Tablo Grubu | Kullanan Modul | Icmal Ayarlarinda Kullaniliyor mu? |
+|---|---|---|
+| `ZReportTotals`, `ZReportDetails`, `ZReportBankDetails` | `PosMuhasebeAktarimiService` | Hayir |
+| `CashRegisterBranches` | POS muhasebe aktariminda kasa-sube eslestirme | Hayir |
+| `Invoices`, `InvoiceLines` | POS muhasebe fatura aktarimi | Hayir |
+| `ExpenseNotes`, `ExpenseNoteLines` | POS muhasebe gider pusulasi aktarimi | Hayir |
+| Eski Mikro `CashRegisterDetails` | Eski/ayri kasa tanimi | Hayir; guncel ayar kaynagi Furpa `CashRegisterDetails` |
+
+### Kod Kaynaklari
+
+| Sorumluluk | Dosya |
+|---|---|
+| Kasa/POS ayarlari ve banka secenekleri | `src/FurpaMerkezApi.Infrastructure/Modules/AyarIslemleri/Ayarlar/AyarlarService.cs` |
+| Icmal lookup'lari | `src/FurpaMerkezApi.Infrastructure/Modules/KasaIslemleri/KasaSayimlari/Lookups/CashSummaryLookupsUseCase.cs` |
+| Kategori kurallari | `src/FurpaMerkezApi.Infrastructure/Modules/KasaIslemleri/KasaSayimlari/CashSummaryCategoryMatcher.cs` |
+| Create/update/delete ve belge numarasi | `src/FurpaMerkezApi.Infrastructure/Modules/KasaIslemleri/KasaSayimlari/Commands/CashSummaryCommandsUseCase.cs` |
+| Liste, detay ve rapor sorgulari | `src/FurpaMerkezApi.Infrastructure/Modules/KasaIslemleri/KasaSayimlari/Queries/CashSummaryQueriesUseCase.cs` |
+| Mikro muhasebe hareketi uretimi | `src/FurpaMerkezApi.Infrastructure/Modules/KasaIslemleri/KasaSayimlari/Commands/CashSummaryCustomerMovementFactory.cs` |
+| Z raporu dosya okuma | `src/FurpaMerkezApi.Infrastructure/Modules/KasaIslemleri/KasaSayimlari/Files/GetCashSummaryZReportTotalUseCase.cs` |
+| Furpa entity ve kolon eslemeleri | `src/FurpaMerkezApi.Infrastructure/Persistence/Furpa/FurpaDbContext.cs` |
+| Mikro icmal entity'leri | `src/FurpaMerkezApi.Infrastructure/Persistence/Mikro/Models/CashSummaryModuleModels.cs` |
+| Mikro tablo eslemeleri | `src/FurpaMerkezApi.Infrastructure/Persistence/Mikro/MikroDbContext.AdditionalModels.cs` |
+| Ayri POS muhasebe akisi | `src/FurpaMerkezApi.Infrastructure/Modules/EntegrasyonIslemleri/PosMuhasebeAktarimi/PosMuhasebeAktarimiService.cs` |
+
 ## Alanlarin Anlami
 
 ### `branchNo`

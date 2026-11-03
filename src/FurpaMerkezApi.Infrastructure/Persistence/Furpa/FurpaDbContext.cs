@@ -23,6 +23,8 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
 
     public DbSet<CashRegisterDetailEntity> CashRegisterDetails => Set<CashRegisterDetailEntity>();
 
+    public DbSet<PaymentTypeDefinitionEntity> PaymentTypes => Set<PaymentTypeDefinitionEntity>();
+
     public DbSet<BranchDetailEntity> BranchDetails => Set<BranchDetailEntity>();
 
     public DbSet<AuthorizationFileEntity> AuthorizationFiles => Set<AuthorizationFileEntity>();
@@ -119,6 +121,19 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
             entity.Property(item => item.Bank).HasMaxLength(100);
             entity.Property(item => item.TerminalId).HasMaxLength(40);
             entity.Property(item => item.MerchantNo).HasMaxLength(40);
+            entity.HasIndex(item => new { item.CashNo, item.PaymentTypeNo });
+        });
+
+        modelBuilder.Entity<PaymentTypeDefinitionEntity>(entity =>
+        {
+            entity.ToTable("PaymentTypes");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).ValueGeneratedOnAdd();
+            entity.Property(item => item.CreateDate).HasColumnType("datetime");
+            entity.Property(item => item.UpdateDate).HasColumnType("datetime");
+            entity.Property(item => item.PaymentName).HasMaxLength(100);
+            entity.Property(item => item.AccountCode).HasMaxLength(20);
+            entity.HasIndex(item => item.PaymentTypeNo).IsUnique();
         });
 
         modelBuilder.Entity<BranchDetailEntity>(entity =>

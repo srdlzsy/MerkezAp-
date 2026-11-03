@@ -61,13 +61,13 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(49, "Furpa Yemek Kart", "108.02.000", paymentGenus: 2),
             CreatePaymentType(50, "Sodexo POS", "108.02.001", paymentGenus: 2),
             CreatePaymentType(52, "Ticket POS", "108.02.002", paymentGenus: 2),
             CreatePaymentType(1, "Akbank", "108.01.001"));
 
-        await mikroDbContext.SaveChangesAsync();
+        await furpaDbContext.SaveChangesAsync();
 
         var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
 
@@ -84,13 +84,13 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(10, "Online Odeme", "0021", paymentGenus: 1),
             CreatePaymentType(600, "Trendyol", "0013", paymentGenus: 5),
             CreatePaymentType(601, "Yemek Sepeti", "0014", paymentGenus: 5),
             CreatePaymentType(602, "Diger Odeme", "0015", paymentGenus: 1));
 
-        await mikroDbContext.SaveChangesAsync();
+        await furpaDbContext.SaveChangesAsync();
 
         var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
 
@@ -129,7 +129,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(1, "Akbank", "108.01.001"),
             CreatePaymentType(2, "Halkbank", "108.01.002"),
             CreatePaymentType(3, "Isbank", "108.01.003"),
@@ -165,7 +165,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(1, "Akbank", "108.01.001"),
             CreatePaymentType(2, "Halkbank", "108.01.002"));
 
@@ -202,7 +202,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(3, "Is Bankasi", "108.01.003"),
             CreatePaymentType(4, "TEB", "108.01.004"));
 
@@ -230,7 +230,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(3, "Is Bankasi", "0004"),
             CreatePaymentType(4, "TEB", "0007"),
             CreatePaymentType(5, "Yapi Kredi", "0011"),
@@ -265,7 +265,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.Add(CreatePaymentType(1, "Akbank", "0001"));
+        furpaDbContext.PaymentTypes.Add(CreatePaymentType(1, "Akbank", "0001"));
         mikroDbContext.CashRegisterDetails.AddRange(
             CreateMikroCashRegisterDetail(1, "POS001", "Akbank", "M-T01", "MERCHANT-1"),
             CreateMikroCashRegisterDetail(2, "POS001", "Akbank", "M-T02", "MERCHANT-1"));
@@ -293,7 +293,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         await using var mikroDbContext = CreateMikroDbContext();
         await using var furpaDbContext = CreateFurpaDbContext();
 
-        mikroDbContext.PaymentTypes.AddRange(
+        furpaDbContext.PaymentTypes.AddRange(
             CreatePaymentType(1, "Akbank", "0001"),
             CreatePaymentType(2, "TEB", "0002"),
             CreatePaymentType(3, "Is Bankasi", "0003"));
@@ -496,7 +496,7 @@ public sealed class CashSummaryLookupsUseCaseTests
         Assert.Equal(string.Empty, result.MerchantNo);
     }
 
-    private static PaymentTypeEntity CreatePaymentType(
+    private static FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models.PaymentTypeDefinitionEntity CreatePaymentType(
         int paymentTypeNo,
         string paymentName,
         string? accountCode,
@@ -506,7 +506,7 @@ public sealed class CashSummaryLookupsUseCaseTests
             PaymentTypeNo = paymentTypeNo,
             PaymentName = paymentName,
             PaymentGenus = paymentGenus,
-            AccountCode = accountCode
+            AccountCode = accountCode ?? string.Empty
         };
 
     private static FurpaCashRegisterDetailEntity CreateCashRegisterDetail(

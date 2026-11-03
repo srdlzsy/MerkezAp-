@@ -92,7 +92,7 @@ public sealed class CashierSynchronizationTests
     }
 
     private static AyarlarService CreateService(TestContexts contexts) =>
-        new(contexts.Furpa, contexts.FurpaB2B, contexts.MikroWrite);
+        new(contexts.Furpa, contexts.FurpaB2B);
 
     private static TestContexts CreateContexts()
     {

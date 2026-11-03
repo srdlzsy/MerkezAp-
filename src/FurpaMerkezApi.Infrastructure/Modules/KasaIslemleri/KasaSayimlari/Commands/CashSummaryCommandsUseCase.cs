@@ -707,7 +707,8 @@ public sealed class CashSummaryCommandsUseCase(
             .ToArray();
         var accountCodes = paymentTypeNos.Length == 0
             ? new Dictionary<int, string>()
-            : await mikroWriteDbContext.PaymentTypes
+            : await furpaDbContext.PaymentTypes
+                .AsNoTracking()
                 .Where(item => paymentTypeNos.Contains(item.PaymentTypeNo))
                 .ToDictionaryAsync(
                     item => item.PaymentTypeNo,
