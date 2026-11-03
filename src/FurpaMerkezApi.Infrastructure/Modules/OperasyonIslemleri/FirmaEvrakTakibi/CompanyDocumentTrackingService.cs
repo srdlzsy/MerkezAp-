@@ -23,6 +23,11 @@ public sealed class CompanyDocumentTrackingService(
         CompanyDocumentTrackingRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.Date.Year < 1753 || request.Date.Year > 9999)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "Tarih 1753 ile 9999 yillari arasinda olmalidir.");
+        }
+
         if (request.WarehouseNo is <= 0)
         {
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request));

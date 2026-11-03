@@ -74,7 +74,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -142,7 +142,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -244,7 +244,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -358,7 +358,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -451,7 +451,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -515,7 +515,7 @@ public sealed class CashSummaryCommandsUseCase(
         {
             mikroWriteDbContext.ChangeTracker.Clear();
             await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
+                IsolationLevel.ReadCommitted,
                 cancellationToken);
 
             try
@@ -538,10 +538,12 @@ public sealed class CashSummaryCommandsUseCase(
                         item.DocumentSerie == request.DocumentSerie &&
                         item.DocumentOrderNo == request.DocumentOrderNo)
                     .ToListAsync(cancellationToken);
+                var summaryDate = summaries.Count > 0 ? summaries[0].SummaryDate : (DateTime?)null;
                 var customerMovements = await GetCustomerMovementsForCashSummaryAsync(
                     request.DocumentSerie,
                     request.DocumentOrderNo,
-                    cancellationToken);
+                    cancellationToken,
+                    summaryDate);
 
                 mikroWriteDbContext.Summaries.RemoveRange(summaries);
                 mikroWriteDbContext.BanknoteMovements.RemoveRange(banknotes);
@@ -607,7 +609,8 @@ public sealed class CashSummaryCommandsUseCase(
         var existingCustomerMovements = await GetCustomerMovementsForCashSummaryAsync(
             header.DocumentSerie,
             header.DocumentOrderNo,
-            cancellationToken);
+            cancellationToken,
+            header.SummaryDate);
         var existingCustomerMovementDocumentOrderNo = existingCustomerMovements
             .Where(item => item.cha_evrakno_seri == CashSummaryCustomerMovementFactory.CustomerMovementDocumentSerie)
             .Select(item => item.cha_evrakno_sira)
@@ -679,20 +682,29 @@ public sealed class CashSummaryCommandsUseCase(
     private async Task<List<CARI_HESAP_HAREKETLERI>> GetCustomerMovementsForCashSummaryAsync(
         string documentSerie,
         int documentOrderNo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? summaryDate = null)
     {
         var legacyDescription = CashSummaryCustomerMovementFactory.BuildLegacyDescription(
             documentSerie,
             documentOrderNo);
 
-        return await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+        var query = mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
             .Where(item =>
                 item.cha_evrak_tip == CashSummaryCustomerMovementFactory.CustomerMovementDocumentType &&
                 ((item.cha_evrakno_seri == CashSummaryCustomerMovementFactory.CustomerMovementDocumentSerie &&
                   item.cha_aciklama == legacyDescription) ||
                  (item.cha_evrakno_seri == documentSerie &&
-                  item.cha_evrakno_sira == documentOrderNo)))
-            .ToListAsync(cancellationToken);
+                  item.cha_evrakno_sira == documentOrderNo)));
+
+        if (summaryDate.HasValue && summaryDate.Value > DateTime.MinValue)
+        {
+            var minDate = summaryDate.Value.Date.AddDays(-60);
+            var maxDate = summaryDate.Value.Date.AddDays(60);
+            query = query.Where(item => item.cha_tarihi >= minDate && item.cha_tarihi <= maxDate);
+        }
+
+        return await query.ToListAsync(cancellationToken);
     }
 
     private async Task<IReadOnlyCollection<CashSummaryCustomerMovementLine>> BuildCustomerMovementLinesAsync(
