@@ -165,8 +165,14 @@ public sealed class KasaHareketAktarimiService(
         CancellationToken cancellationToken)
     {
         ValidateDate(request.Date, nameof(request.Date));
+        if (request.BranchNo is not > 0)
+        {
+            throw new ArgumentException(
+                "Mikro hareket silme islemi icin sube numarasi zorunludur.",
+                nameof(request.BranchNo));
+        }
 
-        var branchParam = request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        var branchParam = request.BranchNo.Value.ToString(CultureInfo.InvariantCulture);
 
         if (request.EndDate.HasValue && request.EndDate.Value.Date != request.Date.Date)
         {
@@ -218,6 +224,75 @@ public sealed class KasaHareketAktarimiService(
             startDate,
             null,
             null);
+    }
+
+    public async Task<KasaHareketTransferStatusDto> GetTransferStatusAsync(
+        KasaHareketTransferStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (startDate, endDate) = NormalizeDateRange(request.StartDate, request.EndDate);
+        if (request.BranchNo is <= 0)
+        {
+            throw new ArgumentException("Sube numarasi sifirdan buyuk olmalidir.", nameof(request.BranchNo));
+        }
+
+        if (request.CashRegisterNo is < 0)
+        {
+            throw new ArgumentException("Kasa numarasi negatif olamaz.", nameof(request.CashRegisterNo));
+        }
+
+        const string sql = """
+            SELECT
+                COUNT_BIG(1) AS TotalReceiptCount,
+                SUM(CASE WHEN ISNULL(invoice.MikroAktarimDurumu, 0) = 1 THEN CONVERT(bigint, 1) ELSE CONVERT(bigint, 0) END)
+                    AS TransferredReceiptCount,
+                SUM(CASE WHEN ISNULL(invoice.MikroAktarimDurumu, 0) <> 1 THEN CONVERT(bigint, 1) ELSE CONVERT(bigint, 0) END)
+                    AS PendingReceiptCount,
+                (
+                    SELECT COUNT_BIG(1)
+                    FROM dbo.PosFaturaIptals AS canceled WITH (NOLOCK)
+                    WHERE canceled.Tarih >= @startDate
+                      AND canceled.Tarih < @endDateExclusive
+                      AND (@branchNo IS NULL OR TRY_CONVERT(int, canceled.Sube) = @branchNo)
+                      AND (@cashRegisterNo IS NULL OR TRY_CONVERT(int, canceled.KasaNo) = @cashRegisterNo)
+                ) AS CanceledReceiptCount
+            FROM dbo.PosFaturas AS invoice WITH (NOLOCK)
+            WHERE invoice.Tarih >= @startDate
+              AND invoice.Tarih < @endDateExclusive
+              AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
+              AND (@cashRegisterNo IS NULL OR TRY_CONVERT(int, invoice.KasaNo) = @cashRegisterNo);
+            """;
+
+        var rows = await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate);
+                AddParameter(command, "@endDateExclusive", endDate.AddDays(1));
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
+            },
+            reader => new
+            {
+                Total = checked((int)ReadInt64(reader, "TotalReceiptCount")),
+                Transferred = checked((int)ReadInt64(reader, "TransferredReceiptCount")),
+                Pending = checked((int)ReadInt64(reader, "PendingReceiptCount")),
+                Canceled = checked((int)ReadInt64(reader, "CanceledReceiptCount"))
+            },
+            cancellationToken);
+
+        var row = rows.FirstOrDefault();
+        return new KasaHareketTransferStatusDto(
+            startDate,
+            endDate,
+            request.BranchNo,
+            request.CashRegisterNo,
+            row?.Total ?? 0,
+            row?.Transferred ?? 0,
+            row?.Pending ?? 0,
+            row?.Canceled ?? 0,
+            DateTime.UtcNow);
     }
 
     public async Task<IReadOnlyCollection<KasaHareketReportRowDto>> GetReportAsync(
@@ -762,26 +837,14 @@ public sealed class KasaHareketAktarimiService(
             )
             SELECT
                 ds.PaymentTypeID AS PaymentTypeId,
-                CASE
-                    WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
-                    ELSE COALESCE(pt.PaymentName, N'')
-                END AS PaymentTypeName,
-                N'' AS AccountCode,
                 SUM(ISNULL(ds.SlipNumber, 0)) AS SlipCount,
                 SUM(ISNULL(ds.Amount, 0)) AS Amount
             FROM DistinctSummaries AS ds
-            LEFT JOIN dbo.PaymentTypes AS pt WITH (NOLOCK)
-                ON ds.PaymentTypeID = pt.PaymentTypeNo
-            GROUP BY
-                ds.PaymentTypeID,
-                CASE
-                    WHEN ds.PaymentTypeID = 500 THEN N'Nakit'
-                    ELSE COALESCE(pt.PaymentName, N'')
-                END
+            GROUP BY ds.PaymentTypeID
             ORDER BY ds.PaymentTypeID;
             """;
 
-        return await ExecuteReaderAsync(
+        var rows = await ExecuteReaderAsync(
             mikroDbContext.Database.GetDbConnection(),
             sql,
             command =>
@@ -791,18 +854,35 @@ public sealed class KasaHareketAktarimiService(
                 AddParameter(command, "@branchNo", request.BranchNo);
                 AddParameter(command, "@cashRegisterNo", request.CashRegisterNo);
             },
-            reader =>
-            {
-                var paymentTypeId = ReadInt(reader, "PaymentTypeId");
-                return new KasaHareketCashSummaryPaymentDto(
-                    paymentTypeId,
-                    ReadString(reader, "PaymentTypeName"),
-                    ReadString(reader, "AccountCode"),
-                    ReadInt(reader, "SlipCount"),
-                    ReadDecimal(reader, "Amount"),
-                    IsCashSummaryPaymentIncluded(paymentTypeId));
-            },
+            reader => new CashSummaryPaymentSource(
+                ReadInt(reader, "PaymentTypeId"),
+                ReadInt(reader, "SlipCount"),
+                ReadDecimal(reader, "Amount")),
             cancellationToken);
+
+        var paymentTypeNos = rows
+            .Where(item => item.PaymentTypeId != 500)
+            .Select(item => item.PaymentTypeId)
+            .Distinct()
+            .ToArray();
+        var paymentTypes = await furpaDbContext.PaymentTypes
+            .AsNoTracking()
+            .Where(item => paymentTypeNos.Contains(item.PaymentTypeNo))
+            .ToDictionaryAsync(item => item.PaymentTypeNo, cancellationToken);
+
+        return rows
+            .Select(item =>
+            {
+                paymentTypes.TryGetValue(item.PaymentTypeId, out var paymentType);
+                return new KasaHareketCashSummaryPaymentDto(
+                    item.PaymentTypeId,
+                    item.PaymentTypeId == 500 ? "Nakit" : paymentType?.PaymentName ?? string.Empty,
+                    paymentType?.AccountCode ?? string.Empty,
+                    item.SlipCount,
+                    item.Amount,
+                    IsCashSummaryPaymentIncluded(item.PaymentTypeId));
+            })
+            .ToArray();
     }
 
     private async Task<IReadOnlyCollection<KasaHareketCashSummaryDocumentDto>> GetCashSummaryDocumentsAsync(
@@ -2685,6 +2765,14 @@ public sealed class KasaHareketAktarimiService(
             : Convert.ToInt32(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
     }
 
+    private static long ReadInt64(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? 0L
+            : Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+    }
+
     private static decimal ReadDecimal(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -3044,6 +3132,11 @@ public sealed class KasaHareketAktarimiService(
         int CashRegisterNo,
         decimal CashSummaryAmount,
         int DocumentCount);
+
+    private sealed record CashSummaryPaymentSource(
+        int PaymentTypeId,
+        int SlipCount,
+        decimal Amount);
 
     private enum MovementImportKind
     {

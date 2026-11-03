@@ -35,6 +35,7 @@ public sealed class CashRegisterTerminalManagementTests
             CancellationToken.None);
 
         Assert.Equal(["TEB", "Yapi Kredi"], result.Terminals.Select(item => item.Bank).ToArray());
+        Assert.Equal([4, 6], result.Terminals.Select(item => item.PaymentTypeNo).ToArray());
         Assert.Single(await contexts.Furpa.CashRegistryDetails.ToArrayAsync());
         Assert.Equal(2, await contexts.Furpa.CashRegisterDetails.CountAsync());
     }
@@ -74,6 +75,7 @@ public sealed class CashRegisterTerminalManagementTests
             CancellationToken.None);
 
         Assert.Equal("TEB", result.Bank);
+        Assert.Equal(4, result.PaymentTypeNo);
     }
 
     [Fact]
@@ -168,6 +170,7 @@ public sealed class CashRegisterTerminalManagementTests
             CancellationToken.None);
 
         Assert.Equal("Yapi Kredi", updated.Bank);
+        Assert.Equal(6, updated.PaymentTypeNo);
         Assert.Empty(await contexts.MikroWrite.CashRegisterDetails.ToArrayAsync());
         Assert.Equal(2, await contexts.Furpa.CashRegisterDetails.CountAsync());
 

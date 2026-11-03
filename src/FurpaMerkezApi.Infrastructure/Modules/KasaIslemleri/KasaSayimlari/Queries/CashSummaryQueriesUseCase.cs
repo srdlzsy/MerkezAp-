@@ -55,8 +55,8 @@ public sealed class CashSummaryQueriesUseCase(
                 SUM(CASE WHEN s.PaymentTypeID = 100 THEN s.SlipNumber ELSE 0 END) AS ExpenseCompassQuantity,
                 SUM(CASE WHEN s.PaymentTypeID BETWEEN 110 AND 113 THEN s.Amount ELSE 0 END) AS StoreExpense,
                 SUM(CASE WHEN s.PaymentTypeID BETWEEN 110 AND 113 THEN s.SlipNumber ELSE 0 END) AS StoreExpenseQuantity
-            FROM Summaries s WITH (NOLOCK) WITH (NOLOCK)
-            LEFT JOIN DEPOLAR w WITH (NOLOCK) ON s.BranchNo = w.dep_no
+            FROM Summaries s
+            LEFT JOIN DEPOLAR w ON s.BranchNo = w.dep_no
             WHERE s.SummaryDate >= @date
               AND s.SummaryDate < @nextDate
               AND (@warehouseNo IS NULL OR s.BranchNo = @warehouseNo)
@@ -134,8 +134,8 @@ public sealed class CashSummaryQueriesUseCase(
                     s.SummaryDate,
                     s.PaymentTypeID,
                     s.Amount
-                FROM Summaries s WITH (NOLOCK) WITH (NOLOCK)
-                LEFT JOIN DEPOLAR w WITH (NOLOCK) ON s.BranchNo = w.dep_no
+                FROM Summaries s
+                LEFT JOIN DEPOLAR w ON s.BranchNo = w.dep_no
                 WHERE s.SummaryDate >= @date
                   AND s.SummaryDate < @nextDate
                   AND (@warehouseNo IS NULL OR s.BranchNo = @warehouseNo)
@@ -199,7 +199,7 @@ public sealed class CashSummaryQueriesUseCase(
                 s.Amount,
                 COALESCE(s.TerminalId, '') AS TerminalId,
                 COALESCE(s.Description, '') AS Description
-            FROM Summaries s WITH (NOLOCK)
+            FROM Summaries s
             WHERE s.BranchNo = @warehouseNo
               AND s.DocumentSerie = @documentSerie
               AND s.DocumentOrderNo = @documentOrderNo
@@ -269,7 +269,7 @@ public sealed class CashSummaryQueriesUseCase(
                     s.DocumentSerie,
                     s.DocumentOrderNo,
                     s.SummaryDate
-                FROM Summaries s WITH (NOLOCK)
+                FROM Summaries s
                 WHERE s.BranchNo = @warehouseNo
                   AND s.DocumentSerie = @documentSerie
                   AND s.DocumentOrderNo = @documentOrderNo
@@ -280,7 +280,7 @@ public sealed class CashSummaryQueriesUseCase(
             OUTER APPLY (
                 SELECT TOP (1)
                     c.cha_meblag AS ZTotalValue
-                FROM CARI_HESAP_HAREKETLERI c WITH (NOLOCK)
+                FROM CARI_HESAP_HAREKETLERI c
                 WHERE c.cha_aciklama = @legacyDescription
                   AND c.cha_evrak_tip = 60
                   AND c.cha_tip = 1
@@ -324,8 +324,8 @@ public sealed class CashSummaryQueriesUseCase(
                 bm.BanknoteTypeID AS BanknoteType,
                 bm.Quantity,
                 bm.Total
-            FROM BanknoteMovements bm WITH (NOLOCK)
-            LEFT JOIN BanknoteTypes bt WITH (NOLOCK) ON bm.BanknoteTypeID = bt.BanknoteType
+            FROM BanknoteMovements bm
+            LEFT JOIN BanknoteTypes bt ON bm.BanknoteTypeID = bt.BanknoteType
             WHERE bm.BranchNo = @warehouseNo
               AND bm.DocumentSerie = @documentSerie
               AND bm.DocumentOrderNo = @documentOrderNo
@@ -362,8 +362,8 @@ public sealed class CashSummaryQueriesUseCase(
                 gm.GiftCheckTypeID AS GiftCheckType,
                 gm.Quantity,
                 gm.Total
-            FROM GiftCheckMovements gm WITH (NOLOCK)
-            LEFT JOIN GiftCheckTypes gt WITH (NOLOCK) ON gm.GiftCheckTypeID = gt.GiftCheckType
+            FROM GiftCheckMovements gm
+            LEFT JOIN GiftCheckTypes gt ON gm.GiftCheckTypeID = gt.GiftCheckType
             WHERE gm.BranchNo = @warehouseNo
               AND gm.DocumentSerie = @documentSerie
               AND gm.DocumentOrderNo = @documentOrderNo
@@ -406,7 +406,7 @@ public sealed class CashSummaryQueriesUseCase(
         try
         {
             using var command = connection.CreateCommand();
-            command.CommandText = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n" + sql;
+            command.CommandText = sql;
             command.CommandType = CommandType.Text;
             command.CommandTimeout = 300;
             configureCommand(command);

@@ -122,6 +122,24 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
             new KasaHareketMikroTransferRangeRequest(request.StartDate!.Value, request.EndDate!.Value),
             cancellationToken));
 
+    [HttpGet("durum")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(KasaHareketTransferStatusDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<KasaHareketTransferStatusDto>> TransferStatus(
+        [FromQuery] KasaHareketTransferStatusHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var branchNo = User.ResolveWarehouseScopeForPolicy(request.BranchNo, ListPolicy);
+        return Ok(await service.GetTransferStatusAsync(
+            new KasaHareketTransferStatusRequest(
+                request.StartDate!.Value,
+                request.EndDate!.Value,
+                branchNo,
+                request.CashRegisterNo),
+            cancellationToken));
+    }
+
     [HttpGet("rapor")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<KasaHareketReportRowDto>), StatusCodes.Status200OK)]
@@ -378,6 +396,21 @@ public sealed class KasaHareketMikroTransferRangeHttpRequest
 
     [Required]
     public DateTime? EndDate { get; init; }
+}
+
+public sealed class KasaHareketTransferStatusHttpRequest
+{
+    [Required]
+    public DateTime? StartDate { get; init; }
+
+    [Required]
+    public DateTime? EndDate { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? BranchNo { get; init; }
+
+    [Range(0, 999)]
+    public int? CashRegisterNo { get; init; }
 }
 
 public sealed class KasaHareketReportHttpRequest

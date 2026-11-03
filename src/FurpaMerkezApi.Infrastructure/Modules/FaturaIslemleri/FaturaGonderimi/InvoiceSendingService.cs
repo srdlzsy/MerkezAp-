@@ -613,8 +613,6 @@ public sealed class InvoiceSendingService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-
             CREATE TABLE #SelectedInvoiceRows
             (
                 FatGuid uniqueidentifier NOT NULL PRIMARY KEY

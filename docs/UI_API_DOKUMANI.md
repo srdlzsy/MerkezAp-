@@ -3228,7 +3228,7 @@ Kasa ve terminal kaynagi:
 - Sube kasa listesi `GET /api/ayar-islemleri/sube-ayarlari/{branchNo}/kasalar` tarafinda Furpa `CashRegistryDetails` kaydindan kasa no'yu okur.
 - Ayni response'taki `cashFinanceNumber`, secili sube ve fiziksel kasa icin Furpa `CashRegisterDetails.CashNo -> CashRegisterNo` ile cozulur. Birden fazla farkli finans/PAV numarasi bulunursa API rastgele ilk kaydi secmez; `409 Conflict` ile cakisan numaralari bildirir ve kasa-POS eslesmesi duzeltilmeden icmal olusturulmaz.
 - POS terminal listesi `GET /api/ayar-islemleri/kasa-pos-terminalleri/kasalar/{cashNo}/terminaller?branchNo={branchNo}` ile Furpa `CashRegisterDetails` ve `CashRegistryDetails` uzerinden, fiziksel kasa + sube eslesmesiyle okunur. Mikro'dan terminal fallback/merge yapilmaz.
-- Icmal banka secenekleri icin UI `cashNo` ve `branchNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. API o fiziksel kasanin Furpa `CashRegisterDetails` terminal bankalarini Mikro `PaymentTypes` kataloguyla eslestirir. Eski istemciler icin `cashRegisterNo` parametresi geriye uyumludur; yeni UI bu global/finans numarasi yolunu kullanmamalidir.
+- Icmal banka secenekleri icin UI `cashNo` ve `branchNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. API o fiziksel kasanin Furpa `CashRegisterDetails.PaymentTypeNo` bagini Furpa `PaymentTypes` kataloguyla eslestirir. Eski istemciler ve henuz backfill edilmemis satirlar icin banka adi eslesmesi gecici olarak desteklenir; yeni UI global/finans numarasi yolunu kullanmamalidir.
 - `cashNo` subedeki fiziksel kasadir; `cashFinanceNumber` PAV/finans grup numarasidir. Icmal banka listesini guvenli daraltmak icin esas filtre `branchNo + cashNo` ikilisidir.
 - UI kasa secimini degistirdiginde onceki kasa icin devam eden detay/banka isteklerini gecersiz saymalidir. Gec gelen eski response yeni kasanin banka listesinin ustune yazilmamalidir.
 
@@ -3561,7 +3561,7 @@ Body `CreateBranchSettingsHttpRequest` ile ayni sube alanlarini alir; `cashRegis
 
 `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler`
 
-Kasa/POS terminal ekleme formundaki kasa tipi ve banka/odeme tipi secimlerinin dropdown kaynagidir. UI terminal bankasini serbest metin gibi yazdirmamali; `terminalBanks[].displayName` gorunen etiket, `terminalBanks[].paymentName` kayit body icindeki `bank` alanidir. API create/update sirasinda da banka adini Mikro `PaymentTypes` (`PaymentGenus=1`) kataloguna gore dogrular ve katalogdaki kesin yazimla kaydeder. Katalogda bulunmayan banka `400 Bad Request` ile reddedilir.
+Kasa/POS terminal ekleme formundaki kasa tipi ve banka/odeme tipi secimlerinin dropdown kaynagidir. UI terminal bankasini serbest metin gibi yazdirmamali; `terminalBanks[].displayName` gorunen etiket, `terminalBanks[].paymentName` kayit body icindeki `bank` alanidir. API create/update sirasinda banka adini Furpa `PaymentTypes` (`PaymentGenus=1`) kataloguna gore dogrular; katalogdaki kesin yazimla birlikte `CashRegisterDetails.PaymentTypeNo` bagini kaydeder. Katalogda bulunmayan banka `400 Bad Request` ile reddedilir.
 
 Response:
 
@@ -3596,7 +3596,7 @@ Response:
 
 `POST /api/ayar-islemleri/kasa-pos-terminalleri`
 
-Yeni kasa tanimi, Furpa `CashRegistryDetails` tablosunda fiziksel kasa kaydini ve Furpa `CashRegisterDetails` tablosunda POS/PAV banka satirlarini tek Furpa transaction'i icinde olusturur. Mikro `PaymentTypes` yalniz banka/odeme katalogu olarak okunur; bu endpoint Mikro `CashRegisterDetails`, `CashRegisterBranches` veya `PaymentTypes` tablolarina yazmaz.
+Yeni kasa tanimi, Furpa `CashRegistryDetails` tablosunda fiziksel kasa kaydini ve Furpa `CashRegisterDetails` tablosunda POS/PAV banka satirlarini tek Furpa transaction'i icinde olusturur. Banka/odeme katalogu Furpa `PaymentTypes` tablosundan okunur; bu endpoint Mikro `CashRegisterDetails`, `CashRegisterBranches` veya `PaymentTypes` tablolarina yazmaz.
 
 Body:
 
@@ -3709,7 +3709,7 @@ Kontrol kodlari:
 - `MISSING_TERMINAL_GROUP`: Fiziksel kasa var, POS/PAV banka satiri yok.
 - `MULTIPLE_TERMINAL_GROUPS`: Ayni fiziksel kasa birden fazla PAV/finans numarasina bagli.
 - `INCOMPLETE_TERMINAL_ROW`: PAV, banka, terminal ID veya merchant alanlarindan biri bos.
-- `UNKNOWN_BANK`: Furpa banka adi Mikro `PaymentTypes` katalogunda yok.
+- `UNKNOWN_BANK`: Furpa banka adi Furpa `PaymentTypes` katalogunda yok.
 - `TERMINAL_GROUP_SHARED`: Ayni PAV grubu birden fazla fiziksel kasaya bagli.
 
 Response ornegi:
@@ -3723,7 +3723,7 @@ Response ornegi:
     "cashNo": 103,
     "terminalNo": "PAV210009468",
     "bank": "Eski Banka",
-    "message": "Eski Banka bankasi Mikro odeme tipi katalogunda bulunamadi. Terminal satirini gecerli bir banka secerek guncelleyin."
+    "message": "Eski Banka bankasi Furpa odeme tipi katalogunda bulunamadi. Terminal satirini gecerli bir banka secerek guncelleyin."
   }
 ]
 ```
@@ -25516,6 +25516,8 @@ Bu bolum insan tarafindan okunacak ozet katalogdur. Tam ve surumlenmis alan, tip
 - `KasaHareketMikroTransferRangeHttpRequest`: `StartDate`, `EndDate`
 - `KasaHareketReportHttpRequest`: `Date`, `BranchNo`, `CashRegisterNo`
 
+`DELETE /api/kasa-islemleri/kasa-hareket-aktarimi/mikro` icin `BranchNo` zorunludur. `EndDate` bos veya `Date` ile ayniysa tek gunluk `StokHareketSil`, farkliysa iki tarih dahil olacak sekilde `StokHareketSilTarihAralikli` calisir. `POST /mikro` aktariminda `EndDate` kullanilmaz; tarih aralikli aktarim icin `/mikro/aralik-aktar` endpointi kullanilir.
+
 ### Fatura Request Modelleri
 
 - `InvoiceSendingListHttpRequest`: `StartDate`, `EndDate`, `Scenario`, `SentState`, `IsSent`
@@ -26078,6 +26080,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashTurnoverListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/detay` | JWT + kasa-islemleri.kasa-cirolari.detail | query: WarehouseNo / integer (int32)<br>query: BusinessDate / string (date-time) (zorunlu)<br>query: ShiftNo / integer (int32) (zorunlu)<br>query: CashierCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/ozet` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverOverviewDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/durum` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketTransferStatusDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: Tolerance / number (double) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketCashSummaryComparisonDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) (zorunlu)<br>query: CashRegisterNo / integer (int32) (zorunlu)<br>query: ReceiptTake / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDetailDto<br>400: ProblemDetails |
@@ -26942,6 +26945,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `cashNo` | integer (int32) | Hayir | nullable |
 | `id` | integer (int32) | Hayir |  |
 | `merchantNo` | string | Hayir | nullable |
+| `paymentTypeNo` | integer (int32) | Hayir | nullable |
 | `terminalId` | string | Hayir | nullable |
 | `terminalNo` | string | Hayir | nullable |
 
@@ -31358,6 +31362,20 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalDifference` | number (double) | Hayir |  |
 | `totalExpense` | number (double) | Hayir |  |
 | `totalNetAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `canceledReceiptCount` | integer (int32) | Hayir |  |
+| `cashRegisterNo` | integer (int32) | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir |  |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `pendingReceiptCount` | integer (int32) | Hayir |  |
+| `startDate` | string (date-time) | Hayir |  |
+| `totalReceiptCount` | integer (int32) | Hayir |  |
+| `transferredReceiptCount` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.BanknoteMovementItemDto
 

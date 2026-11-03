@@ -415,7 +415,8 @@ public sealed class AyarlarService(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .ToArrayAsync(cancellationToken);
 
         return selectedRows
@@ -579,7 +580,8 @@ public sealed class AyarlarService(
                 item.Bank ?? string.Empty,
                 item.TerminalId ?? string.Empty,
                 item.MerchantNo ?? string.Empty,
-                item.CashNo))
+                item.CashNo,
+                item.PaymentTypeNo))
             .ToArrayAsync(cancellationToken);
 
         var bankCatalog = await ListTerminalBankCatalogAsync(cancellationToken);
@@ -652,7 +654,7 @@ public sealed class AyarlarService(
                         cashNo,
                         row.CashRegisterNo.Trim(),
                         row.Bank.Trim(),
-                        $"{row.Bank.Trim()} bankasi Mikro odeme tipi katalogunda bulunamadi. Terminal satirini gecerli bir banka secerek guncelleyin."));
+                        $"{row.Bank.Trim()} bankasi Furpa odeme tipi katalogunda bulunamadi. Terminal satirini gecerli bir banka secerek guncelleyin."));
                 }
             }
         }
@@ -1432,7 +1434,8 @@ public sealed class AyarlarService(
             item.Bank ?? string.Empty,
             item.TerminalId ?? string.Empty,
             item.MerchantNo ?? string.Empty,
-            item.CashNo);
+            item.CashNo,
+            item.PaymentTypeNo);
 
     private static CashRegisterTerminalDto ToTerminalDto(CashRegisterTerminalSource item) =>
         new(
@@ -1441,7 +1444,8 @@ public sealed class AyarlarService(
             item.Bank,
             item.TerminalId,
             item.MerchantNo,
-            item.CashNo);
+            item.CashNo,
+            item.PaymentTypeNo);
 
     private sealed record CashRegisterTerminalSource(
         int Id,
@@ -1449,7 +1453,8 @@ public sealed class AyarlarService(
         string Bank,
         string TerminalId,
         string MerchantNo,
-        int? CashNo);
+        int? CashNo,
+        int? PaymentTypeNo);
 
     private static CashierDto ToCashierDto(CashierEntity item) =>
         new(

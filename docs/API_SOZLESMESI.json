@@ -46303,6 +46303,143 @@
         ]
       }
     },
+    "/api/kasa-islemleri/kasa-hareket-aktarimi/durum": {
+      "get": {
+        "tags": [
+          "KasaHareketAktarimi"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "BranchNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "CashRegisterNo",
+            "in": "query",
+            "schema": {
+              "maximum": 999,
+              "minimum": 0,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "kasa-islemleri.kasa-hareket-aktarimi.list"
+        ]
+      }
+    },
     "/api/kasa-islemleri/kasa-hareket-aktarimi/rapor": {
       "get": {
         "tags": [
@@ -98243,6 +98380,11 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
+          },
+          "paymentTypeNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -112398,6 +112540,50 @@
           "totalDifference": {
             "type": "number",
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "branchNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cashRegisterNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "totalReceiptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "transferredReceiptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingReceiptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "canceledReceiptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false

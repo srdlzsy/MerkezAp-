@@ -25,7 +25,7 @@ public sealed class CompanyDocumentTrackingService(
     {
         if (request.Date.Year < 1753 || request.Date.Year > 9999)
         {
-            throw new ArgumentOutOfRangeException(nameof(request), "Tarih 1753 ile 9999 yillari arasinda olmalidir.");
+            throw new ArgumentOutOfRangeException(nameof(request.Date), "Tarih 1753 ile 9999 yillari arasinda olmalidir.");
         }
 
         if (request.WarehouseNo is <= 0)

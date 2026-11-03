@@ -163,7 +163,7 @@ Firma sevkinde cari kodu, adres numaralari ve e-belge uygunlugu `CARI_HESAPLAR`/
 | Kasa sayimi detay | `GET .../kasa-sayimlari/{documentSerie}/{documentOrderNo}` ve `/detaylar` | header, odeme/sayim satirlari, kasa-kasiyer ve farklar | Detay guncellemesi ayni belge anahtariyla yapilir. |
 | Banknot satirlari | `GET .../{documentSerie}/{documentOrderNo}/banknot-hareketleri`; `PUT` ayni rota | kupur, adet, toplam | Mikro DB `BanknoteMovements`. |
 | Hediye ceki satirlari | `GET/PUT .../{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | cek tipi, adet/tutar | Kasa sayim belgesine bagli hareketler. |
-| Online odeme tipleri | `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | `paymentName`, `paymentTypeNo`, `paymentGenus`, `accountCode`, `terminalId`, `slipNumber`, `amountValue` | Mikro `PaymentTypes`; `PaymentGenus=5` veya adinda `online` gecen kayitlar gelir. Canli temel kayitlar: Online Odeme `10/1/0021`, Trendyol `600/5/0013`, Yemek Sepeti `601/5/0014`. |
+| Online odeme tipleri | `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | `paymentName`, `paymentTypeNo`, `paymentGenus`, `accountCode`, `terminalId`, `slipNumber`, `amountValue` | Furpa `PaymentTypes`; `PaymentGenus=5` veya adinda `online` gecen kayitlar gelir. Canli temel kayitlar: Online Odeme `10/1/0021`, Trendyol `600/5/0013`, Yemek Sepeti `601/5/0014`. |
 | Bagimsiz banknot takip | `GET/POST /api/kasa-islemleri/banknot-takipleri`; detay `/{banknoteTrackId}`; ozet `/sayim-toplami` | takip id, depo, kupur satirlari, beklenen/sayilan toplam, fark | Mikro DB `BanknoteTracks` ve `BanknoteMovements`. |
 
 Kasa sayiminda banka odeme tipi sorgularinda kasa numarasi yerine mumkunse `cashFinanceNumber`/terminal `cashRegisterNo` kullanilmalidir.

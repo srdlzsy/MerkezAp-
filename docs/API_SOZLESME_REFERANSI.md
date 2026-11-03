@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 772. Model sayisi: 705.
+Endpoint sayisi (method + route): 773. Model sayisi: 706.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -452,6 +452,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashTurnoverListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/detay` | JWT + kasa-islemleri.kasa-cirolari.detail | query: WarehouseNo / integer (int32)<br>query: BusinessDate / string (date-time) (zorunlu)<br>query: ShiftNo / integer (int32) (zorunlu)<br>query: CashierCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/ozet` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverOverviewDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/durum` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketTransferStatusDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: Tolerance / number (double) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketCashSummaryComparisonDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) (zorunlu)<br>query: CashRegisterNo / integer (int32) (zorunlu)<br>query: ReceiptTake / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDetailDto<br>400: ProblemDetails |
@@ -1316,6 +1317,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `cashNo` | integer (int32) | Hayir | nullable |
 | `id` | integer (int32) | Hayir |  |
 | `merchantNo` | string | Hayir | nullable |
+| `paymentTypeNo` | integer (int32) | Hayir | nullable |
 | `terminalId` | string | Hayir | nullable |
 | `terminalNo` | string | Hayir | nullable |
 
@@ -5732,6 +5734,20 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalDifference` | number (double) | Hayir |  |
 | `totalExpense` | number (double) | Hayir |  |
 | `totalNetAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `canceledReceiptCount` | integer (int32) | Hayir |  |
+| `cashRegisterNo` | integer (int32) | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir |  |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `pendingReceiptCount` | integer (int32) | Hayir |  |
+| `startDate` | string (date-time) | Hayir |  |
+| `totalReceiptCount` | integer (int32) | Hayir |  |
+| `transferredReceiptCount` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.BanknoteMovementItemDto
 

@@ -122,6 +122,11 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
             entity.Property(item => item.TerminalId).HasMaxLength(40);
             entity.Property(item => item.MerchantNo).HasMaxLength(40);
             entity.HasIndex(item => new { item.CashNo, item.PaymentTypeNo });
+            entity.HasOne<PaymentTypeDefinitionEntity>()
+                .WithMany()
+                .HasForeignKey(item => item.PaymentTypeNo)
+                .HasPrincipalKey(item => item.PaymentTypeNo)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PaymentTypeDefinitionEntity>(entity =>
@@ -133,7 +138,8 @@ public sealed class FurpaDbContext(DbContextOptions<FurpaDbContext> options) : D
             entity.Property(item => item.UpdateDate).HasColumnType("datetime");
             entity.Property(item => item.PaymentName).HasMaxLength(100);
             entity.Property(item => item.AccountCode).HasMaxLength(20);
-            entity.HasIndex(item => item.PaymentTypeNo).IsUnique();
+            entity.HasAlternateKey(item => item.PaymentTypeNo)
+                .HasName("UQ_PaymentTypes_PaymentTypeNo");
         });
 
         modelBuilder.Entity<BranchDetailEntity>(entity =>

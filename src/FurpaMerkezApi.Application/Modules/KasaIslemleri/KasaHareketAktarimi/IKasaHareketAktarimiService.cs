@@ -36,6 +36,10 @@ public interface IKasaHareketAktarimiService
         KasaHareketMikroTransferRangeRequest request,
         CancellationToken cancellationToken);
 
+    Task<KasaHareketTransferStatusDto> GetTransferStatusAsync(
+        KasaHareketTransferStatusRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<KasaHareketReportRowDto>> GetReportAsync(
         KasaHareketReportRequest request,
         CancellationToken cancellationToken);

@@ -125,7 +125,8 @@ public sealed record CashRegisterTerminalDto(
     string Bank,
     string TerminalId,
     string MerchantNo,
-    int? CashNo);
+    int? CashNo,
+    int? PaymentTypeNo);
 
 public sealed record CashRegisterTerminalLocationDto(
     string TerminalNo,

@@ -1,6 +1,6 @@
 # Kasa, POS, Banka ve Icmal Veri Akisi
 
-Bu dokuman; sube ayarlarindaki fiziksel kasa tanimlarinin, POS/PAV terminal satirlarinin, Mikro banka odeme katalogunun ve Icmal Kaydi Girisi ekraninin birbiriyle nasil baglandigini anlatir.
+Bu dokuman; sube ayarlarindaki fiziksel kasa tanimlarinin, POS/PAV terminal satirlarinin, Furpa odeme katalogunun ve Icmal Kaydi Girisi ekraninin birbiriyle nasil baglandigini anlatir.
 
 ## Kisa Cevap
 
@@ -9,9 +9,9 @@ Bu dokuman; sube ayarlarindaki fiziksel kasa tanimlarinin, POS/PAV terminal sati
 | Sube icindeki fiziksel kasa | Furpa `CashRegistryDetails` | Kasa/POS ayar ekrani |
 | Kasanin PAV/finans grup numarasi | Furpa `CashRegisterDetails.CashRegisterNo` | Kasa/POS ayar ekrani |
 | Banka, terminal ID ve merchant no | Furpa `CashRegisterDetails` | Kasa/POS ayar ekrani |
-| Banka odeme tipi no ve muhasebe hesap kodu | Mikro `PaymentTypes` | Bu ekrandan yazilmaz; yalniz katalog olarak okunur |
+| Banka odeme tipi no ve muhasebe hesap kodu | Furpa `PaymentTypes` | Bu ekrandan yazilmaz; yalniz katalog olarak okunur |
 | Icmalde gosterilecek kasa listesi | Furpa `CashRegistryDetails` | Ayar ekranindaki fiziksel kasa kayitlari |
-| Icmalde gosterilecek banka slip satirlari | Furpa terminal satiri + Mikro `PaymentTypes` eslesmesi | Iki kaynaktan okunarak response uretilir |
+| Icmalde gosterilecek banka slip satirlari | Furpa `CashRegisterDetails.PaymentTypeNo` + Furpa `PaymentTypes` | Tek Furpa katalog iliskisinden response uretilir |
 
 Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` tablolari bu akislar icin terminal kaynagi veya fallback degildir. Eski kayitlar yeni ayar ve icmal ekranini etkilemez.
 
@@ -22,7 +22,7 @@ Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` tablolari bu akislar 
 | Katman | Context / Kaynak | Ne Icin Kullaniliyor | Yetki |
 |---|---|---|---|
 | Furpa ayar veritabani | `FurpaDbContext` | Sube, fiziksel kasa, POS terminali, banka etiketi ve kasiyer tanimlari | Okuma / yazma |
-| Mikro veritabani | `MikroDbContext` / `MikroWriteDbContext` | Odeme kataloglari, banknot/cek tanimlari, icmal belgeleri ve muhasebe hareketleri | Okuma / yazma |
+| Mikro veritabani | `MikroDbContext` / `MikroWriteDbContext` | Banknot/cek tanimlari, icmal belgeleri ve muhasebe hareketleri | Okuma / yazma |
 | POS klasoru | `BranchDetails.BranchIpAddress` + `PoskonFolderPath` | Kasanin `ZRAPxxxx.xxx` dosyasindan NET CIRO okumak | Salt okunur dosya |
 | Eski POS muhasebe entegrasyonu | Mikro `ZReport*`, `CashRegisterBranches` ve fatura tablolari | POS muhasebe aktarimi; kasa/POS ayar ekraninin veya icmal dropdown'larinin kaynagi degildir | Ayri modul |
 
@@ -31,21 +31,22 @@ Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` tablolari bu akislar 
 | Tablo | Anahtar | Kullanilan Alanlar | Icmaldeki Anlami | Islem |
 |---|---|---|---|---|
 | `CashRegistryDetails` | `DetailId` | `BranchNo`, `CashRegisterNo`, `CashRegisterType` | Subeye bagli fiziksel kasa numarasi ve kasa tipi | Okuma / yazma |
-| `CashRegisterDetails` | `Id` | `CashRegisterNo`, `Bank`, `TerminalId`, `MerchantNo`, `CashNo` | Finans/PAV numarasi, banka etiketi, terminal ve uye isyeri numarasi; `CashNo` ile fiziksel kasaya baglanir | Okuma / yazma |
+| `CashRegisterDetails` | `Id` | `CashRegisterNo`, `Bank`, `TerminalId`, `MerchantNo`, `CashNo`, `PaymentTypeNo` | Finans/PAV numarasi, banka etiketi, terminal ve uye isyeri numarasi; `CashNo` ile fiziksel kasaya, `PaymentTypeNo` ile kataloga baglanir | Okuma / yazma |
+| `PaymentTypes` | `PaymentTypeNo` | `PaymentName`, `PaymentGenus`, `AccountCode` | Banka, yemek ceki, online odeme ve gider katalogu | Okuma |
 | `BranchDetails` | `BranchNo` | `BranchIpAddress`, `PosGenelFolderPath`, `PoskonFolderPath`, `BranchScalesFolderPath`, `ScalesType` | Sube ve POS dosya yolu bilgileri | Okuma / yazma |
 | `Cashiers` | `CashierId` | `CashierCode`, `CashierName`, `CashierPassword`, `CashierAuthorization`, `CashierState` | Icmalde secilen kasiyer/mudur katalog bilgisi | Okuma / yazma |
 | `KASIYER_TANIMLARI` | Kasiyer kaydi | Kasiyer kodu ve tanim alanlari | Kasiyer olusturma/guncellemede uyumluluk icin senkronlanan tablo; icmal lookup'i dogrudan `Cashiers` okur | Yazma esitlemesi |
 
-### Mikro Katalog ve Referans Tablolari
+### Katalog ve Referans Tablolari
 
 | Tablo | Anahtar | Kullanilan Alanlar | Filtre / Kullanim |
 |---|---|---|---|
-| `PaymentTypes` | `PaymentTypeNo` | `PaymentName`, `PaymentGenus`, `AccountCode` | Banka: `PaymentGenus=1`; yemek ceki: `2`; online: `5` veya adinda `online`; magaza gideri: `110-113` |
+| Furpa `PaymentTypes` | `PaymentTypeNo` | `PaymentName`, `PaymentGenus`, `AccountCode` | Banka: `PaymentGenus=1`; yemek ceki: `2`; online: `5` veya adinda `online`; magaza gideri: `110-113` |
 | `BanknoteTypes` | `BanknoteType` | `Value` | Banknot adet ve tutar satirlarinin kupur katalogu |
 | `GiftCheckTypes` | `GiftCheckType` | `Value` | Hediye ceki adet ve tutar satirlarinin katalogu |
 | `DEPOLAR` | `dep_no` | `dep_adi` | Icmal liste/raporunda `BranchNo` icin sube/depo adi |
 
-`PaymentTypes` katalogu POS cihazinin hangi kasaya bagli oldugunu tutmaz. Kasa-terminal iliskisi Furpa `CashRegisterDetails` tablosundan gelir; Mikro katalogu yalniz odeme tipi, banka adi ve muhasebe hesap kodunu tamamlar.
+`PaymentTypes` katalogu POS cihazinin hangi kasaya bagli oldugunu tutmaz. Kasa-terminal iliskisi Furpa `CashRegisterDetails` tablosundan gelir; `CashRegisterDetails.PaymentTypeNo` katalogdaki odeme tipi, banka adi ve muhasebe hesap koduna baglanir. `Bank` alani okunabilir etiket ve eski kayit uyumlulugu icin korunur.
 
 Icmal rapor sorgusundaki kolonlar su sabit odeme tipi numaralarina gore hesaplanir:
 
@@ -88,7 +89,7 @@ Bu nedenle `PaymentTypes` tablosuna yeni bir banka veya yemek ceki eklemek looku
 | `cashNo` | Furpa `CashRegistryDetails.CashRegisterNo` | `Summaries.CashNo`, banknot/cek `CashNo` |
 | `cashRegisterNo` | Furpa `CashRegisterDetails.CashRegisterNo`; ayni satirin `CashNo` baglantisi dogrulanir | Yeni/eski kasa kararinda kullanilir; `PAV` ise yeni kasa kabul edilir |
 | `terminalId` | Furpa `CashRegisterDetails.TerminalId` | Ilgili `Summaries.TerminalId` |
-| `paymentTypeId` | Mikro `PaymentTypes.PaymentTypeNo` | `Summaries.PaymentTypeID`, muhasebe hesap secimi |
+| `paymentTypeId` | Furpa `PaymentTypes.PaymentTypeNo` | `Summaries.PaymentTypeID`, muhasebe hesap secimi |
 | `amount` | Istek govdesi | `Summaries.Amount`, muhasebe `cha_meblag` |
 | `zReportNo` | Istek ve POS dosyasi | `Summaries.ZReportNo`; `ZRAP{zNo:0000}.{cashNo:000}` dosyasi okunur |
 | `cashierNo`, `managerNo` | Furpa kasiyer katalogu | `Summaries.CashierNo`, `Summaries.ManagerNo` |
@@ -113,17 +114,17 @@ Muhasebe satirlari `cha_evrak_tip=60`, `cha_fileid=51`, `cha_cinsi=5`, seri `X` 
 | Endpoint / Islem | Birinci Kaynak | Tamamlayici Kaynak | Sonuc |
 |---|---|---|---|
 | `GET /api/ayarlar/kasa-pos-terminalleri` | Furpa `CashRegistryDetails` | Furpa `CashRegisterDetails` | Fiziksel kasa ve bagli POS satirlari |
-| `GET /api/ayarlar/kasa-pos-terminalleri/banka-secenekleri` | Mikro `PaymentTypes` | `PaymentGenus=1` | Banka secenekleri |
+| `GET /api/ayarlar/kasa-pos-terminalleri/banka-secenekleri` | Furpa `PaymentTypes` | `PaymentGenus=1` | Banka secenekleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/kasalar` | Furpa `CashRegistryDetails` | Sube filtresi | Fiziksel kasa listesi |
-| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | Furpa `CashRegisterDetails` | Mikro `PaymentTypes` | Kasaya bagli banka/POS terminal secenekleri |
-| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/yemek-ceki` | Mikro `PaymentTypes` | `PaymentGenus=2` | Yemek ceki secenekleri |
-| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | Mikro `PaymentTypes` | `PaymentGenus=5` veya adinda `online` | Online odeme tipleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | Furpa `CashRegisterDetails` | Furpa `PaymentTypes` | Kasaya bagli banka/POS terminal secenekleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/yemek-ceki` | Furpa `PaymentTypes` | `PaymentGenus=2` | Yemek ceki secenekleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | Furpa `PaymentTypes` | `PaymentGenus=5` veya adinda `online` | Online odeme tipleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari` | Furpa `CashRegisterDetails` | Banka adinda `online` | Online POS/kasa detaylari |
 | `GET /api/kasa-islemleri/kasa-sayimlari/banknot-tipleri` | Mikro `BanknoteTypes` | - | Banknot kupurleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/hediye-ceki-tipleri` | Mikro `GiftCheckTypes` | - | Hediye ceki kupurleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/z-rapor-toplam` | Furpa `BranchDetails` | POS `ZRAP` dosyasi | NET CIRO / Z toplam |
-| Icmal create/update | Furpa kasa-POS baglantisi | Mikro odeme kataloglari | Dort Mikro hareket tablosuna transaction ile kayit |
-| Icmal liste/rapor/detay | Mikro `Summaries` | `DEPOLAR`, `PaymentTypes`, banknot/cek kataloglari | Ekran ve rapor DTO'lari |
+| Icmal create/update | Furpa kasa-POS baglantisi ve odeme katalogu | Mikro hareket tablolari | Dort Mikro hareket tablosuna transaction ile kayit |
+| Icmal liste/rapor/detay | Mikro `Summaries` | Mikro `DEPOLAR`, Furpa `PaymentTypes`, Mikro banknot/cek kataloglari | Ekran ve rapor DTO'lari |
 
 ### Bu Modulden Ayri Olan POS Muhasebe Kaynaklari
 
@@ -187,9 +188,9 @@ Bankanin uye isyeri numarasidir.
 
 ### `bank`
 
-Furpa terminal satirinda saklanan banka adidir. Bu ad Mikro `PaymentTypes.PaymentName` katalogundaki `PaymentGenus = 1` kaydiyla eslesmelidir.
+Furpa terminal satirinda saklanan banka adidir. Asil bag `CashRegisterDetails.PaymentTypeNo` ile Furpa `PaymentTypes.PaymentTypeNo` arasindadir. Banka adi katalogdaki `PaymentName` ile kanonik tutulur.
 
-API buyuk/kucuk harf farkini kabul eder, ancak Furpa'ya Mikro katalogundaki kesin yazimi kaydeder. Katalogda olmayan banka yeni kayit veya guncellemede `400 Bad Request` ile reddedilir.
+API buyuk/kucuk harf farkini kabul eder, ancak Furpa'ya Furpa katalogundaki kesin yazimi ve `PaymentTypeNo` degerini kaydeder. Katalogda olmayan banka yeni kayit veya guncellemede `400 Bad Request` ile reddedilir.
 
 ## Tablo Iliskisi
 
@@ -220,11 +221,12 @@ CashRegisterDetails
 CashNo = 163
 CashRegisterNo = PAV210009468
 Bank = TEB
+PaymentTypeNo = 4
 TerminalId = PSB75693
 MerchantNo = 000000000495366
 ```
 
-Mikro banka katalog kaydi:
+Furpa banka katalog kaydi:
 
 ```text
 PaymentTypes
@@ -246,9 +248,9 @@ Furpa CashRegistryDetails
         v
 Furpa CashRegisterDetails
         |
-        | CashRegisterDetails.Bank = PaymentTypes.PaymentName
+        | CashRegisterDetails.PaymentTypeNo = PaymentTypes.PaymentTypeNo
         v
-Mikro PaymentTypes (PaymentGenus = 1)
+Furpa PaymentTypes (PaymentGenus = 1)
 ```
 
 ## Ayar Ekrani Yazma Akisi
@@ -260,7 +262,7 @@ GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler
 ```
 
 - Kasa tipi seceneklerini dondurur.
-- Banka dropdown'unu Mikro `PaymentTypes` tablosundaki `PaymentGenus = 1` kayitlarindan doldurur.
+- Banka dropdown'unu Furpa `PaymentTypes` tablosundaki `PaymentGenus = 1` kayitlarindan doldurur.
 - UI banka adini serbest metin olarak yazdirmamalidir.
 
 ### 2. Yeni kasa ve terminal grubunu birlikte olusturma
@@ -272,7 +274,7 @@ POST /api/ayar-islemleri/kasa-pos-terminalleri
 API:
 
 1. Subenin Furpa `BranchDetails` kaydini kontrol eder.
-2. Banka adlarini Mikro `PaymentTypes` kataloguyla dogrular.
+2. Banka adlarini Furpa `PaymentTypes` kataloguyla dogrular ve `PaymentTypeNo` bagini kurar.
 3. PAV/finans grubunun baska kasada kullanilip kullanilmadigini kontrol eder.
 4. Furpa `CashRegistryDetails` fiziksel kasa kaydini olusturur.
 5. Furpa `CashRegisterDetails` banka terminal satirlarini olusturur.
@@ -286,7 +288,7 @@ Bu islem Mikro `CashRegisterDetails`, Mikro `CashRegisterBranches` veya Mikro `P
 POST /api/ayar-islemleri/kasa-pos-terminalleri/subeler/{branchNo}/kasalar/{cashNo}/terminaller
 ```
 
-Yalniz Furpa `CashRegisterDetails` tablosuna yazar. Banka adi once Mikro katalogundan dogrulanir.
+Yalniz Furpa `CashRegisterDetails` tablosuna yazar. Banka adi once Furpa katalogundan dogrulanir.
 
 ### 4. Terminal satirini guncelleme
 
@@ -347,7 +349,7 @@ Asagidaki sorunlari raporlar:
 - `MISSING_TERMINAL_GROUP`: Fiziksel kasa var, POS/PAV satiri yok.
 - `MULTIPLE_TERMINAL_GROUPS`: Bir fiziksel kasaya birden fazla PAV grubu bagli.
 - `INCOMPLETE_TERMINAL_ROW`: PAV, banka, terminal ID veya merchant bilgisi eksik.
-- `UNKNOWN_BANK`: Furpa banka adi Mikro `PaymentTypes` katalogunda yok.
+- `UNKNOWN_BANK`: Furpa banka adi Furpa `PaymentTypes` katalogunda yok.
 - `TERMINAL_GROUP_SHARED`: Ayni PAV grubu birden fazla fiziksel kasaya bagli.
 
 Angular ayar ekrani bu sorunlari listeler ve `Kasayi Ac` aksiyonuyla ilgili kasayi duzeltmeye acar.
@@ -389,9 +391,9 @@ Backend:
 
 1. Fiziksel kasanin subeye ait oldugunu Furpa `CashRegistryDetails` ile dogrular.
 2. Bu kasanin Furpa `CashRegisterDetails` banka terminal satirlarini okur.
-3. Her satirin `Bank` degerini Mikro `PaymentTypes.PaymentName` ile eslestirir.
+3. Her satirin `PaymentTypeNo` degerini Furpa `PaymentTypes.PaymentTypeNo` ile eslestirir; eski null kayitlarda gecici olarak banka adi eslesmesini kullanir.
 4. Yalniz `PaymentGenus = 1` odeme tiplerini dondurur.
-5. Response'ta Furpa `TerminalId` ile Mikro `PaymentTypeNo` ve `AccountCode` degerlerini birlestirir.
+5. Response'ta Furpa `TerminalId`, `PaymentTypeNo` ve `AccountCode` degerlerini birlestirir.
 
 Ornek response satiri:
 
@@ -416,9 +418,9 @@ Icmal create body icinde:
 - `warehouseNo`: hedef sube/depo.
 - `cashNo`: fiziksel kasa.
 - `cashRegisterNo`: secilen kasanin Furpa PAV/finans grup numarasi.
-- Banka satirlarinda `paymentTypeNo`: Mikro `PaymentTypes.PaymentTypeNo`.
+- Banka satirlarinda `paymentTypeNo`: Furpa `PaymentTypes.PaymentTypeNo`.
 - Banka satirlarinda `terminalId`: Furpa `CashRegisterDetails.TerminalId`.
-- `accountCode`: Mikro `PaymentTypes.AccountCode`.
+- `accountCode`: Furpa `PaymentTypes.AccountCode`.
 
 API, body'deki `cashRegisterNo` degerinin secilen `cashNo` ile Furpa tarafinda eslestigini yeniden kontrol eder. Eslesmiyorsa kaydi reddeder.
 
@@ -431,8 +433,8 @@ Asagidaki sirayla kontrol edilmelidir:
 1. `branchNo + cashNo` Furpa `CashRegistryDetails` tablosunda var mi?
 2. Ayni `cashNo` icin Furpa `CashRegisterDetails` satiri var mi?
 3. Terminal satirinda `Bank`, `CashRegisterNo`, `TerminalId` ve `MerchantNo` dolu mu?
-4. `Bank`, Mikro `PaymentTypes.PaymentName` alaninda var mi?
-5. Eslesen Mikro kaydinda `PaymentGenus = 1` mi?
+4. `PaymentTypeNo`, Furpa `PaymentTypes.PaymentTypeNo` alaninda var mi?
+5. Eslesen Furpa kaydinda `PaymentGenus = 1` mi?
 6. Ayar ekranindaki `Tanim Sorunlari` bolumu hata gosteriyor mu?
 
 API, eski Mikro terminal tablolarina fallback yapmaz. Furpa tanimi eksikse eski kaydi getirerek sorunu gizlemek yerine bos liste veya acik hata dondurur.
@@ -453,7 +455,7 @@ WHERE BranchNo = 145
 PAV ve banka terminal satirlari:
 
 ```sql
-SELECT Id, CashNo, CashRegisterNo AS FinanceNo, Bank, TerminalId, MerchantNo
+SELECT Id, CashNo, CashRegisterNo AS FinanceNo, Bank, PaymentTypeNo, TerminalId, MerchantNo
 FROM Furpa.dbo.CashRegisterDetails
 WHERE CashNo = 163
 ORDER BY CashRegisterNo, Bank, Id;
@@ -463,7 +465,7 @@ Banka odeme katalogu:
 
 ```sql
 SELECT PaymentTypeNo, PaymentName, PaymentGenus, AccountCode
-FROM MikroDesktop_FURPA_2024.dbo.PaymentTypes
+FROM Furpa.dbo.PaymentTypes
 WHERE PaymentGenus = 1
 ORDER BY PaymentName, PaymentTypeNo;
 ```
@@ -483,8 +485,8 @@ SELECT
 FROM Furpa.dbo.CashRegistryDetails r
 LEFT JOIN Furpa.dbo.CashRegisterDetails d
     ON d.CashNo = r.CashRegisterNo
-LEFT JOIN MikroDesktop_FURPA_2024.dbo.PaymentTypes p
-    ON p.PaymentName = d.Bank
+LEFT JOIN Furpa.dbo.PaymentTypes p
+    ON p.PaymentTypeNo = d.PaymentTypeNo
    AND p.PaymentGenus = 1
 WHERE r.BranchNo = 145
   AND r.CashRegisterNo = 163
@@ -500,13 +502,13 @@ Kasa/POS ayar ekranindan:
 - PAV/finans grubu ve banka terminal satirlari eklenebilir, guncellenebilir, silinebilir.
 - PAV grubu dogru kasaya tasinabilir.
 
-Bu ekrandan Mikro `PaymentTypes` katalog kaydi olusturulmaz veya degistirilmez. Yeni bir banka secenegi gerekiyorsa once Mikro odeme tipi katalogunda `PaymentGenus = 1` kaydi yetkili surecle tanimlanmalidir. Daha sonra banka ayar ekranindaki dropdown'da gorunur ve Furpa terminal satirinda kullanilabilir.
+Bu ekrandan Furpa `PaymentTypes` katalog kaydi olusturulmaz veya degistirilmez. Yeni bir banka secenegi gerekiyorsa once Furpa odeme tipi katalogunda `PaymentGenus = 1` kaydi yetkili surecle tanimlanmalidir. Daha sonra banka ayar ekranindaki dropdown'da gorunur ve Furpa terminal satirinda kullanilabilir.
 
 ## Sahada Beklenen Sonuc
 
 - Ayar ekraninda tanimlanan fiziksel kasa icmal kasa listesinde gorunur.
 - Ayar ekraninda ayni kasaya eklenen banka terminal satirlari icmal banka listesinde gorunur.
 - Yanlis subenin veya yanlis kasanin bankalari kullaniciya gelmez.
-- Mikro katalogunda bulunmayan banka yeni kaydedilemez.
+- Furpa katalogunda bulunmayan banka yeni kaydedilemez.
 - Bir fiziksel kasaya birden fazla PAV baglanirsa rastgele secim yapilmaz; duzeltilebilir hata uretilir.
 - Eski Mikro terminal kayitlari yeni Furpa tanimlarinin onune gecmez.

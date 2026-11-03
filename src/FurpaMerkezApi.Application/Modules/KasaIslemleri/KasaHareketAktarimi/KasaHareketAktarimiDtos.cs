@@ -42,6 +42,12 @@ public sealed record KasaHareketMikroTransferRangeRequest(
     DateTime StartDate,
     DateTime EndDate);
 
+public sealed record KasaHareketTransferStatusRequest(
+    DateTime StartDate,
+    DateTime EndDate,
+    int? BranchNo,
+    int? CashRegisterNo);
+
 public sealed record KasaHareketReportRequest(
     DateTime Date,
     int? BranchNo,
@@ -86,6 +92,17 @@ public sealed record KasaHareketProcedureResultDto(
     DateTime Date,
     int? BranchNo,
     int? CashRegisterNo);
+
+public sealed record KasaHareketTransferStatusDto(
+    DateTime StartDate,
+    DateTime EndDate,
+    int? BranchNo,
+    int? CashRegisterNo,
+    int TotalReceiptCount,
+    int TransferredReceiptCount,
+    int PendingReceiptCount,
+    int CanceledReceiptCount,
+    DateTime GeneratedAtUtc);
 
 public sealed record KasaHareketReportRowDto(
     DateTime Date,
