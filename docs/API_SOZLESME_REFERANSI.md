@@ -19,7 +19,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 |---|---|---|---|---|
 | GET | `/` | Anonim |  | 200: bildirilmemis |
 | GET | `/api/arama-islemleri/barkodlar/{barcode}/cariler` | JWT + arama-islemleri.cari-bul.list | path: barcode / string (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: BarcodeCustomerSuggestionResponse<br>400: ProblemDetails<br>403: ProblemDetails |
-| GET | `/api/arama-islemleri/barkodlar/{barcode}/cozumle` | JWT | path: barcode / string (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: OperationType / string<br>query: TargetWarehouseNo / integer (int32)<br>query: SupplierCode / string<br>query: CompanyCode / string<br>query: IsRefund / boolean<br>query: ScreenCode / string | 401: ProblemDetails<br>200: BarcodeResolutionDto<br>400: ProblemDetails |
+| GET | `/api/arama-islemleri/barkodlar/{barcode}/cozumle` | JWT | path: barcode / string (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: OperationType / string<br>query: TargetWarehouseNo / integer (int32)<br>query: SourceWarehouseNo / integer (int32)<br>query: SupplierCode / string<br>query: CompanyCode / string<br>query: IsRefund / boolean<br>query: ScreenCode / string | 401: ProblemDetails<br>200: BarcodeResolutionDto<br>400: ProblemDetails |
 | GET | `/api/arama-islemleri/barkodlar/{barcode}/fiyat` | JWT + arama-islemleri.fiyat-gor.list | path: barcode / string (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: SourceWarehouseNo / integer (int32)<br>query: IncludeDelisted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductLookupItemDto&gt;<br>400: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/arama-islemleri/cari-bul` | JWT + arama-islemleri.cari-bul.list | query: Barcode / string (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: BarcodeCustomerSuggestionResponse<br>400: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/arama-islemleri/cariler` | JWT | query: SearchText / string (zorunlu)<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;CustomerLookupItemDto&gt;<br>400: ProblemDetails |
@@ -1074,6 +1074,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `operationType` | string | Hayir | nullable |
 | `priceTypeCode` | integer (int32) | Hayir | nullable |
 | `primaryBarcode` | string | Hayir | nullable |
+| `procurementType` | string | Hayir | nullable |
 | `productModelCode` | string | Hayir | nullable |
 | `purchaseGrossPrice` | number (double) | Hayir | nullable |
 | `purchasePrice` | number (double) | Hayir | nullable |
@@ -1083,6 +1084,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `resolutionSource` | string | Hayir | nullable |
 | `salesPrice` | number (double) | Hayir | nullable |
 | `screenCode` | string | Hayir | nullable |
+| `sourceWarehouses` | FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts.ProductSourceWarehouseDto[] | Hayir | nullable |
 | `stockCode` | string | Hayir | nullable |
 | `stockName` | string | Hayir | nullable |
 | `supplierCode` | string | Hayir | nullable |

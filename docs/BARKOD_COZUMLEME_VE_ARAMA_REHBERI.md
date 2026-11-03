@@ -69,6 +69,7 @@ Query alanlari:
 | `operationType` | Islem tipi. Satira ekleme kararinda kullanilir. |
 | `screenCode` | Eski UI uyumu. `operationType` bos ise ekran baglami olarak okunur. |
 | `targetWarehouseNo` | Hedef depo. Model kod uygunlugu hesaplanabilir. |
+| `sourceWarehouseNo` | Depo siparisinde urunu gonderecek kaynak depo. Kaynak deponun model/depo katalog uygunlugu bu alanla denetlenir. |
 | `supplierCode` | Secili tedarikci. Satinalma sarti kontrolunde kullanilir. |
 | `companyCode` | `supplierCode` ile ayni anlamda geriye uyum alias'i. |
 | `isRefund` | `false` ise iade disi DLS/99 filtresi uygulanir. |
@@ -200,14 +201,18 @@ Kural:
 ### Depo Siparisi
 
 ```http
-GET /api/arama-islemleri/barkodlar/{barcode}/cozumle?operationType=order&warehouseNo={kaynakDepo}&targetWarehouseNo={hedefDepo}
+GET /api/arama-islemleri/barkodlar/{barcode}/cozumle?operationType=order&warehouseNo={siparisiVerenSube}&sourceWarehouseNo={urunuGonderecekDepo}
 ```
 
 Kural:
 
 - Siparis bloklari dikkate alinir.
-- Hedef depo/model kod uygunlugu karar motoruna dahil edilir.
+- `sourceWarehouseNo` verildiginde urun, kaynak deponun model kodlari,
+  `STOK_DEPO_DETAYLARI` kaydi ve `sdp_sipdursun=0` kurallariyla denetlenir.
+- Barkod cozumleme ve metinle urun arama ayni kaynak depo katalog kuralini kullanir.
 - Satinalma sarti `order` icin karar motoruna dahil edilir.
+- Create endpoint'i de ayni katalog kontrolunu tekrarlar. Eski bir istemci uygun
+  olmayan urunu gonderse bile Mikro yazimi baslamadan istek reddedilir.
 
 ### Firma Siparisi
 
@@ -411,6 +416,8 @@ ayri permission, audit ve duplicate kontroluyle tasarlanmalidir.
   barkodu oldugunu kendi tahmin etmesin.
 - `operationType` mutlaka gonderilsin.
 - Kaynak depo icin `warehouseNo` dogru gonderilsin.
+- Verilen depo siparisinde `sourceWarehouseNo`, urunu gonderecek secili depo
+  olarak ayrica gonderilsin.
 - Hedef depo varsa `targetWarehouseNo` gonderilebilir, fakat sevkte blok
   beklenmemelidir.
 - Firma/tedarikci baglami varsa `supplierCode` veya `companyCode` gonderilsin.

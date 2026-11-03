@@ -231,6 +231,7 @@ type BarcodeResolutionQuery = {
   warehouseNo?: number;
   operationType?: string;     // max 64
   targetWarehouseNo?: number;
+  sourceWarehouseNo?: number; // depo siparisinde urunu gonderecek depo
   supplierCode?: string;      // max 25
   companyCode?: string;       // max 25, alias
   isRefund?: boolean;
@@ -308,6 +309,10 @@ type CreateIssuedWarehouseOrderRequest = {
   description?: string;       // max 50
   lines: IssuedWarehouseOrderLine[]; // min 1
 };
+
+// Depo siparisinde urun arama ve barkod cozumleme ayni katalog kuralini kullanir:
+// DEPOLAR model kodlari + kaynak depo STOK_DEPO_DETAYLARI + sdp_sipdursun=0.
+// Create endpoint'i de lines[] stoklarini outWarehouseNo icin yeniden dogrular.
 
 type IssuedWarehouseOrderLine = {
   stockCode: string;          // zorunlu, max 25

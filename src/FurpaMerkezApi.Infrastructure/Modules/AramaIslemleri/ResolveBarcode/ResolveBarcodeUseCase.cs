@@ -2,7 +2,9 @@ using System.Data;
 using System.Data.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
 using FurpaMerkezApi.Infrastructure.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +21,13 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
 
+        if (request.SourceWarehouseNo is <= 0)
+        {
+            throw new ArgumentException(
+                "Source warehouse no must be greater than zero.",
+                nameof(request.SourceWarehouseNo));
+        }
+
         var rawBarcode = NormalizeOrNull(request.Barcode)
             ?? throw new ArgumentException("Barcode is required.", nameof(request.Barcode));
         var lookup = BarcodeLookupNormalizer.Normalize(rawBarcode);
@@ -27,6 +36,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var operationType = NormalizeOperationType(request.OperationType) ?? NormalizeOperationType(screenCode);
         var supplierCode = NormalizeOrNull(request.SupplierCode);
         var targetWarehouseNo = request.TargetWarehouseNo is > 0 ? request.TargetWarehouseNo : null;
+        var sourceWarehouseNo = request.SourceWarehouseNo is > 0 ? request.SourceWarehouseNo : null;
         var warnings = new List<string>();
         var errors = new List<string>();
 
@@ -268,11 +278,33 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 .Select(customer => customer.cari_unvan1)
                 .FirstOrDefaultAsync(cancellationToken);
 
+        var procurementSources = await SourceWarehouseOrderCatalogReader.ReadProcurementSourcesAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            [stock.StockCode],
+            request.WarehouseNo,
+            cancellationToken);
+        var procurementSource = procurementSources.TryGetValue(stock.StockCode, out var source)
+            ? source
+            : SourceWarehouseProcurementSnapshot.Empty;
+        var procurementType = SourceWarehouseOrderCatalogReader.ResolveProcurementType(
+            procurementSource.SourceWarehouses.Count > 0,
+            procurementSource.HasPurchaseRequirement);
+
         var targetWarehouse = await EvaluateTargetWarehouseAsync(
             targetWarehouseNo,
             stock.ModelCode,
             cancellationToken);
         AddTargetWarnings(targetWarehouse, warnings);
+
+        bool? isAllowedForSourceWarehouse = null;
+        if (BarcodeResolutionOperationRules.ShouldEnforceSourceWarehouse(operationType, sourceWarehouseNo))
+        {
+            isAllowedForSourceWarehouse = await SourceWarehouseOrderCatalogReader.IsStockOrderableAsync(
+                mikroDbContext.Database.GetDbConnection(),
+                sourceWarehouseNo!.Value,
+                stock.StockCode,
+                cancellationToken);
+        }
 
         var shouldEnforceTargetWarehouse = BarcodeResolutionOperationRules.ShouldEnforceTargetWarehouse(operationType);
         var shouldCheckPurchaseRequirement = BarcodeResolutionOperationRules.ShouldCheckPurchaseRequirement(
@@ -331,6 +363,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             isOrderBlocked,
             isGoodsAcceptanceBlocked,
             isPassive,
+            isAllowedForSourceWarehouse,
+            sourceWarehouseNo,
             shouldEnforceTargetWarehouse ? targetWarehouse.IsAllowed : null,
             hasPurchaseRequirement,
             shouldEnforcePurchaseRequirement,
@@ -386,6 +420,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             purchasePrice?.GrossPrice,
             purchasePrice is null ? null : "purchase-requirement",
             purchasePrice?.SupplierCode,
+            procurementType,
+            procurementSource.SourceWarehouses,
             operationDecision.IsUsable,
             operationDecision.Reason,
             warnings,
@@ -740,6 +776,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             purchaseGrossPrice: null,
             purchasePriceSource: null,
             purchaseSupplierCode: null,
+            procurementType: "Unassigned",
+            sourceWarehouses: null,
             isUsableInOperation: false,
             operationDecision: reason,
             warnings: warnings,
@@ -790,6 +828,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         double? purchaseGrossPrice,
         string? purchasePriceSource,
         string? purchaseSupplierCode,
+        string procurementType,
+        IReadOnlyCollection<ProductSourceWarehouseDto>? sourceWarehouses,
         bool isUsableInOperation,
         string? operationDecision,
         IReadOnlyCollection<string> warnings,
@@ -847,7 +887,9 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             purchasePrice,
             purchaseGrossPrice,
             purchasePriceSource,
-            purchaseSupplierCode);
+            purchaseSupplierCode,
+            procurementType,
+            sourceWarehouses);
 
     private static OperationEvaluation EvaluateScreenUsability(
         string? screenCode,
@@ -871,6 +913,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             isPassive,
             null,
             null,
+            null,
+            null,
             false,
             false);
     }
@@ -881,6 +925,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         bool isOrderBlocked,
         bool isGoodsAcceptanceBlocked,
         bool isPassive,
+        bool? isAllowedForSourceWarehouse,
+        int? sourceWarehouseNo,
         bool? isAllowedForTargetWarehouse,
         bool? hasPurchaseRequirement,
         bool shouldEnforcePurchaseRequirement,
@@ -889,6 +935,13 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         if (isPassive)
         {
             return new OperationEvaluation(false, "Urun pasif oldugu icin islemde kullanilamaz.");
+        }
+
+        if (isAllowedForSourceWarehouse == false)
+        {
+            return new OperationEvaluation(
+                false,
+                $"Urun kaynak depo {sourceWarehouseNo} siparis katalogunda bulunmuyor.");
         }
 
         if (isAllowedForTargetWarehouse == false)
@@ -1155,6 +1208,9 @@ file static class BarcodeLookupInfoExtensions
 
 internal static class BarcodeResolutionOperationRules
 {
+    internal static bool ShouldEnforceSourceWarehouse(string? operationType, int? sourceWarehouseNo) =>
+        sourceWarehouseNo.HasValue && string.Equals(operationType, "order", StringComparison.Ordinal);
+
     internal static bool ShouldEnforceTargetWarehouse(string? operationType) =>
         !string.Equals(operationType, "shipment", StringComparison.Ordinal);
 

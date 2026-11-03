@@ -6,5 +6,6 @@ public sealed record BarcodeResolutionRequest(
     string? ScreenCode,
     string? OperationType = null,
     int? TargetWarehouseNo = null,
+    int? SourceWarehouseNo = null,
     string? SupplierCode = null,
     bool? IsRefund = null);

@@ -88,6 +88,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         CreateIssuedWarehouseOrderRequest request,
         CancellationToken cancellationToken)
     {
+        await ValidateSourceWarehouseProductsAsync(request, cancellationToken);
         await ValidateCentralWarehousePackageQuantitiesAsync(request, cancellationToken);
 
         return await (mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
@@ -98,6 +99,33 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             var mode => throw new InvalidOperationException(
                 $"Unsupported MikroWriteRouting:IssuedWarehouseOrder mode '{mode}'.")
         });
+    }
+
+    private async Task ValidateSourceWarehouseProductsAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var catalogStockCodes = await SourceWarehouseOrderCatalogReader.ReadStockCodesAsync(
+            mikroWriteDbContext.Database.GetDbConnection(),
+            request.OutWarehouseNo,
+            stockCode: null,
+            cancellationToken);
+        var invalidStockCodes = request.Lines
+            .Select(line => line.StockCode.Trim())
+            .Where(stockCode => stockCode.Length > 0 && !catalogStockCodes.Contains(stockCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(stockCode => stockCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (invalidStockCodes.Length == 0)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"Su urunler kaynak depo {request.OutWarehouseNo} siparis katalogunda bulunmuyor: " +
+            string.Join(", ", invalidStockCodes),
+            nameof(request.Lines));
     }
 
     private async Task ValidateCentralWarehousePackageQuantitiesAsync(

@@ -198,6 +198,7 @@ public sealed class AramaIslemleriController(
                 request.ScreenCode,
                 request.OperationType,
                 request.TargetWarehouseNo,
+                request.SourceWarehouseNo,
                 request.CompanyCode ?? request.SupplierCode,
                 request.IsRefund),
             cancellationToken));
@@ -438,6 +439,9 @@ public sealed class BarcodeResolutionHttpRequest
 
     [Range(1, int.MaxValue)]
     public int? TargetWarehouseNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? SourceWarehouseNo { get; init; }
 
     [StringLength(25)]
     public string? SupplierCode { get; init; }

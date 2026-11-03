@@ -2511,6 +2511,16 @@
             }
           },
           {
+            "name": "SourceWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "SupplierCode",
             "in": "query",
             "schema": {
@@ -97528,6 +97538,17 @@
           },
           "purchaseSupplierCode": {
             "type": "string",
+            "nullable": true
+          },
+          "procurementType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceWarehouses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts.ProductSourceWarehouseDto"
+            },
             "nullable": true
           }
         },

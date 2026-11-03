@@ -1,10 +1,45 @@
 using FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ResolveBarcode;
+using FurpaMerkezApi.Infrastructure.Modules.Common;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.AramaIslemleri;
 
 public sealed class BarcodeResolutionOperationRulesTests
 {
+    [Theory]
+    [InlineData(true, true, "Mixed")]
+    [InlineData(true, false, "Warehouse")]
+    [InlineData(false, true, "Company")]
+    [InlineData(false, false, "Unassigned")]
+    public void ResolveProcurementType_UsesTheSharedProductSourceStandard(
+        bool hasSourceWarehouse,
+        bool hasPurchaseRequirement,
+        string expected)
+    {
+        var result = SourceWarehouseOrderCatalogReader.ResolveProcurementType(
+            hasSourceWarehouse,
+            hasPurchaseRequirement);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("order", 53, true)]
+    [InlineData("order", null, false)]
+    [InlineData("shipment", 53, false)]
+    [InlineData(null, 53, false)]
+    public void ShouldEnforceSourceWarehouse_OnlyAppliesToWarehouseOrders(
+        string? operationType,
+        int? sourceWarehouseNo,
+        bool expected)
+    {
+        var result = BarcodeResolutionOperationRules.ShouldEnforceSourceWarehouse(
+            operationType,
+            sourceWarehouseNo);
+
+        Assert.Equal(expected, result);
+    }
+
     [Fact]
     public void ShouldEnforceTargetWarehouse_ReturnsFalse_ForShipment()
     {

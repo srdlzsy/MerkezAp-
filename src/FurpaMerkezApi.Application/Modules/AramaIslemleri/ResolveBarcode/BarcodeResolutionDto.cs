@@ -1,3 +1,5 @@
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
+
 namespace FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 
 public sealed record BarcodeResolutionDto(
@@ -53,4 +55,6 @@ public sealed record BarcodeResolutionDto(
     double? PurchasePrice = null,
     double? PurchaseGrossPrice = null,
     string? PurchasePriceSource = null,
-    string? PurchaseSupplierCode = null);
+    string? PurchaseSupplierCode = null,
+    string ProcurementType = "Unassigned",
+    IReadOnlyCollection<ProductSourceWarehouseDto>? SourceWarehouses = null);
