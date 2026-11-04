@@ -22,6 +22,8 @@ public sealed class KasaHareketAktarimiService(
     private const string DefaultFileRootPath = @"\\10.0.0.55\kasa\";
     private const string NormalPrefix = "HR";
     private const string CancelPrefix = "IP";
+    private const int PosExpenseCustomerDocumentType = 61;
+    private const int PosSalesCustomerDocumentType = 63;
 
     private readonly Dictionary<string, string?> barcodeCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -565,7 +567,19 @@ public sealed class KasaHareketAktarimiService(
                       - ISNULL(movement.sth_iskonto4, 0)
                       - ISNULL(movement.sth_iskonto5, 0)
                       - ISNULL(movement.sth_iskonto6, 0)
-                      + ISNULL(movement.sth_vergi, 0)) AS StockMovementAmount
+                      + ISNULL(movement.sth_vergi, 0)) AS StockMovementAmount,
+                    SUM(CASE
+                        WHEN movement.sth_evraktip = 4 THEN
+                            ISNULL(movement.sth_tutar, 0)
+                          - ISNULL(movement.sth_iskonto1, 0)
+                          - ISNULL(movement.sth_iskonto2, 0)
+                          - ISNULL(movement.sth_iskonto3, 0)
+                          - ISNULL(movement.sth_iskonto4, 0)
+                          - ISNULL(movement.sth_iskonto5, 0)
+                          - ISNULL(movement.sth_iskonto6, 0)
+                          + ISNULL(movement.sth_vergi, 0)
+                        ELSE 0
+                    END) AS CurrentComparableStockAmount
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (READUNCOMMITTED)
                 WHERE movement.sth_tarih = @date
                   AND movement.sth_tip = 1
@@ -612,6 +626,7 @@ public sealed class KasaHareketAktarimiService(
             SELECT
                 branch.BranchNo,
                 ISNULL(stock.StockMovementAmount, 0) AS StockMovementAmount,
+                ISNULL(stock.CurrentComparableStockAmount, 0) AS CurrentComparableStockAmount,
                 ISNULL(currentTotal.CurrentAccountAmount, 0) AS CurrentAccountAmount,
                 ISNULL(zReport.ZReportAmount, 0) AS ZReportAmount
             FROM Branches AS branch
@@ -634,6 +649,7 @@ public sealed class KasaHareketAktarimiService(
             reader => new SalesComparisonMikroSqlRow(
                 ReadInt(reader, "BranchNo"),
                 ReadDecimal(reader, "StockMovementAmount"),
+                ReadDecimal(reader, "CurrentComparableStockAmount"),
                 ReadDecimal(reader, "CurrentAccountAmount"),
                 ReadDecimal(reader, "ZReportAmount")),
             cancellationToken);
@@ -641,11 +657,7 @@ public sealed class KasaHareketAktarimiService(
         const string furpaSql = """
             SELECT
                 TRY_CONVERT(int, invoice.Sube) AS BranchNo,
-                SUM(CASE
-                    WHEN ISNULL(invoice.BelgeTuru, 0) <> 4
-                        THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
-                    ELSE 0
-                END) AS TransferredAmount,
+                SUM(ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)) AS TransferredAmount,
                 SUM(CASE
                     WHEN ISNULL(invoice.BelgeTuru, 0) = 4
                         THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
@@ -695,6 +707,7 @@ public sealed class KasaHareketAktarimiService(
                 branchNo,
                 branchNames.GetValueOrDefault(branchNo, string.Empty),
                 mikro?.StockMovementAmount ?? 0m,
+                mikro?.CurrentComparableStockAmount ?? 0m,
                 mikro?.CurrentAccountAmount ?? 0m,
                 furpa?.TransferredAmount ?? 0m,
                 furpa?.ExpenseReceiptAmount ?? 0m,
@@ -2481,6 +2494,104 @@ public sealed class KasaHareketAktarimiService(
             cancellationToken);
 
         EnsureExclusivePendingBranch(branchNo, requireExclusiveBranch, pendingBranchNos);
+        await ValidatePendingTransferSourceTotalsAsync(
+            startDate,
+            endDate,
+            branchNo,
+            cancellationToken);
+    }
+
+    private async Task ValidatePendingTransferSourceTotalsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        int? branchNo,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            WITH PendingInvoices AS (
+                SELECT
+                    invoice.FaturaGuid,
+                    TRY_CONVERT(int, invoice.Sube) AS BranchNo,
+                    invoice.KasaNo AS CashRegisterNo,
+                    invoice.FisNo AS ReceiptNo,
+                    CONVERT(decimal(19, 4),
+                        ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)) AS HeaderTotal
+                FROM dbo.PosFaturas AS invoice WITH (READCOMMITTEDLOCK)
+                WHERE invoice.Tarih >= @startDate
+                  AND invoice.Tarih < @endDateExclusive
+                  AND ISNULL(invoice.MikroAktarimDurumu, 0) = 0
+                  AND invoice.BelgeTuru <> 3
+                  AND invoice.IslemSonuc IS NOT NULL
+                  AND TRY_CONVERT(int, invoice.Sube) IS NOT NULL
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
+            ),
+            LineTotals AS (
+                SELECT
+                    pending.FaturaGuid,
+                    CONVERT(decimal(19, 4), SUM(
+                        ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0))) AS LineTotal
+                FROM PendingInvoices AS pending
+                LEFT JOIN dbo.PosFaturaSatirs AS line WITH (READCOMMITTEDLOCK)
+                    ON line.FaturaGuid = pending.FaturaGuid
+                GROUP BY pending.FaturaGuid
+            )
+            SELECT TOP (20)
+                pending.BranchNo,
+                pending.CashRegisterNo,
+                pending.ReceiptNo,
+                pending.HeaderTotal,
+                ISNULL(lines.LineTotal, 0) AS LineTotal,
+                ISNULL(lines.LineTotal, 0) - pending.HeaderTotal AS Difference
+            FROM PendingInvoices AS pending
+            INNER JOIN LineTotals AS lines ON lines.FaturaGuid = pending.FaturaGuid
+            WHERE ABS(ISNULL(lines.LineTotal, 0) - pending.HeaderTotal) > 0.01
+            ORDER BY ABS(ISNULL(lines.LineTotal, 0) - pending.HeaderTotal) DESC,
+                     pending.BranchNo,
+                     pending.CashRegisterNo,
+                     pending.ReceiptNo;
+            """;
+
+        var mismatches = await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate.Date);
+                AddParameter(command, "@endDateExclusive", endDate.Date.AddDays(1));
+                AddParameter(command, "@branchNo", branchNo);
+            },
+            reader => new PendingTransferSourceMismatch(
+                ReadInt(reader, "BranchNo"),
+                ReadInt(reader, "CashRegisterNo"),
+                ReadInt(reader, "ReceiptNo"),
+                ReadDecimal(reader, "HeaderTotal"),
+                ReadDecimal(reader, "LineTotal"),
+                ReadDecimal(reader, "Difference")),
+            cancellationToken);
+
+        EnsurePendingTransferSourceTotalsMatch(mismatches);
+    }
+
+    internal static void EnsurePendingTransferSourceTotalsMatch(
+        IReadOnlyCollection<PendingTransferSourceMismatch> mismatches)
+    {
+        if (mismatches.Count == 0)
+        {
+            return;
+        }
+
+        var details = string.Join(
+            "; ",
+            mismatches.Take(5).Select(item =>
+                $"sube {item.BranchNo}, kasa {item.CashRegisterNo}, fis {item.ReceiptNo} " +
+                $"(baslik {item.HeaderTotal:N2} TL, satir {item.LineTotal:N2} TL, fark {item.Difference:N2} TL)"));
+        var remaining = mismatches.Count > 5
+            ? "; ilk 5 kayit gosterildi"
+            : string.Empty;
+
+        throw new InvalidOperationException(
+            $"Mikro aktarimi durduruldu. Kasa fisi baslik ve satir toplami eslesmiyor: {details}{remaining}. " +
+            "Kaynak fisleri duzeltip tekrar deneyin.");
     }
 
     internal static void EnsureExclusivePendingBranch(
@@ -2554,7 +2665,7 @@ public sealed class KasaHareketAktarimiService(
             FROM dbo.CARI_HESAP_HAREKETLERI AS movement WITH (READUNCOMMITTED)
             WHERE movement.cha_tarihi >= @startDate
               AND movement.cha_tarihi < @endDateExclusive
-              AND movement.cha_evrak_tip = 63
+              AND movement.cha_evrak_tip IN (@salesCustomerDocumentType, @expenseCustomerDocumentType)
               AND movement.cha_pos_hareketi IN (0, 1)
               AND CONVERT(int, movement.cha_create_user) > 100
               AND NULLIF(LTRIM(RTRIM(ISNULL(movement.cha_evrakno_seri, ''))), '') IS NOT NULL
@@ -2577,6 +2688,8 @@ public sealed class KasaHareketAktarimiService(
                 AddParameter(command, "@branchNo", branchNo);
                 AddParameter(command, "@stockDocumentFlowType", (int)DocumentFlowType.StockMovementDocument);
                 AddParameter(command, "@customerDocumentFlowType", (int)DocumentFlowType.CustomerMovementDocument);
+                AddParameter(command, "@salesCustomerDocumentType", PosSalesCustomerDocumentType);
+                AddParameter(command, "@expenseCustomerDocumentType", PosExpenseCustomerDocumentType);
             },
             reader => new MikroPosDocumentSnapshot(
                 new MikroPosDocumentKey(
@@ -3054,6 +3167,7 @@ public sealed class KasaHareketAktarimiService(
         int branchNo,
         string branchName,
         decimal stockMovementAmount,
+        decimal currentComparableStockAmount,
         decimal currentAccountAmount,
         decimal transferredAmount,
         decimal expenseReceiptAmount,
@@ -3061,6 +3175,7 @@ public sealed class KasaHareketAktarimiService(
         decimal tolerance)
     {
         stockMovementAmount = Round(stockMovementAmount);
+        currentComparableStockAmount = Round(currentComparableStockAmount);
         currentAccountAmount = Round(currentAccountAmount);
         transferredAmount = Round(transferredAmount);
         expenseReceiptAmount = Round(expenseReceiptAmount);
@@ -3068,9 +3183,9 @@ public sealed class KasaHareketAktarimiService(
 
         var expenseExcludedAmount = Round(transferredAmount - expenseReceiptAmount);
         var zReportTransferDifference = Round(
-            stockMovementAmount - (zReportAmount + expenseReceiptAmount));
-        var transferredTurnoverDifference = Round(transferredAmount - stockMovementAmount);
-        var currentStockDifference = Round(stockMovementAmount - currentAccountAmount);
+            expenseExcludedAmount - (zReportAmount + expenseReceiptAmount));
+        var transferredTurnoverDifference = Round(expenseExcludedAmount - stockMovementAmount);
+        var currentStockDifference = Round(currentComparableStockAmount - currentAccountAmount);
         var hasDifference = Math.Abs(zReportTransferDifference) > tolerance
                             || Math.Abs(transferredTurnoverDifference) > tolerance
                             || Math.Abs(currentStockDifference) > tolerance;
@@ -3714,6 +3829,7 @@ public sealed class KasaHareketAktarimiService(
     private sealed record SalesComparisonMikroSqlRow(
         int BranchNo,
         decimal StockMovementAmount,
+        decimal CurrentComparableStockAmount,
         decimal CurrentAccountAmount,
         decimal ZReportAmount);
 
@@ -3732,6 +3848,14 @@ public sealed class KasaHareketAktarimiService(
     internal sealed record MikroPosDocumentSnapshot(
         MikroPosDocumentKey Key,
         int LineCount);
+
+    internal sealed record PendingTransferSourceMismatch(
+        int BranchNo,
+        int CashRegisterNo,
+        int ReceiptNo,
+        decimal HeaderTotal,
+        decimal LineTotal,
+        decimal Difference);
 
     private sealed record CashSummarySqlRow(
         DateTime Date,

@@ -122,13 +122,14 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Fact]
-    public void CreateSalesComparisonRowUsesLegacyReconciliationFormulas()
+    public void CreateSalesComparisonRowSeparatesExpenseAndComparableTurnover()
     {
         var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
             new DateTime(2026, 11, 3),
             116,
             "Test Sube",
             stockMovementAmount: 1_000m,
+            currentComparableStockAmount: 995m,
             currentAccountAmount: 990m,
             transferredAmount: 1_020m,
             expenseReceiptAmount: 30m,
@@ -136,10 +137,32 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             tolerance: 0.01m);
 
         Assert.Equal(990m, row.ExpenseExcludedAmount);
-        Assert.Equal(10m, row.ZReportTransferDifference);
-        Assert.Equal(20m, row.TransferredTurnoverDifference);
-        Assert.Equal(10m, row.CurrentStockDifference);
+        Assert.Equal(0m, row.ZReportTransferDifference);
+        Assert.Equal(-10m, row.TransferredTurnoverDifference);
+        Assert.Equal(5m, row.CurrentStockDifference);
         Assert.True(row.HasDifference);
+    }
+
+    [Fact]
+    public void CreateSalesComparisonRowDoesNotTreatCanceledStockAsCurrentAccountDifference()
+    {
+        var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
+            new DateTime(2026, 10, 27),
+            160,
+            "Test Sube",
+            stockMovementAmount: 1_000m,
+            currentComparableStockAmount: 965.50m,
+            currentAccountAmount: 965.50m,
+            transferredAmount: 1_030m,
+            expenseReceiptAmount: 30m,
+            zReportAmount: 970m,
+            tolerance: 0.01m);
+
+        Assert.Equal(1_000m, row.ExpenseExcludedAmount);
+        Assert.Equal(0m, row.ZReportTransferDifference);
+        Assert.Equal(0m, row.TransferredTurnoverDifference);
+        Assert.Equal(0m, row.CurrentStockDifference);
+        Assert.False(row.HasDifference);
     }
 
     [Fact]
@@ -207,6 +230,32 @@ public sealed class KasaHareketAktarimiServiceParsingTests
 
         var document = Assert.Single(result);
         Assert.Equal(DocumentFlowType.CustomerMovementDocument, document.Key.DocumentType);
+    }
+
+    [Fact]
+    public void EnsurePendingTransferSourceTotalsMatchAllowsMatchingInvoices()
+    {
+        KasaHareketAktarimiService.EnsurePendingTransferSourceTotalsMatch([]);
+    }
+
+    [Fact]
+    public void EnsurePendingTransferSourceTotalsMatchRejectsMismatchingInvoice()
+    {
+        var mismatch = new KasaHareketAktarimiService.PendingTransferSourceMismatch(
+            152,
+            185,
+            143,
+            270.22m,
+            274.80m,
+            4.58m);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            KasaHareketAktarimiService.EnsurePendingTransferSourceTotalsMatch([mismatch]));
+
+        Assert.Contains("sube 152", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("kasa 185", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("fis 143", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Kaynak fisleri duzeltip tekrar deneyin", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
