@@ -71,7 +71,8 @@ public sealed record TrendyolGoDirectPriceStockItem(
     bool PriceChangedFlag,
     DateTime? PriceLastUpDate,
     int WarehouseNo,
-    int UnitPointer = 1);
+    int UnitPointer = 1,
+    string UnitName = "");
 
 public sealed record TrendyolGoDirectPriceStockPreview(
     long StoreId,

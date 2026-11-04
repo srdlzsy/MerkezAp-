@@ -236,15 +236,15 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     public void BranchPosUpsert_OnlyAppliesStrictlyNewerPriceAndWarehouseVersions()
     {
         Assert.Contains(
-            "@sfiyat_lastup_date > sfiyat_lastup_date",
+            "ON CONFLICT (sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano, fiyat_tip_kodu)",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
         Assert.Contains(
-            "@sdp_lastup_date > sdp_lastup_date",
+            "market.stoksatisfiyat",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "WHERE NOT EXISTS (SELECT 1 FROM upd)",
+        Assert.Contains(
+            "EXCLUDED.sfiyat_lastup_date > market.stoksatisfiyat.sfiyat_lastup_date",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
     }

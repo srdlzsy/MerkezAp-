@@ -283,7 +283,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                             item.StockCode,
                             item.SellingPrice,
                             item.UnitPointer,
-                            "",
+                            item.UnitName,
                             0, 0, 0,
                             item.PriceLastUpDate,
                             null,
@@ -462,6 +462,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                         barcode.Barcode AS Barcode,
                         stock.sto_kod AS StockCode,
                         stock.sto_isim AS ProductName,
+                        COALESCE(stock.sto_birim1_ad, '') AS UnitName,
                         COALESCE(barcode.UnitPointer, 1) AS UnitPointer,
                         priceRow.sfiyat_fiyati AS SellingPrice,
                         COALESCE(priceRow.sfiyat_degisti, 0) AS PriceChanged,
@@ -504,7 +505,8 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                         PriceChangedFlag: Convert.ToInt32(reader["PriceChanged"], CultureInfo.InvariantCulture) != 0,
                         PriceLastUpDate: reader["PriceLastUpDate"] is DBNull ? null : Convert.ToDateTime(reader["PriceLastUpDate"], CultureInfo.InvariantCulture),
                         WarehouseNo: warehouseNo,
-                        UnitPointer: Convert.ToInt32(reader["UnitPointer"], CultureInfo.InvariantCulture)));
+                        UnitPointer: Convert.ToInt32(reader["UnitPointer"], CultureInfo.InvariantCulture),
+                        UnitName: Convert.ToString(reader["UnitName"], CultureInfo.InvariantCulture) ?? string.Empty));
                 }
 
                 return items;
