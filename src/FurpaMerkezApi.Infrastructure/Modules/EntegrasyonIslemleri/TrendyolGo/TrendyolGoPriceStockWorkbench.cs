@@ -434,7 +434,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                              ELSE dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, CONVERT(date, GETDATE())) END AS Quantity
                     FROM dbo.STOKLAR AS stock WITH (NOLOCK)
                     INNER JOIN RankedBarcodes AS barcode
-                        ON barcode.StockCode = stock.sto_kod AND barcode.RowNo = 1
+                        ON barcode.StockCode = stock.sto_kod AND barcode.RowNo = 1 and sto_webe_gonderilecek_fl =1
                     INNER JOIN dbo.STOK_SATIS_FIYAT_LISTELERI AS priceRow WITH (NOLOCK)
                         ON priceRow.sfiyat_stokkod = stock.sto_kod
                        AND priceRow.sfiyat_deposirano = @warehouseNo

@@ -1,4 +1,5 @@
 using System.Reflection;
+using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaHareketAktarimi;
 using Xunit;
 
@@ -186,6 +187,56 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal("PS159", document.Key.DocumentSerie);
         Assert.Equal(22278, document.Key.DocumentOrderNo);
     }
+
+    [Fact]
+    public void MergeImportResultsCombinesNormalAndCanceledMovements()
+    {
+        var warning = new KasaHareketImportIssueDto(159, 1, "HR301026.001", null, null, "Warning");
+        var error = new KasaHareketImportIssueDto(159, 1, "IP301026.001", null, null, "Error");
+        var normal = CreateImportResult("normal", 2, 10, 1, 30, 12, 4, [warning], []);
+        var cancel = CreateImportResult("cancel", 1, 3, 2, 8, 0, 0, [], [error]);
+
+        var result = KasaHareketAktarimiService.MergeImportResults(
+            "normal",
+            new DateTime(2026, 10, 30),
+            dryRun: false,
+            normal,
+            cancel);
+
+        Assert.Equal("normal", result.ImportType);
+        Assert.Equal("CompletedWithErrors", result.Status);
+        Assert.Equal(3, result.ProcessedFiles);
+        Assert.Equal(13, result.ProcessedInvoices);
+        Assert.Equal(3, result.SkippedExistingInvoices);
+        Assert.Equal(38, result.InsertedLines);
+        Assert.Equal(12, result.InsertedPayments);
+        Assert.Equal(4, result.InsertedPromotions);
+        Assert.Equal(warning, Assert.Single(result.Warnings));
+        Assert.Equal(error, Assert.Single(result.Errors));
+    }
+
+    private static KasaHareketImportResultDto CreateImportResult(
+        string importType,
+        int processedFiles,
+        int processedInvoices,
+        int skippedExistingInvoices,
+        int insertedLines,
+        int insertedPayments,
+        int insertedPromotions,
+        IReadOnlyCollection<KasaHareketImportIssueDto> warnings,
+        IReadOnlyCollection<KasaHareketImportIssueDto> errors) =>
+        new(
+            importType,
+            importType,
+            errors.Count == 0 ? "Completed" : "CompletedWithErrors",
+            processedFiles,
+            processedInvoices,
+            skippedExistingInvoices,
+            insertedLines,
+            insertedPayments,
+            insertedPromotions,
+            warnings,
+            errors);
 
     private static KasaHareketAktarimiService.MikroPosDocumentSnapshot CreateDocument(
         string documentSerie,

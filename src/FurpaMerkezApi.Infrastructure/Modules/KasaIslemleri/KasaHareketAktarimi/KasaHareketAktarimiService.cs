@@ -83,7 +83,7 @@ public sealed class KasaHareketAktarimiService(
     public Task<KasaHareketImportResultDto> ImportMovementsAsync(
         KasaHareketImportRequest request,
         CancellationToken cancellationToken) =>
-        ExecuteImportAsync(request, MovementImportKind.Normal, cancellationToken);
+        ExecuteCombinedImportAsync(request, "normal", cancellationToken);
 
     public Task<KasaHareketImportResultDto> ImportCancelMovementsAsync(
         KasaHareketImportRequest request,
@@ -105,13 +105,36 @@ public sealed class KasaHareketAktarimiService(
             request.SkipExisting,
             request.DryRun);
 
-        var normalResult = await ImportMovementsAsync(importRequest, cancellationToken);
-        var cancelResult = await ImportCancelMovementsAsync(importRequest, cancellationToken);
+        return await ExecuteCombinedImportAsync(importRequest, "scheduled", cancellationToken);
+    }
 
-        return new KasaHareketImportResultDto(
-            CreateRunId("scheduled", importDate),
-            "scheduled",
-            ResolveStatus(request.DryRun, normalResult.Errors.Count + cancelResult.Errors.Count),
+    private async Task<KasaHareketImportResultDto> ExecuteCombinedImportAsync(
+        KasaHareketImportRequest request,
+        string mode,
+        CancellationToken cancellationToken)
+    {
+        var normalResult = await ExecuteImportAsync(
+            request,
+            MovementImportKind.Normal,
+            cancellationToken);
+        var cancelResult = await ExecuteImportAsync(
+            request,
+            MovementImportKind.Cancel,
+            cancellationToken);
+
+        return MergeImportResults(mode, request.StartDate, request.DryRun, normalResult, cancelResult);
+    }
+
+    internal static KasaHareketImportResultDto MergeImportResults(
+        string mode,
+        DateTime importDate,
+        bool dryRun,
+        KasaHareketImportResultDto normalResult,
+        KasaHareketImportResultDto cancelResult) =>
+        new(
+            CreateRunId(mode, importDate),
+            mode,
+            ResolveStatus(dryRun, normalResult.Errors.Count + cancelResult.Errors.Count),
             normalResult.ProcessedFiles + cancelResult.ProcessedFiles,
             normalResult.ProcessedInvoices + cancelResult.ProcessedInvoices,
             normalResult.SkippedExistingInvoices + cancelResult.SkippedExistingInvoices,
@@ -120,7 +143,6 @@ public sealed class KasaHareketAktarimiService(
             normalResult.InsertedPromotions + cancelResult.InsertedPromotions,
             normalResult.Warnings.Concat(cancelResult.Warnings).ToArray(),
             normalResult.Errors.Concat(cancelResult.Errors).ToArray());
-    }
 
     public async Task<KasaHareketProcedureResultDto> DeleteStagingMovementsAsync(
         KasaHareketDeleteStagingRequest request,
