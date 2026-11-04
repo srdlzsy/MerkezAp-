@@ -483,6 +483,8 @@ public sealed class TrendyolGoDirectPriceStockDispatchHttpRequest
     [MaxLength(10000)]
     public string[] Barcodes { get; init; } = [];
 
+    public bool AutoCreateMissingCatalog { get; init; } = true;
+
     public TrendyolGoDirectPriceStockDispatchRequest ToApplicationRequest() =>
-        new(StoreIds, AllStores, Mode, SinceDate, OnlyFlaggedChanged, Search, Barcodes);
+        new(StoreIds, AllStores, Mode, SinceDate, OnlyFlaggedChanged, Search, Barcodes, AutoCreateMissingCatalog);
 }

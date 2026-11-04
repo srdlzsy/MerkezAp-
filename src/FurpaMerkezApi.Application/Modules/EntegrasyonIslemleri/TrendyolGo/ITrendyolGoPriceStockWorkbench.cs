@@ -89,7 +89,8 @@ public sealed record TrendyolGoDirectPriceStockDispatchRequest(
     DateTime? SinceDate = null,
     bool? OnlyFlaggedChanged = null,
     string? Search = null,
-    IReadOnlyCollection<string>? Barcodes = null);
+    IReadOnlyCollection<string>? Barcodes = null,
+    bool AutoCreateMissingCatalog = true);
 
 public sealed record TrendyolGoDirectStoreDispatchResult(
     long StoreId,
@@ -99,9 +100,12 @@ public sealed record TrendyolGoDirectStoreDispatchResult(
     int BatchCount,
     bool Success,
     string? ErrorMessage,
-    IReadOnlyCollection<string> BatchRequestIds);
+    IReadOnlyCollection<string> BatchRequestIds,
+    int CatalogCreatedCount = 0,
+    IReadOnlyCollection<string>? CatalogBatchRequestIds = null);
 
 public sealed record TrendyolGoDirectPriceStockDispatchResult(
     int TargetStoresCount,
     int TotalItemsDispatched,
-    IReadOnlyCollection<TrendyolGoDirectStoreDispatchResult> StoreResults);
+    IReadOnlyCollection<TrendyolGoDirectStoreDispatchResult> StoreResults,
+    int TotalCatalogCreated = 0);

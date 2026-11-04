@@ -10,7 +10,17 @@ public interface ITrendyolGoCatalogWorkbench
     Task<TrendyolGoCatalogDispatch> DispatchAsync(
         long storeId, string previewHash, bool sendAll,
         IReadOnlyCollection<string> barcodes, CancellationToken cancellationToken);
+
+    Task<TrendyolGoCatalogAutoCreateResult> AutoCreateProductsAsync(
+        long storeId,
+        IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken);
 }
+
+public sealed record TrendyolGoCatalogAutoCreateResult(
+    int CreatedCount,
+    IReadOnlyCollection<string> BatchRequestIds,
+    string? ErrorMessage);
 
 public sealed record TrendyolGoCatalogPreview(
     long StoreId, int WarehouseNo, string StoreName, string PreviewHash,

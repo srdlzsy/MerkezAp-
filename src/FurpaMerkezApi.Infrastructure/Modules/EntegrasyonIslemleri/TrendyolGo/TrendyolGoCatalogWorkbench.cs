@@ -89,6 +89,127 @@ internal sealed class TrendyolGoCatalogWorkbench(
             responses);
     }
 
+    public async Task<TrendyolGoCatalogAutoCreateResult> AutoCreateProductsAsync(
+        long storeId,
+        IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken)
+    {
+        if (barcodes.Count == 0)
+        {
+            return new TrendyolGoCatalogAutoCreateResult(0, [], null);
+        }
+
+        var distinctBarcodes = barcodes
+            .Where(b => !string.IsNullOrWhiteSpace(b))
+            .Select(b => b.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (distinctBarcodes.Length == 0)
+        {
+            return new TrendyolGoCatalogAutoCreateResult(0, [], null);
+        }
+
+        var config = options.CurrentValue;
+        var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
+            ?? throw new ArgumentException($"storeId {storeId} is not configured.");
+
+        var mikroProducts = await ReadMikroCatalogByBarcodesAsync(
+            store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, distinctBarcodes, cancellationToken);
+
+        if (mikroProducts.Length == 0)
+        {
+            return new TrendyolGoCatalogAutoCreateResult(0, [], "Mikro'da bu barkodlara ait uygun stok kartı bulunamadı.");
+        }
+
+        var priceStockSnapshot = snapshotCoordinator.GetState(storeId).Snapshot;
+        var mikroByBarcode = mikroProducts
+            .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
+            .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+
+        var brandMappings = priceStockSnapshot is not null
+            ? InferMappings(
+                priceStockSnapshot.Products, mikroByBarcode,
+                item => item.BrandCode, item => item.BrandId,
+                config.Catalog.BrandMappings)
+            : new Dictionary<string, long>(config.Catalog.BrandMappings, StringComparer.OrdinalIgnoreCase);
+
+        var categoryMappings = priceStockSnapshot is not null
+            ? InferMappings(
+                priceStockSnapshot.Products, mikroByBarcode,
+                item => item.CategoryCode, item => item.CategoryId,
+                config.Catalog.CategoryMappings)
+            : new Dictionary<string, long>(config.Catalog.CategoryMappings, StringComparer.OrdinalIgnoreCase);
+
+        var validItemsToCreate = new List<object>();
+
+        foreach (var product in mikroProducts)
+        {
+            if (string.IsNullOrWhiteSpace(product.Barcode) || product.Blocked)
+            {
+                continue;
+            }
+
+            var normalizedTitle = NormalizeTitle(product.ProductName);
+            if (string.IsNullOrWhiteSpace(normalizedTitle))
+            {
+                continue;
+            }
+
+            var brandId = ResolveMapping(product.BrandCode, brandMappings);
+            if (brandId is null or <= 0)
+            {
+                brandId = config.Catalog.DefaultBrandId > 0 ? config.Catalog.DefaultBrandId : 1;
+            }
+
+            var categoryId = ResolveMapping(product.CategoryCode, categoryMappings);
+            if (categoryId is null or <= 0)
+            {
+                categoryId = config.Catalog.DefaultCategoryId > 0 ? config.Catalog.DefaultCategoryId : 1;
+            }
+
+            var vatRate = product.VatRate.HasValue && AllowedVatRates.Contains(product.VatRate.Value)
+                ? product.VatRate.Value
+                : 1;
+
+            validItemsToCreate.Add(new
+            {
+                barcode = product.Barcode,
+                vatRate,
+                title = normalizedTitle,
+                stockCode = product.StockCode,
+                brandId = brandId.Value,
+                categoryId = categoryId.Value
+            });
+        }
+
+        if (validItemsToCreate.Count == 0)
+        {
+            return new TrendyolGoCatalogAutoCreateResult(0, [], "Katalog için geçerli ürün bulunamadı.");
+        }
+
+        var batchRequestIds = new List<string>();
+        foreach (var batch in validItemsToCreate.Chunk(1000))
+        {
+            var payload = JsonSerializer.SerializeToElement(new { items = batch });
+            var response = await trendyol.CreateProductsAsync(payload, cancellationToken);
+            if (response.HasValue &&
+                response.Value.TryGetProperty("batchRequestId", out var batchIdProp) &&
+                batchIdProp.ValueKind == JsonValueKind.String)
+            {
+                var batchId = batchIdProp.GetString();
+                if (!string.IsNullOrWhiteSpace(batchId))
+                {
+                    batchRequestIds.Add(batchId);
+                }
+            }
+        }
+
+        return new TrendyolGoCatalogAutoCreateResult(validItemsToCreate.Count, batchRequestIds, null);
+    }
+
     private async Task<CatalogSnapshot> BuildSnapshotAsync(long storeId, CancellationToken cancellationToken)
     {
         var config = options.CurrentValue;
@@ -295,6 +416,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
                                   OR COALESCE(stock.sto_satis_dursun, 0) <> 0
                                   OR COALESCE(detail.sdp_Pasif_fl, 0) = 1
                                   OR COALESCE(detail.sdp_satisdursun, 0) <> 0
+                                  OR COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 0
                             THEN 1 ELSE 0 END AS Blocked
                 FROM dbo.STOKLAR AS stock
                 LEFT JOIN RankedBarcodes AS barcode
@@ -317,11 +439,120 @@ internal sealed class TrendyolGoCatalogWorkbench(
                 ) AS price
                 WHERE NULLIF(LTRIM(RTRIM(stock.sto_kod)), '') IS NOT NULL
                   AND NULLIF(LTRIM(RTRIM(stock.sto_isim)), '') IS NOT NULL
+                  AND COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 1
                 ORDER BY stock.sto_kod;
                 """;
             AddParameter(command, "@warehouseNo", warehouseNo);
             AddParameter(command, "@priceListNo", priceListNo);
             AddParameter(command, "@paymentPlanNo", paymentPlanNo);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var vatRate = reader["VatRate"] is DBNull
+                    ? null
+                    : (int?)decimal.ToInt32(Convert.ToDecimal(reader["VatRate"], CultureInfo.InvariantCulture));
+                result.Add(new MikroCatalogProduct(
+                    Convert.ToString(reader["StockCode"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    Convert.ToString(reader["ProductName"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    reader["Barcode"] is DBNull ? null : Convert.ToString(reader["Barcode"], CultureInfo.InvariantCulture),
+                    reader["BrandCode"] is DBNull ? null : Convert.ToString(reader["BrandCode"], CultureInfo.InvariantCulture),
+                    reader["CategoryCode"] is DBNull ? null : Convert.ToString(reader["CategoryCode"], CultureInfo.InvariantCulture),
+                    vatRate,
+                    reader["Price"] is DBNull ? null : Convert.ToDecimal(reader["Price"], CultureInfo.InvariantCulture),
+                    Convert.ToInt32(reader["Blocked"], CultureInfo.InvariantCulture) != 0));
+            }
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        return result.ToArray();
+    }
+
+    private async Task<MikroCatalogProduct[]> ReadMikroCatalogByBarcodesAsync(
+        int warehouseNo, int priceListNo, int paymentPlanNo,
+        IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<MikroCatalogProduct>();
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 120;
+            command.CommandText = """
+                SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+                WITH RankedBarcodes AS
+                (
+                    SELECT barcode.bar_stokkodu AS StockCode,
+                           LTRIM(RTRIM(barcode.bar_kodu)) AS Barcode,
+                           COALESCE(barcode.bar_birimpntr, 1) AS UnitPointer,
+                           ROW_NUMBER() OVER
+                           (
+                               PARTITION BY barcode.bar_stokkodu
+                               ORDER BY CASE WHEN COALESCE(barcode.bar_master, 0) = 1 THEN 0 ELSE 1 END,
+                                        CASE WHEN COALESCE(barcode.bar_birimpntr, 1) = 1 THEN 0 ELSE 1 END,
+                                        barcode.bar_kodu
+                           ) AS RowNo
+                    FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                    WHERE COALESCE(barcode.bar_iptal, 0) = 0
+                      AND NULLIF(LTRIM(RTRIM(barcode.bar_kodu)), '') IS NOT NULL
+                      AND barcode.bar_kodu IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@barcodesJson))
+                )
+                SELECT stock.sto_kod AS StockCode,
+                       COALESCE(stock.sto_isim, '') AS ProductName,
+                       barcode.Barcode,
+                       NULLIF(LTRIM(RTRIM(stock.sto_marka_kodu)), '') AS BrandCode,
+                       COALESCE(NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), ''),
+                                NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '')) AS CategoryCode,
+                       CAST(tax.Rate AS decimal(9, 2)) AS VatRate,
+                       price.Price,
+                       CASE WHEN COALESCE(stock.sto_iptal, 0) = 1
+                                  OR COALESCE(stock.sto_pasif_fl, 0) = 1
+                                  OR COALESCE(stock.sto_satis_dursun, 0) <> 0
+                                  OR COALESCE(detail.sdp_Pasif_fl, 0) = 1
+                                  OR COALESCE(detail.sdp_satisdursun, 0) <> 0
+                                  OR COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 0
+                            THEN 1 ELSE 0 END AS Blocked
+                FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                INNER JOIN RankedBarcodes AS barcode
+                  ON barcode.StockCode = stock.sto_kod AND barcode.RowNo = 1
+                LEFT JOIN dbo.STOK_DEPO_DETAYLARI AS detail WITH (NOLOCK)
+                  ON detail.sdp_depo_kod = stock.sto_kod AND detail.sdp_depo_no = @warehouseNo
+                LEFT JOIN dbo.fn_hs_vergi_oran_listesi() AS tax
+                  ON tax.DepartmentNo = COALESCE(stock.sto_perakende_vergi, 0)
+                OUTER APPLY
+                (
+                    SELECT TOP (1) priceRow.sfiyat_fiyati AS Price
+                    FROM dbo.STOK_SATIS_FIYAT_LISTELERI AS priceRow WITH (NOLOCK)
+                    WHERE priceRow.sfiyat_stokkod = stock.sto_kod
+                      AND priceRow.sfiyat_deposirano = @warehouseNo
+                      AND priceRow.sfiyat_listesirano = @priceListNo
+                      AND priceRow.sfiyat_odemeplan = @paymentPlanNo
+                      AND priceRow.sfiyat_birim_pntr = COALESCE(barcode.UnitPointer, 1)
+                      AND COALESCE(priceRow.sfiyat_iptal, 0) = 0
+                    ORDER BY COALESCE(priceRow.sfiyat_lastup_date, priceRow.sfiyat_create_date) DESC
+                ) AS price
+                WHERE COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 1;
+                """;
+
+            AddParameter(command, "@warehouseNo", warehouseNo);
+            AddParameter(command, "@priceListNo", priceListNo);
+            AddParameter(command, "@paymentPlanNo", paymentPlanNo);
+            AddParameter(command, "@barcodesJson", JsonSerializer.Serialize(barcodes));
+
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {

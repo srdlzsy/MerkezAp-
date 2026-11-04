@@ -15,6 +15,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     MikroDbContext mikroDbContext,
     TrendyolGoBranchPosPriceSyncService branchPosPriceSync,
     TrendyolGoPriceStockSnapshotCoordinator snapshotCoordinator,
+    ITrendyolGoCatalogWorkbench catalogWorkbench,
     IOptionsMonitor<TrendyolGoOptions> options) :
     ITrendyolGoPriceStockWorkbench,
     ITrendyolGoPriceStockSnapshotRefresher
@@ -190,7 +191,9 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             cancellationToken.ThrowIfCancellationRequested();
             var dispatchedItemCount = 0;
             var completedBatchCount = 0;
+            var catalogCreatedCount = 0;
             var batchRequestIds = new List<string>();
+            var catalogBatchRequestIds = new List<string>();
 
             try
             {
@@ -232,7 +235,35 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                         }).ToArray()
                     });
 
-                    var response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
+                    JsonElement? response = null;
+                    try
+                    {
+                        response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
+                    }
+                    catch (Exception ex) when (IsMissingCatalogError(ex) || request.AutoCreateMissingCatalog)
+                    {
+                        var chunkBarcodes = chunk.Select(item => item.Barcode).ToArray();
+                        var autoResult = await catalogWorkbench.AutoCreateProductsAsync(store.StoreId, chunkBarcodes, cancellationToken);
+                        if (autoResult.CreatedCount > 0)
+                        {
+                            catalogCreatedCount += autoResult.CreatedCount;
+                            catalogBatchRequestIds.AddRange(autoResult.BatchRequestIds);
+
+                            try
+                            {
+                                response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
+                            }
+                            catch
+                            {
+                                // TGO is processing catalog creation asynchronously; price-inventory update will take effect once approved.
+                            }
+                        }
+                        else if (!request.AutoCreateMissingCatalog)
+                        {
+                            throw;
+                        }
+                    }
+
                     dispatchedItemCount += chunk.Length;
                     completedBatchCount++;
                     if (response.HasValue &&
@@ -266,7 +297,8 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                 totalItemsDispatched += dispatchedItemCount;
                 storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
                     store.StoreId, store.WarehouseNo, store.StoreName,
-                    dispatchedItemCount, completedBatchCount, true, null, batchRequestIds));
+                    dispatchedItemCount, completedBatchCount, true, null, batchRequestIds,
+                    catalogCreatedCount, catalogBatchRequestIds));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -277,14 +309,17 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                 totalItemsDispatched += dispatchedItemCount;
                 storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
                     store.StoreId, store.WarehouseNo, store.StoreName,
-                    dispatchedItemCount, completedBatchCount, false, ex.Message, batchRequestIds));
+                    dispatchedItemCount, completedBatchCount, false, ex.Message, batchRequestIds,
+                    catalogCreatedCount, catalogBatchRequestIds));
             }
         }
 
+        var totalCatalogCreated = storeResults.Sum(s => s.CatalogCreatedCount);
         return new TrendyolGoDirectPriceStockDispatchResult(
             targetStores.Count,
             totalItemsDispatched,
-            storeResults);
+            storeResults,
+            totalCatalogCreated);
     }
 
     internal static IReadOnlyList<TrendyolGoStoreMappingOptions> ResolveDirectTargetStores(
@@ -360,6 +395,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                     "COALESCE(stock.sto_satis_dursun, 0) = 0",
                     "COALESCE(detail.sdp_Pasif_fl, 0) = 0",
                     "COALESCE(detail.sdp_satisdursun, 0) = 0",
+                    "COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 1",
                     "COALESCE(priceRow.sfiyat_iptal, 0) = 0",
                     "priceRow.sfiyat_fiyati > 0"
                 };
@@ -434,7 +470,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                              ELSE dbo.fn_DepodakiMiktar(stock.sto_kod, @warehouseNo, CONVERT(date, GETDATE())) END AS Quantity
                     FROM dbo.STOKLAR AS stock WITH (NOLOCK)
                     INNER JOIN RankedBarcodes AS barcode
-                        ON barcode.StockCode = stock.sto_kod AND barcode.RowNo = 1 and sto_webe_gonderilecek_fl =1
+                        ON barcode.StockCode = stock.sto_kod AND barcode.RowNo = 1
                     INNER JOIN dbo.STOK_SATIS_FIYAT_LISTELERI AS priceRow WITH (NOLOCK)
                         ON priceRow.sfiyat_stokkod = stock.sto_kod
                        AND priceRow.sfiyat_deposirano = @warehouseNo
@@ -735,6 +771,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                        CASE WHEN COALESCE(stock.sto_iptal, 0) = 1
                                       OR COALESCE(detail.sdp_Pasif_fl, stock.sto_pasif_fl, 0) = 1
                                       OR COALESCE(detail.sdp_satisdursun, stock.sto_satis_dursun, 0) <> 0
+                                      OR COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 0
                             THEN 1 ELSE 0 END AS Blocked
                 FROM (VALUES {string.Join(",", valueRows)}) AS requested(Barcode)
                 LEFT JOIN dbo.BARKOD_TANIMLARI AS barcode
@@ -861,6 +898,18 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         value.TryGetProperty(parentName, out var parent) && parent.ValueKind == JsonValueKind.Object
             ? ReadLong(parent, name)
             : null;
+
+    private static bool IsMissingCatalogError(Exception ex)
+    {
+        var message = ex.Message;
+        return message.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("catalog", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("bulunmuyor", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("tanımlı değil", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("mevcut değil", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("404", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static void AddParameter(DbCommand command, string name, object value)
     {
