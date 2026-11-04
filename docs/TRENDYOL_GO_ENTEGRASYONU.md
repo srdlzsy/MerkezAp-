@@ -95,7 +95,7 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 - Etkinlestirmek icin merkez sunucunun sube PostgreSQL `5432` portuna erisimi ve PostgreSQL `pg_hba.conf` icinde merkez IP'si icin kullanici/DB izni gerekir.
 - Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Trendyol gonderimi ve kullanici ekrani hata almaz veya bu ag beklemesini yasamaz.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
-- Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Merkez POS'ta ayni dogal anahtar icin benzersiz indeks kuruludur; diger POS veritabanlarinda da ayni indeks kurulmalidir.
+- Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Yazma once tarih kontrollu `UPDATE`, kayit yoksa `INSERT` uygular; uzak POS veritabaninda benzersiz indeks bulunmasina bagimli degildir. Fiyat ve depo blok tarihleri birbirinden bagimsiz karsilastirilir.
 8. Basarili gonderimde `upstreamResponses[].batchRequestId` degerleri alinir; `GET /products/batch-requests/{id}` ile satir bazli sonuc kontrol edilir. Toplu modlarda backend Trendyol limitine uygun paketlemeyi kendisi yapar; UI katalog sayfalama veya paket yonetimi yapmaz. Eski istemciler icin `sendAll=true`, `mode=changed` ile ayni davranisi korur.
 
 ```json
@@ -137,6 +137,8 @@ Skipped          Urun pasif/satisa kapali, barkodsuz, gecersiz barkodlu, fiyatsi
 ```
 
 Backend marka ve kategori eslemelerini once secili magazada zaten kabul edilmis barkodlardan ogrenmeye calisir. Ayni Mikro kodu yalniz tek bir TGO ID degerine gidiyorsa otomatik eslesir. Bilinen istisnalar konfigurasyonla acikca verilebilir ve otomatik eslemeyi ezer:
+
+Katalog onizlemesi ve otomatik eksik urun olusturma, magazanin tam TGO katalog snapshot'i hazir olmadan calismaz. Mevcut barkodlar yeniden `create` edilmez. `DefaultBrandId` ve `DefaultCategoryId` varsayilan olarak `0` yani kapali gelir; dogrulanmis ortak bir ID yoksa acik esleme yapilmali, rastgele `1` kullanilmamalidir. Desteklenmeyen KDV orani da otomatik olarak baska bir orana cevrilmez.
 
 ```json
 {

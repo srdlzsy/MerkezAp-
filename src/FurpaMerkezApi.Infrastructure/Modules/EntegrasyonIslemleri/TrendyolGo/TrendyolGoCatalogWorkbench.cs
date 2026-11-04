@@ -113,81 +113,78 @@ internal sealed class TrendyolGoCatalogWorkbench(
         var config = options.CurrentValue;
         var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
             ?? throw new ArgumentException($"storeId {storeId} is not configured.");
+        var priceStockSnapshot = RequireCatalogSnapshot(storeId);
 
         var mikroProducts = await ReadMikroCatalogByBarcodesAsync(
             store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, distinctBarcodes, cancellationToken);
 
         if (mikroProducts.Length == 0)
         {
-            return new TrendyolGoCatalogAutoCreateResult(0, [], "Mikro'da bu barkodlara ait uygun stok kartı bulunamadı.");
+            return new TrendyolGoCatalogAutoCreateResult(
+                0,
+                [],
+                "Mikro'da bu barkodlara ait uygun stok karti bulunamadi.");
         }
 
-        var priceStockSnapshot = snapshotCoordinator.GetState(storeId).Snapshot;
+        var existingBarcodes = priceStockSnapshot.Products
+            .Select(item => item.Barcode)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToHashSet(StringComparer.Ordinal);
         var mikroByBarcode = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
             .Where(group => group.Count() == 1)
             .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
 
-        var brandMappings = priceStockSnapshot is not null
-            ? InferMappings(
-                priceStockSnapshot.Products, mikroByBarcode,
-                item => item.BrandCode, item => item.BrandId,
-                config.Catalog.BrandMappings)
-            : new Dictionary<string, long>(config.Catalog.BrandMappings, StringComparer.OrdinalIgnoreCase);
-
-        var categoryMappings = priceStockSnapshot is not null
-            ? InferMappings(
-                priceStockSnapshot.Products, mikroByBarcode,
-                item => item.CategoryCode, item => item.CategoryId,
-                config.Catalog.CategoryMappings)
-            : new Dictionary<string, long>(config.Catalog.CategoryMappings, StringComparer.OrdinalIgnoreCase);
+        var brandMappings = InferMappings(
+            priceStockSnapshot.Products, mikroByBarcode,
+            item => item.BrandCode, item => item.BrandId,
+            config.Catalog.BrandMappings);
+        var categoryMappings = InferMappings(
+            priceStockSnapshot.Products, mikroByBarcode,
+            item => item.CategoryCode, item => item.CategoryId,
+            config.Catalog.CategoryMappings);
+        var duplicateBarcodes = mikroProducts
+            .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
+            .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
 
         var validItemsToCreate = new List<object>();
 
         foreach (var product in mikroProducts)
         {
-            if (string.IsNullOrWhiteSpace(product.Barcode) || product.Blocked)
+            var row = BuildRow(
+                product,
+                existingBarcodes,
+                duplicateBarcodes,
+                brandMappings,
+                categoryMappings,
+                config.Catalog.DefaultBrandId,
+                config.Catalog.DefaultCategoryId);
+            if (row.Status != "Ready")
             {
                 continue;
             }
-
-            var normalizedTitle = NormalizeTitle(product.ProductName);
-            if (string.IsNullOrWhiteSpace(normalizedTitle))
-            {
-                continue;
-            }
-
-            var brandId = ResolveMapping(product.BrandCode, brandMappings);
-            if (brandId is null or <= 0)
-            {
-                brandId = config.Catalog.DefaultBrandId > 0 ? config.Catalog.DefaultBrandId : 1;
-            }
-
-            var categoryId = ResolveMapping(product.CategoryCode, categoryMappings);
-            if (categoryId is null or <= 0)
-            {
-                categoryId = config.Catalog.DefaultCategoryId > 0 ? config.Catalog.DefaultCategoryId : 1;
-            }
-
-            var vatRate = product.VatRate.HasValue && AllowedVatRates.Contains(product.VatRate.Value)
-                ? product.VatRate.Value
-                : 1;
 
             validItemsToCreate.Add(new
             {
-                barcode = product.Barcode,
-                vatRate,
-                title = normalizedTitle,
-                stockCode = product.StockCode,
-                brandId = brandId.Value,
-                categoryId = categoryId.Value
+                barcode = row.Barcode,
+                vatRate = row.VatRate!.Value,
+                title = NormalizeTitle(row.ProductName),
+                stockCode = row.StockCode,
+                brandId = row.TrendyolBrandId!.Value,
+                categoryId = row.TrendyolCategoryId!.Value
             });
         }
 
         if (validItemsToCreate.Count == 0)
         {
-            return new TrendyolGoCatalogAutoCreateResult(0, [], "Katalog için geçerli ürün bulunamadı.");
+            return new TrendyolGoCatalogAutoCreateResult(
+                0,
+                [],
+                "Yeni ve katalog kurallarina uygun urun bulunamadi. Mevcut urunler yeniden olusturulmadi.");
         }
 
         var batchRequestIds = new List<string>();
@@ -215,33 +212,27 @@ internal sealed class TrendyolGoCatalogWorkbench(
         var config = options.CurrentValue;
         var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
             ?? throw new ArgumentException($"storeId {storeId} is not configured.");
-        var priceStockSnapshot = snapshotCoordinator.GetState(storeId).Snapshot;
+        var priceStockSnapshot = RequireCatalogSnapshot(storeId);
         var mikroProducts = await ReadMikroCatalogAsync(
             store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, cancellationToken);
-        var existingBarcodes = priceStockSnapshot is not null
-            ? priceStockSnapshot.Products
-                .Select(item => item.Barcode)
-                .Where(item => !string.IsNullOrWhiteSpace(item))
-                .ToHashSet(StringComparer.Ordinal)
-            : new HashSet<string>(StringComparer.Ordinal);
+        var existingBarcodes = priceStockSnapshot.Products
+            .Select(item => item.Barcode)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToHashSet(StringComparer.Ordinal);
         var mikroByBarcode = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
             .Where(group => group.Count() == 1)
             .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
 
-        var brandMappings = priceStockSnapshot is not null
-            ? InferMappings(
-                priceStockSnapshot.Products, mikroByBarcode,
-                item => item.BrandCode, item => item.BrandId,
-                config.Catalog.BrandMappings)
-            : new Dictionary<string, long>(config.Catalog.BrandMappings, StringComparer.OrdinalIgnoreCase);
-        var categoryMappings = priceStockSnapshot is not null
-            ? InferMappings(
-                priceStockSnapshot.Products, mikroByBarcode,
-                item => item.CategoryCode, item => item.CategoryId,
-                config.Catalog.CategoryMappings)
-            : new Dictionary<string, long>(config.Catalog.CategoryMappings, StringComparer.OrdinalIgnoreCase);
+        var brandMappings = InferMappings(
+            priceStockSnapshot.Products, mikroByBarcode,
+            item => item.BrandCode, item => item.BrandId,
+            config.Catalog.BrandMappings);
+        var categoryMappings = InferMappings(
+            priceStockSnapshot.Products, mikroByBarcode,
+            item => item.CategoryCode, item => item.CategoryId,
+            config.Catalog.CategoryMappings);
         var duplicateBarcodes = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
@@ -250,7 +241,13 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .ToHashSet(StringComparer.Ordinal);
 
         var rows = mikroProducts.Select(product => BuildRow(
-                product, existingBarcodes, duplicateBarcodes, brandMappings, categoryMappings))
+                product,
+                existingBarcodes,
+                duplicateBarcodes,
+                brandMappings,
+                categoryMappings,
+                config.Catalog.DefaultBrandId,
+                config.Catalog.DefaultCategoryId))
             .OrderBy(item => item.StockCode, StringComparer.Ordinal)
             .ToArray();
         var hashData = JsonSerializer.SerializeToUtf8Bytes(new { storeId, rows });
@@ -264,11 +261,15 @@ internal sealed class TrendyolGoCatalogWorkbench(
         IReadOnlySet<string> existingBarcodes,
         IReadOnlySet<string> duplicateBarcodes,
         IReadOnlyDictionary<string, long> brandMappings,
-        IReadOnlyDictionary<string, long> categoryMappings)
+        IReadOnlyDictionary<string, long> categoryMappings,
+        long defaultBrandId = 0,
+        long defaultCategoryId = 0)
     {
         var barcode = string.IsNullOrWhiteSpace(product.Barcode) ? null : product.Barcode.Trim();
-        var brandId = ResolveMapping(product.BrandCode, brandMappings);
-        var categoryId = ResolveMapping(product.CategoryCode, categoryMappings);
+        var brandId = ResolveMapping(product.BrandCode, brandMappings)
+            ?? (defaultBrandId > 0 ? defaultBrandId : null);
+        var categoryId = ResolveMapping(product.CategoryCode, categoryMappings)
+            ?? (defaultCategoryId > 0 ? defaultCategoryId : null);
         string? reason = null;
         var status = "Ready";
 
@@ -347,6 +348,19 @@ internal sealed class TrendyolGoCatalogWorkbench(
         }
 
         return selected;
+    }
+
+    private TrendyolGoPriceStockSnapshot RequireCatalogSnapshot(long storeId)
+    {
+        var snapshot = snapshotCoordinator.GetState(storeId).Snapshot;
+        if (snapshot is not null)
+        {
+            return snapshot;
+        }
+
+        snapshotCoordinator.RequestRefresh(storeId);
+        throw new InvalidOperationException(
+            "Trendyol katalogu henuz hazir degil. Fiyat-stok onizlemesini yenileyip snapshot tamamlandiktan sonra tekrar deneyin.");
     }
 
     private static Dictionary<string, long> InferMappings(

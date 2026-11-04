@@ -1,5 +1,6 @@
 using System.Reflection;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaHareketAktarimi;
 using Xunit;
 
@@ -189,6 +190,26 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Fact]
+    public void FindDocumentDifferenceSeparatesStockAndCustomerDocumentsWithSameNumber()
+    {
+        var stockDocument = CreateDocument(
+            "PS159",
+            22278,
+            DocumentFlowType.StockMovementDocument);
+        var customerDocument = CreateDocument(
+            "PS159",
+            22278,
+            DocumentFlowType.CustomerMovementDocument);
+
+        var result = KasaHareketAktarimiService.FindDocumentDifference(
+            [stockDocument, customerDocument],
+            [stockDocument]);
+
+        var document = Assert.Single(result);
+        Assert.Equal(DocumentFlowType.CustomerMovementDocument, document.Key.DocumentType);
+    }
+
+    [Fact]
     public void MergeImportResultsCombinesNormalAndCanceledMovements()
     {
         var warning = new KasaHareketImportIssueDto(159, 1, "HR301026.001", null, null, "Warning");
@@ -240,9 +261,11 @@ public sealed class KasaHareketAktarimiServiceParsingTests
 
     private static KasaHareketAktarimiService.MikroPosDocumentSnapshot CreateDocument(
         string documentSerie,
-        int documentOrderNo) =>
+        int documentOrderNo,
+        DocumentFlowType documentType = DocumentFlowType.StockMovementDocument) =>
         new(
             new KasaHareketAktarimiService.MikroPosDocumentKey(
+                documentType,
                 new DateTime(2026, 10, 30),
                 159,
                 documentSerie,

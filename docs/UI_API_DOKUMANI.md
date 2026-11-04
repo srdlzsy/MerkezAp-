@@ -14802,9 +14802,9 @@ Mevcut backend durumu:
 - `skipExisting=true` iken duplicate kontrolu `Sube + KasaNo + FisNo + BelgeTuru + Tarih` alanlariyla yapilir
 - `dryRun=true` import dosyalarini parse eder, barkod lookup ve hata/uyari listesi uretir, staging'e yazmaz
 - barkod lookup Mikro barkod tanimlarindan urun kodu bulmaya calisir; bulunamayan barkodlar response `warnings` icinde doner
-- HR import normal kasa hareketlerini, IP import iptal belgelerini staging'e alir
+- `hareketler/aktar` ve zamanli import HR normal hareketleri ile IP iptal belgelerini tek islemde staging'e alir. Ayrik `iptal-belgeleri/aktar` endpointi eski istemcilerle uyumluluk icin korunur; ayni UI akisinda ikinci kez cagrilmamalidir.
 - HR import `FIS`, `FAT`, `IRS` ve `GPS` belge basliklarini fis olarak okur; `FAT` satirlari `documentKind = 2` / `documentKindName = Fatura` olarak staging'e kaydedilir. Bu nedenle ayni fis numarasi `FIS` ve `FAT` olarak gelirse duplicate sayilmaz, belge turu ayrimi korunur.
-- Mikro aktar/sil endpointleri stored procedure calistirir; response sadece procedure adi, mesaj ve filtre bilgisini doner
+- Mikro aktar/sil endpointleri stored procedure calistirir. Islemden once ve sonra Mikro'daki POS belgeleri karsilastirilir; yalniz gercekten olusan veya silinen stok hareket evraklari ile cari hesap hareket evraklari ayri belge tipi ve ayri akis anahtariyla Belge Akis Takibi'ne yazilir. Ayni seri/sira iki tabloda bulunsa bile tek kayit gibi birlestirilmez.
 
 Endpoint'ler:
 
@@ -19671,7 +19671,9 @@ all-existing  TGO'da mevcut, Mikro'da gecerli Ready ve Unchanged urunlerin tamam
 
 `all-existing` sorunlu `Skipped` satirlari gondermez ve TGO'da bulunmayan Mikro urunlerini olusturmaz. Mikro'daki tum katalogun ilk kez aktarimi ayri urun olusturma akisidir; TGO `brandId`, `categoryId` ve `vatRate` alanlari tamamlanmadan otomatik gonderim yapilmamalidir.
 
-Mikro'daki TGO'da bulunmayan urunler icin `GET /catalog/preview` kullanilir. Backend mevcut TGO urunlerinden Mikro marka ve kategori kodu bazinda tekil ID eslemesi ogrenmeye calisir; konfigurasyondaki `TrendyolGo:Catalog:BrandMappings` ve `CategoryMappings` degerleri bu eslemeyi ezer. Satirlar `Existing`, `Ready`, `MappingRequired` veya `Skipped` doner. Desteklenmeyen KDV orani, gecersiz barkod, sifir fiyat, bloklu/pasif stok veya duplicate barkod gonderilmez ve `Skipped` sebebiyle birlikte doner. `POST /catalog/dispatch` yalniz `Ready` satirlari urun olusturma servisine gonderir. Batch sonucu tamamlanip urunler katalogda gorunmeden fiyat/stok gonderilmemelidir.
+Mikro'daki TGO'da bulunmayan urunler icin `GET /catalog/preview` kullanilir. Backend mevcut TGO urunlerinden Mikro marka ve kategori kodu bazinda tekil ID eslemesi ogrenmeye calisir; konfigurasyondaki `TrendyolGo:Catalog:BrandMappings` ve `CategoryMappings` degerleri bu eslemeyi ezer. Tam TGO katalog snapshot'i hazir degilse onizleme/otomatik create baslamaz ve yenileme kuyruga alinir; bos snapshot mevcut katalog yokmus gibi kabul edilmez. Satirlar `Existing`, `Ready`, `MappingRequired` veya `Skipped` doner. Desteklenmeyen KDV orani, gecersiz barkod, sifir fiyat, bloklu/pasif stok veya duplicate barkod gonderilmez ve `Skipped` sebebiyle birlikte doner. `DefaultBrandId` ve `DefaultCategoryId` varsayilan `0` degerindedir; acik esleme yoksa urun `MappingRequired` kalir. `POST /catalog/dispatch` yalniz yeni `Ready` satirlari urun olusturma servisine gonderir. Batch sonucu tamamlanip urunler katalogda gorunmeden fiyat/stok gonderilmemelidir.
+
+`direct-dispatch` sirasinda yalniz TGO'nun urun/katalog bulunamadi cevabi otomatik katalog olusturmayi tetikler; yetki, rate-limit ve ag hatalari katalog hatasi sayilmaz. Katalog create cevabi asenkron batch kabuludur. Bu durumda ilgili magaza `success=false`, `catalogCreatedCount>0` ve `catalogBatchRequestIds` ile "katalog onayi bekliyor" durumunda doner; fiyat/stok gonderilmis sayilmaz. Batch kabul edildikten ve snapshot yenilendikten sonra fiyat/stok aktarimi yeniden calistirilir.
 
 Katalog gonderim body:
 
@@ -19694,7 +19696,7 @@ POS kuyruk guvenligi:
 
 - Trendyol gonderimi basarili olduktan sonra POS aktarimi kalici kuyruga yazilir; uzak PostgreSQL baglantisi HTTP cevabini bekletmez.
 - Kuyruk tekrar denemeleri ayni depo/stok/fiyat-listesi/birim anahtarini PostgreSQL transaction advisory lock ile serilestirir.
-- Merkez POS `stoksatisfiyat` tablosunda `sdp_depo_no + sfiyat_stokkod + sfiyat_listesirano + fiyat_tip_kodu` benzersiz indeksi bulunur. Diger POS veritabanlarinda da ayni indeksin kurulmasi onerilir.
+- Upsert tarih kontrollu `UPDATE`, ardindan kayit yoksa `INSERT` uygular ve uzak POS'ta benzersiz indeks bulunmasina bagimli degildir. Fiyat tarihi ile depo satis/siparis/mal-kabul blok tarihi ayri ayri degerlendirilir; birinin eski olmasi diger guncel alanin yazilmasini engellemez.
 - Uzak baglanti veya PostgreSQL hatasinda kayit `RetryDelaySeconds` sonunda yeniden denenir; TGO'ya gonderilmis fiyat/stok kaybi veya kullanici ekraninda ag beklemesi olusmaz.
 
 Urun katalog query:

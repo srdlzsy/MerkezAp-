@@ -2522,6 +2522,7 @@ public sealed class KasaHareketAktarimiService(
     {
         const string sql = """
             SELECT
+                @stockDocumentFlowType AS DocumentFlowType,
                 CAST(movement.sth_tarih AS date) AS DocumentDate,
                 ISNULL(movement.sth_cikis_depo_no, 0) AS BranchNo,
                 LTRIM(RTRIM(ISNULL(movement.sth_evrakno_seri, ''))) AS DocumentSerie,
@@ -2539,7 +2540,31 @@ public sealed class KasaHareketAktarimiService(
                 CAST(movement.sth_tarih AS date),
                 movement.sth_cikis_depo_no,
                 LTRIM(RTRIM(ISNULL(movement.sth_evrakno_seri, ''))),
-                movement.sth_evrakno_sira;
+                movement.sth_evrakno_sira
+
+            UNION ALL
+
+            SELECT
+                @customerDocumentFlowType AS DocumentFlowType,
+                CAST(movement.cha_tarihi AS date) AS DocumentDate,
+                CONVERT(int, movement.cha_create_user) AS BranchNo,
+                LTRIM(RTRIM(ISNULL(movement.cha_evrakno_seri, ''))) AS DocumentSerie,
+                ISNULL(movement.cha_evrakno_sira, 0) AS DocumentOrderNo,
+                COUNT_BIG(*) AS LineCount
+            FROM dbo.CARI_HESAP_HAREKETLERI AS movement WITH (READUNCOMMITTED)
+            WHERE movement.cha_tarihi >= @startDate
+              AND movement.cha_tarihi < @endDateExclusive
+              AND movement.cha_evrak_tip = 63
+              AND movement.cha_pos_hareketi IN (0, 1)
+              AND CONVERT(int, movement.cha_create_user) > 100
+              AND NULLIF(LTRIM(RTRIM(ISNULL(movement.cha_evrakno_seri, ''))), '') IS NOT NULL
+              AND ISNULL(movement.cha_evrakno_sira, 0) > 0
+              AND (@branchNo IS NULL OR CONVERT(int, movement.cha_create_user) = @branchNo)
+            GROUP BY
+                CAST(movement.cha_tarihi AS date),
+                movement.cha_create_user,
+                LTRIM(RTRIM(ISNULL(movement.cha_evrakno_seri, ''))),
+                movement.cha_evrakno_sira;
             """;
 
         return await ExecuteReaderAsync(
@@ -2550,9 +2575,12 @@ public sealed class KasaHareketAktarimiService(
                 AddParameter(command, "@startDate", startDate.Date);
                 AddParameter(command, "@endDateExclusive", endDate.Date.AddDays(1));
                 AddParameter(command, "@branchNo", branchNo);
+                AddParameter(command, "@stockDocumentFlowType", (int)DocumentFlowType.StockMovementDocument);
+                AddParameter(command, "@customerDocumentFlowType", (int)DocumentFlowType.CustomerMovementDocument);
             },
             reader => new MikroPosDocumentSnapshot(
                 new MikroPosDocumentKey(
+                    (DocumentFlowType)ReadInt(reader, "DocumentFlowType"),
                     ReadDateTime(reader, "DocumentDate").Date,
                     ReadInt(reader, "BranchNo"),
                     ReadString(reader, "DocumentSerie"),
@@ -2567,7 +2595,8 @@ public sealed class KasaHareketAktarimiService(
         string operationMessage,
         CancellationToken cancellationToken)
     {
-        var requests = documents.OrderBy(item => item.Key.BranchNo)
+        var requests = documents.OrderBy(item => item.Key.DocumentType)
+            .ThenBy(item => item.Key.BranchNo)
             .ThenBy(item => item.Key.Date)
             .ThenBy(item => item.Key.DocumentSerie)
             .ThenBy(item => item.Key.DocumentOrderNo)
@@ -2575,17 +2604,20 @@ public sealed class KasaHareketAktarimiService(
             {
                 var key = document.Key;
                 var documentNo = $"{key.DocumentSerie}/{key.DocumentOrderNo}";
-                var message = $"{operationMessage} Tarih: {key.Date:dd.MM.yyyy}, " +
+                var documentTypeName = key.DocumentType == DocumentFlowType.CustomerMovementDocument
+                    ? "Cari hesap hareket evraki"
+                    : "Stok hareket evraki";
+                var message = $"{operationMessage} {documentTypeName}. Tarih: {key.Date:dd.MM.yyyy}, " +
                               $"sube: {key.BranchNo}, evrak: {documentNo}, " +
                               $"satir: {document.LineCount}.";
 
                 return new RecordDocumentFlowRequest(
                     DocumentFlowKeys.CreateEntity(
-                        DocumentFlowType.StockMovementDocument,
+                        key.DocumentType,
                         key.BranchNo,
                         "POS",
                         $"{key.Date:yyyyMMdd}:{key.DocumentSerie}:{key.DocumentOrderNo}"),
-                    DocumentFlowType.StockMovementDocument,
+                    key.DocumentType,
                     key.BranchNo,
                     null,
                     key.DocumentSerie,
@@ -3691,6 +3723,7 @@ public sealed class KasaHareketAktarimiService(
         decimal ExpenseReceiptAmount);
 
     internal sealed record MikroPosDocumentKey(
+        DocumentFlowType DocumentType,
         DateTime Date,
         int BranchNo,
         string DocumentSerie,

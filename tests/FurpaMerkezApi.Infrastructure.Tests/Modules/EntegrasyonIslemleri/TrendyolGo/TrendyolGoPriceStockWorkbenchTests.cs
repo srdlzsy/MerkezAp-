@@ -14,6 +14,8 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
         Assert.Equal(3, options.PriceListNo);
         Assert.Equal(0, options.PaymentPlanNo);
         Assert.Equal(300, options.PreviewRefreshIntervalSeconds);
+        Assert.Equal(0, options.Catalog.DefaultBrandId);
+        Assert.Equal(0, options.Catalog.DefaultCategoryId);
     }
 
     [Fact]
@@ -154,6 +156,22 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     }
 
     [Fact]
+    public void CatalogBuildRow_UsesExplicitDefaultMappings()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "015550", "Product", "8690000000000", "MARKA", "KATEGORI", 10, 25m, false);
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product, new HashSet<string>(), new HashSet<string>(),
+            new Dictionary<string, long>(), new Dictionary<string, long>(),
+            defaultBrandId: 100, defaultCategoryId: 200);
+
+        Assert.Equal("Ready", row.Status);
+        Assert.Equal(100, row.TrendyolBrandId);
+        Assert.Equal(200, row.TrendyolCategoryId);
+    }
+
+    [Fact]
     public void CatalogBuildRow_DoesNotOfferExistingProductForCreation()
     {
         var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
@@ -236,7 +254,7 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     public void BranchPosUpsert_OnlyAppliesStrictlyNewerPriceAndWarehouseVersions()
     {
         Assert.Contains(
-            "ON CONFLICT (sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano, fiyat_tip_kodu)",
+            "pg_advisory_xact_lock",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -244,9 +262,33 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
         Assert.Contains(
-            "EXCLUDED.sfiyat_lastup_date > market.stoksatisfiyat.sfiyat_lastup_date",
+            "@sfiyat_lastup_date > sfiyat_lastup_date",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "@sdp_lastup_date > sdp_lastup_date",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "ON CONFLICT",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DirectDispatch_AutoCreatesOnlyForMissingCatalogErrorsWhenEnabled()
+    {
+        var missingCatalog = new HttpRequestException(
+            "Trendyol Go Price and inventory update failed: product not found in catalog.");
+        var unauthorized = new HttpRequestException(
+            "Trendyol Go Price and inventory update failed with HTTP 401: Unauthorized.");
+
+        Assert.True(TrendyolGoPriceStockWorkbench.ShouldAutoCreateMissingCatalog(true, missingCatalog));
+        Assert.False(TrendyolGoPriceStockWorkbench.ShouldAutoCreateMissingCatalog(false, missingCatalog));
+        Assert.False(TrendyolGoPriceStockWorkbench.ShouldAutoCreateMissingCatalog(true, unauthorized));
+        Assert.False(TrendyolGoPriceStockWorkbench.ShouldAutoCreateMissingCatalog(
+            true,
+            new InvalidOperationException("product not found in catalog")));
     }
 
     [Fact]

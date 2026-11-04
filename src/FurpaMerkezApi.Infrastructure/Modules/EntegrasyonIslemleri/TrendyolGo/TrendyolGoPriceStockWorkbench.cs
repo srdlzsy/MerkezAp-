@@ -240,28 +240,23 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                     {
                         response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
                     }
-                    catch (Exception ex) when (IsMissingCatalogError(ex) || request.AutoCreateMissingCatalog)
+                    catch (Exception ex) when (ShouldAutoCreateMissingCatalog(request.AutoCreateMissingCatalog, ex))
                     {
                         var chunkBarcodes = chunk.Select(item => item.Barcode).ToArray();
                         var autoResult = await catalogWorkbench.AutoCreateProductsAsync(store.StoreId, chunkBarcodes, cancellationToken);
-                        if (autoResult.CreatedCount > 0)
+                        if (autoResult.CreatedCount <= 0)
                         {
-                            catalogCreatedCount += autoResult.CreatedCount;
-                            catalogBatchRequestIds.AddRange(autoResult.BatchRequestIds);
+                            throw new InvalidOperationException(
+                                autoResult.ErrorMessage ?? "Eksik Trendyol katalog urunleri olusturulamadi.",
+                                ex);
+                        }
 
-                            try
-                            {
-                                response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
-                            }
-                            catch
-                            {
-                                // TGO is processing catalog creation asynchronously; price-inventory update will take effect once approved.
-                            }
-                        }
-                        else if (!request.AutoCreateMissingCatalog)
-                        {
-                            throw;
-                        }
+                        catalogCreatedCount += autoResult.CreatedCount;
+                        catalogBatchRequestIds.AddRange(autoResult.BatchRequestIds);
+                        throw new InvalidOperationException(
+                            $"{autoResult.CreatedCount} katalog urunu olusturma kuyruguna alindi. " +
+                            "Fiyat-stok gonderilmedi; batch sonucu kabul edildikten sonra islemi yeniden calistirin.",
+                            ex);
                     }
 
                     dispatchedItemCount += chunk.Length;
@@ -901,16 +896,30 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             ? ReadLong(parent, name)
             : null;
 
-    private static bool IsMissingCatalogError(Exception ex)
+    internal static bool ShouldAutoCreateMissingCatalog(bool enabled, Exception exception) =>
+        enabled && IsMissingCatalogError(exception);
+
+    internal static bool IsMissingCatalogError(Exception ex)
     {
+        if (ex is not HttpRequestException)
+        {
+            return false;
+        }
+
         var message = ex.Message;
-        return message.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("not found", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("catalog", StringComparison.OrdinalIgnoreCase)
+        var referencesProduct = message.Contains("catalog", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("product", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("urun", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("ürün", StringComparison.OrdinalIgnoreCase);
+        var reportsMissing = message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("bulunamadi", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase)
             || message.Contains("bulunmuyor", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("tanimli degil", StringComparison.OrdinalIgnoreCase)
             || message.Contains("tanımlı değil", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("mevcut değil", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("404", StringComparison.OrdinalIgnoreCase);
+            || message.Contains("mevcut degil", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("mevcut değil", StringComparison.OrdinalIgnoreCase);
+        return referencesProduct && reportsMissing;
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

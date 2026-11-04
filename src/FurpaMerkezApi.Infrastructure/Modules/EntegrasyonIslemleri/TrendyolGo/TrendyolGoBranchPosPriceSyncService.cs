@@ -159,28 +159,61 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
     }
 
     internal const string UpsertCommandText = """
+        SELECT pg_advisory_xact_lock(
+            hashtextextended(CONCAT(@sdp_depo_no, '|', @sfiyat_stokkod, '|', @sfiyat_listesirano, '|1'), 0));
+
+        WITH updated AS
+        (
+            UPDATE market.stoksatisfiyat
+            SET sfiyat_fiyati = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
+                        THEN @sfiyat_fiyati ELSE sfiyat_fiyati END,
+                sfiyat_birim_pntr = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
+                        THEN @sfiyat_birim_pntr ELSE sfiyat_birim_pntr END,
+                sfiyat_birim_adi = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
+                        THEN @sfiyat_birim_adi ELSE sfiyat_birim_adi END,
+                sfiyat_satisdursun = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
+                        THEN @sfiyat_satisdursun ELSE sfiyat_satisdursun END,
+                sfiyat_sipdursun = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
+                        THEN @sfiyat_sipdursun ELSE sfiyat_sipdursun END,
+                sfiyat_malkabuldursun = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
+                        THEN @sfiyat_malkabuldursun ELSE sfiyat_malkabuldursun END,
+                sfiyat_lastup_date = CASE
+                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
+                        THEN @sfiyat_lastup_date ELSE sfiyat_lastup_date END,
+                sdp_lastup_date = CASE
+                    WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
+                        THEN @sdp_lastup_date ELSE sdp_lastup_date END
+            WHERE sdp_depo_no = @sdp_depo_no
+              AND sfiyat_stokkod = @sfiyat_stokkod
+              AND sfiyat_listesirano = @sfiyat_listesirano
+              AND fiyat_tip_kodu = 1
+              AND (sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
+                   OR sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date)
+            RETURNING 1
+        )
         INSERT INTO market.stoksatisfiyat (
             sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano, sfiyat_birim_pntr,
             sfiyat_birim_adi, sfiyat_fiyati, sfiyat_satisdursun, sfiyat_sipdursun,
             sfiyat_malkabuldursun, sfiyat_lastup_date, sdp_lastup_date, fiyat_tip_kodu
         )
-        VALUES (
-            @sdp_depo_no, @sfiyat_stokkod, @sfiyat_listesirano, @sfiyat_birim_pntr,
-            @sfiyat_birim_adi, @sfiyat_fiyati, @sfiyat_satisdursun, @sfiyat_sipdursun,
-            @sfiyat_malkabuldursun, @sfiyat_lastup_date, @sdp_lastup_date, 1
-        )
-        ON CONFLICT (sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano, fiyat_tip_kodu)
-        DO UPDATE SET
-            sfiyat_fiyati = EXCLUDED.sfiyat_fiyati,
-            sfiyat_birim_pntr = EXCLUDED.sfiyat_birim_pntr,
-            sfiyat_birim_adi = EXCLUDED.sfiyat_birim_adi,
-            sfiyat_satisdursun = EXCLUDED.sfiyat_satisdursun,
-            sfiyat_sipdursun = EXCLUDED.sfiyat_sipdursun,
-            sfiyat_malkabuldursun = EXCLUDED.sfiyat_malkabuldursun,
-            sfiyat_lastup_date = EXCLUDED.sfiyat_lastup_date,
-            sdp_lastup_date = EXCLUDED.sdp_lastup_date
-        WHERE EXCLUDED.sfiyat_lastup_date > market.stoksatisfiyat.sfiyat_lastup_date
-           OR market.stoksatisfiyat.sfiyat_lastup_date IS NULL;
+        SELECT @sdp_depo_no, @sfiyat_stokkod, @sfiyat_listesirano, @sfiyat_birim_pntr,
+               @sfiyat_birim_adi, @sfiyat_fiyati, @sfiyat_satisdursun, @sfiyat_sipdursun,
+               @sfiyat_malkabuldursun, @sfiyat_lastup_date, @sdp_lastup_date, 1
+        WHERE NOT EXISTS
+        (
+            SELECT 1
+            FROM market.stoksatisfiyat
+            WHERE sdp_depo_no = @sdp_depo_no
+              AND sfiyat_stokkod = @sfiyat_stokkod
+              AND sfiyat_listesirano = @sfiyat_listesirano
+              AND fiyat_tip_kodu = 1
+        );
         """;
 
     private static async Task UpsertAsync(

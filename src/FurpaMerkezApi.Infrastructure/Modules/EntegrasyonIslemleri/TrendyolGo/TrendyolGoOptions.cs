@@ -55,8 +55,8 @@ public sealed class TrendyolGoOptions
 
 public sealed class TrendyolGoCatalogOptions
 {
-    public long DefaultBrandId { get; init; } = 1;
-    public long DefaultCategoryId { get; init; } = 1;
+    public long DefaultBrandId { get; init; }
+    public long DefaultCategoryId { get; init; }
 
     // Explicit mappings override mappings inferred from products already accepted by TGO.
     public Dictionary<string, long> BrandMappings { get; init; } = new(StringComparer.OrdinalIgnoreCase);
