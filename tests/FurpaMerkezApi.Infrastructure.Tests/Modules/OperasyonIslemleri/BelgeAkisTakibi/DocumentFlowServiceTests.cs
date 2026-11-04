@@ -179,6 +179,22 @@ public sealed class DocumentFlowServiceTests
     }
 
     [Fact]
+    public async Task SuccessfulDocumentCreatedIndex_AllowsMultipleLifecycleEvents()
+    {
+        await using var dbContext = CreateDbContext();
+
+        var eventType = dbContext.Model.FindEntityType(typeof(DocumentFlowEvent));
+        var index = Assert.Single(
+            eventType!.GetIndexes(),
+            item => item.GetDatabaseName() == "ix_document_flow_events_successful_creation");
+
+        Assert.False(index.IsUnique);
+        Assert.Equal(
+            "[step] = N'DocumentCreated' AND [status] = N'Succeeded'",
+            index.GetFilter());
+    }
+
+    [Fact]
     public async Task RecordAsync_DoesNotAppendDuplicateSuccessfulWarehouseReceivingAcceptedEvent()
     {
         await using var dbContext = CreateDbContext();

@@ -5894,8 +5894,7 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DocumentFlowId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_document_flow_events_successful_creation")
+                        .HasDatabaseName("ix_document_flow_events_successful_creation")
                         .HasFilter("[step] = N'DocumentCreated' AND [status] = N'Succeeded'");
 
                     b.HasIndex("DocumentFlowId", "OccurredAtUtc")

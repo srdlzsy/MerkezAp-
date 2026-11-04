@@ -156,17 +156,11 @@ public sealed class KasaHareketAktarimiService(
             requireExclusiveBranch: request.BranchNo.HasValue,
             cancellationToken: cancellationToken);
 
-        var before = await GetMikroPosDocumentsAsync(
-            request.Date.Date,
-            request.Date.Date,
-            request.BranchNo,
-            cancellationToken);
-
         var message = await ExecuteProcedureAsync(
-            "StokHareketYaz2",
+            "StokHareketYaz",
             cancellationToken,
-            ("@StartDate", request.Date.Date),
-            ("@EndDate", request.Date.Date));
+            ("@Tarih", request.Date.Date),
+            ("@Sube", request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty));
 
         var after = await GetMikroPosDocumentsAsync(
             request.Date.Date,
@@ -174,13 +168,13 @@ public sealed class KasaHareketAktarimiService(
             request.BranchNo,
             cancellationToken);
         await RecordMikroDocumentChangesAsync(
-            FindDocumentDifference(after, before),
+            after,
             DocumentFlowStep.DocumentCreated,
             "Kasa hareket aktarimi ile Mikro POS evragi olusturuldu.",
             cancellationToken);
 
         return new KasaHareketProcedureResultDto(
-            "StokHareketYaz2",
+            "StokHareketYaz",
             message,
             request.Date.Date,
             request.BranchNo,
@@ -275,17 +269,17 @@ public sealed class KasaHareketAktarimiService(
             requireExclusiveBranch: false,
             cancellationToken: cancellationToken);
 
-        var before = await GetMikroPosDocumentsAsync(
-            startDate,
-            endDate,
-            null,
-            cancellationToken);
+        foreach (var date in EnumerateDates(startDate, endDate))
+        {
+            await ExecuteProcedureAsync(
+                "StokHareketYaz",
+                cancellationToken,
+                ("@Tarih", date),
+                ("@Sube", string.Empty));
+        }
 
-        var message = await ExecuteProcedureAsync(
-            "StokHareketYaz2",
-            cancellationToken,
-            ("@StartDate", startDate),
-            ("@EndDate", endDate));
+        var message = $"{startDate:dd.MM.yyyy} - {endDate:dd.MM.yyyy} tarih araligindaki " +
+                      "hareketler Mikro'ya islendi.";
 
         var after = await GetMikroPosDocumentsAsync(
             startDate,
@@ -293,13 +287,13 @@ public sealed class KasaHareketAktarimiService(
             null,
             cancellationToken);
         await RecordMikroDocumentChangesAsync(
-            FindDocumentDifference(after, before),
+            after,
             DocumentFlowStep.DocumentCreated,
             "Tarih aralikli kasa hareket aktarimi ile Mikro POS evragi olusturuldu.",
             cancellationToken);
 
         return new KasaHareketProcedureResultDto(
-            "StokHareketYaz2",
+            "StokHareketYaz",
             message,
             startDate,
             null,
