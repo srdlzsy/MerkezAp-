@@ -140,6 +140,37 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.True(row.HasDifference);
     }
 
+    [Fact]
+    public void EnsureExclusivePendingBranchAllowsOnlyRequestedBranch()
+    {
+        KasaHareketAktarimiService.EnsureExclusivePendingBranch(
+            requestedBranchNo: 160,
+            requireExclusiveBranch: true,
+            pendingBranchNos: [160]);
+    }
+
+    [Fact]
+    public void EnsureExclusivePendingBranchRejectsOtherPendingBranches()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            KasaHareketAktarimiService.EnsureExclusivePendingBranch(
+                requestedBranchNo: 160,
+                requireExclusiveBranch: true,
+                pendingBranchNos: [159, 160, 161]));
+
+        Assert.Contains("159, 161", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Mikroya Aktar 2", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnsureExclusivePendingBranchAllowsNoOpWhenRequestedBranchIsNotPending()
+    {
+        KasaHareketAktarimiService.EnsureExclusivePendingBranch(
+            requestedBranchNo: 160,
+            requireExclusiveBranch: true,
+            pendingBranchNos: [159, 161]);
+    }
+
     private static int InvokeTaxRate(int taxCode, DateTime receiptDate)
     {
         var method = typeof(KasaHareketAktarimiService).GetMethod(

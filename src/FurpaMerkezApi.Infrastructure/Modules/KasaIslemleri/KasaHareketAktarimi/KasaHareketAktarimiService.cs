@@ -149,6 +149,13 @@ public sealed class KasaHareketAktarimiService(
     {
         ValidateDate(request.Date, nameof(request.Date));
 
+        await PreparePendingMikroTransferAsync(
+            request.Date.Date,
+            request.Date.Date,
+            request.BranchNo,
+            requireExclusiveBranch: request.BranchNo.HasValue,
+            cancellationToken: cancellationToken);
+
         var before = await GetMikroPosDocumentsAsync(
             request.Date.Date,
             request.Date.Date,
@@ -156,10 +163,10 @@ public sealed class KasaHareketAktarimiService(
             cancellationToken);
 
         var message = await ExecuteProcedureAsync(
-            "StokHareketYaz",
+            "StokHareketYaz2",
             cancellationToken,
-            ("@Tarih", request.Date.Date),
-            ("@Sube", request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty));
+            ("@StartDate", request.Date.Date),
+            ("@EndDate", request.Date.Date));
 
         var after = await GetMikroPosDocumentsAsync(
             request.Date.Date,
@@ -173,7 +180,7 @@ public sealed class KasaHareketAktarimiService(
             cancellationToken);
 
         return new KasaHareketProcedureResultDto(
-            "StokHareketYaz",
+            "StokHareketYaz2",
             message,
             request.Date.Date,
             request.BranchNo,
@@ -260,6 +267,13 @@ public sealed class KasaHareketAktarimiService(
         CancellationToken cancellationToken)
     {
         var (startDate, endDate) = NormalizeDateRange(request.StartDate, request.EndDate);
+
+        await PreparePendingMikroTransferAsync(
+            startDate,
+            endDate,
+            branchNo: null,
+            requireExclusiveBranch: false,
+            cancellationToken: cancellationToken);
 
         var before = await GetMikroPosDocumentsAsync(
             startDate,
@@ -2195,13 +2209,14 @@ public sealed class KasaHareketAktarimiService(
                 KullaniciKodu, KartNumarasi, Toplam, ToplamKdv, FaturaIndirimi,
                 VergiMatrahi18, VergiMatrahi08, VergiMatrahi01, VergiMatrahi00,
                 VergiToplami18, VergiToplami08, VergiToplami01, VergiToplami00,
-                createDate, KasaMaliBellekKodu, MusteriCariKodu, IslemSonuc)
+                createDate, KasaMaliBellekKodu, MusteriCariKodu, IslemSonuc,
+                MikroAktarimDurumu)
             VALUES (
                 @FaturaGuid, @Sube, @Tarih, @Saat, @BelgeTuru, @ZNo, @FisNo, @KasaNo,
                 @KullaniciKodu, @KartNumarasi, @Toplam, @ToplamKdv, @FaturaIndirimi,
                 @VergiMatrahi18, @VergiMatrahi08, @VergiMatrahi01, @VergiMatrahi00,
                 @VergiToplami18, @VergiToplami08, @VergiToplami01, @VergiToplami00,
-                @createDate, @KasaMaliBellekKodu, @MusteriCariKodu, @IslemSonuc);
+                @createDate, @KasaMaliBellekKodu, @MusteriCariKodu, @IslemSonuc, 0);
             """;
 
         await ExecuteNonQueryAsync(
@@ -2399,6 +2414,76 @@ public sealed class KasaHareketAktarimiService(
             ("@Saat", promotion.Time),
             ("@FisNo", promotion.ReceiptNo),
             ("@CreateDate", promotion.CreateDate));
+    }
+
+    private async Task PreparePendingMikroTransferAsync(
+        DateTime startDate,
+        DateTime endDate,
+        int? branchNo,
+        bool requireExclusiveBranch,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE dbo.PosFaturas
+            SET MikroAktarimDurumu = 0
+            WHERE Tarih >= @startDate
+              AND Tarih < @endDateExclusive
+              AND MikroAktarimDurumu IS NULL
+              AND (@branchNo IS NULL OR TRY_CONVERT(int, Sube) = @branchNo);
+
+            SELECT DISTINCT TRY_CONVERT(int, Sube) AS BranchNo
+            FROM dbo.PosFaturas WITH (READCOMMITTEDLOCK)
+            WHERE Tarih >= @startDate
+              AND Tarih < @endDateExclusive
+              AND ISNULL(MikroAktarimDurumu, 0) = 0
+              AND TRY_CONVERT(int, Sube) IS NOT NULL
+            ORDER BY BranchNo;
+            """;
+
+        var pendingBranchNos = await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate.Date);
+                AddParameter(command, "@endDateExclusive", endDate.Date.AddDays(1));
+                AddParameter(command, "@branchNo", branchNo);
+            },
+            reader => ReadInt(reader, "BranchNo"),
+            cancellationToken);
+
+        EnsureExclusivePendingBranch(branchNo, requireExclusiveBranch, pendingBranchNos);
+    }
+
+    internal static void EnsureExclusivePendingBranch(
+        int? requestedBranchNo,
+        bool requireExclusiveBranch,
+        IReadOnlyCollection<int> pendingBranchNos)
+    {
+        if (!requireExclusiveBranch || requestedBranchNo is not > 0)
+        {
+            return;
+        }
+
+        if (!pendingBranchNos.Contains(requestedBranchNo.Value))
+        {
+            return;
+        }
+
+        var otherBranchNos = pendingBranchNos
+            .Where(item => item != requestedBranchNo.Value)
+            .Distinct()
+            .OrderBy(item => item)
+            .ToArray();
+        if (otherBranchNos.Length == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"{requestedBranchNo.Value} subesi tek basina aktarilamadi. " +
+            $"Ayni tarih araliginda bekleyen diger subeler: {string.Join(", ", otherBranchNos)}. " +
+            "Tum bekleyen subeleri birlikte islemek icin Mikroya Aktar 2 islemini kullanin.");
     }
 
     private async Task<IReadOnlyCollection<MikroPosDocumentSnapshot>> GetMikroPosDocumentsAsync(
