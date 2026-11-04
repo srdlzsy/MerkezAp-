@@ -204,6 +204,14 @@ public sealed class TrendyolGoController(
             request.StoreId, request.PreviewHash, request.SendAll,
             request.Barcodes, cancellationToken));
 
+    [HttpPost("catalog/auto-create")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoCatalogAutoCreateResult), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoCatalogAutoCreateResult>> AutoCreateCatalog(
+        [FromBody] TrendyolGoAutoCreateCatalogHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await catalogWorkbench.AutoCreateProductsAsync(request.StoreId, request.Barcodes, cancellationToken));
+
     [HttpGet("products/batch-requests/{batchRequestId}")]
     [Authorize(Policy = DetailPolicy)]
     public async Task<ActionResult<JsonElement>> GetProductBatchResult(
@@ -461,6 +469,15 @@ public sealed class TrendyolGoCatalogDispatchHttpRequest
     public bool SendAll { get; init; }
 
     [MaxLength(10000)]
+    public string[] Barcodes { get; init; } = [];
+}
+
+public sealed class TrendyolGoAutoCreateCatalogHttpRequest
+{
+    [Range(1, long.MaxValue)]
+    public long StoreId { get; init; }
+
+    [Required, MinLength(1), MaxLength(10000)]
     public string[] Barcodes { get; init; } = [];
 }
 

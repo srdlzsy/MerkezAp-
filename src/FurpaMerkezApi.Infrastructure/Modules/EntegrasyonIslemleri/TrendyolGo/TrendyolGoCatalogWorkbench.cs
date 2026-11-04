@@ -215,29 +215,33 @@ internal sealed class TrendyolGoCatalogWorkbench(
         var config = options.CurrentValue;
         var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
             ?? throw new ArgumentException($"storeId {storeId} is not configured.");
-        var priceStockSnapshot = snapshotCoordinator.GetState(storeId).Snapshot
-            ?? throw new InvalidOperationException(
-                "Trendyol catalog snapshot is still preparing. Refresh the price-stock preview first.");
+        var priceStockSnapshot = snapshotCoordinator.GetState(storeId).Snapshot;
         var mikroProducts = await ReadMikroCatalogAsync(
             store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, cancellationToken);
-        var existingBarcodes = priceStockSnapshot.Products
-            .Select(item => item.Barcode)
-            .Where(item => !string.IsNullOrWhiteSpace(item))
-            .ToHashSet(StringComparer.Ordinal);
+        var existingBarcodes = priceStockSnapshot is not null
+            ? priceStockSnapshot.Products
+                .Select(item => item.Barcode)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
         var mikroByBarcode = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
             .Where(group => group.Count() == 1)
             .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
 
-        var brandMappings = InferMappings(
-            priceStockSnapshot.Products, mikroByBarcode,
-            item => item.BrandCode, item => item.BrandId,
-            config.Catalog.BrandMappings);
-        var categoryMappings = InferMappings(
-            priceStockSnapshot.Products, mikroByBarcode,
-            item => item.CategoryCode, item => item.CategoryId,
-            config.Catalog.CategoryMappings);
+        var brandMappings = priceStockSnapshot is not null
+            ? InferMappings(
+                priceStockSnapshot.Products, mikroByBarcode,
+                item => item.BrandCode, item => item.BrandId,
+                config.Catalog.BrandMappings)
+            : new Dictionary<string, long>(config.Catalog.BrandMappings, StringComparer.OrdinalIgnoreCase);
+        var categoryMappings = priceStockSnapshot is not null
+            ? InferMappings(
+                priceStockSnapshot.Products, mikroByBarcode,
+                item => item.CategoryCode, item => item.CategoryId,
+                config.Catalog.CategoryMappings)
+            : new Dictionary<string, long>(config.Catalog.CategoryMappings, StringComparer.OrdinalIgnoreCase);
         var duplicateBarcodes = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
