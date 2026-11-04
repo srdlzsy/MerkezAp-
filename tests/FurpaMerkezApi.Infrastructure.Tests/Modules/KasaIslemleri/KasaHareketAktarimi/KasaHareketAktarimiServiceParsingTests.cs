@@ -171,6 +171,33 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             pendingBranchNos: [159, 161]);
     }
 
+    [Fact]
+    public void FindDocumentDifferenceReturnsOnlyDocumentsCreatedByCurrentOperation()
+    {
+        var existingReceipt = CreateDocument("PSF159", 29901);
+        var existingExpense = CreateDocument("GPS159", 79);
+        var createdStockDocument = CreateDocument("PS159", 22278);
+
+        var result = KasaHareketAktarimiService.FindDocumentDifference(
+            [existingReceipt, existingExpense, createdStockDocument],
+            [existingReceipt, existingExpense]);
+
+        var document = Assert.Single(result);
+        Assert.Equal("PS159", document.Key.DocumentSerie);
+        Assert.Equal(22278, document.Key.DocumentOrderNo);
+    }
+
+    private static KasaHareketAktarimiService.MikroPosDocumentSnapshot CreateDocument(
+        string documentSerie,
+        int documentOrderNo) =>
+        new(
+            new KasaHareketAktarimiService.MikroPosDocumentKey(
+                new DateTime(2026, 10, 30),
+                159,
+                documentSerie,
+                documentOrderNo),
+            1);
+
     private static int InvokeTaxRate(int taxCode, DateTime receiptDate)
     {
         var method = typeof(KasaHareketAktarimiService).GetMethod(

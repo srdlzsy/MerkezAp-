@@ -156,6 +156,12 @@ public sealed class KasaHareketAktarimiService(
             requireExclusiveBranch: request.BranchNo.HasValue,
             cancellationToken: cancellationToken);
 
+        var before = await GetMikroPosDocumentsAsync(
+            request.Date.Date,
+            request.Date.Date,
+            request.BranchNo,
+            cancellationToken);
+
         var message = await ExecuteProcedureAsync(
             "StokHareketYaz",
             cancellationToken,
@@ -168,7 +174,7 @@ public sealed class KasaHareketAktarimiService(
             request.BranchNo,
             cancellationToken);
         await RecordMikroDocumentChangesAsync(
-            after,
+            FindDocumentDifference(after, before),
             DocumentFlowStep.DocumentCreated,
             "Kasa hareket aktarimi ile Mikro POS evragi olusturuldu.",
             cancellationToken);
@@ -269,6 +275,12 @@ public sealed class KasaHareketAktarimiService(
             requireExclusiveBranch: false,
             cancellationToken: cancellationToken);
 
+        var before = await GetMikroPosDocumentsAsync(
+            startDate,
+            endDate,
+            null,
+            cancellationToken);
+
         foreach (var date in EnumerateDates(startDate, endDate))
         {
             await ExecuteProcedureAsync(
@@ -287,7 +299,7 @@ public sealed class KasaHareketAktarimiService(
             null,
             cancellationToken);
         await RecordMikroDocumentChangesAsync(
-            after,
+            FindDocumentDifference(after, before),
             DocumentFlowStep.DocumentCreated,
             "Tarih aralikli kasa hareket aktarimi ile Mikro POS evragi olusturuldu.",
             cancellationToken);
@@ -3079,7 +3091,7 @@ public sealed class KasaHareketAktarimiService(
         return normalized.OrderBy(item => item).ToArray();
     }
 
-    private static MikroPosDocumentSnapshot[] FindDocumentDifference(
+    internal static MikroPosDocumentSnapshot[] FindDocumentDifference(
         IReadOnlyCollection<MikroPosDocumentSnapshot> source,
         IReadOnlyCollection<MikroPosDocumentSnapshot> comparison)
     {
@@ -3656,13 +3668,13 @@ public sealed class KasaHareketAktarimiService(
         decimal TransferredAmount,
         decimal ExpenseReceiptAmount);
 
-    private sealed record MikroPosDocumentKey(
+    internal sealed record MikroPosDocumentKey(
         DateTime Date,
         int BranchNo,
         string DocumentSerie,
         int DocumentOrderNo);
 
-    private sealed record MikroPosDocumentSnapshot(
+    internal sealed record MikroPosDocumentSnapshot(
         MikroPosDocumentKey Key,
         int LineCount);
 
