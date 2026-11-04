@@ -88,6 +88,7 @@ public sealed record TrendyolGoDirectPriceStockDispatchRequest(
     string Mode = "changed",
     DateTime? SinceDate = null,
     bool? OnlyFlaggedChanged = null,
+    string? Search = null,
     IReadOnlyCollection<string>? Barcodes = null);
 
 public sealed record TrendyolGoDirectStoreDispatchResult(

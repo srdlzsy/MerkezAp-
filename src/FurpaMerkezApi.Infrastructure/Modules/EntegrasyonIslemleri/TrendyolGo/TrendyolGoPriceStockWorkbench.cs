@@ -180,23 +180,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         var config = options.CurrentValue;
         var configuredStores = config.Stores;
 
-        IReadOnlyList<TrendyolGoStoreMappingOptions> targetStores;
-        if (request.AllStores)
-        {
-            targetStores = configuredStores;
-        }
-        else if (request.StoreIds is { Count: > 0 } storeIds)
-        {
-            targetStores = configuredStores.Where(s => storeIds.Contains(s.StoreId)).ToList();
-            if (targetStores.Count == 0)
-            {
-                throw new ArgumentException("No valid configured stores found for the provided store IDs.");
-            }
-        }
-        else
-        {
-            throw new ArgumentException("Either AllStores must be true or at least one StoreId must be provided.");
-        }
+        var targetStores = ResolveDirectTargetStores(configuredStores, request);
 
         var storeResults = new List<TrendyolGoDirectStoreDispatchResult>();
         var totalItemsDispatched = 0;
@@ -204,6 +188,9 @@ internal sealed class TrendyolGoPriceStockWorkbench(
         foreach (var store in targetStores)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var dispatchedItemCount = 0;
+            var completedBatchCount = 0;
+            var batchRequestIds = new List<string>();
 
             try
             {
@@ -212,7 +199,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                     request.Mode,
                     request.SinceDate,
                     request.OnlyFlaggedChanged,
-                    search: null,
+                    request.Search,
                     take: 0,
                     request.Barcodes,
                     config.PriceListNo,
@@ -228,7 +215,6 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                 }
 
                 var distinctItems = items.DistinctBy(i => i.Barcode, StringComparer.Ordinal).ToArray();
-                var batchRequestIds = new List<string>();
                 var chunks = distinctItems.Chunk(1000).ToArray();
 
                 foreach (var chunk in chunks)
@@ -247,6 +233,8 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                     });
 
                     var response = await trendyol.UpdatePriceAndInventoryAsync(payload, cancellationToken);
+                    dispatchedItemCount += chunk.Length;
+                    completedBatchCount++;
                     if (response.HasValue &&
                         response.Value.TryGetProperty("batchRequestId", out var batchIdProp) &&
                         batchIdProp.ValueKind == JsonValueKind.String)
@@ -275,16 +263,21 @@ internal sealed class TrendyolGoPriceStockWorkbench(
                     }
                 }
 
-                totalItemsDispatched += distinctItems.Length;
+                totalItemsDispatched += dispatchedItemCount;
                 storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
                     store.StoreId, store.WarehouseNo, store.StoreName,
-                    distinctItems.Length, chunks.Length, true, null, batchRequestIds));
+                    dispatchedItemCount, completedBatchCount, true, null, batchRequestIds));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
+                totalItemsDispatched += dispatchedItemCount;
                 storeResults.Add(new TrendyolGoDirectStoreDispatchResult(
                     store.StoreId, store.WarehouseNo, store.StoreName,
-                    0, 0, false, ex.Message, []));
+                    dispatchedItemCount, completedBatchCount, false, ex.Message, batchRequestIds));
             }
         }
 
@@ -292,6 +285,41 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             targetStores.Count,
             totalItemsDispatched,
             storeResults);
+    }
+
+    internal static IReadOnlyList<TrendyolGoStoreMappingOptions> ResolveDirectTargetStores(
+        IReadOnlyList<TrendyolGoStoreMappingOptions> configuredStores,
+        TrendyolGoDirectPriceStockDispatchRequest request)
+    {
+        if (request.AllStores)
+        {
+            if (configuredStores.Count == 0)
+            {
+                throw new InvalidOperationException("No Trendyol Go stores are configured.");
+            }
+
+            return configuredStores;
+        }
+
+        if (request.StoreIds is not { Count: > 0 } storeIds)
+        {
+            throw new ArgumentException(
+                "Either AllStores must be true or at least one StoreId must be provided.");
+        }
+
+        var requestedStoreIds = storeIds.Distinct().ToHashSet();
+        var targetStores = configuredStores
+            .Where(store => requestedStoreIds.Contains(store.StoreId))
+            .ToArray();
+        if (targetStores.Length != requestedStoreIds.Count)
+        {
+            var configuredStoreIds = targetStores.Select(store => store.StoreId).ToHashSet();
+            var missingStoreIds = requestedStoreIds.Where(id => !configuredStoreIds.Contains(id));
+            throw new ArgumentException(
+                $"Unknown Trendyol Go store IDs: {string.Join(", ", missingStoreIds)}.");
+        }
+
+        return targetStores;
     }
 
     private async Task<IReadOnlyList<TrendyolGoDirectPriceStockItem>> QueryDirectMikroProductsAsync(
@@ -361,15 +389,15 @@ internal sealed class TrendyolGoPriceStockWorkbench(
 
                 if (barcodes is { Count: > 0 })
                 {
-                    var barcodeList = barcodes.Where(b => !string.IsNullOrWhiteSpace(b)).Distinct().ToArray();
+                    var barcodeList = barcodes
+                        .Where(b => !string.IsNullOrWhiteSpace(b))
+                        .Select(b => b.Trim())
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray();
                     if (barcodeList.Length > 0)
                     {
-                        var paramNames = barcodeList.Select((_, idx) => $"@bc{idx}").ToArray();
-                        whereClauses.Add($"barcode.Barcode IN ({string.Join(",", paramNames)})");
-                        for (var i = 0; i < barcodeList.Length; i++)
-                        {
-                            AddParameter(command, $"@bc{i}", barcodeList[i]);
-                        }
+                        whereClauses.Add("barcode.Barcode IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@barcodesJson))");
+                        AddParameter(command, "@barcodesJson", JsonSerializer.Serialize(barcodeList));
                     }
                 }
 

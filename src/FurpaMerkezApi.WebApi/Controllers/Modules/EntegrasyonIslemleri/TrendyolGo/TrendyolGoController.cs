@@ -477,9 +477,12 @@ public sealed class TrendyolGoDirectPriceStockDispatchHttpRequest
 
     public bool? OnlyFlaggedChanged { get; init; }
 
+    [MaxLength(100)]
+    public string? Search { get; init; }
+
     [MaxLength(10000)]
     public string[] Barcodes { get; init; } = [];
 
     public TrendyolGoDirectPriceStockDispatchRequest ToApplicationRequest() =>
-        new(StoreIds, AllStores, Mode, SinceDate, OnlyFlaggedChanged, Barcodes);
+        new(StoreIds, AllStores, Mode, SinceDate, OnlyFlaggedChanged, Search, Barcodes);
 }

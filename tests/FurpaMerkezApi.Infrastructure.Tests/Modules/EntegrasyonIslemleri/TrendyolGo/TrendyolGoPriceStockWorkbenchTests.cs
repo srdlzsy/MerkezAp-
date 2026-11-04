@@ -250,15 +250,34 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     }
 
     [Fact]
-    public void DirectDispatchRequest_ThrowsWhenNoStoresAndNotAllStores()
+    public void ResolveDirectTargetStores_ThrowsWhenNoTargetIsSelected()
     {
         var request = new TrendyolGoDirectPriceStockDispatchRequest(
             StoreIds: [],
             AllStores: false,
             Mode: "changed");
 
-        Assert.False(request.AllStores);
-        Assert.Empty(request.StoreIds!);
+        var exception = Assert.Throws<ArgumentException>(() =>
+            TrendyolGoPriceStockWorkbench.ResolveDirectTargetStores([], request));
+
+        Assert.Contains("StoreId", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveDirectTargetStores_RejectsPartiallyUnknownStoreSelection()
+    {
+        TrendyolGoStoreMappingOptions[] configuredStores =
+        [
+            new() { StoreId = 100, WarehouseNo = 50, StoreName = "Merkez" }
+        ];
+        var request = new TrendyolGoDirectPriceStockDispatchRequest(
+            StoreIds: [100, 999],
+            AllStores: false);
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            TrendyolGoPriceStockWorkbench.ResolveDirectTargetStores(configuredStores, request));
+
+        Assert.Contains("999", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

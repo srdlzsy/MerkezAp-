@@ -35927,6 +35927,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `barcodes` | string[] | Hayir | nullable |
 | `mode` | string | Hayir | pattern=^(?i:all\|changed)$; nullable |
 | `onlyFlaggedChanged` | boolean | Hayir | nullable |
+| `search` | string | Hayir | maxLength=100; nullable |
 | `sinceDate` | string (date-time) | Hayir | nullable |
 | `storeIds` | integer (int64)[] | Hayir | nullable |
 
