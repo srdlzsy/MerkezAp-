@@ -20,6 +20,10 @@ public sealed class ExceptionHandlingMiddleware(
         {
             await next(httpContext);
         }
+        catch (Exception exception) when (httpContext.RequestAborted.IsCancellationRequested)
+        {
+            logger.LogInformation(exception, "The client aborted the request before it could be completed.");
+        }
         catch (Exception exception) when (SqlServerExceptionClassifier.IsConnectivityFailure(exception))
         {
             logger.LogError(exception, "A SQL Server connectivity error occurred.");
@@ -100,10 +104,6 @@ public sealed class ExceptionHandlingMiddleware(
                 httpContext,
                 StatusCodes.Status504GatewayTimeout,
                 BuildUpstreamErrorDetail("Dis servis istegi zaman asimina ugradi.", exception));
-        }
-        catch (OperationCanceledException exception) when (httpContext.RequestAborted.IsCancellationRequested)
-        {
-            logger.LogInformation(exception, "The client aborted the request.");
         }
         catch (ConnectionResetException exception)
         {

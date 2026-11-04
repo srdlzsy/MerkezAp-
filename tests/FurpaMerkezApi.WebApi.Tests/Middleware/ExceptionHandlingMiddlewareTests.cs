@@ -11,6 +11,26 @@ namespace FurpaMerkezApi.WebApi.Tests.Middleware;
 public sealed class ExceptionHandlingMiddlewareTests
 {
     [Fact]
+    public async Task InvokeAsync_DoesNotTurnSqlFailureAfterClientAbortIntoConnectivityError()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        requestCancellation.Cancel();
+
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new InvalidOperationException("Operation cancelled by user."),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/test";
+        context.RequestAborted = requestCancellation.Token;
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal(0, context.Response.Body.Length);
+    }
+
+    [Fact]
     public async Task InvokeAsync_DoesNotTurnClientConnectionResetIntoServerError()
     {
         var middleware = new ExceptionHandlingMiddleware(
