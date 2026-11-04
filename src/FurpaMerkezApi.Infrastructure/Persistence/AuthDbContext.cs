@@ -49,6 +49,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<TrendyolGoBranchPosPriceSyncTask> TrendyolGoBranchPosPriceSyncTasks => Set<TrendyolGoBranchPosPriceSyncTask>();
 
+    public DbSet<TrendyolGoBatchFollowUpTask> TrendyolGoBatchFollowUpTasks => Set<TrendyolGoBatchFollowUpTask>();
+
     public DbSet<StockAnomaly> StockAnomalies => Set<StockAnomaly>();
 
     public DbSet<StockAnomalyEvent> StockAnomalyEvents => Set<StockAnomalyEvent>();

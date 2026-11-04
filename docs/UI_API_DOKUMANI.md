@@ -19421,7 +19421,7 @@ Operasyon modulu notlari:
 
 Trendyol Go Market baglanti katmani `api.tgoapis.com` adresini kullanir. Asagidaki tablo **bizim API'de kodlanmis route'lari** gosterir; TGO'nun tum Market API'sinin desteklendigi veya bu route'larin canlida dogrulandigi anlamina gelmez. Siparis, urun katalogu, sube bazli fiyat-stok, satis acma/kapama, batch sonucu, bazi paket aksiyonlari, fatura linki ve iade/itiraz icin manuel endpointler vardir. Webhook alicisi ve Mikro satis/fatura evragi olusturma yoktur. Kapsam matrisi, operasyon akislarinin ayrintilari ve resmi kaynaklar: [Trendyol Go Entegrasyonu](TRENDYOL_GO_ENTEGRASYONU.md).
 
-Fiyat/stok onizlemesi Mikro'da Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesini kullanir; varsayilan fiyat listesi `3`, odeme plani `0`'dir. Liste `1` veya genel satis fiyati fallback olarak kullanilmaz. `POST /price-stock/dispatch` Trendyol Go'da basarili olduktan sonra, secilen satirlar opsiyonel `TrendyolGo:BranchPosPriceSync` worker'i ile sube POS bilgisayarindaki PostgreSQL `market.stoksatisfiyat` tablosuna kuyruk uzerinden aktarilir. Bu aktarim API cevabini bekletmez; sube kapaliysa kayit yeniden denemek uzere kuyrukta kalir.
+Fiyat/stok onizlemesi Mikro'da Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesini kullanir; varsayilan fiyat listesi `3`, odeme plani `0`'dir. Liste `1` veya genel satis fiyati fallback olarak kullanilmaz. TGO'nun HTTP istegini kabul etmesi basari sayilmaz: `batchRequestId` kalici takip tablosuna yazilir, urun bazli sonuc worker tarafindan kesinlestirilir ve yalniz basarili urunler opsiyonel `TrendyolGo:BranchPosPriceSync` kuyruguna aktarilir.
 
 POS sync varsayilan olarak depoya ait `BranchDetails.BranchIpAddress` adresini kullanir. Merkez veya farkli PostgreSQL sunucusu kullanan istisna depolar `WarehouseHosts` icinde depo no anahtariyla override edilir; depo `50` merkez PostgreSQL hostuna bu sekilde yonlendirilir. Tum depolar icin ortak host gerekirse `TrendyolGo:BranchPosPriceSync:Host` ayari kullanilabilir. `Password`, `AuthorizationToken`, `ApiKey` ve `ApiSecret` kaynak dosyaya yazilmaz; local gelistirmede User Secrets, canlida `TrendyolGo__BranchPosPriceSync__Password` dahil ortam degiskenleri kullanilir. PostgreSQL `pg_hba.conf` kullanici/veritabani yetkisi hazir olmadan POS sync acilmamalidir.
 
@@ -19499,6 +19499,9 @@ Endpointler:
 | `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/preview?storeId=402535&view=actionable` | query | `TrendyolGoPriceStockPreview` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh?storeId=402535` | query | `202` + `TrendyolGoPriceStockRefreshStatus` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | `TrendyolGoPriceStockDispatchHttpRequest` | `TrendyolGoPriceStockDispatch` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/price-stock/direct-preview?storeId=402535&mode=changed` | query | `TrendyolGoDirectPriceStockPreview` | `list` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/price-stock/direct-dispatch` | `TrendyolGoDirectPriceStockDispatchRequest` | `TrendyolGoDirectPriceStockDispatchResult` | `update` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/batch-workflows?take=100` | query | `TrendyolGoBatchWorkflowDto[]` | `detail` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/catalog/preview?storeId=402535&view=actionable` | query | `TrendyolGoCatalogPreview` | `list` |
 | `POST /api/entegrasyon-islemleri/trendyol-go/catalog/dispatch` | `TrendyolGoCatalogDispatchHttpRequest` | `TrendyolGoCatalogDispatch` | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/products/batch-requests/{batchRequestId}` | path | batch sonucu | `detail` |
@@ -19570,7 +19573,7 @@ Mikro'dan barkod girmeden fiyat/stok gonderme:
 5. Kullanici `Yenile` dediginde `POST price-stock/preview/refresh?storeId={id}` cagrilir. Endpoint `202 Accepted` doner ve ayni magazada zaten kuyrukta/calisan yenileme varsa ikinci is acmaz. UI sonucu GET preview ile poll eder.
 6. Sorun inceleme ekrani gerekiyorsa GET istegine `view=issues`; tum katalog denetimi gerekiyorsa `view=all` eklenir. Onizleme endpointinde kullaniciya acik sayfalama yoktur; katalog sayfalari backend tarafinda yonetilir.
 7. Secilen barkodlar ve onizleme `previewHash` degeriyle `price-stock/dispatch` cagrilir. Gonderimde tum katalog tekrar okunmaz; secilen satirlar Mikro'dan yeniden dogrulanir. Secilen urunun fiyati/stoku degismisse veya worker yeni snapshot yayinlayip hash'i degistirmisse `409 Conflict` doner ve UI guncel onizlemeyi alir.
-8. Gonderim response'undaki `upstreamResponses[].batchRequestId` degerleriyle mevcut `products/batch-requests/{batchRequestId}` sonucu kontrol edilir. POST'un kabul edilmesi, tum satirlarin islendigi anlamina gelmez.
+8. Gonderim response'undaki `upstreamResponses[].batchRequestId` kalici takibe alinir. Worker `products/batch-requests/{batchRequestId}` sonucunu kontrol eder; POST'un kabul edilmesi tum satirlarin islendigi anlamina gelmez. UI son durumlari `batch-workflows` endpointinden gosterir.
 9. UI `mode=selected` ile secili `Ready` satirlari, `mode=changed` ile tum `Ready` farklarini veya `mode=all-existing` ile TGO'da mevcut ve Mikro'da gecerli `Ready + Unchanged` urunlerin tamamini yeniden gonderebilir. Eski `sendAll=true` istegi geriye uyum icin `mode=changed` kabul edilir. Backend Trendyol limitine uygun olarak gonderimi kendi icinde en fazla 1000 satirlik paketlere ayirir; UI paket veya sayfa yonetmez.
 
 Snapshot durumlari:
@@ -19673,7 +19676,7 @@ all-existing  TGO'da mevcut, Mikro'da gecerli Ready ve Unchanged urunlerin tamam
 
 Mikro'daki TGO'da bulunmayan urunler icin `GET /catalog/preview` kullanilir. Backend mevcut TGO urunlerinden Mikro marka ve kategori kodu bazinda tekil ID eslemesi ogrenmeye calisir; konfigurasyondaki `TrendyolGo:Catalog:BrandMappings` ve `CategoryMappings` degerleri bu eslemeyi ezer. Tam TGO katalog snapshot'i hazir degilse onizleme/otomatik create baslamaz ve yenileme kuyruga alinir; bos snapshot mevcut katalog yokmus gibi kabul edilmez. Satirlar `Existing`, `Ready`, `MappingRequired` veya `Skipped` doner. Desteklenmeyen KDV orani, gecersiz barkod, sifir fiyat, bloklu/pasif stok veya duplicate barkod gonderilmez ve `Skipped` sebebiyle birlikte doner. `DefaultBrandId` ve `DefaultCategoryId` varsayilan `0` degerindedir; acik esleme yoksa urun `MappingRequired` kalir. `POST /catalog/dispatch` yalniz yeni `Ready` satirlari urun olusturma servisine gonderir. Batch sonucu tamamlanip urunler katalogda gorunmeden fiyat/stok gonderilmemelidir.
 
-`direct-dispatch` sirasinda yalniz TGO'nun urun/katalog bulunamadi cevabi otomatik katalog olusturmayi tetikler; yetki, rate-limit ve ag hatalari katalog hatasi sayilmaz. Katalog create cevabi asenkron batch kabuludur. Bu durumda ilgili magaza `success=false`, `catalogCreatedCount>0` ve `catalogBatchRequestIds` ile "katalog onayi bekliyor" durumunda doner; fiyat/stok gonderilmis sayilmaz. Batch kabul edildikten ve snapshot yenilendikten sonra fiyat/stok aktarimi yeniden calistirilir.
+`direct-dispatch`, Mikro satirlarini en fazla 1000 urunluk fiyat/stok batch'lerine verir ve hemen kalici takibe alir. TGO batch sonucunda katalogda bulunamadigi kesinlesen barkodlarda worker katalog snapshot'ini yeniler, uygun eksik urunleri katalog create batch'ine alir ve katalog kabulunden sonra ilk fiyat/stok batch'ini otomatik acar. Boylece tum magazalar icin tam katalog taramasi HTTP istegi icinde yapilmaz ve kullanicidan yeniden gonderim istenmez. Katalog kurallarini gecemeyen veya farkli bir nedenle reddedilen urunler takip ekraninda hata olarak kalir.
 
 Katalog gonderim body:
 
@@ -19690,11 +19693,11 @@ Katalog urunleri supplier genelinde olusturulur. Kabul sonrasinda her sube icin 
 
 Bu akis sadece TGO katalogunda bulunan urunleri kapsar. Mikro satis fiyati sifir/bos, barkod eslesmesi yok, urun pasif veya satisa kapali ise satir `Skipped` olur. Negatif stok `0` kabul edilir; kesirli stok tam sayiya asagi yuvarlanir. `storeId` tum subeler yerine sadece secilen TGO magazasina gonderilir. Tekrar gonderimden once batch sonucunu ve guncel onizlemeyi kontrol edin; TGO ayni body'nin 15 dakika icinde tekrarini reddedebilir.
 
-Onizleme katalogun tum sayfalarini backend tarafinda tarar. `page` ve `size` query alanlari bu endpointte kullaniciya acik degildir. Mikro'daki TGO'da henuz olmayan urunleri olusturmaz. `dispatch` icin barkodlar UI'da tek tek yazilmaz; onizleme satirlarindan secilir. Batch sonucu otomatik izlenmez, UI `batchRequestId` ile ayrica sorgulamalidir.
+Onizleme katalogun tum sayfalarini backend tarafinda tarar. `page` ve `size` query alanlari bu endpointte kullaniciya acik degildir. Snapshot tabanli `dispatch` TGO'da olmayan urunu olusturmaz; dogrudan `direct-dispatch` akisi ise uygun eksik urunu otomatik katalog akisina alir. Batch sonuclari kalici worker ile otomatik izlenir.
 
 POS kuyruk guvenligi:
 
-- Trendyol gonderimi basarili olduktan sonra POS aktarimi kalici kuyruga yazilir; uzak PostgreSQL baglantisi HTTP cevabini bekletmez.
+- TGO batch sonucunda basarili oldugu kesinlesen urun POS aktarimi kalici kuyruguna yazilir; hatali urun subeye yazilmaz ve uzak PostgreSQL baglantisi HTTP cevabini bekletmez.
 - Kuyruk tekrar denemeleri ayni depo/stok/fiyat-listesi/birim anahtarini PostgreSQL transaction advisory lock ile serilestirir.
 - Upsert tarih kontrollu `UPDATE`, ardindan kayit yoksa `INSERT` uygular ve uzak POS'ta benzersiz indeks bulunmasina bagimli degildir. Fiyat tarihi ile depo satis/siparis/mal-kabul blok tarihi ayri ayri degerlendirilir; birinin eski olmasi diger guncel alanin yazilmasini engellemez.
 - Uzak baglanti veya PostgreSQL hatasinda kayit `RetryDelaySeconds` sonunda yeniden denenir; TGO'ya gonderilmis fiyat/stok kaybi veya kullanici ekraninda ag beklemesi olusmaz.
@@ -25781,7 +25784,9 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | POST | `/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar` | JWT + entegrasyon-islemleri.pos-muhasebe-aktarimi.create | body: request / ImportZReportsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: PosAccountingImportResultDto<br>400: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}` | JWT + entegrasyon-islemleri.pos-muhasebe-aktarimi.detail | path: totalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: ZReportDetailDto<br>404: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go` | JWT + entegrasyon-islemleri.trendyol-go.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoConnectionStatusDto |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/batch-workflows` | JWT + entegrasyon-islemleri.trendyol-go.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;TrendyolGoBatchWorkflowDto&gt; |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/brands` | JWT + entegrasyon-islemleri.trendyol-go.list | query: page / integer (int32)<br>query: size / integer (int32)<br>query: name / string | 401: ProblemDetails<br>403: ProblemDetails |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/catalog/auto-create` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoAutoCreateCatalogHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogAutoCreateResult |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/catalog/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoCatalogDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogDispatch |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/catalog/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogPreview |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/claims` | JWT + entegrasyon-islemleri.trendyol-go.list | query: ClaimItemStatus / string<br>query: StartDate / integer (int64)<br>query: EndDate / integer (int64)<br>query: Page / integer (int32)<br>query: Size / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -25803,9 +25808,9 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/picked` | JWT + entegrasyon-islemleri.trendyol-go.update | path: packageId / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: JsonElement<br>204: bildirilmemis |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/direct-dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoDirectPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoDirectPriceStockDispatchResult |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/direct-preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: mode / string<br>query: sinceDate / string (date-time)<br>query: onlyFlaggedChanged / boolean<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoDirectPriceStockPreview |
-| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
-| GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string | 401: ProblemDetails<br>403: ProblemDetails |
-| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64) | 401: ProblemDetails<br>403: ProblemDetails |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoPriceStockDispatch |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoPriceStockPreview |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64) | 401: ProblemDetails<br>403: ProblemDetails<br>202: TrendyolGoPriceStockRefreshStatus |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/products` | JWT + entegrasyon-islemleri.trendyol-go.list | query: StoreId / integer (int64)<br>query: ListType / string<br>query: Barcode / string<br>query: StockCode / string<br>query: StartDate / integer (int64)<br>query: EndDate / integer (int64)<br>query: BrandIds / integer (int64)[]<br>query: Page / integer (int32)<br>query: Size / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/products` | JWT + entegrasyon-islemleri.trendyol-go.update | body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/products` | JWT + entegrasyon-islemleri.trendyol-go.update | body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -29756,6 +29761,39 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalId` | integer (int32) | Hayir |  |
 | `zNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoBatchWorkflowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `attemptCount` | integer (int32) | Hayir |  |
+| `batchRequestId` | string | Hayir | nullable |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `id` | string (uuid) | Hayir |  |
+| `kind` | string | Hayir | nullable |
+| `lastError` | string | Hayir | nullable |
+| `nextAttemptAtUtc` | string (date-time) | Hayir |  |
+| `resultSummary` | string | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `storeId` | integer (int64) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogAutoCreateResult
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchRequestIds` | string[] | Hayir | nullable |
+| `batchSubmissions` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogBatchSubmission[] | Hayir | nullable |
+| `createdCount` | integer (int32) | Hayir |  |
+| `errorMessage` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogBatchSubmission
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcodes` | string[] | Hayir | nullable |
+| `batchRequestId` | string | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -29821,6 +29859,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `storeResults` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectStoreDispatchResult[] | Hayir | nullable |
 | `targetStoresCount` | integer (int32) | Hayir |  |
+| `totalCatalogCreated` | integer (int32) | Hayir |  |
 | `totalItemsDispatched` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockItem
@@ -29828,14 +29867,21 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `barcode` | string | Hayir | nullable |
+| `goodsAcceptanceBlocked` | integer (int32) | Hayir |  |
+| `orderBlocked` | integer (int32) | Hayir |  |
 | `priceChangedFlag` | boolean | Hayir |  |
 | `priceLastUpDate` | string (date-time) | Hayir | nullable |
 | `productName` | string | Hayir | nullable |
 | `quantity` | integer (int32) | Hayir |  |
+| `salesBlocked` | integer (int32) | Hayir |  |
 | `sellingPrice` | number (double) | Hayir |  |
 | `stockCode` | string | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
+| `unitName` | string | Hayir | nullable |
 | `unitPointer` | integer (int32) | Hayir |  |
+| `warehouseLastUpDate` | string (date-time) | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+| `warehouseQuantity` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockPreview
 
@@ -29844,6 +29890,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockItem[] | Hayir | nullable |
 | `mode` | string | Hayir | nullable |
 | `sinceDate` | string (date-time) | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
 | `storeId` | integer (int64) | Hayir |  |
 | `storeName` | string | Hayir | nullable |
 | `totalCount` | integer (int32) | Hayir |  |
@@ -29855,12 +29902,83 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `batchCount` | integer (int32) | Hayir |  |
 | `batchRequestIds` | string[] | Hayir | nullable |
+| `catalogBatchRequestIds` | string[] | Hayir | nullable |
+| `catalogCreatedCount` | integer (int32) | Hayir |  |
 | `errorMessage` | string | Hayir | nullable |
+| `followUpTaskIds` | string (uuid)[] | Hayir | nullable |
 | `itemCount` | integer (int32) | Hayir |  |
 | `storeId` | integer (int64) | Hayir |  |
 | `storeName` | string | Hayir | nullable |
 | `success` | boolean | Hayir |  |
 | `warehouseNo` | integer (int32) | Hayir |  |
+| `workflowStatus` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockDispatch
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchCount` | integer (int32) | Hayir |  |
+| `mode` | string | Hayir | nullable |
+| `sentCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `upstreamResponses` | [] | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockPreview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `generatedAtUtc` | string (date-time) | Hayir | nullable |
+| `isStale` | boolean | Hayir |  |
+| `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockRow[] | Hayir | nullable |
+| `previewHash` | string | Hayir | nullable |
+| `readyCount` | integer (int32) | Hayir |  |
+| `refreshCompletedAtUtc` | string (date-time) | Hayir | nullable |
+| `refreshError` | string | Hayir | nullable |
+| `refreshStartedAtUtc` | string (date-time) | Hayir | nullable |
+| `skippedCount` | integer (int32) | Hayir |  |
+| `snapshotStatus` | string | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `totalElements` | integer (int64) | Hayir |  |
+| `totalPages` | integer (int32) | Hayir |  |
+| `unchangedCount` | integer (int32) | Hayir |  |
+| `view` | string | Hayir | nullable |
+| `visibleCount` | integer (int32) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockRefreshStatus
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `generatedAtUtc` | string (date-time) | Hayir | nullable |
+| `hasSnapshot` | boolean | Hayir |  |
+| `isStale` | boolean | Hayir |  |
+| `refreshAccepted` | boolean | Hayir |  |
+| `refreshCompletedAtUtc` | string (date-time) | Hayir | nullable |
+| `refreshError` | string | Hayir | nullable |
+| `refreshStartedAtUtc` | string (date-time) | Hayir | nullable |
+| `snapshotStatus` | string | Hayir | nullable |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockRow
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `mikroPrice` | number (double) | Hayir | nullable |
+| `mikroQuantity` | integer (int32) | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `reason` | string | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
+| `trendyolPrice` | number (double) | Hayir | nullable |
+| `trendyolQuantity` | integer (int32) | Hayir | nullable |
+| `warehouseQuantity` | integer (int32) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoStoreMappingDto
 
@@ -35912,6 +36030,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentNo` | string | Hayir | minLength=0; maxLength=50; nullable |
 | `paymentType` | string | Hayir | minLength=0; maxLength=30; nullable |
 
+### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoAutoCreateCatalogHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcodes` | string[] | Evet |  |
+| `storeId` | integer (int64) | Hayir | min=1 |
+
 ### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -35926,6 +36051,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `allStores` | boolean | Hayir |  |
+| `autoCreateMissingCatalog` | boolean | Hayir |  |
 | `barcodes` | string[] | Hayir | nullable |
 | `mode` | string | Hayir | pattern=^(?i:all\|changed)$; nullable |
 | `onlyFlaggedChanged` | boolean | Hayir | nullable |

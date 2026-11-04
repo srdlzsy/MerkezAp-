@@ -31,6 +31,9 @@ public sealed class TrendyolGoOptions
 
     public int PaymentPlanNo { get; init; }
 
+    // Keeps this many base-unit items in the branch instead of exposing all Mikro stock to TGO.
+    public int StockReserveQuantity { get; init; } = 2;
+
     // Kept for configuration compatibility; snapshots now refresh in the background.
     public int PreviewCacheSeconds { get; init; } = 120;
 
@@ -85,4 +88,7 @@ public sealed class TrendyolGoStoreMappingOptions
     public int WarehouseNo { get; init; }
 
     public string StoreName { get; init; } = string.Empty;
+
+    // Optional store override. Null uses TrendyolGo.StockReserveQuantity.
+    public int? StockReserveQuantity { get; init; }
 }

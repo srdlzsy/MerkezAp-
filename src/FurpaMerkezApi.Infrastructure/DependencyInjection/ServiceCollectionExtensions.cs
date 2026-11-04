@@ -745,6 +745,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPosMuhasebeAktarimiService, PosMuhasebeAktarimiService>();
         services.AddScoped<ITrendyolGoIntegrationService, TrendyolGoIntegrationService>();
         services.AddScoped<TrendyolGoBranchPosPriceSyncService>();
+        services.AddScoped<TrendyolGoBatchFollowUpQueue>();
+        services.AddScoped<ITrendyolGoBatchWorkflowQueries>(serviceProvider =>
+            serviceProvider.GetRequiredService<TrendyolGoBatchFollowUpQueue>());
+        services.AddScoped<TrendyolGoBatchFollowUpProcessor>();
         services.AddSingleton<TrendyolGoPriceStockSnapshotCoordinator>();
         services.AddScoped<TrendyolGoPriceStockWorkbench>();
         services.AddScoped<ITrendyolGoPriceStockWorkbench>(serviceProvider =>
@@ -753,6 +757,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITrendyolGoPriceStockSnapshotRefresher>(serviceProvider =>
             serviceProvider.GetRequiredService<TrendyolGoPriceStockWorkbench>());
         services.AddHostedService<TrendyolGoPriceStockSnapshotWorker>();
+        services.AddHostedService<TrendyolGoBatchFollowUpWorker>();
         services.AddHostedService<TrendyolGoBranchPosPriceSyncWorker>();
         services.AddScoped<IAxataSynchronizationTaskHandler, FirmMasterSyncTaskHandler>();
         services.AddScoped<IAxataSynchronizationTaskHandler, ProductMasterSyncTaskHandler>();

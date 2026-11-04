@@ -26,15 +26,30 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
 
         try
         {
-            using var persistenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            authDbContext.TrendyolGoBranchPosPriceSyncTasks.Add(new TrendyolGoBranchPosPriceSyncTask(
-                Guid.NewGuid(), storeId, warehouseNo, JsonSerializer.Serialize(items), clock.UtcNow));
-            await authDbContext.SaveChangesAsync(persistenceTimeout.Token);
+            await EnqueueRequiredAsync(storeId, warehouseNo, items, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogError(exception, "Branch POS price synchronization could not be queued. StoreId={StoreId}, WarehouseNo={WarehouseNo}", storeId, warehouseNo);
         }
+    }
+
+    public async Task EnqueueRequiredAsync(
+        long storeId,
+        int warehouseNo,
+        IReadOnlyCollection<BranchPosPriceItem> items,
+        CancellationToken cancellationToken)
+    {
+        if (!options.CurrentValue.BranchPosPriceSync.Enabled || items.Count == 0)
+        {
+            return;
+        }
+
+        using var persistenceTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        persistenceTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+        authDbContext.TrendyolGoBranchPosPriceSyncTasks.Add(new TrendyolGoBranchPosPriceSyncTask(
+            Guid.NewGuid(), storeId, warehouseNo, JsonSerializer.Serialize(items), clock.UtcNow));
+        await authDbContext.SaveChangesAsync(persistenceTimeout.Token);
     }
 
     public async Task<int> ProcessPendingAsync(CancellationToken cancellationToken)

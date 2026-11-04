@@ -14,7 +14,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.Trendyo
 public sealed class TrendyolGoController(
     ITrendyolGoIntegrationService service,
     ITrendyolGoPriceStockWorkbench priceStockWorkbench,
-    ITrendyolGoCatalogWorkbench catalogWorkbench)
+    ITrendyolGoCatalogWorkbench catalogWorkbench,
+    ITrendyolGoBatchWorkflowQueries batchWorkflowQueries)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "entegrasyon-islemleri";
@@ -39,6 +40,14 @@ public sealed class TrendyolGoController(
     public async Task<ActionResult<IReadOnlyCollection<TrendyolGoStoreMappingDto>>> ListStores(
         CancellationToken cancellationToken) =>
         Ok(await service.ListStoresAsync(cancellationToken));
+
+    [HttpGet("batch-workflows")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<TrendyolGoBatchWorkflowDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<TrendyolGoBatchWorkflowDto>>> ListBatchWorkflows(
+        [FromQuery, Range(1, 500)] int take = 100,
+        CancellationToken cancellationToken = default) =>
+        Ok(await batchWorkflowQueries.ListAsync(take, cancellationToken));
 
     [HttpGet("connection-test")]
     [Authorize(Policy = DetailPolicy)]
@@ -139,6 +148,7 @@ public sealed class TrendyolGoController(
 
     [HttpGet("price-stock/preview")]
     [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(TrendyolGoPriceStockPreview), StatusCodes.Status200OK)]
     public async Task<ActionResult<TrendyolGoPriceStockPreview>> PreviewPriceStock(
         [FromQuery, Range(1, long.MaxValue)] long storeId,
         [FromQuery, RegularExpression("^(?i:actionable|all|issues)$")] string view = "actionable",
@@ -147,12 +157,14 @@ public sealed class TrendyolGoController(
 
     [HttpPost("price-stock/preview/refresh")]
     [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(TrendyolGoPriceStockRefreshStatus), StatusCodes.Status202Accepted)]
     public ActionResult<TrendyolGoPriceStockRefreshStatus> RefreshPriceStockPreview(
         [FromQuery, Range(1, long.MaxValue)] long storeId) =>
         Accepted(priceStockWorkbench.RequestRefresh(storeId));
 
     [HttpPost("price-stock/dispatch")]
     [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoPriceStockDispatch), StatusCodes.Status200OK)]
     public async Task<ActionResult<TrendyolGoPriceStockDispatch>> DispatchPriceStock(
         [FromBody] TrendyolGoPriceStockDispatchHttpRequest request,
         CancellationToken cancellationToken) =>

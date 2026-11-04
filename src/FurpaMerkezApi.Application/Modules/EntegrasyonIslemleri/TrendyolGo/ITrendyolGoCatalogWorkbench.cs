@@ -20,7 +20,12 @@ public interface ITrendyolGoCatalogWorkbench
 public sealed record TrendyolGoCatalogAutoCreateResult(
     int CreatedCount,
     IReadOnlyCollection<string> BatchRequestIds,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    IReadOnlyCollection<TrendyolGoCatalogBatchSubmission>? BatchSubmissions = null);
+
+public sealed record TrendyolGoCatalogBatchSubmission(
+    string BatchRequestId,
+    IReadOnlyCollection<string> Barcodes);
 
 public sealed record TrendyolGoCatalogPreview(
     long StoreId, int WarehouseNo, string StoreName, string PreviewHash,

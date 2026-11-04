@@ -127,7 +127,7 @@ internal enum SnapshotRefreshState
 }
 
 internal sealed record TrendyolGoPriceStockSnapshot(
-    long StoreId, int WarehouseNo, string StoreName,
+    long StoreId, int WarehouseNo, string StoreName, int StockReserveQuantity,
     int TotalPages, long TotalElements, string PreviewHash,
     DateTime GeneratedAtUtc,
     IReadOnlyCollection<TrendyolGoPriceStockWorkbench.TrendyolProduct> Products,

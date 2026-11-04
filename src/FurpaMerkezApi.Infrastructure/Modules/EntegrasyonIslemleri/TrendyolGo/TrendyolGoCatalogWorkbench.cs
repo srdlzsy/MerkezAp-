@@ -151,7 +151,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .Select(group => group.Key)
             .ToHashSet(StringComparer.Ordinal);
 
-        var validItemsToCreate = new List<object>();
+        var validRowsToCreate = new List<TrendyolGoCatalogRow>();
 
         foreach (var product in mikroProducts)
         {
@@ -168,18 +168,10 @@ internal sealed class TrendyolGoCatalogWorkbench(
                 continue;
             }
 
-            validItemsToCreate.Add(new
-            {
-                barcode = row.Barcode,
-                vatRate = row.VatRate!.Value,
-                title = NormalizeTitle(row.ProductName),
-                stockCode = row.StockCode,
-                brandId = row.TrendyolBrandId!.Value,
-                categoryId = row.TrendyolCategoryId!.Value
-            });
+            validRowsToCreate.Add(row);
         }
 
-        if (validItemsToCreate.Count == 0)
+        if (validRowsToCreate.Count == 0)
         {
             return new TrendyolGoCatalogAutoCreateResult(
                 0,
@@ -188,23 +180,36 @@ internal sealed class TrendyolGoCatalogWorkbench(
         }
 
         var batchRequestIds = new List<string>();
-        foreach (var batch in validItemsToCreate.Chunk(1000))
+        var batchSubmissions = new List<TrendyolGoCatalogBatchSubmission>();
+        foreach (var batch in validRowsToCreate.Chunk(1000))
         {
-            var payload = JsonSerializer.SerializeToElement(new { items = batch });
-            var response = await trendyol.CreateProductsAsync(payload, cancellationToken);
-            if (response.HasValue &&
-                response.Value.TryGetProperty("batchRequestId", out var batchIdProp) &&
-                batchIdProp.ValueKind == JsonValueKind.String)
+            var payload = JsonSerializer.SerializeToElement(new
             {
-                var batchId = batchIdProp.GetString();
-                if (!string.IsNullOrWhiteSpace(batchId))
+                items = batch.Select(item => new
                 {
-                    batchRequestIds.Add(batchId);
-                }
-            }
+                    barcode = item.Barcode,
+                    vatRate = item.VatRate!.Value,
+                    title = NormalizeTitle(item.ProductName),
+                    stockCode = item.StockCode,
+                    brandId = item.TrendyolBrandId!.Value,
+                    categoryId = item.TrendyolCategoryId!.Value
+                }).ToArray()
+            });
+            var response = await trendyol.CreateProductsAsync(payload, cancellationToken);
+            var batchId = TrendyolGoBatchFollowUpProcessor.RequireBatchRequestId(
+                response,
+                "catalog create");
+            batchRequestIds.Add(batchId);
+            batchSubmissions.Add(new TrendyolGoCatalogBatchSubmission(
+                batchId,
+                batch.Select(item => item.Barcode!).ToArray()));
         }
 
-        return new TrendyolGoCatalogAutoCreateResult(validItemsToCreate.Count, batchRequestIds, null);
+        return new TrendyolGoCatalogAutoCreateResult(
+            validRowsToCreate.Count,
+            batchRequestIds,
+            null,
+            batchSubmissions);
     }
 
     private async Task<CatalogSnapshot> BuildSnapshotAsync(long storeId, CancellationToken cancellationToken)

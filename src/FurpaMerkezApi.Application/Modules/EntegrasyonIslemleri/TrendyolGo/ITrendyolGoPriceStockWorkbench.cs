@@ -30,7 +30,7 @@ public enum TrendyolGoPriceStockDispatchMode
 }
 
 public sealed record TrendyolGoPriceStockPreview(
-    long StoreId, int WarehouseNo, string StoreName,
+    long StoreId, int WarehouseNo, string StoreName, int StockReserveQuantity,
     int TotalPages, long TotalElements, string PreviewHash,
     int ReadyCount, int UnchangedCount, int SkippedCount,
     string View, int VisibleCount, IReadOnlyCollection<TrendyolGoPriceStockRow> Items,
@@ -48,7 +48,8 @@ public sealed record TrendyolGoPriceStockRow(
     string Barcode, string? StockCode, string ProductName,
     decimal? TrendyolPrice, int? TrendyolQuantity,
     decimal? MikroPrice, int? MikroQuantity,
-    string Status, string? Reason);
+    string Status, string? Reason,
+    int? WarehouseQuantity = null, int StockReserveQuantity = 0);
 
 public sealed record TrendyolGoPriceStockDispatch(
     long StoreId, int WarehouseNo, string Mode, int SentCount, int BatchCount,
@@ -72,12 +73,19 @@ public sealed record TrendyolGoDirectPriceStockItem(
     DateTime? PriceLastUpDate,
     int WarehouseNo,
     int UnitPointer = 1,
-    string UnitName = "");
+    string UnitName = "",
+    int SalesBlocked = 0,
+    int OrderBlocked = 0,
+    int GoodsAcceptanceBlocked = 0,
+    DateTime? WarehouseLastUpDate = null,
+    int WarehouseQuantity = 0,
+    int StockReserveQuantity = 0);
 
 public sealed record TrendyolGoDirectPriceStockPreview(
     long StoreId,
     int WarehouseNo,
     string StoreName,
+    int StockReserveQuantity,
     string Mode,
     DateTime? SinceDate,
     int TotalCount,
@@ -103,10 +111,33 @@ public sealed record TrendyolGoDirectStoreDispatchResult(
     string? ErrorMessage,
     IReadOnlyCollection<string> BatchRequestIds,
     int CatalogCreatedCount = 0,
-    IReadOnlyCollection<string>? CatalogBatchRequestIds = null);
+    IReadOnlyCollection<string>? CatalogBatchRequestIds = null,
+    IReadOnlyCollection<Guid>? FollowUpTaskIds = null,
+    string WorkflowStatus = "Queued");
 
 public sealed record TrendyolGoDirectPriceStockDispatchResult(
     int TargetStoresCount,
     int TotalItemsDispatched,
     IReadOnlyCollection<TrendyolGoDirectStoreDispatchResult> StoreResults,
     int TotalCatalogCreated = 0);
+
+public interface ITrendyolGoBatchWorkflowQueries
+{
+    Task<IReadOnlyCollection<TrendyolGoBatchWorkflowDto>> ListAsync(
+        int take,
+        CancellationToken cancellationToken);
+}
+
+public sealed record TrendyolGoBatchWorkflowDto(
+    Guid Id,
+    string Kind,
+    string BatchRequestId,
+    long StoreId,
+    int WarehouseNo,
+    string Status,
+    int AttemptCount,
+    DateTime NextAttemptAtUtc,
+    string? LastError,
+    string? ResultSummary,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);

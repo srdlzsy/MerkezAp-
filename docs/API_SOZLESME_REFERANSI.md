@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 776. Model sayisi: 714.
+Endpoint sayisi (method + route): 778. Model sayisi: 722.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -151,7 +151,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/ice-aktar` | JWT + entegrasyon-islemleri.pos-muhasebe-aktarimi.create | body: request / ImportZReportsHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: PosAccountingImportResultDto<br>400: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/pos-muhasebe-aktarimi/z-raporlari/{totalId}` | JWT + entegrasyon-islemleri.pos-muhasebe-aktarimi.detail | path: totalId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: ZReportDetailDto<br>404: ProblemDetails |
 | GET | `/api/entegrasyon-islemleri/trendyol-go` | JWT + entegrasyon-islemleri.trendyol-go.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoConnectionStatusDto |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/batch-workflows` | JWT + entegrasyon-islemleri.trendyol-go.detail | query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;TrendyolGoBatchWorkflowDto&gt; |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/brands` | JWT + entegrasyon-islemleri.trendyol-go.list | query: page / integer (int32)<br>query: size / integer (int32)<br>query: name / string | 401: ProblemDetails<br>403: ProblemDetails |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/catalog/auto-create` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoAutoCreateCatalogHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogAutoCreateResult |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/catalog/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoCatalogDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogDispatch |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/catalog/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoCatalogPreview |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/claims` | JWT + entegrasyon-islemleri.trendyol-go.list | query: ClaimItemStatus / string<br>query: StartDate / integer (int64)<br>query: EndDate / integer (int64)<br>query: Page / integer (int32)<br>query: Size / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -173,9 +175,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/packages/{packageId}/picked` | JWT + entegrasyon-islemleri.trendyol-go.update | path: packageId / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: JsonElement<br>204: bildirilmemis |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/direct-dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoDirectPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoDirectPriceStockDispatchResult |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/direct-preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: mode / string<br>query: sinceDate / string (date-time)<br>query: onlyFlaggedChanged / boolean<br>query: search / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoDirectPriceStockPreview |
-| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
-| GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string | 401: ProblemDetails<br>403: ProblemDetails |
-| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64) | 401: ProblemDetails<br>403: ProblemDetails |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/dispatch` | JWT + entegrasyon-islemleri.trendyol-go.update | body: request / TrendyolGoPriceStockDispatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoPriceStockDispatch |
+| GET | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64)<br>query: view / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: TrendyolGoPriceStockPreview |
+| POST | `/api/entegrasyon-islemleri/trendyol-go/price-stock/preview/refresh` | JWT + entegrasyon-islemleri.trendyol-go.list | query: storeId / integer (int64) | 401: ProblemDetails<br>403: ProblemDetails<br>202: TrendyolGoPriceStockRefreshStatus |
 | GET | `/api/entegrasyon-islemleri/trendyol-go/products` | JWT + entegrasyon-islemleri.trendyol-go.list | query: StoreId / integer (int64)<br>query: ListType / string<br>query: Barcode / string<br>query: StockCode / string<br>query: StartDate / integer (int64)<br>query: EndDate / integer (int64)<br>query: BrandIds / integer (int64)[]<br>query: Page / integer (int32)<br>query: Size / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails |
 | POST | `/api/entegrasyon-islemleri/trendyol-go/products` | JWT + entegrasyon-islemleri.trendyol-go.update | body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
 | PUT | `/api/entegrasyon-islemleri/trendyol-go/products` | JWT + entegrasyon-islemleri.trendyol-go.update | body: payload / JsonElement (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails |
@@ -4126,6 +4128,39 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalId` | integer (int32) | Hayir |  |
 | `zNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoBatchWorkflowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `attemptCount` | integer (int32) | Hayir |  |
+| `batchRequestId` | string | Hayir | nullable |
+| `completedAtUtc` | string (date-time) | Hayir | nullable |
+| `createdAtUtc` | string (date-time) | Hayir |  |
+| `id` | string (uuid) | Hayir |  |
+| `kind` | string | Hayir | nullable |
+| `lastError` | string | Hayir | nullable |
+| `nextAttemptAtUtc` | string (date-time) | Hayir |  |
+| `resultSummary` | string | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `storeId` | integer (int64) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogAutoCreateResult
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchRequestIds` | string[] | Hayir | nullable |
+| `batchSubmissions` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogBatchSubmission[] | Hayir | nullable |
+| `createdCount` | integer (int32) | Hayir |  |
+| `errorMessage` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogBatchSubmission
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcodes` | string[] | Hayir | nullable |
+| `batchRequestId` | string | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatch
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -4191,6 +4226,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `storeResults` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectStoreDispatchResult[] | Hayir | nullable |
 | `targetStoresCount` | integer (int32) | Hayir |  |
+| `totalCatalogCreated` | integer (int32) | Hayir |  |
 | `totalItemsDispatched` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockItem
@@ -4198,14 +4234,21 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `barcode` | string | Hayir | nullable |
+| `goodsAcceptanceBlocked` | integer (int32) | Hayir |  |
+| `orderBlocked` | integer (int32) | Hayir |  |
 | `priceChangedFlag` | boolean | Hayir |  |
 | `priceLastUpDate` | string (date-time) | Hayir | nullable |
 | `productName` | string | Hayir | nullable |
 | `quantity` | integer (int32) | Hayir |  |
+| `salesBlocked` | integer (int32) | Hayir |  |
 | `sellingPrice` | number (double) | Hayir |  |
 | `stockCode` | string | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
+| `unitName` | string | Hayir | nullable |
 | `unitPointer` | integer (int32) | Hayir |  |
+| `warehouseLastUpDate` | string (date-time) | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+| `warehouseQuantity` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockPreview
 
@@ -4214,6 +4257,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoDirectPriceStockItem[] | Hayir | nullable |
 | `mode` | string | Hayir | nullable |
 | `sinceDate` | string (date-time) | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
 | `storeId` | integer (int64) | Hayir |  |
 | `storeName` | string | Hayir | nullable |
 | `totalCount` | integer (int32) | Hayir |  |
@@ -4225,12 +4269,83 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `batchCount` | integer (int32) | Hayir |  |
 | `batchRequestIds` | string[] | Hayir | nullable |
+| `catalogBatchRequestIds` | string[] | Hayir | nullable |
+| `catalogCreatedCount` | integer (int32) | Hayir |  |
 | `errorMessage` | string | Hayir | nullable |
+| `followUpTaskIds` | string (uuid)[] | Hayir | nullable |
 | `itemCount` | integer (int32) | Hayir |  |
 | `storeId` | integer (int64) | Hayir |  |
 | `storeName` | string | Hayir | nullable |
 | `success` | boolean | Hayir |  |
 | `warehouseNo` | integer (int32) | Hayir |  |
+| `workflowStatus` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockDispatch
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `batchCount` | integer (int32) | Hayir |  |
+| `mode` | string | Hayir | nullable |
+| `sentCount` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `upstreamResponses` | [] | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockPreview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `generatedAtUtc` | string (date-time) | Hayir | nullable |
+| `isStale` | boolean | Hayir |  |
+| `items` | FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockRow[] | Hayir | nullable |
+| `previewHash` | string | Hayir | nullable |
+| `readyCount` | integer (int32) | Hayir |  |
+| `refreshCompletedAtUtc` | string (date-time) | Hayir | nullable |
+| `refreshError` | string | Hayir | nullable |
+| `refreshStartedAtUtc` | string (date-time) | Hayir | nullable |
+| `skippedCount` | integer (int32) | Hayir |  |
+| `snapshotStatus` | string | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `totalElements` | integer (int64) | Hayir |  |
+| `totalPages` | integer (int32) | Hayir |  |
+| `unchangedCount` | integer (int32) | Hayir |  |
+| `view` | string | Hayir | nullable |
+| `visibleCount` | integer (int32) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockRefreshStatus
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `generatedAtUtc` | string (date-time) | Hayir | nullable |
+| `hasSnapshot` | boolean | Hayir |  |
+| `isStale` | boolean | Hayir |  |
+| `refreshAccepted` | boolean | Hayir |  |
+| `refreshCompletedAtUtc` | string (date-time) | Hayir | nullable |
+| `refreshError` | string | Hayir | nullable |
+| `refreshStartedAtUtc` | string (date-time) | Hayir | nullable |
+| `snapshotStatus` | string | Hayir | nullable |
+| `storeId` | integer (int64) | Hayir |  |
+| `storeName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoPriceStockRow
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `mikroPrice` | number (double) | Hayir | nullable |
+| `mikroQuantity` | integer (int32) | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `reason` | string | Hayir | nullable |
+| `status` | string | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
+| `stockReserveQuantity` | integer (int32) | Hayir |  |
+| `trendyolPrice` | number (double) | Hayir | nullable |
+| `trendyolQuantity` | integer (int32) | Hayir | nullable |
+| `warehouseQuantity` | integer (int32) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoStoreMappingDto
 
@@ -10282,6 +10397,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentNo` | string | Hayir | minLength=0; maxLength=50; nullable |
 | `paymentType` | string | Hayir | minLength=0; maxLength=30; nullable |
 
+### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoAutoCreateCatalogHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcodes` | string[] | Evet |  |
+| `storeId` | integer (int64) | Hayir | min=1 |
+
 ### FurpaMerkezApi.WebApi.Controllers.Modules.EntegrasyonIslemleri.TrendyolGo.TrendyolGoCatalogDispatchHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -10296,6 +10418,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `allStores` | boolean | Hayir |  |
+| `autoCreateMissingCatalog` | boolean | Hayir |  |
 | `barcodes` | string[] | Hayir | nullable |
 | `mode` | string | Hayir | pattern=^(?i:all\|changed)$; nullable |
 | `onlyFlaggedChanged` | boolean | Hayir | nullable |

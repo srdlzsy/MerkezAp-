@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
+using System.Text.Json;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.TrendyolGo;
@@ -7,12 +8,97 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.Trend
 public sealed class TrendyolGoPriceStockWorkbenchTests
 {
     [Fact]
+    public void BatchResultParser_ExtractsSuccessfulAndFailedBarcodes()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "status": "COMPLETED",
+              "itemCount": 2,
+              "failedItemCount": 1,
+              "items": [
+                { "status": "SUCCESS", "requestItem": { "barcode": "success" } },
+                {
+                  "status": "FAILED",
+                  "requestItem": { "product": { "barcode": "failed" } },
+                  "failureReasons": ["Catalog missing"]
+                }
+              ]
+            }
+            """);
+
+        var result = TrendyolGoBatchResultParser.Parse(document.RootElement);
+
+        Assert.True(result.IsCompleted);
+        Assert.False(result.IsFailed);
+        Assert.Equal(1, result.FailedItemCount);
+        Assert.Contains("success", result.SuccessfulBarcodes);
+        Assert.Contains("failed", result.FailedBarcodes);
+        Assert.Contains("Catalog missing", result.FailureReasons);
+    }
+
+    [Fact]
+    public void BatchFollowUp_OnlySelectsSuccessfulItemsForBranchPos()
+    {
+        TrendyolGoDeferredPriceStockItem[] items =
+        [
+            new("success", "001", 10m, 2, 1, "ADET", 0, 0, 0, null, null, 3),
+            new("failed", "002", 20m, 3, 1, "ADET", 0, 0, 0, null, null, 3)
+        ];
+        var parsed = new TrendyolGoParsedBatchResult(
+            "COMPLETED", true, false, 2, 1,
+            new HashSet<string>(["success"], StringComparer.Ordinal),
+            new HashSet<string>(["failed"], StringComparer.Ordinal),
+            ["Catalog missing"]);
+
+        var selected = TrendyolGoBatchFollowUpProcessor.SelectSuccessfulItems(items, parsed);
+
+        Assert.Single(selected);
+        Assert.Equal("success", selected[0].Barcode);
+    }
+
+    [Fact]
+    public void BatchFollowUp_SelectsAllPayloadItemsWhenBatchHasNoFailures()
+    {
+        TrendyolGoDeferredPriceStockItem[] items =
+        [
+            new("one", "001", 10m, 2, 1, "ADET", 0, 0, 0, null, null, 3),
+            new("two", "002", 20m, 3, 1, "ADET", 0, 0, 0, null, null, 3)
+        ];
+        var parsed = new TrendyolGoParsedBatchResult(
+            "COMPLETED", true, false, 2, 0,
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            []);
+
+        var selected = TrendyolGoBatchFollowUpProcessor.SelectSuccessfulItems(items, parsed);
+
+        Assert.Equal(2, selected.Length);
+    }
+
+    [Theory]
+    [InlineData("Product not found in catalog")]
+    [InlineData("PRODUCT_NOT_FOUND")]
+    [InlineData("Urun katalogda bulunamadi")]
+    public void BatchFollowUp_DetectsMissingCatalogFailures(string reason)
+    {
+        Assert.True(TrendyolGoBatchFollowUpProcessor.ReportsMissingCatalog([reason]));
+    }
+
+    [Fact]
+    public void BatchFollowUp_DoesNotTreatPriceValidationAsMissingCatalog()
+    {
+        Assert.False(TrendyolGoBatchFollowUpProcessor.ReportsMissingCatalog(
+            ["Selling price must be greater than zero"]));
+    }
+
+    [Fact]
     public void Options_DefaultToTheDedicatedTrendyolPriceList()
     {
         var options = new TrendyolGoOptions();
 
         Assert.Equal(3, options.PriceListNo);
         Assert.Equal(0, options.PaymentPlanNo);
+        Assert.Equal(2, options.StockReserveQuantity);
         Assert.Equal(300, options.PreviewRefreshIntervalSeconds);
         Assert.Equal(0, options.Catalog.DefaultBrandId);
         Assert.Equal(0, options.Catalog.DefaultCategoryId);
@@ -40,7 +126,7 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
         var coordinator = new TrendyolGoPriceStockSnapshotCoordinator();
         var generatedAtUtc = DateTime.UtcNow;
         var snapshot = new TrendyolGoPriceStockSnapshot(
-            486064, 50, "Merkez Test Subesi", 1, 1, "HASH", generatedAtUtc,
+            486064, 50, "Merkez Test Subesi", 2, 1, 1, "HASH", generatedAtUtc,
             [new TrendyolGoPriceStockWorkbench.TrendyolProduct("8690000000000", "Product", 10m, 1)],
             [new("8690000000000", "015550", "Product", 10m, 1, 11m, 2, "Ready", null)]);
 
@@ -64,6 +150,40 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
         Assert.Equal(99.90m, row.MikroPrice);
         Assert.Equal(8, row.MikroQuantity);
         Assert.Equal("015550", row.StockCode);
+    }
+
+    [Fact]
+    public void BuildRow_LeavesConfiguredStockReserveInTheWarehouse()
+    {
+        var row = TrendyolGoPriceStockWorkbench.BuildRow(
+            new("8690000000000", "Product", 90m, 7),
+            new("015550", "Mikro Product", 99.90m, 8.9m, false),
+            stockReserveQuantity: 2);
+
+        Assert.Equal(8, row.WarehouseQuantity);
+        Assert.Equal(2, row.StockReserveQuantity);
+        Assert.Equal(6, row.MikroQuantity);
+    }
+
+    [Fact]
+    public void SellableQuantity_NeverDropsBelowZero()
+    {
+        Assert.Equal(0, TrendyolGoPriceStockWorkbench.CalculateSellableQuantity(1.9m, 2));
+        Assert.Equal(0, TrendyolGoPriceStockWorkbench.CalculateSellableQuantity(-4m, 2));
+    }
+
+    [Fact]
+    public void StoreStockReserve_OverridesGlobalReserve()
+    {
+        var config = new TrendyolGoOptions { StockReserveQuantity = 2 };
+        var store = new TrendyolGoStoreMappingOptions
+        {
+            StoreId = 1,
+            WarehouseNo = 103,
+            StockReserveQuantity = 5
+        };
+
+        Assert.Equal(5, TrendyolGoPriceStockWorkbench.ResolveStockReserveQuantity(config, store));
     }
 
     [Fact]
@@ -348,4 +468,5 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
         new("unchanged", "002", "Unchanged Product", 20m, 3, 20m, 3, "Unchanged", null),
         new("skipped", null, "Skipped Product", null, null, null, null, "Skipped", "Missing")
     ];
+
 }
