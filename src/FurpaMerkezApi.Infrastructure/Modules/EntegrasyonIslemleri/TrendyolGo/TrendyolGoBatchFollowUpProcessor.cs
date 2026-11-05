@@ -124,7 +124,7 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
     {
         var payload = DeserializePayload(task);
         var successfulItems = SelectSuccessfulItems(payload.Items, parsed);
-        var recoveredCatalogItems = await QueueMissingCatalogRecoveryAsync(
+        var catalogRecovery = await QueueMissingCatalogRecoveryAsync(
             task,
             payload,
             parsed,
@@ -141,14 +141,21 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
         var summary =
             $"TGO fiyat/stok batch tamamlandi. Basarili={successfulItems.Length}, Hatali={parsed.FailedItemCount}. " +
             (successfulItems.Length > 0 ? "Basarili urunler sube POS kuyruguna yazildi." : "Sube POS kuyruguna urun yazilmadi.") +
-            (recoveredCatalogItems > 0
-                ? $" Katalogda olmayan {recoveredCatalogItems} urun otomatik katalog akisina alindi."
-                : string.Empty);
+            (catalogRecovery.CreatedCount > 0
+                ? $" Katalogda olmayan {catalogRecovery.CreatedCount} urun otomatik katalog akisina alindi."
+                : !string.IsNullOrWhiteSpace(catalogRecovery.FailureMessage)
+                    ? $" Otomatik katalog acilamadi: {catalogRecovery.FailureMessage}"
+                    : string.Empty);
 
         if (parsed.FailedItemCount > 0)
         {
             var error = BuildFailureMessage(parsed);
-            if (successfulItems.Length == 0 && recoveredCatalogItems == 0)
+            if (!string.IsNullOrWhiteSpace(catalogRecovery.FailureMessage))
+            {
+                error = $"{error} Otomatik katalog: {catalogRecovery.FailureMessage}";
+            }
+
+            if (successfulItems.Length == 0 && catalogRecovery.CreatedCount == 0)
             {
                 task.MarkFailed(error, now);
             }
@@ -162,7 +169,7 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
         task.MarkSucceeded(summary, now);
     }
 
-    private async Task<int> QueueMissingCatalogRecoveryAsync(
+    private async Task<CatalogRecoveryOutcome> QueueMissingCatalogRecoveryAsync(
         TrendyolGoBatchFollowUpTask task,
         TrendyolGoBatchFollowUpPayload payload,
         TrendyolGoParsedBatchResult parsed,
@@ -172,7 +179,7 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
             parsed.FailedBarcodes.Count == 0 ||
             !ReportsMissingCatalog(parsed.FailureReasons))
         {
-            return 0;
+            return CatalogRecoveryOutcome.None;
         }
 
         var failedItems = payload.Items
@@ -181,7 +188,7 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
             .ToArray();
         if (failedItems.Length == 0)
         {
-            return 0;
+            return CatalogRecoveryOutcome.None;
         }
 
         await snapshotRefresher.RefreshSnapshotAsync(task.StoreId, cancellationToken);
@@ -191,7 +198,7 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
             cancellationToken);
         if (autoResult.CreatedCount <= 0)
         {
-            return 0;
+            return new CatalogRecoveryOutcome(0, autoResult.ErrorMessage);
         }
 
         var deferredByBarcode = failedItems.ToDictionary(item => item.Barcode, StringComparer.Ordinal);
@@ -223,7 +230,7 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
                 cancellationToken);
         }
 
-        return autoResult.CreatedCount;
+        return new CatalogRecoveryOutcome(autoResult.CreatedCount, null);
     }
 
     internal static bool ReportsMissingCatalog(IReadOnlyCollection<string> failureReasons)
@@ -242,6 +249,11 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
             normalized.Contains("mevcut degil", StringComparison.Ordinal) ||
             normalized.Contains("mevcut değil", StringComparison.Ordinal);
         return referencesProduct && reportsMissing;
+    }
+
+    private sealed record CatalogRecoveryOutcome(int CreatedCount, string? FailureMessage)
+    {
+        public static CatalogRecoveryOutcome None { get; } = new(0, null);
     }
 
     private async Task CompleteCatalogAndQueuePriceStockAsync(
