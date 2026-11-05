@@ -8,6 +8,24 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.Trend
 public sealed class TrendyolGoPriceStockWorkbenchTests
 {
     [Fact]
+    public void ReadProduct_PreservesTrendyolStockCodeForCatalogReconciliation()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "barcode": "8690793020075",
+              "stockCode": "007921",
+              "title": "OMO MATIK",
+              "sellingPrice": 199.5,
+              "quantity": 10
+            }
+            """);
+
+        var product = TrendyolGoPriceStockWorkbench.ReadProduct(document.RootElement);
+
+        Assert.Equal("007921", product.StockCode);
+    }
+
+    [Fact]
     public void BatchResultParser_ExtractsSuccessfulAndFailedBarcodes()
     {
         using var document = JsonDocument.Parse("""
@@ -378,6 +396,10 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
         Assert.Contains(
+            "public.stoksatisfiyat",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "market.stoksatisfiyat",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);

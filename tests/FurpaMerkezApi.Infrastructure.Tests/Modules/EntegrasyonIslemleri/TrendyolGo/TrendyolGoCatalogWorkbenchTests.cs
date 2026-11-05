@@ -6,6 +6,28 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.Trend
 public sealed class TrendyolGoCatalogWorkbenchTests
 {
     [Fact]
+    public void BuildRow_DoesNotRecreateProductWhenStockCodeAlreadyExistsWithDifferentBarcode()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "007921", "OMO MATIK", "8690793020075", "BRAND", "CATEGORY", 20, 199.50m, false);
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product,
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["BRAND"] = 1 },
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["CATEGORY"] = 2 },
+            existingStockCodes: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["007921"] = "2700581"
+            });
+
+        Assert.Equal("ExistingStockCode", row.Status);
+        Assert.Contains("2700581", row.Reason, StringComparison.Ordinal);
+        Assert.Contains("yeni urun olusturulmadi", row.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void InferMappings_UsesUnambiguousSiblingProductMapping()
     {
         var trendyolProducts = new[]

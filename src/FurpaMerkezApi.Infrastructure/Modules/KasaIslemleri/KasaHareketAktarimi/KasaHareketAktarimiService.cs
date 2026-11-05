@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Text;
 using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
@@ -1900,12 +1901,12 @@ public sealed class KasaHareketAktarimiService(
     {
         var line = state.PendingLine
             ?? throw new InvalidOperationException("BKD satiri oncesinde SAT/IPT satiri bulunmali.");
-        var barcodeLeft = Token(tokens, 4);
-        var barcodeRight = Token(tokens, 5);
+        var barcodeLeft = NormalizeImportedBarcode(Token(tokens, 4));
+        var barcodeRight = NormalizeImportedBarcode(Token(tokens, 5));
         var barcode = barcodeLeft.StartsWith("27", StringComparison.Ordinal) ||
                       barcodeLeft.StartsWith("29", StringComparison.Ordinal)
             ? SafeSubstring(barcodeLeft, 0, Math.Min(7, barcodeLeft.Length)).Trim()
-            : (barcodeLeft + barcodeRight).Trim();
+            : NormalizeImportedBarcode(barcodeLeft + barcodeRight);
 
         line.Barcode = barcode;
         line.ProductCode = await ResolveProductCodeAsync(barcode, cancellationToken) ?? string.Empty;
@@ -2497,11 +2498,6 @@ public sealed class KasaHareketAktarimiService(
             cancellationToken);
 
         EnsureExclusivePendingBranch(branchNo, requireExclusiveBranch, pendingBranchNos);
-        await ValidatePendingTransferSourceTotalsAsync(
-            startDate,
-            endDate,
-            branchNo,
-            cancellationToken);
         await ValidateMikroPosDocumentSequencesAsync(pendingBranchNos, cancellationToken);
     }
 
@@ -2515,43 +2511,58 @@ public sealed class KasaHareketAktarimiService(
         }
 
         const string sql = """
-            WITH RequestedBranches AS (
-                SELECT DISTINCT TRY_CONVERT(int, LTRIM(RTRIM([value]))) AS BranchNo
-                FROM STRING_SPLIT(@branchNos, ',')
-                WHERE TRY_CONVERT(int, LTRIM(RTRIM([value]))) IS NOT NULL
-            )
             SELECT
-                requested.BranchNo,
+                @branchNo AS BranchNo,
                 ISNULL(stockDocument.LastDocumentNo, 0) AS LastStockDocumentNo,
-                ISNULL(customerDocument.LastDocumentNo, 0) AS LastCustomerDocumentNo
-            FROM RequestedBranches AS requested
+                ISNULL(customerDocument.LastDocumentNo, 0) AS LastCustomerDocumentNo,
+                stockDocument.LastDocumentDate AS LastStockDocumentDate,
+                customerDocument.LastDocumentDate AS LastCustomerDocumentDate
+            FROM (VALUES (1)) AS seed(Value)
             OUTER APPLY (
-                SELECT MAX(movement.sth_evrakno_sira) AS LastDocumentNo
+                SELECT TOP (1)
+                    movement.sth_evrakno_sira AS LastDocumentNo,
+                    CAST(movement.sth_tarih AS date) AS LastDocumentDate
                 FROM dbo.STOK_HAREKETLERI AS movement
+                    WITH (NOLOCK, INDEX(NDX_STOK_HAREKETLERI_05))
                 WHERE movement.sth_evraktip = 4
+                  AND movement.sth_evrakno_seri = @series
                   AND movement.sth_pos_satis = 1
-                  AND movement.sth_evrakno_seri = CONCAT('PS', requested.BranchNo)
+                ORDER BY movement.sth_evrakno_sira DESC, movement.sth_satirno DESC
             ) AS stockDocument
             OUTER APPLY (
-                SELECT MAX(movement.cha_evrakno_sira) AS LastDocumentNo
+                SELECT TOP (1)
+                    movement.cha_evrakno_sira AS LastDocumentNo,
+                    CAST(movement.cha_belge_tarih AS date) AS LastDocumentDate
                 FROM dbo.CARI_HESAP_HAREKETLERI AS movement
+                    WITH (NOLOCK, INDEX(NDX_CARI_HESAP_HAREKETLERI_04))
                 WHERE movement.cha_evrak_tip = 63
+                  AND movement.cha_evrakno_seri = @series
                   AND movement.cha_pos_hareketi = 1
-                  AND movement.cha_evrakno_seri = CONCAT('PS', requested.BranchNo)
-            ) AS customerDocument
-            ORDER BY requested.BranchNo;
+                ORDER BY movement.cha_evrakno_sira DESC, movement.cha_satir_no DESC
+            ) AS customerDocument;
             """;
 
-        var branchNosParameter = string.Join(',', pendingBranchNos.Distinct().OrderBy(item => item));
-        var sequences = await ExecuteReaderAsync(
-            mikroDbContext.Database.GetDbConnection(),
-            sql,
-            command => AddParameter(command, "@branchNos", branchNosParameter),
-            reader => new MikroPosDocumentSequence(
-                ReadInt(reader, "BranchNo"),
-                ReadInt(reader, "LastStockDocumentNo"),
-                ReadInt(reader, "LastCustomerDocumentNo")),
-            cancellationToken);
+        var sequences = new List<MikroPosDocumentSequence>();
+        foreach (var branchNo in pendingBranchNos.Distinct().OrderBy(item => item))
+        {
+            var branchSequence = await ExecuteReaderAsync(
+                mikroDbContext.Database.GetDbConnection(),
+                sql,
+                command =>
+                {
+                    AddParameter(command, "@branchNo", branchNo);
+                    AddParameter(command, "@series", $"PS{branchNo}");
+                },
+                reader => new MikroPosDocumentSequence(
+                    ReadInt(reader, "BranchNo"),
+                    ReadInt(reader, "LastStockDocumentNo"),
+                    ReadInt(reader, "LastCustomerDocumentNo"),
+                    ReadNullableDateTime(reader, "LastStockDocumentDate"),
+                    ReadNullableDateTime(reader, "LastCustomerDocumentDate")),
+                cancellationToken,
+                commandTimeoutSeconds: 15);
+            sequences.AddRange(branchSequence);
+        }
 
         EnsureMikroPosDocumentSequencesAreSafe(sequences);
     }
@@ -2571,108 +2582,21 @@ public sealed class KasaHareketAktarimiService(
         var details = string.Join(
             "; ",
             mismatches.Select(item =>
-                $"sube {item.BranchNo}: stok PS{item.BranchNo}/{item.LastStockDocumentNo}, " +
-                $"cari PS{item.BranchNo}/{item.LastCustomerDocumentNo}"));
+                $"sube {item.BranchNo}: stok PS{item.BranchNo}/{item.LastStockDocumentNo}" +
+                FormatDocumentDate(item.LastStockDocumentDate) +
+                $", cari PS{item.BranchNo}/{item.LastCustomerDocumentNo}" +
+                FormatDocumentDate(item.LastCustomerDocumentDate)));
 
         throw new OperationConflictException(
-            OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+            OperationConflictErrorCodes.MikroPosDocumentSequenceConflict,
             $"Mikro POS evrak siralari uyumsuz oldugu icin aktarim baslatilmadi. {details}. " +
-            "Mevcut Mikro evraklarina dokunulmadi. Eksik cari evraki veya onceki silme islemini kontrol edin.",
+            "Mevcut Mikro evraklarina dokunulmadi. Bu aktarimi tekrar baslatmayin; " +
+            "eksik cari evraki ve onceki silme isleminin tarihini kontrol edin.",
             retryable: false);
     }
 
-    private async Task ValidatePendingTransferSourceTotalsAsync(
-        DateTime startDate,
-        DateTime endDate,
-        int? branchNo,
-        CancellationToken cancellationToken)
-    {
-        const string sql = """
-            WITH PendingInvoices AS (
-                SELECT
-                    invoice.FaturaGuid,
-                    TRY_CONVERT(int, invoice.Sube) AS BranchNo,
-                    invoice.KasaNo AS CashRegisterNo,
-                    invoice.FisNo AS ReceiptNo,
-                    CONVERT(decimal(19, 4),
-                        ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)) AS HeaderTotal
-                FROM dbo.PosFaturas AS invoice WITH (READCOMMITTEDLOCK)
-                WHERE invoice.Tarih >= @startDate
-                  AND invoice.Tarih < @endDateExclusive
-                  AND ISNULL(invoice.MikroAktarimDurumu, 0) = 0
-                  AND invoice.BelgeTuru <> 3
-                  AND invoice.IslemSonuc IS NOT NULL
-                  AND TRY_CONVERT(int, invoice.Sube) IS NOT NULL
-                  AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
-            ),
-            LineTotals AS (
-                SELECT
-                    pending.FaturaGuid,
-                    CONVERT(decimal(19, 4), SUM(
-                        ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0))) AS LineTotal
-                FROM PendingInvoices AS pending
-                LEFT JOIN dbo.PosFaturaSatirs AS line WITH (READCOMMITTEDLOCK)
-                    ON line.FaturaGuid = pending.FaturaGuid
-                GROUP BY pending.FaturaGuid
-            )
-            SELECT TOP (20)
-                pending.BranchNo,
-                pending.CashRegisterNo,
-                pending.ReceiptNo,
-                pending.HeaderTotal,
-                ISNULL(lines.LineTotal, 0) AS LineTotal,
-                ISNULL(lines.LineTotal, 0) - pending.HeaderTotal AS Difference
-            FROM PendingInvoices AS pending
-            INNER JOIN LineTotals AS lines ON lines.FaturaGuid = pending.FaturaGuid
-            WHERE ABS(ISNULL(lines.LineTotal, 0) - pending.HeaderTotal) > 0.01
-            ORDER BY ABS(ISNULL(lines.LineTotal, 0) - pending.HeaderTotal) DESC,
-                     pending.BranchNo,
-                     pending.CashRegisterNo,
-                     pending.ReceiptNo;
-            """;
-
-        var mismatches = await ExecuteReaderAsync(
-            furpaDbContext.Database.GetDbConnection(),
-            sql,
-            command =>
-            {
-                AddParameter(command, "@startDate", startDate.Date);
-                AddParameter(command, "@endDateExclusive", endDate.Date.AddDays(1));
-                AddParameter(command, "@branchNo", branchNo);
-            },
-            reader => new PendingTransferSourceMismatch(
-                ReadInt(reader, "BranchNo"),
-                ReadInt(reader, "CashRegisterNo"),
-                ReadInt(reader, "ReceiptNo"),
-                ReadDecimal(reader, "HeaderTotal"),
-                ReadDecimal(reader, "LineTotal"),
-                ReadDecimal(reader, "Difference")),
-            cancellationToken);
-
-        EnsurePendingTransferSourceTotalsMatch(mismatches);
-    }
-
-    internal static void EnsurePendingTransferSourceTotalsMatch(
-        IReadOnlyCollection<PendingTransferSourceMismatch> mismatches)
-    {
-        if (mismatches.Count == 0)
-        {
-            return;
-        }
-
-        var details = string.Join(
-            "; ",
-            mismatches.Take(5).Select(item =>
-                $"sube {item.BranchNo}, kasa {item.CashRegisterNo}, fis {item.ReceiptNo} " +
-                $"(baslik {item.HeaderTotal:N2} TL, satir {item.LineTotal:N2} TL, fark {item.Difference:N2} TL)"));
-        var remaining = mismatches.Count > 5
-            ? "; ilk 5 kayit gosterildi"
-            : string.Empty;
-
-        throw new InvalidOperationException(
-            $"Mikro aktarimi durduruldu. Kasa fisi baslik ve satir toplami eslesmiyor: {details}{remaining}. " +
-            "Kaynak fisleri duzeltip tekrar deneyin.");
-    }
+    private static string FormatDocumentDate(DateTime? value) =>
+        value.HasValue ? $" ({value.Value:dd.MM.yyyy})" : string.Empty;
 
     internal static void EnsureExclusivePendingBranch(
         int? requestedBranchNo,
@@ -2874,8 +2798,8 @@ public sealed class KasaHareketAktarimiService(
             exception.Number is 2601 or 2627)
         {
             throw new OperationConflictException(
-                OperationConflictErrorCodes.MikroDocumentIdentityConflict,
-                "Mikro POS evrak numarasi baska bir kayitla cakisti. Ayni aktarimi yeniden calistirmadan " +
+                OperationConflictErrorCodes.MikroPosDocumentSequenceConflict,
+                $"Mikro POS evrak numarasi baska bir kayitla cakisti ({exception.Message.Trim()}). Ayni aktarimi yeniden calistirmadan " +
                 "once stok ve cari evraklarini kontrol edin.",
                 retryable: false,
                 exception);
@@ -2950,7 +2874,8 @@ public sealed class KasaHareketAktarimiService(
         string sql,
         Action<DbCommand> configureCommand,
         Func<DbDataReader, T> map,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds = 300)
     {
         var items = new List<T>();
         var closeConnection = connection.State == ConnectionState.Closed;
@@ -2965,7 +2890,7 @@ public sealed class KasaHareketAktarimiService(
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 300;
+            command.CommandTimeout = commandTimeoutSeconds;
             configureCommand(command);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -3115,6 +3040,81 @@ public sealed class KasaHareketAktarimiService(
 
     private static string Token(IReadOnlyList<string> tokens, int index) =>
         index >= 0 && index < tokens.Count ? tokens[index].Trim() : string.Empty;
+
+    internal static string NormalizeImportedBarcode(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = new StringBuilder(Math.Min(value.Length, 64));
+        foreach (var character in value)
+        {
+            if (char.IsControl(character) || char.IsWhiteSpace(character))
+            {
+                continue;
+            }
+
+            normalized.Append(character);
+            if (normalized.Length == 64)
+            {
+                break;
+            }
+        }
+
+        return normalized.ToString();
+    }
+
+    internal static string SanitizeImportIssueMessage(string? message)
+    {
+        const int maxLength = 500;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return "Bilinmeyen aktarim hatasi.";
+        }
+
+        var sanitized = new StringBuilder(Math.Min(message.Length, maxLength));
+        var pendingSpace = false;
+        var truncated = false;
+
+        foreach (var character in message)
+        {
+            if (char.IsControl(character))
+            {
+                pendingSpace |= char.IsWhiteSpace(character);
+                continue;
+            }
+
+            if (char.IsWhiteSpace(character))
+            {
+                pendingSpace = sanitized.Length > 0;
+                continue;
+            }
+
+            if (pendingSpace && sanitized.Length < maxLength)
+            {
+                sanitized.Append(' ');
+            }
+
+            pendingSpace = false;
+            if (sanitized.Length == maxLength)
+            {
+                truncated = true;
+                break;
+            }
+
+            sanitized.Append(character);
+        }
+
+        var result = sanitized.ToString().Trim();
+        if (result.Length == 0)
+        {
+            return "Bilinmeyen aktarim hatasi.";
+        }
+
+        return truncated ? result.TrimEnd() + "..." : result;
+    }
 
     private static string SafeSubstring(string value, int startIndex) =>
         startIndex >= value.Length ? string.Empty : value[startIndex..];
@@ -3548,6 +3548,14 @@ public sealed class KasaHareketAktarimiService(
             : Convert.ToDateTime(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
     }
 
+    private static DateTime? ReadNullableDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : Convert.ToDateTime(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+    }
+
     private static int ReadInt(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -3655,16 +3663,28 @@ public sealed class KasaHareketAktarimiService(
         public int InsertedPromotions { get; set; }
 
         public void AddWarning(int? branchNo, int? cashRegisterNo, string? file, string? receiptNo, int? lineNo, string message) =>
-            warnings.Add(new KasaHareketImportIssueDto(branchNo, cashRegisterNo, file, receiptNo, lineNo, message));
+            warnings.Add(new KasaHareketImportIssueDto(
+                branchNo,
+                cashRegisterNo,
+                file,
+                receiptNo,
+                lineNo,
+                SanitizeImportIssueMessage(message)));
 
         public void AddError(int? branchNo, int? cashRegisterNo, string? file, string? receiptNo, int? lineNo, string message) =>
-            errors.Add(new KasaHareketImportIssueDto(branchNo, cashRegisterNo, file, receiptNo, lineNo, message));
+            errors.Add(new KasaHareketImportIssueDto(
+                branchNo,
+                cashRegisterNo,
+                file,
+                receiptNo,
+                lineNo,
+                SanitizeImportIssueMessage(message)));
 
         public void AddIssues(IEnumerable<KasaHareketImportIssueDto> issues)
         {
             foreach (var issue in issues)
             {
-                errors.Add(issue);
+                errors.Add(issue with { Message = SanitizeImportIssueMessage(issue.Message) });
             }
         }
 
@@ -3725,7 +3745,7 @@ public sealed class KasaHareketAktarimiService(
                 fileName,
                 Current?.ReceiptNo.ToString(CultureInfo.InvariantCulture),
                 lineNo,
-                message);
+                SanitizeImportIssueMessage(message));
     }
 
     private sealed class ParsedReceipt
@@ -3940,18 +3960,12 @@ public sealed class KasaHareketAktarimiService(
         MikroPosDocumentKey Key,
         int LineCount);
 
-    internal sealed record PendingTransferSourceMismatch(
-        int BranchNo,
-        int CashRegisterNo,
-        int ReceiptNo,
-        decimal HeaderTotal,
-        decimal LineTotal,
-        decimal Difference);
-
     internal sealed record MikroPosDocumentSequence(
         int BranchNo,
         int LastStockDocumentNo,
-        int LastCustomerDocumentNo);
+        int LastCustomerDocumentNo,
+        DateTime? LastStockDocumentDate = null,
+        DateTime? LastCustomerDocumentDate = null);
 
     private sealed record CashSummarySqlRow(
         DateTime Date,

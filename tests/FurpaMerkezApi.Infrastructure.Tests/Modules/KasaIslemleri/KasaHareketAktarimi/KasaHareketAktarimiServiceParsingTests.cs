@@ -30,6 +30,28 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal(expected, InvokeDecimal("ParseDecimal", value));
     }
 
+    [Fact]
+    public void NormalizeImportedBarcodeRemovesNullPaddingWithoutLosingDigits()
+    {
+        var paddedBarcode = "2" + new string('\0', 10_000) + "102670";
+
+        var result = KasaHareketAktarimiService.NormalizeImportedBarcode(paddedBarcode);
+
+        Assert.Equal("2102670", result);
+    }
+
+    [Fact]
+    public void SanitizeImportIssueMessageRemovesControlCharactersAndLimitsPayload()
+    {
+        var malformedMessage = "Sistemde olmayan barkod: 2" + new string('\0', 10_000) + new string('9', 1_000);
+
+        var result = KasaHareketAktarimiService.SanitizeImportIssueMessage(malformedMessage);
+
+        Assert.DoesNotContain('\0', result);
+        Assert.EndsWith("...", result, StringComparison.Ordinal);
+        Assert.True(result.Length <= 503);
+    }
+
     [Theory]
     [InlineData(1, 18)]
     [InlineData(2, 8)]
@@ -234,32 +256,6 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Fact]
-    public void EnsurePendingTransferSourceTotalsMatchAllowsMatchingInvoices()
-    {
-        KasaHareketAktarimiService.EnsurePendingTransferSourceTotalsMatch([]);
-    }
-
-    [Fact]
-    public void EnsurePendingTransferSourceTotalsMatchRejectsMismatchingInvoice()
-    {
-        var mismatch = new KasaHareketAktarimiService.PendingTransferSourceMismatch(
-            152,
-            185,
-            143,
-            270.22m,
-            274.80m,
-            4.58m);
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            KasaHareketAktarimiService.EnsurePendingTransferSourceTotalsMatch([mismatch]));
-
-        Assert.Contains("sube 152", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("kasa 185", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("fis 143", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Kaynak fisleri duzeltip tekrar deneyin", exception.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void EnsureMikroPosDocumentSequencesAreSafeAllowsAlignedSequences()
     {
         KasaHareketAktarimiService.EnsureMikroPosDocumentSequencesAreSafe(
@@ -275,15 +271,17 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         var exception = Assert.Throws<OperationConflictException>(() =>
             KasaHareketAktarimiService.EnsureMikroPosDocumentSequencesAreSafe(
             [
-                new(111, 11850, 11849),
+                new(111, 11850, 11849, new DateTime(2026, 11, 4), new DateTime(2026, 10, 29)),
                 new(126, 4478, 4478)
             ]));
 
-        Assert.Equal(OperationConflictErrorCodes.MikroDocumentIdentityConflict, exception.ErrorCode);
+        Assert.Equal(OperationConflictErrorCodes.MikroPosDocumentSequenceConflict, exception.ErrorCode);
         Assert.False(exception.Retryable);
         Assert.Contains("sube 111", exception.Message, StringComparison.Ordinal);
         Assert.Contains("stok PS111/11850", exception.Message, StringComparison.Ordinal);
         Assert.Contains("cari PS111/11849", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("04.11.2026", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("29.10.2026", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Mevcut Mikro evraklarina dokunulmadi", exception.Message, StringComparison.Ordinal);
     }
 

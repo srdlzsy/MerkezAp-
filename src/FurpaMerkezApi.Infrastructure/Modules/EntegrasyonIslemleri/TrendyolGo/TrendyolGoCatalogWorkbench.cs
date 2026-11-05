@@ -137,6 +137,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .Select(item => item.Barcode)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .ToHashSet(StringComparer.Ordinal);
+        var existingStockCodes = BuildExistingStockCodeMap(priceStockSnapshot.Products);
 
         var neededBrandCodes = mikroProducts
             .Select(item => item.BrandCode?.Trim())
@@ -186,7 +187,8 @@ internal sealed class TrendyolGoCatalogWorkbench(
                 brandMappings,
                 categoryMappings,
                 config.Catalog.DefaultBrandId,
-                config.Catalog.DefaultCategoryId);
+                config.Catalog.DefaultCategoryId,
+                existingStockCodes);
             rows.Add(row);
             if (row.Status == "Ready")
             {
@@ -258,6 +260,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .Select(item => item.Barcode)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .ToHashSet(StringComparer.Ordinal);
+        var existingStockCodes = BuildExistingStockCodeMap(priceStockSnapshot.Products);
         var mikroByBarcode = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
@@ -286,7 +289,8 @@ internal sealed class TrendyolGoCatalogWorkbench(
                 brandMappings,
                 categoryMappings,
                 config.Catalog.DefaultBrandId,
-                config.Catalog.DefaultCategoryId))
+                config.Catalog.DefaultCategoryId,
+                existingStockCodes))
             .OrderBy(item => item.StockCode, StringComparer.Ordinal)
             .ToArray();
         var hashData = JsonSerializer.SerializeToUtf8Bytes(new { storeId, rows });
@@ -302,7 +306,8 @@ internal sealed class TrendyolGoCatalogWorkbench(
         IReadOnlyDictionary<string, long> brandMappings,
         IReadOnlyDictionary<string, long> categoryMappings,
         long defaultBrandId = 0,
-        long defaultCategoryId = 0)
+        long defaultCategoryId = 0,
+        IReadOnlyDictionary<string, string>? existingStockCodes = null)
     {
         var barcode = string.IsNullOrWhiteSpace(product.Barcode) ? null : product.Barcode.Trim();
         var brandId = ResolveMapping(product.BrandCode, brandMappings)
@@ -315,6 +320,13 @@ internal sealed class TrendyolGoCatalogWorkbench(
         if (barcode is not null && existingBarcodes.Contains(barcode))
         {
             status = "Existing";
+        }
+        else if (existingStockCodes is not null &&
+                 existingStockCodes.TryGetValue(product.StockCode, out var existingBarcode))
+        {
+            status = "ExistingStockCode";
+            reason = $"Ayni stok kodu Trendyol Go katalogunda {existingBarcode} barkoduyla mevcut. " +
+                     "Mikro ve Trendyol barkodlarini esitleyin; yeni urun olusturulmadi.";
         }
         else if (product.Blocked)
         {
@@ -366,6 +378,18 @@ internal sealed class TrendyolGoCatalogWorkbench(
             product.BrandCode, brandId, product.CategoryCode, categoryId,
             product.VatRate, product.Price, status, reason);
     }
+
+    internal static IReadOnlyDictionary<string, string> BuildExistingStockCodeMap(
+        IReadOnlyCollection<TrendyolGoPriceStockWorkbench.TrendyolProduct> products) =>
+        products
+            .Where(item => !string.IsNullOrWhiteSpace(item.StockCode) &&
+                           !string.IsNullOrWhiteSpace(item.Barcode))
+            .GroupBy(item => item.StockCode!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Select(item => item.Barcode).Distinct(StringComparer.Ordinal).Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First().Barcode,
+                StringComparer.OrdinalIgnoreCase);
 
     internal static TrendyolGoCatalogRow[] SelectRows(
         IReadOnlyCollection<TrendyolGoCatalogRow> rows,

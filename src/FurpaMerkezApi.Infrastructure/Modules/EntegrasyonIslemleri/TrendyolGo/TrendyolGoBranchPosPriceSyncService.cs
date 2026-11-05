@@ -179,7 +179,7 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
 
         WITH updated AS
         (
-            UPDATE market.stoksatisfiyat
+            UPDATE public.stoksatisfiyat
             SET sfiyat_fiyati = CASE
                     WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
                         THEN @sfiyat_fiyati ELSE sfiyat_fiyati END,
@@ -212,7 +212,7 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
                    OR sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date)
             RETURNING 1
         )
-        INSERT INTO market.stoksatisfiyat (
+        INSERT INTO public.stoksatisfiyat (
             sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano, sfiyat_birim_pntr,
             sfiyat_birim_adi, sfiyat_fiyati, sfiyat_satisdursun, sfiyat_sipdursun,
             sfiyat_malkabuldursun, sfiyat_lastup_date, sdp_lastup_date, fiyat_tip_kodu
@@ -223,7 +223,7 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         WHERE NOT EXISTS
         (
             SELECT 1
-            FROM market.stoksatisfiyat
+            FROM public.stoksatisfiyat
             WHERE sdp_depo_no = @sdp_depo_no
               AND sfiyat_stokkod = @sfiyat_stokkod
               AND sfiyat_listesirano = @sfiyat_listesirano

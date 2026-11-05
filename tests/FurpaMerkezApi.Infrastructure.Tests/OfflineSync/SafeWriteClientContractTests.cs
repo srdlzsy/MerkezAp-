@@ -8,6 +8,7 @@ public sealed class SafeWriteClientContractTests
 {
     [Theory]
     [InlineData(OperationConflictErrorCodes.MikroDocumentIdentityConflict, "NotStarted", "EditAndRetry")]
+    [InlineData(OperationConflictErrorCodes.MikroPosDocumentSequenceConflict, "SequenceMismatch", "NeedsReview")]
     [InlineData(OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived, "ExistingDocument", "RefreshList")]
     public void Resolve_MapsCorrectableDocumentConflictsWithoutRetry(
         string errorCode,

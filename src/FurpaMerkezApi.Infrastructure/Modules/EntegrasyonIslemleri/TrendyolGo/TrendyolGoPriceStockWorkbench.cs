@@ -950,7 +950,7 @@ internal sealed class TrendyolGoPriceStockWorkbench(
     private static int NormalizeWarehouseQuantity(decimal rawQuantity) =>
         (int)Math.Clamp(decimal.Floor(rawQuantity), 0, int.MaxValue);
 
-    private static TrendyolProduct ReadProduct(JsonElement product)
+    internal static TrendyolProduct ReadProduct(JsonElement product)
     {
         if (product.ValueKind != JsonValueKind.Object)
         {
@@ -964,7 +964,8 @@ internal sealed class TrendyolGoPriceStockWorkbench(
             ReadInt(product, "quantity"),
             ReadNestedLong(product, "brand", "id"),
             ReadNestedLong(product, "category", "id"),
-            ReadInt(product, "vatRate"));
+            ReadInt(product, "vatRate"),
+            ReadString(product, "stockCode"));
     }
 
     private static string? ReadString(JsonElement value, string name) =>
@@ -1058,7 +1059,8 @@ internal sealed class TrendyolGoPriceStockWorkbench(
 
     internal sealed record TrendyolProduct(
         string Barcode, string Title, decimal? Price, int? Quantity,
-        long? BrandId = null, long? CategoryId = null, int? VatRate = null);
+        long? BrandId = null, long? CategoryId = null, int? VatRate = null,
+        string? StockCode = null);
     internal sealed record MikroProduct(
         string? StockCode, string StockName, decimal? Price, decimal? Quantity, bool Blocked,
         int UnitPointer = 1, string UnitName = "", int SalesBlocked = 0, int OrderBlocked = 0,

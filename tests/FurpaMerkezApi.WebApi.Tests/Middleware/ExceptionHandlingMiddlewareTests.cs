@@ -108,4 +108,33 @@ public sealed class ExceptionHandlingMiddlewareTests
             root.GetProperty("detail").GetString());
         Assert.DoesNotContain("execution strategy", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task InvokeAsync_PreservesPosSequenceConflictDetails()
+    {
+        const string detail =
+            "Mikro POS evrak siralari uyumsuz: sube 111, stok PS111/11850 (04.11.2026), cari PS111/11849 (29.10.2026).";
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroPosDocumentSequenceConflict,
+                detail,
+                retryable: false),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        Assert.Equal(detail, root.GetProperty("detail").GetString());
+        Assert.Equal(
+            OperationConflictErrorCodes.MikroPosDocumentSequenceConflict,
+            root.GetProperty("errorCode").GetString());
+        Assert.Equal("SequenceMismatch", root.GetProperty("recoveryState").GetString());
+        Assert.Equal("NeedsReview", root.GetProperty("recommendedAction").GetString());
+    }
 }
