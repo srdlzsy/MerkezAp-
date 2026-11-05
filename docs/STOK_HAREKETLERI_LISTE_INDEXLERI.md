@@ -104,8 +104,9 @@ Sebep:
 - Veri kaybi riski yoktur, fakat yogun saatte calistirmak liste ve yazma islemlerini yavaslatabilir.
 
 Script tekrar calistirilabilir sekilde yazilmistir. Index varsa tekrar olusturmaz.
-Dokuz indexin tamami `ONLINE = ON`, `MAXDOP = 2` ve 60 saniyelik kilit
-bekleme siniri ile olusturulur. Bu ayarlar tabloyu kullanim disi birakmaz; yine de
+Dokuz indexin tamami `ONLINE = ON`, dusuk `MAXDOP` ve 5 saniyelik kilit
+bekleme siniri ile olusturulur. Mevcut firma liste indexlerinin include upgrade'i
+`MAXDOP = 1` kullanir. Bu ayarlar tabloyu kullanim disi birakmaz; yine de
 buyuk tablo taramasi IO/CPU tuketecegi icin indexler sirayla ve dusuk kullanim
 saatinde uygulanmalidir.
 
@@ -162,5 +163,5 @@ Bu indexler liste performansi icin ilk kontrollu adimdir. Daha sonraki iyilestir
 
 - Liste endpointlerine `take` / sayfalama eklemek
 - Buyuk tarih araliklarini UI tarafinda sinirlamak
-- `VirmanListQueryExecutor` gibi bellege alip gruplayan sorgulari SQL tarafinda gruplamak
+- Liste sorgularinda yeni bellege alma/gruplama regresyonlarini testlerle engellemek
 - Liste ekranlarinda sadece gerekli kolonlari gostermek

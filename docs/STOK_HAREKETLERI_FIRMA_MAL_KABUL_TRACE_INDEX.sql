@@ -8,8 +8,9 @@
     4. App pool'u yeniden baslatin ve /health/ready kontrolunu yapin.
 
     Script yeniden calistirilabilir. Index mevcutsa veri degisikligi yapmaz.
-    SQL Server 2017 CREATE INDEX icin WAIT_AT_LOW_PRIORITY desteklemediginden,
-    aktif yazma trafigi varken calistirilmamalidir.
+    ONLINE build baslangic ve bitiste schema lock isteyebilecegi icin dusuk
+    trafik saatinde calistirilmalidir. Canli SQL Server 2017 RTM, CREATE INDEX
+    icinde WAIT_AT_LOW_PRIORITY kabul etmedigi icin LOCK_TIMEOUT kullanilir.
 */
 
 SET NOCOUNT ON;
@@ -22,7 +23,7 @@ SET ARITHABORT ON;
 SET CONCAT_NULL_YIELDS_NULL ON;
 SET NUMERIC_ROUNDABORT OFF;
 SET DEADLOCK_PRIORITY LOW;
-SET LOCK_TIMEOUT 60000;
+SET LOCK_TIMEOUT 5000;
 GO
 
 IF DB_NAME() <> N'MikroDesktop_FURPA_2024'

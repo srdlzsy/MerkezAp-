@@ -29,8 +29,10 @@ public sealed class VirmanListQueryExecutor(MikroDbContext mikroDbContext)
 
         var endDateExclusive = endDate.AddDays(1);
 
-        var rows = await (
-            from movement in mikroDbContext.STOK_HAREKETLERIs.AsNoTracking()
+        var movementTypeRows = await (
+            from movement in mikroDbContext.STOK_HAREKETLERIs
+                .AsNoTracking()
+                .TagWith("Furpa:List:Virman")
             where movement.sth_belge_tarih.HasValue &&
                   movement.sth_belge_tarih.Value >= startDate &&
                   movement.sth_belge_tarih.Value < endDateExclusive &&
@@ -41,58 +43,70 @@ public sealed class VirmanListQueryExecutor(MikroDbContext mikroDbContext)
             join warehouse in mikroDbContext.DEPOLARs.AsNoTracking()
                 on movement.sth_cikis_depo_no equals warehouse.dep_no into warehouseGroup
             from warehouse in warehouseGroup.DefaultIfEmpty()
+            group movement by new
+            {
+                DocumentSerie = movement.sth_evrakno_seri ?? string.Empty,
+                DocumentOrderNo = movement.sth_evrakno_sira ?? 0,
+                WarehouseNo = movement.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
+                WarehouseName = warehouse.dep_adi,
+                DocumentType = movement.sth_evraktip ?? 0,
+                MovementGenre = movement.sth_cins ?? 0,
+                MovementType = movement.sth_tip ?? 0
+            }
+            into movementTypeGroup
             select new
             {
-                movement.sth_belge_tarih,
-                movement.sth_create_date,
-                movement.sth_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_cikis_depo_no,
-                WarehouseName = warehouse.dep_adi,
-                movement.sth_evraktip,
-                movement.sth_cins,
-                movement.sth_tip,
-                movement.sth_aciklama,
-                movement.sth_miktar,
-                movement.sth_tutar
+                movementTypeGroup.Key.DocumentSerie,
+                movementTypeGroup.Key.DocumentOrderNo,
+                movementTypeGroup.Key.WarehouseNo,
+                WarehouseName = movementTypeGroup.Key.WarehouseName ?? string.Empty,
+                movementTypeGroup.Key.DocumentType,
+                movementTypeGroup.Key.MovementGenre,
+                movementTypeGroup.Key.MovementType,
+                DocumentDate = movementTypeGroup.Min(movement => movement.sth_belge_tarih),
+                MovementCreateDate = movementTypeGroup.Min(movement => movement.sth_create_date),
+                MovementDate = movementTypeGroup.Min(movement => movement.sth_tarih),
+                DocumentNo = movementTypeGroup.Min(movement => movement.sth_belge_no) ?? string.Empty,
+                Description = movementTypeGroup.Min(movement => movement.sth_aciklama) ?? string.Empty,
+                LineCount = movementTypeGroup.Count(),
+                TotalQuantity = movementTypeGroup.Sum(movement => movement.sth_miktar ?? 0d),
+                TotalAmount = movementTypeGroup.Sum(movement => movement.sth_tutar ?? 0d)
             }).ToListAsync(cancellationToken);
 
-        return rows
+        return movementTypeRows
             .GroupBy(row => new
             {
-                DocumentSerie = row.sth_evrakno_seri ?? string.Empty,
-                DocumentOrderNo = row.sth_evrakno_sira ?? 0,
-                WarehouseNo = row.sth_cikis_depo_no ?? request.WarehouseNo ?? 0,
-                WarehouseName = row.WarehouseName ?? string.Empty,
-                DocumentType = row.sth_evraktip ?? 0,
-                MovementGenre = row.sth_cins ?? 0
+                row.DocumentSerie,
+                row.DocumentOrderNo,
+                row.WarehouseNo,
+                row.WarehouseName,
+                row.DocumentType,
+                row.MovementGenre
             })
-            .OrderBy(group => group.Min(row => row.sth_belge_tarih))
-            .ThenBy(group => group.Min(row => row.sth_create_date))
+            .OrderBy(group => group.Min(row => row.DocumentDate))
+            .ThenBy(group => group.Min(row => row.MovementCreateDate))
             .ThenBy(group => group.Key.DocumentSerie)
             .ThenBy(group => group.Key.DocumentOrderNo)
             .Select(group => new VirmanListItemDto(
-                group.Min(row => row.sth_belge_tarih),
-                group.Min(row => row.sth_create_date),
-                group.Min(row => row.sth_tarih),
-                group.Select(row => row.sth_belge_no ?? string.Empty).FirstOrDefault() ?? string.Empty,
+                group.Min(row => row.DocumentDate),
+                group.Min(row => row.MovementCreateDate),
+                group.Min(row => row.MovementDate),
+                group.OrderBy(row => row.MovementType).Select(row => row.DocumentNo).FirstOrDefault() ?? string.Empty,
                 group.Key.DocumentSerie,
                 group.Key.DocumentOrderNo,
                 group.Key.WarehouseNo,
                 group.Key.WarehouseName,
                 group.Key.DocumentType,
                 group.Key.MovementGenre,
-                group.Select(row => row.sth_tip ?? 0).Distinct().OrderBy(movementType => movementType).ToArray(),
-                group.Select(row => row.sth_aciklama ?? string.Empty).FirstOrDefault() ?? string.Empty,
-                group.Count(),
-                group.Count(row => (row.sth_tip ?? 0) == 0),
-                group.Count(row => (row.sth_tip ?? 0) == 1),
-                group.Where(row => (row.sth_tip ?? 0) == 0).Sum(row => row.sth_miktar ?? 0d),
-                group.Where(row => (row.sth_tip ?? 0) == 1).Sum(row => row.sth_miktar ?? 0d),
-                group.Sum(row => row.sth_miktar ?? 0d),
-                group.Sum(row => row.sth_tutar ?? 0d)))
+                group.Select(row => row.MovementType).OrderBy(movementType => movementType).ToArray(),
+                group.OrderBy(row => row.MovementType).Select(row => row.Description).FirstOrDefault() ?? string.Empty,
+                group.Sum(row => row.LineCount),
+                group.Where(row => row.MovementType == 0).Sum(row => row.LineCount),
+                group.Where(row => row.MovementType == 1).Sum(row => row.LineCount),
+                group.Where(row => row.MovementType == 0).Sum(row => row.TotalQuantity),
+                group.Where(row => row.MovementType == 1).Sum(row => row.TotalQuantity),
+                group.Sum(row => row.TotalQuantity),
+                group.Sum(row => row.TotalAmount)))
             .ToArray();
     }
 }

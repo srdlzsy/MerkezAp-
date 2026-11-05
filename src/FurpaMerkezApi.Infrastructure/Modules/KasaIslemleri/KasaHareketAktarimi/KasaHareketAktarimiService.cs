@@ -1,12 +1,14 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -2478,6 +2480,7 @@ public sealed class KasaHareketAktarimiService(
               AND Tarih < @endDateExclusive
               AND ISNULL(MikroAktarimDurumu, 0) = 0
               AND TRY_CONVERT(int, Sube) IS NOT NULL
+              AND (@branchNo IS NULL OR TRY_CONVERT(int, Sube) = @branchNo)
             ORDER BY BranchNo;
             """;
 
@@ -2499,6 +2502,83 @@ public sealed class KasaHareketAktarimiService(
             endDate,
             branchNo,
             cancellationToken);
+        await ValidateMikroPosDocumentSequencesAsync(pendingBranchNos, cancellationToken);
+    }
+
+    private async Task ValidateMikroPosDocumentSequencesAsync(
+        IReadOnlyCollection<int> pendingBranchNos,
+        CancellationToken cancellationToken)
+    {
+        if (pendingBranchNos.Count == 0)
+        {
+            return;
+        }
+
+        const string sql = """
+            WITH RequestedBranches AS (
+                SELECT DISTINCT TRY_CONVERT(int, LTRIM(RTRIM([value]))) AS BranchNo
+                FROM STRING_SPLIT(@branchNos, ',')
+                WHERE TRY_CONVERT(int, LTRIM(RTRIM([value]))) IS NOT NULL
+            )
+            SELECT
+                requested.BranchNo,
+                ISNULL(stockDocument.LastDocumentNo, 0) AS LastStockDocumentNo,
+                ISNULL(customerDocument.LastDocumentNo, 0) AS LastCustomerDocumentNo
+            FROM RequestedBranches AS requested
+            OUTER APPLY (
+                SELECT MAX(movement.sth_evrakno_sira) AS LastDocumentNo
+                FROM dbo.STOK_HAREKETLERI AS movement
+                WHERE movement.sth_evraktip = 4
+                  AND movement.sth_pos_satis = 1
+                  AND movement.sth_evrakno_seri = CONCAT('PS', requested.BranchNo)
+            ) AS stockDocument
+            OUTER APPLY (
+                SELECT MAX(movement.cha_evrakno_sira) AS LastDocumentNo
+                FROM dbo.CARI_HESAP_HAREKETLERI AS movement
+                WHERE movement.cha_evrak_tip = 63
+                  AND movement.cha_pos_hareketi = 1
+                  AND movement.cha_evrakno_seri = CONCAT('PS', requested.BranchNo)
+            ) AS customerDocument
+            ORDER BY requested.BranchNo;
+            """;
+
+        var branchNosParameter = string.Join(',', pendingBranchNos.Distinct().OrderBy(item => item));
+        var sequences = await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            sql,
+            command => AddParameter(command, "@branchNos", branchNosParameter),
+            reader => new MikroPosDocumentSequence(
+                ReadInt(reader, "BranchNo"),
+                ReadInt(reader, "LastStockDocumentNo"),
+                ReadInt(reader, "LastCustomerDocumentNo")),
+            cancellationToken);
+
+        EnsureMikroPosDocumentSequencesAreSafe(sequences);
+    }
+
+    internal static void EnsureMikroPosDocumentSequencesAreSafe(
+        IReadOnlyCollection<MikroPosDocumentSequence> sequences)
+    {
+        var mismatches = sequences
+            .Where(item => item.LastStockDocumentNo > item.LastCustomerDocumentNo)
+            .OrderBy(item => item.BranchNo)
+            .ToArray();
+        if (mismatches.Length == 0)
+        {
+            return;
+        }
+
+        var details = string.Join(
+            "; ",
+            mismatches.Select(item =>
+                $"sube {item.BranchNo}: stok PS{item.BranchNo}/{item.LastStockDocumentNo}, " +
+                $"cari PS{item.BranchNo}/{item.LastCustomerDocumentNo}"));
+
+        throw new OperationConflictException(
+            OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+            $"Mikro POS evrak siralari uyumsuz oldugu icin aktarim baslatilmadi. {details}. " +
+            "Mevcut Mikro evraklarina dokunulmadi. Eksik cari evraki veya onceki silme islemini kontrol edin.",
+            retryable: false);
     }
 
     private async Task ValidatePendingTransferSourceTotalsAsync(
@@ -2788,6 +2868,17 @@ public sealed class KasaHareketAktarimiService(
             }
 
             return $"{procedureName} calisti.";
+        }
+        catch (SqlException exception) when (
+            string.Equals(procedureName, "StokHareketYaz", StringComparison.OrdinalIgnoreCase) &&
+            exception.Number is 2601 or 2627)
+        {
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+                "Mikro POS evrak numarasi baska bir kayitla cakisti. Ayni aktarimi yeniden calistirmadan " +
+                "once stok ve cari evraklarini kontrol edin.",
+                retryable: false,
+                exception);
         }
         finally
         {
@@ -3856,6 +3947,11 @@ public sealed class KasaHareketAktarimiService(
         decimal HeaderTotal,
         decimal LineTotal,
         decimal Difference);
+
+    internal sealed record MikroPosDocumentSequence(
+        int BranchNo,
+        int LastStockDocumentNo,
+        int LastCustomerDocumentNo);
 
     private sealed record CashSummarySqlRow(
         DateTime Date,

@@ -34,7 +34,8 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
         }
 
         var endDateExclusive = endDate.AddDays(1);
-        var movements = CreateFilteredMovementQuery(request.WarehouseNo, startDate, endDateExclusive, kind);
+        var movements = CreateFilteredMovementQuery(request.WarehouseNo, startDate, endDateExclusive, kind)
+            .TagWith($"Furpa:List:CompanyMovement:{kind}");
 
         var documentSummaries =
             from movement in movements
@@ -118,51 +119,63 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
 
         var documents = await ExecuteReadOnlyListAsync(query, cancellationToken);
 
-        // The opposite warehouse is display metadata. Mikro Desktop can append a line with a
-        // different value, but the document header must continue to reflect the first movement.
-        // Resolve it in one narrow, linear query instead of a correlated subquery per document.
-        var movementWarehouseRows = await ExecuteReadOnlyListAsync(
-            movements.Select(movement => new
-            {
-                movement.sth_belge_tarih,
-                movement.sth_tarih,
-                movement.sth_belge_no,
-                movement.sth_evrakno_seri,
-                movement.sth_evrakno_sira,
-                movement.sth_cari_kodu,
-                AuthoritativeWarehouseNo = kind == CompanyMovementKind.IncomingShipment
-                    ? movement.sth_giris_depo_no
-                    : movement.sth_cikis_depo_no,
-                movement.sth_evraktip,
-                movement.sth_tip,
-                movement.sth_normal_iade,
-                movement.sth_satirno,
-                movement.sth_create_date,
-                movement.sth_Guid,
-                movement.sth_giris_depo_no,
-                movement.sth_cikis_depo_no
-            }),
+        // Mikro Desktop can append a line with a different opposite warehouse. Resolve only the
+        // first movement per document in SQL so the header remains stable without loading every
+        // matching movement into API memory.
+        var firstWarehouseRows = await ExecuteReadOnlyListAsync(
+            movements
+                .GroupBy(movement => new
+                {
+                    movement.sth_belge_tarih,
+                    movement.sth_tarih,
+                    movement.sth_belge_no,
+                    movement.sth_evrakno_seri,
+                    movement.sth_evrakno_sira,
+                    movement.sth_cari_kodu,
+                    AuthoritativeWarehouseNo = kind == CompanyMovementKind.IncomingShipment
+                        ? movement.sth_giris_depo_no
+                        : movement.sth_cikis_depo_no,
+                    movement.sth_evraktip,
+                    movement.sth_tip,
+                    movement.sth_normal_iade
+                })
+                .Select(group => group
+                    .OrderBy(movement => movement.sth_satirno)
+                    .ThenBy(movement => movement.sth_create_date)
+                    .ThenBy(movement => movement.sth_Guid)
+                    .Select(movement => new
+                    {
+                        movement.sth_belge_tarih,
+                        movement.sth_tarih,
+                        movement.sth_belge_no,
+                        movement.sth_evrakno_seri,
+                        movement.sth_evrakno_sira,
+                        movement.sth_cari_kodu,
+                        AuthoritativeWarehouseNo = kind == CompanyMovementKind.IncomingShipment
+                            ? movement.sth_giris_depo_no
+                            : movement.sth_cikis_depo_no,
+                        movement.sth_evraktip,
+                        movement.sth_tip,
+                        movement.sth_normal_iade,
+                        movement.sth_giris_depo_no,
+                        movement.sth_cikis_depo_no
+                    })
+                    .First()),
             cancellationToken);
-        var firstWarehouseByDocument = movementWarehouseRows
-            .GroupBy(item => new DocumentIdentity(
-                item.sth_belge_tarih,
-                item.sth_tarih,
-                item.sth_belge_no,
-                item.sth_evrakno_seri,
-                item.sth_evrakno_sira,
-                item.sth_cari_kodu,
-                item.AuthoritativeWarehouseNo,
-                item.sth_evraktip,
-                item.sth_tip,
-                item.sth_normal_iade))
+        var firstWarehouseByDocument = firstWarehouseRows
             .ToDictionary(
-                group => group.Key,
-                group => group
-                    .OrderBy(item => item.sth_satirno)
-                    .ThenBy(item => item.sth_create_date)
-                    .ThenBy(item => item.sth_Guid)
-                    .Select(item => new WarehousePair(item.sth_giris_depo_no, item.sth_cikis_depo_no))
-                    .First());
+                item => new DocumentIdentity(
+                    item.sth_belge_tarih,
+                    item.sth_tarih,
+                    item.sth_belge_no,
+                    item.sth_evrakno_seri,
+                    item.sth_evrakno_sira,
+                    item.sth_cari_kodu,
+                    item.AuthoritativeWarehouseNo,
+                    item.sth_evraktip,
+                    item.sth_tip,
+                    item.sth_normal_iade),
+                item => new WarehousePair(item.sth_giris_depo_no, item.sth_cikis_depo_no));
         var warehouseNames = (await ExecuteReadOnlyListAsync(
                 mikroDbContext.DEPOLARs.AsNoTracking().Select(warehouse => new
                 {

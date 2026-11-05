@@ -1,4 +1,5 @@
 using System.Reflection;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.KasaIslemleri.KasaHareketAktarimi;
@@ -256,6 +257,34 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Contains("kasa 185", exception.Message, StringComparison.Ordinal);
         Assert.Contains("fis 143", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Kaynak fisleri duzeltip tekrar deneyin", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnsureMikroPosDocumentSequencesAreSafeAllowsAlignedSequences()
+    {
+        KasaHareketAktarimiService.EnsureMikroPosDocumentSequencesAreSafe(
+        [
+            new(111, 11850, 11850),
+            new(126, 4478, 4480)
+        ]);
+    }
+
+    [Fact]
+    public void EnsureMikroPosDocumentSequencesAreSafeRejectsStockSequenceAheadOfCustomer()
+    {
+        var exception = Assert.Throws<OperationConflictException>(() =>
+            KasaHareketAktarimiService.EnsureMikroPosDocumentSequencesAreSafe(
+            [
+                new(111, 11850, 11849),
+                new(126, 4478, 4478)
+            ]));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroDocumentIdentityConflict, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+        Assert.Contains("sube 111", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("stok PS111/11850", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("cari PS111/11849", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Mevcut Mikro evraklarina dokunulmadi", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

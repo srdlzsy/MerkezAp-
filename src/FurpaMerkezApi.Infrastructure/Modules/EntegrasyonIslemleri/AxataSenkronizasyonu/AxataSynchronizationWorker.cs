@@ -106,7 +106,7 @@ internal sealed class AxataSynchronizationWorker(
                 workItem.CreatedAtUtc);
 
             using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            var timeoutMinutes = Math.Clamp(options.CurrentValue.JobTimeoutMinutes, 1, 60);
+            var timeoutMinutes = ResolveJobTimeoutMinutes(options.CurrentValue, workItem.TaskCode);
             executionCancellation.CancelAfter(TimeSpan.FromMinutes(timeoutMinutes));
             var executionTask = coordinator.ExecuteAsync(context, executionCancellation.Token);
             while (!executionTask.IsCompleted)
@@ -137,7 +137,7 @@ internal sealed class AxataSynchronizationWorker(
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
-            var timeoutMinutes = Math.Clamp(options.CurrentValue.JobTimeoutMinutes, 1, 60);
+            var timeoutMinutes = ResolveJobTimeoutMinutes(options.CurrentValue, workItem.TaskCode);
             var message = $"AXATA gorevi {timeoutMinutes} dakikalik calisma suresini asti ve siradaki belgelerin beklememesi icin durduruldu.";
             queue.MarkFailed(workItem.JobId, message);
             logger.LogError(
@@ -173,5 +173,16 @@ internal sealed class AxataSynchronizationWorker(
                 exception,
                 queue.GetBacklogSnapshot());
         }
+    }
+
+    internal static int ResolveJobTimeoutMinutes(
+        AxataSynchronizationOptions synchronizationOptions,
+        string taskCode)
+    {
+        var configuredTimeout = synchronizationOptions.Tasks.TryGetValue(taskCode, out var taskOptions)
+            ? taskOptions.JobTimeoutMinutes
+            : null;
+
+        return Math.Clamp(configuredTimeout ?? synchronizationOptions.JobTimeoutMinutes, 1, 60);
     }
 }
