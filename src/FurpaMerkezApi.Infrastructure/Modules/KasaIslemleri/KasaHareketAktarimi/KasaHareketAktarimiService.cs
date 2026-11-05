@@ -177,7 +177,7 @@ public sealed class KasaHareketAktarimiService(
             request.Date.Date,
             request.Date.Date,
             request.BranchNo,
-            requireExclusiveBranch: request.BranchNo.HasValue,
+            requireExclusiveBranch: false,
             cancellationToken: cancellationToken);
 
         var before = await GetMikroPosDocumentsAsync(

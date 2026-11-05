@@ -118,30 +118,53 @@ internal sealed class TrendyolGoCatalogWorkbench(
         var mikroProducts = await ReadMikroCatalogByBarcodesAsync(
             store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, distinctBarcodes, cancellationToken);
 
+        var missingInMikro = distinctBarcodes
+            .Except(mikroProducts.Select(p => p.Barcode).Where(b => !string.IsNullOrWhiteSpace(b))!, StringComparer.Ordinal)
+            .ToArray();
+
         if (mikroProducts.Length == 0)
         {
+            var notFoundMsg = missingInMikro.Length > 0
+                ? $"Mikro'da bu barkodlara ait stok karti bulunamadi: {string.Join(", ", missingInMikro)}."
+                : "Mikro'da bu barkodlara ait uygun stok karti bulunamadi.";
             return new TrendyolGoCatalogAutoCreateResult(
                 0,
                 [],
-                "Mikro'da bu barkodlara ait uygun stok karti bulunamadi.");
+                notFoundMsg);
         }
 
         var existingBarcodes = priceStockSnapshot.Products
             .Select(item => item.Barcode)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .ToHashSet(StringComparer.Ordinal);
-        var mikroByBarcode = mikroProducts
+
+        var neededBrandCodes = mikroProducts
+            .Select(item => item.BrandCode?.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var neededCategoryCodes = mikroProducts
+            .Select(item => item.CategoryCode?.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var mappingProducts = await ReadMikroMappingProductsAsync(
+            neededBrandCodes!, neededCategoryCodes!, cancellationToken);
+
+        var mappingMikroByBarcode = mappingProducts
+            .Concat(mikroProducts)
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
-            .Where(group => group.Count() == 1)
-            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
         var brandMappings = InferMappings(
-            priceStockSnapshot.Products, mikroByBarcode,
+            priceStockSnapshot.Products, mappingMikroByBarcode,
             item => item.BrandCode, item => item.BrandId,
             config.Catalog.BrandMappings);
         var categoryMappings = InferMappings(
-            priceStockSnapshot.Products, mikroByBarcode,
+            priceStockSnapshot.Products, mappingMikroByBarcode,
             item => item.CategoryCode, item => item.CategoryId,
             config.Catalog.CategoryMappings);
         var duplicateBarcodes = mikroProducts
@@ -151,6 +174,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .Select(group => group.Key)
             .ToHashSet(StringComparer.Ordinal);
 
+        var rows = new List<TrendyolGoCatalogRow>();
         var validRowsToCreate = new List<TrendyolGoCatalogRow>();
 
         foreach (var product in mikroProducts)
@@ -163,20 +187,30 @@ internal sealed class TrendyolGoCatalogWorkbench(
                 categoryMappings,
                 config.Catalog.DefaultBrandId,
                 config.Catalog.DefaultCategoryId);
-            if (row.Status != "Ready")
+            rows.Add(row);
+            if (row.Status == "Ready")
             {
-                continue;
+                validRowsToCreate.Add(row);
             }
-
-            validRowsToCreate.Add(row);
         }
 
         if (validRowsToCreate.Count == 0)
         {
+            var issues = rows
+                .Where(r => r.Status != "Ready")
+                .Select(r => $"{r.Barcode ?? r.StockCode} ({r.ProductName}): {r.Reason ?? r.Status}")
+                .ToList();
+            if (missingInMikro.Length > 0)
+            {
+                issues.Add($"Mikro'da bulunamayan barkodlar: {string.Join(", ", missingInMikro)}");
+            }
+            var errorMessage = issues.Count > 0
+                ? $"Katalog olusturma kriterlerini karsilayan urun bulunamadi: {string.Join("; ", issues)}"
+                : "Yeni ve katalog kurallarina uygun urun bulunamadi. Mevcut urunler yeniden olusturulmadi.";
             return new TrendyolGoCatalogAutoCreateResult(
                 0,
                 [],
-                "Yeni ve katalog kurallarina uygun urun bulunamadi. Mevcut urunler yeniden olusturulmadi.");
+                errorMessage);
         }
 
         var batchRequestIds = new List<string>();
@@ -368,7 +402,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
             "Trendyol katalogu henuz hazir degil. Fiyat-stok onizlemesini yenileyip snapshot tamamlandiktan sonra tekrar deneyin.");
     }
 
-    private static Dictionary<string, long> InferMappings(
+    internal static Dictionary<string, long> InferMappings(
         IReadOnlyCollection<TrendyolGoPriceStockWorkbench.TrendyolProduct> trendyolProducts,
         IReadOnlyDictionary<string, MikroCatalogProduct> mikroByBarcode,
         Func<MikroCatalogProduct, string?> mikroCode,
@@ -496,6 +530,78 @@ internal sealed class TrendyolGoCatalogWorkbench(
         return result.ToArray();
     }
 
+    private async Task<IReadOnlyCollection<MikroCatalogProduct>> ReadMikroMappingProductsAsync(
+        IReadOnlyCollection<string> brandCodes,
+        IReadOnlyCollection<string> categoryCodes,
+        CancellationToken cancellationToken)
+    {
+        if (brandCodes.Count == 0 && categoryCodes.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<MikroCatalogProduct>();
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+        if (closeConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 30;
+            command.CommandText = """
+                SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+                SELECT barcode.bar_kodu AS Barcode,
+                       stock.sto_kod AS StockCode,
+                       COALESCE(stock.sto_isim, '') AS ProductName,
+                       NULLIF(LTRIM(RTRIM(stock.sto_marka_kodu)), '') AS BrandCode,
+                       COALESCE(NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), ''),
+                                NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '')) AS CategoryCode
+                FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+                INNER JOIN dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                  ON barcode.bar_stokkodu = stock.sto_kod
+                WHERE COALESCE(barcode.bar_iptal, 0) = 0
+                  AND NULLIF(LTRIM(RTRIM(barcode.bar_kodu)), '') IS NOT NULL
+                  AND (
+                      stock.sto_marka_kodu IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@brandCodesJson))
+                      OR stock.sto_kategori_kodu IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@categoryCodesJson))
+                      OR stock.sto_anagrup_kod IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@categoryCodesJson))
+                  );
+                """;
+
+            AddParameter(command, "@brandCodesJson", JsonSerializer.Serialize(brandCodes));
+            AddParameter(command, "@categoryCodesJson", JsonSerializer.Serialize(categoryCodes));
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                result.Add(new MikroCatalogProduct(
+                    Convert.ToString(reader["StockCode"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    Convert.ToString(reader["ProductName"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    reader["Barcode"] is DBNull ? null : Convert.ToString(reader["Barcode"], CultureInfo.InvariantCulture),
+                    reader["BrandCode"] is DBNull ? null : Convert.ToString(reader["BrandCode"], CultureInfo.InvariantCulture),
+                    reader["CategoryCode"] is DBNull ? null : Convert.ToString(reader["CategoryCode"], CultureInfo.InvariantCulture),
+                    null,
+                    null,
+                    false));
+            }
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        return result;
+    }
+
     private async Task<MikroCatalogProduct[]> ReadMikroCatalogByBarcodesAsync(
         int warehouseNo, int priceListNo, int paymentPlanNo,
         IReadOnlyCollection<string> barcodes,
@@ -567,8 +673,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
                       AND priceRow.sfiyat_birim_pntr = COALESCE(barcode.UnitPointer, 1)
                       AND COALESCE(priceRow.sfiyat_iptal, 0) = 0
                     ORDER BY COALESCE(priceRow.sfiyat_lastup_date, priceRow.sfiyat_create_date) DESC
-                ) AS price
-                WHERE COALESCE(stock.sto_webe_gonderilecek_fl, 0) = 1;
+                ) AS price;
                 """;
 
             AddParameter(command, "@warehouseNo", warehouseNo);

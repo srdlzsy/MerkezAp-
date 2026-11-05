@@ -1,0 +1,201 @@
+using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
+using Xunit;
+
+namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.TrendyolGo;
+
+public sealed class TrendyolGoCatalogWorkbenchTests
+{
+    [Fact]
+    public void InferMappings_UsesUnambiguousSiblingProductMapping()
+    {
+        var trendyolProducts = new[]
+        {
+            new TrendyolGoPriceStockWorkbench.TrendyolProduct("sibling-1", "Erikli Su", 20m, 10, 35246, 1420),
+            new TrendyolGoPriceStockWorkbench.TrendyolProduct("sibling-2", "Erikli Su", 25m, 10, 35246, 1420)
+        };
+        var mikroProducts = new Dictionary<string, TrendyolGoCatalogWorkbench.MikroCatalogProduct>
+        {
+            ["sibling-1"] = new("001", "ERIKLI SU", "sibling-1", "0327", "01.03.02.01", 1, 20m, false),
+            ["sibling-2"] = new("002", "ERIKLI SU", "sibling-2", "0327", "01.03.02.01", 1, 25m, false)
+        };
+
+        var mappings = TrendyolGoCatalogWorkbench.InferMappings(
+            trendyolProducts,
+            mikroProducts,
+            product => product.BrandCode,
+            product => product.BrandId,
+            new Dictionary<string, long>());
+
+        Assert.Equal(35246, mappings["0327"]);
+    }
+
+    [Fact]
+    public void InferMappings_DoesNotGuessWhenSiblingMappingsConflict()
+    {
+        var trendyolProducts = new[]
+        {
+            new TrendyolGoPriceStockWorkbench.TrendyolProduct("sibling-1", "Product 1", 20m, 10, 35246, 1420),
+            new TrendyolGoPriceStockWorkbench.TrendyolProduct("sibling-2", "Product 2", 25m, 10, 99999, 1420)
+        };
+        var mikroProducts = new Dictionary<string, TrendyolGoCatalogWorkbench.MikroCatalogProduct>
+        {
+            ["sibling-1"] = new("001", "PRODUCT 1", "sibling-1", "0327", "01.03.02.01", 1, 20m, false),
+            ["sibling-2"] = new("002", "PRODUCT 2", "sibling-2", "0327", "01.03.02.01", 1, 25m, false)
+        };
+
+        var mappings = TrendyolGoCatalogWorkbench.InferMappings(
+            trendyolProducts,
+            mikroProducts,
+            product => product.BrandCode,
+            product => product.BrandId,
+            new Dictionary<string, long>());
+
+        Assert.DoesNotContain("0327", mappings);
+    }
+
+    [Fact]
+    public void BuildRow_WhenBarcodeNotInExisting_AndMappingsPresent_ReturnsReady()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "000322",
+            "ERİKLİ SU 0,75 LT CAM",
+            "8690793020075",
+            "0327",
+            "01.03.02.01",
+            1,
+            115.00m,
+            false);
+
+        var existingBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var duplicateBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var brandMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["0327"] = 35246 };
+        var categoryMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["01.03.02.01"] = 1420 };
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product,
+            existingBarcodes,
+            duplicateBarcodes,
+            brandMappings,
+            categoryMappings);
+
+        Assert.Equal("Ready", row.Status);
+        Assert.Null(row.Reason);
+        Assert.Equal(35246, row.TrendyolBrandId);
+        Assert.Equal(1420, row.TrendyolCategoryId);
+        Assert.Equal("8690793020075", row.Barcode);
+    }
+
+    [Fact]
+    public void BuildRow_WhenMappingsMissing_ReturnsMappingRequired()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "000322",
+            "ERİKLİ SU 0,75 LT CAM",
+            "8690793020075",
+            "0327",
+            "01.03.02.01",
+            1,
+            115.00m,
+            false);
+
+        var existingBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var duplicateBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var brandMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var categoryMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product,
+            existingBarcodes,
+            duplicateBarcodes,
+            brandMappings,
+            categoryMappings);
+
+        Assert.Equal("MappingRequired", row.Status);
+        Assert.Equal("Trendyol marka ve kategori eslemesi gerekli.", row.Reason);
+    }
+
+    [Fact]
+    public void BuildRow_WhenBarcodeAlreadyExists_DoesNotCreateItAgain()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "000322",
+            "ERIKLI SU 0,75 LT CAM",
+            "8690793020075",
+            "0327",
+            "01.03.02.01",
+            1,
+            115.00m,
+            false);
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product,
+            new HashSet<string>(StringComparer.Ordinal) { "8690793020075" },
+            new HashSet<string>(StringComparer.Ordinal),
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase));
+
+        Assert.Equal("Existing", row.Status);
+        Assert.Null(row.Reason);
+    }
+
+    [Fact]
+    public void BuildRow_WhenDefaultBrandAndCategoryConfigured_UsesDefaults()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "000322",
+            "ERİKLİ SU 0,75 LT CAM",
+            "8690793020075",
+            "0327",
+            "01.03.02.01",
+            1,
+            115.00m,
+            false);
+
+        var existingBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var duplicateBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var brandMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var categoryMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product,
+            existingBarcodes,
+            duplicateBarcodes,
+            brandMappings,
+            categoryMappings,
+            defaultBrandId: 1334359,
+            defaultCategoryId: 1420);
+
+        Assert.Equal("Ready", row.Status);
+        Assert.Equal(1334359, row.TrendyolBrandId);
+        Assert.Equal(1420, row.TrendyolCategoryId);
+    }
+
+    [Fact]
+    public void BuildRow_WhenProductBlocked_ReturnsSkippedWithReason()
+    {
+        var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
+            "000322",
+            "ERİKLİ SU 0,75 LT CAM",
+            "8690793020075",
+            "0327",
+            "01.03.02.01",
+            1,
+            115.00m,
+            true);
+
+        var existingBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var duplicateBarcodes = new HashSet<string>(StringComparer.Ordinal);
+        var brandMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var categoryMappings = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        var row = TrendyolGoCatalogWorkbench.BuildRow(
+            product,
+            existingBarcodes,
+            duplicateBarcodes,
+            brandMappings,
+            categoryMappings);
+
+        Assert.Equal("Skipped", row.Status);
+        Assert.Equal("Urun Mikro'da pasif veya satisa kapali.", row.Reason);
+    }
+}
