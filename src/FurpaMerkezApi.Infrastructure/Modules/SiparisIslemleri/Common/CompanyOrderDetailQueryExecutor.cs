@@ -57,6 +57,21 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
             from address in addressGroup.DefaultIfEmpty()
             join stock in mikroDbContext.STOKLARs.AsNoTracking() on order.sip_stok_kod equals stock.sto_kod into stockGroup
             from stock in stockGroup.DefaultIfEmpty()
+            let barcode = mikroDbContext.BARKOD_TANIMLARIs
+                .AsNoTracking()
+                .Where(item =>
+                    item.bar_stokkodu == order.sip_stok_kod &&
+                    item.bar_iptal != true &&
+                    item.bar_kodu != null &&
+                    item.bar_kodu != string.Empty)
+                .OrderBy(item =>
+                    (item.bar_birimpntr ?? 1) == (order.sip_birim_pntr ?? 1) ? 0 :
+                    (item.bar_birimpntr ?? 1) == 1 ? 1 : 2)
+                .ThenByDescending(item => item.bar_master ?? false)
+                .ThenByDescending(item => item.bar_create_date)
+                .ThenBy(item => item.bar_kodu)
+                .Select(item => item.bar_kodu)
+                .FirstOrDefault()
             orderby order.sip_satirno, order.sip_stok_kod
             select new
             {
@@ -85,6 +100,7 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
                 order.sip_satirno,
                 order.sip_stok_kod,
                 StockName = stock.sto_isim,
+                Barcode = barcode,
                 stock.sto_birim1_ad,
                 stock.sto_birim2_ad,
                 stock.sto_birim3_ad,
@@ -140,6 +156,7 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
                     row.sip_satirno ?? 0,
                     row.sip_stok_kod ?? string.Empty,
                     row.StockName ?? string.Empty,
+                    row.Barcode ?? string.Empty,
                     ResolveUnitName(unitPointer, row.sto_birim1_ad, row.sto_birim2_ad, row.sto_birim3_ad, row.sto_birim4_ad),
                     unitPointer,
                     quantity,

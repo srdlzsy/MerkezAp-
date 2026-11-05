@@ -4,6 +4,7 @@ public sealed record CompanyOrderLineItemDto(
     int LineNo,
     string StockCode,
     string StockName,
+    string Barcode,
     string UnitName,
     byte UnitPointer,
     double Quantity,

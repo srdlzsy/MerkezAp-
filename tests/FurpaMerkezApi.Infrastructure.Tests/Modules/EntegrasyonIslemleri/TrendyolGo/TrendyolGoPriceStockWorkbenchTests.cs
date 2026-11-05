@@ -404,6 +404,26 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);
         Assert.Contains(
+            "SET fiyati = CASE",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "sto_birim_ad = CASE",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "sdp_satisdursun = CASE",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "sfiyat_fiyati = CASE",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "sfiyat_birim_pntr",
+            TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "@sfiyat_lastup_date > sfiyat_lastup_date",
             TrendyolGoBranchPosPriceSyncService.UpsertCommandText,
             StringComparison.Ordinal);

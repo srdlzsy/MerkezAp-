@@ -26,12 +26,12 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
         PdfSharpConfiguration.EnsureInitialized();
     }
 
-    private readonly XFont titleFont = new("Times New Roman", 18, XFontStyleEx.Bold);
-    private readonly XFont documentFont = new("Times New Roman", 11, XFontStyleEx.Bold);
-    private readonly XFont headerFont = new("Times New Roman", 9, XFontStyleEx.Bold);
-    private readonly XFont bodyFont = new("Times New Roman", 9, XFontStyleEx.Regular);
-    private readonly XFont smallFont = new("Times New Roman", 7, XFontStyleEx.Regular);
-    private readonly XFont smallBoldFont = new("Times New Roman", 8, XFontStyleEx.Bold);
+    private readonly XFont titleFont = new("Times New Roman", 19, XFontStyleEx.Bold);
+    private readonly XFont documentFont = new("Times New Roman", 12, XFontStyleEx.Bold);
+    private readonly XFont headerFont = new("Times New Roman", 10, XFontStyleEx.Bold);
+    private readonly XFont bodyFont = new("Times New Roman", 10, XFontStyleEx.Regular);
+    private readonly XFont smallFont = new("Times New Roman", 8, XFontStyleEx.Regular);
+    private readonly XFont smallBoldFont = new("Times New Roman", 9, XFontStyleEx.Bold);
 
     public byte[] Render(IReadOnlyCollection<WarehouseOrderDetailDto> documents)
     {
@@ -263,7 +263,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
                         lines[lineIndex],
                         bodyFont,
                         XBrushes.Black,
-                        new XRect(textRect.X, textRect.Y + (lineIndex * 8d), textRect.Width, 8d),
+                        new XRect(textRect.X, textRect.Y + (lineIndex * 10d), textRect.Width, 10d),
                         XStringFormats.TopLeft);
                 }
             }
@@ -335,7 +335,7 @@ public sealed class ReceivedWarehouseOrderPdfRenderer : IReceivedWarehouseOrderP
             columns[2].Width,
             47d,
             isGreenGrocerDocument);
-        return Math.Max(MinimumRowHeight, 4d + (productLines * 8d));
+        return Math.Max(MinimumRowHeight, 4d + (productLines * 10d));
     }
 
     private static string FormatProduct(WarehouseOrderLineItemDto item, bool isGreenGrocerDocument) =>

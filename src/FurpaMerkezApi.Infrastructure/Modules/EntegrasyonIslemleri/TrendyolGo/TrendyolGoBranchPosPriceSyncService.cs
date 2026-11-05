@@ -120,11 +120,10 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             await connection.OpenAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             foreach (var item in items
-                         .GroupBy(item => new { item.StockCode, item.PriceListNo, item.UnitPointer })
+                         .GroupBy(item => new { item.StockCode, item.PriceListNo })
                          .Select(group => group.Last())
                          .OrderBy(item => item.StockCode, StringComparer.Ordinal)
-                         .ThenBy(item => item.PriceListNo)
-                         .ThenBy(item => item.UnitPointer))
+                         .ThenBy(item => item.PriceListNo))
             {
                 await UpsertAsync(
                     connection,
@@ -180,24 +179,21 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         WITH updated AS
         (
             UPDATE public.stoksatisfiyat
-            SET sfiyat_fiyati = CASE
+            SET fiyati = CASE
                     WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
-                        THEN @sfiyat_fiyati ELSE sfiyat_fiyati END,
-                sfiyat_birim_pntr = CASE
+                        THEN @sfiyat_fiyati ELSE fiyati END,
+                sto_birim_ad = CASE
                     WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
-                        THEN @sfiyat_birim_pntr ELSE sfiyat_birim_pntr END,
-                sfiyat_birim_adi = CASE
-                    WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
-                        THEN @sfiyat_birim_adi ELSE sfiyat_birim_adi END,
-                sfiyat_satisdursun = CASE
+                        THEN @sfiyat_birim_adi ELSE sto_birim_ad END,
+                sdp_satisdursun = CASE
                     WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
-                        THEN @sfiyat_satisdursun ELSE sfiyat_satisdursun END,
-                sfiyat_sipdursun = CASE
+                        THEN @sfiyat_satisdursun ELSE sdp_satisdursun END,
+                sdp_sipdursun = CASE
                     WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
-                        THEN @sfiyat_sipdursun ELSE sfiyat_sipdursun END,
-                sfiyat_malkabuldursun = CASE
+                        THEN @sfiyat_sipdursun ELSE sdp_sipdursun END,
+                sdp_malkabuldursun = CASE
                     WHEN sdp_lastup_date IS NULL OR @sdp_lastup_date > sdp_lastup_date
-                        THEN @sfiyat_malkabuldursun ELSE sfiyat_malkabuldursun END,
+                        THEN @sfiyat_malkabuldursun ELSE sdp_malkabuldursun END,
                 sfiyat_lastup_date = CASE
                     WHEN sfiyat_lastup_date IS NULL OR @sfiyat_lastup_date > sfiyat_lastup_date
                         THEN @sfiyat_lastup_date ELSE sfiyat_lastup_date END,
@@ -213,11 +209,11 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             RETURNING 1
         )
         INSERT INTO public.stoksatisfiyat (
-            sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano, sfiyat_birim_pntr,
-            sfiyat_birim_adi, sfiyat_fiyati, sfiyat_satisdursun, sfiyat_sipdursun,
-            sfiyat_malkabuldursun, sfiyat_lastup_date, sdp_lastup_date, fiyat_tip_kodu
+            sdp_depo_no, sfiyat_stokkod, sfiyat_listesirano,
+            sto_birim_ad, fiyati, sdp_satisdursun, sdp_sipdursun,
+            sdp_malkabuldursun, sfiyat_lastup_date, sdp_lastup_date, fiyat_tip_kodu
         )
-        SELECT @sdp_depo_no, @sfiyat_stokkod, @sfiyat_listesirano, @sfiyat_birim_pntr,
+        SELECT @sdp_depo_no, @sfiyat_stokkod, @sfiyat_listesirano,
                @sfiyat_birim_adi, @sfiyat_fiyati, @sfiyat_satisdursun, @sfiyat_sipdursun,
                @sfiyat_malkabuldursun, @sfiyat_lastup_date, @sdp_lastup_date, 1
         WHERE NOT EXISTS
@@ -245,7 +241,6 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         command.Parameters.AddWithValue("sdp_depo_no", warehouseNo);
         command.Parameters.AddWithValue("sfiyat_stokkod", item.StockCode);
         command.Parameters.AddWithValue("sfiyat_listesirano", item.PriceListNo);
-        command.Parameters.AddWithValue("sfiyat_birim_pntr", item.UnitPointer);
         command.Parameters.AddWithValue("sfiyat_birim_adi", item.UnitName);
         command.Parameters.AddWithValue("sfiyat_fiyati", item.Price);
         command.Parameters.AddWithValue("sfiyat_satisdursun", item.SalesBlocked);
