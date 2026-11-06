@@ -28,6 +28,8 @@ public sealed class KasaHareketAktarimiService(
     private const int PosExpenseCustomerDocumentType = 61;
     private const int PosSalesCustomerDocumentType = 63;
     private const string StockMovementWriteProcedureName = "StokHareketYaz";
+    private const string MikroMutationLockResource = "FurpaMerkezApi:KasaHareketAktarimi:MikroMutation";
+    private const int MikroMutationLockTimeoutMilliseconds = 30000;
     private const int DefaultProcedureCommandTimeoutSeconds = 300;
     private const int StockMovementWriteCommandTimeoutSeconds = 600;
 
@@ -4126,6 +4128,7 @@ public sealed class KasaHareketAktarimiService(
     {
         var connection = furpaDbContext.Database.GetDbConnection();
         var closeConnection = connection.State == ConnectionState.Closed;
+        var mutationLockAcquired = false;
 
         if (closeConnection)
         {
@@ -4134,6 +4137,12 @@ public sealed class KasaHareketAktarimiService(
 
         try
         {
+            if (RequiresExclusiveMutationLock(procedureName))
+            {
+                await AcquireMikroMutationLockAsync(connection, cancellationToken);
+                mutationLockAcquired = true;
+            }
+
             await using var command = connection.CreateCommand();
             command.CommandText = procedureName;
             command.CommandType = CommandType.StoredProcedure;
@@ -4174,9 +4183,85 @@ public sealed class KasaHareketAktarimiService(
                 retryable: false,
                 exception);
         }
+        catch (SqlException exception) when (
+            RequiresExclusiveMutationLock(procedureName) && exception.Number == 1205)
+        {
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+                OperationConflictMessages.MikroWriteOutcomeUnconfirmed,
+                retryable: true,
+                exception);
+        }
         finally
         {
+            if (mutationLockAcquired)
+            {
+                await ReleaseMikroMutationLockAsync(connection);
+            }
+
             if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    internal static bool RequiresExclusiveMutationLock(string procedureName) =>
+        procedureName.Equals("HareketSil", StringComparison.OrdinalIgnoreCase) ||
+        procedureName.Equals(StockMovementWriteProcedureName, StringComparison.OrdinalIgnoreCase) ||
+        procedureName.Equals("StokHareketSil", StringComparison.OrdinalIgnoreCase) ||
+        procedureName.Equals("StokHareketSilTarihAralikli", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task AcquireMikroMutationLockAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Session',
+                @LockTimeout = @lockTimeout;
+            SELECT @result;
+            """;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = 40;
+        AddParameter(command, "@resource", MikroMutationLockResource);
+        AddParameter(command, "@lockTimeout", MikroMutationLockTimeoutMilliseconds);
+
+        var result = Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture);
+        if (result < 0)
+        {
+            throw new OperationConflictException(
+                OperationConflictErrorCodes.MikroWriteQueueBusy,
+                OperationConflictMessages.MikroWriteQueueBusy,
+                retryable: true);
+        }
+    }
+
+    private static async Task ReleaseMikroMutationLockAsync(DbConnection connection)
+    {
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                EXEC sys.sp_releaseapplock
+                    @Resource = @resource,
+                    @LockOwner = 'Session';
+                """;
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = 15;
+            AddParameter(command, "@resource", MikroMutationLockResource);
+            await command.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+        catch (DbException)
+        {
+            // Closing the session below releases a session-owned application lock as a fallback.
+            if (connection.State != ConnectionState.Closed)
             {
                 await connection.CloseAsync();
             }
@@ -4653,6 +4738,8 @@ public sealed class KasaHareketAktarimiService(
         expenseSlipTransferredAmount = Round(expenseSlipTransferredAmount);
         zReportAmount = Round(zReportAmount);
 
+        var stockMovementAmount = Round(retailStockAmount + invoiceStockAmount);
+        var transferredAmount = Round(retailTransferredAmount + invoiceTransferredAmount);
         var retailDifference = Round(retailTransferredAmount - retailStockAmount);
         var invoiceDifference = Round(invoiceTransferredAmount - invoiceStockAmount);
         var expenseSlipDifference = Round(expenseSlipTransferredAmount - expenseSlipStockAmount);
@@ -4660,10 +4747,12 @@ public sealed class KasaHareketAktarimiService(
         var netTransferredTurnover = Round(
             retailTransferredAmount + invoiceTransferredAmount - expenseSlipTransferredAmount);
         var netDifference = Round(netTransferredTurnover - netStockTurnover);
-        var expenseExcludedAmount = Round(retailTransferredAmount + invoiceTransferredAmount);
-        var zReportTransferDifference = Round(expenseExcludedAmount - zReportAmount);
-        var transferredTurnoverDifference = netDifference;
-        var currentStockDifference = Round(currentComparableStockAmount - currentAccountAmount);
+        // These legacy totals intentionally follow the original Satis Karsilastirma/Form1 formulas.
+        var expenseExcludedAmount = Round(transferredAmount - expenseSlipTransferredAmount);
+        var zReportTransferDifference = Round(
+            stockMovementAmount - (zReportAmount + expenseSlipTransferredAmount));
+        var transferredTurnoverDifference = Round(transferredAmount - stockMovementAmount);
+        var currentStockDifference = Round(stockMovementAmount - currentAccountAmount);
         var hasDifference = Math.Abs(retailDifference) > tolerance
                             || Math.Abs(invoiceDifference) > tolerance
                             || Math.Abs(expenseSlipDifference) > tolerance;
@@ -4672,9 +4761,9 @@ public sealed class KasaHareketAktarimiService(
             date.Date,
             branchNo,
             branchName,
-            netStockTurnover,
+            stockMovementAmount,
             currentAccountAmount,
-            netTransferredTurnover,
+            transferredAmount,
             expenseExcludedAmount,
             expenseSlipTransferredAmount,
             zReportAmount,

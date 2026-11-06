@@ -24,6 +24,22 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Theory]
+    [InlineData("HareketSil")]
+    [InlineData("StokHareketYaz")]
+    [InlineData("StokHareketSil")]
+    [InlineData("StokHareketSilTarihAralikli")]
+    public void MikroMutationProceduresUseExclusiveApplicationLock(string procedureName)
+    {
+        Assert.True(KasaHareketAktarimiService.RequiresExclusiveMutationLock(procedureName));
+    }
+
+    [Fact]
+    public void ReadOnlyProcedureDoesNotUseExclusiveApplicationLock()
+    {
+        Assert.False(KasaHareketAktarimiService.RequiresExclusiveMutationLock("RaporOku"));
+    }
+
+    [Theory]
     [InlineData("129.50", 129.50)]
     [InlineData("730.00", 730.00)]
     [InlineData("4625.17", 4625.17)]
@@ -176,10 +192,12 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             zReportAmount: 1_190m,
             tolerance: 0.01m);
 
-        Assert.Equal(1_190m, row.ExpenseExcludedAmount);
-        Assert.Equal(0m, row.ZReportTransferDifference);
+        Assert.Equal(1_200m, row.StockMovementAmount);
+        Assert.Equal(1_190m, row.TransferredAmount);
+        Assert.Equal(1_160m, row.ExpenseExcludedAmount);
+        Assert.Equal(-20m, row.ZReportTransferDifference);
         Assert.Equal(-10m, row.TransferredTurnoverDifference);
-        Assert.Equal(5m, row.CurrentStockDifference);
+        Assert.Equal(210m, row.CurrentStockDifference);
         Assert.Equal(-10m, row.RetailDifference);
         Assert.Equal(0m, row.InvoiceDifference);
         Assert.Equal(0m, row.ExpenseSlipDifference);
@@ -190,7 +208,7 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Fact]
-    public void CreateSalesComparisonRowDoesNotTreatCanceledStockAsCurrentAccountDifference()
+    public void CreateSalesComparisonRowKeepsLegacyAuditDifferenceSeparateFromCategoryStatus()
     {
         var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
             new DateTime(2026, 10, 27),
@@ -207,10 +225,12 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             zReportAmount: 1_000m,
             tolerance: 0.01m);
 
-        Assert.Equal(1_000m, row.ExpenseExcludedAmount);
-        Assert.Equal(0m, row.ZReportTransferDifference);
+        Assert.Equal(1_000m, row.StockMovementAmount);
+        Assert.Equal(1_000m, row.TransferredAmount);
+        Assert.Equal(970m, row.ExpenseExcludedAmount);
+        Assert.Equal(-30m, row.ZReportTransferDifference);
         Assert.Equal(0m, row.TransferredTurnoverDifference);
-        Assert.Equal(0m, row.CurrentStockDifference);
+        Assert.Equal(34.50m, row.CurrentStockDifference);
         Assert.Equal(970m, row.NetStockTurnover);
         Assert.Equal(970m, row.NetTransferredTurnover);
         Assert.Equal(0m, row.NetDifference);
