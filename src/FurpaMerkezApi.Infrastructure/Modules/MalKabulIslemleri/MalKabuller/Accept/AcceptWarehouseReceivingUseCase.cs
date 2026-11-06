@@ -1,8 +1,12 @@
 using System.Data;
 using System.Text.Json;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.Accept;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -13,6 +17,7 @@ using Microsoft.Extensions.Options;
 namespace FurpaMerkezApi.Infrastructure.Modules.MalKabulIslemleri.MalKabuller.Accept;
 
 public sealed class AcceptWarehouseReceivingUseCase(
+    AuthDbContext authDbContext,
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
@@ -102,7 +107,11 @@ public sealed class AcceptWarehouseReceivingUseCase(
                 }
 
                 EnsurePendingReceivingState(request.WarehouseNo, movements);
-                EnsureEDespatchWasSent(movements, documentSerie, request.DocumentOrderNo);
+                await EnsureEDespatchWasSentAsync(
+                    movements,
+                    documentSerie,
+                    request.DocumentOrderNo,
+                    cancellationToken);
 
                 if (hasDiscrepancy && !request.AllowDiscrepancy)
                 {
@@ -173,7 +182,11 @@ public sealed class AcceptWarehouseReceivingUseCase(
         }
 
         EnsurePendingReceivingState(request.WarehouseNo, movements);
-        EnsureEDespatchWasSent(movements, documentSerie, request.DocumentOrderNo);
+        await EnsureEDespatchWasSentAsync(
+            movements,
+            documentSerie,
+            request.DocumentOrderNo,
+            cancellationToken);
 
         if (hasDiscrepancy && !request.AllowDiscrepancy)
         {
@@ -415,19 +428,101 @@ public sealed class AcceptWarehouseReceivingUseCase(
             lineResults);
     }
 
-    private static void EnsureEDespatchWasSent(
+    private async Task EnsureEDespatchWasSentAsync(
         IReadOnlyCollection<STOK_HAREKETLERI> movements,
         string documentSerie,
-        int documentOrderNo)
+        int documentOrderNo,
+        CancellationToken cancellationToken)
     {
-        var missingEDespatchMovement = movements.FirstOrDefault(movement => !HasSentEDespatch(movement));
-        if (missingEDespatchMovement is null)
+        if (movements.All(HasSentEDespatch))
         {
             return;
         }
 
-        throw new InvalidOperationException(
-            $"Inter warehouse shipment {documentSerie}/{documentOrderNo} can not be accepted before e-despatch is sent.");
+        if (TryResolveConsistentEDespatchMarker(movements, out var documentNo, out var uuid))
+        {
+            var firstMovement = movements.First();
+            var sourceWarehouseNo = firstMovement.sth_cikis_depo_no ?? 0;
+            var documentType = firstMovement.sth_normal_iade == ReturnMovement
+                ? DocumentFlowType.WarehouseReturn
+                : DocumentFlowType.InterWarehouseShipment;
+            var documentKey = DocumentFlowKeys.Create(
+                documentType,
+                sourceWarehouseNo,
+                documentSerie,
+                documentOrderNo);
+
+            var hasCompletedSubmission = await authDbContext.EDespatchSubmissions
+                .AsNoTracking()
+                .AnyAsync(
+                    submission =>
+                        submission.DocumentKey == documentKey &&
+                        submission.DocumentNo == documentNo &&
+                        submission.Uuid == uuid &&
+                        submission.Status == EDespatchSubmissionStatus.Completed,
+                    cancellationToken);
+
+            if (hasCompletedSubmission)
+            {
+                foreach (var movement in movements)
+                {
+                    movement.sth_kilitli = true;
+                }
+
+                logger.LogWarning(
+                    "Warehouse receiving e-despatch lock marker was repaired from the completed durable submission. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, DocumentNo={DocumentNo}, Uuid={Uuid}",
+                    documentSerie,
+                    documentOrderNo,
+                    documentNo,
+                    uuid);
+                return;
+            }
+        }
+
+        throw new OperationConflictException(
+            OperationConflictErrorCodes.WarehouseReceivingEDespatchRequired,
+            OperationConflictMessages.WarehouseReceivingEDespatchRequired,
+            retryable: false);
+    }
+
+    internal static bool TryResolveConsistentEDespatchMarker(
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        out string documentNo,
+        out string uuid)
+    {
+        documentNo = string.Empty;
+        uuid = string.Empty;
+
+        if (movements.Count == 0)
+        {
+            return false;
+        }
+
+        var markers = movements
+            .Select(movement => new
+            {
+                DocumentNo = movement.sth_belge_no?.Trim() ?? string.Empty,
+                Uuid = movement.sth_aciklama?.Trim() ?? string.Empty
+            })
+            .ToArray();
+        var firstMarker = markers[0];
+
+        if (!firstMarker.DocumentNo.StartsWith("FRM", StringComparison.OrdinalIgnoreCase) ||
+            !Guid.TryParse(firstMarker.Uuid, out _))
+        {
+            return false;
+        }
+
+        if (markers.Any(marker =>
+                !string.Equals(marker.DocumentNo, firstMarker.DocumentNo, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(marker.Uuid, firstMarker.Uuid, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        documentNo = firstMarker.DocumentNo;
+        uuid = firstMarker.Uuid;
+        return true;
     }
 
     internal static bool HasSentEDespatch(STOK_HAREKETLERI movement)

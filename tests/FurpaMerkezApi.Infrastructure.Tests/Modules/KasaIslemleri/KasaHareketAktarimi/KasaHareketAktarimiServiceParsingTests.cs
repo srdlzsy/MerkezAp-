@@ -10,6 +10,20 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.KasaIslemleri.KasaHareketA
 public sealed class KasaHareketAktarimiServiceParsingTests
 {
     [Theory]
+    [InlineData("StokHareketYaz")]
+    [InlineData("stokhareketyaz")]
+    public void ResolveProcedureCommandTimeoutUsesTenMinutesForStockMovementWrite(string procedureName)
+    {
+        Assert.Equal(600, KasaHareketAktarimiService.ResolveProcedureCommandTimeoutSeconds(procedureName));
+    }
+
+    [Fact]
+    public void ResolveProcedureCommandTimeoutKeepsDefaultForOtherProcedures()
+    {
+        Assert.Equal(300, KasaHareketAktarimiService.ResolveProcedureCommandTimeoutSeconds("HareketSil"));
+    }
+
+    [Theory]
     [InlineData("129.50", 129.50)]
     [InlineData("730.00", 730.00)]
     [InlineData("4625.17", 4625.17)]

@@ -27,6 +27,9 @@ public sealed class KasaHareketAktarimiService(
     private const string CancelPrefix = "IP";
     private const int PosExpenseCustomerDocumentType = 61;
     private const int PosSalesCustomerDocumentType = 63;
+    private const string StockMovementWriteProcedureName = "StokHareketYaz";
+    private const int DefaultProcedureCommandTimeoutSeconds = 300;
+    private const int StockMovementWriteCommandTimeoutSeconds = 600;
 
     private readonly Dictionary<string, string?> barcodeCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -2767,7 +2770,7 @@ public sealed class KasaHareketAktarimiService(
             await using var command = connection.CreateCommand();
             command.CommandText = procedureName;
             command.CommandType = CommandType.StoredProcedure;
-            command.CommandTimeout = 300;
+            command.CommandTimeout = ResolveProcedureCommandTimeoutSeconds(procedureName);
 
             foreach (var parameter in parameters)
             {
@@ -2794,7 +2797,7 @@ public sealed class KasaHareketAktarimiService(
             return $"{procedureName} calisti.";
         }
         catch (SqlException exception) when (
-            string.Equals(procedureName, "StokHareketYaz", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(procedureName, StockMovementWriteProcedureName, StringComparison.OrdinalIgnoreCase) &&
             exception.Number is 2601 or 2627)
         {
             throw new OperationConflictException(
@@ -2812,6 +2815,11 @@ public sealed class KasaHareketAktarimiService(
             }
         }
     }
+
+    internal static int ResolveProcedureCommandTimeoutSeconds(string procedureName) =>
+        string.Equals(procedureName, StockMovementWriteProcedureName, StringComparison.OrdinalIgnoreCase)
+            ? StockMovementWriteCommandTimeoutSeconds
+            : DefaultProcedureCommandTimeoutSeconds;
 
     private static async Task<int> ExecuteNonQueryAsync(
         DbConnection connection,

@@ -26,6 +26,9 @@ public static class OperationConflictMessages
     public const string WarehouseOrderLineClosed =
         "Bagli depo siparisi satiri daha once kapatilmis. Yeni sevk yazimi baslamadi; siparis listesini yenileyip acik satirla yeniden deneyin.";
 
+    public const string WarehouseReceivingEDespatchRequired =
+        "Depo mal kabulu yapilamadi. Evrakin e-irsaliye gonderimi tamamlanmamis. Once e-irsaliyeyi gonderip belge durumunu yenileyin.";
+
     public const string CreateReferenceNotFound =
         "Kayitta kullanilan cari, siparis veya diger referans Mikro'da bulunamadi. Yeni evrak yazimi baslamadi; secimleri yenileyip kaydi duzeltin.";
 
@@ -52,6 +55,7 @@ public static class OperationConflictMessages
             OperationConflictErrorCodes.MikroDocumentIdentityConflict => MikroDocumentIdentityConflict,
             OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived => MikroOfficialDocumentAlreadyReceived,
             OperationConflictErrorCodes.WarehouseOrderLineClosed => WarehouseOrderLineClosed,
+            OperationConflictErrorCodes.WarehouseReceivingEDespatchRequired => WarehouseReceivingEDespatchRequired,
             OperationConflictErrorCodes.CreateReferenceNotFound => CreateReferenceNotFound,
             OperationConflictErrorCodes.MikroBusinessRuleRejected => MikroBusinessRuleRejected,
             OperationConflictErrorCodes.ClientRequestPayloadMismatch => ClientRequestPayloadMismatch,

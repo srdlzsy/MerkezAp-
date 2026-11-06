@@ -41,6 +41,59 @@ public sealed class AcceptWarehouseReceivingUseCaseEDespatchTests
     }
 
     [Fact]
+    public void TryResolveConsistentEDespatchMarker_ReturnsMarker_WhenOldRowsLostOnlyLockFlag()
+    {
+        var uuid = Guid.NewGuid().ToString();
+        var movements = new[]
+        {
+            new STOK_HAREKETLERI
+            {
+                sth_kilitli = false,
+                sth_belge_no = "FRM2026000000001",
+                sth_aciklama = uuid
+            },
+            new STOK_HAREKETLERI
+            {
+                sth_kilitli = false,
+                sth_belge_no = "FRM2026000000001",
+                sth_aciklama = uuid
+            }
+        };
+
+        var resolved = AcceptWarehouseReceivingUseCase.TryResolveConsistentEDespatchMarker(
+            movements,
+            out var documentNo,
+            out var resolvedUuid);
+
+        Assert.True(resolved);
+        Assert.Equal("FRM2026000000001", documentNo);
+        Assert.Equal(uuid, resolvedUuid);
+    }
+
+    [Fact]
+    public void TryResolveConsistentEDespatchMarker_ReturnsFalse_WhenRowsHaveDifferentMarkers()
+    {
+        var movements = new[]
+        {
+            new STOK_HAREKETLERI
+            {
+                sth_belge_no = "FRM2026000000001",
+                sth_aciklama = Guid.NewGuid().ToString()
+            },
+            new STOK_HAREKETLERI
+            {
+                sth_belge_no = "FRM2026000000002",
+                sth_aciklama = Guid.NewGuid().ToString()
+            }
+        };
+
+        Assert.False(AcceptWarehouseReceivingUseCase.TryResolveConsistentEDespatchMarker(
+            movements,
+            out _,
+            out _));
+    }
+
+    [Fact]
     public void AcceptedDocument_AllowsIdempotentRetry_WhenQuantitiesMatch()
     {
         var movementGuid = Guid.NewGuid();
