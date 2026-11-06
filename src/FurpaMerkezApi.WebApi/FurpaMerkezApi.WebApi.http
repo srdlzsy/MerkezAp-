@@ -2510,6 +2510,16 @@ Accept: text/csv
 Authorization: Bearer {{token}}
 
 ###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/satis-mutabakat-raporu?Date=2026-11-01&BranchNo=156
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/satis-mutabakat-raporu/excel?Date=2026-11-01
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
 GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma?Date=2026-07-08&BranchNo=1&CashRegisterNo=1&Tolerance=0.01
 Accept: application/json
 Authorization: Bearer {{token}}
@@ -2559,6 +2569,99 @@ Content-Type: application/json
     "skipExisting":  false,
     "dryRun":  false
 }
+
+###
+
+# Hareket Dosyası Bilgisi Sorgula (Şube Kasası & Merkez)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/bilgi?BranchNo=101&CashRegisterNo=1&Date=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Şubeden Merkeze Hareket Dosyası Kopyala (Dosya Çekme)
+POST {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/kopyala
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "branchNo": 101,
+    "cashRegisterNo": 1,
+    "date": "2026-11-01",
+    "overwrite": true
+}
+
+###
+# Hareket Dosyası İçeriği İncele (Web Notepad++)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/icerik?BranchNo=101&CashRegisterNo=1&Date=2026-11-01&TargetLocation=destination&MaxLines=200
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Kasa Bazlı Z Raporu Detayı (FormDetay)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/kasa-z-detay?BranchNo=101&Date=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Birlik Kart / Hediye Kartı Raporu (FrmBirlikKart)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/birlik-kart-raporu?Date=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Birlik Kart Raporu Excel/CSV
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/birlik-kart-raporu/excel?Date=2026-11-01
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
+# Belge / Fiş İptal Raporu (FrmBelgeIptal)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/belge-iptal-raporu?StartDate=2026-11-01&EndDate=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Belge / Fiş İptal Raporu Excel/CSV
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/belge-iptal-raporu/excel?StartDate=2026-11-01&EndDate=2026-11-01
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
+# Gider Pusulası Raporu (FrmGiderPusulasi)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/gider-pusulasi-raporu?StartDate=2026-11-01&EndDate=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Gider Pusulası Raporu Excel/CSV
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/gider-pusulasi-raporu/excel?StartDate=2026-11-01&EndDate=2026-11-01
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
+# Trendyol Fiş Raporu (FrmTrendyol)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/trendyol-raporu?Date=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Trendyol Fiş Raporu Excel/CSV
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/trendyol-raporu/excel?Date=2026-11-01
+Accept: text/csv
+Authorization: Bearer {{token}}
+
+###
+# Nakit Raporu (FrmNakitRapor)
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/nakit-raporu?Date=2026-11-01
+Accept: application/json
+Authorization: Bearer {{token}}
+
+###
+# Nakit Raporu Excel/CSV
+GET {{baseUrl}}/api/kasa-islemleri/kasa-hareket-aktarimi/nakit-raporu/excel?Date=2026-11-01
+Accept: text/csv
+Authorization: Bearer {{token}}
 
 ###
 

@@ -52,11 +52,59 @@ public interface IKasaHareketAktarimiService
         KasaHareketSalesComparisonRequest request,
         CancellationToken cancellationToken);
 
+    Task<KasaHareketSatisMutabakatReportDto> GetSatisMutabakatReportAsync(
+        KasaHareketSatisMutabakatRequest request,
+        CancellationToken cancellationToken);
+
     Task<KasaHareketCashSummaryComparisonDto> GetCashSummaryComparisonAsync(
         KasaHareketCashSummaryComparisonRequest request,
         CancellationToken cancellationToken);
 
     Task<KasaHareketDetailDto> GetDetailAsync(
         KasaHareketDetailRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketDosyaBilgiDto> GetHareketDosyaBilgisiAsync(
+        KasaHareketDosyaBilgiRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketDosyaKopyalaResultDto> KopyalaHareketDosyasiAsync(
+        KasaHareketDosyaKopyalaRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketDosyaIcerikDto> OkuHareketDosyasiIcerigiAsync(
+        KasaHareketDosyaIcerikRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketKasaZDetayReportDto> GetKasaZDetayReportAsync(
+        KasaHareketKasaZDetayRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketBirlikKartReportDto> GetBirlikKartReportAsync(
+        KasaHareketBirlikKartRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketFisIptalReportDto> GetFisIptalReportAsync(
+        KasaHareketFisIptalRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketFisIptalDetailDto> GetFisIptalDetailAsync(
+        Guid faturaGuid,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketGiderPusulasiReportDto> GetGiderPusulasiReportAsync(
+        KasaHareketGiderPusulasiRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketGiderPusulasiDetailDto> GetGiderPusulasiDetailAsync(
+        Guid faturaGuid,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketTrendyolReportDto> GetTrendyolReportAsync(
+        KasaHareketTrendyolRequest request,
+        CancellationToken cancellationToken);
+
+    Task<KasaHareketNakitReportDto> GetNakitReportAsync(
+        KasaHareketNakitRequest request,
         CancellationToken cancellationToken);
 }
