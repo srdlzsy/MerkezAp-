@@ -408,6 +408,7 @@ public sealed class LabelProductQueryExecutor(
             var price = row.CurrentPrice?.sfiyat_fiyati ?? row.LatestPriceChange?.fid_yenifiy_tutar ?? 0d;
             var lastUpdateDate = row.sto_lastup_date ?? row.CurrentPrice?.sfiyat_lastup_date ?? row.sto_create_date;
             var priceChangeDate = row.LatestPriceChange?.fid_lastup_date
+                ?? row.LatestPriceChange?.fid_create_date
                 ?? row.LatestPriceChange?.fid_tarih
                 ?? row.LatestPriceChange?.fid_belge_tarih;
             var isPassive = row.sdp_Pasif_fl ?? row.sto_pasif_fl ?? false;
@@ -428,7 +429,7 @@ public sealed class LabelProductQueryExecutor(
                 Barcode = row.Barcode ?? string.Empty,
                 OldPrice = oldPrice,
                 Price = price,
-                PriceChangeDate = priceChangeDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
+                PriceChangeDate = priceChangeDate?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? string.Empty,
                 SupplierCode = row.sdp_sat_cari_kod ?? row.sto_sat_cari_kod ?? string.Empty,
                 IsClosedToSale = Convert.ToByte(row.sdp_satisdursun ?? row.sto_satis_dursun ?? 0),
                 IsClosedToOrder = Convert.ToByte(row.sdp_sipdursun ?? row.sto_siparis_dursun ?? 0),
