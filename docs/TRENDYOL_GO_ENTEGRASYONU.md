@@ -101,6 +101,7 @@ POS worker varsayilan olarak depo `BranchDetails.BranchIpAddress` adresini kulla
 - Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Trendyol gonderimi ve kullanici ekrani hata almaz veya bu ag beklemesini yasamaz.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
 - Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Yazma once tarih kontrollu `UPDATE`, kayit yoksa `INSERT` uygular; uzak POS veritabaninda benzersiz indeks bulunmasina bagimli degildir. Fiyat ve depo blok tarihleri birbirinden bagimsiz karsilastirilir.
+- Basarili kalemler `public.stoksatisfiyat` tablosuna yazildiktan sonra ayni PostgreSQL transaction'i icinde `public.sync` tablosundaki `online_satis_fiyatlari_sync` anahtari ilerletilir. Kasa yeni anahtari ancak fiyat ve satis-durdurma satirlari eksiksiz kaydedildiginde gorur.
 8. Kabul edilen istegin `batchRequestId` degeri kalici takip tablosuna yazilir. Worker `GET /products/batch-requests/{id}` sonucunu periyodik kontrol eder. Toplu modlarda backend Trendyol limitine uygun en fazla 1000 satirlik paketlemeyi kendisi yapar; UI katalog sayfalama veya paket yonetimi yapmaz.
 
 ### Dogrudan degisiklik gonderimi
@@ -109,8 +110,8 @@ POS worker varsayilan olarak depo `BranchDetails.BranchIpAddress` adresini kulla
 
 Onizleme ham depo stokunu, magaza rezervini ve TGO'ya gidecek net stogu ayri alanlarda gosterir. Ornegin depo stoku `10`, rezerv `2` ise TGO miktari `8`; depo stoku `2` veya daha azsa TGO miktari `0` olur. Ayni hesap snapshot, dogrudan gonderim ve katalog eksigi tamamlandiktan sonraki otomatik ilk fiyat/stok gonderiminde kullanilir.
 
-1. Mikro'dan secilen barkodlar en fazla 1000 satirlik fiyat/stok batch'lerine gonderilir ve kalici takibe alinir.
-2. Worker TGO batch sonucunu urun bazinda kontrol eder; basarili barkodlari sube POS kuyruguna yazar.
+1. Mikro'da aktif olan barkodlar en fazla 1000 satirlik fiyat/stok batch'lerine gonderilir. Satisi durdurulan, pasife alinan, web gonderimi kapatilan veya fiyati iptal edilen barkodlar `SELLER_CLOSED` sebebiyle magazaya ozel `sale-off` batch'ine ayrilir.
+2. Fiyat, stok ve satis kapatma batch'leri kalici takibe alinir. Worker TGO sonucunu urun bazinda kontrol eder; yalniz basarili barkodlari sube POS kuyruguna yazar.
 3. TGO'nun katalogda bulunamadigi icin reddettigi barkodlarda katalog snapshot'i yalniz bu hata olustugunda yenilenir.
 4. Eksik barkodlar Mikro marka, kategori, KDV ve barkod kurallarini geciyorsa katalog create batch'ine gonderilir.
 5. Katalog batch'i kabul edilince worker katalogu yeniden okur ve ayni urunlerin ilk fiyat/stok batch'ini otomatik acar. Kullanici yeniden gondermez.

@@ -41,6 +41,20 @@ internal sealed class TrendyolGoBatchFollowUpQueue(
             new TrendyolGoBatchFollowUpPayload(items, catalogBarcodes, false),
             cancellationToken);
 
+    public Task<Guid> EnqueueSaleStatusAsync(
+        string batchRequestId,
+        long storeId,
+        int warehouseNo,
+        IReadOnlyCollection<TrendyolGoDeferredPriceStockItem> items,
+        CancellationToken cancellationToken) =>
+        EnqueueAsync(
+            TrendyolGoBatchFollowUpKind.SaleStatus,
+            batchRequestId,
+            storeId,
+            warehouseNo,
+            new TrendyolGoBatchFollowUpPayload(items, [], false),
+            cancellationToken);
+
     public async Task<IReadOnlyCollection<TrendyolGoBatchWorkflowDto>> ListAsync(
         int take,
         CancellationToken cancellationToken)

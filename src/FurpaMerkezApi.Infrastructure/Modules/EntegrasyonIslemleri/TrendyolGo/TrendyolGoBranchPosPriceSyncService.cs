@@ -134,6 +134,12 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
                     cancellationToken);
             }
 
+            await AdvanceOnlinePriceSyncKeyAsync(
+                connection,
+                transaction,
+                task.Id,
+                cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
             task.MarkSucceeded(clock.UtcNow);
             await authDbContext.SaveChangesAsync(cancellationToken);
@@ -227,6 +233,14 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         );
         """;
 
+    internal const string AdvanceSyncKeyCommandText = """
+        INSERT INTO public.sync (sync_type, sync_key, created_at, updated_at)
+        VALUES ('online_satis_fiyatlari_sync', @sync_key, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (sync_type) DO UPDATE
+        SET sync_key = EXCLUDED.sync_key,
+            updated_at = CURRENT_TIMESTAMP;
+        """;
+
     private static async Task UpsertAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -252,6 +266,19 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         command.Parameters.AddWithValue(
             "sdp_lastup_date",
             ResolveSourceVersion(item.WarehouseUpdatedAtUtc, taskCreatedAtUtc));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AdvanceOnlinePriceSyncKeyAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = AdvanceSyncKeyCommandText;
+        command.Parameters.AddWithValue("sync_key", $"FurpaMerkezApi_{taskId:N}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

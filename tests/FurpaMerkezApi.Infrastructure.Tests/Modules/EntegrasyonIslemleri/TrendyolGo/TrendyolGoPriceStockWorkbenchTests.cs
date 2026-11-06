@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
+using FurpaMerkezApi.Domain.Entities;
 using System.Text.Json;
 using Xunit;
 
@@ -438,6 +439,29 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     }
 
     [Fact]
+    public void BranchPosSync_AdvancesOnlineSalesPriceKeyAfterPriceRows()
+    {
+        Assert.Contains(
+            "public.sync",
+            TrendyolGoBranchPosPriceSyncService.AdvanceSyncKeyCommandText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "online_satis_fiyatlari_sync",
+            TrendyolGoBranchPosPriceSyncService.AdvanceSyncKeyCommandText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ON CONFLICT (sync_type) DO UPDATE",
+            TrendyolGoBranchPosPriceSyncService.AdvanceSyncKeyCommandText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BatchFollowUp_HasDedicatedSaleStatusKind()
+    {
+        Assert.Equal(3, (int)TrendyolGoBatchFollowUpKind.SaleStatus);
+    }
+
+    [Fact]
     public void DirectDispatch_AutoCreatesOnlyForMissingCatalogErrorsWhenEnabled()
     {
         var missingCatalog = new HttpRequestException(
@@ -502,6 +526,23 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
         Assert.Equal(49.90m, item.SellingPrice);
         Assert.Equal(12, item.Quantity);
         Assert.True(item.PriceChangedFlag);
+    }
+
+    [Fact]
+    public void SaleOffPayload_IsStoreScopedAndUsesSellerClosedReason()
+    {
+        TrendyolGoDirectPriceStockItem[] items =
+        [
+            new("8690000000001", "STK001", "Test Urun", 49.90m, 0, true, null, 50, SalesBlocked: 1)
+        ];
+
+        var payload = TrendyolGoPriceStockWorkbench.BuildSaleOffPayload(486064, items);
+        var row = payload.GetProperty("items")[0];
+
+        Assert.Equal("8690000000001", row.GetProperty("barcode").GetString());
+        Assert.Equal("SELLER_CLOSED", row.GetProperty("saleOffReason").GetString());
+        Assert.Equal(486064, row.GetProperty("storeId").GetInt64());
+        Assert.False(row.TryGetProperty("sellingPrice", out _));
     }
 
     private static TrendyolGoPriceStockRow[] CreateDispatchRows() =>

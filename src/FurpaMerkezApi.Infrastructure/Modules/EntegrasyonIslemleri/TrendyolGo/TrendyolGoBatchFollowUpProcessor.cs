@@ -78,13 +78,22 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
                         : $"Trendyol Go batch status: {parsed.Status}.",
                     now.Add(PollInterval));
             }
-            else if (task.Kind == TrendyolGoBatchFollowUpKind.PriceStock)
-            {
-                await CompletePriceStockAsync(task, parsed, now, cancellationToken);
-            }
             else
             {
-                await CompleteCatalogAndQueuePriceStockAsync(task, parsed, now, cancellationToken);
+                switch (task.Kind)
+                {
+                    case TrendyolGoBatchFollowUpKind.PriceStock:
+                        await CompletePriceStockAsync(task, parsed, now, cancellationToken);
+                        break;
+                    case TrendyolGoBatchFollowUpKind.CatalogThenPriceStock:
+                        await CompleteCatalogAndQueuePriceStockAsync(task, parsed, now, cancellationToken);
+                        break;
+                    case TrendyolGoBatchFollowUpKind.SaleStatus:
+                        await CompleteSaleStatusAsync(task, parsed, now, cancellationToken);
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Unsupported Trendyol Go batch kind: {task.Kind}.");
+                }
             }
 
             await authDbContext.SaveChangesAsync(cancellationToken);
@@ -167,6 +176,46 @@ internal sealed class TrendyolGoBatchFollowUpProcessor(
         }
 
         task.MarkSucceeded(summary, now);
+    }
+
+    private async Task CompleteSaleStatusAsync(
+        TrendyolGoBatchFollowUpTask task,
+        TrendyolGoParsedBatchResult parsed,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var payload = DeserializePayload(task);
+        var successfulItems = SelectSuccessfulItems(payload.Items, parsed);
+        if (successfulItems.Length > 0)
+        {
+            await branchPosPriceSync.EnqueueRequiredAsync(
+                task.StoreId,
+                task.WarehouseNo,
+                successfulItems.Select(item => item.ToBranchPosItem()).ToArray(),
+                cancellationToken);
+        }
+
+        var summary =
+            $"TGO satis kapatma batch'i tamamlandi. Basarili={successfulItems.Length}, Hatali={parsed.FailedItemCount}. " +
+            (successfulItems.Length > 0
+                ? "Basarili urunler sube POS kuyruguna yazildi."
+                : "Sube POS kuyruguna urun yazilmadi.");
+
+        if (parsed.FailedItemCount == 0)
+        {
+            task.MarkSucceeded(summary, now);
+            return;
+        }
+
+        var error = BuildFailureMessage(parsed);
+        if (successfulItems.Length == 0)
+        {
+            task.MarkFailed(error, now);
+        }
+        else
+        {
+            task.MarkPartiallySucceeded(summary, error, now);
+        }
     }
 
     private async Task<CatalogRecoveryOutcome> QueueMissingCatalogRecoveryAsync(

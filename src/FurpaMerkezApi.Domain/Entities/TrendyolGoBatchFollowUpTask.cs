@@ -97,7 +97,8 @@ public sealed class TrendyolGoBatchFollowUpTask
 public enum TrendyolGoBatchFollowUpKind
 {
     PriceStock = 1,
-    CatalogThenPriceStock = 2
+    CatalogThenPriceStock = 2,
+    SaleStatus = 3
 }
 
 public enum TrendyolGoBatchFollowUpStatus
