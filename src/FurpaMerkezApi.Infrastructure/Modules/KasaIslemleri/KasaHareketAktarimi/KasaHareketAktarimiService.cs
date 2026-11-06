@@ -1157,6 +1157,106 @@ public sealed class KasaHareketAktarimiService(
 
         var date = (request.Date ?? DateTime.Today).Date;
         var dateFormatted = date.ToString("ddMMyy", CultureInfo.InvariantCulture);
+
+        if (request.CashRegisterNo == 0)
+        {
+            var allCashRegs = await furpaDbContext.CashRegistryDetails
+                .AsNoTracking()
+                .Where(c => c.BranchNo == request.BranchNo)
+                .OrderBy(c => c.CashRegisterNo)
+                .Select(c => c.CashRegisterNo)
+                .ToArrayAsync(cancellationToken);
+
+            var bDetail = await furpaDbContext.BranchDetails
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.BranchNo == request.BranchNo, cancellationToken);
+
+            var dep = await mikroDbContext.DEPOLARs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(d => d.dep_no == request.BranchNo, cancellationToken);
+
+            var bName = dep?.dep_adi ?? string.Empty;
+            var bIp = bDetail?.BranchIpAddress ?? string.Empty;
+            var pGenel = bDetail?.PosGenelFolderPath ?? string.Empty;
+
+            var cRoot = ResolveFileRootPath(null);
+            var cFolderPath = Path.Combine(cRoot, request.BranchNo.ToString(CultureInfo.InvariantCulture));
+
+            int sourceExistingCount = 0;
+            long totalSourceBytes = 0;
+            DateTime? latestSourceModified = null;
+
+            int destExistingCount = 0;
+            long totalDestBytes = 0;
+            DateTime? latestDestModified = null;
+
+            foreach (var crNo in allCashRegs)
+            {
+                var kasaStr = crNo.ToString("D3", CultureInfo.InvariantCulture);
+                var fn = $"HR{dateFormatted}.{kasaStr}";
+
+                if (!string.IsNullOrWhiteSpace(bIp))
+                {
+                    var sp = $@"\\{bIp}\{pGenel.Trim('\\')}\{fn}";
+                    try
+                    {
+                        if (File.Exists(sp))
+                        {
+                            var fi = new FileInfo(sp);
+                            sourceExistingCount++;
+                            totalSourceBytes += fi.Length;
+                            if (latestSourceModified == null || fi.LastWriteTime > latestSourceModified)
+                            {
+                                latestSourceModified = fi.LastWriteTime;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                var dp = Path.Combine(cFolderPath, fn);
+                try
+                {
+                    if (File.Exists(dp))
+                    {
+                        var fi = new FileInfo(dp);
+                        destExistingCount++;
+                        totalDestBytes += fi.Length;
+                        if (latestDestModified == null || fi.LastWriteTime > latestDestModified)
+                        {
+                            latestDestModified = fi.LastWriteTime;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return new KasaHareketDosyaBilgiDto(
+                request.BranchNo,
+                bName,
+                0,
+                "TÜM",
+                date,
+                $"HR{dateFormatted}.* (Tüm Kasalar: {allCashRegs.Length} Kasa)",
+                bIp,
+                pGenel,
+                string.IsNullOrWhiteSpace(bIp)
+                    ? string.Empty
+                    : $@"\\{bIp}\{pGenel.Trim('\\')}\HR{dateFormatted}.* ({sourceExistingCount}/{allCashRegs.Length} kasa mevcut)",
+                sourceExistingCount > 0,
+                totalSourceBytes,
+                latestSourceModified,
+                cFolderPath,
+                Path.Combine(cFolderPath, $"HR{dateFormatted}.* ({destExistingCount}/{allCashRegs.Length} kasa mevcut)"),
+                destExistingCount > 0,
+                totalDestBytes,
+                latestDestModified);
+        }
+
         var formattedKasaNo = request.CashRegisterNo.ToString("D3", CultureInfo.InvariantCulture);
         var fileName = $"HR{dateFormatted}.{formattedKasaNo}";
 
@@ -1243,6 +1343,79 @@ public sealed class KasaHareketAktarimiService(
         KasaHareketDosyaKopyalaRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.CashRegisterNo == 0)
+        {
+            var allCashRegs = await furpaDbContext.CashRegistryDetails
+                .AsNoTracking()
+                .Where(c => c.BranchNo == request.BranchNo)
+                .OrderBy(c => c.CashRegisterNo)
+                .Select(c => c.CashRegisterNo)
+                .ToArrayAsync(cancellationToken);
+
+            if (allCashRegs.Length == 0)
+            {
+                return new KasaHareketDosyaKopyalaResultDto(
+                    false,
+                    $"{request.BranchNo} numaralı şube için kayıtlı kasa tanımı bulunamadı.",
+                    string.Empty,
+                    string.Empty,
+                    0,
+                    0);
+            }
+
+            var swTotal = System.Diagnostics.Stopwatch.StartNew();
+            int successCount = 0;
+            int notFoundCount = 0;
+            long totalBytes = 0;
+            var errList = new List<string>();
+
+            foreach (var crNo in allCashRegs)
+            {
+                var singleResult = await KopyalaHareketDosyasiAsync(
+                    new KasaHareketDosyaKopyalaRequest(request.BranchNo, crNo, request.Date, request.Overwrite),
+                    cancellationToken);
+
+                if (singleResult.Success)
+                {
+                    successCount++;
+                    totalBytes += singleResult.BytesCopied;
+                }
+                else
+                {
+                    if (singleResult.Message.Contains("bulunamadı"))
+                    {
+                        notFoundCount++;
+                    }
+                    else
+                    {
+                        errList.Add($"Kasa {crNo}: {singleResult.Message}");
+                    }
+                }
+            }
+
+            swTotal.Stop();
+            var summary = $"Şube {request.BranchNo}: {allCashRegs.Length} kasadan {successCount} tanesi başarıyla kopyalandı ({totalBytes:N0} bayt, {swTotal.ElapsedMilliseconds} ms).";
+            if (notFoundCount > 0)
+            {
+                summary += $" ({notFoundCount} kasada dosya bulunamadı)";
+            }
+            if (errList.Count > 0)
+            {
+                summary += $" Detay: {string.Join("; ", errList)}";
+            }
+
+            var cRoot = ResolveFileRootPath(null);
+            var cFolder = Path.Combine(cRoot, request.BranchNo.ToString(CultureInfo.InvariantCulture));
+
+            return new KasaHareketDosyaKopyalaResultDto(
+                successCount > 0,
+                summary,
+                $"Şube {request.BranchNo} tüm kasalar",
+                cFolder,
+                totalBytes,
+                swTotal.ElapsedMilliseconds);
+        }
+
         var info = await GetHareketDosyaBilgisiAsync(
             new KasaHareketDosyaBilgiRequest(request.BranchNo, request.CashRegisterNo, request.Date),
             cancellationToken);
@@ -1329,6 +1502,11 @@ public sealed class KasaHareketAktarimiService(
         KasaHareketDosyaIcerikRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.CashRegisterNo == 0)
+        {
+            throw new ArgumentException("Dosya içeriğini görüntülemek için belirli bir kasa numarası seçilmelidir.", nameof(request.CashRegisterNo));
+        }
+
         var info = await GetHareketDosyaBilgisiAsync(
             new KasaHareketDosyaBilgiRequest(request.BranchNo, request.CashRegisterNo, request.Date),
             cancellationToken);
@@ -1412,32 +1590,46 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var rows = new List<KasaHareketKasaZDetayRowDto>();
-        await using var connection = mikroDbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 60;
-
-        var pDate = command.CreateParameter();
-        pDate.ParameterName = "@date";
-        pDate.Value = request.Date.Date;
-        command.Parameters.Add(pDate);
-
-        var pBranch = command.CreateParameter();
-        pBranch.ParameterName = "@branchNo";
-        pBranch.Value = request.BranchNo;
-        command.Parameters.Add(pBranch);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+        if (shouldClose)
         {
-            rows.Add(new KasaHareketKasaZDetayRowDto(
-                ReadInt(reader, "BranchNo"),
-                ReadString(reader, "KasaNo"),
-                Round(ReadDecimal(reader, "ZTutari")),
-                ReadString(reader, "DocumentSeries"),
-                ReadInt(reader, "DocumentSequence"),
-                ReadString(reader, "Description")));
+            await connection.OpenAsync(cancellationToken);
+        }
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 60;
+
+            var pDate = command.CreateParameter();
+            pDate.ParameterName = "@date";
+            pDate.Value = request.Date.Date;
+            command.Parameters.Add(pDate);
+
+            var pBranch = command.CreateParameter();
+            pBranch.ParameterName = "@branchNo";
+            pBranch.Value = request.BranchNo;
+            command.Parameters.Add(pBranch);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add(new KasaHareketKasaZDetayRowDto(
+                    ReadInt(reader, "BranchNo"),
+                    ReadString(reader, "KasaNo"),
+                    Round(ReadDecimal(reader, "ZTutari")),
+                    ReadString(reader, "DocumentSeries"),
+                    ReadInt(reader, "DocumentSequence"),
+                    ReadString(reader, "Description")));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
 
         var total = rows.Sum(r => r.ZTutari);
@@ -1477,38 +1669,52 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var rows = new List<KasaHareketBirlikKartRowDto>();
-        await using var connection = furpaDbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 60;
-
-        var pDate = command.CreateParameter();
-        pDate.ParameterName = "@date";
-        pDate.Value = businessDate;
-        command.Parameters.Add(pDate);
-
-        var pBranch = command.CreateParameter();
-        pBranch.ParameterName = "@branchNo";
-        pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
-        command.Parameters.Add(pBranch);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var connection = furpaDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+        if (shouldClose)
         {
-            var memoryCode = ReadString(reader, "KasaMaliBellekKodu");
-            var branchNo = ReadInt(reader, "SubeNo");
-            var cashRegNo = ReadInt(reader, "CashRegisterNo");
-            var amount = ReadDecimal(reader, "Toplam");
-            var cardNo = ReadString(reader, "CekNumarasi");
+            await connection.OpenAsync(cancellationToken);
+        }
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 60;
 
-            rows.Add(new KasaHareketBirlikKartRowDto(
-                branchNo,
-                branchNames.GetValueOrDefault(branchNo, string.Empty),
-                memoryCode,
-                cashRegNo,
-                Round(amount),
-                cardNo));
+            var pDate = command.CreateParameter();
+            pDate.ParameterName = "@date";
+            pDate.Value = businessDate;
+            command.Parameters.Add(pDate);
+
+            var pBranch = command.CreateParameter();
+            pBranch.ParameterName = "@branchNo";
+            pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
+            command.Parameters.Add(pBranch);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var memoryCode = ReadString(reader, "KasaMaliBellekKodu");
+                var branchNo = ReadInt(reader, "SubeNo");
+                var cashRegNo = ReadInt(reader, "CashRegisterNo");
+                var amount = ReadDecimal(reader, "Toplam");
+                var cardNo = ReadString(reader, "CekNumarasi");
+
+                rows.Add(new KasaHareketBirlikKartRowDto(
+                    branchNo,
+                    branchNames.GetValueOrDefault(branchNo, string.Empty),
+                    memoryCode,
+                    cashRegNo,
+                    Round(amount),
+                    cardNo));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
 
         var totalAmount = rows.Sum(r => r.Tutar);
@@ -1558,55 +1764,69 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var rows = new List<KasaHareketFisIptalRowDto>();
-        await using var connection = furpaDbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 90;
-
-        var pStart = command.CreateParameter();
-        pStart.ParameterName = "@startDate";
-        pStart.Value = request.StartDate.Date;
-        command.Parameters.Add(pStart);
-
-        var pEnd = command.CreateParameter();
-        pEnd.ParameterName = "@endDate";
-        pEnd.Value = request.EndDate.Date;
-        command.Parameters.Add(pEnd);
-
-        var pBranch = command.CreateParameter();
-        pBranch.ParameterName = "@branchNo";
-        pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
-        command.Parameters.Add(pBranch);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var connection = furpaDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+        if (shouldClose)
         {
-            var branchNo = ReadInt(reader, "SubeNo");
-            var tarih = ReadDateTime(reader, "Tarih");
-            var saat = ReadString(reader, "Saat");
-            var zNo = ReadInt(reader, "ZNo");
-            var fisNo = ReadInt(reader, "FisNo");
-            var kasaNo = ReadInt(reader, "KasaNo");
-            var tutar = ReadDecimal(reader, "Tutar");
-            var cashierName = ReadString(reader, "CashierName");
-            var cashierCode = ReadInt(reader, "CashierCode");
-            var faturaGuid = ReadGuid(reader, "FaturaGuid");
+            await connection.OpenAsync(cancellationToken);
+        }
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 90;
 
-            var meta = branchDict.GetValueOrDefault(branchNo);
-            rows.Add(new KasaHareketFisIptalRowDto(
-                meta.Region ?? string.Empty,
-                branchNo,
-                meta.Name ?? string.Empty,
-                tarih,
-                saat,
-                zNo,
-                fisNo,
-                kasaNo,
-                Round(tutar),
-                cashierName,
-                cashierCode,
-                faturaGuid));
+            var pStart = command.CreateParameter();
+            pStart.ParameterName = "@startDate";
+            pStart.Value = request.StartDate.Date;
+            command.Parameters.Add(pStart);
+
+            var pEnd = command.CreateParameter();
+            pEnd.ParameterName = "@endDate";
+            pEnd.Value = request.EndDate.Date;
+            command.Parameters.Add(pEnd);
+
+            var pBranch = command.CreateParameter();
+            pBranch.ParameterName = "@branchNo";
+            pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
+            command.Parameters.Add(pBranch);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var branchNo = ReadInt(reader, "SubeNo");
+                var tarih = ReadDateTime(reader, "Tarih");
+                var saat = ReadString(reader, "Saat");
+                var zNo = ReadInt(reader, "ZNo");
+                var fisNo = ReadInt(reader, "FisNo");
+                var kasaNo = ReadInt(reader, "KasaNo");
+                var tutar = ReadDecimal(reader, "Tutar");
+                var cashierName = ReadString(reader, "CashierName");
+                var cashierCode = ReadInt(reader, "CashierCode");
+                var faturaGuid = ReadGuid(reader, "FaturaGuid");
+
+                var meta = branchDict.GetValueOrDefault(branchNo);
+                rows.Add(new KasaHareketFisIptalRowDto(
+                    meta.Region ?? string.Empty,
+                    branchNo,
+                    meta.Name ?? string.Empty,
+                    tarih,
+                    saat,
+                    zNo,
+                    fisNo,
+                    kasaNo,
+                    Round(tutar),
+                    cashierName,
+                    cashierCode,
+                    faturaGuid));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
 
         var totalAmount = rows.Sum(r => r.Tutar);
@@ -1650,39 +1870,6 @@ public sealed class KasaHareketAktarimiService(
         decimal toplamTutar = 0;
         bool found = false;
 
-        await using (var furpaConn = furpaDbContext.Database.GetDbConnection())
-        {
-            await furpaConn.OpenAsync(cancellationToken);
-            await using var headerCmd = furpaConn.CreateCommand();
-            headerCmd.CommandText = headerSql;
-            var pGuid = headerCmd.CreateParameter();
-            pGuid.ParameterName = "@faturaGuid";
-            pGuid.Value = faturaGuid;
-            headerCmd.Parameters.Add(pGuid);
-
-            await using var headerReader = await headerCmd.ExecuteReaderAsync(cancellationToken);
-            if (await headerReader.ReadAsync(cancellationToken))
-            {
-                found = true;
-                tarih = ReadDateTime(headerReader, "Tarih");
-                saat = ReadString(headerReader, "Saat");
-                branchNo = ReadInt(headerReader, "SubeNo");
-                kasaNo = ReadInt(headerReader, "KasaNo");
-                cashierName = ReadString(headerReader, "CashierName");
-                toplamTutar = ReadDecimal(headerReader, "ToplamTutar");
-            }
-        }
-
-        if (!found)
-        {
-            throw new KeyNotFoundException($"İptal fiş belgesi bulunamadı: {faturaGuid}");
-        }
-
-        var depo = await mikroDbContext.DEPOLARs
-            .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.dep_no == branchNo, cancellationToken);
-        var branchName = depo?.dep_adi ?? string.Empty;
-
         const string lineSql = """
             SELECT
                 ISNULL(a.Barkod, '') AS Barcode,
@@ -1694,26 +1881,71 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var tempLines = new List<(string Barcode, decimal Quantity, decimal UnitPrice, decimal LineTotal)>();
-        await using (var furpaConn = furpaDbContext.Database.GetDbConnection())
+        var furpaConn = furpaDbContext.Database.GetDbConnection();
+        var shouldCloseFurpa = furpaConn.State == ConnectionState.Closed;
+        if (shouldCloseFurpa)
         {
             await furpaConn.OpenAsync(cancellationToken);
-            await using var lineCmd = furpaConn.CreateCommand();
-            lineCmd.CommandText = lineSql;
-            var pGuid = lineCmd.CreateParameter();
-            pGuid.ParameterName = "@faturaGuid";
-            pGuid.Value = faturaGuid;
-            lineCmd.Parameters.Add(pGuid);
-
-            await using var lineReader = await lineCmd.ExecuteReaderAsync(cancellationToken);
-            while (await lineReader.ReadAsync(cancellationToken))
+        }
+        try
+        {
+            await using (var headerCmd = furpaConn.CreateCommand())
             {
-                tempLines.Add((
-                    ReadString(lineReader, "Barcode"),
-                    ReadDecimal(lineReader, "Quantity"),
-                    ReadDecimal(lineReader, "UnitPrice"),
-                    ReadDecimal(lineReader, "LineTotal")));
+                headerCmd.CommandText = headerSql;
+                var pGuid = headerCmd.CreateParameter();
+                pGuid.ParameterName = "@faturaGuid";
+                pGuid.Value = faturaGuid;
+                headerCmd.Parameters.Add(pGuid);
+
+                await using var headerReader = await headerCmd.ExecuteReaderAsync(cancellationToken);
+                if (await headerReader.ReadAsync(cancellationToken))
+                {
+                    found = true;
+                    tarih = ReadDateTime(headerReader, "Tarih");
+                    saat = ReadString(headerReader, "Saat");
+                    branchNo = ReadInt(headerReader, "SubeNo");
+                    kasaNo = ReadInt(headerReader, "KasaNo");
+                    cashierName = ReadString(headerReader, "CashierName");
+                    toplamTutar = ReadDecimal(headerReader, "ToplamTutar");
+                }
+            }
+
+            if (!found)
+            {
+                throw new KeyNotFoundException($"İptal fiş belgesi bulunamadı: {faturaGuid}");
+            }
+
+            await using (var lineCmd = furpaConn.CreateCommand())
+            {
+                lineCmd.CommandText = lineSql;
+                var pGuid = lineCmd.CreateParameter();
+                pGuid.ParameterName = "@faturaGuid";
+                pGuid.Value = faturaGuid;
+                lineCmd.Parameters.Add(pGuid);
+
+                await using var lineReader = await lineCmd.ExecuteReaderAsync(cancellationToken);
+                while (await lineReader.ReadAsync(cancellationToken))
+                {
+                    tempLines.Add((
+                        ReadString(lineReader, "Barcode"),
+                        ReadDecimal(lineReader, "Quantity"),
+                        ReadDecimal(lineReader, "UnitPrice"),
+                        ReadDecimal(lineReader, "LineTotal")));
+                }
             }
         }
+        finally
+        {
+            if (shouldCloseFurpa)
+            {
+                await furpaConn.CloseAsync();
+            }
+        }
+
+        var depo = await mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.dep_no == branchNo, cancellationToken);
+        var branchName = depo?.dep_adi ?? string.Empty;
 
         var barcodes = tempLines.Select(l => l.Barcode).Where(b => !string.IsNullOrWhiteSpace(b)).Distinct().ToArray();
         var barcodeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1792,51 +2024,65 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var rows = new List<KasaHareketGiderPusulasiRowDto>();
-        await using var connection = furpaDbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 90;
-
-        var pStart = command.CreateParameter();
-        pStart.ParameterName = "@startDate";
-        pStart.Value = request.StartDate.Date;
-        command.Parameters.Add(pStart);
-
-        var pEnd = command.CreateParameter();
-        pEnd.ParameterName = "@endDate";
-        pEnd.Value = request.EndDate.Date;
-        command.Parameters.Add(pEnd);
-
-        var pBranch = command.CreateParameter();
-        pBranch.ParameterName = "@branchNo";
-        pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
-        command.Parameters.Add(pBranch);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var connection = furpaDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+        if (shouldClose)
         {
-            var branchNo = ReadInt(reader, "SubeNo");
-            var tarih = ReadDateTime(reader, "Tarih");
-            var saat = ReadString(reader, "Saat");
-            var fisNo = ReadInt(reader, "FisNo");
-            var kasaNo = ReadInt(reader, "KasaNo");
-            var cashierCode = ReadInt(reader, "CashierCode");
-            var cashierName = ReadString(reader, "CashierName");
-            var tutar = ReadDecimal(reader, "Tutar");
-            var faturaGuid = ReadGuid(reader, "FaturaGuid");
+            await connection.OpenAsync(cancellationToken);
+        }
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 90;
 
-            rows.Add(new KasaHareketGiderPusulasiRowDto(
-                branchNo,
-                branchNames.GetValueOrDefault(branchNo, string.Empty),
-                tarih,
-                saat,
-                fisNo,
-                kasaNo,
-                cashierCode,
-                cashierName,
-                Round(tutar),
-                faturaGuid));
+            var pStart = command.CreateParameter();
+            pStart.ParameterName = "@startDate";
+            pStart.Value = request.StartDate.Date;
+            command.Parameters.Add(pStart);
+
+            var pEnd = command.CreateParameter();
+            pEnd.ParameterName = "@endDate";
+            pEnd.Value = request.EndDate.Date;
+            command.Parameters.Add(pEnd);
+
+            var pBranch = command.CreateParameter();
+            pBranch.ParameterName = "@branchNo";
+            pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
+            command.Parameters.Add(pBranch);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var branchNo = ReadInt(reader, "SubeNo");
+                var tarih = ReadDateTime(reader, "Tarih");
+                var saat = ReadString(reader, "Saat");
+                var fisNo = ReadInt(reader, "FisNo");
+                var kasaNo = ReadInt(reader, "KasaNo");
+                var cashierCode = ReadInt(reader, "CashierCode");
+                var cashierName = ReadString(reader, "CashierName");
+                var tutar = ReadDecimal(reader, "Tutar");
+                var faturaGuid = ReadGuid(reader, "FaturaGuid");
+
+                rows.Add(new KasaHareketGiderPusulasiRowDto(
+                    branchNo,
+                    branchNames.GetValueOrDefault(branchNo, string.Empty),
+                    tarih,
+                    saat,
+                    fisNo,
+                    kasaNo,
+                    cashierCode,
+                    cashierName,
+                    Round(tutar),
+                    faturaGuid));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
 
         var totalAmount = rows.Sum(r => r.Tutar);
@@ -1880,39 +2126,6 @@ public sealed class KasaHareketAktarimiService(
         decimal toplamTutar = 0;
         bool found = false;
 
-        await using (var furpaConn = furpaDbContext.Database.GetDbConnection())
-        {
-            await furpaConn.OpenAsync(cancellationToken);
-            await using var headerCmd = furpaConn.CreateCommand();
-            headerCmd.CommandText = headerSql;
-            var pGuid = headerCmd.CreateParameter();
-            pGuid.ParameterName = "@faturaGuid";
-            pGuid.Value = faturaGuid;
-            headerCmd.Parameters.Add(pGuid);
-
-            await using var headerReader = await headerCmd.ExecuteReaderAsync(cancellationToken);
-            if (await headerReader.ReadAsync(cancellationToken))
-            {
-                found = true;
-                tarih = ReadDateTime(headerReader, "Tarih");
-                saat = ReadString(headerReader, "Saat");
-                branchNo = ReadInt(headerReader, "SubeNo");
-                kasaNo = ReadInt(headerReader, "KasaNo");
-                cashierName = ReadString(headerReader, "CashierName");
-                toplamTutar = ReadDecimal(headerReader, "ToplamTutar");
-            }
-        }
-
-        if (!found)
-        {
-            throw new KeyNotFoundException($"Gider pusulası belgesi bulunamadı: {faturaGuid}");
-        }
-
-        var depo = await mikroDbContext.DEPOLARs
-            .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.dep_no == branchNo, cancellationToken);
-        var branchName = depo?.dep_adi ?? string.Empty;
-
         const string lineSql = """
             SELECT
                 ISNULL(s.urunkodu, '') AS ProductCode,
@@ -1925,27 +2138,72 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var tempLines = new List<(string ProductCode, string Barcode, decimal Quantity, decimal UnitPrice, decimal LineTotal)>();
-        await using (var furpaConn = furpaDbContext.Database.GetDbConnection())
+        var furpaConn = furpaDbContext.Database.GetDbConnection();
+        var shouldCloseFurpa = furpaConn.State == ConnectionState.Closed;
+        if (shouldCloseFurpa)
         {
             await furpaConn.OpenAsync(cancellationToken);
-            await using var lineCmd = furpaConn.CreateCommand();
-            lineCmd.CommandText = lineSql;
-            var pGuid = lineCmd.CreateParameter();
-            pGuid.ParameterName = "@faturaGuid";
-            pGuid.Value = faturaGuid;
-            lineCmd.Parameters.Add(pGuid);
-
-            await using var lineReader = await lineCmd.ExecuteReaderAsync(cancellationToken);
-            while (await lineReader.ReadAsync(cancellationToken))
+        }
+        try
+        {
+            await using (var headerCmd = furpaConn.CreateCommand())
             {
-                tempLines.Add((
-                    ReadString(lineReader, "ProductCode"),
-                    ReadString(lineReader, "Barcode"),
-                    ReadDecimal(lineReader, "Quantity"),
-                    ReadDecimal(lineReader, "UnitPrice"),
-                    ReadDecimal(lineReader, "LineTotal")));
+                headerCmd.CommandText = headerSql;
+                var pGuid = headerCmd.CreateParameter();
+                pGuid.ParameterName = "@faturaGuid";
+                pGuid.Value = faturaGuid;
+                headerCmd.Parameters.Add(pGuid);
+
+                await using var headerReader = await headerCmd.ExecuteReaderAsync(cancellationToken);
+                if (await headerReader.ReadAsync(cancellationToken))
+                {
+                    found = true;
+                    tarih = ReadDateTime(headerReader, "Tarih");
+                    saat = ReadString(headerReader, "Saat");
+                    branchNo = ReadInt(headerReader, "SubeNo");
+                    kasaNo = ReadInt(headerReader, "KasaNo");
+                    cashierName = ReadString(headerReader, "CashierName");
+                    toplamTutar = ReadDecimal(headerReader, "ToplamTutar");
+                }
+            }
+
+            if (!found)
+            {
+                throw new KeyNotFoundException($"Gider pusulası belgesi bulunamadı: {faturaGuid}");
+            }
+
+            await using (var lineCmd = furpaConn.CreateCommand())
+            {
+                lineCmd.CommandText = lineSql;
+                var pGuid = lineCmd.CreateParameter();
+                pGuid.ParameterName = "@faturaGuid";
+                pGuid.Value = faturaGuid;
+                lineCmd.Parameters.Add(pGuid);
+
+                await using var lineReader = await lineCmd.ExecuteReaderAsync(cancellationToken);
+                while (await lineReader.ReadAsync(cancellationToken))
+                {
+                    tempLines.Add((
+                        ReadString(lineReader, "ProductCode"),
+                        ReadString(lineReader, "Barcode"),
+                        ReadDecimal(lineReader, "Quantity"),
+                        ReadDecimal(lineReader, "UnitPrice"),
+                        ReadDecimal(lineReader, "LineTotal")));
+                }
             }
         }
+        finally
+        {
+            if (shouldCloseFurpa)
+            {
+                await furpaConn.CloseAsync();
+            }
+        }
+
+        var depo = await mikroDbContext.DEPOLARs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.dep_no == branchNo, cancellationToken);
+        var branchName = depo?.dep_adi ?? string.Empty;
 
         var productCodes = tempLines.Select(l => l.ProductCode).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().ToArray();
         var productMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -2017,40 +2275,54 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var rows = new List<KasaHareketTrendyolRowDto>();
-        await using var connection = furpaDbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 60;
-
-        var pDate = command.CreateParameter();
-        pDate.ParameterName = "@date";
-        pDate.Value = businessDate;
-        command.Parameters.Add(pDate);
-
-        var pBranch = command.CreateParameter();
-        pBranch.ParameterName = "@branchNo";
-        pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
-        command.Parameters.Add(pBranch);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var connection = furpaDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+        if (shouldClose)
         {
-            var branchNo = ReadInt(reader, "SubeNo");
-            var tarih = ReadDateTime(reader, "Tarih");
-            var fisNo = ReadInt(reader, "FisNo");
-            var kasaNo = ReadInt(reader, "KasaNo");
-            var cashierName = ReadString(reader, "CashierName");
-            var tutar = ReadDecimal(reader, "Tutar");
+            await connection.OpenAsync(cancellationToken);
+        }
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 60;
 
-            rows.Add(new KasaHareketTrendyolRowDto(
-                branchNo,
-                branchNames.GetValueOrDefault(branchNo, string.Empty),
-                tarih,
-                fisNo,
-                kasaNo,
-                cashierName,
-                Round(tutar)));
+            var pDate = command.CreateParameter();
+            pDate.ParameterName = "@date";
+            pDate.Value = businessDate;
+            command.Parameters.Add(pDate);
+
+            var pBranch = command.CreateParameter();
+            pBranch.ParameterName = "@branchNo";
+            pBranch.Value = (object?)request.BranchNo ?? DBNull.Value;
+            command.Parameters.Add(pBranch);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var branchNo = ReadInt(reader, "SubeNo");
+                var tarih = ReadDateTime(reader, "Tarih");
+                var fisNo = ReadInt(reader, "FisNo");
+                var kasaNo = ReadInt(reader, "KasaNo");
+                var cashierName = ReadString(reader, "CashierName");
+                var tutar = ReadDecimal(reader, "Tutar");
+
+                rows.Add(new KasaHareketTrendyolRowDto(
+                    branchNo,
+                    branchNames.GetValueOrDefault(branchNo, string.Empty),
+                    tarih,
+                    fisNo,
+                    kasaNo,
+                    cashierName,
+                    Round(tutar)));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
 
         var totalAmount = rows.Sum(r => r.Tutar);
@@ -2084,25 +2356,39 @@ public sealed class KasaHareketAktarimiService(
             """;
 
         var rows = new List<KasaHareketNakitRowDto>();
-        await using var connection = mikroDbContext.Database.GetDbConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 60;
-
-        var pDate = command.CreateParameter();
-        pDate.ParameterName = "@date";
-        pDate.Value = businessDate;
-        command.Parameters.Add(pDate);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State == ConnectionState.Closed;
+        if (shouldClose)
         {
-            rows.Add(new KasaHareketNakitRowDto(
-                ReadInt(reader, "BranchNo"),
-                ReadString(reader, "SubeAdi"),
-                Round(ReadDecimal(reader, "NakitTutar")),
-                ReadString(reader, "Description")));
+            await connection.OpenAsync(cancellationToken);
+        }
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 60;
+
+            var pDate = command.CreateParameter();
+            pDate.ParameterName = "@date";
+            pDate.Value = businessDate;
+            command.Parameters.Add(pDate);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add(new KasaHareketNakitRowDto(
+                    ReadInt(reader, "BranchNo"),
+                    ReadString(reader, "SubeAdi"),
+                    Round(ReadDecimal(reader, "NakitTutar")),
+                    ReadString(reader, "Description")));
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
 
         var totalAmount = rows.Sum(r => r.NakitTutar);
