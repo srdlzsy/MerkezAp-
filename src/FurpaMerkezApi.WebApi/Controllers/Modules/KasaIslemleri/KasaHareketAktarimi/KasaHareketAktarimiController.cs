@@ -971,8 +971,8 @@ public sealed class KasaHareketDosyaIcerikHttpRequest
     [StringLength(20)]
     public string? TargetLocation { get; init; } = "destination";
 
-    [Range(1, 10000)]
-    public int? MaxLines { get; init; } = 1000;
+    [Range(0, 1000000)]
+    public int? MaxLines { get; init; }
 }
 
 public sealed class KasaHareketKasaZDetayHttpRequest

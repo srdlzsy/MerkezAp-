@@ -411,7 +411,7 @@ public sealed record KasaHareketDosyaIcerikRequest(
     int CashRegisterNo,
     DateTime? Date,
     string? TargetLocation = "destination",
-    int? MaxLines = 1000);
+    int? MaxLines = null);
 
 public sealed record KasaHareketDosyaIcerikDto(
     string FileName,

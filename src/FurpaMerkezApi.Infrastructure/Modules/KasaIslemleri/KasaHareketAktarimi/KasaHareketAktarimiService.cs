@@ -1342,7 +1342,7 @@ public sealed class KasaHareketAktarimiService(
             throw new FileNotFoundException($"İncelenmek istenen dosya bulunamadı ({readFrom}): {targetPath}");
         }
 
-        var maxLines = Math.Clamp(request.MaxLines ?? 1000, 1, 10000);
+        var maxLines = request.MaxLines is > 0 ? request.MaxLines.Value : int.MaxValue;
         var lines = new List<string>();
         int totalLines = 0;
 
