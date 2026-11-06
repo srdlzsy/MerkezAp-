@@ -66,6 +66,7 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                     request.WarehouseNo,
                     request.CustomerCode,
                     request.Lines.Select(line => line.StockCode),
+                    "Verilen firma siparisi",
                     innerCancellationToken));
     }
 

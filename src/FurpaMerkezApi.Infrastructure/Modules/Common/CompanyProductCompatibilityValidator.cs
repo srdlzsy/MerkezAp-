@@ -1,4 +1,5 @@
 using System.Data;
+using FurpaMerkezApi.Application.Common.Errors;
 using Microsoft.EntityFrameworkCore;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.Common;
@@ -10,6 +11,7 @@ internal static class CompanyProductCompatibilityValidator
         int warehouseNo,
         string customerCode,
         IEnumerable<string> stockCodes,
+        string operationName,
         CancellationToken cancellationToken)
     {
         var normalizedCustomerCode = customerCode.Trim();
@@ -44,7 +46,7 @@ internal static class CompanyProductCompatibilityValidator
                     SELECT StockCode
                     FROM (VALUES {string.Join(", ", stockParameters.Select(parameter => $"({parameter})"))}) AS requested(StockCode)
                 )
-                SELECT requested.StockCode
+                SELECT requested.StockCode, CONVERT(date, GETDATE()) AS ValidationDate
                 FROM RequestedStock AS requested
                 LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
                     ON stock.sto_kod = requested.StockCode
@@ -89,16 +91,22 @@ internal static class CompanyProductCompatibilityValidator
             }
 
             var incompatibleStockCodes = new List<string>();
+            DateTime? validationDate = null;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
                 incompatibleStockCodes.Add(reader.GetString(0).Trim());
+                validationDate ??= reader.GetDateTime(1).Date;
             }
 
             if (incompatibleStockCodes.Count > 0)
             {
-                throw new ArgumentException(
-                    $"Secili cari ile uyumlu olmayan urunler var: {string.Join(", ", incompatibleStockCodes.Distinct(StringComparer.OrdinalIgnoreCase))}.");
+                throw new CompanyProductCompatibilityException(
+                    operationName,
+                    warehouseNo,
+                    normalizedCustomerCode,
+                    validationDate ?? DateTime.Today,
+                    incompatibleStockCodes);
             }
         }
         finally

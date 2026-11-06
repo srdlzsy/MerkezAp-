@@ -57,6 +57,7 @@ public sealed class CompanyMovementWriteService(
                 request.WarehouseNo,
                 request.CustomerCode,
                 request.Lines.Select(line => line.StockCode),
+                "Firma iadesi",
                 innerCancellationToken)
             : null;
 

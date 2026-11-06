@@ -32,6 +32,17 @@ public sealed class ExceptionHandlingMiddleware(
                 StatusCodes.Status503ServiceUnavailable,
                 "Veritabani servisine gecici olarak ulasilamiyor. Lutfen kisa bir sure sonra tekrar deneyin.");
         }
+        catch (CompanyProductCompatibilityException exception)
+        {
+            logger.LogWarning(
+                "Company product compatibility validation rejected the operation. OperationName={OperationName}, WarehouseNo={WarehouseNo}, CustomerCode={CustomerCode}, ValidationDate={ValidationDate:yyyy-MM-dd}, StockCodes={StockCodes}",
+                exception.OperationName,
+                exception.WarehouseNo,
+                exception.CustomerCode,
+                exception.ValidationDate,
+                string.Join(",", exception.StockCodes));
+            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status400BadRequest, exception.Message);
+        }
         catch (ArgumentException exception)
         {
             logger.LogWarning(exception, "A validation error occurred.");

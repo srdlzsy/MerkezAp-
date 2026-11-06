@@ -11,6 +11,37 @@ namespace FurpaMerkezApi.WebApi.Tests.Middleware;
 public sealed class ExceptionHandlingMiddlewareTests
 {
     [Fact]
+    public async Task InvokeAsync_WritesClearCompanyProductCompatibilityWarning()
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new CompanyProductCompatibilityException(
+                "Firma mal kabul",
+                143,
+                "32000257",
+                new DateTime(2026, 11, 6),
+                ["024257", "024254"]),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/mal-kabul-islemleri/firma-mal-kabulleri";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        var detail = root.GetProperty("detail").GetString();
+        Assert.Equal("Gecersiz istek", root.GetProperty("title").GetString());
+        Assert.Contains("Firma mal kabul durduruldu", detail);
+        Assert.Contains("cari 32000257", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("depo 143", detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("06.11.2026", detail);
+        Assert.Contains("024254, 024257", detail);
+        Assert.Contains("Mikro'ya evrak yazilmadi", detail);
+    }
+
+    [Fact]
     public async Task InvokeAsync_DoesNotTurnSqlFailureAfterClientAbortIntoConnectivityError()
     {
         using var requestCancellation = new CancellationTokenSource();
