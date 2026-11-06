@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 778. Model sayisi: 722.
+Endpoint sayisi (method + route): 796. Model sayisi: 745.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -456,22 +456,40 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashTurnoverListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/detay` | JWT + kasa-islemleri.kasa-cirolari.detail | query: WarehouseNo / integer (int32)<br>query: BusinessDate / string (date-time) (zorunlu)<br>query: ShiftNo / integer (int32) (zorunlu)<br>query: CashierCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-cirolari/yeni/ozet` | JWT + kasa-islemleri.kasa-cirolari.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashTurnoverOverviewDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/belge-iptal-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketFisIptalReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/belge-iptal-raporu/detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: faturaGuid / string (uuid) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketFisIptalDetailDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/belge-iptal-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/birlik-kart-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketBirlikKartReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/birlik-kart-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/durum` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: CashRegisterNos / integer (int32)[] | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketTransferStatusDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/gider-pusulasi-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketGiderPusulasiReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/gider-pusulasi-raporu/detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: faturaGuid / string (uuid) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketGiderPusulasiDetailDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/gider-pusulasi-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/bilgi` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: BranchNo / integer (int32) (zorunlu)<br>query: CashRegisterNo / integer (int32) (zorunlu)<br>query: Date / string (date-time) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDosyaBilgiDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/icerik` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: BranchNo / integer (int32) (zorunlu)<br>query: CashRegisterNo / integer (int32) (zorunlu)<br>query: Date / string (date-time)<br>query: TargetLocation / string<br>query: MaxLines / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDosyaIcerikDto<br>400: ProblemDetails |
+| POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/kopyala` | JWT + kasa-islemleri.kasa-hareket-aktarimi.update | body: request / KasaHareketDosyaKopyalaHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDosyaKopyalaResultDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/hareketler/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: Tolerance / number (double) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketCashSummaryComparisonDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) (zorunlu)<br>query: CashRegisterNo / integer (int32) (zorunlu)<br>query: ReceiptTake / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketDetailDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: Tolerance / number (double) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/iptal-belgeleri/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/kasa-z-detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketKasaZDetayReportDto<br>400: ProblemDetails |
 | DELETE | `/api/kasa-islemleri/kasa-hareket-aktarimi/mikro` | JWT + kasa-islemleri.kasa-hareket-aktarimi.update | body: request / KasaHareketMikroTransferHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketMikroTransferHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketMikroTransferRangeHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/nakit-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: Date / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketNakitReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/nakit-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/rapor` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;KasaHareketReportRowDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/rapor/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/rapor/ozet` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketReportSummaryDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/satis-karsilastirma` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketSalesComparisonDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/satis-mutabakat-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketSatisMutabakatReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/satis-mutabakat-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | DELETE | `/api/kasa-islemleri/kasa-hareket-aktarimi/staging` | JWT + kasa-islemleri.kasa-hareket-aktarimi.update | body: request / KasaHareketDeleteStagingHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/subeler` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;KasaHareketBranchDto&gt; |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/subeler/{branchNo}/kasalar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | path: branchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;KasaHareketCashRegisterDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/trendyol-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.list | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketTrendyolReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/trendyol-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/zamanli-aktarim/calistir` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketScheduledImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari` | JWT + kasa-islemleri.kasa-sayimlari.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CashSummaryListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-sayimlari` | JWT + kasa-islemleri.icmal-kaydi-girisi.create | body: request / CreateCashSummaryHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: CreateCashSummaryResponse<br>400: ProblemDetails |
@@ -5655,6 +5673,27 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `paymentTypeNo` | integer (int32) | Hayir |  |
 | `source` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketBirlikKartReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketBirlikKartRowDto[] | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketBirlikKartRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashRegisterNo` | integer (int32) | Hayir |  |
+| `cekNumarasi` | string | Hayir | nullable |
+| `kasaMaliBellekKodu` | string | Hayir | nullable |
+| `tutar` | number (double) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketBranchDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -5796,6 +5835,153 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `receiptCount` | integer (int32) | Hayir |  |
 | `returnedReceiptCount` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketDosyaBilgiDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchIpAddress` | string | Hayir | nullable |
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashRegisterNo` | integer (int32) | Hayir |  |
+| `centralFolderPath` | string | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `destinationFileExists` | boolean | Hayir |  |
+| `destinationFileLastModified` | string (date-time) | Hayir | nullable |
+| `destinationFilePath` | string | Hayir | nullable |
+| `destinationFileSizeBytes` | integer (int64) | Hayir | nullable |
+| `fileName` | string | Hayir | nullable |
+| `formattedKasaNo` | string | Hayir | nullable |
+| `posGenelFolderPath` | string | Hayir | nullable |
+| `sourceFileExists` | boolean | Hayir |  |
+| `sourceFileLastModified` | string (date-time) | Hayir | nullable |
+| `sourceFilePath` | string | Hayir | nullable |
+| `sourceFileSizeBytes` | integer (int64) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketDosyaIcerikDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `displayedLines` | integer (int32) | Hayir |  |
+| `fileName` | string | Hayir | nullable |
+| `filePath` | string | Hayir | nullable |
+| `lines` | string[] | Hayir | nullable |
+| `readFrom` | string | Hayir | nullable |
+| `totalLines` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketDosyaKopyalaResultDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `bytesCopied` | integer (int64) | Hayir |  |
+| `destinationFilePath` | string | Hayir | nullable |
+| `elapsedMilliseconds` | integer (int64) | Hayir |  |
+| `message` | string | Hayir | nullable |
+| `sourceFilePath` | string | Hayir | nullable |
+| `success` | boolean | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketFisIptalDetailDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `faturaGuid` | string (uuid) | Hayir |  |
+| `kasaNo` | integer (int32) | Hayir |  |
+| `lines` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketFisIptalLineDto[] | Hayir | nullable |
+| `saat` | string | Hayir | nullable |
+| `tarih` | string (date-time) | Hayir |  |
+| `toplamTutar` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketFisIptalLineDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `lineTotal` | number (double) | Hayir |  |
+| `productName` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `unitPrice` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketFisIptalReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketFisIptalRowDto[] | Hayir | nullable |
+| `startDate` | string (date-time) | Hayir |  |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketFisIptalRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashierCode` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `faturaGuid` | string (uuid) | Hayir |  |
+| `fisNo` | integer (int32) | Hayir |  |
+| `kasaNo` | integer (int32) | Hayir |  |
+| `regionCode` | string | Hayir | nullable |
+| `saat` | string | Hayir | nullable |
+| `tarih` | string (date-time) | Hayir |  |
+| `tutar` | number (double) | Hayir |  |
+| `zNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketGiderPusulasiDetailDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `faturaGuid` | string (uuid) | Hayir |  |
+| `kasaNo` | integer (int32) | Hayir |  |
+| `lines` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketGiderPusulasiLineDto[] | Hayir | nullable |
+| `saat` | string | Hayir | nullable |
+| `tarih` | string (date-time) | Hayir |  |
+| `toplamTutar` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketGiderPusulasiLineDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `lineTotal` | number (double) | Hayir |  |
+| `productCode` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `unitPrice` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketGiderPusulasiReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketGiderPusulasiRowDto[] | Hayir | nullable |
+| `startDate` | string (date-time) | Hayir |  |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketGiderPusulasiRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashierCode` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `faturaGuid` | string (uuid) | Hayir |  |
+| `fisNo` | integer (int32) | Hayir |  |
+| `kasaNo` | integer (int32) | Hayir |  |
+| `saat` | string | Hayir | nullable |
+| `tarih` | string (date-time) | Hayir |  |
+| `tutar` | number (double) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketImportIssueDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -5822,6 +6008,45 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `skippedExistingInvoices` | integer (int32) | Hayir |  |
 | `status` | string | Hayir | nullable |
 | `warnings` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketImportIssueDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketKasaZDetayReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `date` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketKasaZDetayRowDto[] | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketKasaZDetayRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir |  |
+| `description` | string | Hayir | nullable |
+| `documentSequence` | integer (int32) | Hayir |  |
+| `documentSeries` | string | Hayir | nullable |
+| `kasaNo` | string | Hayir | nullable |
+| `zTutari` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketNakitReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `date` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketNakitRowDto[] | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketNakitRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `description` | string | Hayir | nullable |
+| `nakitTutar` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketPaymentSummaryDto
 
@@ -5921,7 +6146,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `date` | string (date-time) | Hayir |  |
 | `expenseExcludedAmount` | number (double) | Hayir |  |
 | `expenseReceiptAmount` | number (double) | Hayir |  |
+| `expenseSlipDifference` | number (double) | Hayir |  |
+| `expenseSlipStockAmount` | number (double) | Hayir |  |
+| `expenseSlipTransferredAmount` | number (double) | Hayir |  |
 | `hasDifference` | boolean | Hayir |  |
+| `invoiceDifference` | number (double) | Hayir |  |
+| `invoiceStockAmount` | number (double) | Hayir |  |
+| `invoiceTransferredAmount` | number (double) | Hayir |  |
+| `netDifference` | number (double) | Hayir |  |
+| `netStockTurnover` | number (double) | Hayir |  |
+| `netTransferredTurnover` | number (double) | Hayir |  |
+| `retailDifference` | number (double) | Hayir |  |
+| `retailStockAmount` | number (double) | Hayir |  |
+| `retailTransferredAmount` | number (double) | Hayir |  |
 | `stockMovementAmount` | number (double) | Hayir |  |
 | `transferredAmount` | number (double) | Hayir |  |
 | `transferredTurnoverDifference` | number (double) | Hayir |  |
@@ -5938,12 +6175,73 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalCurrentStockDifference` | number (double) | Hayir |  |
 | `totalExcess` | number (double) | Hayir |  |
 | `totalExpenseReceiptAmount` | number (double) | Hayir |  |
+| `totalExpenseSlipDifference` | number (double) | Hayir |  |
+| `totalExpenseSlipStockAmount` | number (double) | Hayir |  |
+| `totalExpenseSlipTransferredAmount` | number (double) | Hayir |  |
+| `totalInvoiceDifference` | number (double) | Hayir |  |
+| `totalInvoiceStockAmount` | number (double) | Hayir |  |
+| `totalInvoiceTransferredAmount` | number (double) | Hayir |  |
+| `totalNetDifference` | number (double) | Hayir |  |
+| `totalNetStockTurnover` | number (double) | Hayir |  |
+| `totalNetTransferredTurnover` | number (double) | Hayir |  |
+| `totalRetailDifference` | number (double) | Hayir |  |
+| `totalRetailStockAmount` | number (double) | Hayir |  |
+| `totalRetailTransferredAmount` | number (double) | Hayir |  |
 | `totalShortage` | number (double) | Hayir |  |
 | `totalStockMovementAmount` | number (double) | Hayir |  |
 | `totalTransferredAmount` | number (double) | Hayir |  |
 | `totalTransferredTurnoverDifference` | number (double) | Hayir |  |
 | `totalZReportAmount` | number (double) | Hayir |  |
 | `totalZReportTransferDifference` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSatisMutabakatReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSatisMutabakatRowDto[] | Hayir | nullable |
+| `summary` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSatisMutabakatSummaryDto | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSatisMutabakatRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `aktarilanTutar` | number (double) | Hayir |  |
+| `araTabloTutar` | number (double) | Hayir |  |
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `date` | string (date-time) | Hayir |  |
+| `durum` | string | Hayir | nullable |
+| `farkSebebi` | string | Hayir | nullable |
+| `gercekKasaFarki` | number (double) | Hayir |  |
+| `giderPusulasiTutar` | number (double) | Hayir |  |
+| `gpsHaricTutar` | number (double) | Hayir |  |
+| `hediyeKarti` | number (double) | Hayir |  |
+| `krediKarti` | number (double) | Hayir |  |
+| `nakit` | number (double) | Hayir |  |
+| `yemekKarti` | number (double) | Hayir |  |
+| `zRaporuTutari` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSatisMutabakatSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `balancedCount` | integer (int32) | Hayir |  |
+| `differenceCount` | integer (int32) | Hayir |  |
+| `duplicateTransferCount` | integer (int32) | Hayir |  |
+| `missingTransferCount` | integer (int32) | Hayir |  |
+| `totalAktarilanTutar` | number (double) | Hayir |  |
+| `totalAraTabloTutar` | number (double) | Hayir |  |
+| `totalBranches` | integer (int32) | Hayir |  |
+| `totalGPSHaricTutar` | number (double) | Hayir |  |
+| `totalGercekKasaFarki` | number (double) | Hayir |  |
+| `totalGiderPusulasiTutar` | number (double) | Hayir |  |
+| `totalHediyeKarti` | number (double) | Hayir |  |
+| `totalKrediKarti` | number (double) | Hayir |  |
+| `totalNakit` | number (double) | Hayir |  |
+| `totalYemekKarti` | number (double) | Hayir |  |
+| `totalZRaporuTutari` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTransferStatusDto
 
@@ -5958,6 +6256,28 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `startDate` | string (date-time) | Hayir |  |
 | `totalReceiptCount` | integer (int32) | Hayir |  |
 | `transferredReceiptCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTrendyolReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTrendyolRowDto[] | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketTrendyolRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashierName` | string | Hayir | nullable |
+| `fisNo` | integer (int32) | Hayir |  |
+| `kasaNo` | integer (int32) | Hayir |  |
+| `tarih` | string (date-time) | Hayir |  |
+| `tutar` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.BanknoteMovementItemDto
 
@@ -8493,6 +8813,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `barcode` | string | Hayir | nullable |
 | `deliveredQuantity` | number (double) | Hayir |  |
 | `description` | string | Hayir | nullable |
 | `isClosed` | boolean | Hayir |  |
@@ -10653,6 +10974,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `branchNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
 | `cashRegisterNo` | integer (int32) | Hayir | min=0; max=999; nullable |
 | `date` | string (date-time) | Evet |  |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketDosyaKopyalaHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Evet | min=1; max=2147483647 |
+| `cashRegisterNo` | integer (int32) | Evet | min=0; max=999 |
+| `date` | string (date-time) | Hayir | nullable |
+| `overwrite` | boolean | Hayir |  |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketImportHttpRequest
 

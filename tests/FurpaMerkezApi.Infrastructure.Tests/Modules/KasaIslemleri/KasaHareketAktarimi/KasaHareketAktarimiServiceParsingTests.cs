@@ -165,18 +165,27 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             new DateTime(2026, 11, 3),
             116,
             "Test Sube",
-            stockMovementAmount: 1_000m,
+            retailStockAmount: 1_000m,
+            invoiceStockAmount: 200m,
+            expenseSlipStockAmount: 30m,
             currentComparableStockAmount: 995m,
             currentAccountAmount: 990m,
-            transferredAmount: 1_020m,
-            expenseReceiptAmount: 30m,
-            zReportAmount: 960m,
+            retailTransferredAmount: 990m,
+            invoiceTransferredAmount: 200m,
+            expenseSlipTransferredAmount: 30m,
+            zReportAmount: 1_190m,
             tolerance: 0.01m);
 
-        Assert.Equal(990m, row.ExpenseExcludedAmount);
+        Assert.Equal(1_190m, row.ExpenseExcludedAmount);
         Assert.Equal(0m, row.ZReportTransferDifference);
         Assert.Equal(-10m, row.TransferredTurnoverDifference);
         Assert.Equal(5m, row.CurrentStockDifference);
+        Assert.Equal(-10m, row.RetailDifference);
+        Assert.Equal(0m, row.InvoiceDifference);
+        Assert.Equal(0m, row.ExpenseSlipDifference);
+        Assert.Equal(1_170m, row.NetStockTurnover);
+        Assert.Equal(1_160m, row.NetTransferredTurnover);
+        Assert.Equal(-10m, row.NetDifference);
         Assert.True(row.HasDifference);
     }
 
@@ -187,18 +196,24 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             new DateTime(2026, 10, 27),
             160,
             "Test Sube",
-            stockMovementAmount: 1_000m,
+            retailStockAmount: 965.50m,
+            invoiceStockAmount: 34.50m,
+            expenseSlipStockAmount: 30m,
             currentComparableStockAmount: 965.50m,
             currentAccountAmount: 965.50m,
-            transferredAmount: 1_030m,
-            expenseReceiptAmount: 30m,
-            zReportAmount: 970m,
+            retailTransferredAmount: 965.50m,
+            invoiceTransferredAmount: 34.50m,
+            expenseSlipTransferredAmount: 30m,
+            zReportAmount: 1_000m,
             tolerance: 0.01m);
 
         Assert.Equal(1_000m, row.ExpenseExcludedAmount);
         Assert.Equal(0m, row.ZReportTransferDifference);
         Assert.Equal(0m, row.TransferredTurnoverDifference);
         Assert.Equal(0m, row.CurrentStockDifference);
+        Assert.Equal(970m, row.NetStockTurnover);
+        Assert.Equal(970m, row.NetTransferredTurnover);
+        Assert.Equal(0m, row.NetDifference);
         Assert.False(row.HasDifference);
     }
 

@@ -565,17 +565,60 @@ public sealed class KasaHareketAktarimiService(
             WITH StockTotals AS (
                 SELECT
                     ISNULL(movement.sth_cikis_depo_no, 0) AS BranchNo,
-                    SUM(
-                        ISNULL(movement.sth_tutar, 0)
-                      - ISNULL(movement.sth_iskonto1, 0)
-                      - ISNULL(movement.sth_iskonto2, 0)
-                      - ISNULL(movement.sth_iskonto3, 0)
-                      - ISNULL(movement.sth_iskonto4, 0)
-                      - ISNULL(movement.sth_iskonto5, 0)
-                      - ISNULL(movement.sth_iskonto6, 0)
-                      + ISNULL(movement.sth_vergi, 0)) AS StockMovementAmount,
                     SUM(CASE
-                        WHEN movement.sth_evraktip = 4 THEN
+                        WHEN movement.sth_evrakno_seri LIKE 'PS%'
+                         AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
+                         AND movement.sth_tip = 1
+                         AND movement.sth_cins = 1
+                         AND movement.sth_evraktip = 4 THEN
+                            ISNULL(movement.sth_tutar, 0)
+                          - ISNULL(movement.sth_iskonto1, 0)
+                          - ISNULL(movement.sth_iskonto2, 0)
+                          - ISNULL(movement.sth_iskonto3, 0)
+                          - ISNULL(movement.sth_iskonto4, 0)
+                          - ISNULL(movement.sth_iskonto5, 0)
+                          - ISNULL(movement.sth_iskonto6, 0)
+                          + ISNULL(movement.sth_vergi, 0)
+                        ELSE 0
+                    END) AS RetailStockAmount,
+                    SUM(CASE
+                        WHEN movement.sth_evrakno_seri LIKE 'PS%'
+                         AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
+                         AND movement.sth_tip = 1
+                         AND movement.sth_cins = 1
+                         AND movement.sth_evraktip = 1 THEN
+                            ISNULL(movement.sth_tutar, 0)
+                          - ISNULL(movement.sth_iskonto1, 0)
+                          - ISNULL(movement.sth_iskonto2, 0)
+                          - ISNULL(movement.sth_iskonto3, 0)
+                          - ISNULL(movement.sth_iskonto4, 0)
+                          - ISNULL(movement.sth_iskonto5, 0)
+                          - ISNULL(movement.sth_iskonto6, 0)
+                          + ISNULL(movement.sth_vergi, 0)
+                        ELSE 0
+                    END) AS InvoiceStockAmount,
+                    SUM(CASE
+                        WHEN movement.sth_evrakno_seri LIKE 'PS%'
+                         AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
+                         AND movement.sth_tip = 0
+                         AND movement.sth_cins = 17
+                         AND movement.sth_evraktip = 16 THEN
+                            -- StokHareketYaz gider tutarini KDV dahil yazar; sth_vergi tekrar eklenmez.
+                            ISNULL(movement.sth_tutar, 0)
+                          - ISNULL(movement.sth_iskonto1, 0)
+                          - ISNULL(movement.sth_iskonto2, 0)
+                          - ISNULL(movement.sth_iskonto3, 0)
+                          - ISNULL(movement.sth_iskonto4, 0)
+                          - ISNULL(movement.sth_iskonto5, 0)
+                          - ISNULL(movement.sth_iskonto6, 0)
+                        ELSE 0
+                    END) AS ExpenseSlipStockAmount,
+                    SUM(CASE
+                        WHEN movement.sth_evrakno_seri LIKE 'PS%'
+                         AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
+                         AND movement.sth_tip = 1
+                         AND movement.sth_cins = 1
+                         AND movement.sth_evraktip = 4 THEN
                             ISNULL(movement.sth_tutar, 0)
                           - ISNULL(movement.sth_iskonto1, 0)
                           - ISNULL(movement.sth_iskonto2, 0)
@@ -588,11 +631,13 @@ public sealed class KasaHareketAktarimiService(
                     END) AS CurrentComparableStockAmount
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (READUNCOMMITTED)
                 WHERE movement.sth_tarih = @date
-                  AND movement.sth_tip = 1
-                  AND movement.sth_cins = 1
-                  AND movement.sth_evraktip IN (1, 4)
                   AND movement.sth_normal_iade = 0
-                  AND ISNULL(movement.sth_evrakno_seri, '') NOT LIKE 'PSF%'
+                  AND movement.sth_evrakno_seri LIKE 'PS%'
+                  AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
+                  AND (
+                       (movement.sth_tip = 1 AND movement.sth_cins = 1 AND movement.sth_evraktip IN (1, 4))
+                    OR (movement.sth_tip = 0 AND movement.sth_cins = 17 AND movement.sth_evraktip = 16)
+                  )
                   AND (@branchNo IS NULL OR movement.sth_cikis_depo_no = @branchNo)
                 GROUP BY movement.sth_cikis_depo_no
             ),
@@ -631,7 +676,9 @@ public sealed class KasaHareketAktarimiService(
             )
             SELECT
                 branch.BranchNo,
-                ISNULL(stock.StockMovementAmount, 0) AS StockMovementAmount,
+                ISNULL(stock.RetailStockAmount, 0) AS RetailStockAmount,
+                ISNULL(stock.InvoiceStockAmount, 0) AS InvoiceStockAmount,
+                ISNULL(stock.ExpenseSlipStockAmount, 0) AS ExpenseSlipStockAmount,
                 ISNULL(stock.CurrentComparableStockAmount, 0) AS CurrentComparableStockAmount,
                 ISNULL(currentTotal.CurrentAccountAmount, 0) AS CurrentAccountAmount,
                 ISNULL(zReport.ZReportAmount, 0) AS ZReportAmount
@@ -654,7 +701,9 @@ public sealed class KasaHareketAktarimiService(
             },
             reader => new SalesComparisonMikroSqlRow(
                 ReadInt(reader, "BranchNo"),
-                ReadDecimal(reader, "StockMovementAmount"),
+                ReadDecimal(reader, "RetailStockAmount"),
+                ReadDecimal(reader, "InvoiceStockAmount"),
+                ReadDecimal(reader, "ExpenseSlipStockAmount"),
                 ReadDecimal(reader, "CurrentComparableStockAmount"),
                 ReadDecimal(reader, "CurrentAccountAmount"),
                 ReadDecimal(reader, "ZReportAmount")),
@@ -662,19 +711,31 @@ public sealed class KasaHareketAktarimiService(
 
         const string furpaSql = """
             SELECT
-                TRY_CONVERT(int, invoice.Sube) AS BranchNo,
-                SUM(ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)) AS TransferredAmount,
+                TRY_CONVERT(int, line.Sube) AS BranchNo,
                 SUM(CASE
-                    WHEN ISNULL(invoice.BelgeTuru, 0) = 4
-                        THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                    WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 1
+                        THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
                     ELSE 0
-                END) AS ExpenseReceiptAmount
-            FROM dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
-            WHERE invoice.Tarih >= @date
-              AND invoice.Tarih < @nextDate
-              AND TRY_CONVERT(int, invoice.Sube) IS NOT NULL
-              AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
-            GROUP BY TRY_CONVERT(int, invoice.Sube)
+                END) AS RetailTransferredAmount,
+                SUM(CASE
+                    WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 3
+                        THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
+                    ELSE 0
+                END) AS InvoiceTransferredAmount,
+                SUM(CASE
+                    WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 4
+                        THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
+                    ELSE 0
+                END) AS ExpenseSlipTransferredAmount
+            FROM dbo.PosFaturaSatirs AS line WITH (READUNCOMMITTED)
+            INNER JOIN dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
+                ON invoice.FaturaGuid = line.FaturaGuid
+            WHERE line.Tarih >= @date
+              AND line.Tarih < @nextDate
+              AND TRY_CONVERT(int, line.Sube) IS NOT NULL
+              AND TRY_CONVERT(int, invoice.BelgeTuru) IN (1, 3, 4)
+              AND (@branchNo IS NULL OR TRY_CONVERT(int, line.Sube) = @branchNo)
+            GROUP BY TRY_CONVERT(int, line.Sube)
             ORDER BY BranchNo;
             """;
 
@@ -689,8 +750,9 @@ public sealed class KasaHareketAktarimiService(
             },
             reader => new SalesComparisonFurpaSqlRow(
                 ReadInt(reader, "BranchNo"),
-                ReadDecimal(reader, "TransferredAmount"),
-                ReadDecimal(reader, "ExpenseReceiptAmount")),
+                ReadDecimal(reader, "RetailTransferredAmount"),
+                ReadDecimal(reader, "InvoiceTransferredAmount"),
+                ReadDecimal(reader, "ExpenseSlipTransferredAmount")),
             cancellationToken);
 
         var mikroByBranch = mikroRows.ToDictionary(item => item.BranchNo);
@@ -712,11 +774,14 @@ public sealed class KasaHareketAktarimiService(
                 businessDate,
                 branchNo,
                 branchNames.GetValueOrDefault(branchNo, string.Empty),
-                mikro?.StockMovementAmount ?? 0m,
+                mikro?.RetailStockAmount ?? 0m,
+                mikro?.InvoiceStockAmount ?? 0m,
+                mikro?.ExpenseSlipStockAmount ?? 0m,
                 mikro?.CurrentComparableStockAmount ?? 0m,
                 mikro?.CurrentAccountAmount ?? 0m,
-                furpa?.TransferredAmount ?? 0m,
-                furpa?.ExpenseReceiptAmount ?? 0m,
+                furpa?.RetailTransferredAmount ?? 0m,
+                furpa?.InvoiceTransferredAmount ?? 0m,
+                furpa?.ExpenseSlipTransferredAmount ?? 0m,
                 mikro?.ZReportAmount ?? 0m,
                 tolerance);
         }).ToArray();
@@ -735,7 +800,19 @@ public sealed class KasaHareketAktarimiService(
             Round(rows.Where(item => item.ZReportTransferDifference < -tolerance)
                 .Sum(item => item.ZReportTransferDifference)),
             Round(rows.Where(item => item.ZReportTransferDifference > tolerance)
-                .Sum(item => item.ZReportTransferDifference)));
+                .Sum(item => item.ZReportTransferDifference)),
+            Round(rows.Sum(item => item.RetailStockAmount)),
+            Round(rows.Sum(item => item.RetailTransferredAmount)),
+            Round(rows.Sum(item => item.RetailDifference)),
+            Round(rows.Sum(item => item.InvoiceStockAmount)),
+            Round(rows.Sum(item => item.InvoiceTransferredAmount)),
+            Round(rows.Sum(item => item.InvoiceDifference)),
+            Round(rows.Sum(item => item.ExpenseSlipStockAmount)),
+            Round(rows.Sum(item => item.ExpenseSlipTransferredAmount)),
+            Round(rows.Sum(item => item.ExpenseSlipDifference)),
+            Round(rows.Sum(item => item.NetStockTurnover)),
+            Round(rows.Sum(item => item.NetTransferredTurnover)),
+            Round(rows.Sum(item => item.NetDifference)));
 
         return new KasaHareketSalesComparisonDto(
             businessDate,
@@ -762,23 +839,23 @@ public sealed class KasaHareketAktarimiService(
             WITH StockTotals AS (
                 SELECT
                     movement.sth_cikis_depo_no AS BranchNo,
-                    COUNT(DISTINCT RTRIM(movement.sth_evrakno_seri) + '/' + CAST(movement.sth_evrakno_sira AS VARCHAR(20))) AS PSEvrakAdedi,
                     SUM(
-                        ISNULL(movement.sth_tutar, 0)
-                      - ISNULL(movement.sth_iskonto1, 0)
-                      - ISNULL(movement.sth_iskonto2, 0)
-                      - ISNULL(movement.sth_iskonto3, 0)
-                      - ISNULL(movement.sth_iskonto4, 0)
-                      - ISNULL(movement.sth_iskonto5, 0)
-                      - ISNULL(movement.sth_iskonto6, 0)
-                      + ISNULL(movement.sth_vergi, 0)) AS AktarilanTutar
+                          ISNULL(movement.sth_tutar, 0)
+                        - ISNULL(movement.sth_iskonto1, 0)
+                        - ISNULL(movement.sth_iskonto2, 0)
+                        - ISNULL(movement.sth_iskonto3, 0)
+                        - ISNULL(movement.sth_iskonto4, 0)
+                        - ISNULL(movement.sth_iskonto5, 0)
+                        - ISNULL(movement.sth_iskonto6, 0)
+                        + ISNULL(movement.sth_vergi, 0)) AS AktarilanTutar
                 FROM dbo.STOK_HAREKETLERI AS movement WITH (READUNCOMMITTED)
                 WHERE movement.sth_tarih = @date
+                  AND movement.sth_normal_iade = 0
+                  AND movement.sth_evrakno_seri LIKE 'PS%'
+                  AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
                   AND movement.sth_tip = 1
                   AND movement.sth_cins = 1
                   AND movement.sth_evraktip IN (1, 4)
-                  AND movement.sth_normal_iade = 0
-                  AND ISNULL(movement.sth_evrakno_seri, '') NOT LIKE 'PSF%'
                   AND (@branchNo IS NULL OR movement.sth_cikis_depo_no = @branchNo)
                 GROUP BY movement.sth_cikis_depo_no
             ),
@@ -822,7 +899,6 @@ public sealed class KasaHareketAktarimiService(
             )
             SELECT
                 branch.BranchNo,
-                ISNULL(stock.PSEvrakAdedi, 0) AS PSEvrakAdedi,
                 ISNULL(stock.AktarilanTutar, 0) AS AktarilanTutar,
                 ISNULL(zReport.ZRaporuTutari, 0) AS ZRaporuTutari,
                 ISNULL(baskaCari.BaskaCariTutar, 0) AS BaskaCariTutar,
@@ -846,7 +922,6 @@ public sealed class KasaHareketAktarimiService(
             },
             reader => new SatisMutabakatMikroSqlRow(
                 ReadInt(reader, "BranchNo"),
-                ReadInt(reader, "PSEvrakAdedi"),
                 ReadDecimal(reader, "AktarilanTutar"),
                 ReadDecimal(reader, "ZRaporuTutari"),
                 ReadDecimal(reader, "BaskaCariTutar"),
@@ -856,23 +931,27 @@ public sealed class KasaHareketAktarimiService(
         const string furpaSql = """
             WITH Faturalar AS (
                 SELECT
-                    TRY_CONVERT(int, invoice.Sube) AS BranchNo,
-                    SUM(ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)) AS AraTabloTutar,
+                    TRY_CONVERT(int, line.Sube) AS BranchNo,
+                    SUM(ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)) AS AraTabloTutar,
                     SUM(CASE
-                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4
-                            THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 4
+                            THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
                         ELSE 0
                     END) AS GiderPusulasiTutar,
                     SUM(CASE
-                        WHEN ISNULL(invoice.BelgeTuru, 0) = 4 THEN 0
-                        ELSE ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) IN (1, 3)
+                            THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
+                        ELSE 0
                     END) AS GPSHaricTutar
-                FROM dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
-                WHERE invoice.Tarih >= @date
-                  AND invoice.Tarih < @nextDate
-                  AND TRY_CONVERT(int, invoice.Sube) IS NOT NULL
-                  AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
-                GROUP BY TRY_CONVERT(int, invoice.Sube)
+                FROM dbo.PosFaturaSatirs AS line WITH (READUNCOMMITTED)
+                INNER JOIN dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
+                    ON invoice.FaturaGuid = line.FaturaGuid
+                WHERE line.Tarih >= @date
+                  AND line.Tarih < @nextDate
+                  AND TRY_CONVERT(int, line.Sube) IS NOT NULL
+                  AND TRY_CONVERT(int, invoice.BelgeTuru) IN (1, 3, 4)
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, line.Sube) = @branchNo)
+                GROUP BY TRY_CONVERT(int, line.Sube)
             ),
             Odemeler AS (
                 SELECT
@@ -952,22 +1031,19 @@ public sealed class KasaHareketAktarimiService(
             var yemekKarti = Round(furpa?.YemekKarti ?? 0m);
             var hediyeKarti = Round(furpa?.HediyeKarti ?? 0m);
             var zRaporuTutari = Round(mikro?.ZRaporuTutari ?? 0m);
-            var psEvrakAdedi = mikro?.PSEvrakAdedi ?? 0;
             var baskaCariTutar = Round(mikro?.BaskaCariTutar ?? 0m);
             var baskaCariDetay = mikro?.BaskaCariDetay ?? string.Empty;
 
             var gercekKasaFarki = Round((gpsHaricTutar - hediyeKarti) - zRaporuTutari);
+            var netAraTabloTutar = gpsHaricTutar;
+            var transferDifference = Round(netAraTabloTutar - aktarilanTutar);
 
             string durum;
-            if (psEvrakAdedi > 1 && aktarilanTutar > (gpsHaricTutar * 1.5m))
-            {
-                durum = "MÜKERRER AKTARIM";
-            }
-            else if (gpsHaricTutar > 0m && aktarilanTutar == 0m)
+            if (netAraTabloTutar != 0m && aktarilanTutar == 0m)
             {
                 durum = "MİKROYA AKTARILMAMIŞ";
             }
-            else if (Math.Abs(gercekKasaFarki) <= 1.00m)
+            else if (Math.Abs(transferDifference) <= 0.01m && Math.Abs(gercekKasaFarki) <= 1.00m)
             {
                 durum = "MUTABIK";
             }
@@ -977,13 +1053,13 @@ public sealed class KasaHareketAktarimiService(
             }
 
             string farkSebebi;
-            if (psEvrakAdedi > 1 && aktarilanTutar > (gpsHaricTutar * 1.5m))
-            {
-                farkSebebi = $"Mükerrer Aktarım (Mikro faturası {psEvrakAdedi} kez aktarılmış)";
-            }
-            else if (gpsHaricTutar > 0m && aktarilanTutar == 0m)
+            if (netAraTabloTutar != 0m && aktarilanTutar == 0m)
             {
                 farkSebebi = "Mikroya Aktarılmamış (Stagingde satış var ama Mikro faturası yok)";
+            }
+            else if (Math.Abs(transferDifference) > 0.01m)
+            {
+                farkSebebi = $"Furpa / Mikro net aktarım farkı: {transferDifference:N2} TL";
             }
             else if (gercekKasaFarki < -100m && zRaporuTutari > gpsHaricTutar)
             {
@@ -1033,10 +1109,9 @@ public sealed class KasaHareketAktarimiService(
         })
         .OrderBy(row => row.Durum switch
         {
-            "MÜKERRER AKTARIM" => 1,
-            "MİKROYA AKTARILMAMIŞ" => 2,
-            "FARK VAR" => 3,
-            _ => 4
+            "MİKROYA AKTARILMAMIŞ" => 1,
+            "FARK VAR" => 2,
+            _ => 3
         })
         .ThenByDescending(row => Math.Abs(row.GercekKasaFarki))
         .ToArray();
@@ -1045,7 +1120,7 @@ public sealed class KasaHareketAktarimiService(
             rows.Length,
             rows.Count(r => r.Durum == "MUTABIK"),
             rows.Count(r => r.Durum == "FARK VAR"),
-            rows.Count(r => r.Durum == "MÜKERRER AKTARIM"),
+            0,
             rows.Count(r => r.Durum == "MİKROYA AKTARILMAMIŞ"),
             Round(rows.Sum(r => r.AraTabloTutar)),
             Round(rows.Sum(r => r.GiderPusulasiTutar)),
@@ -1355,12 +1430,12 @@ public sealed class KasaHareketAktarimiService(
         while (await reader.ReadAsync(cancellationToken))
         {
             rows.Add(new KasaHareketKasaZDetayRowDto(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                Round(reader.GetDecimal(2)),
-                reader.GetString(3),
-                reader.GetInt32(4),
-                reader.GetString(5)));
+                ReadInt(reader, "BranchNo"),
+                ReadString(reader, "KasaNo"),
+                Round(ReadDecimal(reader, "ZTutari")),
+                ReadString(reader, "DocumentSeries"),
+                ReadInt(reader, "DocumentSequence"),
+                ReadString(reader, "Description")));
         }
 
         var total = rows.Sum(r => r.ZTutari);
@@ -1419,11 +1494,11 @@ public sealed class KasaHareketAktarimiService(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var memoryCode = reader.GetString(0);
-            var branchNo = reader.GetInt32(1);
-            var cashRegNo = reader.GetInt32(2);
-            var amount = reader.GetDecimal(3);
-            var cardNo = reader.GetString(4);
+            var memoryCode = ReadString(reader, "KasaMaliBellekKodu");
+            var branchNo = ReadInt(reader, "SubeNo");
+            var cashRegNo = ReadInt(reader, "CashRegisterNo");
+            var amount = ReadDecimal(reader, "Toplam");
+            var cardNo = ReadString(reader, "CekNumarasi");
 
             rows.Add(new KasaHareketBirlikKartRowDto(
                 branchNo,
@@ -1505,16 +1580,16 @@ public sealed class KasaHareketAktarimiService(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var branchNo = reader.GetInt32(0);
-            var tarih = reader.GetDateTime(1);
-            var saat = reader.GetString(2);
-            var zNo = reader.GetInt32(3);
-            var fisNo = reader.GetInt32(4);
-            var kasaNo = reader.GetInt32(5);
-            var tutar = reader.GetDecimal(6);
-            var cashierName = reader.GetString(7);
-            var cashierCode = reader.GetInt32(8);
-            var faturaGuid = reader.GetGuid(9);
+            var branchNo = ReadInt(reader, "SubeNo");
+            var tarih = ReadDateTime(reader, "Tarih");
+            var saat = ReadString(reader, "Saat");
+            var zNo = ReadInt(reader, "ZNo");
+            var fisNo = ReadInt(reader, "FisNo");
+            var kasaNo = ReadInt(reader, "KasaNo");
+            var tutar = ReadDecimal(reader, "Tutar");
+            var cashierName = ReadString(reader, "CashierName");
+            var cashierCode = ReadInt(reader, "CashierCode");
+            var faturaGuid = ReadGuid(reader, "FaturaGuid");
 
             var meta = branchDict.GetValueOrDefault(branchNo);
             rows.Add(new KasaHareketFisIptalRowDto(
@@ -1587,12 +1662,12 @@ public sealed class KasaHareketAktarimiService(
             if (await headerReader.ReadAsync(cancellationToken))
             {
                 found = true;
-                tarih = headerReader.GetDateTime(1);
-                saat = headerReader.GetString(2);
-                branchNo = headerReader.GetInt32(3);
-                kasaNo = headerReader.GetInt32(4);
-                cashierName = headerReader.GetString(5);
-                toplamTutar = headerReader.GetDecimal(6);
+                tarih = ReadDateTime(headerReader, "Tarih");
+                saat = ReadString(headerReader, "Saat");
+                branchNo = ReadInt(headerReader, "SubeNo");
+                kasaNo = ReadInt(headerReader, "KasaNo");
+                cashierName = ReadString(headerReader, "CashierName");
+                toplamTutar = ReadDecimal(headerReader, "ToplamTutar");
             }
         }
 
@@ -1631,10 +1706,10 @@ public sealed class KasaHareketAktarimiService(
             while (await lineReader.ReadAsync(cancellationToken))
             {
                 tempLines.Add((
-                    lineReader.GetString(0),
-                    lineReader.GetDecimal(1),
-                    lineReader.GetDecimal(2),
-                    lineReader.GetDecimal(3)));
+                    ReadString(lineReader, "Barcode"),
+                    ReadDecimal(lineReader, "Quantity"),
+                    ReadDecimal(lineReader, "UnitPrice"),
+                    ReadDecimal(lineReader, "LineTotal")));
             }
         }
 
@@ -1739,15 +1814,15 @@ public sealed class KasaHareketAktarimiService(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var branchNo = reader.GetInt32(0);
-            var tarih = reader.GetDateTime(1);
-            var saat = reader.GetString(2);
-            var fisNo = reader.GetInt32(3);
-            var kasaNo = reader.GetInt32(4);
-            var cashierCode = reader.GetInt32(5);
-            var cashierName = reader.GetString(6);
-            var tutar = reader.GetDecimal(7);
-            var faturaGuid = reader.GetGuid(8);
+            var branchNo = ReadInt(reader, "SubeNo");
+            var tarih = ReadDateTime(reader, "Tarih");
+            var saat = ReadString(reader, "Saat");
+            var fisNo = ReadInt(reader, "FisNo");
+            var kasaNo = ReadInt(reader, "KasaNo");
+            var cashierCode = ReadInt(reader, "CashierCode");
+            var cashierName = ReadString(reader, "CashierName");
+            var tutar = ReadDecimal(reader, "Tutar");
+            var faturaGuid = ReadGuid(reader, "FaturaGuid");
 
             rows.Add(new KasaHareketGiderPusulasiRowDto(
                 branchNo,
@@ -1817,12 +1892,12 @@ public sealed class KasaHareketAktarimiService(
             if (await headerReader.ReadAsync(cancellationToken))
             {
                 found = true;
-                tarih = headerReader.GetDateTime(1);
-                saat = headerReader.GetString(2);
-                branchNo = headerReader.GetInt32(3);
-                kasaNo = headerReader.GetInt32(4);
-                cashierName = headerReader.GetString(5);
-                toplamTutar = headerReader.GetDecimal(6);
+                tarih = ReadDateTime(headerReader, "Tarih");
+                saat = ReadString(headerReader, "Saat");
+                branchNo = ReadInt(headerReader, "SubeNo");
+                kasaNo = ReadInt(headerReader, "KasaNo");
+                cashierName = ReadString(headerReader, "CashierName");
+                toplamTutar = ReadDecimal(headerReader, "ToplamTutar");
             }
         }
 
@@ -1862,11 +1937,11 @@ public sealed class KasaHareketAktarimiService(
             while (await lineReader.ReadAsync(cancellationToken))
             {
                 tempLines.Add((
-                    lineReader.GetString(0),
-                    lineReader.GetString(1),
-                    lineReader.GetDecimal(2),
-                    lineReader.GetDecimal(3),
-                    lineReader.GetDecimal(4)));
+                    ReadString(lineReader, "ProductCode"),
+                    ReadString(lineReader, "Barcode"),
+                    ReadDecimal(lineReader, "Quantity"),
+                    ReadDecimal(lineReader, "UnitPrice"),
+                    ReadDecimal(lineReader, "LineTotal")));
             }
         }
 
@@ -1959,12 +2034,12 @@ public sealed class KasaHareketAktarimiService(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var branchNo = reader.GetInt32(0);
-            var tarih = reader.GetDateTime(1);
-            var fisNo = reader.GetInt32(2);
-            var kasaNo = reader.GetInt32(3);
-            var cashierName = reader.GetString(4);
-            var tutar = reader.GetDecimal(5);
+            var branchNo = ReadInt(reader, "SubeNo");
+            var tarih = ReadDateTime(reader, "Tarih");
+            var fisNo = ReadInt(reader, "FisNo");
+            var kasaNo = ReadInt(reader, "KasaNo");
+            var cashierName = ReadString(reader, "CashierName");
+            var tutar = ReadDecimal(reader, "Tutar");
 
             rows.Add(new KasaHareketTrendyolRowDto(
                 branchNo,
@@ -2022,10 +2097,10 @@ public sealed class KasaHareketAktarimiService(
         while (await reader.ReadAsync(cancellationToken))
         {
             rows.Add(new KasaHareketNakitRowDto(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                Round(reader.GetDecimal(2)),
-                reader.GetString(3)));
+                ReadInt(reader, "BranchNo"),
+                ReadString(reader, "SubeAdi"),
+                Round(ReadDecimal(reader, "NakitTutar")),
+                ReadString(reader, "Description")));
         }
 
         var totalAmount = rows.Sum(r => r.NakitTutar);
@@ -4557,44 +4632,68 @@ public sealed class KasaHareketAktarimiService(
         DateTime date,
         int branchNo,
         string branchName,
-        decimal stockMovementAmount,
+        decimal retailStockAmount,
+        decimal invoiceStockAmount,
+        decimal expenseSlipStockAmount,
         decimal currentComparableStockAmount,
         decimal currentAccountAmount,
-        decimal transferredAmount,
-        decimal expenseReceiptAmount,
+        decimal retailTransferredAmount,
+        decimal invoiceTransferredAmount,
+        decimal expenseSlipTransferredAmount,
         decimal zReportAmount,
         decimal tolerance)
     {
-        stockMovementAmount = Round(stockMovementAmount);
+        retailStockAmount = Round(retailStockAmount);
+        invoiceStockAmount = Round(invoiceStockAmount);
+        expenseSlipStockAmount = Round(expenseSlipStockAmount);
         currentComparableStockAmount = Round(currentComparableStockAmount);
         currentAccountAmount = Round(currentAccountAmount);
-        transferredAmount = Round(transferredAmount);
-        expenseReceiptAmount = Round(expenseReceiptAmount);
+        retailTransferredAmount = Round(retailTransferredAmount);
+        invoiceTransferredAmount = Round(invoiceTransferredAmount);
+        expenseSlipTransferredAmount = Round(expenseSlipTransferredAmount);
         zReportAmount = Round(zReportAmount);
 
-        var expenseExcludedAmount = Round(transferredAmount - expenseReceiptAmount);
-        var zReportTransferDifference = Round(
-            expenseExcludedAmount - (zReportAmount + expenseReceiptAmount));
-        var transferredTurnoverDifference = Round(expenseExcludedAmount - stockMovementAmount);
+        var retailDifference = Round(retailTransferredAmount - retailStockAmount);
+        var invoiceDifference = Round(invoiceTransferredAmount - invoiceStockAmount);
+        var expenseSlipDifference = Round(expenseSlipTransferredAmount - expenseSlipStockAmount);
+        var netStockTurnover = Round(retailStockAmount + invoiceStockAmount - expenseSlipStockAmount);
+        var netTransferredTurnover = Round(
+            retailTransferredAmount + invoiceTransferredAmount - expenseSlipTransferredAmount);
+        var netDifference = Round(netTransferredTurnover - netStockTurnover);
+        var expenseExcludedAmount = Round(retailTransferredAmount + invoiceTransferredAmount);
+        var zReportTransferDifference = Round(expenseExcludedAmount - zReportAmount);
+        var transferredTurnoverDifference = netDifference;
         var currentStockDifference = Round(currentComparableStockAmount - currentAccountAmount);
-        var hasDifference = Math.Abs(zReportTransferDifference) > tolerance
-                            || Math.Abs(transferredTurnoverDifference) > tolerance
-                            || Math.Abs(currentStockDifference) > tolerance;
+        var hasDifference = Math.Abs(retailDifference) > tolerance
+                            || Math.Abs(invoiceDifference) > tolerance
+                            || Math.Abs(expenseSlipDifference) > tolerance;
 
         return new KasaHareketSalesComparisonRowDto(
             date.Date,
             branchNo,
             branchName,
-            stockMovementAmount,
+            netStockTurnover,
             currentAccountAmount,
-            transferredAmount,
+            netTransferredTurnover,
             expenseExcludedAmount,
-            expenseReceiptAmount,
+            expenseSlipTransferredAmount,
             zReportAmount,
             zReportTransferDifference,
             transferredTurnoverDifference,
             currentStockDifference,
-            hasDifference);
+            hasDifference,
+            retailStockAmount,
+            retailTransferredAmount,
+            retailDifference,
+            invoiceStockAmount,
+            invoiceTransferredAmount,
+            invoiceDifference,
+            expenseSlipStockAmount,
+            expenseSlipTransferredAmount,
+            expenseSlipDifference,
+            netStockTurnover,
+            netTransferredTurnover,
+            netDifference);
     }
 
     private static IReadOnlyCollection<DateTime> EnumerateDates(DateTime startDate, DateTime endDate)
@@ -5239,19 +5338,21 @@ public sealed class KasaHareketAktarimiService(
 
     private sealed record SalesComparisonMikroSqlRow(
         int BranchNo,
-        decimal StockMovementAmount,
+        decimal RetailStockAmount,
+        decimal InvoiceStockAmount,
+        decimal ExpenseSlipStockAmount,
         decimal CurrentComparableStockAmount,
         decimal CurrentAccountAmount,
         decimal ZReportAmount);
 
     private sealed record SalesComparisonFurpaSqlRow(
         int BranchNo,
-        decimal TransferredAmount,
-        decimal ExpenseReceiptAmount);
+        decimal RetailTransferredAmount,
+        decimal InvoiceTransferredAmount,
+        decimal ExpenseSlipTransferredAmount);
 
     private sealed record SatisMutabakatMikroSqlRow(
         int BranchNo,
-        int PSEvrakAdedi,
         decimal AktarilanTutar,
         decimal ZRaporuTutari,
         decimal BaskaCariTutar,

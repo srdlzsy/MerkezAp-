@@ -148,7 +148,19 @@ public sealed record KasaHareketSalesComparisonSummaryDto(
     decimal TotalTransferredTurnoverDifference,
     decimal TotalCurrentStockDifference,
     decimal TotalShortage,
-    decimal TotalExcess);
+    decimal TotalExcess,
+    decimal TotalRetailStockAmount,
+    decimal TotalRetailTransferredAmount,
+    decimal TotalRetailDifference,
+    decimal TotalInvoiceStockAmount,
+    decimal TotalInvoiceTransferredAmount,
+    decimal TotalInvoiceDifference,
+    decimal TotalExpenseSlipStockAmount,
+    decimal TotalExpenseSlipTransferredAmount,
+    decimal TotalExpenseSlipDifference,
+    decimal TotalNetStockTurnover,
+    decimal TotalNetTransferredTurnover,
+    decimal TotalNetDifference);
 
 public sealed record KasaHareketSalesComparisonRowDto(
     DateTime Date,
@@ -163,7 +175,19 @@ public sealed record KasaHareketSalesComparisonRowDto(
     decimal ZReportTransferDifference,
     decimal TransferredTurnoverDifference,
     decimal CurrentStockDifference,
-    bool HasDifference);
+    bool HasDifference,
+    decimal RetailStockAmount,
+    decimal RetailTransferredAmount,
+    decimal RetailDifference,
+    decimal InvoiceStockAmount,
+    decimal InvoiceTransferredAmount,
+    decimal InvoiceDifference,
+    decimal ExpenseSlipStockAmount,
+    decimal ExpenseSlipTransferredAmount,
+    decimal ExpenseSlipDifference,
+    decimal NetStockTurnover,
+    decimal NetTransferredTurnover,
+    decimal NetDifference);
 
 public sealed record KasaHareketCashSummaryComparisonDto(
     DateTime Date,
