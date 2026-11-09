@@ -883,6 +883,267 @@ public sealed class SalesAnalysisReportsUseCase(
             _ => "Yemek Ceki Toplam"
         };
 
+    public async Task<IReadOnlyCollection<CategoryYearlyGrowthItemDto>> GetCategoryYearlyGrowthAsync(
+        CategoryYearlyGrowthRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateSingleMonthRange(request.StartDate, request.EndDate);
+
+        var currentStart = request.StartDate.ToDateTime(TimeOnly.MinValue);
+        var currentEndExclusive = request.EndDate.ToDateTime(TimeOnly.MinValue).AddDays(1);
+
+        var prevStart = request.StartDate.AddYears(-1).ToDateTime(TimeOnly.MinValue);
+        var prevEndExclusive = request.EndDate.AddYears(-1).ToDateTime(TimeOnly.MinValue).AddDays(1);
+
+        decimal goalPercent = 0m;
+        const string goalSql = """
+            SELECT TOP (1) CAST(COALESCE(HedeflenenCiroOrani_Yuzde, 0) AS decimal(18,2))
+            FROM dbo.HEDEF_TANIMLARI WITH (NOLOCK)
+            WHERE Yil = @year
+              AND Ay_Sira = @month
+              AND Sube_No IS NULL
+            ORDER BY Id;
+            """;
+
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var goalCmd = connection.CreateCommand();
+            goalCmd.CommandText = goalSql;
+            AddParameter(goalCmd, "@year", request.StartDate.Year);
+            AddParameter(goalCmd, "@month", request.StartDate.Month);
+            var goalObj = await goalCmd.ExecuteScalarAsync(cancellationToken);
+            if (goalObj is not null && goalObj != DBNull.Value)
+            {
+                goalPercent = Convert.ToDecimal(goalObj, CultureInfo.InvariantCulture);
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        const string categoryDataSql = """
+            SELECT
+                COALESCE(dbo.fn_KategoriIsmi(SUBSTRING(t.ktg_kod, 1, 2)), SUBSTRING(t.ktg_kod, 1, 2)) AS CategoryName,
+                COALESCE(dbo.fn_KategoriIsmi(SUBSTRING(t.ktg_kod, 1, 5)), SUBSTRING(t.ktg_kod, 1, 5)) AS SubCategoryName,
+                COALESCE(dbo.fn_KategoriIsmi(SUBSTRING(t.ktg_kod, 1, 8)), SUBSTRING(t.ktg_kod, 1, 8)) AS SegmentName,
+                COALESCE(dbo.fn_KategoriIsmi(SUBSTRING(t.ktg_kod, 1, 11)), SUBSTRING(t.ktg_kod, 1, 11)) AS SubSegmentName,
+                SUM(COALESCE(h.sth_miktar, 0)) AS Quantity,
+                SUM((COALESCE(h.sth_tutar, 0) + COALESCE(h.sth_vergi, 0))
+                  - (COALESCE(h.sth_iskonto1, 0) + COALESCE(h.sth_iskonto2, 0) + COALESCE(h.sth_iskonto3, 0)
+                   + COALESCE(h.sth_iskonto4, 0) + COALESCE(h.sth_iskonto5, 0) + COALESCE(h.sth_iskonto6, 0))) AS TotalAmount
+            FROM dbo.STOK_HAREKETLERI AS h WITH (NOLOCK)
+            INNER JOIN dbo.STOKLAR AS s WITH (NOLOCK) ON s.sto_kod = h.sth_stok_kod
+            INNER JOIN dbo.STOK_KATEGORILERI AS t WITH (NOLOCK) ON s.sto_kategori_kodu = t.ktg_kod
+            WHERE h.sth_tip = 1
+              AND h.sth_cins = 1
+              AND h.sth_normal_iade = 0
+              AND (h.sth_evraktip = 1 OR h.sth_evraktip = 4)
+              AND h.sth_tarih >= @startDate AND h.sth_tarih < @endDateExclusive
+            GROUP BY
+                SUBSTRING(t.ktg_kod, 1, 2),
+                SUBSTRING(t.ktg_kod, 1, 5),
+                SUBSTRING(t.ktg_kod, 1, 8),
+                SUBSTRING(t.ktg_kod, 1, 11);
+            """;
+
+        var currentRows = await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            categoryDataSql,
+            command =>
+            {
+                AddParameter(command, "@startDate", currentStart);
+                AddParameter(command, "@endDateExclusive", currentEndExclusive);
+            },
+            reader => new CategoryRawRow(
+                ReadString(reader, "CategoryName"),
+                ReadString(reader, "SubCategoryName"),
+                ReadString(reader, "SegmentName"),
+                ReadString(reader, "SubSegmentName"),
+                Round(ReadDouble(reader, "Quantity")),
+                Round(ReadDouble(reader, "TotalAmount"))),
+            cancellationToken);
+
+        var prevRows = await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            categoryDataSql,
+            command =>
+            {
+                AddParameter(command, "@startDate", prevStart);
+                AddParameter(command, "@endDateExclusive", prevEndExclusive);
+            },
+            reader => new CategoryRawRow(
+                ReadString(reader, "CategoryName"),
+                ReadString(reader, "SubCategoryName"),
+                ReadString(reader, "SegmentName"),
+                ReadString(reader, "SubSegmentName"),
+                Round(ReadDouble(reader, "Quantity")),
+                Round(ReadDouble(reader, "TotalAmount"))),
+            cancellationToken);
+
+        var currentMap = currentRows.ToDictionary(r => $"{r.CategoryName}|{r.SubCategoryName}|{r.SegmentName}|{r.SubSegmentName}");
+        var prevMap = prevRows.ToDictionary(r => $"{r.CategoryName}|{r.SubCategoryName}|{r.SegmentName}|{r.SubSegmentName}");
+
+        var allKeys = currentMap.Keys.Union(prevMap.Keys).OrderBy(k => k).ToArray();
+        var results = new List<CategoryYearlyGrowthItemDto>();
+
+        foreach (var key in allKeys)
+        {
+            currentMap.TryGetValue(key, out var curr);
+            prevMap.TryGetValue(key, out var prev);
+
+            var cat = curr?.CategoryName ?? prev?.CategoryName ?? string.Empty;
+            var subCat = curr?.SubCategoryName ?? prev?.SubCategoryName ?? string.Empty;
+            var seg = curr?.SegmentName ?? prev?.SegmentName ?? string.Empty;
+            var subSeg = curr?.SubSegmentName ?? prev?.SubSegmentName ?? string.Empty;
+
+            var currQty = curr?.Quantity ?? 0d;
+            var currAmt = curr?.TotalAmount ?? 0d;
+            var prevQty = prev?.Quantity ?? 0d;
+            var prevAmt = prev?.TotalAmount ?? 0d;
+
+            var goalAmt = Math.Round(prevAmt * (1d + ((double)goalPercent / 100d)), 2);
+            var realizedRatio = goalAmt > 0d
+                ? Math.Round((currAmt / goalAmt) * 100d, 2)
+                : 0d;
+
+            results.Add(new CategoryYearlyGrowthItemDto(
+                cat,
+                subCat,
+                seg,
+                subSeg,
+                currQty,
+                currAmt,
+                prevQty,
+                prevAmt,
+                goalPercent,
+                (decimal)goalAmt,
+                (decimal)realizedRatio));
+        }
+
+        return results;
+    }
+
+    public async Task<IReadOnlyCollection<CategorySalesDetailedItemDto>> GetCategorySalesDetailedAsync(
+        CategorySalesDetailedRequest request,
+        CancellationToken cancellationToken)
+    {
+        var startDate = request.StartDate.ToDateTime(TimeOnly.MinValue);
+        var endDateExclusive = request.EndDate.ToDateTime(TimeOnly.MinValue).AddDays(1);
+        var take = request.Take <= 0 ? 1000 : Math.Min(request.Take, 5000);
+
+        const string sql = """
+            SELECT TOP (@take)
+                COALESCE(w.dep_bolge_kodu, '') AS Region,
+                w.dep_no AS BranchNo,
+                COALESCE(w.dep_adi, '') AS BranchName,
+                COALESCE(sec.sek_isim, '') AS SectorName,
+                COALESCE(ray.ryn_isim, '') AS RayonName,
+                COALESCE(cat.ktg_isim, '') AS CategoryName,
+                s.sto_kod AS ProductCode,
+                COALESCE(s.sto_isim, '') AS ProductName,
+                SUM(COALESCE(h.sth_miktar, 0)) AS Quantity,
+                SUM(COALESCE(h.sth_tutar, 0) + COALESCE(h.sth_vergi, 0)) AS GrossAmount,
+                SUM(COALESCE(h.sth_iskonto1, 0) + COALESCE(h.sth_iskonto2, 0) + COALESCE(h.sth_iskonto3, 0)
+                  + COALESCE(h.sth_iskonto4, 0) + COALESCE(h.sth_iskonto5, 0) + COALESCE(h.sth_iskonto6, 0)) AS DiscountAmount,
+                SUM((COALESCE(h.sth_tutar, 0) + COALESCE(h.sth_vergi, 0))
+                  - (COALESCE(h.sth_iskonto1, 0) + COALESCE(h.sth_iskonto2, 0) + COALESCE(h.sth_iskonto3, 0)
+                   + COALESCE(h.sth_iskonto4, 0) + COALESCE(h.sth_iskonto5, 0) + COALESCE(h.sth_iskonto6, 0))) AS NetAmount
+            FROM dbo.STOK_HAREKETLERI AS h WITH (NOLOCK)
+            INNER JOIN dbo.DEPOLAR AS w WITH (NOLOCK) ON h.sth_cikis_depo_no = w.dep_no
+            INNER JOIN dbo.STOKLAR AS s WITH (NOLOCK) ON s.sto_kod = h.sth_stok_kod
+            LEFT JOIN dbo.STOK_SEKTORLERI AS sec WITH (NOLOCK) ON s.sto_sektor_kodu = sec.sek_kod
+            LEFT JOIN dbo.STOK_REYONLARI AS ray WITH (NOLOCK) ON s.sto_reyon_kodu = ray.ryn_kod
+            LEFT JOIN dbo.STOK_KATEGORILERI AS cat WITH (NOLOCK) ON s.sto_kategori_kodu = cat.ktg_kod
+            WHERE h.sth_tip = 1
+              AND h.sth_cins = 1
+              AND h.sth_normal_iade = 0
+              AND (h.sth_evraktip = 1 OR h.sth_evraktip = 4)
+              AND h.sth_tarih >= @startDate AND h.sth_tarih < @endDateExclusive
+              AND (@branchNo IS NULL OR w.dep_no = @branchNo)
+              AND (@region IS NULL OR w.dep_bolge_kodu = @region)
+              AND (@sectorCode IS NULL OR s.sto_sektor_kodu = @sectorCode)
+              AND (@rayonCode IS NULL OR s.sto_reyon_kodu = @rayonCode)
+              AND (@categoryCode IS NULL OR s.sto_kategori_kodu LIKE @categoryCode + '%')
+              AND (@productCode IS NULL OR s.sto_kod = @productCode)
+            GROUP BY
+                w.dep_bolge_kodu,
+                w.dep_no,
+                w.dep_adi,
+                sec.sek_isim,
+                ray.ryn_isim,
+                cat.ktg_isim,
+                s.sto_kod,
+                s.sto_isim
+            ORDER BY
+                NetAmount DESC,
+                ProductName;
+            """;
+
+        return await ExecuteReaderAsync(
+            mikroDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate);
+                AddParameter(command, "@endDateExclusive", endDateExclusive);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(command, "@region", string.IsNullOrWhiteSpace(request.Region) ? null : request.Region);
+                AddParameter(command, "@sectorCode", string.IsNullOrWhiteSpace(request.SectorCode) ? null : request.SectorCode);
+                AddParameter(command, "@rayonCode", string.IsNullOrWhiteSpace(request.RayonCode) ? null : request.RayonCode);
+                AddParameter(command, "@categoryCode", string.IsNullOrWhiteSpace(request.CategoryCode) ? null : request.CategoryCode);
+                AddParameter(command, "@productCode", string.IsNullOrWhiteSpace(request.ProductCode) ? null : request.ProductCode);
+                AddParameter(command, "@take", take);
+            },
+            reader => new CategorySalesDetailedItemDto(
+                ReadString(reader, "Region"),
+                ReadInt(reader, "BranchNo"),
+                ReadString(reader, "BranchName"),
+                ReadString(reader, "SectorName"),
+                ReadString(reader, "RayonName"),
+                ReadString(reader, "CategoryName"),
+                ReadString(reader, "ProductCode"),
+                ReadString(reader, "ProductName"),
+                Round(ReadDouble(reader, "Quantity")),
+                Round(ReadDouble(reader, "GrossAmount")),
+                Round(ReadDouble(reader, "DiscountAmount")),
+                Round(ReadDouble(reader, "NetAmount"))),
+            cancellationToken);
+    }
+
+    private sealed record CategoryRawRow(
+        string CategoryName,
+        string SubCategoryName,
+        string SegmentName,
+        string SubSegmentName,
+        double Quantity,
+        double TotalAmount);
+
+    private static void ValidateSingleMonthRange(DateOnly startDate, DateOnly endDate)
+    {
+        if (endDate < startDate)
+        {
+            throw new ArgumentException("Bitis tarihi baslangic tarihinden once olamaz.", nameof(endDate));
+        }
+
+        if (startDate.Year != endDate.Year || startDate.Month != endDate.Month)
+        {
+            throw new ArgumentException(
+                "Yillik kategori karsilastirmasi ayni yil ve ay icindeki bir tarih araligi icin calistirilmalidir.",
+                nameof(endDate));
+        }
+    }
+
     private static string NormalizeCardNumber(string value) =>
         value.Trim().ToUpperInvariant();
 

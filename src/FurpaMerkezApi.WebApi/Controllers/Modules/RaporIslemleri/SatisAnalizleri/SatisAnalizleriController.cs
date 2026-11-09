@@ -204,6 +204,43 @@ public sealed class SatisAnalizleriController(
         CancellationToken cancellationToken) =>
         Ok(await salesAnalysisReportsUseCase.GetMissingTurnoverBranchesAsync(ToDateRangeRequest(request), cancellationToken));
 
+    [HttpGet("yillik-kategori-buyume")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CategoryYearlyGrowthItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CategoryYearlyGrowthItemDto>>> CategoryYearlyGrowth(
+        [FromQuery] CategoryYearlyGrowthHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await salesAnalysisReportsUseCase.GetCategoryYearlyGrowthAsync(
+            new CategoryYearlyGrowthRequest(
+                DateOnly.FromDateTime(request.StartDate!.Value),
+                DateOnly.FromDateTime(request.EndDate!.Value)),
+            cancellationToken));
+
+    [HttpGet("kategori-satislari")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CategorySalesDetailedItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CategorySalesDetailedItemDto>>> CategorySalesDetailed(
+        [FromQuery] CategorySalesDetailedHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseScope(request.BranchNo, AllWarehousesPolicy);
+
+        return Ok(await salesAnalysisReportsUseCase.GetCategorySalesDetailedAsync(
+            new CategorySalesDetailedRequest(
+                DateOnly.FromDateTime(request.StartDate!.Value),
+                DateOnly.FromDateTime(request.EndDate!.Value),
+                resolvedWarehouseNo,
+                request.SectorCode,
+                request.RayonCode,
+                request.CategoryCode,
+                request.ProductCode,
+                request.Region,
+                request.Take),
+            cancellationToken));
+    }
+
     private async Task<ActionResult<SalesAnalysisAmountDto>> FoodCheckTotal(
         WarehouseOrderDateRangeHttpRequest request,
         FoodCheckTotalKind totalKind,
@@ -218,4 +255,32 @@ public sealed class SatisAnalizleriController(
             User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy),
             request.StartDate!.Value,
             request.EndDate!.Value);
+}
+
+public sealed class CategoryYearlyGrowthHttpRequest
+{
+    public DateTime? StartDate { get; init; }
+
+    public DateTime? EndDate { get; init; }
+}
+
+public sealed class CategorySalesDetailedHttpRequest
+{
+    public DateTime? StartDate { get; init; }
+
+    public DateTime? EndDate { get; init; }
+
+    public int? BranchNo { get; init; }
+
+    public string? SectorCode { get; init; }
+
+    public string? RayonCode { get; init; }
+
+    public string? CategoryCode { get; init; }
+
+    public string? ProductCode { get; init; }
+
+    public string? Region { get; init; }
+
+    public int Take { get; init; } = 1000;
 }

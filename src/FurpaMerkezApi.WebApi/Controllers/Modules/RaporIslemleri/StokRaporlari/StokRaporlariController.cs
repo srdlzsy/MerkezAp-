@@ -410,6 +410,82 @@ public sealed class StokRaporlariController(IStockReportsUseCase stockReportsUse
                 request.PackageCode,
                 request.Take),
             cancellationToken));
+
+    [HttpGet("tedarikci-sube-matrisi")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(SupplierBranchStockMatrixDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<SupplierBranchStockMatrixDto>> SupplierBranchStockMatrix(
+        [FromQuery] SupplierBranchStockMatrixHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy);
+
+        return Ok(await stockReportsUseCase.GetSupplierBranchStockMatrixAsync(
+            new SupplierBranchStockMatrixRequest(
+                request.CustomerCode!,
+                resolvedWarehouseNo),
+            cancellationToken));
+    }
+
+    [HttpGet("sube-zayiat-fire-analizi")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<BranchOutageAnalysisItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<BranchOutageAnalysisItemDto>>> BranchOutageAnalysis(
+        [FromQuery] BranchOutageAnalysisHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await stockReportsUseCase.GetBranchOutageAnalysisAsync(
+            new BranchOutageAnalysisRequest(
+                DateOnly.FromDateTime(request.StartDate!.Value),
+                DateOnly.FromDateTime(request.EndDate!.Value)),
+            cancellationToken));
+
+    [HttpGet("anlik-fiyat-stok")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(LiveStockAndPriceDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<LiveStockAndPriceDto>> LiveStockAndPrice(
+        [FromQuery] LiveStockAndPriceHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseScope(request.WarehouseNo, AllWarehousesPolicy);
+
+        return Ok(await stockReportsUseCase.GetLiveStockAndPriceAsync(
+            new LiveStockAndPriceRequest(
+                request.Barcode!,
+                resolvedWarehouseNo),
+            cancellationToken));
+    }
+}
+
+public sealed class SupplierBranchStockMatrixHttpRequest
+{
+    [Required]
+    [StringLength(25)]
+    public string? CustomerCode { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+}
+
+public sealed class BranchOutageAnalysisHttpRequest
+{
+    [Required]
+    public DateTime? StartDate { get; init; }
+
+    [Required]
+    public DateTime? EndDate { get; init; }
+}
+
+public sealed class LiveStockAndPriceHttpRequest
+{
+    [Required]
+    [StringLength(30)]
+    public string? Barcode { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
 }
 
 public sealed class StockOnHandReportHttpRequest

@@ -74,4 +74,15 @@ public interface IStockReportsUseCase
         ProductShipmentDistributionRequest request,
         CancellationToken cancellationToken);
 
+    Task<SupplierBranchStockMatrixDto> GetSupplierBranchStockMatrixAsync(
+        SupplierBranchStockMatrixRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<BranchOutageAnalysisItemDto>> GetBranchOutageAnalysisAsync(
+        BranchOutageAnalysisRequest request,
+        CancellationToken cancellationToken);
+
+    Task<LiveStockAndPriceDto> GetLiveStockAndPriceAsync(
+        LiveStockAndPriceRequest request,
+        CancellationToken cancellationToken);
 }

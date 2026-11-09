@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 796. Model sayisi: 745.
+Endpoint sayisi (method + route): 810. Model sayisi: 768.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -642,6 +642,13 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/permissions` | JWT + kullanici-islemleri.yetkiler.manage | body: request / SavePermissionBody (zorunlu) | 200: PermissionDto<br>400: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/permissions/catalog` | JWT + kullanici-islemleri.yetkiler.manage |  | 200: IReadOnlyCollection&lt;PermissionModuleDto&gt; |
 | PUT | `/api/permissions/{id}` | JWT + kullanici-islemleri.yetkiler.manage | path: id / string (uuid) (zorunlu)<br>body: request / SavePermissionBody (zorunlu) | 200: PermissionDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/rapor-islemleri/ciro-hedef/hedef-tanimlari` | JWT + rapor-islemleri.ciro-hedef-raporlari.list | query: year / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;HedefTanimDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/ciro-hedef/karsilastirma` | JWT + rapor-islemleri.ciro-hedef-raporlari.list | query: StartDate / string (date) (zorunlu)<br>query: EndDate / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Region / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: CiroHedefKarsilastirmaRaporDto<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/kasa-raporlari/gider-pusulalari` | JWT + rapor-islemleri.kasa-raporlari.list | query: StartDate / string (date) (zorunlu)<br>query: EndDate / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: CashierCode / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ExpenseSlipZoneSummaryDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/kasa-raporlari/gider-pusulalari/detaylar` | JWT + rapor-islemleri.kasa-raporlari.detail | query: StartDate / string (date) (zorunlu)<br>query: EndDate / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: CashierCode / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ExpenseSlipDetailItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/mal-kabul/tedarikci-hacim-analizi` | JWT + rapor-islemleri.mal-kabul-raporlari.list | query: StartDate / string (date) (zorunlu)<br>query: EndDate / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyDocumentByCustomerItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/mal-kabul/tembel-subeler` | JWT + rapor-islemleri.mal-kabul-raporlari.list | query: StartDate / string (date)<br>query: EndDate / string (date)<br>query: Region / string<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LazyBranchReceivingItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/mal-kabul/tembel-subeler/evraklar` | JWT + rapor-islemleri.mal-kabul-raporlari.detail | query: StartDate / string (date)<br>query: EndDate / string (date)<br>query: Region / string<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LazyBranchDocumentDetailDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/promosyon-raporlari/bulten-secenekleri` | JWT + rapor-islemleri.promosyon-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ActiveOn / string (date-time)<br>query: OnlyActive / boolean<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PromotionBulletinOptionDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/promosyon-raporlari/bultenler` | JWT + rapor-islemleri.promosyon-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ActiveOn / string (date-time)<br>query: OnlyActive / boolean<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PromotionBulletinListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/promosyon-raporlari/bultenler/secenekler` | JWT + rapor-islemleri.promosyon-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ActiveOn / string (date-time)<br>query: OnlyActive / boolean<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PromotionBulletinOptionDto&gt;<br>400: ProblemDetails |
@@ -655,6 +662,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/rapor-islemleri/satis-analizleri/banka-odeme-ozetleri/valor` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: ValorPaymentSummaryReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/eksik-cirolar` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;MissingTurnoverBranchItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/indirim-kartlari` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DiscountCardDetailItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/satis-analizleri/kategori-satislari` | JWT + rapor-islemleri.satis-analizleri.list | query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: BranchNo / integer (int32)<br>query: SectorCode / string<br>query: RayonCode / string<br>query: CategoryCode / string<br>query: ProductCode / string<br>query: Region / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CategorySalesDetailedItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/marketyo-satislari` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: MyoSalesReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/marketyo-satislari/sube` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;MyoSalesByBranchItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/yemek-cekleri` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FoodCheckReportDto<br>400: ProblemDetails |
@@ -667,7 +675,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/rapor-islemleri/satis-analizleri/yemek-cekleri/ticket-kupon-toplam` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SalesAnalysisAmountDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/yemek-cekleri/ticket-pos-toplam` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SalesAnalysisAmountDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/yemek-cekleri/toplamlar` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FoodCheckTotalsDto<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/satis-analizleri/yillik-kategori-buyume` | JWT + rapor-islemleri.satis-analizleri.list | query: StartDate / string (date-time)<br>query: EndDate / string (date-time) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CategoryYearlyGrowthItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/satis-analizleri/z-rapor-banka-analizi` | JWT + rapor-islemleri.satis-analizleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ZReportBankAnalysisItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/stok-raporlari/anlik-fiyat-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: Barcode / string (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: LiveStockAndPriceDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/depo-sifir-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: ModelCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseZeroStockDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/depoda-var-subede-yok` | JWT + rapor-islemleri.stok-raporlari.list | query: SourceWarehouseNo / integer (int32) (zorunlu)<br>query: TargetWarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: Search / string<br>query: ModelCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseMissingStockDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/envanter-degeri` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: Search / string<br>query: SupplierCode / string<br>query: CategoryCode / string<br>query: ProducerCode / string<br>query: ProductManagerCode / string<br>query: ModelCode / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
@@ -685,7 +695,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/rapor-islemleri/stok-raporlari/son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: Search / string<br>query: SupplierCode / string<br>query: CategoryCode / string<br>query: ProducerCode / string<br>query: ProductManagerCode / string<br>query: ModelCode / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/stok-kartlari` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: ProductManagerCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockCardDetailDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/sube-fiyat-farklari` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BranchPriceDifferenceItemDto&gt; |
+| GET | `/api/rapor-islemleri/stok-raporlari/sube-zayiat-fire-analizi` | JWT + rapor-islemleri.stok-raporlari.list | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;BranchOutageAnalysisItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/tedarikci-son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: SupplierCode / string (zorunlu)<br>query: Search / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
+| GET | `/api/rapor-islemleri/stok-raporlari/tedarikci-sube-matrisi` | JWT + rapor-islemleri.stok-raporlari.list | query: CustomerCode / string (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SupplierBranchStockMatrixDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/uretici-sezonsal-satis` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: PastYear / integer (int32)<br>query: PresentYear / integer (int32)<br>query: ManufacturerCode / string (zorunlu)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ManufacturerSeasonalSalesItemDto&gt; |
 | GET | `/api/rapor-islemleri/stok-raporlari/uretici-son-stok` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: ReportDate / string (date-time)<br>query: ProducerCode / string (zorunlu)<br>query: Search / string<br>query: OnlyWithStock / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockOnHandReportDto<br>400: ProblemDetails |
 | GET | `/api/rapor-islemleri/stok-raporlari/urun-ara` | JWT + rapor-islemleri.stok-raporlari.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: ProductManagerCode / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockCardDetailDto&gt;<br>400: ProblemDetails |
@@ -764,6 +776,8 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/siparis-islemleri/verilen-firma-siparisleri/firma-urunleri` | JWT + siparis-islemleri.verilen-firma-siparisleri.create | query: WarehouseNo / integer (int32)<br>query: CustomerCode / string (zorunlu)<br>query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;IssuedCompanyOrderSupplierProductDto&gt;<br>400: ProblemDetails |
 | GET | `/api/siparis-islemleri/verilen-firma-siparisleri/key/{documentKey}` | JWT + siparis-islemleri.verilen-firma-siparisleri.detail | path: documentKey / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/siparis-islemleri/verilen-firma-siparisleri/offline-sync/{clientRequestId}` | JWT + siparis-islemleri.verilen-firma-siparisleri.create | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: OfflineSyncStatusDto&lt;CreateIssuedCompanyOrderResponse&gt;<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/siparis-islemleri/verilen-firma-siparisleri/onay-bekleyenler` | JWT + siparis-islemleri.verilen-firma-siparisleri.list | query: UserDefPerCode / string<br>query: CustomerCode / string<br>query: WarehouseNo / integer (int32)<br>query: StartDate / string (date)<br>query: EndDate / string (date)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;PendingApprovalCompanyOrderItemDto&gt;<br>400: ProblemDetails |
+| POST | `/api/siparis-islemleri/verilen-firma-siparisleri/onayla` | JWT + siparis-islemleri.verilen-firma-siparisleri.update | body: request / BatchApproveCompanyOrdersHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BatchApproveCompanyOrdersResultDto<br>400: ProblemDetails |
 | GET | `/api/siparis-islemleri/verilen-firma-siparisleri/{documentSerie}/{documentOrderNo}` | JWT + siparis-islemleri.verilen-firma-siparisleri.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/siparis-islemleri/verilen-firma-siparisleri/{id}` | JWT + siparis-islemleri.verilen-firma-siparisleri.update | path: id / string (zorunlu)<br>body: request / ModuleActionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>501: ModuleActionScaffoldResponse |
 | GET | `/api/stok-islemleri/masraf-fisleri` | JWT + stok-islemleri.masraf-fisleri.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;StockReceiptListItemDto&gt;<br>400: ProblemDetails |
@@ -7847,6 +7861,161 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `myOpenCount` | integer (int32) | Hayir |  |
 | `myResolvedCount` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefKarsilastirmaRaporDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branches` | FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefSubeKarsilastirmaDto[] | Hayir | nullable |
+| `ciroGoalPercent` | number (double) | Hayir |  |
+| `currentOverallAverageBasket` | number (double) | Hayir |  |
+| `customerGoalPercent` | number (double) | Hayir |  |
+| `endDate` | string (date) | Hayir |  |
+| `overallCustomerAchievementRate` | number (double) | Hayir |  |
+| `overallTurnoverAchievementRate` | number (double) | Hayir |  |
+| `previousOverallAverageBasket` | number (double) | Hayir |  |
+| `startDate` | string (date) | Hayir |  |
+| `totalCurrentCustomers` | integer (int32) | Hayir |  |
+| `totalCurrentTurnover` | number (double) | Hayir |  |
+| `totalPreviousCustomers` | integer (int32) | Hayir |  |
+| `totalPreviousTurnover` | number (double) | Hayir |  |
+| `totalTargetCustomers` | number (double) | Hayir |  |
+| `totalTargetTurnover` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefSubeKarsilastirmaDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `currentAverageBasketAmount` | number (double) | Hayir |  |
+| `currentCashTotal` | number (double) | Hayir |  |
+| `currentCreditTotal` | number (double) | Hayir |  |
+| `currentCustomerCount` | integer (int32) | Hayir |  |
+| `currentExpenseTotal` | number (double) | Hayir |  |
+| `currentFuturesTotal` | number (double) | Hayir |  |
+| `currentGiftTotal` | number (double) | Hayir |  |
+| `currentOverallTotal` | number (double) | Hayir |  |
+| `customerAchievementRate` | number (double) | Hayir |  |
+| `previousAverageBasketAmount` | number (double) | Hayir |  |
+| `previousCashTotal` | number (double) | Hayir |  |
+| `previousCreditTotal` | number (double) | Hayir |  |
+| `previousCustomerCount` | integer (int32) | Hayir |  |
+| `previousExpenseTotal` | number (double) | Hayir |  |
+| `previousFuturesTotal` | number (double) | Hayir |  |
+| `previousGiftTotal` | number (double) | Hayir |  |
+| `previousOverallTotal` | number (double) | Hayir |  |
+| `region` | string | Hayir | nullable |
+| `targetCustomerCount` | number (double) | Hayir |  |
+| `targetTurnover` | number (double) | Hayir |  |
+| `turnoverAchievementRate` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.HedefTanimDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `ciroGoalPercent` | number (double) | Hayir |  |
+| `customerGoalPercent` | number (double) | Hayir |  |
+| `expenseGoalPercent` | number (double) | Hayir |  |
+| `id` | integer (int32) | Hayir |  |
+| `month` | integer (int32) | Hayir |  |
+| `monthName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir | nullable |
+| `year` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipBranchSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashRegisters` | FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashRegisterSummaryDto[] | Hayir | nullable |
+| `slipCount` | integer (int32) | Hayir |  |
+| `totalExpenseAmount` | number (double) | Hayir |  |
+| `zoneCode` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashRegisterSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `cashRegisterNo` | integer (int32) | Hayir |  |
+| `cashiers` | FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashierSummaryDto[] | Hayir | nullable |
+| `slipCount` | integer (int32) | Hayir |  |
+| `totalExpenseAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashierSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `cashierCode` | string | Hayir | nullable |
+| `cashierName` | string | Hayir | nullable |
+| `slipCount` | integer (int32) | Hayir |  |
+| `totalExpenseAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipDetailItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `amount` | number (double) | Hayir |  |
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashRegisterNo` | integer (int32) | Hayir |  |
+| `cashierCode` | string | Hayir | nullable |
+| `cashierName` | string | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `description` | string | Hayir | nullable |
+| `documentGuid` | string (uuid) | Hayir |  |
+| `slipNo` | integer (int32) | Hayir |  |
+| `time` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipZoneSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branches` | FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipBranchSummaryDto[] | Hayir | nullable |
+| `slipCount` | integer (int32) | Hayir |  |
+| `totalExpenseAmount` | number (double) | Hayir |  |
+| `zoneCode` | string | Hayir | nullable |
+| `zoneName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.CompanyDocumentByCustomerItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `customerCode` | string | Hayir | nullable |
+| `customerName` | string | Hayir | nullable |
+| `customerTitle` | string | Hayir | nullable |
+| `documentCount` | integer (int32) | Hayir |  |
+| `netAmount` | number (double) | Hayir |  |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalDiscountAmount` | number (double) | Hayir |  |
+| `totalTaxAmount` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchDocumentDetailDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentDate` | string (date-time) | Hayir |  |
+| `documentNo` | string | Hayir | nullable |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `lineCount` | integer (int32) | Hayir |  |
+| `region` | string | Hayir | nullable |
+| `totalQuantity` | number (double) | Hayir |  |
+| `warehouseName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchReceivingItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `latestShipmentDate` | string (date-time) | Hayir | nullable |
+| `notAcceptedCount` | integer (int32) | Hayir |  |
+| `oldestShipmentDate` | string (date-time) | Hayir | nullable |
+| `region` | string | Hayir | nullable |
+| `totalQuantity` | number (double) | Hayir |  |
+| `warehouseName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.PromosyonRaporlari.PromotionBranchPerformanceItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -7976,6 +8145,39 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `bankingNumber` | integer (int32) | Hayir |  |
 | `branchName` | string | Hayir | nullable |
 | `branchNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategorySalesDetailedItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `categoryName` | string | Hayir | nullable |
+| `discountAmount` | number (double) | Hayir |  |
+| `grossAmount` | number (double) | Hayir |  |
+| `netAmount` | number (double) | Hayir |  |
+| `productCode` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `rayonName` | string | Hayir | nullable |
+| `region` | string | Hayir | nullable |
+| `sectorName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategoryYearlyGrowthItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `categoryName` | string | Hayir | nullable |
+| `currentAmount` | number (double) | Hayir |  |
+| `currentQuantity` | number (double) | Hayir |  |
+| `goalAmount` | number (double) | Hayir |  |
+| `goalRatioPercent` | number (double) | Hayir |  |
+| `previousAmount` | number (double) | Hayir |  |
+| `previousQuantity` | number (double) | Hayir |  |
+| `realizedRatioPercent` | number (double) | Hayir |  |
+| `segmentName` | string | Hayir | nullable |
+| `subCategoryName` | string | Hayir | nullable |
+| `subSegmentName` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.DiscountCardDetailItemDto
 
@@ -8128,6 +8330,18 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `terminalId` | string | Hayir | nullable |
 | `zNo` | integer (int32) | Hayir |  |
 
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchOutageAnalysisItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `giroTotal` | number (double) | Hayir |  |
+| `greenGrocerRatioPercent` | number (double) | Hayir |  |
+| `greenGrocerSaleGiro` | number (double) | Hayir |  |
+| `outageTotal` | number (double) | Hayir |  |
+| `ratioPercent` | number (double) | Hayir |  |
+| `regionCode` | string | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchPriceDifferenceItemDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -8186,6 +8400,25 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `unitName` | string | Hayir | nullable |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceBranchItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `currentQuantity` | number (double) | Hayir |  |
+| `latestPurchasePrice` | number (double) | Hayir |  |
+| `salesPrice` | number (double) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `branches` | FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceBranchItemDto[] | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.ManufacturerSeasonalSalesItemDto
 
@@ -8400,6 +8633,32 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `unitName` | string | Hayir | nullable |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierBranchStockMatrixDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branches` | FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixBranchColumnDto[] | Hayir | nullable |
+| `customerCode` | string | Hayir | nullable |
+| `customerName` | string | Hayir | nullable |
+| `products` | FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixProductItemDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixBranchColumnDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `warehouseName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixProductItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `branchQuantities` | object | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
+| `stockName` | string | Hayir | nullable |
+| `totalQuantity` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.WarehouseMissingStockDto
 
@@ -9048,6 +9307,33 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `outWarehouseNo` | integer (int32) | Hayir |  |
 | `totalQuantity` | number (double) | Hayir |  |
 | `writeConnectionName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.BatchApproveCompanyOrdersResultDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `approvedCount` | integer (int32) | Hayir |  |
+| `approvedDocumentKeys` | string[] | Hayir | nullable |
+| `failedDocumentKeys` | string[] | Hayir | nullable |
+| `totalRequested` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.PendingApprovalCompanyOrderItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `canBeCalled` | boolean | Hayir |  |
+| `customerCode` | string | Hayir | nullable |
+| `customerName` | string | Hayir | nullable |
+| `customerTitle` | string | Hayir | nullable |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `lineCount` | integer (int32) | Hayir |  |
+| `orderDate` | string (date-time) | Hayir |  |
+| `purchasingPersonCode` | string | Hayir | nullable |
+| `purchasingPersonName` | string | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create.CreateIssuedCompanyOrderResponse
 
@@ -11588,6 +11874,20 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `inputQuantity` | number (double) | Hayir | max=100000 |
 | `microUnit` | string | Evet | minLength=0; maxLength=20 |
 | `unitsPerCase` | number (double) | Hayir | nullable |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.ApproveCompanyOrderItemHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentOrderNo` | integer (int32) | Hayir | min=1; max=2147483647 |
+| `documentSerie` | string | Evet | minLength=0; maxLength=25 |
+| `warehouseNo` | integer (int32) | Hayir | min=1; max=2147483647 |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.BatchApproveCompanyOrdersHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `orders` | FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.ApproveCompanyOrderItemHttpRequest[] | Evet |  |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.CreateIssuedCompanyOrderHttpRequest
 

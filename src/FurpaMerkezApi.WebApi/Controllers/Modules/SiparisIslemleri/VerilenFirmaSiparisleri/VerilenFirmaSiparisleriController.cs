@@ -12,6 +12,8 @@ using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval;
+
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri;
 
 [ApiController]
@@ -23,7 +25,9 @@ public sealed class VerilenFirmaSiparisleriController(
     IGetIssuedCompanyOrderDetailUseCase getIssuedCompanyOrderDetailUseCase,
     IDocumentFlowService documentFlowService,
     ICreateIssuedCompanyOrderUseCase createIssuedCompanyOrderUseCase,
-    IListIssuedCompanyOrderSupplierProductsUseCase listSupplierProductsUseCase)
+    IListIssuedCompanyOrderSupplierProductsUseCase listSupplierProductsUseCase,
+    IListPendingApprovalCompanyOrdersUseCase listPendingApprovalCompanyOrdersUseCase,
+    IApproveIssuedCompanyOrdersUseCase approveIssuedCompanyOrdersUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "siparis-islemleri";
@@ -186,6 +190,86 @@ public sealed class VerilenFirmaSiparisleriController(
     [ProducesResponseType(typeof(ModuleActionScaffoldResponse), StatusCodes.Status501NotImplemented)]
     public ActionResult<ModuleActionScaffoldResponse> Update(string id, [FromBody] ModuleActionRequest request) =>
         UpdateNotImplemented(UpdatePolicy, id);
+
+    [HttpGet("onay-bekleyenler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<PendingApprovalCompanyOrderItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<PendingApprovalCompanyOrderItemDto>>> PendingApproval(
+        [FromQuery] PendingApprovalCompanyOrdersHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var resolvedWarehouseNo = User.ResolveWarehouseScopeForPolicy(request.WarehouseNo, ListPolicy);
+
+        return Ok(await listPendingApprovalCompanyOrdersUseCase.ExecuteAsync(
+            new PendingApprovalCompanyOrdersRequest(
+                request.UserDefPerCode,
+                request.CustomerCode,
+                resolvedWarehouseNo,
+                request.StartDate,
+                request.EndDate,
+                request.Take),
+            cancellationToken));
+    }
+
+    [HttpPost("onayla")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(BatchApproveCompanyOrdersResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BatchApproveCompanyOrdersResultDto>> Approve(
+        [FromBody] BatchApproveCompanyOrdersHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var commands = request.Orders
+            .Select(order => new ApproveCompanyOrderCommand(
+                order.DocumentSerie,
+                order.DocumentOrderNo,
+                User.ResolveWarehouseNoForPolicy(order.WarehouseNo, UpdatePolicy)))
+            .ToArray();
+
+        var result = await approveIssuedCompanyOrdersUseCase.ExecuteAsync(
+            new BatchApproveCompanyOrdersRequest(commands),
+            cancellationToken);
+
+        return Ok(result);
+    }
+}
+
+public sealed class PendingApprovalCompanyOrdersHttpRequest
+{
+    public string? UserDefPerCode { get; init; }
+
+    public string? CustomerCode { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    public DateOnly? StartDate { get; init; }
+
+    public DateOnly? EndDate { get; init; }
+
+    public int Take { get; init; } = 100;
+}
+
+public sealed class BatchApproveCompanyOrdersHttpRequest
+{
+    [Required]
+    [MinLength(1)]
+    public IReadOnlyCollection<ApproveCompanyOrderItemHttpRequest> Orders { get; init; } =
+        Array.Empty<ApproveCompanyOrderItemHttpRequest>();
+}
+
+public sealed class ApproveCompanyOrderItemHttpRequest
+{
+    [Required]
+    [StringLength(25)]
+    public string DocumentSerie { get; init; } = string.Empty;
+
+    [Range(1, int.MaxValue)]
+    public int DocumentOrderNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int WarehouseNo { get; init; }
 }
 
 public sealed class IssuedCompanyOrderListHttpRequest

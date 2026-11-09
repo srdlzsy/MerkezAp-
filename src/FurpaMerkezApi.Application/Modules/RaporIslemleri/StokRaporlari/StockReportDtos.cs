@@ -403,3 +403,54 @@ public sealed record ProductShipmentDistributionDto(
     double TotalAmount,
     int LineCount,
     int DocumentCount);
+
+public sealed record SupplierBranchStockMatrixRequest(
+    string CustomerCode,
+    int? WarehouseNo);
+
+public sealed record SupplierStockMatrixBranchColumnDto(
+    int WarehouseNo,
+    string WarehouseName);
+
+public sealed record SupplierStockMatrixProductItemDto(
+    string StockCode,
+    string StockName,
+    string Barcode,
+    IReadOnlyDictionary<int, double> BranchQuantities,
+    double TotalQuantity);
+
+public sealed record SupplierBranchStockMatrixDto(
+    string CustomerCode,
+    string CustomerName,
+    IReadOnlyCollection<SupplierStockMatrixProductItemDto> Products,
+    IReadOnlyCollection<SupplierStockMatrixBranchColumnDto> Branches);
+
+public sealed record BranchOutageAnalysisRequest(
+    DateOnly StartDate,
+    DateOnly EndDate);
+
+public sealed record BranchOutageAnalysisItemDto(
+    string RegionCode,
+    string BranchName,
+    decimal OutageTotal,
+    decimal GiroTotal,
+    decimal RatioPercent,
+    decimal GreenGrocerSaleGiro,
+    decimal GreenGrocerRatioPercent);
+
+public sealed record LiveStockAndPriceRequest(
+    string Barcode,
+    int? WarehouseNo);
+
+public sealed record LiveStockAndPriceBranchItemDto(
+    int WarehouseNo,
+    string BranchName,
+    double CurrentQuantity,
+    decimal SalesPrice,
+    decimal LatestPurchasePrice);
+
+public sealed record LiveStockAndPriceDto(
+    string Barcode,
+    string StockCode,
+    string ProductName,
+    IReadOnlyCollection<LiveStockAndPriceBranchItemDto> Branches);

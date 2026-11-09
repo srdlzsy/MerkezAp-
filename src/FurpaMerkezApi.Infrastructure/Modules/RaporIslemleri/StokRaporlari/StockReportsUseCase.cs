@@ -2311,6 +2311,334 @@ public sealed class StockReportsUseCase(MikroDbContext mikroDbContext) : IStockR
         command.Parameters.Add(parameter);
     }
 
+    public async Task<SupplierBranchStockMatrixDto> GetSupplierBranchStockMatrixAsync(
+        SupplierBranchStockMatrixRequest request,
+        CancellationToken cancellationToken)
+    {
+        var customerCode = NormalizeOrNull(request.CustomerCode) ?? string.Empty;
+
+        const string branchSql = """
+            SELECT dep_no AS WarehouseNo, COALESCE(dep_adi, '') AS WarehouseName
+            FROM dbo.DEPOLAR WITH (NOLOCK)
+            WHERE dep_no > 100
+              AND (@warehouseNo IS NULL OR dep_no = @warehouseNo)
+            ORDER BY dep_adi;
+            """;
+
+        var branches = await ExecuteReaderAsync(
+            branchSql,
+            command => AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32),
+            reader => new SupplierStockMatrixBranchColumnDto(
+                ReadInt(reader, "WarehouseNo"),
+                ReadString(reader, "WarehouseName")),
+            cancellationToken);
+
+        const string customerSql = """
+            SELECT TOP (1) COALESCE(cari_unvan1, '') + ' ' + COALESCE(cari_unvan2, '') AS CustomerName
+            FROM dbo.CARI_HESAPLAR WITH (NOLOCK)
+            WHERE cari_kod = @customerCode;
+            """;
+
+        var customerName = string.Empty;
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = customerSql;
+            AddParameter(cmd, "@customerCode", customerCode, DbType.String);
+            var obj = await cmd.ExecuteScalarAsync(cancellationToken);
+            if (obj is not null && obj != DBNull.Value)
+            {
+                customerName = Convert.ToString(obj, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        const string matrixDataSql = """
+            WITH SupplierProducts AS (
+                SELECT DISTINCT sas.sas_stok_kod AS StockCode
+                FROM dbo.SATINALMA_SARTLARI AS sas WITH (NOLOCK)
+                WHERE sas.sas_cari_kod = @customerCode
+            )
+            SELECT
+                s.sto_kod AS StockCode,
+                COALESCE(s.sto_isim, '') AS StockName,
+                COALESCE(bar.Barcode, '') AS Barcode,
+                d.dep_no AS WarehouseNo,
+                CAST(dbo.fn_depodakiMiktar(s.sto_kod, d.dep_no, GETDATE()) AS decimal(18, 2)) AS Quantity
+            FROM SupplierProducts AS supplierProduct
+            INNER JOIN dbo.STOKLAR AS s WITH (NOLOCK)
+                ON s.sto_kod = supplierProduct.StockCode
+            CROSS JOIN dbo.DEPOLAR AS d WITH (NOLOCK)
+            OUTER APPLY (
+                SELECT TOP (1) b.bar_kodu AS Barcode
+                FROM dbo.BARKOD_TANIMLARI AS b WITH (NOLOCK)
+                WHERE b.bar_stokkodu = s.sto_kod
+                  AND b.bar_birimpntr = 1
+                ORDER BY b.bar_barkod_tipi, b.bar_RECno
+            ) AS bar
+            WHERE s.sto_isim NOT LIKE N'DLS%'
+              AND d.dep_no > 100
+              AND (@warehouseNo IS NULL OR d.dep_no = @warehouseNo)
+            ORDER BY s.sto_isim, d.dep_adi;
+            """;
+
+        var rawRows = await ExecuteReaderAsync(
+            matrixDataSql,
+            command =>
+            {
+                AddParameter(command, "@customerCode", customerCode, DbType.String);
+                AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
+            },
+            reader => new
+            {
+                StockCode = ReadString(reader, "StockCode"),
+                StockName = ReadString(reader, "StockName"),
+                Barcode = ReadString(reader, "Barcode"),
+                WarehouseNo = ReadInt(reader, "WarehouseNo"),
+                Quantity = Round(ReadDouble(reader, "Quantity"))
+            },
+            cancellationToken);
+
+        var productGroups = rawRows
+            .GroupBy(r => new { r.StockCode, r.StockName, r.Barcode })
+            .Select(g =>
+            {
+                var branchQuantities = g.ToDictionary(r => r.WarehouseNo, r => r.Quantity);
+                var totalQty = Round(branchQuantities.Values.Sum());
+                return new SupplierStockMatrixProductItemDto(
+                    g.Key.StockCode,
+                    g.Key.StockName,
+                    g.Key.Barcode,
+                    branchQuantities,
+                    totalQty);
+            })
+            .OrderBy(p => p.StockName)
+            .ToArray();
+
+        return new SupplierBranchStockMatrixDto(
+            customerCode,
+            customerName,
+            productGroups,
+            branches);
+    }
+
+    public async Task<IReadOnlyCollection<BranchOutageAnalysisItemDto>> GetBranchOutageAnalysisAsync(
+        BranchOutageAnalysisRequest request,
+        CancellationToken cancellationToken)
+    {
+        var startDate = request.StartDate.ToDateTime(TimeOnly.MinValue);
+        var endDateExclusive = request.EndDate.ToDateTime(TimeOnly.MinValue).AddDays(1);
+
+        const string sql = """
+            WITH FIRE AS (
+                SELECT
+                    COALESCE(DEPOLAR.dep_bolge_kodu, '') AS dep_bolge_kodu,
+                    DEPOLAR.dep_adi,
+                    SUM(COALESCE(STOK_HAREKETLERI.sth_tutar, 0)) AS Fire_Tutar
+                FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
+                INNER JOIN dbo.STOKLAR WITH (NOLOCK) ON STOK_HAREKETLERI.sth_stok_kod = STOKLAR.sto_kod
+                INNER JOIN dbo.DEPOLAR WITH (NOLOCK) ON STOK_HAREKETLERI.sth_cikis_depo_no = DEPOLAR.dep_no
+                WHERE STOK_HAREKETLERI.sth_tip = 1 AND STOK_HAREKETLERI.sth_cins = 4 AND STOK_HAREKETLERI.sth_evraktip = 0 AND DEPOLAR.dep_tipi = 1
+                  AND STOK_HAREKETLERI.sth_tarih >= @startDate AND STOK_HAREKETLERI.sth_tarih < @endDateExclusive
+                  AND STOKLAR.sto_altgrup_kod = '03.02'
+                GROUP BY DEPOLAR.dep_adi, DEPOLAR.dep_bolge_kodu
+            ),
+            MNVSF AS (
+                SELECT
+                    DEPOLAR.dep_adi,
+                    SUM(COALESCE(STOK_HAREKETLERI.sth_tutar, 0) + COALESCE(STOK_HAREKETLERI.sth_vergi, 0)) AS Tutar
+                FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
+                INNER JOIN dbo.STOKLAR WITH (NOLOCK) ON STOK_HAREKETLERI.sth_stok_kod = STOKLAR.sto_kod
+                INNER JOIN dbo.DEPOLAR WITH (NOLOCK) ON STOK_HAREKETLERI.sth_cikis_depo_no = DEPOLAR.dep_no
+                WHERE STOK_HAREKETLERI.sth_tip = 1 AND STOK_HAREKETLERI.sth_normal_iade = 0
+                  AND STOK_HAREKETLERI.sth_tarih >= @startDate AND STOK_HAREKETLERI.sth_tarih < @endDateExclusive
+                  AND STOKLAR.sto_isim LIKE N'%MNVSF%'
+                  AND STOK_HAREKETLERI.sth_cins = 1
+                  AND (STOK_HAREKETLERI.sth_evraktip = 1 OR STOK_HAREKETLERI.sth_evraktip = 4)
+                  AND DEPOLAR.dep_tipi = 1
+                GROUP BY DEPOLAR.dep_adi
+            ),
+            CIRO AS (
+                SELECT
+                    COALESCE(DEPOLAR.dep_adi, '') AS DepoIsmi,
+                    SUM((CASE WHEN STOK_HAREKETLERI.sth_evraktip IN (1, 4) THEN
+                        ((COALESCE(STOK_HAREKETLERI.sth_tutar, 0) + COALESCE(STOK_HAREKETLERI.sth_vergi, 0))
+                         - (COALESCE(STOK_HAREKETLERI.sth_iskonto1, 0) + COALESCE(STOK_HAREKETLERI.sth_iskonto2, 0)
+                          + COALESCE(STOK_HAREKETLERI.sth_iskonto3, 0) + COALESCE(STOK_HAREKETLERI.sth_iskonto4, 0)
+                          + COALESCE(STOK_HAREKETLERI.sth_iskonto5, 0) + COALESCE(STOK_HAREKETLERI.sth_iskonto6, 0)))
+                        ELSE 0 END)
+                        -
+                        (CASE WHEN STOK_HAREKETLERI.sth_evraktip = 16 THEN
+                        ((COALESCE(STOK_HAREKETLERI.sth_tutar, 0) + COALESCE(STOK_HAREKETLERI.sth_vergi, 0))
+                         - (COALESCE(STOK_HAREKETLERI.sth_iskonto1, 0) + COALESCE(STOK_HAREKETLERI.sth_iskonto2, 0)
+                          + COALESCE(STOK_HAREKETLERI.sth_iskonto3, 0) + COALESCE(STOK_HAREKETLERI.sth_iskonto4, 0)
+                          + COALESCE(STOK_HAREKETLERI.sth_iskonto5, 0) + COALESCE(STOK_HAREKETLERI.sth_iskonto6, 0)))
+                        ELSE 0 END)) AS NetTutar
+                FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
+                INNER JOIN dbo.STOKLAR WITH (NOLOCK) ON STOK_HAREKETLERI.sth_stok_kod = STOKLAR.sto_kod
+                INNER JOIN dbo.DEPOLAR WITH (NOLOCK) ON STOK_HAREKETLERI.sth_cikis_depo_no = DEPOLAR.dep_no
+                WHERE STOK_HAREKETLERI.sth_pos_satis = 1
+                  AND STOK_HAREKETLERI.sth_tarih >= @startDate AND STOK_HAREKETLERI.sth_tarih < @endDateExclusive
+                  AND STOKLAR.sto_altgrup_kod = '03.02'
+                  AND DEPOLAR.dep_tipi = 1
+                GROUP BY DEPOLAR.dep_adi
+            )
+            SELECT
+                FIRE.dep_bolge_kodu AS RegionCode,
+                FIRE.dep_adi AS BranchName,
+                CAST(COALESCE(FIRE.Fire_Tutar, 0) AS decimal(18,2)) AS OutageTotal,
+                CAST(COALESCE(CIRO.NetTutar, 0) AS decimal(18,2)) AS Giro,
+                CAST(CASE WHEN COALESCE(CIRO.NetTutar, 0) > 0
+                     THEN (FIRE.Fire_Tutar / CIRO.NetTutar) * 100
+                     ELSE 0 END AS decimal(18,2)) AS Ratio,
+                CAST(COALESCE(MNVSF.Tutar, 0) AS decimal(18,2)) AS GreenGrocerSaleGiroLatestPrice,
+                CAST(CASE WHEN COALESCE(CIRO.NetTutar, 0) > 0
+                     THEN (MNVSF.Tutar / CIRO.NetTutar) * 100
+                     ELSE 0 END AS decimal(18,2)) AS GreenGrocerSaleGiroRatio
+            FROM FIRE WITH (NOLOCK)
+            LEFT JOIN MNVSF WITH (NOLOCK) ON FIRE.dep_adi = MNVSF.dep_adi
+            LEFT JOIN CIRO WITH (NOLOCK) ON CIRO.DepoIsmi = FIRE.dep_adi
+            ORDER BY FIRE.dep_bolge_kodu, FIRE.dep_adi;
+            """;
+
+        return await ExecuteReaderAsync(
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate, DbType.DateTime);
+                AddParameter(command, "@endDateExclusive", endDateExclusive, DbType.DateTime);
+            },
+            reader => new BranchOutageAnalysisItemDto(
+                ReadString(reader, "RegionCode"),
+                ReadString(reader, "BranchName"),
+                ReadDecimal(reader, "OutageTotal"),
+                ReadDecimal(reader, "Giro"),
+                ReadDecimal(reader, "Ratio"),
+                ReadDecimal(reader, "GreenGrocerSaleGiroLatestPrice"),
+                ReadDecimal(reader, "GreenGrocerSaleGiroRatio")),
+            cancellationToken);
+    }
+
+    public async Task<LiveStockAndPriceDto> GetLiveStockAndPriceAsync(
+        LiveStockAndPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var barcode = NormalizeOrNull(request.Barcode) ?? string.Empty;
+
+        const string headerSql = """
+            SELECT TOP (1)
+                s.sto_kod AS StockCode,
+                COALESCE(s.sto_isim, '') AS ProductName
+            FROM dbo.BARKOD_TANIMLARI AS b WITH (NOLOCK)
+            INNER JOIN dbo.STOKLAR AS s WITH (NOLOCK) ON s.sto_kod = b.bar_stokkodu
+            WHERE b.bar_kodu = @barcode;
+            """;
+
+        var stockCode = string.Empty;
+        var productName = string.Empty;
+
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = headerSql;
+            AddParameter(cmd, "@barcode", barcode, DbType.String);
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                stockCode = ReadString(reader, "StockCode");
+                productName = ReadString(reader, "ProductName");
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(stockCode))
+        {
+            return new LiveStockAndPriceDto(barcode, string.Empty, string.Empty, Array.Empty<LiveStockAndPriceBranchItemDto>());
+        }
+
+        const string branchDataSql = """
+            SELECT
+                d.dep_no AS WarehouseNo,
+                COALESCE(d.dep_adi, '') AS BranchName,
+                dbo.fn_depodakiMiktar(@stockCode, d.dep_no, GETDATE()) AS CurrentQuantity,
+                ROUND(ISNULL(sf.sfiyat_fiyati, 0), 2) AS SalesPrice,
+                ROUND(ISNULL((
+                    SELECT TOP (1)
+                        CASE WHEN COALESCE(h.sth_miktar, 0) > 0
+                             THEN ((COALESCE(h.sth_tutar, 0) + COALESCE(h.sth_vergi, 0))
+                                  - (COALESCE(h.sth_iskonto1, 0) + COALESCE(h.sth_iskonto2, 0) + COALESCE(h.sth_iskonto3, 0)
+                                   + COALESCE(h.sth_iskonto4, 0) + COALESCE(h.sth_iskonto5, 0) + COALESCE(h.sth_iskonto6, 0))) / h.sth_miktar
+                             ELSE 0 END
+                    FROM dbo.STOK_HAREKETLERI AS h WITH (NOLOCK)
+                    WHERE h.sth_stok_kod = @stockCode
+                      AND h.sth_tip = 0
+                      AND h.sth_evraktip = 13
+                      AND h.sth_normal_iade = 0
+                      AND COALESCE(h.sth_iptal, 0) = 0
+                    ORDER BY h.sth_tarih DESC, h.sth_create_date DESC, h.sth_satirno DESC
+                ), 0), 2) AS LatestPurchasePrice
+            FROM dbo.DEPOLAR AS d WITH (NOLOCK)
+            LEFT JOIN dbo.STOK_SATIS_FIYATLARI_F1_D0_VIEW AS sf WITH (NOLOCK)
+                ON sf.sfiyat_stokkod = @stockCode AND sf.sfiyat_satirno = 1
+            WHERE d.dep_no > 100
+              AND (@warehouseNo IS NULL OR d.dep_no = @warehouseNo)
+            ORDER BY d.dep_adi;
+            """;
+
+        var branches = await ExecuteReaderAsync(
+            branchDataSql,
+            command =>
+            {
+                AddParameter(command, "@stockCode", stockCode, DbType.String);
+                AddParameter(command, "@warehouseNo", request.WarehouseNo, DbType.Int32);
+            },
+            reader => new LiveStockAndPriceBranchItemDto(
+                ReadInt(reader, "WarehouseNo"),
+                ReadString(reader, "BranchName"),
+                Round(ReadDouble(reader, "CurrentQuantity")),
+                ReadDecimal(reader, "SalesPrice"),
+                ReadDecimal(reader, "LatestPurchasePrice")),
+            cancellationToken);
+
+        return new LiveStockAndPriceDto(
+            barcode,
+            stockCode,
+            productName,
+            branches);
+    }
+
+    private static decimal ReadDecimal(DbDataReader reader, string columnName) =>
+        reader.IsDBNull(reader.GetOrdinal(columnName))
+            ? 0m
+            : Convert.ToDecimal(reader.GetValue(reader.GetOrdinal(columnName)), CultureInfo.InvariantCulture);
+
     private static int ReadInt(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);

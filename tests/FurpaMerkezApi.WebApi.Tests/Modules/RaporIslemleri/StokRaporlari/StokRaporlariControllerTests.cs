@@ -263,5 +263,20 @@ public sealed class StokRaporlariControllerTests
             CountingComparisonReportRequest request,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyCollection<CountingComparisonReportItemDto>>([]);
+
+        public Task<SupplierBranchStockMatrixDto> GetSupplierBranchStockMatrixAsync(
+            SupplierBranchStockMatrixRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new SupplierBranchStockMatrixDto(request.CustomerCode, "Test", [], []));
+
+        public Task<IReadOnlyCollection<BranchOutageAnalysisItemDto>> GetBranchOutageAnalysisAsync(
+            BranchOutageAnalysisRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<BranchOutageAnalysisItemDto>>([]);
+
+        public Task<LiveStockAndPriceDto> GetLiveStockAndPriceAsync(
+            LiveStockAndPriceRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new LiveStockAndPriceDto(request.Barcode, "STO01", "Urun", []));
     }
 }

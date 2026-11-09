@@ -153,3 +153,45 @@ public sealed record MissingTurnoverBranchItemDto(
     int BranchNo,
     string BranchName,
     string Region);
+
+public sealed record CategoryYearlyGrowthRequest(
+    DateOnly StartDate,
+    DateOnly EndDate);
+
+public sealed record CategoryYearlyGrowthItemDto(
+    string CategoryName,
+    string SubCategoryName,
+    string SegmentName,
+    string SubSegmentName,
+    double CurrentQuantity,
+    double CurrentAmount,
+    double PreviousQuantity,
+    double PreviousAmount,
+    decimal GoalRatioPercent,
+    decimal GoalAmount,
+    decimal RealizedRatioPercent);
+
+public sealed record CategorySalesDetailedRequest(
+    DateOnly StartDate,
+    DateOnly EndDate,
+    int? BranchNo,
+    string? SectorCode,
+    string? RayonCode,
+    string? CategoryCode,
+    string? ProductCode,
+    string? Region,
+    int Take);
+
+public sealed record CategorySalesDetailedItemDto(
+    string Region,
+    int BranchNo,
+    string BranchName,
+    string SectorName,
+    string RayonName,
+    string CategoryName,
+    string ProductCode,
+    string ProductName,
+    double Quantity,
+    double GrossAmount,
+    double DiscountAmount,
+    double NetAmount);

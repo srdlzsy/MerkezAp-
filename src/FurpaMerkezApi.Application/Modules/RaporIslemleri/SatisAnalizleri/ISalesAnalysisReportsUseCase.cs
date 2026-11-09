@@ -50,4 +50,12 @@ public interface ISalesAnalysisReportsUseCase
     Task<IReadOnlyCollection<MissingTurnoverBranchItemDto>> GetMissingTurnoverBranchesAsync(
         SalesAnalysisDateRangeRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CategoryYearlyGrowthItemDto>> GetCategoryYearlyGrowthAsync(
+        CategoryYearlyGrowthRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CategorySalesDetailedItemDto>> GetCategorySalesDetailedAsync(
+        CategorySalesDetailedRequest request,
+        CancellationToken cancellationToken);
 }

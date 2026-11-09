@@ -1997,6 +1997,94 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = new Guid("4de5f06d-e8f4-7e4f-619e-5bdc04ef44ea"),
+                            Code = "rapor-islemleri.ciro-hedef-raporlari.page",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > CiroHedefRaporlari > Sayfa yetkisi.",
+                            Name = "CiroHedefRaporlari Sayfa"
+                        },
+                        new
+                        {
+                            Id = new Guid("678484ea-3486-0ea5-5423-2cac62f4f885"),
+                            Code = "rapor-islemleri.ciro-hedef-raporlari.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > CiroHedefRaporlari > Listele yetkisi.",
+                            Name = "CiroHedefRaporlari Listele"
+                        },
+                        new
+                        {
+                            Id = new Guid("4aae24f1-ef52-3834-7fe0-e60526f369a3"),
+                            Code = "rapor-islemleri.ciro-hedef-raporlari.all-warehouses",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > CiroHedefRaporlari > Tum Depolar yetkisi.",
+                            Name = "CiroHedefRaporlari Tum Depolar"
+                        },
+                        new
+                        {
+                            Id = new Guid("f4a3350d-3804-fbad-7046-584e2de1a39e"),
+                            Code = "rapor-islemleri.mal-kabul-raporlari.page",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > MalKabulRaporlari > Sayfa yetkisi.",
+                            Name = "MalKabulRaporlari Sayfa"
+                        },
+                        new
+                        {
+                            Id = new Guid("229fe8ac-88b7-7d5d-6166-24f010ae0cbb"),
+                            Code = "rapor-islemleri.mal-kabul-raporlari.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > MalKabulRaporlari > Listele yetkisi.",
+                            Name = "MalKabulRaporlari Listele"
+                        },
+                        new
+                        {
+                            Id = new Guid("79197b25-da31-deaf-de32-5ce34569c5a8"),
+                            Code = "rapor-islemleri.mal-kabul-raporlari.detail",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > MalKabulRaporlari > Detay yetkisi.",
+                            Name = "MalKabulRaporlari Detay"
+                        },
+                        new
+                        {
+                            Id = new Guid("581e8299-f4ef-7685-7f08-c0dd2c8e6140"),
+                            Code = "rapor-islemleri.mal-kabul-raporlari.all-warehouses",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > MalKabulRaporlari > Tum Depolar yetkisi.",
+                            Name = "MalKabulRaporlari Tum Depolar"
+                        },
+                        new
+                        {
+                            Id = new Guid("4acc2e2c-be8e-e93c-83f1-0e03de05cdd1"),
+                            Code = "rapor-islemleri.kasa-raporlari.page",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > KasaRaporlari > Sayfa yetkisi.",
+                            Name = "KasaRaporlari Sayfa"
+                        },
+                        new
+                        {
+                            Id = new Guid("ebfdf730-4d58-c2e7-fefa-6713ad8d11c2"),
+                            Code = "rapor-islemleri.kasa-raporlari.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > KasaRaporlari > Listele yetkisi.",
+                            Name = "KasaRaporlari Listele"
+                        },
+                        new
+                        {
+                            Id = new Guid("6435df0a-444f-1de5-a671-dcc4c9a28c7d"),
+                            Code = "rapor-islemleri.kasa-raporlari.detail",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > KasaRaporlari > Detay yetkisi.",
+                            Name = "KasaRaporlari Detay"
+                        },
+                        new
+                        {
+                            Id = new Guid("73d9418b-f6c4-492d-3197-7a63c653c078"),
+                            Code = "rapor-islemleri.kasa-raporlari.all-warehouses",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "RaporIslemleri > KasaRaporlari > Tum Depolar yetkisi.",
+                            Name = "KasaRaporlari Tum Depolar"
+                        },
+                        new
+                        {
                             Id = new Guid("421772b7-2615-d8e9-41f6-929c9a40e598"),
                             Code = "operasyon-islemleri.operations.page",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -4504,6 +4592,72 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("636e2155-66ce-fec9-7146-da92c81daece"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("4de5f06d-e8f4-7e4f-619e-5bdc04ef44ea"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("678484ea-3486-0ea5-5423-2cac62f4f885"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("4aae24f1-ef52-3834-7fe0-e60526f369a3"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("f4a3350d-3804-fbad-7046-584e2de1a39e"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("229fe8ac-88b7-7d5d-6166-24f010ae0cbb"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("79197b25-da31-deaf-de32-5ce34569c5a8"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("581e8299-f4ef-7685-7f08-c0dd2c8e6140"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("4acc2e2c-be8e-e93c-83f1-0e03de05cdd1"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("ebfdf730-4d58-c2e7-fefa-6713ad8d11c2"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("6435df0a-444f-1de5-a671-dcc4c9a28c7d"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("73d9418b-f6c4-492d-3197-7a63c653c078"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new

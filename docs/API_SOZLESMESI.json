@@ -21499,6 +21499,256 @@
         ]
       }
     },
+    "/api/rapor-islemleri/ciro-hedef/karsilastirma": {
+      "get": {
+        "tags": [
+          "CiroHedefRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Region",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefKarsilastirmaRaporDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefKarsilastirmaRaporDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefKarsilastirmaRaporDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.ciro-hedef-raporlari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/ciro-hedef/hedef-tanimlari": {
+      "get": {
+        "tags": [
+          "CiroHedefRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.HedefTanimDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.HedefTanimDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.HedefTanimDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.ciro-hedef-raporlari.list"
+        ]
+      }
+    },
     "/api/iade-islemleri/depo-iadeleri/iade-edilebilir-urunler": {
       "get": {
         "tags": [
@@ -51084,6 +51334,308 @@
         ]
       }
     },
+    "/api/rapor-islemleri/kasa-raporlari/gider-pusulalari": {
+      "get": {
+        "tags": [
+          "KasaRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "CashRegisterNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "CashierCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipZoneSummaryDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipZoneSummaryDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipZoneSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.kasa-raporlari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/kasa-raporlari/gider-pusulalari/detaylar": {
+      "get": {
+        "tags": [
+          "KasaRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "CashRegisterNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "CashierCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipDetailItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipDetailItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipDetailItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.kasa-raporlari.detail"
+        ]
+      }
+    },
     "/api/kasa-islemleri/kasa-sayimlari": {
       "get": {
         "tags": [
@@ -57094,6 +57646,432 @@
         ],
         "x-permissions": [
           "mal-kabul-islemleri.mal-kabul-farklari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/mal-kabul/tembel-subeler": {
+      "get": {
+        "tags": [
+          "MalKabulRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "Region",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchReceivingItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchReceivingItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchReceivingItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.mal-kabul-raporlari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/mal-kabul/tembel-subeler/evraklar": {
+      "get": {
+        "tags": [
+          "MalKabulRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "Region",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchDocumentDetailDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchDocumentDetailDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchDocumentDetailDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.mal-kabul-raporlari.detail"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/mal-kabul/tedarikci-hacim-analizi": {
+      "get": {
+        "tags": [
+          "MalKabulRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.CompanyDocumentByCustomerItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.CompanyDocumentByCustomerItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.CompanyDocumentByCustomerItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.mal-kabul-raporlari.list"
         ]
       }
     },
@@ -76765,6 +77743,305 @@
         ]
       }
     },
+    "/api/rapor-islemleri/satis-analizleri/yillik-kategori-buyume": {
+      "get": {
+        "tags": [
+          "SatisAnalizleri"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategoryYearlyGrowthItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategoryYearlyGrowthItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategoryYearlyGrowthItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.satis-analizleri.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/satis-analizleri/kategori-satislari": {
+      "get": {
+        "tags": [
+          "SatisAnalizleri"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "BranchNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "SectorCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "RayonCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CategoryCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ProductCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Region",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategorySalesDetailedItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategorySalesDetailedItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategorySalesDetailedItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.satis-analizleri.list"
+        ]
+      }
+    },
     "/api/stok-islemleri/sayim-sonuclari": {
       "get": {
         "tags": [
@@ -82440,6 +83717,370 @@
                   "items": {
                     "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.CountingComparisonReportItemDto"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.stok-raporlari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/stok-raporlari/tedarikci-sube-matrisi": {
+      "get": {
+        "tags": [
+          "StokRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "CustomerCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 25,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierBranchStockMatrixDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierBranchStockMatrixDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierBranchStockMatrixDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.stok-raporlari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/stok-raporlari/sube-zayiat-fire-analizi": {
+      "get": {
+        "tags": [
+          "StokRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "StartDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchOutageAnalysisItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchOutageAnalysisItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchOutageAnalysisItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "rapor-islemleri.stok-raporlari.list"
+        ]
+      }
+    },
+    "/api/rapor-islemleri/stok-raporlari/anlik-fiyat-stok": {
+      "get": {
+        "tags": [
+          "StokRaporlari"
+        ],
+        "parameters": [
+          {
+            "name": "Barcode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 30,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceDto"
                 }
               }
             }
@@ -94562,6 +96203,278 @@
               "text/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.Common.ModuleActionScaffoldResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "siparis-islemleri.verilen-firma-siparisleri.update"
+        ]
+      }
+    },
+    "/api/siparis-islemleri/verilen-firma-siparisleri/onay-bekleyenler": {
+      "get": {
+        "tags": [
+          "VerilenFirmaSiparisleri"
+        ],
+        "parameters": [
+          {
+            "name": "UserDefPerCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CustomerCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "StartDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "EndDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "Take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.PendingApprovalCompanyOrderItemDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.PendingApprovalCompanyOrderItemDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.PendingApprovalCompanyOrderItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "siparis-islemleri.verilen-firma-siparisleri.list"
+        ]
+      }
+    },
+    "/api/siparis-islemleri/verilen-firma-siparisleri/onayla": {
+      "post": {
+        "tags": [
+          "VerilenFirmaSiparisleri"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.BatchApproveCompanyOrdersHttpRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.BatchApproveCompanyOrdersHttpRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.BatchApproveCompanyOrdersHttpRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.BatchApproveCompanyOrdersResultDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.BatchApproveCompanyOrdersResultDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.BatchApproveCompanyOrdersResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
                 }
               }
             }
@@ -121737,6 +123650,487 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefKarsilastirmaRaporDto": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "ciroGoalPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "customerGoalPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalCurrentTurnover": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalPreviousTurnover": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalTargetTurnover": {
+            "type": "number",
+            "format": "double"
+          },
+          "overallTurnoverAchievementRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalCurrentCustomers": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPreviousCustomers": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalTargetCustomers": {
+            "type": "number",
+            "format": "double"
+          },
+          "overallCustomerAchievementRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentOverallAverageBasket": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousOverallAverageBasket": {
+            "type": "number",
+            "format": "double"
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefSubeKarsilastirmaDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.CiroHedefSubeKarsilastirmaDto": {
+        "type": "object",
+        "properties": {
+          "branchNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "region": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentCashTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentCreditTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentGiftTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentFuturesTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentExpenseTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentOverallTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentCustomerCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentAverageBasketAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousCashTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousCreditTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousGiftTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousFuturesTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousExpenseTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousOverallTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousCustomerCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "previousAverageBasketAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "targetTurnover": {
+            "type": "number",
+            "format": "double"
+          },
+          "turnoverAchievementRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "targetCustomerCount": {
+            "type": "number",
+            "format": "double"
+          },
+          "customerAchievementRate": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.CiroHedefRaporlari.HedefTanimDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "month": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "monthName": {
+            "type": "string",
+            "nullable": true
+          },
+          "ciroGoalPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "customerGoalPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "expenseGoalPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipBranchSummaryDto": {
+        "type": "object",
+        "properties": {
+          "branchNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "zoneCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalExpenseAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "slipCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cashRegisters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashRegisterSummaryDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashRegisterSummaryDto": {
+        "type": "object",
+        "properties": {
+          "cashRegisterNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalExpenseAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "slipCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cashiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashierSummaryDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipCashierSummaryDto": {
+        "type": "object",
+        "properties": {
+          "cashierCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "cashierName": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalExpenseAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "slipCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipDetailItemDto": {
+        "type": "object",
+        "properties": {
+          "branchNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "cashRegisterNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cashierCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "cashierName": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "time": {
+            "type": "string",
+            "nullable": true
+          },
+          "slipNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "documentGuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipZoneSummaryDto": {
+        "type": "object",
+        "properties": {
+          "zoneCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "zoneName": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalExpenseAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "slipCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.KasaRaporlari.ExpenseSlipBranchSummaryDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.CompanyDocumentByCustomerItemDto": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalTaxAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalDiscountAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "netAmount": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchDocumentDetailDto": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "nullable": true
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warehouseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentSerie": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentOrderNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "documentNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lineCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.MalKabulRaporlari.LazyBranchReceivingItemDto": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "nullable": true
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warehouseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "notAcceptedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "oldestShipmentDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "latestShipmentDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "totalQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.RaporIslemleri.PromosyonRaporlari.PromotionBranchPerformanceItemDto": {
         "type": "object",
         "properties": {
@@ -122146,6 +124540,110 @@
           "bankingNumber": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategorySalesDetailedItemDto": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "nullable": true
+          },
+          "branchNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "sectorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "rayonName": {
+            "type": "string",
+            "nullable": true
+          },
+          "categoryName": {
+            "type": "string",
+            "nullable": true
+          },
+          "productCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "grossAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "discountAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "netAmount": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.SatisAnalizleri.CategoryYearlyGrowthItemDto": {
+        "type": "object",
+        "properties": {
+          "categoryName": {
+            "type": "string",
+            "nullable": true
+          },
+          "subCategoryName": {
+            "type": "string",
+            "nullable": true
+          },
+          "segmentName": {
+            "type": "string",
+            "nullable": true
+          },
+          "subSegmentName": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "currentAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "goalRatioPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "goalAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "realizedRatioPercent": {
+            "type": "number",
+            "format": "double"
           }
         },
         "additionalProperties": false
@@ -122570,6 +125068,40 @@
         },
         "additionalProperties": false
       },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchOutageAnalysisItemDto": {
+        "type": "object",
+        "properties": {
+          "regionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "outageTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "giroTotal": {
+            "type": "number",
+            "format": "double"
+          },
+          "ratioPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "greenGrocerSaleGiro": {
+            "type": "number",
+            "format": "double"
+          },
+          "greenGrocerRatioPercent": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.BranchPriceDifferenceItemDto": {
         "type": "object",
         "properties": {
@@ -122746,6 +125278,57 @@
           "differenceSalesValue": {
             "type": "number",
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceBranchItemDto": {
+        "type": "object",
+        "properties": {
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "salesPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "latestPurchasePrice": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceDto": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stockCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string",
+            "nullable": true
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.LiveStockAndPriceBranchItemDto"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -123447,6 +126030,78 @@
           },
           "isPassive": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierBranchStockMatrixDto": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixProductItemDto"
+            },
+            "nullable": true
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixBranchColumnDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixBranchColumnDto": {
+        "type": "object",
+        "properties": {
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warehouseName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.RaporIslemleri.StokRaporlari.SupplierStockMatrixProductItemDto": {
+        "type": "object",
+        "properties": {
+          "stockCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stockName": {
+            "type": "string",
+            "nullable": true
+          },
+          "barcode": {
+            "type": "string",
+            "nullable": true
+          },
+          "branchQuantities": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "nullable": true
+          },
+          "totalQuantity": {
+            "type": "number",
+            "format": "double"
           }
         },
         "additionalProperties": false
@@ -125507,6 +128162,91 @@
             "format": "double"
           },
           "writeConnectionName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.BatchApproveCompanyOrdersResultDto": {
+        "type": "object",
+        "properties": {
+          "totalRequested": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "approvedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "approvedDocumentKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "failedDocumentKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Approval.PendingApprovalCompanyOrderItemDto": {
+        "type": "object",
+        "properties": {
+          "documentSerie": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentOrderNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "orderDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "branchNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "lineCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "canBeCalled": {
+            "type": "boolean"
+          },
+          "purchasingPersonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "purchasingPersonName": {
             "type": "string",
             "nullable": true
           }
@@ -135351,6 +138091,48 @@
             "maxLength": 30,
             "minLength": 0,
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.ApproveCompanyOrderItemHttpRequest": {
+        "required": [
+          "documentSerie"
+        ],
+        "type": "object",
+        "properties": {
+          "documentSerie": {
+            "maxLength": 25,
+            "minLength": 0,
+            "type": "string"
+          },
+          "documentOrderNo": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "warehouseNo": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.BatchApproveCompanyOrdersHttpRequest": {
+        "required": [
+          "orders"
+        ],
+        "type": "object",
+        "properties": {
+          "orders": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.ApproveCompanyOrderItemHttpRequest"
+            }
           }
         },
         "additionalProperties": false
