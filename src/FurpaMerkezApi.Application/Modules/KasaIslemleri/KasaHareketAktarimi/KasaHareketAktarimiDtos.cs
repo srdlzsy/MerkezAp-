@@ -588,4 +588,3 @@ public sealed record KasaHareketNakitRowDto(
     string BranchName,
     decimal NakitTutar,
     string Description);
-

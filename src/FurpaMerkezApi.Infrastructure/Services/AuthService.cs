@@ -442,6 +442,14 @@ public sealed class AuthService(
 
             return result;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation(
+                "Auth profile query {QueryName} was canceled by the caller after {ElapsedMs} ms.",
+                queryName,
+                stopwatch.Elapsed.TotalMilliseconds);
+            throw;
+        }
         catch (Exception exception)
         {
             logger.LogError(

@@ -52,19 +52,22 @@ public sealed class DailyFileLoggerProvider(
         var scopeText = CollectScopeText();
         var entry = FormatEntry(timestamp, categoryName, logLevel, eventId, message, exception, scopeText);
         var basePath = ResolveBasePath(options.BasePath);
-        var applicationLogPath = BuildFilePath(basePath, options.ApplicationFilePrefix, timestamp);
+        var filePrefix = ResolveFilePrefix(options, logLevel);
+        var logPath = BuildFilePath(basePath, filePrefix, timestamp);
 
         lock (syncRoot)
         {
-            Append(applicationLogPath, entry);
-
-            if (logLevel >= options.ErrorFileMinimumLevel)
-            {
-                var errorLogPath = BuildFilePath(basePath, options.ErrorFilePrefix, timestamp);
-                Append(errorLogPath, entry);
-            }
+            Append(logPath, entry);
         }
     }
+
+    private static string ResolveFilePrefix(FileLoggingOptions options, LogLevel logLevel) =>
+        logLevel switch
+        {
+            LogLevel.Warning => options.WarningFilePrefix,
+            LogLevel.Error or LogLevel.Critical => options.ErrorFilePrefix,
+            _ => options.InformationFilePrefix
+        };
 
     private string ResolveBasePath(string configuredPath) =>
         Path.IsPathRooted(configuredPath)

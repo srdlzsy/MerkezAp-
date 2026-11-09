@@ -1163,8 +1163,9 @@ public sealed class KasaHareketAktarimiService(
             var allCashRegs = await furpaDbContext.CashRegistryDetails
                 .AsNoTracking()
                 .Where(c => c.BranchNo == request.BranchNo)
-                .OrderBy(c => c.CashRegisterNo)
                 .Select(c => c.CashRegisterNo)
+                .Distinct()
+                .OrderBy(cashRegisterNo => cashRegisterNo)
                 .ToArrayAsync(cancellationToken);
 
             var bDetail = await furpaDbContext.BranchDetails
@@ -1348,8 +1349,9 @@ public sealed class KasaHareketAktarimiService(
             var allCashRegs = await furpaDbContext.CashRegistryDetails
                 .AsNoTracking()
                 .Where(c => c.BranchNo == request.BranchNo)
-                .OrderBy(c => c.CashRegisterNo)
                 .Select(c => c.CashRegisterNo)
+                .Distinct()
+                .OrderBy(cashRegisterNo => cashRegisterNo)
                 .ToArrayAsync(cancellationToken);
 
             if (allCashRegs.Length == 0)
@@ -1456,26 +1458,11 @@ public sealed class KasaHareketAktarimiService(
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var destDir = Path.GetDirectoryName(info.DestinationFilePath);
-            if (!string.IsNullOrWhiteSpace(destDir) && !Directory.Exists(destDir))
-            {
-                Directory.CreateDirectory(destDir);
-            }
-
-            long bytesCopied = 0;
-            const int bufferSize = 64 * 1024;
-            var buffer = new byte[bufferSize];
-
-            await using (var sourceStream = new FileStream(info.SourceFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize, true))
-            await using (var destinationStream = new FileStream(info.DestinationFilePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, true))
-            {
-                int bytesRead;
-                while ((bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, bufferSize), cancellationToken)) > 0)
-                {
-                    await destinationStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                    bytesCopied += bytesRead;
-                }
-            }
+            var bytesCopied = await CopyFileAtomicallyAsync(
+                info.SourceFilePath,
+                info.DestinationFilePath,
+                request.Overwrite,
+                cancellationToken);
 
             sw.Stop();
             return new KasaHareketDosyaKopyalaResultDto(
@@ -1486,6 +1473,10 @@ public sealed class KasaHareketAktarimiService(
                 bytesCopied,
                 sw.ElapsedMilliseconds);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return new KasaHareketDosyaKopyalaResultDto(
@@ -1495,6 +1486,77 @@ public sealed class KasaHareketAktarimiService(
                 info.DestinationFilePath,
                 0,
                 0);
+        }
+    }
+
+    internal static async Task<long> CopyFileAtomicallyAsync(
+        string sourceFilePath,
+        string destinationFilePath,
+        bool overwrite,
+        CancellationToken cancellationToken)
+    {
+        const int bufferSize = 64 * 1024;
+        var destinationDirectory = Path.GetDirectoryName(destinationFilePath);
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            throw new InvalidOperationException("Hedef dosya klasoru belirlenemedi.");
+        }
+
+        Directory.CreateDirectory(destinationDirectory);
+        var temporaryFilePath = Path.Combine(
+            destinationDirectory,
+            $".{Path.GetFileName(destinationFilePath)}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            long bytesCopied = 0;
+            var buffer = new byte[bufferSize];
+
+            await using (var sourceStream = new FileStream(
+                             sourceFilePath,
+                             FileMode.Open,
+                             FileAccess.Read,
+                             FileShare.ReadWrite,
+                             bufferSize,
+                             FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (var temporaryStream = new FileStream(
+                             temporaryFilePath,
+                             FileMode.CreateNew,
+                             FileAccess.Write,
+                             FileShare.None,
+                             bufferSize,
+                             FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                int bytesRead;
+                while ((bytesRead = await sourceStream.ReadAsync(
+                           buffer.AsMemory(0, bufferSize),
+                           cancellationToken)) > 0)
+                {
+                    await temporaryStream.WriteAsync(
+                        buffer.AsMemory(0, bytesRead),
+                        cancellationToken);
+                    bytesCopied += bytesRead;
+                }
+
+                await temporaryStream.FlushAsync(cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryFilePath, destinationFilePath, overwrite);
+            return bytesCopied;
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(temporaryFilePath);
+            }
+            catch
+            {
+                // The original copy failure is more useful than a cleanup failure.
+            }
+
+            throw;
         }
     }
 
@@ -1756,7 +1818,7 @@ public sealed class KasaHareketAktarimiService(
                 i.FaturaGuid
             FROM dbo.PosFaturaIptals AS i WITH (NOLOCK)
             LEFT JOIN dbo.Cashiers AS k WITH (NOLOCK) ON k.CashierCode = i.KullaniciKodu
-            WHERE i.Tarih >= @startDate AND i.Tarih <= @endDate
+            WHERE i.Tarih >= @startDate AND i.Tarih < @endDateExclusive
               AND i.IptalNedeni = 0
               AND (@branchNo IS NULL OR i.Sube = @branchNo)
             GROUP BY i.Tarih, i.saat, i.ZNo, i.FisNo, i.KasaNo, k.CashierCode, k.CashierName, i.KullaniciKodu, i.FaturaGuid, i.Sube
@@ -1781,10 +1843,10 @@ public sealed class KasaHareketAktarimiService(
             pStart.Value = request.StartDate.Date;
             command.Parameters.Add(pStart);
 
-            var pEnd = command.CreateParameter();
-            pEnd.ParameterName = "@endDate";
-            pEnd.Value = request.EndDate.Date;
-            command.Parameters.Add(pEnd);
+            var pEndExclusive = command.CreateParameter();
+            pEndExclusive.ParameterName = "@endDateExclusive";
+            pEndExclusive.Value = request.EndDate.Date.AddDays(1);
+            command.Parameters.Add(pEndExclusive);
 
             var pBranch = command.CreateParameter();
             pBranch.ParameterName = "@branchNo";
@@ -2016,7 +2078,7 @@ public sealed class KasaHareketAktarimiService(
                 p.FaturaGuid
             FROM dbo.PosFaturas AS p WITH (NOLOCK)
             LEFT JOIN dbo.Cashiers AS k WITH (NOLOCK) ON k.CashierCode = p.KullaniciKodu
-            WHERE p.Tarih >= @startDate AND p.Tarih <= @endDate
+            WHERE p.Tarih >= @startDate AND p.Tarih < @endDateExclusive
               AND p.BelgeTuru = 4
               AND (@branchNo IS NULL OR p.Sube = @branchNo)
             GROUP BY p.Sube, p.Tarih, p.Saat, p.FisNo, p.KasaNo, p.KullaniciKodu, k.CashierName, p.FaturaGuid
@@ -2041,10 +2103,10 @@ public sealed class KasaHareketAktarimiService(
             pStart.Value = request.StartDate.Date;
             command.Parameters.Add(pStart);
 
-            var pEnd = command.CreateParameter();
-            pEnd.ParameterName = "@endDate";
-            pEnd.Value = request.EndDate.Date;
-            command.Parameters.Add(pEnd);
+            var pEndExclusive = command.CreateParameter();
+            pEndExclusive.ParameterName = "@endDateExclusive";
+            pEndExclusive.Value = request.EndDate.Date.AddDays(1);
+            command.Parameters.Add(pEndExclusive);
 
             var pBranch = command.CreateParameter();
             pBranch.ParameterName = "@branchNo";

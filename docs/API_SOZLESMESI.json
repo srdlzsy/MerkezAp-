@@ -47791,8 +47791,8 @@
             "name": "MaxLines",
             "in": "query",
             "schema": {
-              "maximum": 10000,
-              "minimum": 1,
+              "maximum": 1000000,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }

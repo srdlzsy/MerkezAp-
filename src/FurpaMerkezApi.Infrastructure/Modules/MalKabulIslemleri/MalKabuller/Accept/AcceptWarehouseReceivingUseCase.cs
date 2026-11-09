@@ -188,6 +188,11 @@ public sealed class AcceptWarehouseReceivingUseCase(
             request.DocumentOrderNo,
             cancellationToken);
 
+        if (mikroWriteDbContext.ChangeTracker.HasChanges())
+        {
+            await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+        }
+
         if (hasDiscrepancy && !request.AllowDiscrepancy)
         {
             throw new InvalidOperationException(
