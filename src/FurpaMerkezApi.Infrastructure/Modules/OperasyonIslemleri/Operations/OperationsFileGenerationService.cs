@@ -558,11 +558,32 @@ internal sealed class OperationsFileGenerationService(
         Directory.CreateDirectory(targetDirectory);
 
         var destinationPath = Path.Combine(targetDirectory, Path.GetFileName(localPath));
-        await using var sourceStream = File.Open(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        await using var destinationStream = File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await sourceStream.CopyToAsync(destinationStream, cancellationToken);
+        const int maxAttempts = 5;
 
-        logger.LogInformation("Copied operation export file to {DestinationPath}.", destinationPath);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await using var sourceStream = File.Open(localPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                await using var destinationStream = File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                await sourceStream.CopyToAsync(destinationStream, cancellationToken);
+                await destinationStream.FlushAsync(cancellationToken);
+
+                logger.LogInformation("Copied operation export file to {DestinationPath}.", destinationPath);
+                return destinationPath;
+            }
+            catch (IOException exception) when (attempt < maxAttempts && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Transient IO error while copying operation export file to {DestinationPath} (attempt {Attempt}/{MaxAttempts}). Retrying...",
+                    destinationPath,
+                    attempt,
+                    maxAttempts);
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+            }
+        }
+
         return destinationPath;
     }
 

@@ -38,6 +38,16 @@ internal sealed class OperationsJobWorker(
 
                 queue.MarkSucceeded(workItem.JobId, result.Message, result.Files);
             }
+            catch (OperationCanceledException exception) when (stoppingToken.IsCancellationRequested)
+            {
+                logger.LogInformation(
+                    exception,
+                    "Operations job {JobId} for warehouse {WarehouseNo} was canceled because the application is stopping.",
+                    workItem.JobId,
+                    workItem.WarehouseNo);
+                queue.MarkFailed(workItem.JobId, "Uygulama yeniden baslatildigi icin islem iptal edildi.");
+                break;
+            }
             catch (Exception exception)
             {
                 logger.LogError(

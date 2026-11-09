@@ -84,6 +84,16 @@ public sealed class ExceptionHandlingMiddleware(
             logger.LogInformation(exception, "A requested resource was not found.");
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status404NotFound, exception.Message);
         }
+        catch (FileNotFoundException exception)
+        {
+            logger.LogInformation(exception, "A requested file was not found.");
+            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status404NotFound, exception.Message);
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            logger.LogInformation(exception, "A requested directory was not found.");
+            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status404NotFound, exception.Message);
+        }
         catch (CommunicationException exception)
         {
             logger.LogWarning(exception, "An upstream communication error occurred.");
@@ -244,6 +254,8 @@ public sealed class ExceptionHandlingMiddleware(
             " can not ",
             " cannot ",
             " could not ",
+            "could not find file",
+            "could not find a part of the path",
             " does not ",
             " did not ",
             " already exists",

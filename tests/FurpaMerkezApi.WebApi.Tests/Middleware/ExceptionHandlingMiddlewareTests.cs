@@ -168,4 +168,25 @@ public sealed class ExceptionHandlingMiddlewareTests
         Assert.Equal("SequenceMismatch", root.GetProperty("recoveryState").GetString());
         Assert.Equal("NeedsReview", root.GetProperty("recommendedAction").GetString());
     }
+
+    [Fact]
+    public async Task InvokeAsync_MapsFileNotFoundExceptionTo404WithTurkishDetail()
+    {
+        const string detail = @"İncelenmek istenen dosya bulunamadı (Merkez Klasör): \\10.0.0.55\kasa\144\HR091126.160";
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new FileNotFoundException(detail),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/kasa-islemleri/kasa-hareket-aktarimi/hareket-dosyasi/icerik";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        Assert.Equal("Kayit bulunamadi", root.GetProperty("title").GetString());
+        Assert.Equal(detail, root.GetProperty("detail").GetString());
+    }
 }
