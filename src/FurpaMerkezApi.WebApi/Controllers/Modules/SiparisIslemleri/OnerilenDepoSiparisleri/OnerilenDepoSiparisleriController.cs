@@ -75,9 +75,14 @@ public sealed class OnerilenDepoSiparisleriController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<SuggestedWarehouseSourceProductDto>>> ListSourceWarehouseProducts(
         [FromQuery, Range(1, int.MaxValue)] int sourceWarehouseNo,
+        [FromQuery, Range(1, int.MaxValue)] int? targetWarehouseNo,
         CancellationToken cancellationToken)
     {
-        return Ok(await suggestedWarehouseSourceProductsUseCase.ExecuteAsync(sourceWarehouseNo, cancellationToken));
+        var resolvedTargetWarehouseNo = User.ResolveWarehouseNoForPolicy(targetWarehouseNo, ListPolicy);
+        return Ok(await suggestedWarehouseSourceProductsUseCase.ExecuteAsync(
+            sourceWarehouseNo,
+            cancellationToken,
+            resolvedTargetWarehouseNo));
     }
 
     [HttpGet("manav")]
@@ -85,9 +90,14 @@ public sealed class OnerilenDepoSiparisleriController(
     [ProducesResponseType(typeof(IReadOnlyCollection<SuggestedWarehouseSourceProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<SuggestedWarehouseSourceProductDto>>> ListGreenGrocerProductsAlias(
+        [FromQuery, Range(1, int.MaxValue)] int? targetWarehouseNo,
         CancellationToken cancellationToken)
     {
-        return Ok(await suggestedWarehouseSourceProductsUseCase.ExecuteAsync(56, cancellationToken));
+        var resolvedTargetWarehouseNo = User.ResolveWarehouseNoForPolicy(targetWarehouseNo, ListPolicy);
+        return Ok(await suggestedWarehouseSourceProductsUseCase.ExecuteAsync(
+            56,
+            cancellationToken,
+            resolvedTargetWarehouseNo));
     }
 
     [HttpPost("convert-to-order")]

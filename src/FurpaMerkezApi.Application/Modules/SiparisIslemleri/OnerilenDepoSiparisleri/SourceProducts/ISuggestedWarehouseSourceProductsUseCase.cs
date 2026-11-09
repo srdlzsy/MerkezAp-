@@ -4,5 +4,6 @@ public interface ISuggestedWarehouseSourceProductsUseCase
 {
     Task<IReadOnlyCollection<SuggestedWarehouseSourceProductDto>> ExecuteAsync(
         int sourceWarehouseNo,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        int? targetWarehouseNo = null);
 }

@@ -109,7 +109,8 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             mikroWriteDbContext.Database.GetDbConnection(),
             request.OutWarehouseNo,
             stockCode: null,
-            cancellationToken);
+            cancellationToken,
+            request.InWarehouseNo);
         var invalidStockCodes = request.Lines
             .Select(line => line.StockCode.Trim())
             .Where(stockCode => stockCode.Length > 0 && !catalogStockCodes.Contains(stockCode))
@@ -123,7 +124,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         }
 
         throw new ArgumentException(
-            $"Su urunler kaynak depo {request.OutWarehouseNo} siparis katalogunda bulunmuyor: " +
+            $"Su urunler kaynak depo {request.OutWarehouseNo} veya talep eden depo {request.InWarehouseNo} siparis katalogunda bulunmuyor ya da siparise kapali: " +
             string.Join(", ", invalidStockCodes),
             nameof(request.Lines));
     }

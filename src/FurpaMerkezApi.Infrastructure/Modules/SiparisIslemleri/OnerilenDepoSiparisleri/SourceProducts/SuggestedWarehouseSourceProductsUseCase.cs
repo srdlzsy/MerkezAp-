@@ -12,11 +12,17 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
 {
     public async Task<IReadOnlyCollection<SuggestedWarehouseSourceProductDto>> ExecuteAsync(
         int sourceWarehouseNo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? targetWarehouseNo = null)
     {
         if (sourceWarehouseNo <= 0)
         {
             throw new ArgumentException("Source warehouse no must be greater than zero.", nameof(sourceWarehouseNo));
+        }
+
+        if (targetWarehouseNo is <= 0)
+        {
+            throw new ArgumentException("Target warehouse no must be greater than zero.", nameof(targetWarehouseNo));
         }
 
         const string sql = """
@@ -86,12 +92,26 @@ public sealed class SuggestedWarehouseSourceProductsUseCase(MikroDbContext mikro
                     AND sourceDetail.sdp_depo_kod = stock.sto_kod
                     AND ISNULL(sourceDetail.sdp_sipdursun, 0) = 0
               )
+              AND (
+                  @targetWarehouseNo IS NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM dbo.STOK_DEPO_DETAYLARI AS targetDetail WITH (NOLOCK)
+                      WHERE targetDetail.sdp_depo_no = @targetWarehouseNo
+                        AND targetDetail.sdp_depo_kod = stock.sto_kod
+                        AND ISNULL(targetDetail.sdp_sipdursun, 0) = 0
+                  )
+              )
             ORDER BY stock.sto_model_kodu, stock.sto_isim, stock.sto_kod;
             """;
 
         return await ExecuteReaderAsync(
             sql,
-            command => AddParameter(command, "@sourceWarehouseNo", sourceWarehouseNo, DbType.Int32),
+            command =>
+            {
+                AddParameter(command, "@sourceWarehouseNo", sourceWarehouseNo, DbType.Int32);
+                AddParameter(command, "@targetWarehouseNo", targetWarehouseNo, DbType.Int32);
+            },
             ReadItem,
             cancellationToken);
     }

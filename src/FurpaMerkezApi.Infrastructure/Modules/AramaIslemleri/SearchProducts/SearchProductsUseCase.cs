@@ -70,6 +70,7 @@ public sealed class SearchProductsUseCase(
                 ? await GetSourceWarehouseStockCodesAsync(
                     connection,
                     request.SourceWarehouseNo.Value,
+                    request.WarehouseNo,
                     cancellationToken)
                 : null;
 
@@ -501,9 +502,10 @@ public sealed class SearchProductsUseCase(
     private async Task<IReadOnlySet<string>> GetSourceWarehouseStockCodesAsync(
         DbConnection connection,
         int sourceWarehouseNo,
+        int targetWarehouseNo,
         CancellationToken cancellationToken)
     {
-        var cacheKey = $"product-search:source-warehouse-catalog:{sourceWarehouseNo}";
+        var cacheKey = $"product-search:source-warehouse-catalog:{sourceWarehouseNo}:target:{targetWarehouseNo}";
         if (cache.TryGetValue(cacheKey, out IReadOnlySet<string>? stockCodes) && stockCodes is not null)
         {
             return stockCodes;
@@ -513,7 +515,8 @@ public sealed class SearchProductsUseCase(
             connection,
             sourceWarehouseNo,
             stockCode: null,
-            cancellationToken);
+            cancellationToken,
+            targetWarehouseNo);
         cache.Set(cacheKey, stockCodes, SourceWarehouseCatalogCacheDuration);
         return stockCodes;
     }

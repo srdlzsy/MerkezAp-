@@ -303,7 +303,8 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 mikroDbContext.Database.GetDbConnection(),
                 sourceWarehouseNo!.Value,
                 stock.StockCode,
-                cancellationToken);
+                cancellationToken,
+                request.WarehouseNo);
         }
 
         var shouldEnforceTargetWarehouse = BarcodeResolutionOperationRules.ShouldEnforceTargetWarehouse(operationType);

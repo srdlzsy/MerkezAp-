@@ -75,6 +75,16 @@ internal static class SourceWarehouseOrderCatalogReader
                         REPLACE(REPLACE(ISNULL(warehouse.dep_barkod_yazici_yolu, N''), N';', N','), N'|', N','),
                         N',') AS sourceModel
                     WHERE LTRIM(RTRIM(sourceModel.value)) = LTRIM(RTRIM(ISNULL(stock.sto_model_kodu, N'')))
+                      AND ISNULL(stock.sto_iptal, 0) = 0
+                      AND ISNULL(stock.sto_siparis_dursun, 0) = 0
+                      AND EXISTS
+                      (
+                          SELECT 1
+                          FROM dbo.STOK_DEPO_DETAYLARI AS targetDetail WITH (NOLOCK)
+                          WHERE targetDetail.sdp_depo_no = @warehouseNo
+                            AND targetDetail.sdp_depo_kod = stock.sto_kod
+                            AND ISNULL(targetDetail.sdp_sipdursun, 0) = 0
+                      )
                       AND EXISTS
                       (
                           SELECT 1
@@ -145,7 +155,8 @@ internal static class SourceWarehouseOrderCatalogReader
         DbConnection connection,
         int sourceWarehouseNo,
         string? stockCode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? targetWarehouseNo = null)
     {
         var closeConnection = connection.State == ConnectionState.Closed;
         if (closeConnection)
@@ -171,13 +182,27 @@ internal static class SourceWarehouseOrderCatalogReader
                    AND ISNULL(sourceDetail.sdp_sipdursun, 0) = 0
                 WHERE sourceWarehouse.dep_no = @sourceWarehouseNo
                   AND LTRIM(RTRIM(sourceModel.value)) <> N''
-                  AND (@stockCode IS NULL OR stock.sto_kod = @stockCode);
+                  AND ISNULL(stock.sto_iptal, 0) = 0
+                  AND ISNULL(stock.sto_siparis_dursun, 0) = 0
+                  AND (@stockCode IS NULL OR stock.sto_kod = @stockCode)
+                  AND (
+                      @targetWarehouseNo IS NULL
+                      OR EXISTS
+                      (
+                          SELECT 1
+                          FROM dbo.STOK_DEPO_DETAYLARI AS targetDetail WITH (NOLOCK)
+                          WHERE targetDetail.sdp_depo_no = @targetWarehouseNo
+                            AND targetDetail.sdp_depo_kod = stock.sto_kod
+                            AND ISNULL(targetDetail.sdp_sipdursun, 0) = 0
+                      )
+                  );
                 """;
             command.CommandType = CommandType.Text;
             command.CommandTimeout = 300;
 
             AddParameter(command, "@sourceWarehouseNo", sourceWarehouseNo, DbType.Int32);
             AddParameter(command, "@stockCode", NormalizeOrNull(stockCode), DbType.String);
+            AddParameter(command, "@targetWarehouseNo", targetWarehouseNo, DbType.Int32);
 
             var stockCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -207,7 +232,8 @@ internal static class SourceWarehouseOrderCatalogReader
         DbConnection connection,
         int sourceWarehouseNo,
         string stockCode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? targetWarehouseNo = null)
     {
         var normalizedStockCode = NormalizeOrNull(stockCode);
         if (sourceWarehouseNo <= 0 || normalizedStockCode is null)
@@ -219,7 +245,8 @@ internal static class SourceWarehouseOrderCatalogReader
             connection,
             sourceWarehouseNo,
             normalizedStockCode,
-            cancellationToken);
+            cancellationToken,
+            targetWarehouseNo);
         return stockCodes.Contains(normalizedStockCode);
     }
 
