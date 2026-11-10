@@ -124,6 +124,7 @@ public sealed class HomeWarehousePrioritiesService(
                 flow.TargetWarehouseNo,
                 flow.Status,
                 flow.CurrentStep,
+                flow.ExternalUuid,
                 flow.CreatedAtUtc,
                 flow.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
@@ -165,9 +166,14 @@ public sealed class HomeWarehousePrioritiesService(
 
         var unsubmittedEDespatchCount = operationalRows.Count(flow =>
             (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+            flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+            flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+            flow.Status == DocumentFlowStatus.Succeeded &&
+            flow.ExternalUuid == null &&
             IsDespatchDocument(flow.DocumentType) &&
-            flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-            flow.Status == DocumentFlowStatus.Succeeded);
+            (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
+             flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
+             flow.CurrentStep == DocumentFlowStep.DocumentUpdated));
 
         var otherFailedOperationCount = operationalRows.Count(flow =>
             (!hasWarehouseNo ||
@@ -555,9 +561,8 @@ public sealed class HomeWarehousePrioritiesService(
     private static bool IsPendingReceiving(FlowRow flow) =>
         flow.TargetWarehouseNo.HasValue &&
         IsWarehouseMovement(flow.DocumentType) &&
-        flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
-        !IsFailedCreation(flow);
+        flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+        flow.Status == DocumentFlowStatus.Succeeded;
 
     private static string BuildFlowRoute(
         int? warehouseNo,
@@ -611,6 +616,7 @@ public sealed class HomeWarehousePrioritiesService(
         int? TargetWarehouseNo,
         DocumentFlowStatus Status,
         DocumentFlowStep CurrentStep,
+        string? ExternalUuid,
         DateTime CreatedAtUtc,
         DateTime UpdatedAtUtc);
 

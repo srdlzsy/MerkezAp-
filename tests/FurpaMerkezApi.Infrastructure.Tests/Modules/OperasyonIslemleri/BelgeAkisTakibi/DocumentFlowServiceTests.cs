@@ -386,7 +386,7 @@ public sealed class DocumentFlowServiceTests
         Assert.Equal(1, pendingReceivingFor104.Items.Single().DocumentOrderNo);
         Assert.NotNull(pendingReceivingFor104.Summary);
         Assert.Equal(1, pendingReceivingFor104.Summary.PendingReceivingCount);
-        Assert.Equal(1, pendingReceivingFor104.Summary.UnacceptedOutgoingCount);
+        Assert.Equal(0, pendingReceivingFor104.Summary.UnacceptedOutgoingCount);
         Assert.Equal(1, pendingReceivingFor104.Summary.PendingEDespatchCount);
         Assert.Equal(2, pendingReceivingFor104.Summary.ActionRequiredCount);
     }

@@ -148,6 +148,30 @@ public sealed class FirmaMalKabulleriController(
                     ExternalUuid: ResolveOfficialDocumentEttn(request)),
                 cancellationToken);
 
+            if (!string.IsNullOrWhiteSpace(response.AutoCreatedReturnDocumentSerie) &&
+                response.AutoCreatedReturnDocumentOrderNo.HasValue &&
+                response.AutoCreatedReturnLineCount > 0)
+            {
+                await documentFlowService.RecordAsync(
+                    new RecordDocumentFlowRequest(
+                        DocumentFlowKeys.Create(
+                            DocumentFlowType.CompanyReturn,
+                            response.WarehouseNo,
+                            response.AutoCreatedReturnDocumentSerie,
+                            response.AutoCreatedReturnDocumentOrderNo.Value),
+                        DocumentFlowType.CompanyReturn,
+                        response.WarehouseNo,
+                        null,
+                        response.AutoCreatedReturnDocumentSerie,
+                        response.AutoCreatedReturnDocumentOrderNo.Value,
+                        DocumentFlowStep.DocumentCreated,
+                        DocumentFlowStatus.Succeeded,
+                        $"Firma mal kabul kismi kabul farkindan otomatik iade fisi olusturuldu ({response.DocumentSerie}-{response.DocumentOrderNo}).",
+                        ChangedByUserId: requestedByUserId.Value,
+                        DocumentNo: response.DocumentNo),
+                    cancellationToken);
+            }
+
             logger.LogInformation(
                 "Company receiving create succeeded. WarehouseNo={WarehouseNo}; DocumentSerie={DocumentSerie}; DocumentOrderNo={DocumentOrderNo}; DocumentNo={DocumentNo}; ClientRequestId={ClientRequestId}; LineCount={LineCount}; TotalReceivedQuantity={TotalReceivedQuantity}; TotalDispatchQuantity={TotalDispatchQuantity}; TotalNetAcceptedQuantity={TotalNetAcceptedQuantity}",
                 response.WarehouseNo,

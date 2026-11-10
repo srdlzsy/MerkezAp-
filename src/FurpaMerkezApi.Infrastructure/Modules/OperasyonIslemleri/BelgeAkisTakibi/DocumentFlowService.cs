@@ -324,22 +324,24 @@ public sealed class DocumentFlowService(
                     flow.TargetWarehouseNo.HasValue &&
                     (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
                      flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                    flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-                    flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
-                    !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-                      flow.Status == DocumentFlowStatus.Failed)),
+                    flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                    flow.Status == DocumentFlowStatus.Succeeded),
 
             DocumentFlowPreset.PendingEDespatch =>
                 query.Where(flow =>
                     flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                    flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
                     ((flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
                       flow.Status == DocumentFlowStatus.Failed) ||
                      ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
                        flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
                        flow.DocumentType == DocumentFlowType.CompanyReturn ||
                        flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                      flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-                      flow.Status == DocumentFlowStatus.Succeeded))),
+                      flow.Status == DocumentFlowStatus.Succeeded &&
+                      flow.ExternalUuid == null &&
+                      (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
+                       flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
+                       flow.CurrentStep == DocumentFlowStep.DocumentUpdated)))),
 
             DocumentFlowPreset.FailedEDespatch =>
                 query.Where(flow =>
@@ -388,33 +390,39 @@ public sealed class DocumentFlowService(
                         ((flow.TargetWarehouseNo == warehouseNo.Value &&
                           (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
                            flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                          flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-                          !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-                            flow.Status == DocumentFlowStatus.Failed)) ||
+                          flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                          flow.Status == DocumentFlowStatus.Succeeded) ||
                          (flow.SourceWarehouseNo == warehouseNo.Value &&
+                          flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
                           ((flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
                             flow.Status == DocumentFlowStatus.Failed) ||
                            ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
                              flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
                              flow.DocumentType == DocumentFlowType.CompanyReturn ||
                              flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                            flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-                            flow.Status == DocumentFlowStatus.Succeeded))) ||
+                            flow.Status == DocumentFlowStatus.Succeeded &&
+                            flow.ExternalUuid == null &&
+                            (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
+                             flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
+                             flow.CurrentStep == DocumentFlowStep.DocumentUpdated)))) ||
                          flow.Status == DocumentFlowStatus.Failed))
                     : query.Where(flow =>
                         flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
                         ((flow.TargetWarehouseNo.HasValue &&
                           (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
                            flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                          flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-                          !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-                            flow.Status == DocumentFlowStatus.Failed)) ||
-                         ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
+                          flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                          flow.Status == DocumentFlowStatus.Succeeded) ||
+                         (flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+                          (flow.DocumentType == DocumentFlowType.CompanyShipment ||
                            flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
                            flow.DocumentType == DocumentFlowType.CompanyReturn ||
                            flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                          flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-                          flow.Status == DocumentFlowStatus.Succeeded) ||
+                          flow.Status == DocumentFlowStatus.Succeeded &&
+                          flow.ExternalUuid == null &&
+                          (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
+                           flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
+                           flow.CurrentStep == DocumentFlowStep.DocumentUpdated)) ||
                          flow.Status == DocumentFlowStatus.Failed)),
 
             _ => query
@@ -492,6 +500,7 @@ public sealed class DocumentFlowService(
                 flow.TargetWarehouseNo,
                 flow.Status,
                 flow.CurrentStep,
+                flow.ExternalUuid,
                 flow.CreatedAtUtc,
                 flow.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
@@ -549,9 +558,8 @@ public sealed class DocumentFlowService(
     private static bool IsPendingReceiving(SummaryRow row) =>
         row.TargetWarehouseNo.HasValue &&
         (row.DocumentType is DocumentFlowType.InterWarehouseShipment or DocumentFlowType.WarehouseReturn) &&
-        row.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-        row.CurrentStep != DocumentFlowStep.DocumentDeleted &&
-        !(row.CurrentStep == DocumentFlowStep.DocumentCreated && row.Status == DocumentFlowStatus.Failed);
+        row.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+        row.Status == DocumentFlowStatus.Succeeded;
 
     private static bool IsDespatchDocument(DocumentFlowType documentType) =>
         documentType is DocumentFlowType.CompanyShipment
@@ -567,11 +575,15 @@ public sealed class DocumentFlowService(
 
     private static bool IsPendingOrFailedEDespatch(SummaryRow row) =>
         row.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        row.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
         ((row.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
           row.Status == DocumentFlowStatus.Failed) ||
          (IsDespatchDocument(row.DocumentType) &&
-          row.CurrentStep == DocumentFlowStep.DocumentCreated &&
-          row.Status == DocumentFlowStatus.Succeeded));
+          row.Status == DocumentFlowStatus.Succeeded &&
+          row.ExternalUuid is null &&
+          row.CurrentStep is DocumentFlowStep.DocumentCreated
+              or DocumentFlowStep.AxataDocumentImported
+              or DocumentFlowStep.DocumentUpdated));
 
     private static bool IsActionRequired(SummaryRow row, int? warehouseNo)
     {
@@ -690,6 +702,7 @@ public sealed class DocumentFlowService(
         int? TargetWarehouseNo,
         DocumentFlowStatus Status,
         DocumentFlowStep CurrentStep,
+        string? ExternalUuid,
         DateTime CreatedAtUtc,
         DateTime UpdatedAtUtc);
 }

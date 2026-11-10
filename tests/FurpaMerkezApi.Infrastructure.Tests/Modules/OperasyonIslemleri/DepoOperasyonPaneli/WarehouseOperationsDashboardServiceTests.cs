@@ -89,7 +89,7 @@ public sealed class WarehouseOperationsDashboardServiceTests
 
         var warehouse50 = Assert.Single(result.Warehouses, item => item.WarehouseNo == 50);
         Assert.Equal(0, warehouse50.TodayShipmentCount);
-        Assert.Equal(1, warehouse50.PendingReceivingCount);
+        Assert.Equal(0, warehouse50.PendingReceivingCount);
         Assert.Equal(1, warehouse50.UnacceptedOutgoingCount);
 
         var warehouse104 = Assert.Single(result.Warehouses, item => item.WarehouseNo == 104);

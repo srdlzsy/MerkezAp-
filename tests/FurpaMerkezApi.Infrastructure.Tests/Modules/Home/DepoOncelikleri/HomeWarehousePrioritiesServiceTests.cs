@@ -90,6 +90,17 @@ public sealed class HomeWarehousePrioritiesServiceTests
             now);
         authDbContext.DocumentFlows.Add(outgoingUnacceptedAndUnsubmittedFlow);
 
+        var unsubmittedFlow = new DocumentFlow(
+            Guid.NewGuid(),
+            "unsubmitted-53",
+            DocumentFlowType.InterWarehouseShipment,
+            sourceWarehouseNo: 53,
+            targetWarehouseNo: 104,
+            documentSerie: "F53",
+            documentOrderNo: 2,
+            createdAtUtc: now);
+        authDbContext.DocumentFlows.Add(unsubmittedFlow);
+
         await authDbContext.SaveChangesAsync();
 
         var service = new HomeWarehousePrioritiesService(
@@ -188,8 +199,9 @@ public sealed class HomeWarehousePrioritiesServiceTests
         string flowKey,
         int sourceWarehouseNo,
         int targetWarehouseNo,
-        DateTime createdAtUtc) =>
-        new(
+        DateTime createdAtUtc)
+    {
+        var flow = new DocumentFlow(
             Guid.NewGuid(),
             flowKey,
             DocumentFlowType.InterWarehouseShipment,
@@ -198,6 +210,17 @@ public sealed class HomeWarehousePrioritiesServiceTests
             documentSerie: "F53",
             documentOrderNo: 1,
             createdAtUtc);
+        flow.Record(
+            DocumentFlowStep.EDespatchSubmission,
+            DocumentFlowStatus.Succeeded,
+            "E-irsaliye gonderildi.",
+            error: null,
+            changedByUserId: null,
+            occurredAtUtc: createdAtUtc,
+            externalDocumentNo: "FRM2026000001",
+            externalUuid: Guid.NewGuid().ToString());
+        return flow;
+    }
 
     private sealed class FixedClock(DateTime utcNow) : IClock
     {

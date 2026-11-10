@@ -154,8 +154,7 @@ public sealed class DepolarArasiSevklerController(
         CancellationToken cancellationToken)
     {
         var resolvedWarehouseNo = User.ResolveWarehouseNoForPolicy(warehouseNo, OutgoingUpdatePolicy);
-
-        return Ok(await updateWarehouseShippingDocumentUseCase.ExecuteAsync(
+        var response = await updateWarehouseShippingDocumentUseCase.ExecuteAsync(
             new UpdateWarehouseShippingDocumentRequest(
                 resolvedWarehouseNo,
                 documentSerie,
@@ -185,7 +184,28 @@ public sealed class DepolarArasiSevklerController(
                         line.ProductResponsibilityCenter))
                     .ToArray(),
                 RequestedByUserId: User.GetRequiredUserId()),
-            cancellationToken));
+            cancellationToken);
+
+        await documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.InterWarehouseShipment,
+                    response.SourceWarehouseNo,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo),
+                DocumentFlowType.InterWarehouseShipment,
+                response.SourceWarehouseNo,
+                response.TargetWarehouseNo,
+                response.DocumentSerie,
+                response.DocumentOrderNo,
+                DocumentFlowStep.DocumentUpdated,
+                DocumentFlowStatus.Succeeded,
+                "Depolar arasi sevk guncellendi.",
+                ChangedByUserId: User.GetRequiredUserId(),
+                DocumentNo: request.DocumentNo),
+            cancellationToken);
+
+        return Ok(response);
     }
 
     [HttpDelete("{documentSerie}/{documentOrderNo:int}")]

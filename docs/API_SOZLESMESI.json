@@ -20214,6 +20214,40 @@
             }
           },
           {
+            "name": "CurrentStep",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Domain.Entities.DocumentFlowStep"
+            }
+          },
+          {
+            "name": "Direction",
+            "in": "query",
+            "schema": {
+              "maxLength": 50,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "name": "Category",
+            "in": "query",
+            "schema": {
+              "maxLength": 50,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
+            "name": "Preset",
+            "in": "query",
+            "schema": {
+              "maxLength": 50,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
             "name": "Search",
             "in": "query",
             "schema": {
@@ -28141,6 +28175,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "warehouseNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
           }
         ],
         "responses": {
@@ -28211,7 +28253,6 @@
           }
         ],
         "x-permissions": [
-          "operasyon-islemleri.depo-operasyon-paneli.all-warehouses",
           "operasyon-islemleri.depo-operasyon-paneli.list"
         ]
       }
@@ -122251,6 +122292,51 @@
               "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowListItemDto"
             },
             "nullable": true
+          },
+          "summary": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowSummaryDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowSummaryDto": {
+        "type": "object",
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "succeededCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "actionRequiredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingReceivingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unacceptedOutgoingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingEDespatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failedEDespatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "openOrderCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -122283,6 +122369,11 @@
             "items": {
               "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli.WarehouseOperationsDashboardItemDto"
             },
+            "nullable": true
+          },
+          "lookbackStartDate": {
+            "type": "string",
+            "format": "date",
             "nullable": true
           }
         },
@@ -122349,6 +122440,22 @@
           "healthStatus": {
             "type": "string",
             "nullable": true
+          },
+          "unacceptedOutgoingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingEDespatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "openOrderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "otherFailedOperationCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -122381,6 +122488,22 @@
             "format": "int32"
           },
           "failedEDespatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unacceptedOutgoingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingEDespatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "openOrderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "otherFailedOperationCount": {
             "type": "integer",
             "format": "int32"
           }
@@ -129678,6 +129801,23 @@
         "enum": [
           1,
           2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "FurpaMerkezApi.Domain.Entities.DocumentFlowStep": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
         ],
         "type": "integer",
         "format": "int32"

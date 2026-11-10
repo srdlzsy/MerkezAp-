@@ -70,6 +70,7 @@ public sealed class WarehouseOperationsDashboardService(
                 flow.TargetWarehouseNo,
                 flow.Status,
                 flow.CurrentStep,
+                flow.ExternalUuid,
                 flow.CreatedAtUtc,
                 flow.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
@@ -292,17 +293,20 @@ public sealed class WarehouseOperationsDashboardService(
     private static bool IsPendingReceiving(FlowRow flow) =>
         flow.TargetWarehouseNo.HasValue &&
         IsWarehouseMovement(flow.DocumentType) &&
-        flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
-        !IsFailedCreation(flow);
+        flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+        flow.Status == DocumentFlowStatus.Succeeded;
 
     private static bool IsPendingOrFailedEDespatch(FlowRow flow) =>
         flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
         ((flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
           flow.Status == DocumentFlowStatus.Failed) ||
          (IsDespatchDocument(flow.DocumentType) &&
-          flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
-          flow.Status == DocumentFlowStatus.Succeeded));
+          flow.Status == DocumentFlowStatus.Succeeded &&
+          flow.ExternalUuid == null &&
+          (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
+           flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
+           flow.CurrentStep == DocumentFlowStep.DocumentUpdated)));
 
     private static string ResolveHealthStatus(
         int pendingReceivingCount,
@@ -332,6 +336,7 @@ public sealed class WarehouseOperationsDashboardService(
         int? TargetWarehouseNo,
         DocumentFlowStatus Status,
         DocumentFlowStep CurrentStep,
+        string? ExternalUuid,
         DateTime CreatedAtUtc,
         DateTime UpdatedAtUtc);
 }

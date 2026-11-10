@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 810. Model sayisi: 768.
+Endpoint sayisi (method + route): 810. Model sayisi: 770.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -598,9 +598,9 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` | JWT | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/yeniden-dogrula` | JWT | path: clientRequestId / string (uuid) (zorunlu)<br>body: request / RecheckMobileSafeWriteHttpRequest (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mobile-sync/urun-fiyat-katalogu` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileProductPriceCatalogResponse<br>400: ProblemDetails<br>403: ProblemDetails |
-| GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: Search / string<br>query: Skip / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |
+| GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: CurrentStep / FurpaMerkezApi.Domain.Entities.DocumentFlowStep<br>query: Direction / string<br>query: Category / string<br>query: Preset / string<br>query: Search / string<br>query: Skip / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/belge-akis-takibi/{id}` | JWT + operasyon-islemleri.belge-akis-takibi.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowDetailDto<br>404: ProblemDetails |
-| GET | `/api/operasyon-islemleri/depo-operasyon-paneli` | JWT + operasyon-islemleri.depo-operasyon-paneli.all-warehouses + operasyon-islemleri.depo-operasyon-paneli.list | query: date / string (date) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOperationsDashboardDto |
+| GET | `/api/operasyon-islemleri/depo-operasyon-paneli` | JWT + operasyon-islemleri.depo-operasyon-paneli.list | query: date / string (date)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOperationsDashboardDto |
 | GET | `/api/operasyon-islemleri/firma-evrak-takibi` | JWT + operasyon-islemleri.firma-evrak-takibi.list | query: Date / string (date) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyDocumentTrackingDto<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/urun-dagilimlari` | JWT + operasyon-islemleri.urun-dagilimlari.list | query: Status / integer (int32)<br>query: DocumentNo / string<br>query: StockCode / string<br>query: DistributionCenterWarehouseNo / integer (int32)<br>query: CreatedFrom / string (date-time)<br>query: CreatedTo / string (date-time)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductDistributionListItemDto&gt;<br>400: ProblemDetails |
 | POST | `/api/operasyon-islemleri/urun-dagilimlari` | JWT + operasyon-islemleri.urun-dagilimlari.create | body: request / ProductDistributionSaveHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: ProductDistributionDetailDto<br>400: ProblemDetails |
@@ -7381,8 +7381,23 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `items` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowListItemDto[] | Hayir | nullable |
+| `summary` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowSummaryDto | Hayir |  |
 | `totalCount` | integer (int32) | Hayir |  |
 | `trackingEnabled` | boolean | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `actionRequiredCount` | integer (int32) | Hayir |  |
+| `failedCount` | integer (int32) | Hayir |  |
+| `failedEDespatchCount` | integer (int32) | Hayir |  |
+| `openOrderCount` | integer (int32) | Hayir |  |
+| `pendingEDespatchCount` | integer (int32) | Hayir |  |
+| `pendingReceivingCount` | integer (int32) | Hayir |  |
+| `succeededCount` | integer (int32) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+| `unacceptedOutgoingCount` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli.WarehouseOperationsDashboardDto
 
@@ -7391,6 +7406,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `busiestWarehouse` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli.WarehouseOperationsDashboardHighlightDto | Hayir |  |
 | `date` | string (date) | Hayir |  |
 | `generatedAtUtc` | string (date-time) | Hayir |  |
+| `lookbackStartDate` | string (date) | Hayir | nullable |
 | `slowestWarehouse` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli.WarehouseOperationsDashboardHighlightDto | Hayir |  |
 | `summary` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli.WarehouseOperationsDashboardSummaryDto | Hayir |  |
 | `trackingEnabled` | boolean | Hayir |  |
@@ -7412,10 +7428,14 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `failedEDespatchCount` | integer (int32) | Hayir |  |
 | `healthStatus` | string | Hayir | nullable |
 | `incompleteOperationCount` | integer (int32) | Hayir |  |
+| `openOrderCount` | integer (int32) | Hayir |  |
+| `otherFailedOperationCount` | integer (int32) | Hayir |  |
+| `pendingEDespatchCount` | integer (int32) | Hayir |  |
 | `pendingReceivingCount` | integer (int32) | Hayir |  |
 | `todayReceivingCount` | integer (int32) | Hayir |  |
 | `todayReturnCount` | integer (int32) | Hayir |  |
 | `todayShipmentCount` | integer (int32) | Hayir |  |
+| `unacceptedOutgoingCount` | integer (int32) | Hayir |  |
 | `warehouseName` | string | Hayir | nullable |
 | `warehouseNo` | integer (int32) | Hayir |  |
 
@@ -7425,10 +7445,14 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `failedEDespatchCount` | integer (int32) | Hayir |  |
 | `incompleteOperationCount` | integer (int32) | Hayir |  |
+| `openOrderCount` | integer (int32) | Hayir |  |
+| `otherFailedOperationCount` | integer (int32) | Hayir |  |
+| `pendingEDespatchCount` | integer (int32) | Hayir |  |
 | `pendingReceivingCount` | integer (int32) | Hayir |  |
 | `todayReceivingCount` | integer (int32) | Hayir |  |
 | `todayReturnCount` | integer (int32) | Hayir |  |
 | `todayShipmentCount` | integer (int32) | Hayir |  |
+| `unacceptedOutgoingCount` | integer (int32) | Hayir |  |
 | `warehouseCount` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.FirmaEvrakTakibi.CompanyDocumentTrackingDto
@@ -9763,6 +9787,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `warehouseNo` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Domain.Entities.DocumentFlowStatus
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+
+Enum degerleri JSON sozlesmesinde bulunur.
+
+### FurpaMerkezApi.Domain.Entities.DocumentFlowStep
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
