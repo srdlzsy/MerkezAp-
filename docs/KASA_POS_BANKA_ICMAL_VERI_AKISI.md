@@ -116,7 +116,7 @@ Muhasebe satirlari `cha_evrak_tip=60`, `cha_fileid=51`, `cha_cinsi=5`, seri `X` 
 | `GET /api/ayarlar/kasa-pos-terminalleri` | Furpa `CashRegistryDetails` | Furpa `CashRegisterDetails` | Fiziksel kasa ve bagli POS satirlari |
 | `GET /api/ayarlar/kasa-pos-terminalleri/banka-secenekleri` | Furpa `PaymentTypes` | `PaymentGenus=1` | Banka secenekleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/kasalar` | Furpa `CashRegistryDetails` | Sube filtresi | Fiziksel kasa listesi |
-| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | Furpa `CashRegisterDetails` | Furpa `PaymentTypes` | Kasaya bagli banka/POS terminal secenekleri |
+| `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka` | Furpa `CashRegisterDetails` | Furpa `PaymentTypes` | Kasaya bagli banka/POS terminal secenekleri; `PaymentTypeNo=2` Halkbank icmal satiri bu secim listesinden haric tutulur |
 | `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/yemek-ceki` | Furpa `PaymentTypes` | `PaymentGenus=2` | Yemek ceki secenekleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/online` | Furpa `PaymentTypes` | `PaymentGenus=5` veya adinda `online` | Online odeme tipleri |
 | `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari` | Furpa `CashRegisterDetails` | Banka adinda `online` | Online POS/kasa detaylari |
@@ -393,7 +393,10 @@ Backend:
 2. Bu kasanin Furpa `CashRegisterDetails` banka terminal satirlarini okur.
 3. Her satirin `PaymentTypeNo` degerini Furpa `PaymentTypes.PaymentTypeNo` ile eslestirir; eski null kayitlarda gecici olarak banka adi eslesmesini kullanir.
 4. Yalniz `PaymentGenus = 1` odeme tiplerini dondurur.
-5. Response'ta Furpa `TerminalId`, `PaymentTypeNo` ve `AccountCode` degerlerini birlestirir.
+5. Icmalde ayri sabit kategori olarak hesaplanan Halkbank'i adindan degil, resmi `PaymentTypeNo = 2` kimliginden taniyarak listeden cikarir.
+6. Response'ta Furpa `TerminalId`, `PaymentTypeNo` ve `AccountCode` degerlerini birlestirir.
+
+Halkbank filtresi metin aramasi yapmaz. Banka etiketi sonradan degisse bile `PaymentTypeNo=2` haric tutulur; adinda `Halkbank` gecen baska bir odeme tipi ise kimligi `2` degilse otomatik olarak elenmez.
 
 Ornek response satiri:
 

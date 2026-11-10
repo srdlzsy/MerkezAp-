@@ -8,6 +8,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.List;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -178,6 +179,7 @@ public sealed class VerilenDepoSiparisleriController(
                 request.Confidence);
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateIssuedWarehouseOrderHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

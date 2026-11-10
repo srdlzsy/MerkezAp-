@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -404,6 +405,7 @@ public sealed class ManavMalKabulVeEtiketMicroTransferHttpRequest
     public string SupplierCode { get; init; } = string.Empty;
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class ManavMalKabulVeEtiketCreateMicroGoodsReceiptHttpRequest
 {
     [Required]

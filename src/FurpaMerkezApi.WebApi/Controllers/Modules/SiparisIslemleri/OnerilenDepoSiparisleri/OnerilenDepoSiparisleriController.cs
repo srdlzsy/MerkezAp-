@@ -8,6 +8,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenDepoSiparisler
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -184,6 +185,7 @@ public sealed class SuggestedWarehouseOrderListHttpRequest
     public int FallbackRecommendedDay { get; init; } = 7;
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class ConvertSuggestedWarehouseOrderHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

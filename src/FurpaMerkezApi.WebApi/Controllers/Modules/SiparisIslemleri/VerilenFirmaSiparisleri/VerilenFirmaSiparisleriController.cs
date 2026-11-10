@@ -9,6 +9,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisler
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.SupplierProducts;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -289,6 +290,7 @@ public sealed class IssuedCompanyOrderListHttpRequest
     public bool OnlyOpen { get; init; }
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateIssuedCompanyOrderHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

@@ -8,6 +8,7 @@ using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detai
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.List;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -453,6 +454,7 @@ public sealed class DepolarArasiSevklerController(
     }
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateInterWarehouseShipmentHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

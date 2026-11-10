@@ -5,6 +5,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.Detail;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri.List;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -126,6 +127,7 @@ public sealed class BanknoteTrackDateHttpRequest
     public string? Search { get; init; }
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateBanknoteTrackHttpRequest
 {
     [Range(1, int.MaxValue)]

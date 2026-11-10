@@ -3,6 +3,7 @@ using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -173,6 +174,7 @@ public sealed class GreenGrocerOperationsAdjustmentPreviewHttpRequest
         Array.Empty<GreenGrocerOperationsAdjustmentLineHttpRequest>();
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class GreenGrocerOperationsAdjustmentApplyHttpRequest
 {
     [Required]

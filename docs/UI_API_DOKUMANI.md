@@ -2586,7 +2586,7 @@ Veri kaynaklari:
 
 - Furpa DB: `DeviceDetails`, `DeviceTypes`, `BranchDetails`, `CashRegistryDetails`, `CashRegisterDetails`, `Cashiers`, `KASIYER_TANIMLARI`
 - FurpaB2B DB: `Bultens`, `Users`, `UserAccounts`
-- Mikro DB: terminal banka adlarinin eslestirildigi `PaymentTypes` odeme tipi katalogu
+- Furpa DB: terminal banka kimliklerinin eslestirildigi `PaymentTypes` odeme tipi katalogu
 - Auth DB: `despatch_drivers`
 - Auth DB: `database_monitoring_incidents`, `database_session_termination_audits`
 - Auth DB: `terminal_installations`
@@ -3642,7 +3642,7 @@ Response `201 Created`:
 Notlar:
 
 - `branchNo + cashNo` duplicate ise `409 Conflict` doner.
-- Her `bank` degeri Mikro `PaymentTypes.PaymentName` katalogunda `PaymentGenus=1` olarak bulunmalidir. API buyuk/kucuk harf farkini kabul eder fakat Furpa'ya katalogdaki kesin adi yazar. Eslesmeyen banka `400 Bad Request` doner.
+- Her `bank` degeri Furpa `PaymentTypes.PaymentName` katalogunda `PaymentGenus=1` olarak bulunmalidir. API buyuk/kucuk harf farkini kabul eder fakat Furpa'ya katalogdaki kesin adi ve `PaymentTypeNo` bagini yazar. Eslesmeyen banka `400 Bad Request` doner.
 - Terminal no baska bir fiziksel kasa veya subede kullaniliyorsa `409 Conflict` doner. `detail` mesaji numaranin bulundugu sube, kasa ve bankalari belirtir; UI kullaniciyi mevcut kaydi acip `Dogru Kasaya Tasi` islemine yonlendirir.
 - Ayni fiziksel terminal/grup numarasi birden fazla banka satirinda kullanilabilir. Tekrarlanan tam satir (`terminalNo + bank + terminalId + merchantNo`) `409 Conflict` doner.
 - Silme islemleri mutlaka branch-scoped endpointlerle yapilir.
@@ -15844,13 +15844,13 @@ Route'lar:
 - `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/magaza-masrafi`
 - `GET /api/kasa-islemleri/kasa-sayimlari/online-kasa-detaylari`
 
-`odeme-tipleri/banka` icin yeni UI hem `branchNo` hem fiziksel `cashNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. Backend once Furpa `CashRegistryDetails` ile fiziksel kasanin subeye ait oldugunu dogrular, sonra Furpa `CashRegisterDetails` icindeki terminal banka satirlarini alir. Banka adlari Mikro `PaymentTypes.PaymentName` ile eslestirilir ve yalniz `PaymentGenus=1` odeme tipleri dondurulur. Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` terminal kaynagi olarak kullanilmaz. Eski istemciler `cashRegisterNo` ile sorgulayabilir; yeni UI bu geriye uyumluluk yolunu kullanmamali. `terminalId` Furpa `CashRegisterDetails.TerminalId`, `accountCode` Mikro `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` listesinden yapilmalidir.
+`odeme-tipleri/banka` icin yeni UI hem `branchNo` hem fiziksel `cashNo` gondermelidir. Ornek: `GET /api/kasa-islemleri/kasa-sayimlari/odeme-tipleri/banka?cashNo=103&branchNo=129`. Backend once Furpa `CashRegistryDetails` ile fiziksel kasanin subeye ait oldugunu dogrular, sonra Furpa `CashRegisterDetails` icindeki terminal banka satirlarini alir. Satirlar Furpa `PaymentTypes` kataloguyla `PaymentTypeNo` uzerinden eslestirilir ve yalniz `PaymentGenus=1` odeme tipleri dondurulur. Icmalde ayri Halkbank kategorisine yazilan resmi `PaymentTypeNo=2` banka secim listesinden cikarilir; filtre banka adina bakmaz. Eski Mikro `CashRegisterDetails` ve `CashRegisterBranches` terminal kaynagi olarak kullanilmaz. Eski istemciler `cashRegisterNo` ile sorgulayabilir; yeni UI bu geriye uyumluluk yolunu kullanmamali. `terminalId` Furpa `CashRegisterDetails.TerminalId`, `accountCode` Furpa `PaymentTypes.AccountCode` degeridir. Terminal tanimlama ekranindaki banka secimi `GET /api/ayar-islemleri/kasa-pos-terminalleri/secenekler` response'undaki `terminalBanks` listesinden yapilmalidir.
 
 UI kasa seciminde fiziksel kasa satirindaki `branchNo` ve `cashNo` degerleri banka odeme tipi endpointine gonderilmelidir. `cashFinanceNumber` ekranda kasa/PAV eslesmesini gostermek icin kullanilabilir; banka listesini sorgulamak icin kullanilmaz.
 
 `odeme-tipleri/yemek-ceki` response'unda yemek ceki tipi adi `paymentName` alanindadir. Backend eski API ile uyumlu olarak `PaymentTypes.PaymentGenus = 2` olan yemek ceki odeme tiplerini listeler ve `accountCode` alanini `PaymentTypes.AccountCode` degeriyle doldurur. UI yemek ceki seciminde gorunen ad olarak `paymentName`, kayit payload'inda odeme tipi olarak `paymentTypeNo` kullanmalidir.
 
-`odeme-tipleri/online`, `PaymentTypes.PaymentGenus = 5` olan kayitlari ve geriye uyumluluk icin `PaymentName` icinde `online` gecen kayitlari birlikte dondurur. Response'taki `paymentGenus` Mikro kaydinin gercek turudur. Canli Mikro tanimiyla beklenen temel satirlar:
+`odeme-tipleri/online`, Furpa `PaymentTypes.PaymentGenus = 5` olan kayitlari ve geriye uyumluluk icin `PaymentName` icinde `online` gecen kayitlari birlikte dondurur. Response'taki `paymentGenus` Furpa katalog kaydinin gercek turudur. Canli Furpa tanimiyla beklenen temel satirlar:
 
 ```json
 [
@@ -15973,19 +15973,11 @@ Kisa response ornekleri:
     "slipNumber": 0,
     "amountValue": 0,
     "paymentTypeKey": "1|108.01.001|TERM-01"
-  },
-  {
-    "paymentName": "Halkbank",
-    "paymentTypeId": 2,
-    "paymentTypeNo": 2,
-    "terminalId": "TERM-02",
-    "accountCode": "108.01.002",
-    "slipNumber": 0,
-    "amountValue": 0,
-    "paymentTypeKey": "2|108.01.002|TERM-02"
   }
 ]
 ```
+
+`PaymentTypeNo=2` Halkbank satiri bu endpointte bilerek donmez. Bu tutar icmal raporunda sabit Halkbank kategorisi olarak takip edilir.
 
 `odeme-tipleri/yemek-ceki` response ornegi:
 

@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.WebApi.Filters;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateInventoryCountHttpRequest
 {
     [Range(1, int.MaxValue)]

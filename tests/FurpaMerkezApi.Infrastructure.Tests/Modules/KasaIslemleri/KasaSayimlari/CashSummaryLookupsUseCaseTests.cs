@@ -221,6 +221,34 @@ public sealed class CashSummaryLookupsUseCaseTests
     }
 
     [Fact]
+    public async Task ListBankPaymentTypesAsync_ExcludesHalkbankByPaymentTypeNo_NotByName()
+    {
+        await using var mikroDbContext = CreateMikroDbContext();
+        await using var furpaDbContext = CreateFurpaDbContext();
+
+        furpaDbContext.PaymentTypes.AddRange(
+            CreatePaymentType(2, "Eski Banka Etiketi", "108.01.002"),
+            CreatePaymentType(7, "Halkbank Test Etiketi", "108.01.007"));
+
+        furpaDbContext.CashRegisterDetails.AddRange(
+            CreateCashRegisterDetail(2, "PAV-ID-CONTROL", "Eski Banka Etiketi", "T002"),
+            CreateCashRegisterDetail(7, "PAV-ID-CONTROL", "Halkbank Test Etiketi", "T007"));
+
+        await furpaDbContext.SaveChangesAsync();
+
+        var useCase = new CashSummaryLookupsUseCase(mikroDbContext, furpaDbContext);
+
+        var result = await useCase.ListBankPaymentTypesAsync(
+            new BankPaymentTypeRequest("PAV-ID-CONTROL"),
+            CancellationToken.None);
+
+        var item = Assert.Single(result);
+        Assert.Equal(7, item.PaymentTypeNo);
+        Assert.Equal("Halkbank Test Etiketi", item.PaymentName);
+        Assert.Equal("T007", item.TerminalId);
+    }
+
+    [Fact]
     public async Task ListBankPaymentTypesAsync_UsesFurpaWhenMikroHasNoTerminal()
     {
         await using var mikroDbContext = CreateMikroDbContext();

@@ -187,11 +187,13 @@ internal static class CashSummaryCategoryMatcher
         return Contains(normalized, "store expense") || Contains(normalized, "magaza gider") || Contains(normalized, "gider");
     }
 
+    public const int HalkbankPaymentTypeNo = 2;
+
     public static bool IsCashPaymentType(string? value) =>
         IsCash(Normalize(value));
 
-    public static bool IsHalkbankPaymentType(string? value) =>
-        Contains(Normalize(value), "halk");
+    public static bool IsHalkbankPaymentType(int paymentTypeNo) =>
+        paymentTypeNo == HalkbankPaymentTypeNo;
 
     private static bool IsCash(string normalized) =>
         Contains(normalized, "cash") || Contains(normalized, "nakit");

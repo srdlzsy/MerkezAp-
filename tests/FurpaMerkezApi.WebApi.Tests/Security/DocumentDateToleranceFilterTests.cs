@@ -152,6 +152,21 @@ public sealed class DocumentDateToleranceFilterTests
     }
 
     [Fact]
+    public void OnActionExecuting_Ignores_UnmarkedPostRequests()
+    {
+        var request = new SamplePrintRequest
+        {
+            Date = new DateTime(2019, 1, 1)
+        };
+        var context = CreateContext(request, httpMethod: "POST", warehouseNo: 50);
+        var filter = new DocumentDateToleranceFilter(() => FixedToday);
+
+        filter.OnActionExecuting(context);
+
+        Assert.Equal(new DateTime(2019, 1, 1), request.Date);
+    }
+
+    [Fact]
     public void OnActionExecuting_DeliveryDate_AllowsFutureDate_ButRejectsOldPastDate()
     {
         var requestFuture = new SampleOrderRequest
@@ -244,15 +259,22 @@ public sealed class DocumentDateToleranceFilterTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"));
     }
 
+    [ValidateDocumentDateTolerance]
     private sealed class SampleCreateDocumentRequest
     {
         public DateTime? DocumentDate { get; init; }
         public DateTime? MovementDate { get; init; }
     }
 
+    [ValidateDocumentDateTolerance]
     private sealed class SampleOrderRequest
     {
         public DateTime? OrderDate { get; init; }
         public DateTime? DeliveryDate { get; init; }
+    }
+
+    private sealed class SamplePrintRequest
+    {
+        public DateTime? Date { get; init; }
     }
 }

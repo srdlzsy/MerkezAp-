@@ -8,6 +8,7 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -822,6 +823,7 @@ public sealed class ZReportValueHttpRequest
     public int? CashNo { get; init; }
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateCashSummaryHttpRequest
 {
     [Range(1, int.MaxValue)]

@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using FurpaMerkezApi.WebApi.Filters;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateVirmanHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

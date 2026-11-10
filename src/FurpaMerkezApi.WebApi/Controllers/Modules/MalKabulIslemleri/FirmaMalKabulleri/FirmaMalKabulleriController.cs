@@ -12,6 +12,7 @@ using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -450,6 +451,7 @@ public sealed class FirmaMalKabulleriController(
         UpdateNotImplemented(UpdatePolicy, id);
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateCompanyReceivingHttpRequest
 {
     [Range(1, int.MaxValue)]

@@ -184,7 +184,8 @@ public sealed class CashSummaryLookupsUseCase(
                 cancellationToken);
 
         var terminalPaymentTypeNos = terminals
-            .Where(item => item.PaymentTypeNo.HasValue)
+            .Where(item => item.PaymentTypeNo.HasValue &&
+                           !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.PaymentTypeNo.Value))
             .Select(item => item.PaymentTypeNo!.Value)
             .Distinct()
             .ToArray();
@@ -205,6 +206,7 @@ public sealed class CashSummaryLookupsUseCase(
             .AsNoTracking()
             .Where(item =>
                 item.PaymentGenus == 1 &&
+                item.PaymentTypeNo != CashSummaryCategoryMatcher.HalkbankPaymentTypeNo &&
                 (terminalPaymentTypeNos.Contains(item.PaymentTypeNo) ||
                  (item.PaymentName != null && legacyTerminalBanks.Contains(item.PaymentName))))
             .Select(item => new
@@ -222,7 +224,7 @@ public sealed class CashSummaryLookupsUseCase(
 
         var paymentTypes = terminals
             .Where(item => (item.PaymentTypeNo.HasValue || !string.IsNullOrWhiteSpace(item.Bank)) &&
-                           !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.Bank))
+                           (!item.PaymentTypeNo.HasValue || !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.PaymentTypeNo.Value)))
             .SelectMany(
                 cashRegister => cashRegister.PaymentTypeNo.HasValue
                     ? paymentTypeRows.Where(item => item.PaymentTypeNo == cashRegister.PaymentTypeNo.Value)
@@ -235,7 +237,7 @@ public sealed class CashSummaryLookupsUseCase(
                     paymentType.AccountCode,
                     cashRegister.TerminalId
                 })
-            .Where(item => !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.PaymentName))
+            .Where(item => !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.PaymentTypeNo))
             .OrderBy(item => item.PaymentName)
             .ThenBy(item => item.TerminalId)
             .ToArray();

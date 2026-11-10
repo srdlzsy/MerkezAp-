@@ -10,6 +10,7 @@ using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -414,6 +415,7 @@ public sealed class DepoIadeleriController(
     }
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class CreateWarehouseReturnHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

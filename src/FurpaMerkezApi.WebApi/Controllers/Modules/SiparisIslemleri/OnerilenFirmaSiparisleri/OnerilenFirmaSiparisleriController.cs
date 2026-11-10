@@ -7,6 +7,7 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.OnerilenFirmaSiparisle
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
+using FurpaMerkezApi.WebApi.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -139,6 +140,7 @@ public sealed class SuggestedCompanyOrderListHttpRequest
     public int FallbackRecommendedDay { get; init; } = 7;
 }
 
+[ValidateDocumentDateTolerance]
 public sealed class ConvertSuggestedCompanyOrderHttpRequest
 {
     public Guid? ClientRequestId { get; init; }

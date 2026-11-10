@@ -46,6 +46,16 @@ public sealed class DocumentDateToleranceFilter(Func<DateTime>? nowProvider = nu
             return;
         }
 
+        var validationEnabled =
+            context.ActionDescriptor.EndpointMetadata.OfType<ValidateDocumentDateToleranceAttribute>().Any() ||
+            context.ActionArguments.Values.Any(value =>
+                value?.GetType().GetCustomAttribute<ValidateDocumentDateToleranceAttribute>() is not null);
+
+        if (!validationEnabled)
+        {
+            return;
+        }
+
         var user = context.HttpContext.User;
         if (user.Identity?.IsAuthenticated == true && user.CanAccessAllWarehouses())
         {
@@ -181,3 +191,6 @@ public sealed class DocumentDateToleranceFilter(Func<DateTime>? nowProvider = nu
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Property)]
 public sealed class IgnoreDocumentDateToleranceAttribute : Attribute;
+
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+public sealed class ValidateDocumentDateToleranceAttribute : Attribute;
