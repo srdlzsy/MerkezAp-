@@ -54,6 +54,7 @@ builder.Services.Configure<LegacyEDespatchBridgeOptions>(
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<WarehouseAccessFilter>();
+    options.Filters.Add<DocumentDateToleranceFilter>();
 });
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
