@@ -197,7 +197,7 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal(1_160m, row.ExpenseExcludedAmount);
         Assert.Equal(-20m, row.ZReportTransferDifference);
         Assert.Equal(-10m, row.TransferredTurnoverDifference);
-        Assert.Equal(210m, row.CurrentStockDifference);
+        Assert.Equal(5m, row.CurrentStockDifference);
         Assert.Equal(-10m, row.RetailDifference);
         Assert.Equal(0m, row.InvoiceDifference);
         Assert.Equal(0m, row.ExpenseSlipDifference);
@@ -230,7 +230,7 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal(970m, row.ExpenseExcludedAmount);
         Assert.Equal(-30m, row.ZReportTransferDifference);
         Assert.Equal(0m, row.TransferredTurnoverDifference);
-        Assert.Equal(34.50m, row.CurrentStockDifference);
+        Assert.Equal(0m, row.CurrentStockDifference);
         Assert.Equal(970m, row.NetStockTurnover);
         Assert.Equal(970m, row.NetTransferredTurnover);
         Assert.Equal(0m, row.NetDifference);

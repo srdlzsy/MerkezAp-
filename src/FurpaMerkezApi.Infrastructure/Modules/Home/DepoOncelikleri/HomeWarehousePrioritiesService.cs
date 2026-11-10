@@ -16,7 +16,8 @@ public sealed class HomeWarehousePrioritiesService(
     private const string Warning = "warning";
     private const string Info = "info";
     private const string Healthy = "healthy";
-    private static readonly DateOnly OperationalDataStartDate = new(2026, 11, 1);
+    private const int OperationalLookbackDays = 30;
+    private static readonly DateOnly MinimumOperationalStartDate = new(2026, 10, 1);
 
     public async Task<HomeWarehousePrioritiesDto> GetAsync(
         HomeWarehousePrioritiesRequest request,
@@ -32,9 +33,10 @@ public sealed class HomeWarehousePrioritiesService(
             throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
         }
 
+        var lookbackStartDate = ResolveLookbackStartDate(request.Date);
         var startUtc = ToUtc(request.Date);
         var endUtc = ToUtc(request.Date.AddDays(1));
-        var operationalDataStartUtc = ToUtc(OperationalDataStartDate);
+        var operationalDataStartUtc = ToUtc(lookbackStartDate);
         var warehouseName = await ResolveWarehouseNameAsync(request, cancellationToken);
         var flowSummary = await LoadFlowSummaryAsync(
             request.WarehouseNo,
@@ -57,23 +59,22 @@ public sealed class HomeWarehousePrioritiesService(
 
         var priorities = BuildPriorities(
             request.WarehouseNo,
-            flowSummary.PendingReceivingCount,
-            flowSummary.FailedEDespatchCount,
+            lookbackStartDate,
+            request.Date,
+            flowSummary,
             stockAnomalySummary.CriticalCount,
             stockAnomalySummary.HighCount,
             myOpenFeedbackCount);
         var metrics = BuildMetrics(
             request.WarehouseNo,
-            flowSummary.TodayShipmentCount,
-            flowSummary.TodayReceivingCount,
-            flowSummary.PendingReceivingCount,
-            flowSummary.FailedEDespatchCount,
+            lookbackStartDate,
+            request.Date,
+            flowSummary,
             stockAnomalySummary.OpenCount,
             myOpenFeedbackCount);
         var overallStatus = ResolveOverallStatus(
-            flowSummary.FailedEDespatchCount,
+            flowSummary,
             stockAnomalySummary.CriticalCount,
-            flowSummary.PendingReceivingCount,
             stockAnomalySummary.HighCount,
             stockAnomalySummary.OpenCount,
             myOpenFeedbackCount);
@@ -87,7 +88,7 @@ public sealed class HomeWarehousePrioritiesService(
             CreateHeadline(priorities.Count),
             metrics,
             priorities,
-            BuildQuickActions(request.WarehouseNo));
+            BuildQuickActions(request.WarehouseNo, lookbackStartDate, request.Date));
     }
 
     private async Task<FlowSummary> LoadFlowSummaryAsync(
@@ -102,20 +103,12 @@ public sealed class HomeWarehousePrioritiesService(
 
         var query = authDbContext.DocumentFlows
             .AsNoTracking()
-            .Where(flow => flow.CreatedAtUtc >= operationalDataStartUtc)
             .Where(flow =>
-                ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
-                  flow.DocumentType == DocumentFlowType.InterWarehouseShipment) &&
-                 flow.CreatedAtUtc >= startUtc &&
-                 flow.CreatedAtUtc < endUtc) ||
-                (flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted &&
-                 flow.UpdatedAtUtc >= startUtc &&
-                 flow.UpdatedAtUtc < endUtc) ||
-                ((flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
-                  flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                 flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted) ||
-                (flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
-                 flow.Status == DocumentFlowStatus.Failed));
+                flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                ((flow.CreatedAtUtc >= operationalDataStartUtc && flow.CreatedAtUtc < endUtc) ||
+                 (flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted &&
+                  flow.UpdatedAtUtc >= startUtc &&
+                  flow.UpdatedAtUtc < endUtc)));
 
         if (hasWarehouseNo)
         {
@@ -124,31 +117,74 @@ public sealed class HomeWarehousePrioritiesService(
                 flow.TargetWarehouseNo == scopedWarehouseNo);
         }
 
-        return await query
-            .GroupBy(_ => 1)
-            .Select(group => new FlowSummary(
-                group.Count(flow =>
-                    (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
-                    (flow.DocumentType == DocumentFlowType.CompanyShipment ||
-                     flow.DocumentType == DocumentFlowType.InterWarehouseShipment) &&
-                    flow.CreatedAtUtc >= startUtc &&
-                    flow.CreatedAtUtc < endUtc),
-                group.Count(flow =>
-                    (!hasWarehouseNo || flow.TargetWarehouseNo == scopedWarehouseNo) &&
-                    flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted &&
-                    flow.UpdatedAtUtc >= startUtc &&
-                    flow.UpdatedAtUtc < endUtc),
-                group.Count(flow =>
-                    (!hasWarehouseNo || flow.TargetWarehouseNo == scopedWarehouseNo) &&
-                    (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
-                     flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                    flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted),
-                group.Count(flow =>
-                    (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
-                    flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
-                    flow.Status == DocumentFlowStatus.Failed)))
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? new FlowSummary(0, 0, 0, 0);
+        var rows = await query
+            .Select(flow => new FlowRow(
+                flow.DocumentType,
+                flow.SourceWarehouseNo,
+                flow.TargetWarehouseNo,
+                flow.Status,
+                flow.CurrentStep,
+                flow.CreatedAtUtc,
+                flow.UpdatedAtUtc))
+            .ToListAsync(cancellationToken);
+
+        var operationalRows = rows
+            .Where(flow => flow.CreatedAtUtc >= operationalDataStartUtc && flow.CreatedAtUtc < endUtc)
+            .ToArray();
+
+        var todayShipmentCount = rows.Count(flow =>
+            (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+            IsShipment(flow.DocumentType) &&
+            flow.CreatedAtUtc >= startUtc &&
+            flow.CreatedAtUtc < endUtc &&
+            !IsFailedCreation(flow));
+
+        var todayReceivingCount = rows.Count(flow =>
+            (!hasWarehouseNo || flow.TargetWarehouseNo == scopedWarehouseNo) &&
+            flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted &&
+            flow.UpdatedAtUtc >= startUtc &&
+            flow.UpdatedAtUtc < endUtc);
+
+        var pendingReceivingCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo || flow.TargetWarehouseNo == scopedWarehouseNo) &&
+            IsPendingReceiving(flow));
+
+        var overduePendingReceivingCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo || flow.TargetWarehouseNo == scopedWarehouseNo) &&
+            IsPendingReceiving(flow) &&
+            flow.CreatedAtUtc < startUtc);
+
+        var unacceptedOutgoingCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+            IsPendingReceiving(flow));
+
+        var failedEDespatchCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+            flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+            flow.Status == DocumentFlowStatus.Failed);
+
+        var unsubmittedEDespatchCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+            IsDespatchDocument(flow.DocumentType) &&
+            flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+            flow.Status == DocumentFlowStatus.Succeeded);
+
+        var otherFailedOperationCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo ||
+             flow.SourceWarehouseNo == scopedWarehouseNo ||
+             flow.TargetWarehouseNo == scopedWarehouseNo) &&
+            flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
+            flow.Status == DocumentFlowStatus.Failed);
+
+        return new FlowSummary(
+            todayShipmentCount,
+            todayReceivingCount,
+            pendingReceivingCount,
+            overduePendingReceivingCount,
+            unacceptedOutgoingCount,
+            failedEDespatchCount,
+            unsubmittedEDespatchCount,
+            otherFailedOperationCount);
     }
 
     private async Task<StockAnomalySummary> LoadStockAnomalySummaryAsync(
@@ -208,25 +244,53 @@ public sealed class HomeWarehousePrioritiesService(
 
     private static IReadOnlyCollection<HomePriorityMetricDto> BuildMetrics(
         int? warehouseNo,
-        int todayShipmentCount,
-        int todayReceivingCount,
-        int pendingReceivingCount,
-        int failedEDespatchCount,
+        DateOnly lookbackStartDate,
+        DateOnly selectedDate,
+        FlowSummary flowSummary,
         int openStockAnomalyCount,
-        int myOpenFeedbackCount) =>
+        int myOpenFeedbackCount)
+    {
+        var pendingEDespatchTotal = flowSummary.FailedEDespatchCount + flowSummary.UnsubmittedEDespatchCount;
+
+        return
         [
             new(
                 "failedEDespatch",
-                "E-Irsaliye Hatasi",
-                failedEDespatchCount,
-                failedEDespatchCount > 0 ? Critical : Healthy,
-                AppendWarehouseQuery("/operasyon-islemleri/belge-akis-takibi?status=Failed", warehouseNo)),
+                "E-Irsaliye Eksik / Hata",
+                pendingEDespatchTotal,
+                flowSummary.FailedEDespatchCount > 0
+                    ? Critical
+                    : pendingEDespatchTotal > 0
+                        ? Warning
+                        : Healthy,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "pending-edespatch",
+                    direction: "Outgoing",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)),
             new(
                 "pendingReceiving",
                 "Bekleyen Kabul",
-                pendingReceivingCount,
-                pendingReceivingCount > 0 ? Warning : Healthy,
-                AppendWarehouseQuery("/operasyon-islemleri/belge-akis-takibi", warehouseNo)),
+                flowSummary.PendingReceivingCount,
+                flowSummary.PendingReceivingCount > 0 ? Warning : Healthy,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "pending-receiving",
+                    direction: "Incoming",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)),
+            new(
+                "unacceptedOutgoing",
+                "Kabul Bekleyen Cikis",
+                flowSummary.UnacceptedOutgoingCount,
+                flowSummary.UnacceptedOutgoingCount > 0 ? Info : Healthy,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "unaccepted-outgoing",
+                    direction: "Outgoing",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)),
             new(
                 "openStockAnomaly",
                 "Acik Stok Anomalisi",
@@ -242,36 +306,69 @@ public sealed class HomeWarehousePrioritiesService(
             new(
                 "todayShipment",
                 "Bugunku Sevk",
-                todayShipmentCount,
+                flowSummary.TodayShipmentCount,
                 Info,
-                AppendWarehouseQuery("/operasyon-islemleri/belge-akis-takibi", warehouseNo)),
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "today-shipments",
+                    direction: "Outgoing",
+                    startDate: selectedDate,
+                    endDate: selectedDate)),
             new(
                 "todayReceiving",
                 "Bugunku Kabul",
-                todayReceivingCount,
+                flowSummary.TodayReceivingCount,
                 Info,
-                AppendWarehouseQuery("/operasyon-islemleri/belge-akis-takibi", warehouseNo))
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "today-receivings",
+                    direction: "Incoming",
+                    startDate: selectedDate,
+                    endDate: selectedDate))
         ];
+    }
 
     private static IReadOnlyCollection<HomePriorityItemDto> BuildPriorities(
         int? warehouseNo,
-        int pendingReceivingCount,
-        int failedEDespatchCount,
+        DateOnly lookbackStartDate,
+        DateOnly selectedDate,
+        FlowSummary flowSummary,
         int criticalStockAnomalyCount,
         int highStockAnomalyCount,
         int myOpenFeedbackCount)
     {
         var items = new List<HomePriorityItemDto>();
 
-        if (failedEDespatchCount > 0)
+        if (flowSummary.FailedEDespatchCount > 0)
         {
             items.Add(new HomePriorityItemDto(
                 "failedEDespatch",
                 Critical,
                 "E-irsaliye gonderimi basarisiz",
-                $"{failedEDespatchCount} belge tekrar kontrol bekliyor.",
-                failedEDespatchCount,
-                AppendWarehouseQuery("/operasyon-islemleri/belge-akis-takibi?status=Failed", warehouseNo)));
+                $"{flowSummary.FailedEDespatchCount} belge tekrar kontrol bekliyor.",
+                flowSummary.FailedEDespatchCount,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "failed-edespatch",
+                    direction: "Outgoing",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)));
+        }
+
+        if (flowSummary.OtherFailedOperationCount > 0)
+        {
+            items.Add(new HomePriorityItemDto(
+                "otherFailedFlows",
+                Critical,
+                "Hatali belge akisi var",
+                $"Toplam {flowSummary.FailedEDespatchCount + flowSummary.OtherFailedOperationCount} belge akisi hata almis durumda.",
+                flowSummary.FailedEDespatchCount + flowSummary.OtherFailedOperationCount,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "failed-only",
+                    direction: null,
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)));
         }
 
         if (criticalStockAnomalyCount > 0)
@@ -285,15 +382,56 @@ public sealed class HomeWarehousePrioritiesService(
                 AppendWarehouseQuery("/stok-islemleri/stok-anomali-merkezi?status=Open&severity=Critical", warehouseNo)));
         }
 
-        if (pendingReceivingCount > 0)
+        if (flowSummary.UnsubmittedEDespatchCount > 0)
         {
+            items.Add(new HomePriorityItemDto(
+                "unsubmittedEDespatch",
+                Warning,
+                "E-irsaliyesi gonderilmemis sevk/iade var",
+                $"{flowSummary.UnsubmittedEDespatchCount} evrak olusturulmus ancak e-irsaliyesi henuz gonderilmemis.",
+                flowSummary.UnsubmittedEDespatchCount,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "pending-edespatch",
+                    direction: "Outgoing",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)));
+        }
+
+        if (flowSummary.PendingReceivingCount > 0)
+        {
+            var description = flowSummary.OverduePendingReceivingCount > 0
+                ? $"{flowSummary.PendingReceivingCount} depo hareketi kabul bekliyor ({flowSummary.OverduePendingReceivingCount} tanesi gecmis gunlerden)."
+                : $"{flowSummary.PendingReceivingCount} depo hareketi henuz kabul edilmemis.";
+
             items.Add(new HomePriorityItemDto(
                 "pendingReceiving",
                 Warning,
                 "Depo kabul bekliyor",
-                $"{pendingReceivingCount} depo hareketi henuz kabul edilmemis.",
-                pendingReceivingCount,
-                AppendWarehouseQuery("/operasyon-islemleri/belge-akis-takibi", warehouseNo)));
+                description,
+                flowSummary.PendingReceivingCount,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "pending-receiving",
+                    direction: "Incoming",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)));
+        }
+
+        if (flowSummary.UnacceptedOutgoingCount > 0)
+        {
+            items.Add(new HomePriorityItemDto(
+                "unacceptedOutgoing",
+                Info,
+                "Karsi depoda kabul bekleyen cikis var",
+                $"{flowSummary.UnacceptedOutgoingCount} gonderilen sevk/iade karsi depo tarafindan henuz kabul edilmemis.",
+                flowSummary.UnacceptedOutgoingCount,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "unaccepted-outgoing",
+                    direction: "Outgoing",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)));
         }
 
         if (highStockAnomalyCount > 0)
@@ -321,8 +459,21 @@ public sealed class HomeWarehousePrioritiesService(
         return items;
     }
 
-    private static IReadOnlyCollection<HomeQuickActionDto> BuildQuickActions(int? warehouseNo) =>
+    private static IReadOnlyCollection<HomeQuickActionDto> BuildQuickActions(
+        int? warehouseNo,
+        DateOnly lookbackStartDate,
+        DateOnly selectedDate) =>
         [
+            new(
+                "actionRequiredFlows",
+                "Bekleyen Eksik Islemleri Ac",
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "action-required",
+                    direction: null,
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate),
+                "operasyon-islemleri.belge-akis-takibi.list"),
             new(
                 "documentFlow",
                 "Belge Akisina Git",
@@ -341,30 +492,101 @@ public sealed class HomeWarehousePrioritiesService(
         ];
 
     private static string ResolveOverallStatus(
-        int failedEDespatchCount,
+        FlowSummary flowSummary,
         int criticalStockAnomalyCount,
-        int pendingReceivingCount,
         int highStockAnomalyCount,
         int openStockAnomalyCount,
         int myOpenFeedbackCount)
     {
-        if (failedEDespatchCount > 0 || criticalStockAnomalyCount > 0)
+        if (flowSummary.FailedEDespatchCount > 0 ||
+            flowSummary.OtherFailedOperationCount > 0 ||
+            criticalStockAnomalyCount > 0)
         {
             return Critical;
         }
 
-        if (pendingReceivingCount > 0 || highStockAnomalyCount > 0 || openStockAnomalyCount > 0)
+        if (flowSummary.PendingReceivingCount > 0 ||
+            flowSummary.UnsubmittedEDespatchCount > 0 ||
+            highStockAnomalyCount > 0 ||
+            openStockAnomalyCount > 0)
         {
             return Warning;
         }
 
-        return myOpenFeedbackCount > 0 ? Info : Healthy;
+        return flowSummary.UnacceptedOutgoingCount > 0 || myOpenFeedbackCount > 0
+            ? Info
+            : Healthy;
     }
 
     private static string CreateHeadline(int priorityCount) =>
         priorityCount == 0
             ? "Bugun acil oncelik yok"
             : $"Bugun {priorityCount} oncelikli konu var";
+
+    private static DateOnly ResolveLookbackStartDate(DateOnly date)
+    {
+        var lookbackStart = date.AddDays(-OperationalLookbackDays);
+        if (date < MinimumOperationalStartDate)
+        {
+            return lookbackStart;
+        }
+
+        return lookbackStart > MinimumOperationalStartDate
+            ? lookbackStart
+            : MinimumOperationalStartDate;
+    }
+
+    private static bool IsShipment(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.CompanyShipment or DocumentFlowType.InterWarehouseShipment;
+
+    private static bool IsReturn(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.CompanyReturn or DocumentFlowType.WarehouseReturn;
+
+    private static bool IsDespatchDocument(DocumentFlowType documentType) =>
+        IsShipment(documentType) || IsReturn(documentType);
+
+    private static bool IsWarehouseMovement(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.InterWarehouseShipment or DocumentFlowType.WarehouseReturn;
+
+    private static bool IsFailedCreation(FlowRow flow) =>
+        flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+        flow.Status == DocumentFlowStatus.Failed;
+
+    private static bool IsPendingReceiving(FlowRow flow) =>
+        flow.TargetWarehouseNo.HasValue &&
+        IsWarehouseMovement(flow.DocumentType) &&
+        flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        !IsFailedCreation(flow);
+
+    private static string BuildFlowRoute(
+        int? warehouseNo,
+        string? preset,
+        string? direction,
+        DateOnly startDate,
+        DateOnly endDate)
+    {
+        var parameters = new List<string>();
+        if (warehouseNo.HasValue)
+        {
+            parameters.Add($"warehouseNo={warehouseNo.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(preset))
+        {
+            parameters.Add($"preset={preset}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(direction))
+        {
+            parameters.Add($"direction={direction}");
+        }
+
+        parameters.Add($"startDate={startDate:yyyy-MM-dd}");
+        parameters.Add($"endDate={endDate:yyyy-MM-dd}");
+
+        return $"/operasyon-islemleri/belge-akis-takibi?{string.Join("&", parameters)}";
+    }
 
     private static string AppendWarehouseQuery(string route, int? warehouseNo)
     {
@@ -383,11 +605,24 @@ public sealed class HomeWarehousePrioritiesService(
         return localStart.ToUniversalTime();
     }
 
+    private sealed record FlowRow(
+        DocumentFlowType DocumentType,
+        int SourceWarehouseNo,
+        int? TargetWarehouseNo,
+        DocumentFlowStatus Status,
+        DocumentFlowStep CurrentStep,
+        DateTime CreatedAtUtc,
+        DateTime UpdatedAtUtc);
+
     private sealed record FlowSummary(
         int TodayShipmentCount,
         int TodayReceivingCount,
         int PendingReceivingCount,
-        int FailedEDespatchCount);
+        int OverduePendingReceivingCount,
+        int UnacceptedOutgoingCount,
+        int FailedEDespatchCount,
+        int UnsubmittedEDespatchCount,
+        int OtherFailedOperationCount);
 
     private sealed record StockAnomalySummary(
         int OpenCount,

@@ -21,46 +21,66 @@ public sealed class DocumentFlowService(
     {
         var skip = Math.Max(request.Skip, 0);
         var take = Math.Clamp(request.Take, 1, 500);
-        var query = authDbContext.DocumentFlows.AsNoTracking();
+        var baseQuery = authDbContext.DocumentFlows.AsNoTracking();
+        DateTime? startUtc = request.StartDate.HasValue
+            ? ToLocalDayStartUtc(request.StartDate.Value)
+            : null;
+        DateTime? endExclusiveUtc = request.EndDate.HasValue
+            ? ToLocalDayStartUtc(request.EndDate.Value.Date.AddDays(1))
+            : null;
 
-        if (request.WarehouseNo.HasValue)
+        if (request.Category != DocumentFlowCategory.All)
         {
-            var warehouseNo = request.WarehouseNo.Value;
-            query = query.Where(flow =>
-                flow.SourceWarehouseNo == warehouseNo ||
-                flow.TargetWarehouseNo == warehouseNo);
-        }
-
-        if (request.StartDate.HasValue)
-        {
-            var startDate = ToUtc(request.StartDate.Value.Date);
-            query = query.Where(flow => flow.UpdatedAtUtc >= startDate);
-        }
-
-        if (request.EndDate.HasValue)
-        {
-            var endDateExclusive = ToUtc(request.EndDate.Value.Date.AddDays(1));
-            query = query.Where(flow => flow.UpdatedAtUtc < endDateExclusive);
+            baseQuery = ApplyCategoryFilter(baseQuery, request.Category);
         }
 
         if (request.DocumentType.HasValue)
         {
-            query = query.Where(flow => flow.DocumentType == request.DocumentType.Value);
-        }
-
-        if (request.Status.HasValue)
-        {
-            query = query.Where(flow => flow.Status == request.Status.Value);
+            baseQuery = baseQuery.Where(flow => flow.DocumentType == request.DocumentType.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var search = request.Search.Trim();
-            query = query.Where(flow =>
+            baseQuery = baseQuery.Where(flow =>
                 flow.DocumentSerie.Contains(search) ||
                 (flow.DocumentNo != null && flow.DocumentNo.Contains(search)) ||
                 (flow.ExternalDocumentNo != null && flow.ExternalDocumentNo.Contains(search)) ||
                 (flow.ExternalUuid != null && flow.ExternalUuid.Contains(search)));
+        }
+
+        var summary = await BuildSummaryAsync(
+            baseQuery,
+            request.WarehouseNo,
+            startUtc,
+            endExclusiveUtc,
+            cancellationToken);
+
+        // "Tum akislar" ve "gunluk kabul" listeleri son hareket (guncelleme) tarihine,
+        // bekleyen/eksik islem listeleri ise belgenin olusturulma tarihine gore filtrelenir.
+        // Ozet sayaclari da ayni kurallarla hesaplandigi icin kart sayisi ile liste birebir eslesir.
+        var useUpdatedDate = request.Preset is DocumentFlowPreset.All or DocumentFlowPreset.TodayReceivings;
+        var query = ApplyDateFilter(baseQuery, startUtc, endExclusiveUtc, useUpdatedDate);
+
+        query = ApplyWarehouseAndDirectionFilter(
+            query,
+            request.WarehouseNo,
+            request.Direction,
+            request.Preset);
+
+        if (request.Preset != DocumentFlowPreset.All)
+        {
+            query = ApplyPresetFilter(query, request.Preset, request.WarehouseNo);
+        }
+
+        if (request.CurrentStep.HasValue)
+        {
+            query = query.Where(flow => flow.CurrentStep == request.CurrentStep.Value);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(flow => flow.Status == request.Status.Value);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -74,7 +94,8 @@ public sealed class DocumentFlowService(
         return new DocumentFlowListResponse(
             trackingOptions.CurrentValue.Enabled,
             totalCount,
-            flows.Select(ToListItem).ToArray());
+            flows.Select(ToListItem).ToArray(),
+            summary);
     }
 
     public async Task<DocumentFlowDetailDto> GetAsync(
@@ -215,6 +236,363 @@ public sealed class DocumentFlowService(
         }
     }
 
+    private static IQueryable<DocumentFlow> ApplyWarehouseAndDirectionFilter(
+        IQueryable<DocumentFlow> query,
+        int? warehouseNo,
+        DocumentFlowDirection direction,
+        DocumentFlowPreset preset)
+    {
+        if (!warehouseNo.HasValue)
+        {
+            return direction switch
+            {
+                DocumentFlowDirection.Incoming => query.Where(flow => flow.TargetWarehouseNo.HasValue),
+                _ => query
+            };
+        }
+
+        var warehouse = warehouseNo.Value;
+        var effectiveDirection = direction;
+
+        if (effectiveDirection == DocumentFlowDirection.All)
+        {
+            effectiveDirection = preset switch
+            {
+                DocumentFlowPreset.PendingReceiving or DocumentFlowPreset.TodayReceivings =>
+                    DocumentFlowDirection.Incoming,
+                DocumentFlowPreset.UnacceptedOutgoing
+                    or DocumentFlowPreset.PendingEDespatch
+                    or DocumentFlowPreset.FailedEDespatch
+                    or DocumentFlowPreset.TodayShipments
+                    or DocumentFlowPreset.TodayReturns =>
+                    DocumentFlowDirection.Outgoing,
+                _ => DocumentFlowDirection.All
+            };
+        }
+
+        return effectiveDirection switch
+        {
+            DocumentFlowDirection.Incoming => query.Where(flow => flow.TargetWarehouseNo == warehouse),
+            DocumentFlowDirection.Outgoing => query.Where(flow => flow.SourceWarehouseNo == warehouse),
+            _ => query.Where(flow =>
+                flow.SourceWarehouseNo == warehouse ||
+                flow.TargetWarehouseNo == warehouse)
+        };
+    }
+
+    private static IQueryable<DocumentFlow> ApplyCategoryFilter(
+        IQueryable<DocumentFlow> query,
+        DocumentFlowCategory category) =>
+        category switch
+        {
+            DocumentFlowCategory.ShipmentsAndReceiving => query.Where(flow =>
+                flow.DocumentType == DocumentFlowType.CompanyShipment ||
+                flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                flow.DocumentType == DocumentFlowType.CompanyReceiving),
+            DocumentFlowCategory.Returns => query.Where(flow =>
+                flow.DocumentType == DocumentFlowType.CompanyReturn ||
+                flow.DocumentType == DocumentFlowType.WarehouseReturn),
+            DocumentFlowCategory.Orders => query.Where(flow =>
+                flow.DocumentType == DocumentFlowType.IssuedCompanyOrder ||
+                flow.DocumentType == DocumentFlowType.ReceivedCompanyOrder ||
+                flow.DocumentType == DocumentFlowType.IssuedWarehouseOrder ||
+                flow.DocumentType == DocumentFlowType.ReceivedWarehouseOrder),
+            DocumentFlowCategory.CashAndStore => query.Where(flow =>
+                flow.DocumentType == DocumentFlowType.CashSummary ||
+                flow.DocumentType == DocumentFlowType.OutageReceipt ||
+                flow.DocumentType == DocumentFlowType.ExpenseReceipt ||
+                flow.DocumentType == DocumentFlowType.StockMovementDocument ||
+                flow.DocumentType == DocumentFlowType.CustomerMovementDocument),
+            DocumentFlowCategory.StockAndCounting => query.Where(flow =>
+                flow.DocumentType == DocumentFlowType.InventoryCount ||
+                flow.DocumentType == DocumentFlowType.Virman ||
+                flow.DocumentType == DocumentFlowType.StockCard ||
+                flow.DocumentType == DocumentFlowType.WarehouseCard ||
+                flow.DocumentType == DocumentFlowType.CustomerCard ||
+                flow.DocumentType == DocumentFlowType.StockSalesPrice),
+            _ => query
+        };
+
+    private static IQueryable<DocumentFlow> ApplyPresetFilter(
+        IQueryable<DocumentFlow> query,
+        DocumentFlowPreset preset,
+        int? warehouseNo) =>
+        preset switch
+        {
+            DocumentFlowPreset.PendingReceiving or DocumentFlowPreset.UnacceptedOutgoing =>
+                query.Where(flow =>
+                    flow.TargetWarehouseNo.HasValue &&
+                    (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                     flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                    flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+                    flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                    !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                      flow.Status == DocumentFlowStatus.Failed)),
+
+            DocumentFlowPreset.PendingEDespatch =>
+                query.Where(flow =>
+                    flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                    ((flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                      flow.Status == DocumentFlowStatus.Failed) ||
+                     ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
+                       flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                       flow.DocumentType == DocumentFlowType.CompanyReturn ||
+                       flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                      flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                      flow.Status == DocumentFlowStatus.Succeeded))),
+
+            DocumentFlowPreset.FailedEDespatch =>
+                query.Where(flow =>
+                    flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                    flow.Status == DocumentFlowStatus.Failed),
+
+            DocumentFlowPreset.OpenOrders =>
+                query.Where(flow =>
+                    (flow.DocumentType == DocumentFlowType.IssuedCompanyOrder ||
+                     flow.DocumentType == DocumentFlowType.ReceivedCompanyOrder ||
+                     flow.DocumentType == DocumentFlowType.IssuedWarehouseOrder ||
+                     flow.DocumentType == DocumentFlowType.ReceivedWarehouseOrder) &&
+                    flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+                    flow.Status == DocumentFlowStatus.Succeeded),
+
+            DocumentFlowPreset.FailedOnly =>
+                query.Where(flow =>
+                    flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                    flow.Status == DocumentFlowStatus.Failed),
+
+            DocumentFlowPreset.TodayShipments =>
+                query.Where(flow =>
+                    (flow.DocumentType == DocumentFlowType.CompanyShipment ||
+                     flow.DocumentType == DocumentFlowType.InterWarehouseShipment) &&
+                    flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                    !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                      flow.Status == DocumentFlowStatus.Failed)),
+
+            DocumentFlowPreset.TodayReturns =>
+                query.Where(flow =>
+                    (flow.DocumentType == DocumentFlowType.CompanyReturn ||
+                     flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                    flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                    !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                      flow.Status == DocumentFlowStatus.Failed)),
+
+            DocumentFlowPreset.TodayReceivings =>
+                query.Where(flow =>
+                    flow.TargetWarehouseNo.HasValue &&
+                    flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted),
+
+            DocumentFlowPreset.ActionRequired =>
+                warehouseNo.HasValue
+                    ? query.Where(flow =>
+                        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                        ((flow.TargetWarehouseNo == warehouseNo.Value &&
+                          (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                           flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                          flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+                          !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                            flow.Status == DocumentFlowStatus.Failed)) ||
+                         (flow.SourceWarehouseNo == warehouseNo.Value &&
+                          ((flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                            flow.Status == DocumentFlowStatus.Failed) ||
+                           ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
+                             flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                             flow.DocumentType == DocumentFlowType.CompanyReturn ||
+                             flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                            flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                            flow.Status == DocumentFlowStatus.Succeeded))) ||
+                         flow.Status == DocumentFlowStatus.Failed))
+                    : query.Where(flow =>
+                        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                        ((flow.TargetWarehouseNo.HasValue &&
+                          (flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                           flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                          flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+                          !(flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                            flow.Status == DocumentFlowStatus.Failed)) ||
+                         ((flow.DocumentType == DocumentFlowType.CompanyShipment ||
+                           flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
+                           flow.DocumentType == DocumentFlowType.CompanyReturn ||
+                           flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
+                          flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+                          flow.Status == DocumentFlowStatus.Succeeded) ||
+                         flow.Status == DocumentFlowStatus.Failed)),
+
+            _ => query
+        };
+
+    private static IQueryable<DocumentFlow> ApplyDateFilter(
+        IQueryable<DocumentFlow> query,
+        DateTime? startUtc,
+        DateTime? endExclusiveUtc,
+        bool useUpdatedDate)
+    {
+        if (useUpdatedDate)
+        {
+            if (startUtc.HasValue)
+            {
+                var start = startUtc.Value;
+                query = query.Where(flow => flow.UpdatedAtUtc >= start);
+            }
+
+            if (endExclusiveUtc.HasValue)
+            {
+                var end = endExclusiveUtc.Value;
+                query = query.Where(flow => flow.UpdatedAtUtc < end);
+            }
+
+            return query;
+        }
+
+        if (startUtc.HasValue)
+        {
+            var start = startUtc.Value;
+            query = query.Where(flow => flow.CreatedAtUtc >= start);
+        }
+
+        if (endExclusiveUtc.HasValue)
+        {
+            var end = endExclusiveUtc.Value;
+            query = query.Where(flow => flow.CreatedAtUtc < end);
+        }
+
+        return query;
+    }
+
+    private static async Task<DocumentFlowSummaryDto> BuildSummaryAsync(
+        IQueryable<DocumentFlow> baseQuery,
+        int? warehouseNo,
+        DateTime? startUtc,
+        DateTime? endExclusiveUtc,
+        CancellationToken cancellationToken)
+    {
+        var scopedQuery = warehouseNo.HasValue
+            ? baseQuery.Where(flow =>
+                flow.SourceWarehouseNo == warehouseNo.Value ||
+                flow.TargetWarehouseNo == warehouseNo.Value)
+            : baseQuery;
+
+        // Hem guncelleme hem olusturma tarihine gore aralikta kalan kayitlari tek seferde okur;
+        // her sayac kendi listesinin tarih kuralini bellekte uygular.
+        if (startUtc.HasValue)
+        {
+            var start = startUtc.Value;
+            scopedQuery = scopedQuery.Where(flow => flow.UpdatedAtUtc >= start || flow.CreatedAtUtc >= start);
+        }
+
+        if (endExclusiveUtc.HasValue)
+        {
+            var end = endExclusiveUtc.Value;
+            scopedQuery = scopedQuery.Where(flow => flow.UpdatedAtUtc < end || flow.CreatedAtUtc < end);
+        }
+
+        var candidateRows = await scopedQuery
+            .Select(flow => new SummaryRow(
+                flow.DocumentType,
+                flow.SourceWarehouseNo,
+                flow.TargetWarehouseNo,
+                flow.Status,
+                flow.CurrentStep,
+                flow.CreatedAtUtc,
+                flow.UpdatedAtUtc))
+            .ToListAsync(cancellationToken);
+
+        bool InRange(DateTime value) =>
+            (!startUtc.HasValue || value >= startUtc.Value) &&
+            (!endExclusiveUtc.HasValue || value < endExclusiveUtc.Value);
+
+        var updatedRows = candidateRows.Where(row => InRange(row.UpdatedAtUtc)).ToArray();
+        var rows = candidateRows.Where(row => InRange(row.CreatedAtUtc)).ToArray();
+
+        var totalCount = updatedRows.Length;
+        var succeededCount = updatedRows.Count(row => row.Status == DocumentFlowStatus.Succeeded);
+        var failedCount = rows.Count(row =>
+            row.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+            row.Status == DocumentFlowStatus.Failed);
+
+        var pendingReceivingCount = rows.Count(row =>
+            (!warehouseNo.HasValue || row.TargetWarehouseNo == warehouseNo.Value) &&
+            IsPendingReceiving(row));
+
+        var unacceptedOutgoingCount = rows.Count(row =>
+            (!warehouseNo.HasValue || row.SourceWarehouseNo == warehouseNo.Value) &&
+            IsPendingReceiving(row));
+
+        var pendingEDespatchCount = rows.Count(row =>
+            (!warehouseNo.HasValue || row.SourceWarehouseNo == warehouseNo.Value) &&
+            IsPendingOrFailedEDespatch(row));
+
+        var failedEDespatchCount = rows.Count(row =>
+            (!warehouseNo.HasValue || row.SourceWarehouseNo == warehouseNo.Value) &&
+            row.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+            row.Status == DocumentFlowStatus.Failed);
+
+        var openOrderCount = rows.Count(row =>
+            IsOrder(row.DocumentType) &&
+            row.CurrentStep == DocumentFlowStep.OrderCreated &&
+            row.Status == DocumentFlowStatus.Succeeded);
+
+        var actionRequiredCount = rows.Count(row =>
+            IsActionRequired(row, warehouseNo));
+
+        return new DocumentFlowSummaryDto(
+            totalCount,
+            succeededCount,
+            failedCount,
+            actionRequiredCount,
+            pendingReceivingCount,
+            unacceptedOutgoingCount,
+            pendingEDespatchCount,
+            failedEDespatchCount,
+            openOrderCount);
+    }
+
+    private static bool IsPendingReceiving(SummaryRow row) =>
+        row.TargetWarehouseNo.HasValue &&
+        (row.DocumentType is DocumentFlowType.InterWarehouseShipment or DocumentFlowType.WarehouseReturn) &&
+        row.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+        row.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        !(row.CurrentStep == DocumentFlowStep.DocumentCreated && row.Status == DocumentFlowStatus.Failed);
+
+    private static bool IsDespatchDocument(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.CompanyShipment
+            or DocumentFlowType.InterWarehouseShipment
+            or DocumentFlowType.CompanyReturn
+            or DocumentFlowType.WarehouseReturn;
+
+    private static bool IsOrder(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.IssuedCompanyOrder
+            or DocumentFlowType.ReceivedCompanyOrder
+            or DocumentFlowType.IssuedWarehouseOrder
+            or DocumentFlowType.ReceivedWarehouseOrder;
+
+    private static bool IsPendingOrFailedEDespatch(SummaryRow row) =>
+        row.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        ((row.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+          row.Status == DocumentFlowStatus.Failed) ||
+         (IsDespatchDocument(row.DocumentType) &&
+          row.CurrentStep == DocumentFlowStep.DocumentCreated &&
+          row.Status == DocumentFlowStatus.Succeeded));
+
+    private static bool IsActionRequired(SummaryRow row, int? warehouseNo)
+    {
+        if (row.CurrentStep == DocumentFlowStep.DocumentDeleted)
+        {
+            return false;
+        }
+
+        if (warehouseNo.HasValue)
+        {
+            var warehouse = warehouseNo.Value;
+            return (row.TargetWarehouseNo == warehouse && IsPendingReceiving(row))
+                || (row.SourceWarehouseNo == warehouse && IsPendingOrFailedEDespatch(row))
+                || row.Status == DocumentFlowStatus.Failed;
+        }
+
+        return IsPendingReceiving(row)
+            || IsPendingOrFailedEDespatch(row)
+            || row.Status == DocumentFlowStatus.Failed;
+    }
+
     private async Task RecordCoreAsync(
         RecordDocumentFlowRequest request,
         CancellationToken cancellationToken)
@@ -300,6 +678,18 @@ public sealed class DocumentFlowService(
             flow.CreatedAtUtc,
             flow.UpdatedAtUtc);
 
-    private static DateTime ToUtc(DateTime value) =>
-        DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    private static DateTime ToLocalDayStartUtc(DateTime value)
+    {
+        var dateOnly = DateOnly.FromDateTime(value.Date);
+        return dateOnly.ToDateTime(TimeOnly.MinValue, DateTimeKind.Local).ToUniversalTime();
+    }
+
+    private sealed record SummaryRow(
+        DocumentFlowType DocumentType,
+        int SourceWarehouseNo,
+        int? TargetWarehouseNo,
+        DocumentFlowStatus Status,
+        DocumentFlowStep CurrentStep,
+        DateTime CreatedAtUtc,
+        DateTime UpdatedAtUtc);
 }

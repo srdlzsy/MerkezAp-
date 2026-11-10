@@ -28,6 +28,38 @@ public interface IDocumentFlowService
     }
 }
 
+public enum DocumentFlowDirection
+{
+    All = 0,
+    Incoming = 1,
+    Outgoing = 2
+}
+
+public enum DocumentFlowCategory
+{
+    All = 0,
+    ShipmentsAndReceiving = 1,
+    Returns = 2,
+    Orders = 3,
+    CashAndStore = 4,
+    StockAndCounting = 5
+}
+
+public enum DocumentFlowPreset
+{
+    All = 0,
+    ActionRequired = 1,
+    PendingReceiving = 2,
+    UnacceptedOutgoing = 3,
+    PendingEDespatch = 4,
+    FailedEDespatch = 5,
+    OpenOrders = 6,
+    FailedOnly = 7,
+    TodayShipments = 8,
+    TodayReturns = 9,
+    TodayReceivings = 10
+}
+
 public sealed record DocumentFlowListRequest(
     int? WarehouseNo,
     DateTime? StartDate,
@@ -36,12 +68,28 @@ public sealed record DocumentFlowListRequest(
     DocumentFlowStatus? Status,
     string? Search,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    DocumentFlowDirection Direction = DocumentFlowDirection.All,
+    DocumentFlowStep? CurrentStep = null,
+    DocumentFlowCategory Category = DocumentFlowCategory.All,
+    DocumentFlowPreset Preset = DocumentFlowPreset.All);
+
+public sealed record DocumentFlowSummaryDto(
+    int TotalCount,
+    int SucceededCount,
+    int FailedCount,
+    int ActionRequiredCount,
+    int PendingReceivingCount,
+    int UnacceptedOutgoingCount,
+    int PendingEDespatchCount,
+    int FailedEDespatchCount,
+    int OpenOrderCount);
 
 public sealed record DocumentFlowListResponse(
     bool TrackingEnabled,
     int TotalCount,
-    IReadOnlyCollection<DocumentFlowListItemDto> Items);
+    IReadOnlyCollection<DocumentFlowListItemDto> Items,
+    DocumentFlowSummaryDto? Summary = null);
 
 public sealed record DocumentFlowListItemDto(
     Guid Id,

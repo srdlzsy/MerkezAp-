@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,17 +19,18 @@ public sealed class DepoOperasyonPaneliController(
     private const string MenuCode = "depo-operasyon-paneli";
     private const string MenuName = "DepoOperasyonPaneli";
     private const string ListPolicy = "operasyon-islemleri.depo-operasyon-paneli.list";
-    private const string AllWarehousesPolicy = "operasyon-islemleri.depo-operasyon-paneli.all-warehouses";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
-    [Authorize(Policy = AllWarehousesPolicy)]
     [ProducesResponseType(typeof(WarehouseOperationsDashboardDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<WarehouseOperationsDashboardDto>> Get(
         [FromQuery] DateOnly? date,
+        [FromQuery] int? warehouseNo,
         CancellationToken cancellationToken)
     {
         var resolvedDate = date ?? DateOnly.FromDateTime(DateTime.Today);
-        return Ok(await dashboardService.GetAsync(resolvedDate, cancellationToken));
+        var scopedWarehouseNo = User.ResolveWarehouseScopeForPolicy(warehouseNo, ListPolicy);
+
+        return Ok(await dashboardService.GetAsync(resolvedDate, cancellationToken, scopedWarehouseNo));
     }
 }

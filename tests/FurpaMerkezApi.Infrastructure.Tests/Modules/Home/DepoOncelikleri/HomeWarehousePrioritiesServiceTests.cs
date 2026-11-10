@@ -12,12 +12,13 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.Home.DepoOncelikleri;
 public sealed class HomeWarehousePrioritiesServiceTests
 {
     [Fact]
-    public async Task GetAsync_CountsOperationalDataFromNovemberFirstByPrimaryWarehouseOnly()
+    public async Task GetAsync_CountsOperationalDataWithinLookbackWindowAndExcludesDeletedFlows()
     {
         await using var authDbContext = CreateAuthDbContext();
         await using var mikroDbContext = CreateMikroDbContext();
-        var now = new DateTime(2026, 11, 2, 8, 0, 0, DateTimeKind.Utc);
-        var beforeOperationalStart = new DateTime(2026, 10, 31, 20, 0, 0, DateTimeKind.Utc);
+        var now = new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc);
+        var withinThirtyDayLookback = new DateTime(2026, 10, 20, 8, 0, 0, DateTimeKind.Utc);
+        var beforeThirtyDayLookback = new DateTime(2026, 10, 5, 20, 0, 0, DateTimeKind.Utc);
         var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
         authDbContext.StockAnomalies.Add(CreateAnomaly(
@@ -50,15 +51,45 @@ public sealed class HomeWarehousePrioritiesServiceTests
             StockAnomalySeverity.Critical,
             warehouseNo: 53,
             relatedWarehouseNo: null,
-            beforeOperationalStart));
+            beforeThirtyDayLookback));
+
         authDbContext.DocumentFlows.Add(CreatePendingReceivingFlow(
-            "old-flow",
+            "too-old-flow",
+            sourceWarehouseNo: 50,
             targetWarehouseNo: 53,
-            beforeOperationalStart));
+            beforeThirtyDayLookback));
         authDbContext.DocumentFlows.Add(CreatePendingReceivingFlow(
-            "current-flow",
+            "october-pending-flow",
+            sourceWarehouseNo: 50,
+            targetWarehouseNo: 53,
+            withinThirtyDayLookback));
+        authDbContext.DocumentFlows.Add(CreatePendingReceivingFlow(
+            "today-pending-flow",
+            sourceWarehouseNo: 50,
             targetWarehouseNo: 53,
             now));
+
+        var deletedFlow = CreatePendingReceivingFlow(
+            "deleted-flow",
+            sourceWarehouseNo: 50,
+            targetWarehouseNo: 53,
+            now);
+        deletedFlow.Record(
+            DocumentFlowStep.DocumentDeleted,
+            DocumentFlowStatus.Succeeded,
+            "Belge silindi.",
+            error: null,
+            changedByUserId: null,
+            occurredAtUtc: now);
+        authDbContext.DocumentFlows.Add(deletedFlow);
+
+        var outgoingUnacceptedAndUnsubmittedFlow = CreatePendingReceivingFlow(
+            "outgoing-from-53",
+            sourceWarehouseNo: 53,
+            targetWarehouseNo: 104,
+            now);
+        authDbContext.DocumentFlows.Add(outgoingUnacceptedAndUnsubmittedFlow);
+
         await authDbContext.SaveChangesAsync();
 
         var service = new HomeWarehousePrioritiesService(
@@ -68,7 +99,7 @@ public sealed class HomeWarehousePrioritiesServiceTests
 
         var result = await service.GetAsync(
             new HomeWarehousePrioritiesRequest(
-                new DateOnly(2026, 11, 2),
+                new DateOnly(2026, 11, 10),
                 WarehouseNo: 53,
                 WarehouseName: "ET-SARKUTERI DEPO",
                 UserId: userId),
@@ -77,7 +108,16 @@ public sealed class HomeWarehousePrioritiesServiceTests
         Assert.Equal(2, result.Metrics.Single(metric => metric.Code == "openStockAnomaly").Value);
         Assert.Equal(1, result.Priorities.Single(priority => priority.Code == "criticalStockAnomaly").Count);
         Assert.Equal(1, result.Priorities.Single(priority => priority.Code == "highStockAnomaly").Count);
-        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
+        Assert.Equal(2, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "unacceptedOutgoing").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "failedEDespatch").Value);
+
+        var pendingReceivingPriority = result.Priorities.Single(priority => priority.Code == "pendingReceiving");
+        Assert.Equal(2, pendingReceivingPriority.Count);
+        Assert.Contains("preset=pending-receiving", pendingReceivingPriority.Route, StringComparison.Ordinal);
+        Assert.Contains("direction=Incoming", pendingReceivingPriority.Route, StringComparison.Ordinal);
+        Assert.Contains("startDate=2026-10-11", pendingReceivingPriority.Route, StringComparison.Ordinal);
+        Assert.Contains("endDate=2026-11-10", pendingReceivingPriority.Route, StringComparison.Ordinal);
     }
 
     private static AuthDbContext CreateAuthDbContext()
@@ -146,13 +186,14 @@ public sealed class HomeWarehousePrioritiesServiceTests
 
     private static DocumentFlow CreatePendingReceivingFlow(
         string flowKey,
+        int sourceWarehouseNo,
         int targetWarehouseNo,
         DateTime createdAtUtc) =>
         new(
             Guid.NewGuid(),
             flowKey,
             DocumentFlowType.InterWarehouseShipment,
-            sourceWarehouseNo: 50,
+            sourceWarehouseNo,
             targetWarehouseNo,
             documentSerie: "F53",
             documentOrderNo: 1,

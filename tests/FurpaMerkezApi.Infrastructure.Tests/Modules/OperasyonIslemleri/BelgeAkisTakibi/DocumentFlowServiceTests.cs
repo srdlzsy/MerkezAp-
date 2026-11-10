@@ -319,6 +319,78 @@ public sealed class DocumentFlowServiceTests
         Assert.Equal([1], secondPage.Items.Select(item => item.DocumentOrderNo));
     }
 
+    [Fact]
+    public async Task ListAsync_FiltersByPresetDirectionAndComputesSummaryCounts()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc));
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                "InterWarehouseShipment:50:F50:1",
+                DocumentFlowType.InterWarehouseShipment,
+                50,
+                104,
+                "F50",
+                1,
+                DocumentFlowStep.EDespatchSubmission,
+                DocumentFlowStatus.Succeeded,
+                "E-irsaliye gonderildi."),
+            CancellationToken.None);
+
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                "InterWarehouseShipment:104:F104:2",
+                DocumentFlowType.InterWarehouseShipment,
+                104,
+                105,
+                "F104",
+                2,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Succeeded,
+                "Sevk olusturuldu ama e-irsaliye gonderilmedi."),
+            CancellationToken.None);
+
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                "InterWarehouseShipment:50:F50:3",
+                DocumentFlowType.InterWarehouseShipment,
+                50,
+                104,
+                "F50",
+                3,
+                DocumentFlowStep.DocumentDeleted,
+                DocumentFlowStatus.Succeeded,
+                "Silinen sevk."),
+            CancellationToken.None);
+
+        var pendingReceivingFor104 = await service.ListAsync(
+            new DocumentFlowListRequest(
+                WarehouseNo: 104,
+                StartDate: new DateTime(2026, 10, 11),
+                EndDate: new DateTime(2026, 11, 10),
+                DocumentType: null,
+                Status: null,
+                Search: null,
+                Direction: DocumentFlowDirection.Incoming,
+                Preset: DocumentFlowPreset.PendingReceiving),
+            CancellationToken.None);
+
+        Assert.Equal(1, pendingReceivingFor104.TotalCount);
+        Assert.Single(pendingReceivingFor104.Items);
+        Assert.Equal(1, pendingReceivingFor104.Items.Single().DocumentOrderNo);
+        Assert.NotNull(pendingReceivingFor104.Summary);
+        Assert.Equal(1, pendingReceivingFor104.Summary.PendingReceivingCount);
+        Assert.Equal(1, pendingReceivingFor104.Summary.UnacceptedOutgoingCount);
+        Assert.Equal(1, pendingReceivingFor104.Summary.PendingEDespatchCount);
+        Assert.Equal(2, pendingReceivingFor104.Summary.ActionRequiredCount);
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()

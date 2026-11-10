@@ -4,7 +4,8 @@ public interface IWarehouseOperationsDashboardService
 {
     Task<WarehouseOperationsDashboardDto> GetAsync(
         DateOnly date,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        int? warehouseNo = null);
 }
 
 public sealed record WarehouseOperationsDashboardDto(
@@ -14,7 +15,8 @@ public sealed record WarehouseOperationsDashboardDto(
     WarehouseOperationsDashboardSummaryDto Summary,
     WarehouseOperationsDashboardHighlightDto? BusiestWarehouse,
     WarehouseOperationsDashboardHighlightDto? SlowestWarehouse,
-    IReadOnlyCollection<WarehouseOperationsDashboardItemDto> Warehouses);
+    IReadOnlyCollection<WarehouseOperationsDashboardItemDto> Warehouses,
+    DateOnly? LookbackStartDate = null);
 
 public sealed record WarehouseOperationsDashboardSummaryDto(
     int WarehouseCount,
@@ -23,7 +25,11 @@ public sealed record WarehouseOperationsDashboardSummaryDto(
     int TodayReceivingCount,
     int PendingReceivingCount,
     int IncompleteOperationCount,
-    int FailedEDespatchCount);
+    int FailedEDespatchCount,
+    int UnacceptedOutgoingCount = 0,
+    int PendingEDespatchCount = 0,
+    int OpenOrderCount = 0,
+    int OtherFailedOperationCount = 0);
 
 public sealed record WarehouseOperationsDashboardHighlightDto(
     int WarehouseNo,
@@ -40,4 +46,8 @@ public sealed record WarehouseOperationsDashboardItemDto(
     int IncompleteOperationCount,
     int FailedEDespatchCount,
     double? AverageReceivingMinutes,
-    string HealthStatus);
+    string HealthStatus,
+    int UnacceptedOutgoingCount = 0,
+    int PendingEDespatchCount = 0,
+    int OpenOrderCount = 0,
+    int OtherFailedOperationCount = 0);

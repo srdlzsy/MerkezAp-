@@ -25,6 +25,8 @@ public sealed class KasaHareketAktarimiService(
     private const string DefaultFileRootPath = @"\\10.0.0.55\kasa\";
     private const string NormalPrefix = "HR";
     private const string CancelPrefix = "IP";
+    private const int PosRetailStockDocumentType = 4;
+    private const int PosExpenseStockDocumentType = 16;
     private const int PosExpenseCustomerDocumentType = 61;
     private const int PosSalesCustomerDocumentType = 63;
     private const string StockMovementWriteProcedureName = "StokHareketYaz";
@@ -4367,6 +4369,9 @@ public sealed class KasaHareketAktarimiService(
             WHERE movement.sth_tarih >= @startDate
               AND movement.sth_tarih < @endDateExclusive
               AND movement.sth_pos_satis = 1
+              AND movement.sth_evraktip IN (@retailStockDocumentType, @expenseStockDocumentType)
+              AND movement.sth_evrakno_seri LIKE 'PS%'
+              AND movement.sth_evrakno_seri NOT LIKE 'PSF%'
               AND movement.sth_cikis_depo_no > 100
               AND NULLIF(LTRIM(RTRIM(ISNULL(movement.sth_evrakno_seri, ''))), '') IS NOT NULL
               AND ISNULL(movement.sth_evrakno_sira, 0) > 0
@@ -4391,6 +4396,8 @@ public sealed class KasaHareketAktarimiService(
               AND movement.cha_tarihi < @endDateExclusive
               AND movement.cha_evrak_tip IN (@salesCustomerDocumentType, @expenseCustomerDocumentType)
               AND movement.cha_pos_hareketi IN (0, 1)
+              AND movement.cha_evrakno_seri LIKE 'PS%'
+              AND movement.cha_evrakno_seri NOT LIKE 'PSF%'
               AND CONVERT(int, movement.cha_create_user) > 100
               AND NULLIF(LTRIM(RTRIM(ISNULL(movement.cha_evrakno_seri, ''))), '') IS NOT NULL
               AND ISNULL(movement.cha_evrakno_sira, 0) > 0
@@ -4412,6 +4419,8 @@ public sealed class KasaHareketAktarimiService(
                 AddParameter(command, "@branchNo", branchNo);
                 AddParameter(command, "@stockDocumentFlowType", (int)DocumentFlowType.StockMovementDocument);
                 AddParameter(command, "@customerDocumentFlowType", (int)DocumentFlowType.CustomerMovementDocument);
+                AddParameter(command, "@retailStockDocumentType", PosRetailStockDocumentType);
+                AddParameter(command, "@expenseStockDocumentType", PosExpenseStockDocumentType);
                 AddParameter(command, "@salesCustomerDocumentType", PosSalesCustomerDocumentType);
                 AddParameter(command, "@expenseCustomerDocumentType", PosExpenseCustomerDocumentType);
             },
@@ -5100,7 +5109,7 @@ public sealed class KasaHareketAktarimiService(
         var zReportTransferDifference = Round(
             stockMovementAmount - (zReportAmount + expenseSlipTransferredAmount));
         var transferredTurnoverDifference = Round(transferredAmount - stockMovementAmount);
-        var currentStockDifference = Round(stockMovementAmount - currentAccountAmount);
+        var currentStockDifference = Round(currentComparableStockAmount - currentAccountAmount);
         var hasDifference = Math.Abs(retailDifference) > tolerance
                             || Math.Abs(invoiceDifference) > tolerance
                             || Math.Abs(expenseSlipDifference) > tolerance;

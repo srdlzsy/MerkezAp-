@@ -16,16 +16,29 @@ public sealed class WarehouseOperationsDashboardService(
     IOptionsMonitor<DocumentFlowTrackingOptions> trackingOptions)
     : IWarehouseOperationsDashboardService
 {
+    private const int OperationalLookbackDays = 30;
+    private static readonly DateOnly MinimumOperationalStartDate = new(2026, 10, 1);
+
     public async Task<WarehouseOperationsDashboardDto> GetAsync(
         DateOnly date,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? warehouseNo = null)
     {
+        var lookbackStartDate = ResolveLookbackStartDate(date);
+        var lookbackStartUtc = ToUtc(lookbackStartDate);
         var startUtc = ToUtc(date);
         var endUtc = ToUtc(date.AddDays(1));
 
-        var warehouseRows = await mikroDbContext.DEPOLARs
+        var warehousesQuery = mikroDbContext.DEPOLARs
             .AsNoTracking()
-            .Where(warehouse => warehouse.dep_iptal != true && warehouse.dep_no.HasValue)
+            .Where(warehouse => warehouse.dep_iptal != true && warehouse.dep_no.HasValue);
+
+        if (warehouseNo.HasValue)
+        {
+            warehousesQuery = warehousesQuery.Where(warehouse => warehouse.dep_no == warehouseNo.Value);
+        }
+
+        var warehouseRows = await warehousesQuery
             .OrderBy(warehouse => warehouse.dep_no)
             .Select(warehouse => new
             {
@@ -34,21 +47,23 @@ public sealed class WarehouseOperationsDashboardService(
             })
             .ToListAsync(cancellationToken);
 
-        var flowRows = await authDbContext.DocumentFlows
+        var flowsQuery = authDbContext.DocumentFlows
             .AsNoTracking()
             .Where(flow =>
-                (flow.CreatedAtUtc >= startUtc && flow.CreatedAtUtc < endUtc &&
-                 (flow.DocumentType == DocumentFlowType.CompanyShipment ||
-                  flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
-                  flow.DocumentType == DocumentFlowType.CompanyReturn ||
-                  flow.DocumentType == DocumentFlowType.WarehouseReturn)) ||
-                (flow.UpdatedAtUtc >= startUtc && flow.UpdatedAtUtc < endUtc &&
-                 flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted) ||
-                ((flow.DocumentType == DocumentFlowType.InterWarehouseShipment ||
-                  flow.DocumentType == DocumentFlowType.WarehouseReturn) &&
-                 flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted) ||
-                (flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
-                 flow.Status == DocumentFlowStatus.Failed))
+                flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                ((flow.CreatedAtUtc >= lookbackStartUtc && flow.CreatedAtUtc < endUtc) ||
+                 (flow.UpdatedAtUtc >= startUtc && flow.UpdatedAtUtc < endUtc &&
+                  flow.CurrentStep == DocumentFlowStep.WarehouseReceivingAccepted)));
+
+        if (warehouseNo.HasValue)
+        {
+            var scopedWarehouse = warehouseNo.Value;
+            flowsQuery = flowsQuery.Where(flow =>
+                flow.SourceWarehouseNo == scopedWarehouse ||
+                flow.TargetWarehouseNo == scopedWarehouse);
+        }
+
+        var flowRows = await flowsQuery
             .Select(flow => new FlowRow(
                 flow.DocumentType,
                 flow.SourceWarehouseNo,
@@ -64,6 +79,7 @@ public sealed class WarehouseOperationsDashboardService(
                 warehouse.WarehouseNo,
                 warehouse.WarehouseName,
                 flowRows,
+                lookbackStartUtc,
                 startUtc,
                 endUtc))
             .ToArray();
@@ -79,12 +95,34 @@ public sealed class WarehouseOperationsDashboardService(
             .ThenBy(item => item.WarehouseNo)
             .FirstOrDefault();
 
-        var incompleteOperationCount = flowRows.Count(flow =>
+        var summaryPendingReceivingCount = items.Sum(item => item.PendingReceivingCount);
+        var summaryUnacceptedOutgoingCount = items.Sum(item => item.UnacceptedOutgoingCount);
+        var summaryPendingEDespatchCount = items.Sum(item => item.PendingEDespatchCount);
+        var summaryFailedEDespatchCount = items.Sum(item => item.FailedEDespatchCount);
+
+        // Hatali akislar hem kaynak hem hedef depo satirinda gorunebilir; genel toplamda
+        // ayni belgenin iki kez sayilmamasi icin ozet belge bazinda hesaplanir.
+        var activeWarehouseNos = warehouseRows.Select(warehouse => warehouse.WarehouseNo).ToHashSet();
+        var summaryOperationalFlows = flowRows
+            .Where(flow =>
+                flow.CreatedAtUtc >= lookbackStartUtc &&
+                flow.CreatedAtUtc < endUtc &&
+                (activeWarehouseNos.Contains(flow.SourceWarehouseNo) ||
+                 (flow.TargetWarehouseNo.HasValue && activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value))))
+            .ToArray();
+        var summaryOpenOrderCount = summaryOperationalFlows.Count(flow =>
+            IsOrder(flow.DocumentType) &&
+            flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+            flow.Status == DocumentFlowStatus.Succeeded);
+        var summaryOtherFailedOperationCount = summaryOperationalFlows.Count(flow =>
+            flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
+            flow.Status == DocumentFlowStatus.Failed);
+        var summaryIncompleteOperationCount = summaryOperationalFlows.Count(flow =>
             (flow.TargetWarehouseNo.HasValue &&
-             IsWarehouseMovement(flow.DocumentType) &&
-             flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted) ||
-            (flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
-             flow.Status == DocumentFlowStatus.Failed));
+             activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value) &&
+             IsPendingReceiving(flow)) ||
+            (activeWarehouseNos.Contains(flow.SourceWarehouseNo) && IsPendingOrFailedEDespatch(flow)) ||
+            flow.Status == DocumentFlowStatus.Failed);
 
         return new WarehouseOperationsDashboardDto(
             date,
@@ -95,9 +133,13 @@ public sealed class WarehouseOperationsDashboardService(
                 items.Sum(item => item.TodayShipmentCount),
                 items.Sum(item => item.TodayReturnCount),
                 items.Sum(item => item.TodayReceivingCount),
-                items.Sum(item => item.PendingReceivingCount),
-                incompleteOperationCount,
-                items.Sum(item => item.FailedEDespatchCount)),
+                summaryPendingReceivingCount,
+                summaryIncompleteOperationCount,
+                summaryFailedEDespatchCount,
+                summaryUnacceptedOutgoingCount,
+                summaryPendingEDespatchCount,
+                summaryOpenOrderCount,
+                summaryOtherFailedOperationCount),
             busiestWarehouse is null
                 ? null
                 : new WarehouseOperationsDashboardHighlightDto(
@@ -112,13 +154,15 @@ public sealed class WarehouseOperationsDashboardService(
                     slowestWarehouse.WarehouseNo,
                     slowestWarehouse.WarehouseName,
                     slowestWarehouse.AverageReceivingMinutes!.Value),
-            items);
+            items,
+            lookbackStartDate);
     }
 
     private static WarehouseOperationsDashboardItemDto BuildWarehouseItem(
         int warehouseNo,
         string warehouseName,
         IReadOnlyCollection<FlowRow> flows,
+        DateTime lookbackStartUtc,
         DateTime startUtc,
         DateTime endUtc)
     {
@@ -126,13 +170,15 @@ public sealed class WarehouseOperationsDashboardService(
             flow.SourceWarehouseNo == warehouseNo &&
             flow.CreatedAtUtc >= startUtc &&
             flow.CreatedAtUtc < endUtc &&
-            IsShipment(flow.DocumentType));
+            IsShipment(flow.DocumentType) &&
+            !IsFailedCreation(flow));
 
         var todayReturnCount = flows.Count(flow =>
             flow.SourceWarehouseNo == warehouseNo &&
             flow.CreatedAtUtc >= startUtc &&
             flow.CreatedAtUtc < endUtc &&
-            IsReturn(flow.DocumentType));
+            IsReturn(flow.DocumentType) &&
+            !IsFailedCreation(flow));
 
         var completedReceivings = flows
             .Where(flow =>
@@ -142,17 +188,44 @@ public sealed class WarehouseOperationsDashboardService(
                 flow.UpdatedAtUtc < endUtc)
             .ToArray();
 
-        var pendingReceivingCount = flows.Count(flow =>
-            flow.TargetWarehouseNo == warehouseNo &&
-            IsWarehouseMovement(flow.DocumentType) &&
-            flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted);
+        var operationalFlows = flows
+            .Where(flow => flow.CreatedAtUtc >= lookbackStartUtc && flow.CreatedAtUtc < endUtc)
+            .ToArray();
 
-        var failedEDespatchCount = flows.Count(flow =>
+        var pendingReceivingCount = operationalFlows.Count(flow =>
+            flow.TargetWarehouseNo == warehouseNo &&
+            IsPendingReceiving(flow));
+
+        var unacceptedOutgoingCount = operationalFlows.Count(flow =>
+            flow.SourceWarehouseNo == warehouseNo &&
+            IsPendingReceiving(flow));
+
+        var failedEDespatchCount = operationalFlows.Count(flow =>
             flow.SourceWarehouseNo == warehouseNo &&
             flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
             flow.Status == DocumentFlowStatus.Failed);
 
-        var incompleteOperationCount = pendingReceivingCount + failedEDespatchCount;
+        var pendingEDespatchCount = operationalFlows.Count(flow =>
+            flow.SourceWarehouseNo == warehouseNo &&
+            IsPendingOrFailedEDespatch(flow));
+
+        var openOrderCount = operationalFlows.Count(flow =>
+            (flow.SourceWarehouseNo == warehouseNo || flow.TargetWarehouseNo == warehouseNo) &&
+            IsOrder(flow.DocumentType) &&
+            flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+            flow.Status == DocumentFlowStatus.Succeeded);
+
+        var otherFailedOperationCount = operationalFlows.Count(flow =>
+            (flow.SourceWarehouseNo == warehouseNo || flow.TargetWarehouseNo == warehouseNo) &&
+            flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
+            flow.Status == DocumentFlowStatus.Failed);
+
+        var incompleteOperationCount = operationalFlows.Count(flow =>
+            (flow.TargetWarehouseNo == warehouseNo && IsPendingReceiving(flow)) ||
+            (flow.SourceWarehouseNo == warehouseNo && IsPendingOrFailedEDespatch(flow)) ||
+            ((flow.SourceWarehouseNo == warehouseNo || flow.TargetWarehouseNo == warehouseNo) &&
+             flow.Status == DocumentFlowStatus.Failed));
+
         var averageReceivingMinutes = completedReceivings.Length == 0
             ? (double?)null
             : Math.Round(
@@ -170,7 +243,28 @@ public sealed class WarehouseOperationsDashboardService(
             incompleteOperationCount,
             failedEDespatchCount,
             averageReceivingMinutes,
-            ResolveHealthStatus(pendingReceivingCount, failedEDespatchCount));
+            ResolveHealthStatus(
+                pendingReceivingCount,
+                pendingEDespatchCount,
+                failedEDespatchCount,
+                otherFailedOperationCount),
+            unacceptedOutgoingCount,
+            pendingEDespatchCount,
+            openOrderCount,
+            otherFailedOperationCount);
+    }
+
+    private static DateOnly ResolveLookbackStartDate(DateOnly date)
+    {
+        var lookbackStart = date.AddDays(-OperationalLookbackDays);
+        if (date < MinimumOperationalStartDate)
+        {
+            return lookbackStart;
+        }
+
+        return lookbackStart > MinimumOperationalStartDate
+            ? lookbackStart
+            : MinimumOperationalStartDate;
     }
 
     private static bool IsShipment(DocumentFlowType documentType) =>
@@ -179,17 +273,51 @@ public sealed class WarehouseOperationsDashboardService(
     private static bool IsReturn(DocumentFlowType documentType) =>
         documentType is DocumentFlowType.CompanyReturn or DocumentFlowType.WarehouseReturn;
 
+    private static bool IsDespatchDocument(DocumentFlowType documentType) =>
+        IsShipment(documentType) || IsReturn(documentType);
+
     private static bool IsWarehouseMovement(DocumentFlowType documentType) =>
         documentType is DocumentFlowType.InterWarehouseShipment or DocumentFlowType.WarehouseReturn;
 
-    private static string ResolveHealthStatus(int pendingReceivingCount, int failedEDespatchCount)
+    private static bool IsOrder(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.IssuedCompanyOrder
+            or DocumentFlowType.ReceivedCompanyOrder
+            or DocumentFlowType.IssuedWarehouseOrder
+            or DocumentFlowType.ReceivedWarehouseOrder;
+
+    private static bool IsFailedCreation(FlowRow flow) =>
+        flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+        flow.Status == DocumentFlowStatus.Failed;
+
+    private static bool IsPendingReceiving(FlowRow flow) =>
+        flow.TargetWarehouseNo.HasValue &&
+        IsWarehouseMovement(flow.DocumentType) &&
+        flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        !IsFailedCreation(flow);
+
+    private static bool IsPendingOrFailedEDespatch(FlowRow flow) =>
+        flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+        ((flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+          flow.Status == DocumentFlowStatus.Failed) ||
+         (IsDespatchDocument(flow.DocumentType) &&
+          flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
+          flow.Status == DocumentFlowStatus.Succeeded));
+
+    private static string ResolveHealthStatus(
+        int pendingReceivingCount,
+        int pendingEDespatchCount,
+        int failedEDespatchCount,
+        int otherFailedOperationCount)
     {
-        if (failedEDespatchCount > 0)
+        if (failedEDespatchCount > 0 || otherFailedOperationCount > 0)
         {
             return "Critical";
         }
 
-        return pendingReceivingCount > 0 ? "Warning" : "Healthy";
+        return pendingReceivingCount > 0 || pendingEDespatchCount > 0
+            ? "Warning"
+            : "Healthy";
     }
 
     private static DateTime ToUtc(DateOnly date)
