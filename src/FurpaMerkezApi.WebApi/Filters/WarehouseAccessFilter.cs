@@ -133,8 +133,20 @@ public sealed class WarehouseAccessFilter : IActionFilter
 
     private static bool CanAccessAllWarehouses(
         ClaimsPrincipal user,
-        IReadOnlyCollection<string> allWarehousesPermissionCodes) =>
-        allWarehousesPermissionCodes.Any(user.HasPermission);
+        IReadOnlyCollection<string> allWarehousesPermissionCodes)
+    {
+        if (user.IsAdministrator())
+        {
+            return true;
+        }
+
+        if (allWarehousesPermissionCodes.Count > 0)
+        {
+            return allWarehousesPermissionCodes.Any(user.HasPermission);
+        }
+
+        return user.HasAnyAllWarehousesPermission();
+    }
 
     private static IEnumerable<string> GetAllWarehousesPermissionCodes(ActionExecutingContext context)
     {

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FurpaMerkezApi.WebApi.Controllers.Modules.AramaIslemleri;
 using FurpaMerkezApi.WebApi.Controllers.Modules.OperasyonIslemleri;
+using FurpaMerkezApi.WebApi.Extensions;
 using FurpaMerkezApi.WebApi.Filters;
 using FurpaMerkezApi.WebApi.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -102,6 +103,117 @@ public sealed class WarehouseAccessFilterTests
         filter.OnActionExecuting(context);
 
         Assert.Equal(1, request.WarehouseNo);
+    }
+
+    [Fact]
+    public void OnActionExecuting_AllowsAdministratorRole_WhenActionHasNoPolicy()
+    {
+        var request = new ScopedWarehouseRequest
+        {
+            WarehouseNo = 120
+        };
+        var context = CreateContext(
+            request,
+            currentWarehouseNo: 1,
+            policy: null,
+            roles: ["Administrator"]);
+        var filter = new WarehouseAccessFilter();
+
+        filter.OnActionExecuting(context);
+
+        Assert.Equal(120, request.WarehouseNo);
+    }
+
+    [Fact]
+    public void OnActionExecuting_AllowsUserWithAnyAllWarehousesPermission_WhenActionHasNoPolicy()
+    {
+        var request = new ScopedWarehouseRequest
+        {
+            WarehouseNo = 120
+        };
+        var context = CreateContext(
+            request,
+            currentWarehouseNo: 1,
+            policy: null,
+            permissions: ["siparis-islemleri.verilen-depo-siparisleri.all-warehouses"]);
+        var filter = new WarehouseAccessFilter();
+
+        filter.OnActionExecuting(context);
+
+        Assert.Equal(120, request.WarehouseNo);
+    }
+
+    [Fact]
+    public void OnActionExecuting_RejectsScopedWarehouseMismatch_WhenActionHasNoPolicy_ForRegularUser()
+    {
+        var request = new ScopedWarehouseRequest
+        {
+            WarehouseNo = 120
+        };
+        var context = CreateContext(
+            request,
+            currentWarehouseNo: 1,
+            policy: null);
+        var filter = new WarehouseAccessFilter();
+
+        var exception = Assert.Throws<ForbiddenAccessException>(() => filter.OnActionExecuting(context));
+
+        Assert.Contains("Property=WarehouseNo", exception.Message);
+        Assert.Contains("CurrentWarehouseNo=1", exception.Message);
+        Assert.Contains("RequestedWarehouseNo=120", exception.Message);
+    }
+
+    [Fact]
+    public void ClaimsPrincipalExtensions_ResolveWarehouseNo_ReturnsRequestedWarehouse_ForAdministrator()
+    {
+        var user = CreateUser(warehouseNo: 1, roles: ["Administrator"], permissions: null);
+
+        var resolved = user.ResolveWarehouseNo(120);
+
+        Assert.Equal(120, resolved);
+    }
+
+    [Fact]
+    public void ClaimsPrincipalExtensions_ResolveWarehouseNo_ReturnsCurrentWarehouse_WhenAdminOmitsWarehouse()
+    {
+        var user = CreateUser(warehouseNo: 1, roles: ["Administrator"], permissions: null);
+
+        var resolved = user.ResolveWarehouseNo(null);
+
+        Assert.Equal(1, resolved);
+    }
+
+    [Fact]
+    public void ClaimsPrincipalExtensions_ResolveWarehouseNo_ReturnsRequestedWarehouse_WhenUserHasAnyAllWarehousesPermission()
+    {
+        var user = CreateUser(
+            warehouseNo: 1,
+            roles: null,
+            permissions: ["siparis-islemleri.verilen-depo-siparisleri.all-warehouses"]);
+
+        var resolved = user.ResolveWarehouseNo(120);
+
+        Assert.Equal(120, resolved);
+    }
+
+    [Fact]
+    public void ClaimsPrincipalExtensions_ResolveWarehouseNo_ThrowsForbiddenAccess_WhenRegularUserRequestsDifferentWarehouse()
+    {
+        var user = CreateUser(warehouseNo: 1, roles: null, permissions: null);
+
+        var exception = Assert.Throws<ForbiddenAccessException>(() => user.ResolveWarehouseNo(120));
+
+        Assert.Contains("CurrentWarehouseNo=1", exception.Message);
+        Assert.Contains("RequestedWarehouseNo=120", exception.Message);
+    }
+
+    [Fact]
+    public void ClaimsPrincipalExtensions_ResolveWarehouseScope_ReturnsRequestedOrNull_ForAdministrator()
+    {
+        var user = CreateUser(warehouseNo: 1, roles: ["Administrator"], permissions: null);
+
+        Assert.Equal(120, user.ResolveWarehouseScope(120));
+        Assert.Null(user.ResolveWarehouseScope(null));
     }
 
     [Fact]
