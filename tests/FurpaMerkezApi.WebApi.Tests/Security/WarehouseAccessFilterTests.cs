@@ -197,6 +197,19 @@ public sealed class WarehouseAccessFilterTests
     }
 
     [Fact]
+    public void ClaimsPrincipalExtensions_ResolveWarehouseNo_ReturnsRequestedWarehouse_WhenWarehouseUserHasExplicitAllWarehousesPermission()
+    {
+        var user = CreateUser(
+            warehouseNo: 1,
+            roles: ["SubeKullanicisi"],
+            permissions: ["siparis-islemleri.verilen-depo-siparisleri.all-warehouses"]);
+
+        var resolved = user.ResolveWarehouseNo(120);
+
+        Assert.Equal(120, resolved);
+    }
+
+    [Fact]
     public void ClaimsPrincipalExtensions_ResolveWarehouseNo_ThrowsForbiddenAccess_WhenRegularUserRequestsDifferentWarehouse()
     {
         var user = CreateUser(warehouseNo: 1, roles: null, permissions: null);

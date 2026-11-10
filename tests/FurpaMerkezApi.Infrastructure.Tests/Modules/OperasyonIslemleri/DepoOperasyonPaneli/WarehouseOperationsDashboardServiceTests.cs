@@ -71,10 +71,28 @@ public sealed class WarehouseOperationsDashboardServiceTests
             documentOrderNo: 5,
             createdAtUtc: todayUtc);
 
+        var openOrderFrom104To50 = new DocumentFlow(
+            Guid.NewGuid(),
+            "IssuedWarehouseOrder:104:D104:6",
+            DocumentFlowType.IssuedWarehouseOrder,
+            sourceWarehouseNo: 104,
+            targetWarehouseNo: 50,
+            documentSerie: "D104",
+            documentOrderNo: 6,
+            createdAtUtc: todayUtc);
+        openOrderFrom104To50.Record(
+            DocumentFlowStep.OrderCreated,
+            DocumentFlowStatus.Succeeded,
+            "Siparis olusturuldu.",
+            error: null,
+            changedByUserId: null,
+            occurredAtUtc: todayUtc);
+
         authDbContext.DocumentFlows.AddRange(
             pendingShipmentFrom50To104,
             deletedShipmentFrom50To104,
-            unsubmittedReturnFrom104To50);
+            unsubmittedReturnFrom104To50,
+            openOrderFrom104To50);
         await authDbContext.SaveChangesAsync();
 
         var service = new WarehouseOperationsDashboardService(
@@ -91,13 +109,17 @@ public sealed class WarehouseOperationsDashboardServiceTests
         Assert.Equal(0, warehouse50.TodayShipmentCount);
         Assert.Equal(0, warehouse50.PendingReceivingCount);
         Assert.Equal(1, warehouse50.UnacceptedOutgoingCount);
+        Assert.Equal(1, warehouse50.OpenOrderCount);
 
         var warehouse104 = Assert.Single(result.Warehouses, item => item.WarehouseNo == 104);
         Assert.Equal(1, warehouse104.TodayReturnCount);
         Assert.Equal(1, warehouse104.PendingReceivingCount);
         Assert.Equal(1, warehouse104.PendingEDespatchCount);
-        Assert.Equal(2, warehouse104.IncompleteOperationCount);
+        Assert.Equal(1, warehouse104.OpenOrderCount);
+        Assert.Equal(3, warehouse104.IncompleteOperationCount);
         Assert.Equal("Warning", warehouse104.HealthStatus);
+        Assert.Equal(1, result.Summary.OpenOrderCount);
+        Assert.Equal(3, result.Summary.IncompleteOperationCount);
     }
 
     private static AuthDbContext CreateAuthDbContext()

@@ -182,6 +182,14 @@ public sealed class HomeWarehousePrioritiesService(
             flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
             flow.Status == DocumentFlowStatus.Failed);
 
+        var openOrderCount = operationalRows.Count(flow =>
+            (!hasWarehouseNo ||
+             flow.SourceWarehouseNo == scopedWarehouseNo ||
+             flow.TargetWarehouseNo == scopedWarehouseNo) &&
+            IsOrder(flow.DocumentType) &&
+            flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+            flow.Status == DocumentFlowStatus.Succeeded);
+
         return new FlowSummary(
             todayShipmentCount,
             todayReceivingCount,
@@ -190,7 +198,8 @@ public sealed class HomeWarehousePrioritiesService(
             unacceptedOutgoingCount,
             failedEDespatchCount,
             unsubmittedEDespatchCount,
-            otherFailedOperationCount);
+            otherFailedOperationCount,
+            openOrderCount);
     }
 
     private async Task<StockAnomalySummary> LoadStockAnomalySummaryAsync(
@@ -295,6 +304,17 @@ public sealed class HomeWarehousePrioritiesService(
                     warehouseNo,
                     preset: "unaccepted-outgoing",
                     direction: "Outgoing",
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)),
+            new(
+                "openOrder",
+                "Acik Siparis",
+                flowSummary.OpenOrderCount,
+                flowSummary.OpenOrderCount > 0 ? Warning : Healthy,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "open-orders",
+                    direction: null,
                     startDate: lookbackStartDate,
                     endDate: selectedDate)),
             new(
@@ -440,6 +460,22 @@ public sealed class HomeWarehousePrioritiesService(
                     endDate: selectedDate)));
         }
 
+        if (flowSummary.OpenOrderCount > 0)
+        {
+            items.Add(new HomePriorityItemDto(
+                "openOrder",
+                Warning,
+                "AXATA gonderimi bekleyen siparis var",
+                $"{flowSummary.OpenOrderCount} siparis olusturulmus ancak AXATA gonderim adimi tamamlanmamis.",
+                flowSummary.OpenOrderCount,
+                BuildFlowRoute(
+                    warehouseNo,
+                    preset: "open-orders",
+                    direction: null,
+                    startDate: lookbackStartDate,
+                    endDate: selectedDate)));
+        }
+
         if (highStockAnomalyCount > 0)
         {
             items.Add(new HomePriorityItemDto(
@@ -513,6 +549,7 @@ public sealed class HomeWarehousePrioritiesService(
 
         if (flowSummary.PendingReceivingCount > 0 ||
             flowSummary.UnsubmittedEDespatchCount > 0 ||
+            flowSummary.OpenOrderCount > 0 ||
             highStockAnomalyCount > 0 ||
             openStockAnomalyCount > 0)
         {
@@ -550,6 +587,12 @@ public sealed class HomeWarehousePrioritiesService(
 
     private static bool IsDespatchDocument(DocumentFlowType documentType) =>
         IsShipment(documentType) || IsReturn(documentType);
+
+    private static bool IsOrder(DocumentFlowType documentType) =>
+        documentType is DocumentFlowType.IssuedCompanyOrder
+            or DocumentFlowType.ReceivedCompanyOrder
+            or DocumentFlowType.IssuedWarehouseOrder
+            or DocumentFlowType.ReceivedWarehouseOrder;
 
     private static bool IsWarehouseMovement(DocumentFlowType documentType) =>
         documentType is DocumentFlowType.InterWarehouseShipment or DocumentFlowType.WarehouseReturn;
@@ -628,7 +671,8 @@ public sealed class HomeWarehousePrioritiesService(
         int UnacceptedOutgoingCount,
         int FailedEDespatchCount,
         int UnsubmittedEDespatchCount,
-        int OtherFailedOperationCount);
+        int OtherFailedOperationCount,
+        int OpenOrderCount);
 
     private sealed record StockAnomalySummary(
         int OpenCount,

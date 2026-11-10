@@ -358,6 +358,19 @@ public sealed class DocumentFlowServiceTests
 
         await service.RecordAsync(
             new RecordDocumentFlowRequest(
+                "IssuedWarehouseOrder:104:D104:4",
+                DocumentFlowType.IssuedWarehouseOrder,
+                104,
+                50,
+                "D104",
+                4,
+                DocumentFlowStep.OrderCreated,
+                DocumentFlowStatus.Succeeded,
+                "Siparis olusturuldu."),
+            CancellationToken.None);
+
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
                 "InterWarehouseShipment:50:F50:3",
                 DocumentFlowType.InterWarehouseShipment,
                 50,
@@ -388,7 +401,26 @@ public sealed class DocumentFlowServiceTests
         Assert.Equal(1, pendingReceivingFor104.Summary.PendingReceivingCount);
         Assert.Equal(0, pendingReceivingFor104.Summary.UnacceptedOutgoingCount);
         Assert.Equal(1, pendingReceivingFor104.Summary.PendingEDespatchCount);
-        Assert.Equal(2, pendingReceivingFor104.Summary.ActionRequiredCount);
+        Assert.Equal(3, pendingReceivingFor104.Summary.ActionRequiredCount);
+        Assert.Equal(1, pendingReceivingFor104.Summary.OpenOrderCount);
+
+        var actionRequiredFor104 = await service.ListAsync(
+            new DocumentFlowListRequest(
+                WarehouseNo: 104,
+                StartDate: new DateTime(2026, 10, 11),
+                EndDate: new DateTime(2026, 11, 10),
+                DocumentType: null,
+                Status: null,
+                Search: null,
+                Direction: DocumentFlowDirection.All,
+                Preset: DocumentFlowPreset.ActionRequired),
+            CancellationToken.None);
+
+        Assert.Equal(3, actionRequiredFor104.TotalCount);
+        Assert.Contains(
+            actionRequiredFor104.Items,
+            item => item.DocumentType == nameof(DocumentFlowType.IssuedWarehouseOrder) &&
+                    item.DocumentOrderNo == 4);
     }
 
     private static AuthDbContext CreateDbContext()

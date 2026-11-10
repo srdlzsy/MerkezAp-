@@ -123,6 +123,9 @@ public sealed class WarehouseOperationsDashboardService(
              activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value) &&
              IsPendingReceiving(flow)) ||
             (activeWarehouseNos.Contains(flow.SourceWarehouseNo) && IsPendingOrFailedEDespatch(flow)) ||
+            ((activeWarehouseNos.Contains(flow.SourceWarehouseNo) ||
+              (flow.TargetWarehouseNo.HasValue && activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value))) &&
+             IsOpenOrder(flow)) ||
             flow.Status == DocumentFlowStatus.Failed);
 
         return new WarehouseOperationsDashboardDto(
@@ -225,6 +228,8 @@ public sealed class WarehouseOperationsDashboardService(
             (flow.TargetWarehouseNo == warehouseNo && IsPendingReceiving(flow)) ||
             (flow.SourceWarehouseNo == warehouseNo && IsPendingOrFailedEDespatch(flow)) ||
             ((flow.SourceWarehouseNo == warehouseNo || flow.TargetWarehouseNo == warehouseNo) &&
+             IsOpenOrder(flow)) ||
+            ((flow.SourceWarehouseNo == warehouseNo || flow.TargetWarehouseNo == warehouseNo) &&
              flow.Status == DocumentFlowStatus.Failed));
 
         var averageReceivingMinutes = completedReceivings.Length == 0
@@ -248,7 +253,8 @@ public sealed class WarehouseOperationsDashboardService(
                 pendingReceivingCount,
                 pendingEDespatchCount,
                 failedEDespatchCount,
-                otherFailedOperationCount),
+                otherFailedOperationCount,
+                openOrderCount),
             unacceptedOutgoingCount,
             pendingEDespatchCount,
             openOrderCount,
@@ -286,6 +292,11 @@ public sealed class WarehouseOperationsDashboardService(
             or DocumentFlowType.IssuedWarehouseOrder
             or DocumentFlowType.ReceivedWarehouseOrder;
 
+    private static bool IsOpenOrder(FlowRow flow) =>
+        IsOrder(flow.DocumentType) &&
+        flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+        flow.Status == DocumentFlowStatus.Succeeded;
+
     private static bool IsFailedCreation(FlowRow flow) =>
         flow.CurrentStep == DocumentFlowStep.DocumentCreated &&
         flow.Status == DocumentFlowStatus.Failed;
@@ -312,14 +323,15 @@ public sealed class WarehouseOperationsDashboardService(
         int pendingReceivingCount,
         int pendingEDespatchCount,
         int failedEDespatchCount,
-        int otherFailedOperationCount)
+        int otherFailedOperationCount,
+        int openOrderCount)
     {
         if (failedEDespatchCount > 0 || otherFailedOperationCount > 0)
         {
             return "Critical";
         }
 
-        return pendingReceivingCount > 0 || pendingEDespatchCount > 0
+        return pendingReceivingCount > 0 || pendingEDespatchCount > 0 || openOrderCount > 0
             ? "Warning"
             : "Healthy";
     }

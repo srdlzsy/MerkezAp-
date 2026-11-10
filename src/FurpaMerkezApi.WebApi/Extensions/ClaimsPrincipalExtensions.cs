@@ -32,13 +32,6 @@ internal static class ClaimsPrincipalExtensions
             return true;
         }
 
-        // Tokens issued before the client-profile split contain the union permission set.
-        // Policy checks resolve these tokens from the database; direct scope checks must fail closed.
-        if (user.IsInRole("SubeKullanicisi"))
-        {
-            return false;
-        }
-
         return user.HasClaim(claim =>
             string.Equals(claim.Type, AuthorizationConstants.PermissionClaimType, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(claim.Value, permissionCode, StringComparison.OrdinalIgnoreCase));
@@ -49,11 +42,6 @@ internal static class ClaimsPrincipalExtensions
         if (user.IsAdministrator())
         {
             return true;
-        }
-
-        if (user.IsInRole("SubeKullanicisi"))
-        {
-            return false;
         }
 
         return user.HasClaim(claim =>

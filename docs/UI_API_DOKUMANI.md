@@ -18557,7 +18557,7 @@ Bu endpoint merkez yoneticisinin aktif depolari tek istekte izlemesi icindir. De
 GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-02
 ```
 
-- Yalniz `operasyon-islemleri.depo-operasyon-paneli.list` ve `operasyon-islemleri.depo-operasyon-paneli.all-warehouses` yetkilerine sahip kullanicilar erisebilir.
+- `operasyon-islemleri.depo-operasyon-paneli.list` yetkisi ekrana erisim verir. `operasyon-islemleri.depo-operasyon-paneli.all-warehouses` yetkisi olan kullanici tum depolari veya istedigi tek depoyu; bu yetki olmayan kullanici yalniz kendi deposunu gorur.
 - Modul kodu `operasyon-islemleri`, menu kodu `depo-operasyon-paneli`, menu adi `DepoOperasyonPaneli` degeridir.
 - UI bu kaydi `Operasyon Islemleri > Depo Operasyon Paneli` menusu olarak gosterebilir.
 - `date` opsiyoneldir ve `yyyy-MM-dd` formatindadir. Gonderilmezse API sunucusunun bugunku tarihi kullanilir.
@@ -18565,13 +18565,18 @@ GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-02
 - `todayReturnCount`: secilen gunde API uzerinden olusturulan firma iadesi ve depo iadesi hareketleridir; kaynak depoya yazilir.
 - `todayReceivingCount`: secilen gunde API uzerinden tamamlanan depo mal kabulleridir; hedef depoya yazilir.
 - `pendingReceivingCount`: depolar arasi sevk veya depo iadesi olusturulmus, henuz depo mal kabulu tamamlanmamis kayitlardir; hedef depoya yazilir.
+- `unacceptedOutgoingCount`: kaynak deponun cikardigi, hedef deponun henuz kabul etmedigi depo sevk ve iadeleridir.
+- `pendingEDespatchCount`: e-irsaliyesi henuz gonderilmemis veya e-irsaliye gonderimi hata vermis sevk/iade kayitlaridir; kaynak depoya yazilir.
 - `failedEDespatchCount`: son belge akis adimi basarisiz e-irsaliye gonderimi olan kayitlardir; kaynak depoya yazilir.
-- `incompleteOperationCount`: bekleyen mal kabulleri ve basarisiz e-irsaliye gonderimlerini ifade eder. Genel ozette ayni belge bir kez sayilir.
+- `openOrderCount`: `OrderCreated/Succeeded` adiminda kalmis, AXATA gonderim adimi tamamlanmamis firma ve depo siparisleridir; kaynak veya hedef depo satirinda gorunur.
+- `otherFailedOperationCount`: e-irsaliye adimi disindaki basarisiz belge akislaridir.
+- `incompleteOperationCount`: bekleyen mal kabul, bekleyen/basarisiz e-irsaliye, acik siparis ve diger basarisiz operasyonlari ifade eder. Genel ozette ayni belge bir kez sayilir.
 - `averageReceivingMinutes`: secilen gunde tamamlanan mal kabullerinin sevk olusturma ile kabul arasindaki ortalama suresidir.
 - `busiestWarehouse.value`: secilen gunun sevk, iade ve mal kabul toplami.
 - `slowestWarehouse.value`: dakika cinsinden ortalama mal kabul suresi.
-- `healthStatus`: e-irsaliye hatasi varsa `Critical`, bekleyen kabul varsa `Warning`, ikisi de yoksa `Healthy` doner.
+- `healthStatus`: e-irsaliye veya diger operasyon hatasi varsa `Critical`; bekleyen kabul, e-irsaliye ya da acik siparis varsa `Warning`; hicbiri yoksa `Healthy` doner.
 - `trackingEnabled = false` ise yeni belge akisi yazimi kapalidir; panel mevcut eski kayitlardan hesaplanmaya devam eder.
+- Bekleyen ve acik is sayilari secilen tarihten geriye 30 gunluk pencereden hesaplanir; 01.10.2026 ve sonrasindaki secili tarihlerde pencere bu tarihten daha geriye gitmez.
 
 Capraz depo mantigi:
 
@@ -18595,8 +18600,12 @@ Response ornegi:
     "todayReturnCount": 12,
     "todayReceivingCount": 385,
     "pendingReceivingCount": 35,
-    "incompleteOperationCount": 38,
-    "failedEDespatchCount": 4
+    "incompleteOperationCount": 44,
+    "failedEDespatchCount": 4,
+    "unacceptedOutgoingCount": 35,
+    "pendingEDespatchCount": 4,
+    "openOrderCount": 5,
+    "otherFailedOperationCount": 1
   },
   "busiestWarehouse": {
     "warehouseNo": 12,
@@ -18616,8 +18625,12 @@ Response ornegi:
       "todayReturnCount": 2,
       "todayReceivingCount": 17,
       "pendingReceivingCount": 3,
-      "incompleteOperationCount": 3,
+      "incompleteOperationCount": 5,
       "failedEDespatchCount": 0,
+      "unacceptedOutgoingCount": 2,
+      "pendingEDespatchCount": 1,
+      "openOrderCount": 1,
+      "otherFailedOperationCount": 0,
       "averageReceivingMinutes": 42.75,
       "healthStatus": "Warning"
     }

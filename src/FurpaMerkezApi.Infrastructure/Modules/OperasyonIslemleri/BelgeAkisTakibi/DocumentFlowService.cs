@@ -404,7 +404,15 @@ public sealed class DocumentFlowService(
                             flow.ExternalUuid == null &&
                             (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
                              flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
-                             flow.CurrentStep == DocumentFlowStep.DocumentUpdated)))) ||
+                              flow.CurrentStep == DocumentFlowStep.DocumentUpdated)))) ||
+                         ((flow.SourceWarehouseNo == warehouseNo.Value ||
+                           flow.TargetWarehouseNo == warehouseNo.Value) &&
+                          (flow.DocumentType == DocumentFlowType.IssuedCompanyOrder ||
+                           flow.DocumentType == DocumentFlowType.ReceivedCompanyOrder ||
+                           flow.DocumentType == DocumentFlowType.IssuedWarehouseOrder ||
+                           flow.DocumentType == DocumentFlowType.ReceivedWarehouseOrder) &&
+                          flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+                          flow.Status == DocumentFlowStatus.Succeeded) ||
                          flow.Status == DocumentFlowStatus.Failed))
                     : query.Where(flow =>
                         flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
@@ -422,7 +430,13 @@ public sealed class DocumentFlowService(
                           flow.ExternalUuid == null &&
                           (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
                            flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
-                           flow.CurrentStep == DocumentFlowStep.DocumentUpdated)) ||
+                            flow.CurrentStep == DocumentFlowStep.DocumentUpdated)) ||
+                         ((flow.DocumentType == DocumentFlowType.IssuedCompanyOrder ||
+                           flow.DocumentType == DocumentFlowType.ReceivedCompanyOrder ||
+                           flow.DocumentType == DocumentFlowType.IssuedWarehouseOrder ||
+                           flow.DocumentType == DocumentFlowType.ReceivedWarehouseOrder) &&
+                          flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+                          flow.Status == DocumentFlowStatus.Succeeded) ||
                          flow.Status == DocumentFlowStatus.Failed)),
 
             _ => query
@@ -597,13 +611,21 @@ public sealed class DocumentFlowService(
             var warehouse = warehouseNo.Value;
             return (row.TargetWarehouseNo == warehouse && IsPendingReceiving(row))
                 || (row.SourceWarehouseNo == warehouse && IsPendingOrFailedEDespatch(row))
+                || ((row.SourceWarehouseNo == warehouse || row.TargetWarehouseNo == warehouse) &&
+                    IsOpenOrder(row))
                 || row.Status == DocumentFlowStatus.Failed;
         }
 
         return IsPendingReceiving(row)
             || IsPendingOrFailedEDespatch(row)
+            || IsOpenOrder(row)
             || row.Status == DocumentFlowStatus.Failed;
     }
+
+    private static bool IsOpenOrder(SummaryRow row) =>
+        IsOrder(row.DocumentType) &&
+        row.CurrentStep == DocumentFlowStep.OrderCreated &&
+        row.Status == DocumentFlowStatus.Succeeded;
 
     private async Task RecordCoreAsync(
         RecordDocumentFlowRequest request,
