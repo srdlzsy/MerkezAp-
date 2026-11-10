@@ -175,11 +175,11 @@ public sealed class CashSummaryLookupsUseCaseTests
             CancellationToken.None);
 
         Assert.Equal(
-            new[] { "Akbank:T001:108.01.001", "Halkbank:T002:108.01.002", "Isbank:T003:108.01.003" },
+            new[] { "Akbank:T001:108.01.001", "Isbank:T003:108.01.003" },
             result.Select(item => $"{item.PaymentName}:{item.TerminalId}:{item.AccountCode}").ToArray());
 
         Assert.Equal(
-            new[] { "1|108.01.001|T001", "2|108.01.002|T002", "3|108.01.003|T003" },
+            new[] { "1|108.01.001|T001", "3|108.01.003|T003" },
             result.Select(item => item.PaymentTypeKey).ToArray());
     }
 

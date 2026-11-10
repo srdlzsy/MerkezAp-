@@ -221,7 +221,8 @@ public sealed class CashSummaryLookupsUseCase(
             StringComparer.OrdinalIgnoreCase);
 
         var paymentTypes = terminals
-            .Where(item => item.PaymentTypeNo.HasValue || !string.IsNullOrWhiteSpace(item.Bank))
+            .Where(item => (item.PaymentTypeNo.HasValue || !string.IsNullOrWhiteSpace(item.Bank)) &&
+                           !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.Bank))
             .SelectMany(
                 cashRegister => cashRegister.PaymentTypeNo.HasValue
                     ? paymentTypeRows.Where(item => item.PaymentTypeNo == cashRegister.PaymentTypeNo.Value)
@@ -234,6 +235,7 @@ public sealed class CashSummaryLookupsUseCase(
                     paymentType.AccountCode,
                     cashRegister.TerminalId
                 })
+            .Where(item => !CashSummaryCategoryMatcher.IsHalkbankPaymentType(item.PaymentName))
             .OrderBy(item => item.PaymentName)
             .ThenBy(item => item.TerminalId)
             .ToArray();
@@ -366,7 +368,7 @@ public sealed class CashSummaryLookupsUseCase(
     {
         var paymentTypes = await furpaDbContext.PaymentTypes
             .AsNoTracking()
-            .Where(item => item.PaymentGenus == paymentGenus)
+            .Where(item => item.PaymentGenus == paymentGenus && item.PaymentTypeNo != 51 && item.PaymentTypeNo != 53)
             .OrderBy(item => item.PaymentName)
             .Select(item => new
             {

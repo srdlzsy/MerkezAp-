@@ -190,6 +190,9 @@ internal static class CashSummaryCategoryMatcher
     public static bool IsCashPaymentType(string? value) =>
         IsCash(Normalize(value));
 
+    public static bool IsHalkbankPaymentType(string? value) =>
+        Contains(Normalize(value), "halk");
+
     private static bool IsCash(string normalized) =>
         Contains(normalized, "cash") || Contains(normalized, "nakit");
 
