@@ -58,6 +58,7 @@ public sealed class EDespatchService(
     private const int DocumentNumberAvailabilityAttemptCount = 100;
     private const int PostSubmissionCompletionTimeoutSeconds = 120;
     private const int LocalMetadataUpdateAttemptCount = 2;
+    private const int MissingTrackedDocumentReviewAttemptCount = 12;
     private const string StockMovementUpdatePath = "/Api/apiMethods/DahiliStokHareketDuzeltV2";
     private const string InterWarehouseCreateOperationCode = "sevk-islemleri.giden-depolar-arasi-sevkler.create";
     private const string WarehouseReturnCreateOperationCode = "iade-islemleri.giden-depo-iadeleri.create";
@@ -384,6 +385,13 @@ public sealed class EDespatchService(
         Exception exception,
         DateTime now)
     {
+        if (submission.AttemptCount >= MissingTrackedDocumentReviewAttemptCount - 1 &&
+            IsTrackedDocumentNotFound(exception))
+        {
+            submission.RequireReview(exception.Message);
+            return;
+        }
+
         if (exception is EDespatchMetadataConflictException &&
             submission.Status is EDespatchSubmissionStatus.Unknown or EDespatchSubmissionStatus.PendingMetadata)
         {
@@ -393,6 +401,10 @@ public sealed class EDespatchService(
 
         submission.ScheduleRetry(exception.Message, now);
     }
+
+    internal static bool IsTrackedDocumentNotFound(Exception exception) =>
+        exception is InvalidOperationException &&
+        exception.Message.Contains("ilgili irsaliye bulunamad", StringComparison.OrdinalIgnoreCase);
 
     private async Task<bool> UpdateLocalMetadataAsync(
         EDespatchMetadataUpdateWorkItem workItem,

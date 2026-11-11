@@ -149,36 +149,45 @@ public sealed class MalKabulRaporlariUseCase(MikroDbContext mikroDbContext) : IM
         var take = NormalizeTake(request.Take);
 
         const string sql = """
+            WITH CustomerTotals AS
+            (
+                SELECT
+                    sth.sth_cari_kodu AS CustomerCode,
+                    COUNT(DISTINCT sth.sth_evrakno_seri + '-' + CONVERT(varchar(20), sth.sth_evrakno_sira)) AS DocumentCount,
+                    SUM(COALESCE(sth.sth_tutar, 0)) AS TotalAmount,
+                    SUM(COALESCE(sth.sth_vergi, 0)) AS TotalTaxAmount,
+                    SUM(COALESCE(sth.sth_iskonto1, 0) + COALESCE(sth.sth_iskonto2, 0) + COALESCE(sth.sth_iskonto3, 0)
+                      + COALESCE(sth.sth_iskonto4, 0) + COALESCE(sth.sth_iskonto5, 0) + COALESCE(sth.sth_iskonto6, 0)) AS TotalDiscountAmount,
+                    SUM((COALESCE(sth.sth_tutar, 0) + COALESCE(sth.sth_vergi, 0))
+                      - (COALESCE(sth.sth_iskonto1, 0) + COALESCE(sth.sth_iskonto2, 0) + COALESCE(sth.sth_iskonto3, 0)
+                       + COALESCE(sth.sth_iskonto4, 0) + COALESCE(sth.sth_iskonto5, 0) + COALESCE(sth.sth_iskonto6, 0))) AS NetAmount
+                FROM dbo.STOK_HAREKETLERI AS sth WITH (NOLOCK)
+                WHERE sth.sth_tip = 0
+                  AND sth.sth_evraktip = 13
+                  AND sth.sth_normal_iade = 0
+                  AND (sth.sth_iptal = 0 OR sth.sth_iptal IS NULL)
+                  AND sth.sth_giris_depo_no > 100
+                  AND sth.sth_tarih >= @startDate
+                  AND sth.sth_tarih < @endDateExclusive
+                  AND (@warehouseNo IS NULL OR sth.sth_giris_depo_no = @warehouseNo)
+                GROUP BY sth.sth_cari_kodu
+            )
             SELECT TOP (@take)
-                sth.sth_cari_kodu AS CustomerCode,
+                totals.CustomerCode,
                 COALESCE(c.cari_unvan1, '') AS CustomerName,
                 COALESCE(c.cari_unvan2, '') AS CustomerTitle,
-                COUNT(DISTINCT sth.sth_evrakno_seri + '-' + CONVERT(varchar(20), sth.sth_evrakno_sira)) AS DocumentCount,
-                SUM(COALESCE(sth.sth_tutar, 0)) AS TotalAmount,
-                SUM(COALESCE(sth.sth_vergi, 0)) AS TotalTaxAmount,
-                SUM(COALESCE(sth.sth_iskonto1, 0) + COALESCE(sth.sth_iskonto2, 0) + COALESCE(sth.sth_iskonto3, 0)
-                  + COALESCE(sth.sth_iskonto4, 0) + COALESCE(sth.sth_iskonto5, 0) + COALESCE(sth.sth_iskonto6, 0)) AS TotalDiscountAmount,
-                SUM((COALESCE(sth.sth_tutar, 0) + COALESCE(sth.sth_vergi, 0))
-                  - (COALESCE(sth.sth_iskonto1, 0) + COALESCE(sth.sth_iskonto2, 0) + COALESCE(sth.sth_iskonto3, 0)
-                   + COALESCE(sth.sth_iskonto4, 0) + COALESCE(sth.sth_iskonto5, 0) + COALESCE(sth.sth_iskonto6, 0))) AS NetAmount
-            FROM dbo.STOK_HAREKETLERI AS sth WITH (NOLOCK)
+                totals.DocumentCount,
+                totals.TotalAmount,
+                totals.TotalTaxAmount,
+                totals.TotalDiscountAmount,
+                totals.NetAmount
+            FROM CustomerTotals AS totals
             INNER JOIN dbo.CARI_HESAPLAR AS c WITH (NOLOCK)
-                ON sth.sth_cari_kodu = c.cari_kod
-            WHERE sth.sth_tip = 0
-              AND sth.sth_evraktip = 13
-              AND sth.sth_normal_iade = 0
-              AND COALESCE(sth.sth_iptal, 0) = 0
-              AND sth.sth_giris_depo_no > 100
-              AND sth.sth_create_date >= @startDate
-              AND sth.sth_create_date < @endDateExclusive
-              AND (@warehouseNo IS NULL OR sth.sth_giris_depo_no = @warehouseNo)
-            GROUP BY
-                sth.sth_cari_kodu,
-                c.cari_unvan1,
-                c.cari_unvan2
+                ON totals.CustomerCode = c.cari_kod
             ORDER BY
-                NetAmount DESC,
-                CustomerName;
+                totals.NetAmount DESC,
+                CustomerName
+            OPTION (RECOMPILE);
             """;
 
         return await ExecuteReaderAsync(
@@ -219,6 +228,7 @@ public sealed class MalKabulRaporlariUseCase(MikroDbContext mikroDbContext) : IM
         {
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
+            command.CommandTimeout = 120;
             configureParameters(command);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);

@@ -3563,7 +3563,7 @@ public sealed class KasaHareketAktarimiService(
             BranchNo = state.BranchNo,
             CreateDate = DateTime.Now,
             UserCode = SafeSubstring(cashAndUser, 4).Trim(),
-            ZNo = SafeSubstring(receiptAndZNo, 6).Trim(),
+            ZNo = ParseZNo(SafeSubstring(receiptAndZNo, 6)),
             ReceiptNo = ParseInt(SafeSubstring(receiptAndZNo, 0, Math.Min(6, receiptAndZNo.Length))),
             CashRegisterNo = ParseInt(SafeSubstring(cashAndUser, 0, Math.Min(3, cashAndUser.Length))),
             DocumentKind = MapDocumentKind(code)
@@ -5067,6 +5067,37 @@ public sealed class KasaHareketAktarimiService(
             ? parsed
             : 0;
 
+    internal static int ParseZNo(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0;
+        }
+
+        var trimmed = value.Trim();
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return Math.Max(0, parsed);
+        }
+
+        var digits = new StringBuilder();
+        foreach (var ch in trimmed)
+        {
+            if (char.IsDigit(ch))
+            {
+                digits.Append(ch);
+            }
+            else if (digits.Length > 0)
+            {
+                break;
+            }
+        }
+
+        return digits.Length > 0 && int.TryParse(digits.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var result)
+            ? Math.Max(0, result)
+            : 0;
+    }
+
     private static decimal Round(decimal value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
@@ -5607,7 +5638,7 @@ public sealed class KasaHareketAktarimiService(
 
         public byte DocumentKind { get; init; }
 
-        public string ZNo { get; init; } = string.Empty;
+        public int ZNo { get; init; }
 
         public int ReceiptNo { get; init; }
 

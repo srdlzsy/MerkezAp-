@@ -32,9 +32,11 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
         }
     }
 
-    private static LogLevel ResolveLogLevel(int statusCode) =>
+    internal static LogLevel ResolveLogLevel(int statusCode) =>
         statusCode >= 500
             ? LogLevel.Error
+            : statusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status404NotFound
+                ? LogLevel.Information
             : statusCode >= 400
                 ? LogLevel.Warning
                 : LogLevel.Information;

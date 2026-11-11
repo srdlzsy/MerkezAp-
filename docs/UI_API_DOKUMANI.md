@@ -7571,7 +7571,7 @@ Yetki:
 
 Not:
 
-- tarih filtresi Mikro tarafinda `STOK_HAREKETLERI.sth_create_date` uzerinden yapilir
+- tarih filtresi Mikro tarafinda belge/hareket tarihi olan `STOK_HAREKETLERI.sth_tarih` uzerinden yapilir; bu alan canli `IX_FR_STH_FirmaMalKabul_Liste` indeksiyle desteklenir
 - eski mantiktaki `DocumentType = 13`, `MovementType = 0`, `IsReturn = 0`, `InputWarehouseNo = WarehouseNo` filtresinin karsiligidir
 - Mikro kolon karsiliklari: `sth_evraktip = 13`, `sth_tip = 0`, `sth_normal_iade = 0`, `sth_giris_depo_no = WarehouseNo`
 - response modeli giden firma sevkleriyle aynidir

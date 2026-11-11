@@ -119,6 +119,24 @@ public sealed class HomeWarehousePrioritiesServiceTests
             occurredAtUtc: now);
         authDbContext.DocumentFlows.Add(openOrderFlow);
 
+        var orderBeforeOperationalStart = new DocumentFlow(
+            Guid.NewGuid(),
+            "IssuedWarehouseOrder:53:D53:2",
+            DocumentFlowType.IssuedWarehouseOrder,
+            sourceWarehouseNo: 53,
+            targetWarehouseNo: 104,
+            documentSerie: "D53",
+            documentOrderNo: 2,
+            createdAtUtc: withinThirtyDayLookback);
+        orderBeforeOperationalStart.Record(
+            DocumentFlowStep.OrderCreated,
+            DocumentFlowStatus.Succeeded,
+            "Siparis olusturuldu.",
+            error: null,
+            changedByUserId: null,
+            occurredAtUtc: withinThirtyDayLookback);
+        authDbContext.DocumentFlows.Add(orderBeforeOperationalStart);
+
         await authDbContext.SaveChangesAsync();
 
         var service = new HomeWarehousePrioritiesService(
@@ -137,16 +155,16 @@ public sealed class HomeWarehousePrioritiesServiceTests
         Assert.Equal(2, result.Metrics.Single(metric => metric.Code == "openStockAnomaly").Value);
         Assert.Equal(1, result.Priorities.Single(priority => priority.Code == "criticalStockAnomaly").Count);
         Assert.Equal(1, result.Priorities.Single(priority => priority.Code == "highStockAnomaly").Count);
-        Assert.Equal(2, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
         Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "unacceptedOutgoing").Value);
         Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "failedEDespatch").Value);
         Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "openOrder").Value);
 
         var pendingReceivingPriority = result.Priorities.Single(priority => priority.Code == "pendingReceiving");
-        Assert.Equal(2, pendingReceivingPriority.Count);
+        Assert.Equal(1, pendingReceivingPriority.Count);
         Assert.Contains("preset=pending-receiving", pendingReceivingPriority.Route, StringComparison.Ordinal);
         Assert.Contains("direction=Incoming", pendingReceivingPriority.Route, StringComparison.Ordinal);
-        Assert.Contains("startDate=2026-10-11", pendingReceivingPriority.Route, StringComparison.Ordinal);
+        Assert.Contains("startDate=2026-11-01", pendingReceivingPriority.Route, StringComparison.Ordinal);
         Assert.Contains("endDate=2026-11-10", pendingReceivingPriority.Route, StringComparison.Ordinal);
 
         var openOrderPriority = result.Priorities.Single(priority => priority.Code == "openOrder");

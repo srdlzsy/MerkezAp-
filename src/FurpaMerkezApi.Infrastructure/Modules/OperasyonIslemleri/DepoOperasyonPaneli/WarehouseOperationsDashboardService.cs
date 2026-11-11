@@ -16,8 +16,7 @@ public sealed class WarehouseOperationsDashboardService(
     IOptionsMonitor<DocumentFlowTrackingOptions> trackingOptions)
     : IWarehouseOperationsDashboardService
 {
-    private const int OperationalLookbackDays = 30;
-    private static readonly DateOnly MinimumOperationalStartDate = new(2026, 10, 1);
+    private static readonly DateOnly MinimumOperationalStartDate = new(2026, 11, 1);
 
     public async Task<WarehouseOperationsDashboardDto> GetAsync(
         DateOnly date,
@@ -263,15 +262,12 @@ public sealed class WarehouseOperationsDashboardService(
 
     private static DateOnly ResolveLookbackStartDate(DateOnly date)
     {
-        var lookbackStart = date.AddDays(-OperationalLookbackDays);
         if (date < MinimumOperationalStartDate)
         {
-            return lookbackStart;
+            return date;
         }
 
-        return lookbackStart > MinimumOperationalStartDate
-            ? lookbackStart
-            : MinimumOperationalStartDate;
+        return MinimumOperationalStartDate;
     }
 
     private static bool IsShipment(DocumentFlowType documentType) =>

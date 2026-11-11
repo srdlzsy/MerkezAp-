@@ -362,6 +362,11 @@ public sealed class DocumentFlowService(
                     flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
                     flow.Status == DocumentFlowStatus.Failed),
 
+            DocumentFlowPreset.OtherFailedOperations =>
+                query.Where(flow =>
+                    flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
+                    flow.Status == DocumentFlowStatus.Failed),
+
             DocumentFlowPreset.TodayShipments =>
                 query.Where(flow =>
                     (flow.DocumentType == DocumentFlowType.CompanyShipment ||

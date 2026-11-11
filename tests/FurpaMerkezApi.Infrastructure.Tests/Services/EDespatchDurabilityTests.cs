@@ -251,6 +251,42 @@ public sealed class EDespatchDurabilityTests
     }
 
     [Fact]
+    public void RepeatedTrackedDocumentNotFound_RequiresReviewInsteadOfRetryingForever()
+    {
+        var submission = Submission();
+        var now = DateTime.UtcNow;
+        for (var attempt = 0; attempt < 11; attempt++)
+        {
+            submission.ScheduleRetry("Uyumsoft gecici olarak kullanilamiyor.", now);
+        }
+
+        var exception = new InvalidOperationException(
+            "Verilen musteriye ait ilgili irsaliye bulunamadi, Irsaliye Id: test-id");
+        EDespatchService.ApplyMetadataProcessingFailure(submission, exception, now);
+
+        Assert.Equal(EDespatchSubmissionStatus.NeedsReview, submission.Status);
+        Assert.Equal(11, submission.AttemptCount);
+        Assert.Equal(exception.Message, submission.LastError);
+    }
+
+    [Fact]
+    public void FirstTrackedDocumentNotFound_RemainsRetryable()
+    {
+        var submission = Submission();
+        var now = DateTime.UtcNow;
+
+        EDespatchService.ApplyMetadataProcessingFailure(
+            submission,
+            new InvalidOperationException(
+                "Verilen musteriye ait ilgili irsaliye bulunamadi, Irsaliye Id: test-id"),
+            now);
+
+        Assert.Equal(EDespatchSubmissionStatus.Unknown, submission.Status);
+        Assert.Equal(1, submission.AttemptCount);
+        Assert.True(submission.NextAttemptAtUtc > now);
+    }
+
+    [Fact]
     public async Task PdfLookup_UsesLegacySuccessWhenMikroIsUnmarked()
     {
         await using var db = new AuthDbContext(Options());

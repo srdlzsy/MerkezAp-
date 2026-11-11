@@ -138,6 +138,7 @@ public sealed class BelgeAkisTakibiController(IDocumentFlowService documentFlowS
             "failed-edespatch" or "hatali-eirsaliye" => DocumentFlowPreset.FailedEDespatch,
             "open-orders" or "acik-siparis" => DocumentFlowPreset.OpenOrders,
             "failed-only" or "hatali" => DocumentFlowPreset.FailedOnly,
+            "other-failed" or "diger-hata" => DocumentFlowPreset.OtherFailedOperations,
             "today-shipments" or "bugun-sevk" => DocumentFlowPreset.TodayShipments,
             "today-returns" or "bugun-iade" => DocumentFlowPreset.TodayReturns,
             "today-receivings" or "bugun-kabul" => DocumentFlowPreset.TodayReceivings,

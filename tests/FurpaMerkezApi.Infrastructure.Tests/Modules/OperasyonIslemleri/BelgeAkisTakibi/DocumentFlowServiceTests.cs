@@ -423,6 +423,58 @@ public sealed class DocumentFlowServiceTests
                     item.DocumentOrderNo == 4);
     }
 
+    [Fact]
+    public async Task ListAsync_OtherFailedOperations_ExcludesEDespatchFailures()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc));
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                "CompanyReceiving:104:FK104:1",
+                DocumentFlowType.CompanyReceiving,
+                104,
+                null,
+                "FK104",
+                1,
+                DocumentFlowStep.DocumentCreated,
+                DocumentFlowStatus.Failed,
+                "Mal kabul yazilamadi."),
+            CancellationToken.None);
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                "CompanyShipment:104:F104:2",
+                DocumentFlowType.CompanyShipment,
+                104,
+                null,
+                "F104",
+                2,
+                DocumentFlowStep.EDespatchSubmission,
+                DocumentFlowStatus.Failed,
+                "E-irsaliye gonderilemedi."),
+            CancellationToken.None);
+
+        var result = await service.ListAsync(
+            new DocumentFlowListRequest(
+                WarehouseNo: 104,
+                StartDate: new DateTime(2026, 11, 1),
+                EndDate: new DateTime(2026, 11, 10),
+                DocumentType: null,
+                Status: null,
+                Search: null,
+                Preset: DocumentFlowPreset.OtherFailedOperations),
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(nameof(DocumentFlowType.CompanyReceiving), item.DocumentType);
+        Assert.Equal(1, item.DocumentOrderNo);
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()

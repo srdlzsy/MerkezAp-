@@ -16,8 +16,7 @@ public sealed class HomeWarehousePrioritiesService(
     private const string Warning = "warning";
     private const string Info = "info";
     private const string Healthy = "healthy";
-    private const int OperationalLookbackDays = 30;
-    private static readonly DateOnly MinimumOperationalStartDate = new(2026, 10, 1);
+    private static readonly DateOnly MinimumOperationalStartDate = new(2026, 11, 1);
 
     public async Task<HomeWarehousePrioritiesDto> GetAsync(
         HomeWarehousePrioritiesRequest request,
@@ -568,15 +567,12 @@ public sealed class HomeWarehousePrioritiesService(
 
     private static DateOnly ResolveLookbackStartDate(DateOnly date)
     {
-        var lookbackStart = date.AddDays(-OperationalLookbackDays);
         if (date < MinimumOperationalStartDate)
         {
-            return lookbackStart;
+            return date;
         }
 
-        return lookbackStart > MinimumOperationalStartDate
-            ? lookbackStart
-            : MinimumOperationalStartDate;
+        return MinimumOperationalStartDate;
     }
 
     private static bool IsShipment(DocumentFlowType documentType) =>

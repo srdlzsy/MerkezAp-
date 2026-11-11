@@ -88,11 +88,29 @@ public sealed class WarehouseOperationsDashboardServiceTests
             changedByUserId: null,
             occurredAtUtc: todayUtc);
 
+        var orderBeforeOperationalStart = new DocumentFlow(
+            Guid.NewGuid(),
+            "IssuedWarehouseOrder:104:D104:5",
+            DocumentFlowType.IssuedWarehouseOrder,
+            sourceWarehouseNo: 104,
+            targetWarehouseNo: 50,
+            documentSerie: "D104",
+            documentOrderNo: 5,
+            createdAtUtc: new DateTime(2026, 10, 20, 9, 0, 0, DateTimeKind.Utc));
+        orderBeforeOperationalStart.Record(
+            DocumentFlowStep.OrderCreated,
+            DocumentFlowStatus.Succeeded,
+            "Siparis olusturuldu.",
+            error: null,
+            changedByUserId: null,
+            occurredAtUtc: new DateTime(2026, 10, 20, 9, 0, 0, DateTimeKind.Utc));
+
         authDbContext.DocumentFlows.AddRange(
             pendingShipmentFrom50To104,
             deletedShipmentFrom50To104,
             unsubmittedReturnFrom104To50,
-            openOrderFrom104To50);
+            openOrderFrom104To50,
+            orderBeforeOperationalStart);
         await authDbContext.SaveChangesAsync();
 
         var service = new WarehouseOperationsDashboardService(
@@ -103,7 +121,7 @@ public sealed class WarehouseOperationsDashboardServiceTests
 
         var result = await service.GetAsync(new DateOnly(2026, 11, 10), CancellationToken.None);
 
-        Assert.Equal(new DateOnly(2026, 10, 11), result.LookbackStartDate);
+        Assert.Equal(new DateOnly(2026, 11, 1), result.LookbackStartDate);
 
         var warehouse50 = Assert.Single(result.Warehouses, item => item.WarehouseNo == 50);
         Assert.Equal(0, warehouse50.TodayShipmentCount);

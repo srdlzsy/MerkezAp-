@@ -17,17 +17,23 @@ internal sealed class AxataOrderDocumentFlowRecorder(IDocumentFlowService docume
         var documentType = normalizedMovementType == "G02"
             ? DocumentFlowType.ReceivedWarehouseOrder
             : DocumentFlowType.IssuedWarehouseOrder;
+        var flowWarehouseNo = documentType == DocumentFlowType.IssuedWarehouseOrder
+            ? header.InWarehouseNo
+            : header.OutWarehouseNo;
+        var targetWarehouseNo = documentType == DocumentFlowType.IssuedWarehouseOrder
+            ? header.OutWarehouseNo
+            : header.InWarehouseNo;
 
         return documentFlowService.RecordAsync(
             new RecordDocumentFlowRequest(
                 DocumentFlowKeys.Create(
                     documentType,
-                    header.OutWarehouseNo,
+                    flowWarehouseNo,
                     header.DocumentSerie,
                     header.DocumentOrderNo),
                 documentType,
-                header.OutWarehouseNo,
-                header.InWarehouseNo,
+                flowWarehouseNo,
+                targetWarehouseNo,
                 header.DocumentSerie,
                 header.DocumentOrderNo,
                 DocumentFlowStep.AxataOrderSent,

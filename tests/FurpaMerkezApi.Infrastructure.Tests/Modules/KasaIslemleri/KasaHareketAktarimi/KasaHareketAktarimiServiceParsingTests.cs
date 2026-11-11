@@ -407,6 +407,23 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         return Assert.IsType<int>(method!.Invoke(null, new object[] { taxCode, receiptDate }));
     }
 
+    [Theory]
+    [InlineData("3958", 3958)]
+    [InlineData("0003958", 3958)]
+    [InlineData("1.0 1", 1)]
+    [InlineData("1.0", 1)]
+    [InlineData(" 123 ", 123)]
+    [InlineData("0", 0)]
+    [InlineData("", 0)]
+    [InlineData("   ", 0)]
+    [InlineData("abc", 0)]
+    [InlineData(null, 0)]
+    public void ParseZNo_SanitizesMalformedOrPrefixedZNumbers(string? value, int expected)
+    {
+        var result = KasaHareketAktarimiService.ParseZNo(value);
+        Assert.Equal(expected, result);
+    }
+
     private static decimal InvokeDecimal(string methodName, string value)
     {
         var method = typeof(KasaHareketAktarimiService).GetMethod(

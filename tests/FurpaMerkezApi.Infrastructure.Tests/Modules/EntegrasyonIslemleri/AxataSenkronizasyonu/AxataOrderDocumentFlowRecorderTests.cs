@@ -1,7 +1,13 @@
+using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
@@ -9,13 +15,15 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.Axata
 public sealed class AxataOrderDocumentFlowRecorderTests
 {
     [Theory]
-    [InlineData("C01", DocumentFlowType.IssuedWarehouseOrder, 50, 131)]
-    [InlineData("G02", DocumentFlowType.ReceivedWarehouseOrder, 131, 50)]
-    public async Task RecordWarehouseOrderSentAsync_UsesPhysicalDirectionAndExpectedType(
+    [InlineData("C01", DocumentFlowType.IssuedWarehouseOrder, 50, 131, 131, 50)]
+    [InlineData("G02", DocumentFlowType.ReceivedWarehouseOrder, 131, 50, 131, 50)]
+    public async Task RecordWarehouseOrderSentAsync_UsesStableOwnershipAndExpectedType(
         string movementType,
         DocumentFlowType expectedType,
         int outWarehouseNo,
-        int inWarehouseNo)
+        int inWarehouseNo,
+        int expectedSourceWarehouseNo,
+        int expectedTargetWarehouseNo)
     {
         var service = new RecordingDocumentFlowService();
         var recorder = new AxataOrderDocumentFlowRecorder(service);
@@ -29,13 +37,60 @@ public sealed class AxataOrderDocumentFlowRecorderTests
 
         var request = Assert.Single(service.Requests);
         Assert.Equal(expectedType, request.DocumentType);
-        Assert.Equal(outWarehouseNo, request.SourceWarehouseNo);
-        Assert.Equal(inWarehouseNo, request.TargetWarehouseNo);
+        Assert.Equal(expectedSourceWarehouseNo, request.SourceWarehouseNo);
+        Assert.Equal(expectedTargetWarehouseNo, request.TargetWarehouseNo);
         Assert.Equal(DocumentFlowStep.AxataOrderSent, request.Step);
         Assert.Equal(DocumentFlowStatus.Succeeded, request.Status);
         Assert.Equal(
-            DocumentFlowKeys.Create(expectedType, outWarehouseNo, "F131", 5506),
+            DocumentFlowKeys.Create(expectedType, expectedSourceWarehouseNo, "F131", 5506),
             request.FlowKey);
+    }
+
+    [Fact]
+    public async Task RecordWarehouseOrderSentAsync_C01_AdvancesExistingCreatedOrderFlow()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 11, 11, 7, 0, 0, DateTimeKind.Utc));
+        var service = new DocumentFlowService(
+            dbContext,
+            clock,
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<DocumentFlowService>.Instance);
+        var detail = CreateWarehouseOrder(50, 131);
+        var flowKey = DocumentFlowKeys.Create(
+            DocumentFlowType.IssuedWarehouseOrder,
+            131,
+            "F131",
+            5506);
+
+        await service.RecordAsync(
+            new RecordDocumentFlowRequest(
+                flowKey,
+                DocumentFlowType.IssuedWarehouseOrder,
+                131,
+                50,
+                "F131",
+                5506,
+                DocumentFlowStep.OrderCreated,
+                DocumentFlowStatus.Succeeded,
+                "Verilen depo siparisi olusturuldu."),
+            CancellationToken.None);
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await new AxataOrderDocumentFlowRecorder(service).RecordWarehouseOrderSentAsync(
+            detail,
+            "C01",
+            Guid.Empty,
+            CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var flow = await dbContext.DocumentFlows
+            .Include(item => item.Events)
+            .SingleAsync();
+
+        Assert.Equal(flowKey, flow.FlowKey);
+        Assert.Equal(DocumentFlowStep.AxataOrderSent, flow.CurrentStep);
+        Assert.Equal(2, flow.Events.Count);
     }
 
     [Theory]
@@ -145,5 +200,25 @@ public sealed class AxataOrderDocumentFlowRecorderTests
             int? allowedWarehouseNo,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    private static AuthDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<AuthDbContext>()
+            .UseInMemoryDatabase($"axata-order-flow-{Guid.NewGuid():N}")
+            .Options;
+        return new AuthDbContext(options);
+    }
+
+    private sealed class MutableClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 }

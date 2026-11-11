@@ -57,7 +57,8 @@ public enum DocumentFlowPreset
     FailedOnly = 7,
     TodayShipments = 8,
     TodayReturns = 9,
-    TodayReceivings = 10
+    TodayReceivings = 10,
+    OtherFailedOperations = 11
 }
 
 public sealed record DocumentFlowListRequest(
