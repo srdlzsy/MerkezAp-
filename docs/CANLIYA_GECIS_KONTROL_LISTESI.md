@@ -89,7 +89,7 @@ Yerel production dosyasinin gercek sunucu ayarlariyla ayni oldugu varsayilmamali
 - Create conflict karari ile e-irsaliye `status=NeedsReview` ayni state degildir. Ilki create/recovery 409 sozlesmesi, ikincisi gonderilmis e-belgenin isaretleme/icerik incelemesidir.
 - Manuel incelemeyi kaldiran yeni yonetim endpointi bu surumde yoktur. UI boyle bir route varsaymamali.
 
-Degisen akislar icin dokuman yeterli entegrasyon bilgisini icerir. Tum kayitli API sozlesmesi 2026-10-16'da test hostunda ApiExplorer/Swagger ile uretilen 750 method/route ve 686 JSON model uzerinden dogrulandi; tam makine referansi `API_SOZLESME_REFERANSI.md` ve `API_SOZLESMESI.json` dosyalarindadir. Bu kontrol canli endpointlere business istek atmaz; canli smoke/onay ayri kalir. Bilinen rol fallback siniri, legacy guvenlik siniri ve Mikro Desktop harici gecis adimlari dokumana acikca eklendi.
+Degisen akislar icin dokuman yeterli entegrasyon bilgisini icerir. Tum kayitli API sozlesmesi 2026-11-11'de test hostunda ApiExplorer/Swagger ile uretilen 810 method/route ve 770 JSON model uzerinden dogrulandi; tam makine referansi `API_SOZLESME_REFERANSI.md` ve `API_SOZLESMESI.json` dosyalarindadir. Bu kontrol canli endpointlere business istek atmaz; canli smoke/onay ayri kalir. Bilinen rol fallback siniri, legacy guvenlik siniri ve Mikro Desktop harici gecis adimlari dokumana acikca eklendi.
 
 ## Testler ve smoke matrisi
 

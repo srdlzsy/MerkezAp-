@@ -3229,7 +3229,7 @@ Authorization: Bearer {{token}}
 ###
 
 # BelgeAkisTakibi
-GET {{baseUrl}}/api/operasyon-islemleri/belge-akis-takibi?WarehouseNo=1&StartDate=2026-07-08&EndDate=2026-07-08&DocumentType=1&Status=pending&Search=sample&Take=1
+GET {{baseUrl}}/api/operasyon-islemleri/belge-akis-takibi?WarehouseNo=1&StartDate=2026-11-01&EndDate=2026-11-11&Preset=other-failed&Direction=Outgoing&Take=100
 Accept: application/json
 Authorization: Bearer {{token}}
 

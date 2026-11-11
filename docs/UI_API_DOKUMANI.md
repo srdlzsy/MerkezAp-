@@ -2,7 +2,7 @@
 
 Bu dokuman, mevcut backend durumuna gore frontend/UI tasarimi ve entegrasyonu icin hazirlanmistir.
 
-Son hedefli kontrol: 2026-10-23. Kayitli 767 method/route ve 702 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
+Son hedefli kontrol: 2026-11-11. Kayitli 810 method/route ve 770 JSON modeli koddan uretilen sozlesmeyle; auth, CORS, dogrudan IIS barindirma, Mikro create/readback, firma e-irsaliye, guvenli retry, terminal sozlesme kopyalari, worker heartbeat/backlog ve veritabani izleme anlatimlari kaynak kod ve Production ayarlariyla karsilastirildi.
 Tum kayitli endpointlerin route, method, request/response ve yetki metadata referansi: [API Sozlesme Referansi](API_SOZLESME_REFERANSI.md). Makine formati: [OpenAPI Sozlesmesi](API_SOZLESMESI.json). Bu referans test ile koddan uretilir; anlatimdaki orneklerin yerine tam alan/alias listesi icin kullanilir.
 Kasa, POS/PAV, banka katalogu ve icmal ekraninin veri kaynaklari icin: [Kasa, POS, Banka ve Icmal Veri Akisi](KASA_POS_BANKA_ICMAL_VERI_AKISI.md).
 Bu kontrol tum endpointlerin uctan uca canli onayi degildir. Yayin oncesi migration, acik riskler ve smoke testleri icin [Canliya Gecis Kontrol Listesi](CANLIYA_GECIS_KONTROL_LISTESI.md) kullanilmalidir.
@@ -358,6 +358,7 @@ Kapsam:
 - `home.depo-oncelikleri.all-warehouses` yetkisi olan kullanici `warehouseNo` gondererek depo secebilir.
 - Bu yetkiye sahip kullanici `warehouseNo` gondermezse tum depolar ozetlenir ve `warehouseNo: null` doner.
 - Endpoint sadece mevcut izleme tablolarindan okur; pahali tarama/senkronizasyon tetiklemez.
+- Gunluk sayaclar secilen gunu, bekleyen/acik operasyon sayaclari ise `01.11.2026` ile secilen gun arasini kapsar. Secilen tarih bu tarihten eskiyse yalniz secilen gun kullanilir.
 
 Endpoint ozeti:
 
@@ -374,14 +375,14 @@ warehouseNo  opsiyonel; sadece `home.depo-oncelikleri.all-warehouses` yetkisi ol
 
 Ornek:
 
-`GET /api/home/depo-oncelikleri?date=2026-07-24&warehouseNo=110`
+`GET /api/home/depo-oncelikleri?date=2026-11-11&warehouseNo=110`
 
 Response:
 
 ```json
 {
-  "date": "2026-07-24",
-  "generatedAtUtc": "2026-07-24T09:10:00Z",
+  "date": "2026-11-11",
+  "generatedAtUtc": "2026-11-11T09:10:00Z",
   "warehouseNo": 110,
   "warehouseName": "KESTEL 1",
   "overallStatus": "critical",
@@ -392,14 +393,14 @@ Response:
       "label": "E-Irsaliye Hatasi",
       "value": 2,
       "severity": "critical",
-      "route": "/operasyon-islemleri/belge-akis-takibi?status=Failed&warehouseNo=110"
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110&preset=failed-edespatch&direction=Outgoing&startDate=2026-11-01&endDate=2026-11-11"
     },
     {
       "code": "pendingReceiving",
       "label": "Bekleyen Kabul",
       "value": 7,
       "severity": "warning",
-      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110"
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110&preset=pending-receiving&direction=Incoming&startDate=2026-11-01&endDate=2026-11-11"
     },
     {
       "code": "openStockAnomaly",
@@ -423,7 +424,7 @@ Response:
       "title": "E-irsaliye gonderimi basarisiz",
       "description": "2 belge tekrar kontrol bekliyor.",
       "count": 2,
-      "route": "/operasyon-islemleri/belge-akis-takibi?status=Failed&warehouseNo=110"
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110&preset=failed-edespatch&direction=Outgoing&startDate=2026-11-01&endDate=2026-11-11"
     },
     {
       "code": "pendingReceiving",
@@ -431,7 +432,7 @@ Response:
       "title": "Depo kabul bekliyor",
       "description": "7 depo hareketi henuz kabul edilmemis.",
       "count": 7,
-      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110"
+      "route": "/operasyon-islemleri/belge-akis-takibi?warehouseNo=110&preset=pending-receiving&direction=Incoming&startDate=2026-11-01&endDate=2026-11-11"
     }
   ],
   "quickActions": [
@@ -18554,7 +18555,7 @@ Production'da `StartupTasks__ApplyAuthMigrations=false` ise migration deploy sir
 Bu endpoint merkez yoneticisinin aktif depolari tek istekte izlemesi icindir. Depo numarasi ve adi Mikro `DEPOLAR` tablosundan okunur; operasyon sayilari yalnizca Furpa Merkez API'nin Auth DB'ye yazdigi belge akis kayitlarindan hesaplanir. Mikro veya baska bir uygulama uzerinden dogrudan yapilan islemler sayilara dahil edilmez.
 
 ```http
-GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-02
+GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-11-11
 ```
 
 - `operasyon-islemleri.depo-operasyon-paneli.list` yetkisi ekrana erisim verir. `operasyon-islemleri.depo-operasyon-paneli.all-warehouses` yetkisi olan kullanici tum depolari veya istedigi tek depoyu; bu yetki olmayan kullanici yalniz kendi deposunu gorur.
@@ -18576,7 +18577,7 @@ GET /api/operasyon-islemleri/depo-operasyon-paneli?date=2026-07-02
 - `slowestWarehouse.value`: dakika cinsinden ortalama mal kabul suresi.
 - `healthStatus`: e-irsaliye veya diger operasyon hatasi varsa `Critical`; bekleyen kabul, e-irsaliye ya da acik siparis varsa `Warning`; hicbiri yoksa `Healthy` doner.
 - `trackingEnabled = false` ise yeni belge akisi yazimi kapalidir; panel mevcut eski kayitlardan hesaplanmaya devam eder.
-- Bekleyen ve acik is sayilari secilen tarihten geriye 30 gunluk pencereden hesaplanir; 01.10.2026 ve sonrasindaki secili tarihlerde pencere bu tarihten daha geriye gitmez.
+- Bekleyen ve acik is sayilari `01.11.2026` ile secilen tarih arasindan hesaplanir. Secilen tarih `01.11.2026` oncesindeyse baslangic secilen tarihin kendisidir. Response icindeki `lookbackStartDate`, UI'nin kullandigi gercek baslangici gosterir.
 
 Capraz depo mantigi:
 
@@ -18591,8 +18592,8 @@ Response ornegi:
 
 ```json
 {
-  "date": "2026-07-02",
-  "generatedAtUtc": "2026-07-02T11:20:00Z",
+  "date": "2026-11-11",
+  "generatedAtUtc": "2026-11-11T11:20:00Z",
   "trackingEnabled": true,
   "summary": {
     "warehouseCount": 60,
@@ -18634,7 +18635,8 @@ Response ornegi:
       "averageReceivingMinutes": 42.75,
       "healthStatus": "Warning"
     }
-  ]
+  ],
+  "lookbackStartDate": "2026-11-01"
 }
 ```
 
@@ -19285,7 +19287,7 @@ Mikro evrak duzenleme kaynakli akislar:
 #### Belge Akis Liste
 
 ```http
-GET /api/operasyon-islemleri/belge-akis-takibi?warehouseNo=1&startDate=2026-07-01&endDate=2026-07-01&documentType=CompanyShipment&status=Failed&search=FRM2026000000101&skip=0&take=100
+GET /api/operasyon-islemleri/belge-akis-takibi?warehouseNo=1&startDate=2026-11-01&endDate=2026-11-11&preset=other-failed&direction=Outgoing&skip=0&take=100
 ```
 
 Query alanlari:
@@ -19295,11 +19297,21 @@ Query alanlari:
 - `endDate`: opsiyonel. Gun sonu dahil olacak sekilde filtreler.
 - `documentType`: opsiyonel enum.
 - `status`: opsiyonel enum.
+- `currentStep`: opsiyonel enum; akisin son adimini filtreler.
+- `direction`: opsiyonel; `Incoming` veya `Outgoing` depo yonunu filtreler.
+- `category`: opsiyonel; `shipments`, `returns`, `orders`, `cash` veya `stock` is gruplarindan birini filtreler.
+- `preset`: opsiyonel hazir filtre. Desteklenen temel degerler: `action-required`, `pending-receiving`, `unaccepted-outgoing`, `pending-edespatch`, `failed-edespatch`, `open-orders`, `failed-only`, `other-failed`, `today-shipments`, `today-returns`, `today-receivings`.
 - `search`: opsiyonel. `documentSerie`, `documentNo`, `externalDocumentNo`, `externalUuid` icinde arar.
 - `skip`: 0 veya daha buyuk, varsayilan `0`. Sonraki sayfalari okumak icin onceki sayfalarda donen kayit sayisi kadar artirilir.
 - `take`: 1-500 arasi, varsayilan `100`.
 
-Liste `updatedAtUtc DESC, id DESC` sirasiyla kararlı sayfalanir. UI ilk 500 kaydi getirir; `totalCount` daha buyukse "Daha Eski Kayitlari Yukle" aksiyonu `skip` degerini artirarak kalan kayitlari ayni listeye ekler.
+Angular davranisi:
+
+- Belge Akis Takibi ekrani menuden dogrudan acildiginda baslangic ve bitis tarihi bugundur.
+- Filtreler temizlendiginde ekran yeniden bugune doner.
+- Depo Oncelikleri veya Depo Operasyon Paneli uzerindeki bekleyen/acik is kartlarindan gelindiginde route `startDate=2026-11-01`, `endDate=secilen gun` ve ilgili `preset` degerini tasir; bu nedenle operasyon sayaci ile acilan liste ayni kapsami kullanir.
+
+Liste `updatedAtUtc DESC, id DESC` sirasiyla kararli sayfalanir. UI ilk 500 kaydi getirir; `totalCount` daha buyukse "Daha Eski Kayitlari Yukle" aksiyonu `skip` degerini artirarak kalan kayitlari ayni listeye ekler.
 
 Response:
 
