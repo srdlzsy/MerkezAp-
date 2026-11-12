@@ -226,7 +226,7 @@ public sealed class HomeWarehousePrioritiesService(
                 group.Count(),
                 group.Count(anomaly => anomaly.Severity == StockAnomalySeverity.Critical),
                 group.Count(anomaly => anomaly.Severity == StockAnomalySeverity.High)))
-            .FirstOrDefaultAsync(cancellationToken)
+            .SingleOrDefaultAsync(cancellationToken)
             ?? new StockAnomalySummary(0, 0, 0);
     }
 

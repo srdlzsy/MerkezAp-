@@ -24,11 +24,13 @@ internal sealed class AxataSynchronizationDocumentStateService(
 
         var normalizedTaskCode = Normalize(taskCode);
         var now = clock.UtcNow;
+        var manualReviewAfterFailureCount = ResolveManualReviewAfterFailureCount();
         var keys = await authDbContext.AxataSynchronizationDocumentStates
             .AsNoTracking()
             .Where(item =>
                 item.TaskCode == normalizedTaskCode &&
-                item.NextAttemptAtUtc > now)
+                (item.NextAttemptAtUtc > now ||
+                 item.FailureCount >= manualReviewAfterFailureCount))
             .Select(item => item.DocumentKey)
             .ToArrayAsync(cancellationToken);
 
@@ -85,8 +87,13 @@ internal sealed class AxataSynchronizationDocumentStateService(
         {
             if (statesByKey.TryGetValue(failure.Key, out var state))
             {
+                if (RequiresManualReview(state))
+                {
+                    continue;
+                }
+
                 state.RegisterFailure(failure.Value, now);
-                LogDeferred(normalizedTaskCode, state);
+                LogOutcome(normalizedTaskCode, state);
                 continue;
             }
 
@@ -97,12 +104,15 @@ internal sealed class AxataSynchronizationDocumentStateService(
                 failure.Value,
                 now);
             authDbContext.AxataSynchronizationDocumentStates.Add(newState);
-            LogDeferred(normalizedTaskCode, newState);
+            LogOutcome(normalizedTaskCode, newState);
         }
 
         var staleBoundary = now.AddDays(-30);
+        var manualReviewAfterFailureCount = ResolveManualReviewAfterFailureCount();
         var staleStates = await authDbContext.AxataSynchronizationDocumentStates
-            .Where(item => item.LastFailedAtUtc < staleBoundary)
+            .Where(item =>
+                item.LastFailedAtUtc < staleBoundary &&
+                item.FailureCount < manualReviewAfterFailureCount)
             .ToArrayAsync(cancellationToken);
         authDbContext.AxataSynchronizationDocumentStates.RemoveRange(staleStates);
 
@@ -117,7 +127,28 @@ internal sealed class AxataSynchronizationDocumentStateService(
     private bool IsEnabled() =>
         optionsMonitor.CurrentValue.DocumentRetryState.Enabled;
 
-    private void LogDeferred(string taskCode, AxataSynchronizationDocumentState state) =>
+    private int ResolveManualReviewAfterFailureCount() =>
+        Math.Clamp(
+            optionsMonitor.CurrentValue.DocumentRetryState.ManualReviewAfterFailureCount,
+            3,
+            100);
+
+    private bool RequiresManualReview(AxataSynchronizationDocumentState state) =>
+        state.FailureCount >= ResolveManualReviewAfterFailureCount();
+
+    private void LogOutcome(string taskCode, AxataSynchronizationDocumentState state)
+    {
+        if (RequiresManualReview(state))
+        {
+            logger.LogError(
+                "AXATA belge veri sorunu otomatik deneme sinirina ulasti; manuel inceleme gerekiyor. TaskCode={TaskCode}, DocumentKey={DocumentKey}, FailureCount={FailureCount}, Reason={Reason}",
+                taskCode,
+                state.DocumentKey,
+                state.FailureCount,
+                state.LastError);
+            return;
+        }
+
         logger.LogWarning(
             "AXATA belge veri sorunu nedeniyle kontrollu yeniden denemeye ertelendi. TaskCode={TaskCode}, DocumentKey={DocumentKey}, FailureCount={FailureCount}, NextAttemptAtUtc={NextAttemptAtUtc}, Reason={Reason}",
             taskCode,
@@ -125,6 +156,7 @@ internal sealed class AxataSynchronizationDocumentStateService(
             state.FailureCount,
             state.NextAttemptAtUtc,
             state.LastError);
+    }
 }
 
 internal sealed record AxataSynchronizationDocumentFailure(

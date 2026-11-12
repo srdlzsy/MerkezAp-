@@ -48,6 +48,8 @@ internal static class CompanyEDespatchCreateGuard
         var creates = await db.MobileOfflineSyncRequests.AsNoTracking()
             .Where(record => operationCodes.Contains(record.OperationCode) && record.WarehouseNo == request.WarehouseNo &&
                 record.ClientRequestId == requestId.ToString("D"))
+            .OrderBy(record => record.CreatedAtUtc)
+            .ThenBy(record => record.Id)
             .Take(3).ToListAsync(cancellationToken);
         if (creates.Count > 1) throw StockMovementRecoveryMatcher.ContentMismatch();
         var create = creates.SingleOrDefault();

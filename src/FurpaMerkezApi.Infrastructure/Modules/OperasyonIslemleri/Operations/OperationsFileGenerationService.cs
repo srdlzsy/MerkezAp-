@@ -19,6 +19,9 @@ internal sealed class OperationsFileGenerationService(
     IConfiguration configuration,
     ILogger<OperationsFileGenerationService> logger)
 {
+    private const int GibSourceAvailable = 0;
+    private const int GibSourceUnavailable = 1;
+    private static int gibSourceState = GibSourceAvailable;
     private static readonly Encoding FileEncoding = Encoding.GetEncoding(1254);
     private static readonly string[] PromotionCodeColumns =
     [
@@ -756,9 +759,25 @@ internal sealed class OperationsFileGenerationService(
 
     private async Task<IReadOnlyCollection<string>> TryListGibTaxNumbersAsync(CancellationToken cancellationToken)
     {
+        if (!HasConfiguredGibSource() || Volatile.Read(ref gibSourceState) == GibSourceUnavailable)
+        {
+            return Array.Empty<string>();
+        }
+
         try
         {
             return await ListGibTaxNumbersAsync(cancellationToken);
+        }
+        catch (SqlException exception) when (exception.Number is 4060 or 18456)
+        {
+            if (Interlocked.Exchange(ref gibSourceState, GibSourceUnavailable) == GibSourceAvailable)
+            {
+                logger.LogInformation(
+                    "UYUM GIB kaynagina erisim yok. Uygulama yeniden baslatilana kadar EFATVNO.DAT sorgusu atlanacak. SqlError={SqlError}",
+                    exception.Number);
+            }
+
+            return Array.Empty<string>();
         }
         catch (Exception exception) when (exception is InvalidOperationException or SqlException)
         {
@@ -768,6 +787,12 @@ internal sealed class OperationsFileGenerationService(
             return Array.Empty<string>();
         }
     }
+
+    private bool HasConfiguredGibSource() =>
+        configuration.GetValue<bool>("OperationsExport:GibTaxNumberSourceEnabled") &&
+        new[] { "UyumConnection", "UYUMConnection", "UyumDbConnection" }
+            .Select(configuration.GetConnectionString)
+            .Any(connectionString => !string.IsNullOrWhiteSpace(connectionString));
 
     private async Task<IReadOnlyCollection<string>> ListGibTaxNumbersAsync(CancellationToken cancellationToken)
     {

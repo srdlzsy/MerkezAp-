@@ -85,6 +85,50 @@ public sealed class AxataSynchronizationDocumentStateServiceTests
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task RepeatedBusinessFailure_StopsAutomaticRetryAtManualReviewThreshold()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 11, 12, 6, 0, 0, DateTimeKind.Utc));
+        var service = CreateService(dbContext, clock, manualReviewAfterFailureCount: 3);
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            await service.RecordOutcomeAsync(
+                "c01-outbound-delivery-import",
+                [],
+                [new AxataSynchronizationDocumentFailure("263207", "Teslim miktari kalan miktardan buyuk.")],
+                CancellationToken.None);
+            clock.UtcNow = clock.UtcNow.AddHours(7);
+        }
+
+        var state = await dbContext.AxataSynchronizationDocumentStates.SingleAsync();
+        Assert.Equal(3, state.FailureCount);
+        Assert.Contains("263207", await service.GetDeferredDocumentKeysAsync(
+            "c01-outbound-delivery-import",
+            CancellationToken.None));
+
+        await service.RecordOutcomeAsync(
+            "c01-outbound-delivery-import",
+            [],
+            [new AxataSynchronizationDocumentFailure("263207", "Ayni veri sorunu devam ediyor.")],
+            CancellationToken.None);
+
+        Assert.Equal(3, state.FailureCount);
+
+        clock.UtcNow = clock.UtcNow.AddDays(31);
+        await service.RecordOutcomeAsync(
+            "c01-outbound-delivery-import",
+            [],
+            [],
+            CancellationToken.None);
+
+        Assert.Single(await dbContext.AxataSynchronizationDocumentStates.ToArrayAsync());
+        Assert.Contains("263207", await service.GetDeferredDocumentKeysAsync(
+            "c01-outbound-delivery-import",
+            CancellationToken.None));
+    }
+
     private static AuthDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<AuthDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -93,7 +137,8 @@ public sealed class AxataSynchronizationDocumentStateServiceTests
     private static AxataSynchronizationDocumentStateService CreateService(
         AuthDbContext dbContext,
         IClock clock,
-        bool enabled = true) =>
+        bool enabled = true,
+        int manualReviewAfterFailureCount = 12) =>
         new(
             dbContext,
             clock,
@@ -101,7 +146,8 @@ public sealed class AxataSynchronizationDocumentStateServiceTests
             {
                 DocumentRetryState = new AxataDocumentRetryStateOptions
                 {
-                    Enabled = enabled
+                    Enabled = enabled,
+                    ManualReviewAfterFailureCount = manualReviewAfterFailureCount
                 }
             }),
             NullLogger<AxataSynchronizationDocumentStateService>.Instance);

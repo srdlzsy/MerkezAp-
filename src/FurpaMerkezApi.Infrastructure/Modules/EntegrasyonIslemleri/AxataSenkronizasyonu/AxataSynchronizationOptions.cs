@@ -39,6 +39,8 @@ public sealed class AxataSynchronizationOptions
 public sealed class AxataDocumentRetryStateOptions
 {
     public bool Enabled { get; init; } = true;
+
+    public int ManualReviewAfterFailureCount { get; init; } = 12;
 }
 
 public sealed class AxataWarehouseOrderAutomationOptions

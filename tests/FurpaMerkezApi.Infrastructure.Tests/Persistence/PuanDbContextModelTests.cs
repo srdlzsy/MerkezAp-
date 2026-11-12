@@ -20,4 +20,24 @@ public sealed class PuanDbContextModelTests
         Assert.NotNull(entityType);
         Assert.False(entityType.IsSqlOutputClauseUsed());
     }
+
+    [Fact]
+    public void InterbonusIndirimCek_UsesDatabaseDecimalPrecision()
+    {
+        var options = new DbContextOptionsBuilder<PuanDbContext>()
+            .UseSqlServer("Server=(local);Database=PuanModelTest;Trusted_Connection=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new PuanDbContext(options);
+
+        var entityType = context.Model.FindEntityType(typeof(InterbonusIndirimCek));
+
+        Assert.NotNull(entityType);
+        foreach (var propertyName in new[] { "Tutar", "Puan", "Belge_Tutar" })
+        {
+            var property = entityType.FindProperty(propertyName);
+            Assert.NotNull(property);
+            Assert.Equal(18, property.GetPrecision());
+            Assert.Equal(2, property.GetScale());
+        }
+    }
 }

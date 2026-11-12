@@ -105,6 +105,7 @@ public sealed class ZayiatFisleriController(
                 request.ForceCreateNew),
             cancellationToken);
 
+        using var flowTrackingTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await documentFlowService.RecordAsync(
             new RecordDocumentFlowRequest(
                 DocumentFlowKeys.Create(
@@ -122,7 +123,7 @@ public sealed class ZayiatFisleriController(
                 "Zayiat fisi olusturuldu.",
                 ChangedByUserId: User.GetRequiredUserId(),
                 DocumentNo: response.DocumentNo),
-            cancellationToken);
+            flowTrackingTimeout.Token);
 
         return StatusCode(StatusCodes.Status201Created, response);
     }

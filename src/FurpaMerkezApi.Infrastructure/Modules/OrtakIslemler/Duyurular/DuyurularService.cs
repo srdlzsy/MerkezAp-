@@ -31,6 +31,7 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         }
 
         var announcements = await query
+            .AsSplitQuery()
             .Include(announcement => announcement.Targets)
             .Include(announcement => announcement.Reads.Where(read => read.UserId == request.UserId))
             .OrderByDescending(announcement => announcement.Priority)
@@ -86,6 +87,7 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         ValidateUserWarehouseNo(warehouseNo);
 
         var announcement = await CreateVisibleAnnouncementQuery(userId, warehouseNo, clock.UtcNow)
+            .AsSplitQuery()
             .Include(currentAnnouncement => currentAnnouncement.Targets)
             .Include(currentAnnouncement => currentAnnouncement.Reads.Where(read => read.UserId == userId))
             .FirstOrDefaultAsync(currentAnnouncement => currentAnnouncement.Id == announcementId, cancellationToken);
@@ -442,6 +444,7 @@ public sealed class DuyurularService(AuthDbContext dbContext, IClock clock) : ID
         if (includeReads)
         {
             query = query
+                .AsSplitQuery()
                 .Include(announcement => announcement.Reads)
                 .ThenInclude(read => read.User);
         }

@@ -254,6 +254,12 @@ public sealed class InvoiceViewingQueryExecutor(
                 invoice.InvoiceId == normalizedDocumentId ||
                 invoice.ServiceDocumentId == normalizedDocumentId ||
                 invoice.LocalDocumentId == normalizedDocumentId)
+            .OrderByDescending(invoice => invoice.DocumentId == normalizedDocumentId)
+            .ThenByDescending(invoice => invoice.InvoiceId == normalizedDocumentId)
+            .ThenByDescending(invoice => invoice.ServiceDocumentId == normalizedDocumentId)
+            .ThenByDescending(invoice => invoice.LocalDocumentId == normalizedDocumentId)
+            .ThenByDescending(invoice => invoice.UpdatedAtUtc)
+            .ThenBy(invoice => invoice.Id)
             .Take(5)
             .ToListAsync(cancellationToken);
         var entity = entities
