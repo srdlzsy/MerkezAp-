@@ -758,6 +758,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAxataSynchronizationService, AxataSynchronizationService>();
         services.AddScoped<IPosMuhasebeAktarimiService, PosMuhasebeAktarimiService>();
         services.AddScoped<ITrendyolGoIntegrationService, TrendyolGoIntegrationService>();
+        services.AddScoped<TrendyolGoRuntimeSettingsProvider>();
+        services.AddScoped<ITrendyolGoAdministrationService, TrendyolGoAdministrationService>();
         services.AddScoped<TrendyolGoBranchPosPriceSyncService>();
         services.AddScoped<TrendyolGoBatchFollowUpQueue>();
         services.AddScoped<ITrendyolGoBatchWorkflowQueries>(serviceProvider =>

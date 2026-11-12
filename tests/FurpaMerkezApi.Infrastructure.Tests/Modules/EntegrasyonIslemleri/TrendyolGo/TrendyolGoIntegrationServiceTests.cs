@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
+using FurpaMerkezApi.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -159,7 +161,13 @@ public sealed class TrendyolGoIntegrationServiceTests
 
         return new TrendyolGoIntegrationService(
             new TrendyolGoApiClient(httpClient, options),
-            options);
+            options,
+            new TrendyolGoRuntimeSettingsProvider(
+                new AuthDbContext(
+                    new DbContextOptionsBuilder<AuthDbContext>()
+                        .UseInMemoryDatabase($"trendyol-go-integration-{Guid.NewGuid():N}")
+                        .Options),
+                options));
     }
 
     private sealed class CapturingHandler(

@@ -1,6 +1,6 @@
 # Trendyol Go Market Entegrasyonu
 
-Son kod/dokuman karsilastirmasi: 04.11.2026. Kapsam Uber Eats Trendyol Go **Market/Grocery** API'sidir; Yemek API'si degildir. Bu belge mevcut kodun yaptigini anlatir, canli sistemde basarili islem yapildigina dair kanit yerine gecmez.
+Son kod/dokuman karsilastirmasi: 12.11.2026. Kapsam Uber Eats Trendyol Go **Market/Grocery** API'sidir; Yemek API'si degildir. Bu belge mevcut kodun yaptigini anlatir, canli sistemde basarili islem yapildigina dair kanit yerine gecmez.
 
 ## Kisa cevap
 
@@ -28,7 +28,7 @@ TGO'dan okunan siparis ve iade JSON'u buyuk olcude oldugu gibi istemciye doner; 
 - Config bolumu `TrendyolGo`; `Enabled=false` varsayilandir. Production base URL `https://api.tgoapis.com`, stage URL `https://stageapi.tgoapis.com`.
 - Satici kimligi `SupplierId` ile belirlenir. Basic Auth icin `AuthorizationToken` veya `ApiKey`/`ApiSecret` sunucu secret/env ayarinda tutulur; UI'ya veya repo'ya yazilmaz. Bu projede `AuthorizationToken` env adi `TrendyolGo__AuthorizationToken`, acma anahtari `TrendyolGo__Enabled`.
 - `AgentName` ve `ExecutorUser`, TGO'nun yazma isteklerinde istedigi `x-agentname` ve `x-executor-user` header degerlerine kaynak olur. `ExecutorUser` islem yapanin e-posta bilgisidir; mevcut tasarimda sabit config degeridir, oturumdaki kullanicidan uretilmez.
-- `Stores` listesi TGO `storeId` -> Mikro `warehouseNo` baglantisidir. Mevcut production config 60 magaza tanimlar. Isim benzerliginden depo secilmez. Magaza/depo eslesmesi canliya almadan once tek tek dogrulanmalidir.
+- `Stores` listesi TGO `storeId` -> Mikro `warehouseNo` baglantisidir. Config ilk kurulum degeridir; yonetim ekraninda kaydedilen aktif/pasif magaza ve magaza bazli rezerv kaydi veritabanindan config'i ezer. Isim benzerliginden depo secilmez.
 - UI menu yetkisi `entegrasyon-islemleri.trendyol-go.page`; okuma `list`/`detail`, yazma `update`. Auth DB permission migration'i `20260928101758_AddTrendyolGoIntegrationPermissions` hedef ortamda uygulanmis ve kullanici rolune atanmis olmalidir.
 - TGO API key/secret/token bu dokumanda yer almaz. Daha once sohbet veya dosyalarda paylasilan token/secret aciga cikmis sayilmali ve TGO tarafinda yenilenmelidir.
 
@@ -45,7 +45,7 @@ TGO'dan okunan siparis ve iade JSON'u buyuk olcude oldugu gibi istemciye doner; 
 | Alternatif urun, manuel sevk/teslim | Var | TGO islem durumu yeniden okunmali. |
 | Fatura linki gonderme | Var | Linkin gecerliligi/arsiv suresi istemcinin sorumlulugunda. |
 | Marka listeleme | Var | Kategori agaci ayni kapsamda degil. |
-| Kategori agaci, guncel kategori/attribute ID alma | Yok | Urun olusturmada `categoryId` disaridan saglanmali. |
+| Kategori agaci ve guncel kategori ID alma | Var | Resmi kategori agaci yonetim ekranindan yenilenir; yalniz aktif `leaf` kategoriler eslemede secilebilir. Attribute katalogu ayri kapsamdir. |
 | Urun listeleme | Kismi | `categoryIds`, `title`, `orderBy`, `order` filtreleri yok. |
 | Urun olusturma/guncelleme, attribute gonderme | Var | Raw JSON; tam urun kurali/semantik dogrulama TGO'da. Otomatik Mikro -> TGO urun master aktarimi yok. |
 | Sube bazli fiyat/stok, satis acma/kapama, batch kontrolu | Var | Fiyat/stok ve otomatik katalog batch'leri kalici kuyrukta urun bazinda takip edilir. |
@@ -73,6 +73,7 @@ Tum route'lar `/api/entegrasyon-islemleri/trendyol-go` kokunun altindadir. Tam q
 | Mikro fiyat/stok (Dogrudan / Hizli) | `GET /price-stock/direct-preview?storeId=&mode=changed` | `POST /price-stock/direct-dispatch` |
 | Kalici batch akisi | `GET /batch-workflows?take=100` | - |
 | Mikro urun katalogu | `GET /catalog/preview?storeId=&view=actionable` | `POST /catalog/dispatch` |
+| Yonetim | `GET /management?categorySearch=` | `PUT /management/settings`, `PUT/DELETE /management/stores`, `POST /management/categories/refresh`, `PUT/DELETE /management/category-mappings`, `PUT/DELETE /management/product-overrides` |
 | Fatura linki | - | `POST /invoice-links` |
 | Iade | `GET /claims`, `/claims/{claimId}/items/objectionable` | `PUT /claims/{claimId}/accept`, `/reject`, `POST /claims/{claimId}/items/objections` |
 
@@ -90,7 +91,7 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 
 ### Sube POS fiyat senkronu
 
-`price-stock/dispatch` isteginin HTTP 200 almasi POS yazimi icin yeterli degildir. `batchRequestId`, `trendyol_go_batch_follow_up_tasks` tablosuna kaydedilir ve hosted worker TGO batch sonucunu kontrol eder. Yalniz TGO'nun urun bazinda basarili saydigi satirlar, kasalarin kullandigi PostgreSQL `market.stoksatisfiyat` tablosu icin kalici POS kuyruguna yazilir. Hatali urunler subeye yazilmaz; kismi sonuc ekranda `Kismi hata` olarak gorulur.
+`price-stock/dispatch` isteginin HTTP 200 almasi POS yazimi icin yeterli degildir. `batchRequestId`, `trendyol_go_batch_follow_up_tasks` tablosuna kaydedilir ve hosted worker TGO batch sonucunu kontrol eder. Yalniz TGO'nun urun bazinda basarili saydigi satirlar, kasalarin kullandigi PostgreSQL `public.stoksatisfiyat` tablosu icin kalici POS kuyruguna yazilir. Hatali urunler subeye yazilmaz; kismi sonuc ekranda `Kismi hata` olarak gorulur.
 
 Uygulama batch kontrolu sirasinda kapanirsa `Processing` kaydinin iki dakikalik kirasi dolar ve yeni instance isi devralir. TGO'nun sonuc penceresi dolmadan takip tamamlanamazsa is kalici hata olur. `20261104112210_AddTrendyolGoBatchFollowUpTasks` migration'i hedef Auth/Furpa veritabaninda uygulanmis olmalidir.
 
@@ -98,10 +99,11 @@ POS worker varsayilan olarak depo `BranchDetails.BranchIpAddress` adresini kulla
 
 - `TrendyolGo:BranchPosPriceSync:Enabled` varsayilan olarak `false` gelir.
 - Etkinlestirmek icin merkez sunucunun sube PostgreSQL `5432` portuna erisimi ve PostgreSQL `pg_hba.conf` icinde merkez IP'si icin kullanici/DB izni gerekir.
-- Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Trendyol gonderimi ve kullanici ekrani hata almaz veya bu ag beklemesini yasamaz.
+- Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Ana Trendyol gonderimi uzak sube agini beklemez. Yonetim ekraninda bu durum `TGO basarili, sube POS aktarimi tamamlanamadi` uyarisi; depo/magaza, urun sayisi, deneme sayisi, son hata ve sonraki deneme zamaniyla gorulur.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
 - Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Yazma once tarih kontrollu `UPDATE`, kayit yoksa `INSERT` uygular; uzak POS veritabaninda benzersiz indeks bulunmasina bagimli degildir. Fiyat ve depo blok tarihleri birbirinden bagimsiz karsilastirilir.
 - Basarili kalemler `public.stoksatisfiyat` tablosuna yazildiktan sonra ayni PostgreSQL transaction'i icinde `public.sync` tablosundaki `online_satis_fiyatlari_sync` anahtari ilerletilir. Kasa yeni anahtari ancak fiyat ve satis-durdurma satirlari eksiksiz kaydedildiginde gorur.
+- TGO satis kapatma batch'inde basarili olan kalemler de ayni kuyruga girer; `SalesBlocked=1`, subede `public.stoksatisfiyat.sdp_satisdursun=1` olarak yazilir. Yonetim tablosu her kuyruk kaydindaki toplam urun ve satisa kapali urun sayisini ayri gosterir.
 8. Kabul edilen istegin `batchRequestId` degeri kalici takip tablosuna yazilir. Worker `GET /products/batch-requests/{id}` sonucunu periyodik kontrol eder. Toplu modlarda backend Trendyol limitine uygun en fazla 1000 satirlik paketlemeyi kendisi yapar; UI katalog sayfalama veya paket yonetimi yapmaz.
 
 ### Dogrudan degisiklik gonderimi
@@ -157,9 +159,31 @@ MappingRequired  Mikro marka veya kategori kodunun TGO ID eslemesi eksik/celiski
 Skipped          Urun pasif/satisa kapali, barkodsuz, gecersiz barkodlu, fiyatsiz, desteklenmeyen KDV oranli veya duplicate barkodlu.
 ```
 
-Backend marka ve kategori eslemelerini once secili magazada zaten kabul edilmis barkodlardan ogrenmeye calisir. Ayni Mikro kodu yalniz tek bir TGO ID degerine gidiyorsa otomatik eslesir. Bilinen istisnalar konfigurasyonla acikca verilebilir ve otomatik eslemeyi ezer:
+Kategori secim sirasi guvenli ve aciktir:
+
+1. Stok koduna tanimli urun istisnasi.
+2. Mikro kategori + ana grup birlikte tanimli kural.
+3. Yalniz Mikro kategori kuralı.
+4. Config'deki eski acik esleme veya mevcut TGO katalogundan **tek ve celiskisiz** cikarilabilen esleme.
+5. Hicbiri yoksa `MappingRequired`; urun gonderilmez.
+
+Cogunluk tahmini otomatik onay sayilmaz. Ayni Mikro kodu birden fazla TGO kategorisine gidiyorsa yanlis eski urunler yeni urunlere yayilmasin diye kullanici onayi beklenir. `DefaultCategoryId` ve `DefaultBrandId` production'da `0` tutulur; eslesmeyen urun `Su (1420)` veya rastgele bir kategoriyle acilmaz.
 
 Katalog onizlemesi ve otomatik eksik urun olusturma, magazanin tam TGO katalog snapshot'i hazir olmadan calismaz. Mevcut barkodlar yeniden `create` edilmez. `DefaultBrandId` ve `DefaultCategoryId` varsayilan olarak `0` yani kapali gelir; dogrulanmis ortak bir ID yoksa acik esleme yapilmali, rastgele `1` kullanilmamalidir. Desteklenmeyen KDV orani da otomatik olarak baska bir orana cevrilmez.
+
+### Yonetim ekrani
+
+Angular Trendyol Go sayfasindaki `Yonetim` sekmesi su canli ayarlari Auth DB'de saklar:
+
+- fiyat listesi no, odeme plani no ve genel stok rezervi,
+- TGO magaza ID - Mikro depo no eslesmesi, aktiflik ve magaza bazli stok rezervi,
+- sube POS fiyat senkronunu acma/kapama,
+- TGO resmi kategori agaci,
+- Mikro kategori/ana grup -> TGO leaf kategori kurallari,
+- stok koduna ozel kategori istisnalari,
+- son sube POS senkron kuyruklarinin durum ve hatalari.
+
+API token, sifre, supplier kimligi, base URL ve PostgreSQL parolasi panelden degistirilmez; bunlar deployment secret/config olarak kalir. `20261112105132_AddTrendyolGoManagement` migration'i hedef Auth DB'ye uygulanmadan yonetim endpointleri kullanilamaz.
 
 ```json
 {

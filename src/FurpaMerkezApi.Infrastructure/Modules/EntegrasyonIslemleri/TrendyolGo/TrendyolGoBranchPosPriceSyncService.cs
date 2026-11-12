@@ -15,11 +15,13 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
     FurpaDbContext furpaDbContext,
     IClock clock,
     IOptionsMonitor<TrendyolGoOptions> options,
+    TrendyolGoRuntimeSettingsProvider runtimeSettingsProvider,
     ILogger<TrendyolGoBranchPosPriceSyncService> logger)
 {
     public async Task EnqueueAsync(long storeId, int warehouseNo, IReadOnlyCollection<BranchPosPriceItem> items, CancellationToken cancellationToken)
     {
-        if (!options.CurrentValue.BranchPosPriceSync.Enabled || items.Count == 0)
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
+        if (!runtime.BranchPosPriceSyncEnabled || items.Count == 0)
         {
             return;
         }
@@ -40,7 +42,8 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         IReadOnlyCollection<BranchPosPriceItem> items,
         CancellationToken cancellationToken)
     {
-        if (!options.CurrentValue.BranchPosPriceSync.Enabled || items.Count == 0)
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
+        if (!runtime.BranchPosPriceSyncEnabled || items.Count == 0)
         {
             return;
         }
@@ -55,7 +58,8 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
     public async Task<int> ProcessPendingAsync(CancellationToken cancellationToken)
     {
         var config = options.CurrentValue.BranchPosPriceSync;
-        if (!config.Enabled)
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
+        if (!runtime.BranchPosPriceSyncEnabled)
         {
             return 0;
         }

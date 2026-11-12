@@ -7226,6 +7226,232 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.ToTable("trendyol_go_branch_pos_price_sync_tasks", (string)null);
                 });
 
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.TrendyolGoCategory", b =>
+                {
+                    b.Property<long>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsLeaf")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_leaf");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("name");
+
+                    b.Property<long?>("ParentCategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("parent_category_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1500)
+                        .HasColumnType("nvarchar(1500)")
+                        .HasColumnName("path");
+
+                    b.Property<DateTime>("SyncedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("synced_at_utc");
+
+                    b.HasKey("CategoryId");
+
+                    b.HasIndex("IsActive", "IsLeaf", "Name");
+
+                    b.ToTable("trendyol_go_categories", (string)null);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.TrendyolGoCategoryMapping", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("MappingKey")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)")
+                        .HasColumnName("mapping_key");
+
+                    b.Property<string>("MikroCategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("mikro_category_code");
+
+                    b.Property<string>("MikroMainGroupCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("mikro_main_group_code");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MappingKey")
+                        .IsUnique();
+
+                    b.HasIndex("IsActive", "CategoryId");
+
+                    b.ToTable("trendyol_go_category_mappings", (string)null);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.TrendyolGoProductCategoryOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("StockCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("stock_code");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StockCode")
+                        .IsUnique();
+
+                    b.HasIndex("IsActive", "CategoryId");
+
+                    b.ToTable("trendyol_go_product_category_overrides", (string)null);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.TrendyolGoRuntimeSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("BranchPosPriceSyncEnabled")
+                        .HasColumnType("bit")
+                        .HasColumnName("branch_pos_price_sync_enabled");
+
+                    b.Property<int>("PaymentPlanNo")
+                        .HasColumnType("int")
+                        .HasColumnName("payment_plan_no");
+
+                    b.Property<int>("PriceListNo")
+                        .HasColumnType("int")
+                        .HasColumnName("price_list_no");
+
+                    b.Property<int>("StockReserveQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("stock_reserve_quantity");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("trendyol_go_runtime_settings", (string)null);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.TrendyolGoStoreSetting", b =>
+                {
+                    b.Property<long>("StoreId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("store_id");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<int?>("StockReserveQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("stock_reserve_quantity");
+
+                    b.Property<string>("StoreName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("store_name");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("updated_by");
+
+                    b.Property<int>("WarehouseNo")
+                        .HasColumnType("int")
+                        .HasColumnName("warehouse_no");
+
+                    b.HasKey("StoreId");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("WarehouseNo")
+                        .IsUnique()
+                        .HasFilter("[is_active] = 1");
+
+                    b.ToTable("trendyol_go_store_settings", (string)null);
+                });
+
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.UyumsoftInboxInvoice", b =>
                 {
                     b.Property<Guid>("Id")

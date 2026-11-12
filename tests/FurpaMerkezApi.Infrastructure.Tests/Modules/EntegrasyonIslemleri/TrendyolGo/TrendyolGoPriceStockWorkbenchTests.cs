@@ -295,7 +295,7 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     }
 
     [Fact]
-    public void CatalogBuildRow_UsesExplicitDefaultMappings()
+    public void CatalogBuildRow_IgnoresUnsafeDefaultMappings()
     {
         var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
             "015550", "Product", "8690000000000", "MARKA", "KATEGORI", 10, 25m, false);
@@ -305,9 +305,9 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
             new Dictionary<string, long>(), new Dictionary<string, long>(),
             defaultBrandId: 100, defaultCategoryId: 200);
 
-        Assert.Equal("Ready", row.Status);
-        Assert.Equal(100, row.TrendyolBrandId);
-        Assert.Equal(200, row.TrendyolCategoryId);
+        Assert.Equal("MappingRequired", row.Status);
+        Assert.Null(row.TrendyolBrandId);
+        Assert.Null(row.TrendyolCategoryId);
     }
 
     [Fact]

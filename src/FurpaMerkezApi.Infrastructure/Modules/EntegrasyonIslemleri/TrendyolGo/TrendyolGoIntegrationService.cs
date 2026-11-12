@@ -7,7 +7,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
 
 internal sealed class TrendyolGoIntegrationService(
     TrendyolGoApiClient apiClient,
-    IOptionsMonitor<TrendyolGoOptions> options)
+    IOptionsMonitor<TrendyolGoOptions> options,
+    TrendyolGoRuntimeSettingsProvider runtimeSettingsProvider)
     : ITrendyolGoIntegrationService
 {
     private static readonly HashSet<string> AllowedStatuses = new(StringComparer.OrdinalIgnoreCase)
@@ -33,19 +34,16 @@ internal sealed class TrendyolGoIntegrationService(
             currentOptions.Enabled ? "Configuration loaded." : "Integration is disabled."));
     }
 
-    public Task<IReadOnlyCollection<TrendyolGoStoreMappingDto>> ListStoresAsync(
+    public async Task<IReadOnlyCollection<TrendyolGoStoreMappingDto>> ListStoresAsync(
         CancellationToken cancellationToken)
     {
-        IReadOnlyCollection<TrendyolGoStoreMappingDto> stores = options.CurrentValue.Stores
-            .Where(store => store.StoreId > 0 && store.WarehouseNo > 0)
-            .OrderBy(store => store.WarehouseNo)
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
+        return runtime.Stores
             .Select(store => new TrendyolGoStoreMappingDto(
                 store.StoreId,
                 store.WarehouseNo,
                 store.StoreName))
             .ToArray();
-
-        return Task.FromResult(stores);
     }
 
     public async Task<TrendyolGoConnectionStatusDto> TestConnectionAsync(
@@ -171,6 +169,11 @@ internal sealed class TrendyolGoIntegrationService(
         return ReadRequiredJson(await apiClient.GetAsync(path, cancellationToken), "Brand list");
     }
 
+    public async Task<JsonElement> ListCategoriesAsync(CancellationToken cancellationToken) =>
+        ReadRequiredJson(
+            await apiClient.GetAsync("/integrator/product/grocery/categories", cancellationToken),
+            "Category list");
+
     public async Task<JsonElement?> CreateProductsAsync(
         JsonElement payload,
         CancellationToken cancellationToken)
@@ -195,7 +198,7 @@ internal sealed class TrendyolGoIntegrationService(
         JsonElement payload,
         CancellationToken cancellationToken)
     {
-        ValidatePriceAndInventoryPayload(payload);
+        await ValidatePriceAndInventoryPayloadAsync(payload, cancellationToken);
         return ReadOptionalJson(
             await apiClient.PostAsync($"{ProductRootPath()}/price-and-inventory", payload, cancellationToken),
             "Price and inventory update");
@@ -457,9 +460,12 @@ internal sealed class TrendyolGoIntegrationService(
         }
     }
 
-    private void ValidatePriceAndInventoryPayload(JsonElement payload)
+    private async Task ValidatePriceAndInventoryPayloadAsync(
+        JsonElement payload,
+        CancellationToken cancellationToken)
     {
         ValidateItemsPayload(payload, 1000, "Price and inventory update");
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
         foreach (var item in payload.GetProperty("items").EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.Object ||
@@ -480,9 +486,9 @@ internal sealed class TrendyolGoIntegrationService(
                     throw new ArgumentException("storeId must be a positive integer when supplied.");
                 }
 
-                if (!options.CurrentValue.Stores.Any(store => store.StoreId == value))
+                if (!runtime.Stores.Any(store => store.StoreId == value))
                 {
-                    throw new ArgumentException($"storeId {value} is not configured in TrendyolGo:Stores.");
+                    throw new ArgumentException($"storeId {value} is not configured for Trendyol Go.");
                 }
             }
         }

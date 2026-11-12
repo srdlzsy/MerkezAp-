@@ -7,7 +7,9 @@ public interface ITrendyolGoPriceStockWorkbench
     Task<TrendyolGoPriceStockPreview> PreviewAsync(
         long storeId, string view, CancellationToken cancellationToken);
 
-    TrendyolGoPriceStockRefreshStatus RequestRefresh(long storeId);
+    Task<TrendyolGoPriceStockRefreshStatus> RequestRefreshAsync(
+        long storeId,
+        CancellationToken cancellationToken);
 
     Task<TrendyolGoPriceStockDispatch> DispatchAsync(
         long storeId, string previewHash, TrendyolGoPriceStockDispatchMode mode,

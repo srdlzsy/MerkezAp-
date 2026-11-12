@@ -35,6 +35,8 @@ public interface ITrendyolGoIntegrationService
 
     Task<JsonElement> ListBrandsAsync(int page, int size, string? name, CancellationToken cancellationToken);
 
+    Task<JsonElement> ListCategoriesAsync(CancellationToken cancellationToken);
+
     Task<JsonElement?> CreateProductsAsync(JsonElement payload, CancellationToken cancellationToken);
 
     Task<JsonElement?> UpdateProductsAsync(JsonElement payload, CancellationToken cancellationToken);

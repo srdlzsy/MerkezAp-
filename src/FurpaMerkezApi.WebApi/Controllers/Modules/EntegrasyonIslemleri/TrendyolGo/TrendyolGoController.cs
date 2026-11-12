@@ -15,7 +15,8 @@ public sealed class TrendyolGoController(
     ITrendyolGoIntegrationService service,
     ITrendyolGoPriceStockWorkbench priceStockWorkbench,
     ITrendyolGoCatalogWorkbench catalogWorkbench,
-    ITrendyolGoBatchWorkflowQueries batchWorkflowQueries)
+    ITrendyolGoBatchWorkflowQueries batchWorkflowQueries,
+    ITrendyolGoAdministrationService administrationService)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "entegrasyon-islemleri";
@@ -40,6 +41,84 @@ public sealed class TrendyolGoController(
     public async Task<ActionResult<IReadOnlyCollection<TrendyolGoStoreMappingDto>>> ListStores(
         CancellationToken cancellationToken) =>
         Ok(await service.ListStoresAsync(cancellationToken));
+
+    [HttpGet("management")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(TrendyolGoAdministrationOverview), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoAdministrationOverview>> GetManagementOverview(
+        [FromQuery, MaxLength(100)] string? categorySearch = null,
+        CancellationToken cancellationToken = default) =>
+        Ok(await administrationService.GetOverviewAsync(categorySearch, cancellationToken));
+
+    [HttpPut("management/settings")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoRuntimeSettingsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoRuntimeSettingsDto>> UpdateManagementSettings(
+        [FromBody] TrendyolGoRuntimeSettingsHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await administrationService.UpdateRuntimeSettingsAsync(
+            request.ToApplicationRequest(), CurrentActor(), cancellationToken));
+
+    [HttpPut("management/stores")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoStoreSettingDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoStoreSettingDto>> UpsertManagementStore(
+        [FromBody] TrendyolGoStoreSettingHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await administrationService.UpsertStoreAsync(
+            request.ToApplicationRequest(), CurrentActor(), cancellationToken));
+
+    [HttpDelete("management/stores/{storeId:long}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteManagementStore(long storeId, CancellationToken cancellationToken)
+    {
+        await administrationService.DeleteStoreAsync(storeId, CurrentActor(), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("management/categories/refresh")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoCategorySyncResult), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoCategorySyncResult>> RefreshManagementCategories(
+        CancellationToken cancellationToken) =>
+        Ok(await administrationService.RefreshCategoriesAsync(cancellationToken));
+
+    [HttpPut("management/category-mappings")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoCategoryMappingDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoCategoryMappingDto>> UpsertCategoryMapping(
+        [FromBody] TrendyolGoCategoryMappingHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await administrationService.UpsertCategoryMappingAsync(
+            request.ToApplicationRequest(), CurrentActor(), cancellationToken));
+
+    [HttpDelete("management/category-mappings/{id:guid}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteCategoryMapping(Guid id, CancellationToken cancellationToken)
+    {
+        await administrationService.DeleteCategoryMappingAsync(id, CurrentActor(), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPut("management/product-overrides")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(TrendyolGoProductCategoryOverrideDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoProductCategoryOverrideDto>> UpsertProductOverride(
+        [FromBody] TrendyolGoProductCategoryOverrideHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await administrationService.UpsertProductOverrideAsync(
+            request.ToApplicationRequest(), CurrentActor(), cancellationToken));
+
+    [HttpDelete("management/product-overrides/{id:guid}")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteProductOverride(Guid id, CancellationToken cancellationToken)
+    {
+        await administrationService.DeleteProductOverrideAsync(id, CurrentActor(), cancellationToken);
+        return NoContent();
+    }
 
     [HttpGet("batch-workflows")]
     [Authorize(Policy = DetailPolicy)]
@@ -158,9 +237,10 @@ public sealed class TrendyolGoController(
     [HttpPost("price-stock/preview/refresh")]
     [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(TrendyolGoPriceStockRefreshStatus), StatusCodes.Status202Accepted)]
-    public ActionResult<TrendyolGoPriceStockRefreshStatus> RefreshPriceStockPreview(
-        [FromQuery, Range(1, long.MaxValue)] long storeId) =>
-        Accepted(priceStockWorkbench.RequestRefresh(storeId));
+    public async Task<ActionResult<TrendyolGoPriceStockRefreshStatus>> RefreshPriceStockPreview(
+        [FromQuery, Range(1, long.MaxValue)] long storeId,
+        CancellationToken cancellationToken) =>
+        Accepted(await priceStockWorkbench.RequestRefreshAsync(storeId, cancellationToken));
 
     [HttpPost("price-stock/dispatch")]
     [Authorize(Policy = UpdatePolicy)]
@@ -336,6 +416,52 @@ public sealed class TrendyolGoController(
 
     private IActionResult OptionalJson(JsonElement? response) =>
         response.HasValue ? Ok(response.Value) : NoContent();
+
+    private string CurrentActor() => User.Identity?.Name?.Trim() is { Length: > 0 } actor ? actor : "system";
+}
+
+public sealed class TrendyolGoRuntimeSettingsHttpRequest
+{
+    [Range(1, 1000)] public int PriceListNo { get; init; }
+    [Range(0, 100000)] public int PaymentPlanNo { get; init; }
+    [Range(0, 100000)] public int StockReserveQuantity { get; init; }
+    public bool BranchPosPriceSyncEnabled { get; init; }
+
+    public TrendyolGoRuntimeSettingsUpdate ToApplicationRequest() =>
+        new(PriceListNo, PaymentPlanNo, StockReserveQuantity, BranchPosPriceSyncEnabled);
+}
+
+public sealed class TrendyolGoStoreSettingHttpRequest
+{
+    [Range(1, long.MaxValue)] public long StoreId { get; init; }
+    [Range(1, int.MaxValue)] public int WarehouseNo { get; init; }
+    [Required, MaxLength(300)] public string StoreName { get; init; } = string.Empty;
+    [Range(0, 100000)] public int? StockReserveQuantity { get; init; }
+    public bool IsActive { get; init; } = true;
+
+    public TrendyolGoStoreSettingUpdate ToApplicationRequest() =>
+        new(StoreId, WarehouseNo, StoreName, StockReserveQuantity, IsActive);
+}
+
+public sealed class TrendyolGoCategoryMappingHttpRequest
+{
+    public Guid? Id { get; init; }
+    [Required, MaxLength(100)] public string MikroCategoryCode { get; init; } = string.Empty;
+    [MaxLength(100)] public string? MikroMainGroupCode { get; init; }
+    [Range(1, long.MaxValue)] public long CategoryId { get; init; }
+
+    public TrendyolGoCategoryMappingUpdate ToApplicationRequest() =>
+        new(Id, MikroCategoryCode, MikroMainGroupCode, CategoryId);
+}
+
+public sealed class TrendyolGoProductCategoryOverrideHttpRequest
+{
+    public Guid? Id { get; init; }
+    [Required, MaxLength(100)] public string StockCode { get; init; } = string.Empty;
+    [Range(1, long.MaxValue)] public long CategoryId { get; init; }
+
+    public TrendyolGoProductCategoryOverrideUpdate ToApplicationRequest() =>
+        new(Id, StockCode, CategoryId);
 }
 
 public sealed class TrendyolGoOrderListHttpRequest

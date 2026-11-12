@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
+using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -13,8 +15,10 @@ namespace FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.TrendyolGo;
 internal sealed class TrendyolGoCatalogWorkbench(
     ITrendyolGoIntegrationService trendyol,
     MikroDbContext mikroDbContext,
+    AuthDbContext authDbContext,
     TrendyolGoPriceStockSnapshotCoordinator snapshotCoordinator,
-    IOptionsMonitor<TrendyolGoOptions> options) : ITrendyolGoCatalogWorkbench
+    IOptionsMonitor<TrendyolGoOptions> options,
+    TrendyolGoRuntimeSettingsProvider runtimeSettingsProvider) : ITrendyolGoCatalogWorkbench
 {
     private static readonly HashSet<int> AllowedVatRates = [0, 1, 10, 20];
     private const string UnsupportedCharacters = "?/&%+^'*_";
@@ -111,12 +115,12 @@ internal sealed class TrendyolGoCatalogWorkbench(
         }
 
         var config = options.CurrentValue;
-        var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
-            ?? throw new ArgumentException($"storeId {storeId} is not configured.");
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
+        var store = runtime.RequireStore(storeId);
         var priceStockSnapshot = RequireCatalogSnapshot(storeId);
 
         var mikroProducts = await ReadMikroCatalogByBarcodesAsync(
-            store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, distinctBarcodes, cancellationToken);
+            store.WarehouseNo, runtime.PriceListNo, runtime.PaymentPlanNo, distinctBarcodes, cancellationToken);
 
         var missingInMikro = distinctBarcodes
             .Except(mikroProducts.Select(p => p.Barcode).Where(b => !string.IsNullOrWhiteSpace(b))!, StringComparer.Ordinal)
@@ -146,7 +150,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .ToArray();
 
         var neededCategoryCodes = mikroProducts
-            .Select(item => item.CategoryCode?.Trim())
+            .SelectMany(item => new[] { item.CategoryCode?.Trim(), item.MainGroupCode?.Trim() })
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -166,8 +170,9 @@ internal sealed class TrendyolGoCatalogWorkbench(
             config.Catalog.BrandMappings);
         var categoryMappings = InferMappings(
             priceStockSnapshot.Products, mappingMikroByBarcode,
-            item => item.CategoryCode, item => item.CategoryId,
+            item => item.EffectiveCategoryCode, item => item.CategoryId,
             config.Catalog.CategoryMappings);
+        var approvedRules = await LoadApprovedCategoryRulesAsync(cancellationToken);
         var duplicateBarcodes = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
@@ -180,6 +185,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
 
         foreach (var product in mikroProducts)
         {
+            var approvedCategory = ResolveApprovedCategory(product, approvedRules);
             var row = BuildRow(
                 product,
                 existingBarcodes,
@@ -188,7 +194,9 @@ internal sealed class TrendyolGoCatalogWorkbench(
                 categoryMappings,
                 config.Catalog.DefaultBrandId,
                 config.Catalog.DefaultCategoryId,
-                existingStockCodes);
+                existingStockCodes,
+                approvedCategory.CategoryId,
+                approvedCategory.Source);
             rows.Add(row);
             if (row.Status == "Ready")
             {
@@ -251,11 +259,11 @@ internal sealed class TrendyolGoCatalogWorkbench(
     private async Task<CatalogSnapshot> BuildSnapshotAsync(long storeId, CancellationToken cancellationToken)
     {
         var config = options.CurrentValue;
-        var store = config.Stores.SingleOrDefault(item => item.StoreId == storeId)
-            ?? throw new ArgumentException($"storeId {storeId} is not configured.");
+        var runtime = await runtimeSettingsProvider.GetAsync(cancellationToken);
+        var store = runtime.RequireStore(storeId);
         var priceStockSnapshot = RequireCatalogSnapshot(storeId);
         var mikroProducts = await ReadMikroCatalogAsync(
-            store.WarehouseNo, config.PriceListNo, config.PaymentPlanNo, cancellationToken);
+            store.WarehouseNo, runtime.PriceListNo, runtime.PaymentPlanNo, cancellationToken);
         var existingBarcodes = priceStockSnapshot.Products
             .Select(item => item.Barcode)
             .Where(item => !string.IsNullOrWhiteSpace(item))
@@ -273,8 +281,9 @@ internal sealed class TrendyolGoCatalogWorkbench(
             config.Catalog.BrandMappings);
         var categoryMappings = InferMappings(
             priceStockSnapshot.Products, mikroByBarcode,
-            item => item.CategoryCode, item => item.CategoryId,
+            item => item.EffectiveCategoryCode, item => item.CategoryId,
             config.Catalog.CategoryMappings);
+        var approvedRules = await LoadApprovedCategoryRulesAsync(cancellationToken);
         var duplicateBarcodes = mikroProducts
             .Where(item => !string.IsNullOrWhiteSpace(item.Barcode))
             .GroupBy(item => item.Barcode!, StringComparer.Ordinal)
@@ -282,15 +291,21 @@ internal sealed class TrendyolGoCatalogWorkbench(
             .Select(group => group.Key)
             .ToHashSet(StringComparer.Ordinal);
 
-        var rows = mikroProducts.Select(product => BuildRow(
-                product,
-                existingBarcodes,
-                duplicateBarcodes,
-                brandMappings,
-                categoryMappings,
-                config.Catalog.DefaultBrandId,
-                config.Catalog.DefaultCategoryId,
-                existingStockCodes))
+        var rows = mikroProducts.Select(product =>
+            {
+                var approvedCategory = ResolveApprovedCategory(product, approvedRules);
+                return BuildRow(
+                    product,
+                    existingBarcodes,
+                    duplicateBarcodes,
+                    brandMappings,
+                    categoryMappings,
+                    config.Catalog.DefaultBrandId,
+                    config.Catalog.DefaultCategoryId,
+                    existingStockCodes,
+                    approvedCategory.CategoryId,
+                    approvedCategory.Source);
+            })
             .OrderBy(item => item.StockCode, StringComparer.Ordinal)
             .ToArray();
         var hashData = JsonSerializer.SerializeToUtf8Bytes(new { storeId, rows });
@@ -307,13 +322,21 @@ internal sealed class TrendyolGoCatalogWorkbench(
         IReadOnlyDictionary<string, long> categoryMappings,
         long defaultBrandId = 0,
         long defaultCategoryId = 0,
-        IReadOnlyDictionary<string, string>? existingStockCodes = null)
+        IReadOnlyDictionary<string, string>? existingStockCodes = null,
+        long? approvedCategoryId = null,
+        string? categoryMappingSource = null)
     {
         var barcode = string.IsNullOrWhiteSpace(product.Barcode) ? null : product.Barcode.Trim();
-        var brandId = ResolveMapping(product.BrandCode, brandMappings)
-            ?? (defaultBrandId > 0 ? defaultBrandId : null);
-        var categoryId = ResolveMapping(product.CategoryCode, categoryMappings)
-            ?? (defaultCategoryId > 0 ? defaultCategoryId : null);
+        _ = defaultBrandId;
+        _ = defaultCategoryId;
+        var brandId = ResolveMapping(product.BrandCode, brandMappings);
+        var categoryId = approvedCategoryId
+            ?? ResolveMapping(product.EffectiveCategoryCode, categoryMappings);
+        categoryMappingSource ??= approvedCategoryId.HasValue
+            ? "ApprovedRule"
+            : ResolveMapping(product.EffectiveCategoryCode, categoryMappings).HasValue
+                ? "ExistingCatalog"
+                : null;
         string? reason = null;
         var status = "Ready";
 
@@ -375,8 +398,8 @@ internal sealed class TrendyolGoCatalogWorkbench(
 
         return new TrendyolGoCatalogRow(
             product.StockCode, product.ProductName, barcode,
-            product.BrandCode, brandId, product.CategoryCode, categoryId,
-            product.VatRate, product.Price, status, reason);
+            product.BrandCode, brandId, product.CategoryCode, product.MainGroupCode, categoryId,
+            categoryMappingSource, product.VatRate, product.Price, status, reason);
     }
 
     internal static IReadOnlyDictionary<string, string> BuildExistingStockCodeMap(
@@ -450,6 +473,49 @@ internal sealed class TrendyolGoCatalogWorkbench(
         return inferred;
     }
 
+    private async Task<ApprovedCategoryRules> LoadApprovedCategoryRulesAsync(
+        CancellationToken cancellationToken)
+    {
+        var mappings = await authDbContext.TrendyolGoCategoryMappings
+            .AsNoTracking()
+            .Where(item => item.IsActive)
+            .ToArrayAsync(cancellationToken);
+        var overrides = await authDbContext.TrendyolGoProductCategoryOverrides
+            .AsNoTracking()
+            .Where(item => item.IsActive)
+            .ToArrayAsync(cancellationToken);
+        return new ApprovedCategoryRules(
+            mappings.ToDictionary(item => item.MappingKey, item => item.CategoryId, StringComparer.OrdinalIgnoreCase),
+            overrides.ToDictionary(item => item.StockCode, item => item.CategoryId, StringComparer.OrdinalIgnoreCase));
+    }
+
+    internal static ApprovedCategoryResolution ResolveApprovedCategory(
+        MikroCatalogProduct product,
+        ApprovedCategoryRules rules)
+    {
+        if (rules.ProductOverrides.TryGetValue(product.StockCode, out var productCategoryId))
+        {
+            return new ApprovedCategoryResolution(productCategoryId, "ProductOverride");
+        }
+
+        if (!string.IsNullOrWhiteSpace(product.CategoryCode))
+        {
+            var exactKey = TrendyolGoCategoryMapping.BuildKey(product.CategoryCode, product.MainGroupCode);
+            if (rules.CategoryMappings.TryGetValue(exactKey, out var exactCategoryId))
+            {
+                return new ApprovedCategoryResolution(exactCategoryId, "CategoryAndMainGroupRule");
+            }
+
+            var categoryKey = TrendyolGoCategoryMapping.BuildKey(product.CategoryCode, null);
+            if (rules.CategoryMappings.TryGetValue(categoryKey, out var categoryId))
+            {
+                return new ApprovedCategoryResolution(categoryId, "CategoryRule");
+            }
+        }
+
+        return new ApprovedCategoryResolution(null, null);
+    }
+
     private async Task<MikroCatalogProduct[]> ReadMikroCatalogAsync(
         int warehouseNo, int priceListNo, int paymentPlanNo,
         CancellationToken cancellationToken)
@@ -467,29 +533,16 @@ internal sealed class TrendyolGoCatalogWorkbench(
             await using var command = connection.CreateCommand();
             command.CommandType = CommandType.Text;
             command.CommandTimeout = 300;
-            command.CommandText = """
-                WITH RankedBarcodes AS
-                (
-                    SELECT barcode.bar_stokkodu AS StockCode,
-                           LTRIM(RTRIM(barcode.bar_kodu)) AS Barcode,
-                           COALESCE(barcode.bar_birimpntr, 1) AS UnitPointer,
-                           ROW_NUMBER() OVER
-                           (
-                               PARTITION BY barcode.bar_stokkodu
-                               ORDER BY CASE WHEN COALESCE(barcode.bar_master, 0) = 1 THEN 0 ELSE 1 END,
-                                        CASE WHEN COALESCE(barcode.bar_birimpntr, 1) = 1 THEN 0 ELSE 1 END,
-                                        barcode.bar_kodu
-                           ) AS RowNo
-                    FROM dbo.BARKOD_TANIMLARI AS barcode
-                    WHERE COALESCE(barcode.bar_iptal, 0) = 0
-                      AND NULLIF(LTRIM(RTRIM(barcode.bar_kodu)), '') IS NOT NULL
-                )
+            var barcodeExpression = TrendyolGoBarcodeRule.SqlBarcodeExpression("barcode.Barcode");
+            var rankedBarcodesCte = TrendyolGoBarcodeRule.SqlRankedBarcodesCte();
+            command.CommandText = $"""
+                WITH {rankedBarcodesCte}
                 SELECT stock.sto_kod AS StockCode,
                        COALESCE(stock.sto_isim, '') AS ProductName,
-                       barcode.Barcode,
+                       {barcodeExpression} AS Barcode,
                        NULLIF(LTRIM(RTRIM(stock.sto_marka_kodu)), '') AS BrandCode,
-                       COALESCE(NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), ''),
-                                NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '')) AS CategoryCode,
+                       NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), '') AS CategoryCode,
+                       NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '') AS MainGroupCode,
                        CAST(tax.Rate AS decimal(9, 2)) AS VatRate,
                        price.Price,
                        CASE WHEN COALESCE(stock.sto_iptal, 0) = 1
@@ -538,6 +591,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
                     reader["Barcode"] is DBNull ? null : Convert.ToString(reader["Barcode"], CultureInfo.InvariantCulture),
                     reader["BrandCode"] is DBNull ? null : Convert.ToString(reader["BrandCode"], CultureInfo.InvariantCulture),
                     reader["CategoryCode"] is DBNull ? null : Convert.ToString(reader["CategoryCode"], CultureInfo.InvariantCulture),
+                    reader["MainGroupCode"] is DBNull ? null : Convert.ToString(reader["MainGroupCode"], CultureInfo.InvariantCulture),
                     vatRate,
                     reader["Price"] is DBNull ? null : Convert.ToDecimal(reader["Price"], CultureInfo.InvariantCulture),
                     Convert.ToInt32(reader["Blocked"], CultureInfo.InvariantCulture) != 0));
@@ -577,15 +631,16 @@ internal sealed class TrendyolGoCatalogWorkbench(
             await using var command = connection.CreateCommand();
             command.CommandType = CommandType.Text;
             command.CommandTimeout = 30;
-            command.CommandText = """
+            var barcodeExpression = TrendyolGoBarcodeRule.SqlBarcodeExpression("barcode.bar_kodu");
+            command.CommandText = $"""
                 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-                SELECT barcode.bar_kodu AS Barcode,
+                SELECT {barcodeExpression} AS Barcode,
                        stock.sto_kod AS StockCode,
                        COALESCE(stock.sto_isim, '') AS ProductName,
                        NULLIF(LTRIM(RTRIM(stock.sto_marka_kodu)), '') AS BrandCode,
-                       COALESCE(NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), ''),
-                                NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '')) AS CategoryCode
+                       NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), '') AS CategoryCode,
+                       NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '') AS MainGroupCode
                 FROM dbo.STOKLAR AS stock WITH (NOLOCK)
                 INNER JOIN dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
                   ON barcode.bar_stokkodu = stock.sto_kod
@@ -610,6 +665,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
                     reader["Barcode"] is DBNull ? null : Convert.ToString(reader["Barcode"], CultureInfo.InvariantCulture),
                     reader["BrandCode"] is DBNull ? null : Convert.ToString(reader["BrandCode"], CultureInfo.InvariantCulture),
                     reader["CategoryCode"] is DBNull ? null : Convert.ToString(reader["CategoryCode"], CultureInfo.InvariantCulture),
+                    reader["MainGroupCode"] is DBNull ? null : Convert.ToString(reader["MainGroupCode"], CultureInfo.InvariantCulture),
                     null,
                     null,
                     false));
@@ -644,32 +700,20 @@ internal sealed class TrendyolGoCatalogWorkbench(
             await using var command = connection.CreateCommand();
             command.CommandType = CommandType.Text;
             command.CommandTimeout = 120;
-            command.CommandText = """
+            var barcodeExpression = TrendyolGoBarcodeRule.SqlBarcodeExpression("barcode.Barcode");
+            var lookupBarcodes = TrendyolGoBarcodeRule.ExpandLookupBarcodes(barcodes);
+            var rankedBarcodesCte = TrendyolGoBarcodeRule.SqlRankedBarcodesCte(
+                "LTRIM(RTRIM(barcode.bar_kodu)) IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@lookupBarcodesJson))");
+            command.CommandText = $"""
                 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-                WITH RankedBarcodes AS
-                (
-                    SELECT barcode.bar_stokkodu AS StockCode,
-                           LTRIM(RTRIM(barcode.bar_kodu)) AS Barcode,
-                           COALESCE(barcode.bar_birimpntr, 1) AS UnitPointer,
-                           ROW_NUMBER() OVER
-                           (
-                               PARTITION BY barcode.bar_stokkodu
-                               ORDER BY CASE WHEN COALESCE(barcode.bar_master, 0) = 1 THEN 0 ELSE 1 END,
-                                        CASE WHEN COALESCE(barcode.bar_birimpntr, 1) = 1 THEN 0 ELSE 1 END,
-                                        barcode.bar_kodu
-                           ) AS RowNo
-                    FROM dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
-                    WHERE COALESCE(barcode.bar_iptal, 0) = 0
-                      AND NULLIF(LTRIM(RTRIM(barcode.bar_kodu)), '') IS NOT NULL
-                      AND barcode.bar_kodu IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@barcodesJson))
-                )
+                WITH {rankedBarcodesCte}
                 SELECT stock.sto_kod AS StockCode,
                        COALESCE(stock.sto_isim, '') AS ProductName,
-                       barcode.Barcode,
+                       {barcodeExpression} AS Barcode,
                        NULLIF(LTRIM(RTRIM(stock.sto_marka_kodu)), '') AS BrandCode,
-                       COALESCE(NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), ''),
-                                NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '')) AS CategoryCode,
+                       NULLIF(LTRIM(RTRIM(stock.sto_kategori_kodu)), '') AS CategoryCode,
+                       NULLIF(LTRIM(RTRIM(stock.sto_anagrup_kod)), '') AS MainGroupCode,
                        CAST(tax.Rate AS decimal(9, 2)) AS VatRate,
                        price.Price,
                        CASE WHEN COALESCE(stock.sto_iptal, 0) = 1
@@ -697,13 +741,15 @@ internal sealed class TrendyolGoCatalogWorkbench(
                       AND priceRow.sfiyat_birim_pntr = COALESCE(barcode.UnitPointer, 1)
                       AND COALESCE(priceRow.sfiyat_iptal, 0) = 0
                     ORDER BY COALESCE(priceRow.sfiyat_lastup_date, priceRow.sfiyat_create_date) DESC
-                ) AS price;
+                ) AS price
+                WHERE {barcodeExpression} IN (SELECT CONVERT(nvarchar(100), [value]) FROM OPENJSON(@barcodesJson));
                 """;
 
             AddParameter(command, "@warehouseNo", warehouseNo);
             AddParameter(command, "@priceListNo", priceListNo);
             AddParameter(command, "@paymentPlanNo", paymentPlanNo);
             AddParameter(command, "@barcodesJson", JsonSerializer.Serialize(barcodes));
+            AddParameter(command, "@lookupBarcodesJson", JsonSerializer.Serialize(lookupBarcodes));
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -717,6 +763,7 @@ internal sealed class TrendyolGoCatalogWorkbench(
                     reader["Barcode"] is DBNull ? null : Convert.ToString(reader["Barcode"], CultureInfo.InvariantCulture),
                     reader["BrandCode"] is DBNull ? null : Convert.ToString(reader["BrandCode"], CultureInfo.InvariantCulture),
                     reader["CategoryCode"] is DBNull ? null : Convert.ToString(reader["CategoryCode"], CultureInfo.InvariantCulture),
+                    reader["MainGroupCode"] is DBNull ? null : Convert.ToString(reader["MainGroupCode"], CultureInfo.InvariantCulture),
                     vatRate,
                     reader["Price"] is DBNull ? null : Convert.ToDecimal(reader["Price"], CultureInfo.InvariantCulture),
                     Convert.ToInt32(reader["Blocked"], CultureInfo.InvariantCulture) != 0));
@@ -783,7 +830,31 @@ internal sealed class TrendyolGoCatalogWorkbench(
 
     internal sealed record MikroCatalogProduct(
         string StockCode, string ProductName, string? Barcode,
-        string? BrandCode, string? CategoryCode, int? VatRate, decimal? Price, bool Blocked);
+        string? BrandCode, string? CategoryCode, string? MainGroupCode,
+        int? VatRate, decimal? Price, bool Blocked)
+    {
+        public MikroCatalogProduct(
+            string stockCode,
+            string productName,
+            string? barcode,
+            string? brandCode,
+            string? categoryCode,
+            int? vatRate,
+            decimal? price,
+            bool blocked)
+            : this(stockCode, productName, barcode, brandCode, categoryCode, null, vatRate, price, blocked)
+        {
+        }
+
+        public string? EffectiveCategoryCode =>
+            !string.IsNullOrWhiteSpace(CategoryCode) ? CategoryCode : MainGroupCode;
+    }
+
+    internal sealed record ApprovedCategoryRules(
+        IReadOnlyDictionary<string, long> CategoryMappings,
+        IReadOnlyDictionary<string, long> ProductOverrides);
+
+    internal sealed record ApprovedCategoryResolution(long? CategoryId, string? Source);
 
     private sealed record CatalogSnapshot(
         long StoreId, int WarehouseNo, string StoreName, string PreviewHash,

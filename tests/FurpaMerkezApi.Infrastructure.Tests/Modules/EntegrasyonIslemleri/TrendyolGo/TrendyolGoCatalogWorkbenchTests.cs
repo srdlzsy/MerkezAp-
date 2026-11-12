@@ -161,7 +161,7 @@ public sealed class TrendyolGoCatalogWorkbenchTests
     }
 
     [Fact]
-    public void BuildRow_WhenDefaultBrandAndCategoryConfigured_UsesDefaults()
+    public void BuildRow_WhenUnsafeDefaultsAreConfigured_StillRequiresExplicitMappings()
     {
         var product = new TrendyolGoCatalogWorkbench.MikroCatalogProduct(
             "000322",
@@ -187,9 +187,9 @@ public sealed class TrendyolGoCatalogWorkbenchTests
             defaultBrandId: 1334359,
             defaultCategoryId: 1420);
 
-        Assert.Equal("Ready", row.Status);
-        Assert.Equal(1334359, row.TrendyolBrandId);
-        Assert.Equal(1420, row.TrendyolCategoryId);
+        Assert.Equal("MappingRequired", row.Status);
+        Assert.Null(row.TrendyolBrandId);
+        Assert.Null(row.TrendyolCategoryId);
     }
 
     [Fact]
@@ -219,5 +219,46 @@ public sealed class TrendyolGoCatalogWorkbenchTests
 
         Assert.Equal("Skipped", row.Status);
         Assert.Equal("Urun Mikro'da pasif veya satisa kapali.", row.Reason);
+    }
+
+    [Theory]
+    [InlineData("2700123", "FURPA2700123")]
+    [InlineData(" 2900139 ", "FURPA2900139")]
+    [InlineData("FURPA2900139", "FURPA2900139")]
+    [InlineData("2968000009189", "2968000009189")]
+    [InlineData("8690793020075", "8690793020075")]
+    public void BarcodeRule_AppliesUppercaseFurpaPrefixOnlyForShortScaleBarcodesStartingWith27Or29(
+        string rawBarcode,
+        string expected)
+    {
+        var formatted = TrendyolGoBarcodeRule.FormatBarcode(rawBarcode);
+
+        Assert.Equal(expected, formatted);
+    }
+
+    [Fact]
+    public void BarcodeRule_ExpandLookupBarcodes_IncludesStrippedRawBarcodeForFurpaPrefix()
+    {
+        var expanded = TrendyolGoBarcodeRule.ExpandLookupBarcodes(["FURPA2700123", "8690793020075"]);
+
+        Assert.Contains("FURPA2700123", expanded);
+        Assert.Contains("2700123", expanded);
+        Assert.Contains("8690793020075", expanded);
+    }
+
+    [Fact]
+    public void BarcodeRule_SqlRankedBarcodesCte_PrioritizesPricedMasterAndUnitOneBarcodes()
+    {
+        var cte = TrendyolGoBarcodeRule.SqlRankedBarcodesCte();
+
+        var pricedIdx = cte.IndexOf("STOK_SATIS_FIYAT_LISTELERI", StringComparison.Ordinal);
+        var masterIdx = cte.IndexOf("barcode.bar_master", StringComparison.Ordinal);
+        var unitOneIdx = cte.IndexOf("barcode.bar_birimpntr", masterIdx, StringComparison.Ordinal);
+        var dateIdx = cte.IndexOf("bar_lastup_date", StringComparison.Ordinal);
+
+        Assert.True(pricedIdx > 0);
+        Assert.True(masterIdx > pricedIdx);
+        Assert.True(unitOneIdx > masterIdx);
+        Assert.True(dateIdx > unitOneIdx);
     }
 }

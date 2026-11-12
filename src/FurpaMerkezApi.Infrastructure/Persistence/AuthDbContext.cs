@@ -51,6 +51,16 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<TrendyolGoBatchFollowUpTask> TrendyolGoBatchFollowUpTasks => Set<TrendyolGoBatchFollowUpTask>();
 
+    public DbSet<TrendyolGoCategory> TrendyolGoCategories => Set<TrendyolGoCategory>();
+
+    public DbSet<TrendyolGoCategoryMapping> TrendyolGoCategoryMappings => Set<TrendyolGoCategoryMapping>();
+
+    public DbSet<TrendyolGoProductCategoryOverride> TrendyolGoProductCategoryOverrides => Set<TrendyolGoProductCategoryOverride>();
+
+    public DbSet<TrendyolGoRuntimeSetting> TrendyolGoRuntimeSettings => Set<TrendyolGoRuntimeSetting>();
+
+    public DbSet<TrendyolGoStoreSetting> TrendyolGoStoreSettings => Set<TrendyolGoStoreSetting>();
+
     public DbSet<StockAnomaly> StockAnomalies => Set<StockAnomaly>();
 
     public DbSet<StockAnomalyEvent> StockAnomalyEvents => Set<StockAnomalyEvent>();

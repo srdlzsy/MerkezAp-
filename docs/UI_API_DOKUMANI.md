@@ -19438,7 +19438,9 @@ Operasyon modulu notlari:
 
 Trendyol Go Market baglanti katmani `api.tgoapis.com` adresini kullanir. Asagidaki tablo **bizim API'de kodlanmis route'lari** gosterir; TGO'nun tum Market API'sinin desteklendigi veya bu route'larin canlida dogrulandigi anlamina gelmez. Siparis, urun katalogu, sube bazli fiyat-stok, satis acma/kapama, batch sonucu, bazi paket aksiyonlari, fatura linki ve iade/itiraz icin manuel endpointler vardir. Webhook alicisi ve Mikro satis/fatura evragi olusturma yoktur. Kapsam matrisi, operasyon akislarinin ayrintilari ve resmi kaynaklar: [Trendyol Go Entegrasyonu](TRENDYOL_GO_ENTEGRASYONU.md).
 
-Fiyat/stok onizlemesi Mikro'da Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesini kullanir; varsayilan fiyat listesi `3`, odeme plani `0`'dir. Liste `1` veya genel satis fiyati fallback olarak kullanilmaz. TGO'nun HTTP istegini kabul etmesi basari sayilmaz: `batchRequestId` kalici takip tablosuna yazilir, urun bazli sonuc worker tarafindan kesinlestirilir ve yalniz basarili urunler opsiyonel `TrendyolGo:BranchPosPriceSync` kuyruguna aktarilir.
+Fiyat/stok onizlemesi yonetim ayarindaki fiyat listesi ve odeme plani degerlerini kullanir; veritabaninda yonetim kaydi yoksa `TrendyolGo` config degerleri ilk kurulum varsayilani olur. Liste `1` veya genel satis fiyati fallback olarak kullanilmaz. TGO'nun HTTP istegini kabul etmesi basari sayilmaz: `batchRequestId` kalici takip tablosuna yazilir, urun bazli sonuc worker tarafindan kesinlestirilir ve yalniz basarili urunler opsiyonel sube POS kuyruguna aktarilir.
+
+Yonetim sekmesi magaza/depo eslesmelerini, genel ve magaza bazli stok rezervini, fiyat listesi/odeme planini, sube POS senkron anahtarini, resmi TGO kategori agacini, onayli Mikro kategori kurallarini ve urun bazli kategori istisnalarini Auth DB'de saklar. Token, sifre ve base URL gibi secret/deployment ayarlari bu endpointlerden degistirilmez. Kategori onceligi `urun istisnasi > kategori+ana grup > kategori > ana grup > celiskisiz eski esleme` seklindedir; sonuc yoksa urun `MappingRequired` kalir.
 
 POS sync varsayilan olarak depoya ait `BranchDetails.BranchIpAddress` adresini kullanir. Merkez veya farkli PostgreSQL sunucusu kullanan istisna depolar `WarehouseHosts` icinde depo no anahtariyla override edilir; depo `50` merkez PostgreSQL hostuna bu sekilde yonlendirilir. Tum depolar icin ortak host gerekirse `TrendyolGo:BranchPosPriceSync:Host` ayari kullanilabilir. `Password`, `AuthorizationToken`, `ApiKey` ve `ApiSecret` kaynak dosyaya yazilmaz; local gelistirmede User Secrets, canlida `TrendyolGo__BranchPosPriceSync__Password` dahil ortam degiskenleri kullanilir. PostgreSQL `pg_hba.conf` kullanici/veritabani yetkisi hazir olmadan POS sync acilmamalidir.
 
@@ -19502,6 +19504,15 @@ Endpointler:
 | `GET /api/entegrasyon-islemleri/trendyol-go/status` | - | `TrendyolGoConnectionStatusDto` | `list` |
 | `GET /api/entegrasyon-islemleri/trendyol-go` | - | `status` ile ayni cevap | `list` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/stores` | - | `TrendyolGoStoreMappingDto[]` | `list` |
+| `GET /api/entegrasyon-islemleri/trendyol-go/management?categorySearch=` | query | `TrendyolGoAdministrationOverview` | `detail` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/management/settings` | `TrendyolGoRuntimeSettingsHttpRequest` | `TrendyolGoRuntimeSettingsDto` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/management/stores` | `TrendyolGoStoreSettingHttpRequest` | `TrendyolGoStoreSettingDto` | `update` |
+| `DELETE /api/entegrasyon-islemleri/trendyol-go/management/stores/{storeId}` | path | `204`; magaza tanimi pasif olur | `update` |
+| `POST /api/entegrasyon-islemleri/trendyol-go/management/categories/refresh` | body yok | `TrendyolGoCategorySyncResult` | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/management/category-mappings` | `TrendyolGoCategoryMappingHttpRequest` | `TrendyolGoCategoryMappingDto` | `update` |
+| `DELETE /api/entegrasyon-islemleri/trendyol-go/management/category-mappings/{id}` | path | `204`; kural pasif olur | `update` |
+| `PUT /api/entegrasyon-islemleri/trendyol-go/management/product-overrides` | `TrendyolGoProductCategoryOverrideHttpRequest` | `TrendyolGoProductCategoryOverrideDto` | `update` |
+| `DELETE /api/entegrasyon-islemleri/trendyol-go/management/product-overrides/{id}` | path | `204`; istisna pasif olur | `update` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/connection-test?storeId=402535` | query | `TrendyolGoConnectionStatusDto` | `detail` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/orders` | query | TGO siparis JSON response'u | `list` |
 | `GET /api/entegrasyon-islemleri/trendyol-go/orders/by-number/{orderNumber}` | path | TGO siparis JSON response'u | `detail` |
