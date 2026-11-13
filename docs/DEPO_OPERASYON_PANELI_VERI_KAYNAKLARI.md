@@ -42,6 +42,13 @@ gostermeye devam eder:
 - diger basarisiz API islemleri,
 - dis belge numarasi, ETTN, hata ve olay gecmisi.
 
+`document_flows`, `stock_anomalies` veya `feedback_items` gibi yardimci Auth
+DB tablolari bulunamazsa Mikro kaynakli depo sayilari hesaplanmaya devam eder.
+Yardimci kartlar sifir kabul edilir, eksiklik warning loguna yazilir ve depo
+operasyon panelinde akis takibinin kullanilabilir olmadigi bildirilir. Bu
+tolerans yalniz SQL Server'in `Invalid object name` (`208`) hatasi icindir;
+baglanti, yetki ve gercek sorgu hatalari gizlenmez.
+
 Paneldeki `openOrderCount`, tum Mikro acik siparisleri degil, etkin AXATA
 gorevlerinin kapsadigi ve Mikro'da henuz gonderim isareti almamis siparisleri
 ifade eder. Kullanici ekraninda bu nedenle `AXATA Bekleyen Siparis` olarak

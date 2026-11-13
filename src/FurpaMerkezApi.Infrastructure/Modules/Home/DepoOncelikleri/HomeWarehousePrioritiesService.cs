@@ -6,6 +6,7 @@ using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.Home.DepoOncelikleri;
 
@@ -14,7 +15,8 @@ public sealed class HomeWarehousePrioritiesService(
     MikroDbContext mikroDbContext,
     IWarehouseMovementMikroSnapshotReader warehouseMovementSnapshotReader,
     IAxataOrderMikroSnapshotReader axataOrderSnapshotReader,
-    IClock clock) : IHomeWarehousePrioritiesService
+    IClock clock,
+    ILogger<HomeWarehousePrioritiesService> logger) : IHomeWarehousePrioritiesService
 {
     private const string Critical = "critical";
     private const string Warning = "warning";
@@ -62,14 +64,9 @@ public sealed class HomeWarehousePrioritiesService(
             request.WarehouseNo,
             operationalDataStartUtc,
             cancellationToken);
-        var myOpenFeedbackCount = await authDbContext.FeedbackItems
-            .AsNoTracking()
-            .Where(item => item.CreatedByUserId == request.UserId)
-            .CountAsync(
-                item => item.Status != FeedbackItemStatus.Resolved &&
-                        item.Status != FeedbackItemStatus.Closed &&
-                        item.Status != FeedbackItemStatus.Rejected,
-                cancellationToken);
+        var myOpenFeedbackCount = await LoadMyOpenFeedbackCountAsync(
+            request.UserId,
+            cancellationToken);
 
         var priorities = BuildPriorities(
             request.WarehouseNo,
@@ -134,18 +131,29 @@ public sealed class HomeWarehousePrioritiesService(
                 flow.TargetWarehouseNo == scopedWarehouseNo);
         }
 
-        var rows = await query
-            .Select(flow => new FlowRow(
-                flow.FlowKey,
-                flow.DocumentType,
-                flow.SourceWarehouseNo,
-                flow.TargetWarehouseNo,
-                flow.Status,
-                flow.CurrentStep,
-                flow.ExternalUuid,
-                flow.CreatedAtUtc,
-                flow.UpdatedAtUtc))
-            .ToListAsync(cancellationToken);
+        IReadOnlyCollection<FlowRow> rows;
+        try
+        {
+            rows = await query
+                .Select(flow => new FlowRow(
+                    flow.FlowKey,
+                    flow.DocumentType,
+                    flow.SourceWarehouseNo,
+                    flow.TargetWarehouseNo,
+                    flow.Status,
+                    flow.CurrentStep,
+                    flow.ExternalUuid,
+                    flow.CreatedAtUtc,
+                    flow.UpdatedAtUtc))
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception exception) when (OptionalAuthTableExceptionClassifier.IsMissingTable(exception))
+        {
+            logger.LogWarning(
+                exception,
+                "Home warehouse priorities will continue without document flow audit data because the optional table is unavailable.");
+            rows = [];
+        }
 
         var operationalRows = rows
             .Where(flow => flow.CreatedAtUtc >= operationalDataStartUtc && flow.CreatedAtUtc < endUtc)
@@ -305,14 +313,48 @@ public sealed class HomeWarehousePrioritiesService(
             query = query.Where(anomaly => anomaly.WarehouseNo == scopedWarehouseNo);
         }
 
-        return await query
-            .GroupBy(_ => 1)
-            .Select(group => new StockAnomalySummary(
-                group.Count(),
-                group.Count(anomaly => anomaly.Severity == StockAnomalySeverity.Critical),
-                group.Count(anomaly => anomaly.Severity == StockAnomalySeverity.High)))
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? new StockAnomalySummary(0, 0, 0);
+        try
+        {
+            return await query
+                .GroupBy(_ => 1)
+                .Select(group => new StockAnomalySummary(
+                    group.Count(),
+                    group.Count(anomaly => anomaly.Severity == StockAnomalySeverity.Critical),
+                    group.Count(anomaly => anomaly.Severity == StockAnomalySeverity.High)))
+                .SingleOrDefaultAsync(cancellationToken)
+                ?? new StockAnomalySummary(0, 0, 0);
+        }
+        catch (Exception exception) when (OptionalAuthTableExceptionClassifier.IsMissingTable(exception))
+        {
+            logger.LogWarning(
+                exception,
+                "Home warehouse priorities will continue without stock anomaly data because the optional table is unavailable.");
+            return new StockAnomalySummary(0, 0, 0);
+        }
+    }
+
+    private async Task<int> LoadMyOpenFeedbackCountAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await authDbContext.FeedbackItems
+                .AsNoTracking()
+                .Where(item => item.CreatedByUserId == userId)
+                .CountAsync(
+                    item => item.Status != FeedbackItemStatus.Resolved &&
+                            item.Status != FeedbackItemStatus.Closed &&
+                            item.Status != FeedbackItemStatus.Rejected,
+                    cancellationToken);
+        }
+        catch (Exception exception) when (OptionalAuthTableExceptionClassifier.IsMissingTable(exception))
+        {
+            logger.LogWarning(
+                exception,
+                "Home warehouse priorities will continue without feedback data because the optional table is unavailable.");
+            return 0;
+        }
     }
 
     private async Task<string> ResolveWarehouseNameAsync(

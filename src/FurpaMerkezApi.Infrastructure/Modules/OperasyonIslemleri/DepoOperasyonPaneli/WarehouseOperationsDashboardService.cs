@@ -6,6 +6,7 @@ using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
@@ -16,7 +17,8 @@ public sealed class WarehouseOperationsDashboardService(
     IWarehouseMovementMikroSnapshotReader warehouseMovementSnapshotReader,
     IAxataOrderMikroSnapshotReader axataOrderSnapshotReader,
     IClock clock,
-    IOptionsMonitor<DocumentFlowTrackingOptions> trackingOptions)
+    IOptionsMonitor<DocumentFlowTrackingOptions> trackingOptions,
+    ILogger<WarehouseOperationsDashboardService> logger)
     : IWarehouseOperationsDashboardService
 {
     private static readonly DateOnly MinimumOperationalStartDate = new(2026, 11, 1);
@@ -65,18 +67,31 @@ public sealed class WarehouseOperationsDashboardService(
                 flow.TargetWarehouseNo == scopedWarehouse);
         }
 
-        var flowRows = await flowsQuery
-            .Select(flow => new FlowRow(
-                flow.FlowKey,
-                flow.DocumentType,
-                flow.SourceWarehouseNo,
-                flow.TargetWarehouseNo,
-                flow.Status,
-                flow.CurrentStep,
-                flow.ExternalUuid,
-                flow.CreatedAtUtc,
-                flow.UpdatedAtUtc))
-            .ToListAsync(cancellationToken);
+        var documentFlowStoreAvailable = true;
+        IReadOnlyCollection<FlowRow> flowRows;
+        try
+        {
+            flowRows = await flowsQuery
+                .Select(flow => new FlowRow(
+                    flow.FlowKey,
+                    flow.DocumentType,
+                    flow.SourceWarehouseNo,
+                    flow.TargetWarehouseNo,
+                    flow.Status,
+                    flow.CurrentStep,
+                    flow.ExternalUuid,
+                    flow.CreatedAtUtc,
+                    flow.UpdatedAtUtc))
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception exception) when (OptionalAuthTableExceptionClassifier.IsMissingTable(exception))
+        {
+            logger.LogWarning(
+                exception,
+                "Warehouse operations dashboard will continue without document flow audit data because the optional table is unavailable.");
+            documentFlowStoreAvailable = false;
+            flowRows = [];
+        }
         var movementSnapshot = await warehouseMovementSnapshotReader.ReadAsync(
             lookbackStartDate,
             date,
@@ -142,7 +157,7 @@ public sealed class WarehouseOperationsDashboardService(
         return new WarehouseOperationsDashboardDto(
             date,
             clock.UtcNow,
-            trackingOptions.CurrentValue.Enabled,
+            trackingOptions.CurrentValue.Enabled && documentFlowStoreAvailable,
             new WarehouseOperationsDashboardSummaryDto(
                 items.Length,
                 items.Sum(item => item.TodayShipmentCount),

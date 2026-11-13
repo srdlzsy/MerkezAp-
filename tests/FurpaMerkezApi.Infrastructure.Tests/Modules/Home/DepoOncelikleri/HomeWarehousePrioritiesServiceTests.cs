@@ -6,6 +6,7 @@ using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.Home.DepoOncelikleri;
@@ -59,7 +60,8 @@ public sealed class HomeWarehousePrioritiesServiceTests
             mikroDbContext,
             new StaticMikroSnapshotReader(snapshot),
             new StaticAxataOrderSnapshotReader(axataSnapshot),
-            new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)));
+            new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)),
+            NullLogger<HomeWarehousePrioritiesService>.Instance);
 
         var result = await service.GetAsync(
             new HomeWarehousePrioritiesRequest(
@@ -210,7 +212,8 @@ public sealed class HomeWarehousePrioritiesServiceTests
             mikroDbContext,
             new UnavailableMikroSnapshotReader(),
             new UnavailableAxataOrderSnapshotReader(),
-            new FixedClock(now));
+            new FixedClock(now),
+            NullLogger<HomeWarehousePrioritiesService>.Instance);
 
         var result = await service.GetAsync(
             new HomeWarehousePrioritiesRequest(

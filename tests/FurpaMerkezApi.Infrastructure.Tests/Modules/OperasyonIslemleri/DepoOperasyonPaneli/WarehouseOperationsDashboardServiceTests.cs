@@ -7,6 +7,7 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -51,7 +52,8 @@ public sealed class WarehouseOperationsDashboardServiceTests
             new StaticMikroSnapshotReader(snapshot),
             new StaticAxataOrderSnapshotReader(axataSnapshot),
             new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)),
-            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }));
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<WarehouseOperationsDashboardService>.Instance);
 
         var result = await service.GetAsync(selectedDate, CancellationToken.None);
 
@@ -179,7 +181,8 @@ public sealed class WarehouseOperationsDashboardServiceTests
             new UnavailableMikroSnapshotReader(),
             new UnavailableAxataOrderSnapshotReader(),
             new FixedClock(todayUtc),
-            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }));
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }),
+            NullLogger<WarehouseOperationsDashboardService>.Instance);
 
         var result = await service.GetAsync(new DateOnly(2026, 11, 10), CancellationToken.None);
 
