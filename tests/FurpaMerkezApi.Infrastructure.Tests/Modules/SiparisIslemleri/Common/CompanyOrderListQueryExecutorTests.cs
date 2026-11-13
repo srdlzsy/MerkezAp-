@@ -78,6 +78,31 @@ public sealed class CompanyOrderListQueryExecutorTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ManualDeskDoesNotIncludeBackdatedOrderChangedToday()
+    {
+        await using var dbContext = CreateDbContext();
+        var scanDate = new DateTime(2026, 11, 13);
+        dbContext.SIPARISLERs.Add(CreateOrderLine(
+            documentDate: scanDate.AddDays(-1),
+            createDate: scanDate,
+            sentFlag: string.Empty));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new CompanyOrderListQueryExecutor(dbContext).ExecuteAsync(
+            new CompanyOrderListRequest(
+                50,
+                scanDate,
+                scanDate,
+                OnlyOpen: true,
+                ExcludeAxataSent: true,
+                UseStrictDocumentDate: true),
+            CompanyOrderListDirection.Received,
+            CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
     private static SIPARISLER CreateOrderLine(
         DateTime documentDate,
         DateTime createDate,

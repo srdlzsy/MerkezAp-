@@ -4,4 +4,6 @@ public sealed record WarehouseOrderListRequest(
     int? WarehouseNo,
     DateTime StartDate,
     DateTime EndDate,
-    bool ExcludeAxataSent = false);
+    bool ExcludeAxataSent = false,
+    bool OnlyOpen = false,
+    bool UseStrictDocumentDate = false);

@@ -482,7 +482,10 @@ public static class ServiceCollectionExtensions
                 mikroWriteConnection,
                 sqlServer =>
                 {
-                    sqlServer.EnableRetryOnFailure();
+                    sqlServer.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorNumbersToAdd: [1205]);
                     sqlServer.CommandTimeout(mikroWriteCommandTimeoutSeconds);
                 }));
 

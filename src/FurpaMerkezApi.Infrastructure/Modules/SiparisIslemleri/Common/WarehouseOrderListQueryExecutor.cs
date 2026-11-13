@@ -34,7 +34,7 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
                 ((order.ssip_tarih.HasValue &&
                   order.ssip_tarih.Value >= startDate &&
                   order.ssip_tarih.Value < endDateExclusive) ||
-                 (request.ExcludeAxataSent &&
+                 (!request.UseStrictDocumentDate && request.ExcludeAxataSent &&
                   ((order.ssip_create_date >= startDate && order.ssip_create_date < endDateExclusive) ||
                    (order.ssip_lastup_date >= startDate && order.ssip_lastup_date < endDateExclusive)))));
 
@@ -78,6 +78,7 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
                 LineCount = grouped.Count(),
                 AxataSentLineCount = grouped.Count(item => item.order.ssip_special1 == "1"),
                 TotalQuantity = grouped.Sum(item => item.order.ssip_miktar ?? 0d),
+                TotalDeliveredQuantity = grouped.Sum(item => item.order.ssip_teslim_miktar ?? 0d),
                 TotalAmount = grouped.Sum(item => item.order.ssip_tutar ?? 0d),
                 DeliveryDate = grouped.Max(item => item.order.ssip_teslim_tarih)
             };
@@ -86,6 +87,7 @@ public sealed class WarehouseOrderListQueryExecutor(MikroDbContext mikroDbContex
 
         return documents
             .Where(document => !request.ExcludeAxataSent || document.AxataSentLineCount < document.LineCount)
+            .Where(document => !request.OnlyOpen || document.TotalQuantity - document.TotalDeliveredQuantity > 0.000001d)
             .Select(document =>
             {
                 var warehouseNo = isIssued ? (document.InWarehouseNo ?? 0) : (document.OutWarehouseNo ?? 0);

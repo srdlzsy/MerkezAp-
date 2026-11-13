@@ -6,4 +6,5 @@ public sealed record CompanyOrderListRequest(
     DateTime EndDate,
     string? CustomerCode = null,
     bool OnlyOpen = false,
-    bool ExcludeAxataSent = false);
+    bool ExcludeAxataSent = false,
+    bool UseStrictDocumentDate = false);

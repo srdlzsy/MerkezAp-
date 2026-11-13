@@ -102,7 +102,13 @@ internal sealed class AxataSynchronizationManualDocumentService(
             case "issued-warehouse-order-sync":
             {
                 var documents = await warehouseOrderListQueryExecutor.ExecuteAsync(
-                    new WarehouseOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
+                    new WarehouseOrderListRequest(
+                        warehouseNo,
+                        criteria.StartDate,
+                        criteria.EndDate,
+                        ExcludeAxataSent: true,
+                        OnlyOpen: true,
+                        UseStrictDocumentDate: true),
                     AxataOutboundWarehouseOrderDirection,
                     cancellationToken);
                 totalRecordCount = documents.Count;
@@ -150,7 +156,13 @@ internal sealed class AxataSynchronizationManualDocumentService(
             case "received-company-order-sync":
             {
                 var documents = await companyOrderListQueryExecutor.ExecuteAsync(
-                    new CompanyOrderListRequest(warehouseNo, criteria.StartDate, criteria.EndDate),
+                    new CompanyOrderListRequest(
+                        warehouseNo,
+                        criteria.StartDate,
+                        criteria.EndDate,
+                        OnlyOpen: true,
+                        ExcludeAxataSent: true,
+                        UseStrictDocumentDate: true),
                     AxataReceivedCompanyOrderDirection,
                     cancellationToken);
                 totalRecordCount = documents.Count;

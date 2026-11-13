@@ -35,7 +35,7 @@ public sealed class CompanyOrderListQueryExecutor(MikroDbContext mikroDbContext)
                 ((order.sip_tarih.HasValue &&
                   order.sip_tarih.Value >= startDate &&
                   order.sip_tarih.Value < endDateExclusive) ||
-                 (request.ExcludeAxataSent &&
+                 (!request.UseStrictDocumentDate && request.ExcludeAxataSent &&
                   ((order.sip_create_date >= startDate &&
                     order.sip_create_date < endDateExclusive) ||
                    (order.sip_lastup_date.HasValue &&

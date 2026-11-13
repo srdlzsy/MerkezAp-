@@ -74,6 +74,32 @@ public sealed class WarehouseOrderListQueryExecutorTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ManualDeskUsesExactDateAndOnlyOpenUnsentOrders()
+    {
+        await using var dbContext = CreateDbContext();
+        var scanDate = new DateTime(2026, 11, 13);
+        AddWarehouses(dbContext, scanDate);
+        var backdated = CreateOrderLine(scanDate.AddDays(-1), scanDate, 0, "FROU");
+        var closed = CreateOrderLine(scanDate, scanDate, 1, "FROU");
+        closed.ssip_teslim_miktar = closed.ssip_miktar;
+        dbContext.DEPOLAR_ARASI_SIPARISLERs.AddRange(backdated, closed);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new WarehouseOrderListQueryExecutor(dbContext).ExecuteAsync(
+            new WarehouseOrderListRequest(
+                50,
+                scanDate,
+                scanDate,
+                ExcludeAxataSent: true,
+                OnlyOpen: true,
+                UseStrictDocumentDate: true),
+            WarehouseOrderListDirection.Received,
+            CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
     private static DEPOLAR_ARASI_SIPARISLER CreateOrderLine(
         DateTime documentDate,
         DateTime createDate,

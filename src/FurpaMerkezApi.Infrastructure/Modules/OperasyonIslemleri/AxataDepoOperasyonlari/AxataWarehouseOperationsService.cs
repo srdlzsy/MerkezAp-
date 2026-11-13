@@ -302,7 +302,8 @@ public sealed class AxataWarehouseOperationsService(
         }
         const string typeSql = """
             SELECT sy.CSYER,sy.CSTAN,COUNT(c.YKORID) FROM dbo.STOKYER sy
-            LEFT JOIN dbo.CELL c ON c.YSIRKD=@company AND c.YDEPO=@warehouse AND c.YTIP=TRY_CONVERT(decimal(2,0),sy.CSYER)
+            LEFT JOIN dbo.CELL c ON c.YSIRKD=@company AND c.YDEPO=@warehouse
+              AND LTRIM(RTRIM(CONVERT(varchar(20),c.YTIP)))=LTRIM(RTRIM(CONVERT(varchar(20),sy.CSYER)))
             GROUP BY sy.CSYER,sy.CSTAN ORDER BY COUNT(c.YKORID) DESC,sy.CSYER
             """;
         var types = new List<AxataStockTypeCapacityItem>();
@@ -319,7 +320,7 @@ public sealed class AxataWarehouseOperationsService(
     {
         const string sql = """
             SELECT CONVERT(int,m.SMSYIL),CONVERT(int,m.SMSNO),m.SMHKOD,CONVERT(int,m.SMSTAT),m.SMAPLK,r.TMRAMP,
-              CONVERT(varchar(8),CONVERT(bigint,m.SMYSTR)),TRY_CONVERT(int,d.SDKALN),l.SDLSIRA,d.SDSTKD,sku.MAMADA,d.SDMIKI,
+              CONVERT(varchar(8),CONVERT(bigint,m.SMYSTR)),CONVERT(int,d.SDKALN),l.SDLSIRA,d.SDSTKD,sku.MAMADA,d.SDMIKI,
               CASE WHEN COALESCE(sd.SDGMIK,0)>d.SDMIKI THEN d.SDMIKI ELSE COALESCE(sd.SDGMIK,0) END
             FROM dbo.SIPDETAIL d
             INNER JOIN dbo.SEVK_LINK l ON l.SDLSKOD=d.SDSIRK AND l.SDLSIPN=d.SDSIPN AND l.SDLKALN=d.SDKALN
