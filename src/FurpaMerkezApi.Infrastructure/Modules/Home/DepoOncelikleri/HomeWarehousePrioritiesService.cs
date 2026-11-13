@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
@@ -12,6 +13,7 @@ public sealed class HomeWarehousePrioritiesService(
     AuthDbContext authDbContext,
     MikroDbContext mikroDbContext,
     IWarehouseMovementMikroSnapshotReader warehouseMovementSnapshotReader,
+    IAxataOrderMikroSnapshotReader axataOrderSnapshotReader,
     IClock clock) : IHomeWarehousePrioritiesService
 {
     private const string Critical = "critical";
@@ -43,10 +45,15 @@ public sealed class HomeWarehousePrioritiesService(
             lookbackStartDate,
             request.Date,
             cancellationToken);
+        var axataOrderSnapshot = await axataOrderSnapshotReader.ReadAsync(
+            lookbackStartDate,
+            request.Date,
+            cancellationToken);
         var flowSummary = await LoadFlowSummaryAsync(
             request.WarehouseNo,
             request.Date,
             movementSnapshot,
+            axataOrderSnapshot,
             startUtc,
             endUtc,
             operationalDataStartUtc,
@@ -102,6 +109,7 @@ public sealed class HomeWarehousePrioritiesService(
         int? warehouseNo,
         DateOnly selectedDate,
         WarehouseMovementMikroSnapshot movementSnapshot,
+        AxataOrderMikroSnapshot axataOrderSnapshot,
         DateTime startUtc,
         DateTime endUtc,
         DateTime operationalDataStartUtc,
@@ -128,6 +136,7 @@ public sealed class HomeWarehousePrioritiesService(
 
         var rows = await query
             .Select(flow => new FlowRow(
+                flow.FlowKey,
                 flow.DocumentType,
                 flow.SourceWarehouseNo,
                 flow.TargetWarehouseNo,
@@ -187,13 +196,12 @@ public sealed class HomeWarehousePrioritiesService(
         if (movementSnapshot.IsAvailable)
         {
             var movements = movementSnapshot.Rows;
-            todayShipmentCount = rows.Count(flow =>
-                                     (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
-                                     flow.DocumentType == DocumentFlowType.CompanyShipment &&
-                                     flow.CreatedAtUtc >= startUtc &&
-                                     flow.CreatedAtUtc < endUtc &&
-                                     !IsFailedCreation(flow)) +
-                                 movements.Count(row =>
+            var companyMovements = movementSnapshot.CompanyRows ?? [];
+            todayShipmentCount = movements.Count(row =>
+                                     (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
+                                     row.DocumentDate == selectedDate &&
+                                     !row.IsReturn) +
+                                 companyMovements.Count(row =>
                                      (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
                                      row.DocumentDate == selectedDate &&
                                      !row.IsReturn);
@@ -216,29 +224,35 @@ public sealed class HomeWarehousePrioritiesService(
                 !row.IsAccepted &&
                 row.IsEDespatchSent);
 
-            var failedWarehouseEDespatchCount = operationalRows.Count(flow =>
-                (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
-                IsWarehouseMovement(flow.DocumentType) &&
-                flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
-                flow.Status == DocumentFlowStatus.Failed);
-            var pendingWarehouseEDespatchCount = movements.Count(row =>
-                (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
-                !row.IsAccepted &&
-                !row.IsEDespatchSent);
-            var unsubmittedCompanyEDespatchCount = operationalRows.Count(flow =>
-                (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
-                flow.DocumentType is DocumentFlowType.CompanyShipment or DocumentFlowType.CompanyReturn &&
-                flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
-                flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
-                flow.Status == DocumentFlowStatus.Succeeded &&
-                flow.ExternalUuid == null &&
-                (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
-                 flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
-                 flow.CurrentStep == DocumentFlowStep.DocumentUpdated));
-            unsubmittedEDespatchCount = Math.Max(
-                                             0,
-                                             pendingWarehouseEDespatchCount - failedWarehouseEDespatchCount) +
-                                         unsubmittedCompanyEDespatchCount;
+            var failedEDespatchKeys = operationalRows
+                .Where(flow =>
+                    (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+                    flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                    flow.Status == DocumentFlowStatus.Failed)
+                .Select(flow => flow.FlowKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var pendingEDespatchKeys = movements
+                .Where(row =>
+                    (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
+                    !row.IsAccepted &&
+                    !row.IsEDespatchSent)
+                .Select(row => DocumentFlowKeys.Create(
+                    row.IsReturn ? DocumentFlowType.WarehouseReturn : DocumentFlowType.InterWarehouseShipment,
+                    row.SourceWarehouseNo,
+                    row.DocumentSerie,
+                    row.DocumentOrderNo))
+                .Concat(companyMovements
+                    .Where(row =>
+                        (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
+                        !row.IsEDespatchSent)
+                    .Select(row => DocumentFlowKeys.Create(
+                        row.IsReturn ? DocumentFlowType.CompanyReturn : DocumentFlowType.CompanyShipment,
+                        row.SourceWarehouseNo,
+                        row.DocumentSerie,
+                        row.DocumentOrderNo)))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            failedEDespatchCount = pendingEDespatchKeys.Count(failedEDespatchKeys.Contains);
+            unsubmittedEDespatchCount = pendingEDespatchKeys.Count(key => !failedEDespatchKeys.Contains(key));
         }
 
         var otherFailedOperationCount = operationalRows.Count(flow =>
@@ -248,13 +262,17 @@ public sealed class HomeWarehousePrioritiesService(
             flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
             flow.Status == DocumentFlowStatus.Failed);
 
-        var openOrderCount = operationalRows.Count(flow =>
-            (!hasWarehouseNo ||
-             flow.SourceWarehouseNo == scopedWarehouseNo ||
-             flow.TargetWarehouseNo == scopedWarehouseNo) &&
-            IsOrder(flow.DocumentType) &&
-            flow.CurrentStep == DocumentFlowStep.OrderCreated &&
-            flow.Status == DocumentFlowStatus.Succeeded);
+        var openOrderCount = axataOrderSnapshot.IsAvailable
+            ? axataOrderSnapshot.Rows.Count(row =>
+                !row.IsSent &&
+                (!hasWarehouseNo ||
+                 row.SourceWarehouseNo == scopedWarehouseNo ||
+                 row.TargetWarehouseNo == scopedWarehouseNo))
+            : operationalRows.Count(flow =>
+                (!hasWarehouseNo ||
+                 flow.SourceWarehouseNo == scopedWarehouseNo ||
+                 flow.TargetWarehouseNo == scopedWarehouseNo) &&
+                IsOpenOrder(flow));
 
         return new FlowSummary(
             todayShipmentCount,
@@ -716,7 +734,13 @@ public sealed class HomeWarehousePrioritiesService(
         return localStart.ToUniversalTime();
     }
 
+    private static bool IsOpenOrder(FlowRow flow) =>
+        flow.Status == DocumentFlowStatus.Succeeded &&
+        flow.CurrentStep == DocumentFlowStep.OrderCreated &&
+        flow.DocumentType is DocumentFlowType.IssuedWarehouseOrder or DocumentFlowType.IssuedCompanyOrder;
+
     private sealed record FlowRow(
+        string FlowKey,
         DocumentFlowType DocumentType,
         int SourceWarehouseNo,
         int? TargetWarehouseNo,

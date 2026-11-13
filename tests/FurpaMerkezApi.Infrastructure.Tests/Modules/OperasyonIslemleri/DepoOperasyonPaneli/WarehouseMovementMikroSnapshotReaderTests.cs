@@ -21,7 +21,10 @@ public sealed class WarehouseMovementMikroSnapshotReaderTests
         dbContext.STOK_HAREKETLERIs.AddRange(
             CreateMovement("F50", 10, 0, 50, 60, 104, 0, true, sentUuid, 0),
             CreateMovement("F50", 10, 0, 50, 60, 104, 0, true, sentUuid, 1),
-            CreateMovement("I104", 11, 1, 104, 50, 60, 1, true, sentUuid, 0));
+            CreateMovement("I104", 11, 1, 104, 50, 60, 1, true, sentUuid, 0),
+            CreateMovement("F50", 12, 0, 50, 60, 104, 0, true, sentUuid, 0, isCancelled: true),
+            CreateCompanyMovement("FC50", 20, 50, false, sentUuid),
+            CreateCompanyMovement("FC50", 21, 50, true, sentUuid, isCancelled: true));
         await dbContext.SaveChangesAsync();
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var reader = new WarehouseMovementMikroSnapshotReader(
@@ -45,6 +48,11 @@ public sealed class WarehouseMovementMikroSnapshotReaderTests
         var accepted = Assert.Single(result.Rows, row => row.DocumentOrderNo == 11);
         Assert.True(accepted.IsAccepted);
         Assert.Equal(50, accepted.TargetWarehouseNo);
+
+        var companyMovement = Assert.Single(result.CompanyRows!);
+        Assert.Equal(20, companyMovement.DocumentOrderNo);
+        Assert.False(companyMovement.IsReturn);
+        Assert.True(companyMovement.IsEDespatchSent);
     }
 
     private static STOK_HAREKETLERI CreateMovement(
@@ -57,10 +65,12 @@ public sealed class WarehouseMovementMikroSnapshotReaderTests
         byte shippingState,
         bool locked,
         string uuid,
-        int lineNo) =>
+        int lineNo,
+        bool isCancelled = false) =>
         new()
         {
             sth_Guid = Guid.NewGuid(),
+            sth_iptal = isCancelled,
             sth_evraktip = 17,
             sth_evrakno_seri = serie,
             sth_evrakno_sira = orderNo,
@@ -74,6 +84,33 @@ public sealed class WarehouseMovementMikroSnapshotReaderTests
             sth_belge_no = "FRM2026000000001",
             sth_aciklama = uuid,
             sth_tarih = new DateTime(2026, 11, 13),
+            sth_create_date = new DateTime(2026, 11, 13, 8, 0, 0),
+            sth_lastup_date = new DateTime(2026, 11, 13, 8, 10, 0)
+        };
+
+    private static STOK_HAREKETLERI CreateCompanyMovement(
+        string serie,
+        int orderNo,
+        int sourceWarehouseNo,
+        bool isReturn,
+        string uuid,
+        bool isCancelled = false) =>
+        new()
+        {
+            sth_Guid = Guid.NewGuid(),
+            sth_iptal = isCancelled,
+            sth_evraktip = 1,
+            sth_tip = 1,
+            sth_normal_iade = isReturn ? (byte)1 : (byte)0,
+            sth_evrakno_seri = serie,
+            sth_evrakno_sira = orderNo,
+            sth_satirno = 0,
+            sth_cikis_depo_no = sourceWarehouseNo,
+            sth_kilitli = true,
+            sth_belge_no = "FRM2026000000001",
+            sth_aciklama = uuid,
+            sth_tarih = new DateTime(2026, 11, 13),
+            sth_belge_tarih = new DateTime(2026, 11, 13),
             sth_create_date = new DateTime(2026, 11, 13, 8, 0, 0),
             sth_lastup_date = new DateTime(2026, 11, 13, 8, 10, 0)
         };

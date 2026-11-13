@@ -27,10 +27,38 @@ public sealed class HomeWarehousePrioritiesServiceTests
                 new("F50", 3, false, 50, 53, selectedDate, createdAt, createdAt.AddMinutes(20), true, true),
                 new("F53", 4, false, 53, 104, selectedDate, createdAt, null, false, false)
             ]);
+        var staleFlow = new DocumentFlow(
+            Guid.NewGuid(),
+            "IssuedWarehouseOrder:53:D53:10",
+            DocumentFlowType.IssuedWarehouseOrder,
+            53,
+            104,
+            "D53",
+            10,
+            createdAt);
+        staleFlow.Record(
+            DocumentFlowStep.OrderCreated,
+            DocumentFlowStatus.Succeeded,
+            "Siparis olusturuldu.",
+            null,
+            null,
+            createdAt);
+        authDbContext.DocumentFlows.Add(staleFlow);
+        await authDbContext.SaveChangesAsync();
+
+        var axataSnapshot = new AxataOrderMikroSnapshot(
+            true,
+            [
+                new(DocumentFlowType.IssuedWarehouseOrder, 53, 104, "D53", 10, selectedDate,
+                    createdAt, createdAt, true, 10, 0, "issued-warehouse-order-sync"),
+                new(DocumentFlowType.IssuedWarehouseOrder, 53, 105, "D53", 11, selectedDate,
+                    createdAt, createdAt, false, 10, 0, "issued-warehouse-order-sync")
+            ]);
         var service = new HomeWarehousePrioritiesService(
             authDbContext,
             mikroDbContext,
             new StaticMikroSnapshotReader(snapshot),
+            new StaticAxataOrderSnapshotReader(axataSnapshot),
             new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)));
 
         var result = await service.GetAsync(
@@ -46,6 +74,7 @@ public sealed class HomeWarehousePrioritiesServiceTests
         Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
         Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "unacceptedOutgoing").Value);
         Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "failedEDespatch").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "openOrder").Value);
     }
 
     [Fact]
@@ -180,6 +209,7 @@ public sealed class HomeWarehousePrioritiesServiceTests
             authDbContext,
             mikroDbContext,
             new UnavailableMikroSnapshotReader(),
+            new UnavailableAxataOrderSnapshotReader(),
             new FixedClock(now));
 
         var result = await service.GetAsync(
@@ -319,6 +349,25 @@ public sealed class HomeWarehousePrioritiesServiceTests
         : IWarehouseMovementMikroSnapshotReader
     {
         public Task<WarehouseMovementMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(snapshot);
+    }
+
+    private sealed class UnavailableAxataOrderSnapshotReader : IAxataOrderMikroSnapshotReader
+    {
+        public Task<AxataOrderMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(AxataOrderMikroSnapshot.Unavailable);
+    }
+
+    private sealed class StaticAxataOrderSnapshotReader(AxataOrderMikroSnapshot snapshot)
+        : IAxataOrderMikroSnapshotReader
+    {
+        public Task<AxataOrderMikroSnapshot> ReadAsync(
             DateOnly startDate,
             DateOnly endDate,
             CancellationToken cancellationToken) =>

@@ -14,6 +14,7 @@ public sealed class WarehouseOperationsDashboardService(
     AuthDbContext authDbContext,
     MikroDbContext mikroDbContext,
     IWarehouseMovementMikroSnapshotReader warehouseMovementSnapshotReader,
+    IAxataOrderMikroSnapshotReader axataOrderSnapshotReader,
     IClock clock,
     IOptionsMonitor<DocumentFlowTrackingOptions> trackingOptions)
     : IWarehouseOperationsDashboardService
@@ -66,6 +67,7 @@ public sealed class WarehouseOperationsDashboardService(
 
         var flowRows = await flowsQuery
             .Select(flow => new FlowRow(
+                flow.FlowKey,
                 flow.DocumentType,
                 flow.SourceWarehouseNo,
                 flow.TargetWarehouseNo,
@@ -79,6 +81,10 @@ public sealed class WarehouseOperationsDashboardService(
             lookbackStartDate,
             date,
             cancellationToken);
+        var axataOrderSnapshot = await axataOrderSnapshotReader.ReadAsync(
+            lookbackStartDate,
+            date,
+            cancellationToken);
 
         var items = warehouseRows
             .Select(warehouse => BuildWarehouseItem(
@@ -86,6 +92,7 @@ public sealed class WarehouseOperationsDashboardService(
                 warehouse.WarehouseName,
                 flowRows,
                 movementSnapshot,
+                axataOrderSnapshot,
                 date,
                 lookbackStartUtc,
                 startUtc,
@@ -118,10 +125,12 @@ public sealed class WarehouseOperationsDashboardService(
                 (activeWarehouseNos.Contains(flow.SourceWarehouseNo) ||
                  (flow.TargetWarehouseNo.HasValue && activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value))))
             .ToArray();
-        var summaryOpenOrderCount = summaryOperationalFlows.Count(flow =>
-            IsOrder(flow.DocumentType) &&
-            flow.CurrentStep == DocumentFlowStep.OrderCreated &&
-            flow.Status == DocumentFlowStatus.Succeeded);
+        var summaryOpenOrderCount = axataOrderSnapshot.IsAvailable
+            ? axataOrderSnapshot.Rows.Count(row =>
+                !row.IsSent &&
+                (activeWarehouseNos.Contains(row.SourceWarehouseNo) ||
+                 (row.TargetWarehouseNo.HasValue && activeWarehouseNos.Contains(row.TargetWarehouseNo.Value))))
+            : summaryOperationalFlows.Count(flow => IsOpenOrder(flow));
         var summaryOtherFailedOperationCount = summaryOperationalFlows.Count(flow =>
             flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
             flow.Status == DocumentFlowStatus.Failed);
@@ -169,6 +178,7 @@ public sealed class WarehouseOperationsDashboardService(
         string warehouseName,
         IReadOnlyCollection<FlowRow> flows,
         WarehouseMovementMikroSnapshot movementSnapshot,
+        AxataOrderMikroSnapshot axataOrderSnapshot,
         DateOnly selectedDate,
         DateTime lookbackStartUtc,
         DateTime startUtc,
@@ -247,23 +257,20 @@ public sealed class WarehouseOperationsDashboardService(
         if (movementSnapshot.IsAvailable)
         {
             var movementRows = movementSnapshot.Rows;
-            todayShipmentCount = flows.Count(flow =>
-                                     flow.SourceWarehouseNo == warehouseNo &&
-                                     flow.CreatedAtUtc >= startUtc &&
-                                     flow.CreatedAtUtc < endUtc &&
-                                     flow.DocumentType == DocumentFlowType.CompanyShipment &&
-                                     !IsFailedCreation(flow)) +
-                                 movementRows.Count(row =>
+            var companyMovementRows = movementSnapshot.CompanyRows ?? [];
+            todayShipmentCount = movementRows.Count(row =>
+                                     row.SourceWarehouseNo == warehouseNo &&
+                                     row.DocumentDate == selectedDate &&
+                                     !row.IsReturn) +
+                                 companyMovementRows.Count(row =>
                                      row.SourceWarehouseNo == warehouseNo &&
                                      row.DocumentDate == selectedDate &&
                                      !row.IsReturn);
-            todayReturnCount = flows.Count(flow =>
-                                   flow.SourceWarehouseNo == warehouseNo &&
-                                   flow.CreatedAtUtc >= startUtc &&
-                                   flow.CreatedAtUtc < endUtc &&
-                                   flow.DocumentType == DocumentFlowType.CompanyReturn &&
-                                   !IsFailedCreation(flow)) +
-                               movementRows.Count(row =>
+            todayReturnCount = movementRows.Count(row =>
+                                   row.SourceWarehouseNo == warehouseNo &&
+                                   row.DocumentDate == selectedDate &&
+                                   row.IsReturn) +
+                               companyMovementRows.Count(row =>
                                    row.SourceWarehouseNo == warehouseNo &&
                                    row.DocumentDate == selectedDate &&
                                    row.IsReturn);
@@ -292,15 +299,44 @@ public sealed class WarehouseOperationsDashboardService(
                 !row.IsAccepted &&
                 row.IsEDespatchSent);
 
-            var pendingWarehouseEDespatchCount = movementRows.Count(row =>
-                row.SourceWarehouseNo == warehouseNo &&
-                !row.IsAccepted &&
-                !row.IsEDespatchSent);
-            var pendingCompanyEDespatchCount = operationalFlows.Count(flow =>
-                flow.SourceWarehouseNo == warehouseNo &&
-                flow.DocumentType is DocumentFlowType.CompanyShipment or DocumentFlowType.CompanyReturn &&
-                IsPendingOrFailedEDespatch(flow));
-            pendingEDespatchCount = pendingWarehouseEDespatchCount + pendingCompanyEDespatchCount;
+            var pendingEDespatchKeys = movementRows
+                .Where(row =>
+                    row.SourceWarehouseNo == warehouseNo &&
+                    !row.IsAccepted &&
+                    !row.IsEDespatchSent)
+                .Select(row => DocumentFlowKeys.Create(
+                    row.IsReturn ? DocumentFlowType.WarehouseReturn : DocumentFlowType.InterWarehouseShipment,
+                    row.SourceWarehouseNo,
+                    row.DocumentSerie,
+                    row.DocumentOrderNo))
+                .Concat(companyMovementRows
+                    .Where(row => row.SourceWarehouseNo == warehouseNo && !row.IsEDespatchSent)
+                    .Select(row => DocumentFlowKeys.Create(
+                        row.IsReturn ? DocumentFlowType.CompanyReturn : DocumentFlowType.CompanyShipment,
+                        row.SourceWarehouseNo,
+                        row.DocumentSerie,
+                        row.DocumentOrderNo)))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var failedEDespatchKeys = operationalFlows
+                .Where(flow =>
+                    flow.SourceWarehouseNo == warehouseNo &&
+                    flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                    flow.Status == DocumentFlowStatus.Failed)
+                .Select(flow => flow.FlowKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            failedEDespatchCount = pendingEDespatchKeys.Count(failedEDespatchKeys.Contains);
+            pendingEDespatchCount = pendingEDespatchKeys.Count(key => !failedEDespatchKeys.Contains(key));
+        }
+
+        if (axataOrderSnapshot.IsAvailable)
+        {
+            openOrderCount = axataOrderSnapshot.Rows.Count(row =>
+                !row.IsSent &&
+                (row.SourceWarehouseNo == warehouseNo || row.TargetWarehouseNo == warehouseNo));
+        }
+
+        if (movementSnapshot.IsAvailable || axataOrderSnapshot.IsAvailable)
+        {
             incompleteOperationCount = pendingReceivingCount +
                                        pendingEDespatchCount +
                                        openOrderCount +
@@ -408,6 +444,7 @@ public sealed class WarehouseOperationsDashboardService(
     }
 
     private sealed record FlowRow(
+        string FlowKey,
         DocumentFlowType DocumentType,
         int SourceWarehouseNo,
         int? TargetWarehouseNo,

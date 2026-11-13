@@ -33,10 +33,23 @@ public sealed class WarehouseOperationsDashboardServiceTests
                 new("F50", 11, false, 50, 104, selectedDate, createdAt, createdAt.AddMinutes(12), true, true),
                 new("I104", 5, true, 104, 50, selectedDate, createdAt, null, false, false)
             ]);
+        var axataSnapshot = new AxataOrderMikroSnapshot(
+            true,
+            [
+                new(DocumentFlowType.IssuedWarehouseOrder, 104, 50, "D104", 6, selectedDate,
+                    createdAt, createdAt, true, 10, 0, "issued-warehouse-order-sync"),
+                new(DocumentFlowType.IssuedWarehouseOrder, 104, 50, "D104", 7, selectedDate,
+                    createdAt, createdAt, false, 10, 0, "issued-warehouse-order-sync")
+            ]);
+        authDbContext.DocumentFlows.AddRange(
+            CreateFailedEDespatchFlow("WarehouseReturn:104:I104:5", "I104", 5, createdAt),
+            CreateFailedEDespatchFlow("WarehouseReturn:104:I104:99", "I104", 99, createdAt));
+        await authDbContext.SaveChangesAsync();
         var service = new WarehouseOperationsDashboardService(
             authDbContext,
             mikroDbContext,
             new StaticMikroSnapshotReader(snapshot),
+            new StaticAxataOrderSnapshotReader(axataSnapshot),
             new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)),
             new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }));
 
@@ -53,8 +66,11 @@ public sealed class WarehouseOperationsDashboardServiceTests
         Assert.Equal(1, warehouse104.TodayReceivingCount);
         Assert.Equal(1, warehouse104.PendingReceivingCount);
         Assert.Equal(0, warehouse104.UnacceptedOutgoingCount);
-        Assert.Equal(1, warehouse104.PendingEDespatchCount);
+        Assert.Equal(0, warehouse104.PendingEDespatchCount);
+        Assert.Equal(1, warehouse104.FailedEDespatchCount);
         Assert.Equal(12d, warehouse104.AverageReceivingMinutes);
+        Assert.Equal(1, warehouse104.OpenOrderCount);
+        Assert.Equal(1, result.Summary.OpenOrderCount);
     }
 
     [Fact]
@@ -161,6 +177,7 @@ public sealed class WarehouseOperationsDashboardServiceTests
             authDbContext,
             mikroDbContext,
             new UnavailableMikroSnapshotReader(),
+            new UnavailableAxataOrderSnapshotReader(),
             new FixedClock(todayUtc),
             new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }));
 
@@ -201,6 +218,31 @@ public sealed class WarehouseOperationsDashboardServiceTests
         return new MikroDbContext(options);
     }
 
+    private static DocumentFlow CreateFailedEDespatchFlow(
+        string flowKey,
+        string documentSerie,
+        int documentOrderNo,
+        DateTime createdAt)
+    {
+        var flow = new DocumentFlow(
+            Guid.NewGuid(),
+            flowKey,
+            DocumentFlowType.WarehouseReturn,
+            104,
+            50,
+            documentSerie,
+            documentOrderNo,
+            createdAt);
+        flow.Record(
+            DocumentFlowStep.EDespatchSubmission,
+            DocumentFlowStatus.Failed,
+            "E-irsaliye gonderilemedi.",
+            "UYUM hatasi",
+            null,
+            createdAt);
+        return flow;
+    }
+
     private sealed class FixedClock(DateTime utcNow) : IClock
     {
         public DateTime UtcNow { get; } = utcNow;
@@ -219,6 +261,25 @@ public sealed class WarehouseOperationsDashboardServiceTests
         : IWarehouseMovementMikroSnapshotReader
     {
         public Task<WarehouseMovementMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(snapshot);
+    }
+
+    private sealed class UnavailableAxataOrderSnapshotReader : IAxataOrderMikroSnapshotReader
+    {
+        public Task<AxataOrderMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(AxataOrderMikroSnapshot.Unavailable);
+    }
+
+    private sealed class StaticAxataOrderSnapshotReader(AxataOrderMikroSnapshot snapshot)
+        : IAxataOrderMikroSnapshotReader
+    {
+        public Task<AxataOrderMikroSnapshot> ReadAsync(
             DateOnly startDate,
             DateOnly endDate,
             CancellationToken cancellationToken) =>

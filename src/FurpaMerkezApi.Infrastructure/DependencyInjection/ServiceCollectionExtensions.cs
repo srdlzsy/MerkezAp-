@@ -798,6 +798,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<DatabaseMonitoringWorker>();
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IWarehouseMovementMikroSnapshotReader, WarehouseMovementMikroSnapshotReader>();
+        services.AddScoped<IAxataOrderMikroSnapshotReader, AxataOrderMikroSnapshotReader>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();
         services.AddScoped<ICompanyDocumentTrackingService, CompanyDocumentTrackingService>();

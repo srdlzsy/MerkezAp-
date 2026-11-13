@@ -37,9 +37,11 @@ public sealed class WarehouseMovementMikroSnapshotReader(
 
         try
         {
+            var queryResult = await ExecuteQueryAsync(startDate, endDate, cancellationToken);
             var snapshot = new WarehouseMovementMikroSnapshot(
                 true,
-                await ExecuteQueryAsync(startDate, endDate, cancellationToken));
+                queryResult.WarehouseRows,
+                queryResult.CompanyRows);
             cache.Set(cacheKey, snapshot, CacheDuration);
             return snapshot;
         }
@@ -54,7 +56,7 @@ public sealed class WarehouseMovementMikroSnapshotReader(
         }
     }
 
-    private async Task<IReadOnlyCollection<WarehouseMovementMikroRow>> ExecuteQueryAsync(
+    private async Task<MovementQueryResult> ExecuteQueryAsync(
         DateOnly startDate,
         DateOnly endDate,
         CancellationToken cancellationToken)
@@ -68,6 +70,7 @@ public sealed class WarehouseMovementMikroSnapshotReader(
                 .AsNoTracking()
                 .Where(movement =>
                     movement.sth_evraktip == InterWarehouseShippingDocumentType &&
+                    movement.sth_iptal != true &&
                     movement.sth_tarih.HasValue &&
                     movement.sth_tarih.Value >= start &&
                     movement.sth_tarih.Value < endExclusive)
@@ -100,10 +103,47 @@ public sealed class WarehouseMovementMikroSnapshotReader(
                 .ToListAsync(cancellationToken);
         }
 
-        List<WarehouseMovementProjection> rows;
+        async Task<List<CompanyMovementProjection>> QueryCompanyMovementsAsync()
+        {
+            return await mikroDbContext.STOK_HAREKETLERIs
+                .AsNoTracking()
+                .Where(movement =>
+                    movement.sth_iptal != true &&
+                    movement.sth_belge_tarih.HasValue &&
+                    movement.sth_belge_tarih.Value >= start &&
+                    movement.sth_belge_tarih.Value < endExclusive &&
+                    movement.sth_evraktip == 1 &&
+                    movement.sth_tip == 1 &&
+                    (movement.sth_normal_iade == 0 || movement.sth_normal_iade == 1))
+                .GroupBy(movement => new
+                {
+                    movement.sth_evrakno_seri,
+                    movement.sth_evrakno_sira,
+                    movement.sth_normal_iade,
+                    movement.sth_cikis_depo_no
+                })
+                .Select(group => new CompanyMovementProjection(
+                    group.Key.sth_evrakno_seri ?? string.Empty,
+                    group.Key.sth_evrakno_sira ?? 0,
+                    group.Key.sth_normal_iade == 1,
+                    group.Key.sth_cikis_depo_no ?? 0,
+                    group.Count(),
+                    group.Count(movement =>
+                        movement.sth_kilitli == true &&
+                        movement.sth_belge_no != null &&
+                        movement.sth_belge_no.StartsWith("FRM") &&
+                        movement.sth_aciklama != null &&
+                        movement.sth_aciklama.Length == 36),
+                    group.Min(movement => movement.sth_belge_tarih),
+                    group.Min(movement => movement.sth_create_date),
+                    group.Max(movement => movement.sth_lastup_date)))
+                .ToListAsync(cancellationToken);
+        }
+
+        (List<WarehouseMovementProjection> WarehouseRows, List<CompanyMovementProjection> CompanyRows) rows;
         if (!IsSqlServerProvider())
         {
-            rows = await QueryAsync();
+            rows = (await QueryAsync(), await QueryCompanyMovementsAsync());
         }
         else
         {
@@ -113,13 +153,13 @@ public sealed class WarehouseMovementMikroSnapshotReader(
                 await using var transaction = await mikroDbContext.Database.BeginTransactionAsync(
                     IsolationLevel.ReadUncommitted,
                     cancellationToken);
-                var result = await QueryAsync();
+                var result = (await QueryAsync(), await QueryCompanyMovementsAsync());
                 await transaction.CommitAsync(cancellationToken);
                 return result;
             });
         }
 
-        return rows
+        var warehouseRows = rows.WarehouseRows
             .Where(row => row.SourceWarehouseNo > 0 && row.DocumentDate.HasValue)
             .Select(row =>
             {
@@ -138,6 +178,20 @@ public sealed class WarehouseMovementMikroSnapshotReader(
                     row.LineCount > 0 && row.SentEDespatchLineCount == row.LineCount);
             })
             .ToArray();
+        var companyRows = rows.CompanyRows
+            .Where(row => row.SourceWarehouseNo > 0 && row.DocumentDate.HasValue)
+            .Select(row => new CompanyMovementMikroRow(
+                row.DocumentSerie.Trim(),
+                row.DocumentOrderNo,
+                row.IsReturn,
+                row.SourceWarehouseNo,
+                DateOnly.FromDateTime(row.DocumentDate!.Value),
+                row.CreatedAt,
+                row.UpdatedAt,
+                row.LineCount > 0 && row.SentEDespatchLineCount == row.LineCount))
+            .ToArray();
+
+        return new MovementQueryResult(warehouseRows, companyRows);
     }
 
     private bool IsSqlServerProvider() =>
@@ -157,11 +211,27 @@ public sealed class WarehouseMovementMikroSnapshotReader(
         DateTime? DocumentDate,
         DateTime CreatedAt,
         DateTime? UpdatedAt);
+
+    private sealed record CompanyMovementProjection(
+        string DocumentSerie,
+        int DocumentOrderNo,
+        bool IsReturn,
+        int SourceWarehouseNo,
+        int LineCount,
+        int SentEDespatchLineCount,
+        DateTime? DocumentDate,
+        DateTime CreatedAt,
+        DateTime? UpdatedAt);
+
+    private sealed record MovementQueryResult(
+        IReadOnlyCollection<WarehouseMovementMikroRow> WarehouseRows,
+        IReadOnlyCollection<CompanyMovementMikroRow> CompanyRows);
 }
 
 public sealed record WarehouseMovementMikroSnapshot(
     bool IsAvailable,
-    IReadOnlyCollection<WarehouseMovementMikroRow> Rows)
+    IReadOnlyCollection<WarehouseMovementMikroRow> Rows,
+    IReadOnlyCollection<CompanyMovementMikroRow>? CompanyRows = null)
 {
     public static WarehouseMovementMikroSnapshot Unavailable { get; } = new(false, []);
 }
@@ -176,4 +246,14 @@ public sealed record WarehouseMovementMikroRow(
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     bool IsAccepted,
+    bool IsEDespatchSent);
+
+public sealed record CompanyMovementMikroRow(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    bool IsReturn,
+    int SourceWarehouseNo,
+    DateOnly DocumentDate,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
     bool IsEDespatchSent);
