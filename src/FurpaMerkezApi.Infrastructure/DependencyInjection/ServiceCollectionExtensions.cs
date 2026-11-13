@@ -10,6 +10,8 @@ using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductAvailability;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchCustomers;
 using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
+using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.AxataDepoOperasyonlari;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.PosMuhasebeAktarimi;
@@ -756,6 +758,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAxataIntegrationAuditService>(serviceProvider =>
             serviceProvider.GetRequiredService<AxataOutboundDeliveryImportService>());
         services.AddScoped<AxataSynchronizationConnectionProbeService>();
+        services.AddScoped<IAxataWarehouseOperationsService, AxataWarehouseOperationsService>();
         services.AddScoped<IAxataSynchronizationService, AxataSynchronizationService>();
         services.AddScoped<IPosMuhasebeAktarimiService, PosMuhasebeAktarimiService>();
         services.AddScoped<ITrendyolGoIntegrationService, TrendyolGoIntegrationService>();

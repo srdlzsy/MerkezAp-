@@ -2189,6 +2189,38 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = new Guid("0677eec1-930a-b0bf-2535-d9c00be299e7"),
+                            Code = "operasyon-islemleri.axata-depo-kokpiti.page",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "OperasyonIslemleri > AxataDepoKokpiti > Sayfa yetkisi.",
+                            Name = "AxataDepoKokpiti Sayfa"
+                        },
+                        new
+                        {
+                            Id = new Guid("378c2fe2-bfb4-989e-220e-d2f5d2f69bc8"),
+                            Code = "operasyon-islemleri.axata-depo-kokpiti.list",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "OperasyonIslemleri > AxataDepoKokpiti > Listele yetkisi.",
+                            Name = "AxataDepoKokpiti Listele"
+                        },
+                        new
+                        {
+                            Id = new Guid("71669f3b-77c4-38bb-821f-fb0d55172dff"),
+                            Code = "operasyon-islemleri.axata-depo-kokpiti.detail",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "OperasyonIslemleri > AxataDepoKokpiti > Detay yetkisi.",
+                            Name = "AxataDepoKokpiti Detay"
+                        },
+                        new
+                        {
+                            Id = new Guid("b284c323-7a1b-52c4-e72d-ffd2a0e01104"),
+                            Code = "operasyon-islemleri.axata-depo-kokpiti.all-warehouses",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "OperasyonIslemleri > AxataDepoKokpiti > Tum Depolar yetkisi.",
+                            Name = "AxataDepoKokpiti Tum Depolar"
+                        },
+                        new
+                        {
                             Id = new Guid("bfd06389-093f-5315-f627-c7a062afe536"),
                             Code = "operasyon-islemleri.firma-evrak-takibi.page",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -4736,6 +4768,30 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("35edfa18-1e87-37f3-68b1-e8efa1cd320a"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("0677eec1-930a-b0bf-2535-d9c00be299e7"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("378c2fe2-bfb4-989e-220e-d2f5d2f69bc8"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("71669f3b-77c4-38bb-821f-fb0d55172dff"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("b284c323-7a1b-52c4-e72d-ffd2a0e01104"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new

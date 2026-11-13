@@ -3375,6 +3375,525 @@
         "x-permissions": [ ]
       }
     },
+    "/api/operasyon-islemleri/axata-depo-operasyonlari/overview": {
+      "get": {
+        "tags": [
+          "AxataDepoOperasyonlari"
+        ],
+        "parameters": [
+          {
+            "name": "warehouseNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseOverviewDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseOverviewDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseOverviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "operasyon-islemleri.axata-depo-kokpiti.list"
+        ]
+      }
+    },
+    "/api/operasyon-islemleri/axata-depo-operasyonlari/trace": {
+      "get": {
+        "tags": [
+          "AxataDepoOperasyonlari"
+        ],
+        "parameters": [
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataDocumentTraceDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataDocumentTraceDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataDocumentTraceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "operasyon-islemleri.axata-depo-kokpiti.detail"
+        ]
+      }
+    },
+    "/api/operasyon-islemleri/axata-depo-operasyonlari/picking-performance": {
+      "get": {
+        "tags": [
+          "AxataDepoOperasyonlari"
+        ],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "warehouseNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickingPerformanceDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickingPerformanceDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickingPerformanceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "operasyon-islemleri.axata-depo-kokpiti.list"
+        ]
+      }
+    },
+    "/api/operasyon-islemleri/axata-depo-operasyonlari/fill-rate": {
+      "get": {
+        "tags": [
+          "AxataDepoOperasyonlari"
+        ],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "targetStoreCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "warehouseNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataFillRateDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataFillRateDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataFillRateDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "operasyon-islemleri.axata-depo-kokpiti.list"
+        ]
+      }
+    },
+    "/api/operasyon-islemleri/axata-depo-operasyonlari/capacity": {
+      "get": {
+        "tags": [
+          "AxataDepoOperasyonlari"
+        ],
+        "parameters": [
+          {
+            "name": "warehouseNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataCapacityDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataCapacityDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataCapacityDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ],
+        "x-permissions": [
+          "operasyon-islemleri.axata-depo-kokpiti.list"
+        ]
+      }
+    },
     "/api/integrations/axata-sync/status": {
       "get": {
         "tags": [
@@ -123291,6 +123810,801 @@
               "format": "int32"
             },
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataActiveLoadingItem": {
+        "type": "object",
+        "properties": {
+          "shipmentYear": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shipmentNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "plate": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "ramp": {
+            "type": "string",
+            "nullable": true
+          },
+          "picker": {
+            "type": "string",
+            "nullable": true
+          },
+          "startTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "lineCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataCapacityDto": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata"
+          },
+          "totalLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "occupiedLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "emptyLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "blockedLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "occupancyRatePercentage": {
+            "type": "number",
+            "format": "double"
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZoneCapacityItem"
+            },
+            "nullable": true
+          },
+          "stockTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStockTypeCapacityItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataDocumentTraceDto": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata"
+          },
+          "searchTerm": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementType": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetName": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "orderStatus": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "orderStatusDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "shipments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentItem"
+            },
+            "nullable": true
+          },
+          "pickingLogs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTracePickingLogItem"
+            },
+            "nullable": true
+          },
+          "inbounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundItem"
+            },
+            "nullable": true
+          },
+          "integrationQueues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceQueueItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataFillRateDto": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata"
+          },
+          "overallFillRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalOrderedLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fullySuppliedLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "partiallySuppliedLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unsuppliedLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStoreFillRateItem"
+            },
+            "nullable": true
+          },
+          "topMissingSkus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataSkuFillRateItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataInboundOverview": {
+        "type": "object",
+        "properties": {
+          "pendingReceivingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "processingReceivingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "completedTodayCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata": {
+        "type": "object",
+        "properties": {
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dataSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "freshness": {
+            "type": "string",
+            "nullable": true
+          },
+          "warehouseNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOutboundOverview": {
+        "type": "object",
+        "properties": {
+          "pendingOrderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pickingOrderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shippedTodayCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shippedTodayQty": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPendingOrderItem": {
+        "type": "object",
+        "properties": {
+          "orderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementType": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetName": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "lineCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOrderQty": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickerPerformanceItem": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "userName": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalShipments": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPickTasks": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "unpickedLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "completionRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "averageDurationMinutes": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickingPerformanceDto": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata"
+          },
+          "pickers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickerPerformanceItem"
+            },
+            "nullable": true
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZonePerformanceItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataQueueOverview": {
+        "type": "object",
+        "properties": {
+          "outboundWaitingIntegrationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "inboundWaitingIntegrationCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataSkuFillRateItem": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuName": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOrderedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalShippedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalMissingQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "fillRatePercentage": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStockTypeCapacityItem": {
+        "type": "object",
+        "properties": {
+          "typeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "locationCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStoreFillRateItem": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "storeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOrderedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalShippedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalMissingQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "fillRatePercentage": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundDetailItem": {
+        "type": "object",
+        "properties": {
+          "lineNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuName": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "receivedQty": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundItem": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "documentNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementType": {
+            "type": "string",
+            "nullable": true
+          },
+          "supplierCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "supplierName": {
+            "type": "string",
+            "nullable": true
+          },
+          "receiptNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "receiptDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "statusDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundDetailItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTracePickingLogItem": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warehouse": {
+            "type": "string",
+            "nullable": true
+          },
+          "zone": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuName": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "picker": {
+            "type": "string",
+            "nullable": true
+          },
+          "logDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "logTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "palletNo": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceQueueItem": {
+        "type": "object",
+        "properties": {
+          "queueType": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "statusDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "creationDate": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentDetailItem": {
+        "type": "object",
+        "properties": {
+          "lineNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "itemOrderNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuName": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "shippedQty": {
+            "type": "number",
+            "format": "double"
+          },
+          "differenceQty": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentItem": {
+        "type": "object",
+        "properties": {
+          "shipmentYear": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shipmentNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "movementType": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "statusDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "plate": {
+            "type": "string",
+            "nullable": true
+          },
+          "ramp": {
+            "type": "string",
+            "nullable": true
+          },
+          "shipmentDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentDetailItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseOverviewDto": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata"
+          },
+          "outbound": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOutboundOverview"
+          },
+          "inbound": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataInboundOverview"
+          },
+          "queues": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataQueueOverview"
+          },
+          "activeLoadings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataActiveLoadingItem"
+            },
+            "nullable": true
+          },
+          "pendingOrders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPendingOrderItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZoneCapacityItem": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "occupiedLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "emptyLocations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "occupancyRatePercentage": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZonePerformanceItem": {
+        "type": "object",
+        "properties": {
+          "zoneCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalShipments": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "unpickedLines": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

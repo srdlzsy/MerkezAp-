@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 820. Model sayisi: 783.
+Endpoint sayisi (method + route): 825. Model sayisi: 806.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -608,6 +608,11 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/vazgec` | JWT | path: clientRequestId / string (uuid) (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails<br>409: ProblemDetails |
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/yeniden-dogrula` | JWT | path: clientRequestId / string (uuid) (zorunlu)<br>body: request / RecheckMobileSafeWriteHttpRequest (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mobile-sync/urun-fiyat-katalogu` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileProductPriceCatalogResponse<br>400: ProblemDetails<br>403: ProblemDetails |
+| GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/capacity` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataCapacityDto |
+| GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/fill-rate` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: startDate / string (date)<br>query: endDate / string (date)<br>query: targetStoreCode / string<br>query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataFillRateDto |
+| GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/overview` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: warehouseNo / integer (int32)<br>query: date / string (date) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataWarehouseOverviewDto |
+| GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/picking-performance` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: startDate / string (date)<br>query: endDate / string (date)<br>query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataPickingPerformanceDto |
+| GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/trace` | JWT + operasyon-islemleri.axata-depo-kokpiti.detail | query: searchTerm / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataDocumentTraceDto<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/belge-akis-takibi` | JWT + operasyon-islemleri.belge-akis-takibi.list | query: WarehouseNo / integer (int32)<br>query: StartDate / string (date-time)<br>query: EndDate / string (date-time)<br>query: DocumentType / FurpaMerkezApi.Domain.Entities.DocumentFlowType<br>query: Status / FurpaMerkezApi.Domain.Entities.DocumentFlowStatus<br>query: CurrentStep / FurpaMerkezApi.Domain.Entities.DocumentFlowStep<br>query: Direction / string<br>query: Category / string<br>query: Preset / string<br>query: Search / string<br>query: Skip / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowListResponse<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/belge-akis-takibi/{id}` | JWT + operasyon-islemleri.belge-akis-takibi.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DocumentFlowDetailDto<br>404: ProblemDetails |
 | GET | `/api/operasyon-islemleri/depo-operasyon-paneli` | JWT + operasyon-islemleri.depo-operasyon-paneli.list | query: date / string (date)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOperationsDashboardDto |
@@ -7445,6 +7450,275 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `pageSize` | integer (int32) | Hayir |  |
 | `since` | string (date-time) | Hayir | nullable |
 | `syncToken` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataActiveLoadingItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `destinationCode` | string | Hayir | nullable |
+| `destinationName` | string | Hayir | nullable |
+| `lineCount` | integer (int32) | Hayir |  |
+| `picker` | string | Hayir | nullable |
+| `plate` | string | Hayir | nullable |
+| `ramp` | string | Hayir | nullable |
+| `shipmentNo` | integer (int32) | Hayir |  |
+| `shipmentYear` | integer (int32) | Hayir |  |
+| `startTime` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataCapacityDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `blockedLocations` | integer (int32) | Hayir |  |
+| `emptyLocations` | integer (int32) | Hayir |  |
+| `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `occupancyRatePercentage` | number (double) | Hayir |  |
+| `occupiedLocations` | integer (int32) | Hayir |  |
+| `stockTypes` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStockTypeCapacityItem[] | Hayir | nullable |
+| `totalLocations` | integer (int32) | Hayir |  |
+| `zones` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZoneCapacityItem[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataDocumentTraceDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentType` | string | Hayir | nullable |
+| `inbounds` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundItem[] | Hayir | nullable |
+| `integrationQueues` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceQueueItem[] | Hayir | nullable |
+| `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `movementType` | string | Hayir | nullable |
+| `orderDate` | string (date) | Hayir | nullable |
+| `orderNo` | string | Hayir | nullable |
+| `orderStatus` | integer (int32) | Hayir | nullable |
+| `orderStatusDescription` | string | Hayir | nullable |
+| `pickingLogs` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTracePickingLogItem[] | Hayir | nullable |
+| `searchTerm` | string | Hayir | nullable |
+| `shipments` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentItem[] | Hayir | nullable |
+| `targetCode` | string | Hayir | nullable |
+| `targetName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataFillRateDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `fullySuppliedLines` | integer (int32) | Hayir |  |
+| `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `overallFillRate` | number (double) | Hayir |  |
+| `partiallySuppliedLines` | integer (int32) | Hayir |  |
+| `stores` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStoreFillRateItem[] | Hayir | nullable |
+| `topMissingSkus` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataSkuFillRateItem[] | Hayir | nullable |
+| `totalOrderedLines` | integer (int32) | Hayir |  |
+| `unsuppliedLines` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataInboundOverview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `completedTodayCount` | integer (int32) | Hayir |  |
+| `pendingReceivingCount` | integer (int32) | Hayir |  |
+| `processingReceivingCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `dataSource` | string | Hayir | nullable |
+| `date` | string (date) | Hayir | nullable |
+| `freshness` | string | Hayir | nullable |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `warehouseNo` | integer (int32) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOutboundOverview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `pendingOrderCount` | integer (int32) | Hayir |  |
+| `pickingOrderCount` | integer (int32) | Hayir |  |
+| `shippedTodayCount` | integer (int32) | Hayir |  |
+| `shippedTodayQty` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPendingOrderItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `lineCount` | integer (int32) | Hayir |  |
+| `movementType` | string | Hayir | nullable |
+| `orderDate` | string (date) | Hayir |  |
+| `orderNo` | string | Hayir | nullable |
+| `targetCode` | string | Hayir | nullable |
+| `targetName` | string | Hayir | nullable |
+| `totalOrderQty` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickerPerformanceItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `averageDurationMinutes` | number (double) | Hayir |  |
+| `completionRate` | number (double) | Hayir |  |
+| `totalLines` | integer (int32) | Hayir |  |
+| `totalPickTasks` | integer (int32) | Hayir |  |
+| `totalQuantity` | number (double) | Hayir |  |
+| `totalShipments` | integer (int32) | Hayir |  |
+| `unpickedLines` | integer (int32) | Hayir |  |
+| `userId` | string | Hayir | nullable |
+| `userName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickingPerformanceDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `pickers` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPickerPerformanceItem[] | Hayir | nullable |
+| `zones` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZonePerformanceItem[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataQueueOverview
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `inboundWaitingIntegrationCount` | integer (int32) | Hayir |  |
+| `outboundWaitingIntegrationCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataSkuFillRateItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `fillRatePercentage` | number (double) | Hayir |  |
+| `orderCount` | integer (int32) | Hayir |  |
+| `sku` | string | Hayir | nullable |
+| `skuName` | string | Hayir | nullable |
+| `totalMissingQty` | number (double) | Hayir |  |
+| `totalOrderedQty` | number (double) | Hayir |  |
+| `totalShippedQty` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStockTypeCapacityItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `locationCount` | integer (int32) | Hayir |  |
+| `typeCode` | string | Hayir | nullable |
+| `typeDescription` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataStoreFillRateItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `fillRatePercentage` | number (double) | Hayir |  |
+| `orderCount` | integer (int32) | Hayir |  |
+| `storeCode` | string | Hayir | nullable |
+| `storeName` | string | Hayir | nullable |
+| `totalLines` | integer (int32) | Hayir |  |
+| `totalMissingQty` | number (double) | Hayir |  |
+| `totalOrderedQty` | number (double) | Hayir |  |
+| `totalShippedQty` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundDetailItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `expectedQty` | number (double) | Hayir |  |
+| `lineNo` | integer (int32) | Hayir |  |
+| `receivedQty` | number (double) | Hayir |  |
+| `sku` | string | Hayir | nullable |
+| `skuName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `details` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundDetailItem[] | Hayir | nullable |
+| `documentNo` | string | Hayir | nullable |
+| `movementType` | string | Hayir | nullable |
+| `orderId` | integer (int64) | Hayir |  |
+| `receiptDate` | string (date) | Hayir | nullable |
+| `receiptNo` | string | Hayir | nullable |
+| `status` | integer (int32) | Hayir | nullable |
+| `statusDescription` | string | Hayir | nullable |
+| `supplierCode` | string | Hayir | nullable |
+| `supplierName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTracePickingLogItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `location` | string | Hayir | nullable |
+| `logDate` | string | Hayir | nullable |
+| `logTime` | string | Hayir | nullable |
+| `palletNo` | string | Hayir | nullable |
+| `picker` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `sequence` | integer (int32) | Hayir |  |
+| `sku` | string | Hayir | nullable |
+| `skuName` | string | Hayir | nullable |
+| `warehouse` | string | Hayir | nullable |
+| `zone` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceQueueItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `creationDate` | string | Hayir | nullable |
+| `documentNo` | string | Hayir | nullable |
+| `queueType` | string | Hayir | nullable |
+| `status` | integer (int32) | Hayir |  |
+| `statusDescription` | string | Hayir | nullable |
+| `targetCode` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentDetailItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `differenceQty` | number (double) | Hayir |  |
+| `itemOrderNo` | integer (int32) | Hayir |  |
+| `lineNo` | integer (int32) | Hayir |  |
+| `orderedQty` | number (double) | Hayir |  |
+| `shippedQty` | number (double) | Hayir |  |
+| `sku` | string | Hayir | nullable |
+| `skuName` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `details` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceShipmentDetailItem[] | Hayir | nullable |
+| `movementType` | string | Hayir | nullable |
+| `plate` | string | Hayir | nullable |
+| `ramp` | string | Hayir | nullable |
+| `shipmentDate` | string | Hayir | nullable |
+| `shipmentNo` | integer (int32) | Hayir |  |
+| `shipmentYear` | integer (int32) | Hayir |  |
+| `status` | integer (int32) | Hayir | nullable |
+| `statusDescription` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseOverviewDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `activeLoadings` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataActiveLoadingItem[] | Hayir | nullable |
+| `inbound` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataInboundOverview | Hayir |  |
+| `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `outbound` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOutboundOverview | Hayir |  |
+| `pendingOrders` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataPendingOrderItem[] | Hayir | nullable |
+| `queues` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataQueueOverview | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZoneCapacityItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `emptyLocations` | integer (int32) | Hayir |  |
+| `occupancyRatePercentage` | number (double) | Hayir |  |
+| `occupiedLocations` | integer (int32) | Hayir |  |
+| `totalLocations` | integer (int32) | Hayir |  |
+| `zone` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataZonePerformanceItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `totalLines` | integer (int32) | Hayir |  |
+| `totalQuantity` | number (double) | Hayir |  |
+| `totalShipments` | integer (int32) | Hayir |  |
+| `unpickedLines` | integer (int32) | Hayir |  |
+| `zoneCode` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi.DocumentFlowDetailDto
 
