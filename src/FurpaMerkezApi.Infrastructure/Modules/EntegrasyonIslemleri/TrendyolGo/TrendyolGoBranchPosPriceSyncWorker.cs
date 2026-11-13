@@ -16,9 +16,17 @@ internal sealed class TrendyolGoBranchPosPriceSyncWorker(
         {
             try
             {
-                await using var scope = scopeFactory.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<TrendyolGoBranchPosPriceSyncService>()
-                    .ProcessPendingAsync(stoppingToken);
+                for (var processed = 0; processed < 20; processed++)
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var count = await scope.ServiceProvider
+                        .GetRequiredService<TrendyolGoBranchPosPriceSyncService>()
+                        .ProcessPendingAsync(stoppingToken);
+                    if (count == 0)
+                    {
+                        break;
+                    }
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

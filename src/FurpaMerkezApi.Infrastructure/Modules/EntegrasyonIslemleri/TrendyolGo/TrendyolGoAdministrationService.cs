@@ -15,6 +15,46 @@ internal sealed class TrendyolGoAdministrationService(
     IOptionsMonitor<TrendyolGoOptions> options,
     IClock clock) : ITrendyolGoAdministrationService
 {
+    public async Task<IReadOnlyCollection<TrendyolGoBranchPosSyncTaskDto>> ListBranchPosSyncTasksAsync(
+        int take,
+        CancellationToken cancellationToken)
+    {
+        take = Math.Clamp(take, 1, 500);
+        var configuredStores = options.CurrentValue.Stores
+            .Where(item => item.StoreId > 0)
+            .ToDictionary(item => item.StoreId, item => item.StoreName);
+        var databaseStores = await authDbContext.TrendyolGoStoreSettings
+            .AsNoTracking()
+            .Select(item => new { item.StoreId, item.StoreName })
+            .ToDictionaryAsync(item => item.StoreId, item => item.StoreName, cancellationToken);
+        var tasks = await authDbContext.TrendyolGoBranchPosPriceSyncTasks
+            .AsNoTracking()
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+
+        return tasks.Select(item =>
+        {
+            var payloadSummary = ReadBranchPosPayloadSummary(item.PayloadJson);
+            var storeName = databaseStores.GetValueOrDefault(item.StoreId)
+                ?? configuredStores.GetValueOrDefault(item.StoreId)
+                ?? $"Magaza {item.StoreId}";
+            return new TrendyolGoBranchPosSyncTaskDto(
+                item.Id,
+                item.StoreId,
+                item.WarehouseNo,
+                storeName,
+                item.Status.ToString(),
+                item.AttemptCount,
+                item.NextAttemptAtUtc,
+                payloadSummary.ItemCount,
+                payloadSummary.BlockedItemCount,
+                item.LastError,
+                item.CreatedAtUtc,
+                item.CompletedAtUtc);
+        }).ToArray();
+    }
+
     public async Task<TrendyolGoAdministrationOverview> GetOverviewAsync(
         string? search,
         CancellationToken cancellationToken)

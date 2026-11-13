@@ -71,7 +71,7 @@ Tum route'lar `/api/entegrasyon-islemleri/trendyol-go` kokunun altindadir. Tam q
 | Urun | `GET /brands`, `/products`, `/products/batch-requests/{batchRequestId}` | `POST /products`, `PUT /products`, `POST /products/price-and-inventory`, `PUT /products/sale-on`, `/sale-off`, `POST /products/seller-attributes` |
 | Mikro fiyat/stok (Snapshot) | `GET /price-stock/preview?storeId=&view=actionable` | `POST /price-stock/preview/refresh?storeId=`, `POST /price-stock/dispatch` |
 | Mikro fiyat/stok (Dogrudan / Hizli) | `GET /price-stock/direct-preview?storeId=&mode=changed` | `POST /price-stock/direct-dispatch` |
-| Kalici batch akisi | `GET /batch-workflows?take=100` | - |
+| Kalici batch akisi | `GET /batch-workflows?take=100`, `GET /workflow-status?take=100` | - |
 | Mikro urun katalogu | `GET /catalog/preview?storeId=&view=actionable` | `POST /catalog/dispatch` |
 | Yonetim | `GET /management?categorySearch=` | `PUT /management/settings`, `PUT/DELETE /management/stores`, `POST /management/categories/refresh`, `PUT/DELETE /management/category-mappings`, `PUT/DELETE /management/product-overrides` |
 | Fatura linki | - | `POST /invoice-links` |
@@ -82,7 +82,7 @@ GET islemleri icin `list` veya `detail`, yazmalar icin `update` permission gerek
 ## Fiyat/stok: barkod elle girilmeden
 
 1. `GET /stores` ile magaza secilir; `storeId` -> `warehouseNo` eslesmesi gorulur.
-2. `GET /price-stock/preview?storeId={id}` hazir snapshot'i hemen doner. Ilk snapshot yoksa uzun taramayi request icinde bekletmez; `snapshotStatus=Preparing` doner ve hosted worker yenilemeyi kuyruktan yapar. UI 2-5 saniyede bir ayni GET'i tekrar cagirir. `PreviewWarmupStoreIds` bos oldugunda uygulama acilisinda katalog taramasi yapilmaz; ilk ekran istegi yenilemeyi kuyruga alir.
+2. `GET /price-stock/preview?storeId={id}` hazir snapshot'i hemen doner. Ilk snapshot yoksa uzun taramayi request icinde bekletmez; `snapshotStatus=Preparing` doner ve hosted worker yenilemeyi kuyruktan yapar. UI hazirlanma boyunca ayni GET'i kontrollu araliklarla tekrar cagirir. `PreviewWarmupStoreIds` bos oldugunda uygulama acilisinda katalog taramasi yapilmaz; ilk ekran istegi yenilemeyi kuyruga alir.
 3. Worker TGO katalogunun tum sayfalarini `PreviewPageParallelism` siniriyla tarar; canli varsayilan `1` istektir. Sayfalar toplandiktan sonra benzersiz barkodlari Mikro'da en fazla 1000 barkodluk toplu sorgularla **tam eslesme** uzerinden bulur; her TGO sayfasi icin ayri Mikro sorgusu calistirmaz. Hazir snapshot varsayilan 1800 saniyelik `PreviewRefreshIntervalSeconds` araliginda yenilenir. Yenileme boyunca eski snapshot ekranda kalir ve durum `Refreshing` olur.
 4. Mikro fiyat, Trendyol Go icin ayrilan `TrendyolGo:PriceListNo` listesinden (varsayilan `3`) ve `PaymentPlanNo` degerinden (varsayilan `0`) depo ve barkod birimi esleserek okunur. Liste 1 veya genel satis fiyati fallback olarak kullanilmaz. Stok `dbo.fn_DepodakiMiktar(stockCode,warehouseNo,today)` ile gelir. Negatif stok sifira cekilir, kesirli stok tam sayiya asagi yuvarlanir. Sonra `TrendyolGo:StockReserveQuantity` (canli varsayilan `2`) dusulur ve TGO'ya `max(0, depo stok - rezerv)` gonderilir. Magaza bazinda farkli rezerv gerekiyorsa ilgili `Stores` kaydina `StockReserveQuantity` yazilir; bu deger genel ayari ezer.
 5. `Ready` fiyat/stok farki olan ve gonderilebilir satirdir. `Unchanged` fark yoktur. `Skipped` Mikro barkodu/fiyati eksik, stok karti pasif/satisa kapali veya sayfada duplicate barkod gibi bir neden tasir. UI sebebi gostermelidir.
@@ -99,7 +99,7 @@ POS worker varsayilan olarak depo `BranchDetails.BranchIpAddress` adresini kulla
 
 - `TrendyolGo:BranchPosPriceSync:Enabled` varsayilan olarak `false` gelir.
 - Etkinlestirmek icin merkez sunucunun sube PostgreSQL `5432` portuna erisimi ve PostgreSQL `pg_hba.conf` icinde merkez IP'si icin kullanici/DB izni gerekir.
-- Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. Ana Trendyol gonderimi uzak sube agini beklemez. Yonetim ekraninda bu durum `TGO basarili, sube POS aktarimi tamamlanamadi` uyarisi; depo/magaza, urun sayisi, deneme sayisi, son hata ve sonraki deneme zamaniyla gorulur.
+- Sube kapaliysa is kaybolmaz; kuyruk kaydi `RetryDelaySeconds` sonunda yeniden denenir. `MaxAttempts` varsayilan `5` degeridir. Limit dolunca gorev `Failed` olur, otomatik deneme durur ve manuel kontrol uyarisi gorunur. Ana Trendyol gonderimi uzak sube agini beklemez. Ekranda bu durum `TGO basarili, sube POS aktarimi tamamlanamadi` uyarisi; depo/magaza, urun sayisi, deneme sayisi, son hata ve sonraki deneme zamaniyla gorulur.
 - `Password` ayari kod deposunda tutulmamalidir; canli ortamda `TrendyolGo__BranchPosPriceSync__Password` ortam degiskeni kullanilmalidir.
 - Kuyruk ayni depo/stok/fiyat-listesi/birim anahtarini transaction advisory lock ile serilestirir. Yazma once tarih kontrollu `UPDATE`, kayit yoksa `INSERT` uygular; uzak POS veritabaninda benzersiz indeks bulunmasina bagimli degildir. Fiyat ve depo blok tarihleri birbirinden bagimsiz karsilastirilir.
 - Basarili kalemler `public.stoksatisfiyat` tablosuna yazildiktan sonra ayni PostgreSQL transaction'i icinde `public.sync` tablosundaki `online_satis_fiyatlari_sync` anahtari ilerletilir. Kasa yeni anahtari ancak fiyat ve satis-durdurma satirlari eksiksiz kaydedildiginde gorur.
@@ -109,6 +109,8 @@ POS worker varsayilan olarak depo `BranchDetails.BranchIpAddress` adresini kulla
 ### Dogrudan degisiklik gonderimi
 
 `direct-preview` Mikro'daki uygun fiyat/depo satirlarini `changed`, tarih veya `all` modunda listeler. Kullanici secimini `direct-dispatch` ile gonderdiginde her magaza icin su akis uygulanir:
+
+Angular hedef kapsaminda tek magaza, belirli magazalar veya tum magazalar secilebilir. Belirli magazalar secildiginde her subenin degisen urun listesi kendi Mikro depo numarasi ve stok rezerviyle ayri hesaplanir; ortak bir liste tum subelere kopyalanmaz. Coklu secim listesindeki goz dugmesi secilen subenin detay onizlemesini urun tablosunda acar. Gonderim sonucu da her magazanin gercek kalem ve batch sayisini ayri satirda gosterir.
 
 Onizleme ham depo stokunu, magaza rezervini ve TGO'ya gidecek net stogu ayri alanlarda gosterir. Ornegin depo stoku `10`, rezerv `2` ise TGO miktari `8`; depo stoku `2` veya daha azsa TGO miktari `0` olur. Ayni hesap snapshot, dogrudan gonderim ve katalog eksigi tamamlandiktan sonraki otomatik ilk fiyat/stok gonderiminde kullanilir.
 

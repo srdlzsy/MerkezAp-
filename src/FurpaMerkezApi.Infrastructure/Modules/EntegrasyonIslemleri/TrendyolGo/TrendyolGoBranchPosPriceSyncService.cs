@@ -28,7 +28,7 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
 
         try
         {
-            await EnqueueRequiredAsync(storeId, warehouseNo, items, cancellationToken);
+            await EnqueueCoreAsync(storeId, warehouseNo, items, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -48,6 +48,15 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             return;
         }
 
+        await EnqueueCoreAsync(storeId, warehouseNo, items, cancellationToken);
+    }
+
+    private async Task EnqueueCoreAsync(
+        long storeId,
+        int warehouseNo,
+        IReadOnlyCollection<BranchPosPriceItem> items,
+        CancellationToken cancellationToken)
+    {
         using var persistenceTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         persistenceTimeout.CancelAfter(TimeSpan.FromSeconds(10));
         authDbContext.TrendyolGoBranchPosPriceSyncTasks.Add(new TrendyolGoBranchPosPriceSyncTask(
@@ -123,19 +132,22 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-            foreach (var item in items
-                         .GroupBy(item => new { item.StockCode, item.PriceListNo })
-                         .Select(group => group.Last())
-                         .OrderBy(item => item.StockCode, StringComparer.Ordinal)
-                         .ThenBy(item => item.PriceListNo))
+            var distinctItems = items
+                .GroupBy(item => new { item.StockCode, item.PriceListNo })
+                .Select(group => group.Last())
+                .OrderBy(item => item.StockCode, StringComparer.Ordinal)
+                .ThenBy(item => item.PriceListNo)
+                .ToArray();
+            await using var upsertCommand = CreateUpsertCommand(
+                connection,
+                transaction,
+                task.WarehouseNo,
+                distinctItems[0],
+                task.CreatedAtUtc);
+            foreach (var item in distinctItems)
             {
-                await UpsertAsync(
-                    connection,
-                    transaction,
-                    task.WarehouseNo,
-                    item,
-                    task.CreatedAtUtc,
-                    cancellationToken);
+                SetUpsertParameterValues(upsertCommand, item, task.CreatedAtUtc);
+                await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
             await AdvanceOnlinePriceSyncKeyAsync(
@@ -152,11 +164,40 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            var retryDelay = Math.Clamp(config.RetryDelaySeconds, 30, 3600);
-            task.ScheduleRetry(exception.Message, clock.UtcNow.AddSeconds(retryDelay));
+            var failureTime = clock.UtcNow;
+            var maxAttempts = Math.Clamp(config.MaxAttempts, 1, 100);
+            if (task.AttemptCount + 1 >= maxAttempts)
+            {
+                task.MarkFailed(exception.Message, failureTime);
+            }
+            else
+            {
+                var retryDelay = Math.Clamp(config.RetryDelaySeconds, 30, 3600);
+                task.ScheduleRetry(exception.Message, failureTime.AddSeconds(retryDelay));
+            }
             await authDbContext.SaveChangesAsync(cancellationToken);
-            logger.LogWarning(exception, "Branch POS price synchronization failed and will retry. WarehouseNo={WarehouseNo}, TaskId={TaskId}", task.WarehouseNo, task.Id);
-            return 0;
+            if (task.Status == TrendyolGoBranchPosPriceSyncStatus.Failed)
+            {
+                logger.LogError(
+                    exception,
+                    "Branch POS price synchronization stopped after {AttemptCount} attempts. WarehouseNo={WarehouseNo}, TaskId={TaskId}",
+                    task.AttemptCount,
+                    task.WarehouseNo,
+                    task.Id);
+            }
+            else
+            {
+                logger.LogWarning(
+                    exception,
+                    "Branch POS price synchronization failed and will retry. Attempt={AttemptCount}/{MaxAttempts}, WarehouseNo={WarehouseNo}, TaskId={TaskId}",
+                    task.AttemptCount,
+                    maxAttempts,
+                    task.WarehouseNo,
+                    task.Id);
+            }
+            // The task was claimed and its retry/failure state was persisted. Let the
+            // worker continue draining other branches in the same cycle.
+            return 1;
         }
     }
 
@@ -245,15 +286,14 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
             updated_at = CURRENT_TIMESTAMP;
         """;
 
-    private static async Task UpsertAsync(
+    private static NpgsqlCommand CreateUpsertCommand(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int warehouseNo,
         BranchPosPriceItem item,
-        DateTime taskCreatedAtUtc,
-        CancellationToken cancellationToken)
+        DateTime taskCreatedAtUtc)
     {
-        await using var command = connection.CreateCommand();
+        var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = UpsertCommandText;
         command.Parameters.AddWithValue("sdp_depo_no", warehouseNo);
@@ -270,7 +310,25 @@ internal sealed class TrendyolGoBranchPosPriceSyncService(
         command.Parameters.AddWithValue(
             "sdp_lastup_date",
             ResolveSourceVersion(item.WarehouseUpdatedAtUtc, taskCreatedAtUtc));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return command;
+    }
+
+    private static void SetUpsertParameterValues(
+        NpgsqlCommand command,
+        BranchPosPriceItem item,
+        DateTime taskCreatedAtUtc)
+    {
+        command.Parameters["sfiyat_stokkod"].Value = item.StockCode;
+        command.Parameters["sfiyat_listesirano"].Value = item.PriceListNo;
+        command.Parameters["sfiyat_birim_adi"].Value = item.UnitName;
+        command.Parameters["sfiyat_fiyati"].Value = item.Price;
+        command.Parameters["sfiyat_satisdursun"].Value = item.SalesBlocked;
+        command.Parameters["sfiyat_sipdursun"].Value = item.OrderBlocked;
+        command.Parameters["sfiyat_malkabuldursun"].Value = item.GoodsAcceptanceBlocked;
+        command.Parameters["sfiyat_lastup_date"].Value =
+            ResolveSourceVersion(item.PriceUpdatedAtUtc, taskCreatedAtUtc);
+        command.Parameters["sdp_lastup_date"].Value =
+            ResolveSourceVersion(item.WarehouseUpdatedAtUtc, taskCreatedAtUtc);
     }
 
     private static async Task AdvanceOnlinePriceSyncKeyAsync(

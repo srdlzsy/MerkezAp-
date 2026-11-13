@@ -128,6 +128,18 @@ public sealed class TrendyolGoController(
         CancellationToken cancellationToken = default) =>
         Ok(await batchWorkflowQueries.ListAsync(take, cancellationToken));
 
+    [HttpGet("workflow-status")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(TrendyolGoWorkflowStatusDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TrendyolGoWorkflowStatusDto>> GetWorkflowStatus(
+        [FromQuery, Range(1, 500)] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var workflows = await batchWorkflowQueries.ListAsync(take, cancellationToken);
+        var branchTasks = await administrationService.ListBranchPosSyncTasksAsync(take, cancellationToken);
+        return Ok(new TrendyolGoWorkflowStatusDto(workflows, branchTasks));
+    }
+
     [HttpGet("connection-test")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(TrendyolGoConnectionStatusDto), StatusCodes.Status200OK)]

@@ -456,6 +456,21 @@ public sealed class TrendyolGoPriceStockWorkbenchTests
     }
 
     [Fact]
+    public void BranchPosTask_MarkFailed_StopsAutomaticRetryAndRecordsFinalAttempt()
+    {
+        var now = new DateTime(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+        var task = new TrendyolGoBranchPosPriceSyncTask(Guid.NewGuid(), 486064, 50, "[]", now);
+
+        task.ScheduleRetry("connection refused", now.AddMinutes(5));
+        task.MarkFailed("connection refused", now.AddMinutes(10));
+
+        Assert.Equal(TrendyolGoBranchPosPriceSyncStatus.Failed, task.Status);
+        Assert.Equal(2, task.AttemptCount);
+        Assert.Equal(now.AddMinutes(10), task.CompletedAtUtc);
+        Assert.Equal(task.CompletedAtUtc, task.NextAttemptAtUtc);
+    }
+
+    [Fact]
     public void BatchFollowUp_HasDedicatedSaleStatusKind()
     {
         Assert.Equal(3, (int)TrendyolGoBatchFollowUpKind.SaleStatus);

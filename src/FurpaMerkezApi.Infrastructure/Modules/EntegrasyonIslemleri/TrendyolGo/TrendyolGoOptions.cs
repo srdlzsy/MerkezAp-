@@ -79,6 +79,7 @@ public sealed class TrendyolGoBranchPosPriceSyncOptions
     public int CommandTimeoutSeconds { get; init; } = 30;
     public int WorkerIntervalSeconds { get; init; } = 30;
     public int RetryDelaySeconds { get; init; } = 300;
+    public int MaxAttempts { get; init; } = 5;
 }
 
 public sealed class TrendyolGoStoreMappingOptions

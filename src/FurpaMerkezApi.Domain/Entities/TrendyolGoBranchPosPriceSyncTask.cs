@@ -55,6 +55,17 @@ public sealed class TrendyolGoBranchPosPriceSyncTask
         NextAttemptAtUtc = NormalizeUtc(nextAttemptAtUtc);
     }
 
+    public void MarkFailed(string error, DateTime completedAtUtc)
+    {
+        AttemptCount++;
+        Status = TrendyolGoBranchPosPriceSyncStatus.Failed;
+        LastError = string.IsNullOrWhiteSpace(error)
+            ? "Branch POS price synchronization failed."
+            : error[..Math.Min(error.Length, 2000)];
+        CompletedAtUtc = NormalizeUtc(completedAtUtc);
+        NextAttemptAtUtc = CompletedAtUtc.Value;
+    }
+
     private static DateTime NormalizeUtc(DateTime value) => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
 }
 
@@ -62,5 +73,6 @@ public enum TrendyolGoBranchPosPriceSyncStatus
 {
     Pending = 1,
     Processing = 2,
-    Succeeded = 3
+    Succeeded = 3,
+    Failed = 4
 }

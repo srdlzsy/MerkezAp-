@@ -3,6 +3,8 @@ namespace FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.TrendyolGo;
 public interface ITrendyolGoAdministrationService
 {
     Task<TrendyolGoAdministrationOverview> GetOverviewAsync(string? search, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<TrendyolGoBranchPosSyncTaskDto>> ListBranchPosSyncTasksAsync(
+        int take, CancellationToken cancellationToken);
     Task<TrendyolGoRuntimeSettingsDto> UpdateRuntimeSettingsAsync(
         TrendyolGoRuntimeSettingsUpdate request, string actor, CancellationToken cancellationToken);
     Task<TrendyolGoStoreSettingDto> UpsertStoreAsync(
@@ -114,3 +116,7 @@ public sealed record TrendyolGoBranchPosSyncTaskDto(
     string? LastError,
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc);
+
+public sealed record TrendyolGoWorkflowStatusDto(
+    IReadOnlyCollection<TrendyolGoBatchWorkflowDto> BatchWorkflows,
+    IReadOnlyCollection<TrendyolGoBranchPosSyncTaskDto> BranchPosSyncTasks);
