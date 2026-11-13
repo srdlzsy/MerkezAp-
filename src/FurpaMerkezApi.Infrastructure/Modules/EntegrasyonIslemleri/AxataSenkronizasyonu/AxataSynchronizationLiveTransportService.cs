@@ -293,7 +293,17 @@ internal sealed class AxataSynchronizationLiveTransportService(
             ValuesEqual(header.BranchCode, payload.Master.S00SKOD) &&
             ValuesEqual(header.SourceCustomerCode, payload.Master.S00SMUS) &&
             ValuesEqual(header.TargetCustomerCode, payload.Master.S00TMUS));
-        if (!headerMatches || lines.Count != payload.Lines.Count)
+        if (!headerMatches || lines.Count < payload.Lines.Count)
+        {
+            return false;
+        }
+
+        // AXATA legacy tables do not expose a header-line foreign key. When the same
+        // document number has multiple headers, lines from every header are returned
+        // together; verify the expected payload as a multiset within that shared pool.
+        // A normal single-header document must still match line-for-line.
+        var hasMultipleHeaders = headers.Count > 1;
+        if (!hasMultipleHeaders && lines.Count != payload.Lines.Count)
         {
             return false;
         }
@@ -314,7 +324,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
             remainingLines.RemoveAt(matchIndex);
         }
 
-        return remainingLines.Count == 0;
+        return hasMultipleHeaders || remainingLines.Count == 0;
     }
 
     private static string BuildOutboundOrderConflictMessage(

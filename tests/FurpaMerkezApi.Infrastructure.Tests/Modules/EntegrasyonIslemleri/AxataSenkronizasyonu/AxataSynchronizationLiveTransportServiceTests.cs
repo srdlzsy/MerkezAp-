@@ -71,6 +71,51 @@ public sealed class AxataSynchronizationLiveTransportServiceTests
         Assert.False(result);
     }
 
+    [Fact]
+    public void MatchesExistingOutboundOrder_ReturnsTrue_WhenMatchingHeaderAndLinesShareDocumentNumberWithAnotherOrder()
+    {
+        var payload = CreatePayload("3312384204", [(0, "018854", 10d)]);
+        var headers = new[]
+        {
+            new AxataExistingOutboundOrderHeader("01", "4730004089", "4730004089"),
+            new AxataExistingOutboundOrderHeader("01", "3312384204", "3312384204")
+        };
+        var lines = new[]
+        {
+            new AxataExistingOutboundOrderLine("0", "010724", 52m, "01"),
+            new AxataExistingOutboundOrderLine("0", "018854", 10m, "01")
+        };
+
+        var result = AxataSynchronizationLiveTransportService.MatchesExistingOutboundOrder(
+            payload,
+            headers,
+            lines);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void MatchesExistingOutboundOrder_ReturnsFalse_WhenSingleHeaderHasAdditionalLines()
+    {
+        var payload = CreatePayload("3312384204", [(0, "018854", 10d)]);
+        var headers = new[]
+        {
+            new AxataExistingOutboundOrderHeader("01", "3312384204", "3312384204")
+        };
+        var lines = new[]
+        {
+            new AxataExistingOutboundOrderLine("0", "018854", 10m, "01"),
+            new AxataExistingOutboundOrderLine("1", "010724", 52m, "01")
+        };
+
+        var result = AxataSynchronizationLiveTransportService.MatchesExistingOutboundOrder(
+            payload,
+            headers,
+            lines);
+
+        Assert.False(result);
+    }
+
     private static AxataLegacyOutboundOrderPayload CreatePayload(
         string customerCode,
         IReadOnlyCollection<(int LineNo, string StockCode, double Quantity)> lines) =>
