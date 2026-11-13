@@ -1,6 +1,7 @@
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.Home.DepoOncelikleri;
 public sealed class HomeWarehousePrioritiesService(
     AuthDbContext authDbContext,
     MikroDbContext mikroDbContext,
+    IWarehouseMovementMikroSnapshotReader warehouseMovementSnapshotReader,
     IClock clock) : IHomeWarehousePrioritiesService
 {
     private const string Critical = "critical";
@@ -37,8 +39,14 @@ public sealed class HomeWarehousePrioritiesService(
         var endUtc = ToUtc(request.Date.AddDays(1));
         var operationalDataStartUtc = ToUtc(lookbackStartDate);
         var warehouseName = await ResolveWarehouseNameAsync(request, cancellationToken);
+        var movementSnapshot = await warehouseMovementSnapshotReader.ReadAsync(
+            lookbackStartDate,
+            request.Date,
+            cancellationToken);
         var flowSummary = await LoadFlowSummaryAsync(
             request.WarehouseNo,
+            request.Date,
+            movementSnapshot,
             startUtc,
             endUtc,
             operationalDataStartUtc,
@@ -92,6 +100,8 @@ public sealed class HomeWarehousePrioritiesService(
 
     private async Task<FlowSummary> LoadFlowSummaryAsync(
         int? warehouseNo,
+        DateOnly selectedDate,
+        WarehouseMovementMikroSnapshot movementSnapshot,
         DateTime startUtc,
         DateTime endUtc,
         DateTime operationalDataStartUtc,
@@ -173,6 +183,63 @@ public sealed class HomeWarehousePrioritiesService(
             (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
              flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
              flow.CurrentStep == DocumentFlowStep.DocumentUpdated));
+
+        if (movementSnapshot.IsAvailable)
+        {
+            var movements = movementSnapshot.Rows;
+            todayShipmentCount = rows.Count(flow =>
+                                     (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+                                     flow.DocumentType == DocumentFlowType.CompanyShipment &&
+                                     flow.CreatedAtUtc >= startUtc &&
+                                     flow.CreatedAtUtc < endUtc &&
+                                     !IsFailedCreation(flow)) +
+                                 movements.Count(row =>
+                                     (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
+                                     row.DocumentDate == selectedDate &&
+                                     !row.IsReturn);
+            todayReceivingCount = movements.Count(row =>
+                (!hasWarehouseNo || row.TargetWarehouseNo == scopedWarehouseNo) &&
+                row.IsAccepted &&
+                row.UpdatedAt.HasValue &&
+                DateOnly.FromDateTime(row.UpdatedAt.Value) == selectedDate);
+            pendingReceivingCount = movements.Count(row =>
+                (!hasWarehouseNo || row.TargetWarehouseNo == scopedWarehouseNo) &&
+                !row.IsAccepted &&
+                row.IsEDespatchSent);
+            overduePendingReceivingCount = movements.Count(row =>
+                (!hasWarehouseNo || row.TargetWarehouseNo == scopedWarehouseNo) &&
+                !row.IsAccepted &&
+                row.IsEDespatchSent &&
+                row.DocumentDate < selectedDate);
+            unacceptedOutgoingCount = movements.Count(row =>
+                (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
+                !row.IsAccepted &&
+                row.IsEDespatchSent);
+
+            var failedWarehouseEDespatchCount = operationalRows.Count(flow =>
+                (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+                IsWarehouseMovement(flow.DocumentType) &&
+                flow.CurrentStep == DocumentFlowStep.EDespatchSubmission &&
+                flow.Status == DocumentFlowStatus.Failed);
+            var pendingWarehouseEDespatchCount = movements.Count(row =>
+                (!hasWarehouseNo || row.SourceWarehouseNo == scopedWarehouseNo) &&
+                !row.IsAccepted &&
+                !row.IsEDespatchSent);
+            var unsubmittedCompanyEDespatchCount = operationalRows.Count(flow =>
+                (!hasWarehouseNo || flow.SourceWarehouseNo == scopedWarehouseNo) &&
+                flow.DocumentType is DocumentFlowType.CompanyShipment or DocumentFlowType.CompanyReturn &&
+                flow.CurrentStep != DocumentFlowStep.DocumentDeleted &&
+                flow.CurrentStep != DocumentFlowStep.WarehouseReceivingAccepted &&
+                flow.Status == DocumentFlowStatus.Succeeded &&
+                flow.ExternalUuid == null &&
+                (flow.CurrentStep == DocumentFlowStep.DocumentCreated ||
+                 flow.CurrentStep == DocumentFlowStep.AxataDocumentImported ||
+                 flow.CurrentStep == DocumentFlowStep.DocumentUpdated));
+            unsubmittedEDespatchCount = Math.Max(
+                                             0,
+                                             pendingWarehouseEDespatchCount - failedWarehouseEDespatchCount) +
+                                         unsubmittedCompanyEDespatchCount;
+        }
 
         var otherFailedOperationCount = operationalRows.Count(flow =>
             (!hasWarehouseNo ||
@@ -307,7 +374,7 @@ public sealed class HomeWarehousePrioritiesService(
                     endDate: selectedDate)),
             new(
                 "openOrder",
-                "Acik Siparis",
+                "AXATA Bekleyen Siparis",
                 flowSummary.OpenOrderCount,
                 flowSummary.OpenOrderCount > 0 ? Warning : Healthy,
                 BuildFlowRoute(

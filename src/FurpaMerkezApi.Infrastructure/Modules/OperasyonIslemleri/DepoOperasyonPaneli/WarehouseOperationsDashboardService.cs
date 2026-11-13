@@ -2,6 +2,7 @@ using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,7 @@ namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyon
 public sealed class WarehouseOperationsDashboardService(
     AuthDbContext authDbContext,
     MikroDbContext mikroDbContext,
+    IWarehouseMovementMikroSnapshotReader warehouseMovementSnapshotReader,
     IClock clock,
     IOptionsMonitor<DocumentFlowTrackingOptions> trackingOptions)
     : IWarehouseOperationsDashboardService
@@ -73,12 +75,18 @@ public sealed class WarehouseOperationsDashboardService(
                 flow.CreatedAtUtc,
                 flow.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
+        var movementSnapshot = await warehouseMovementSnapshotReader.ReadAsync(
+            lookbackStartDate,
+            date,
+            cancellationToken);
 
         var items = warehouseRows
             .Select(warehouse => BuildWarehouseItem(
                 warehouse.WarehouseNo,
                 warehouse.WarehouseName,
                 flowRows,
+                movementSnapshot,
+                date,
                 lookbackStartUtc,
                 startUtc,
                 endUtc))
@@ -117,15 +125,10 @@ public sealed class WarehouseOperationsDashboardService(
         var summaryOtherFailedOperationCount = summaryOperationalFlows.Count(flow =>
             flow.CurrentStep != DocumentFlowStep.EDespatchSubmission &&
             flow.Status == DocumentFlowStatus.Failed);
-        var summaryIncompleteOperationCount = summaryOperationalFlows.Count(flow =>
-            (flow.TargetWarehouseNo.HasValue &&
-             activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value) &&
-             IsPendingReceiving(flow)) ||
-            (activeWarehouseNos.Contains(flow.SourceWarehouseNo) && IsPendingOrFailedEDespatch(flow)) ||
-            ((activeWarehouseNos.Contains(flow.SourceWarehouseNo) ||
-              (flow.TargetWarehouseNo.HasValue && activeWarehouseNos.Contains(flow.TargetWarehouseNo.Value))) &&
-             IsOpenOrder(flow)) ||
-            flow.Status == DocumentFlowStatus.Failed);
+        var summaryIncompleteOperationCount = summaryPendingReceivingCount +
+                                              summaryPendingEDespatchCount +
+                                              summaryOpenOrderCount +
+                                              summaryOtherFailedOperationCount;
 
         return new WarehouseOperationsDashboardDto(
             date,
@@ -165,6 +168,8 @@ public sealed class WarehouseOperationsDashboardService(
         int warehouseNo,
         string warehouseName,
         IReadOnlyCollection<FlowRow> flows,
+        WarehouseMovementMikroSnapshot movementSnapshot,
+        DateOnly selectedDate,
         DateTime lookbackStartUtc,
         DateTime startUtc,
         DateTime endUtc)
@@ -231,6 +236,7 @@ public sealed class WarehouseOperationsDashboardService(
             ((flow.SourceWarehouseNo == warehouseNo || flow.TargetWarehouseNo == warehouseNo) &&
              flow.Status == DocumentFlowStatus.Failed));
 
+        var todayReceivingCount = completedReceivings.Length;
         var averageReceivingMinutes = completedReceivings.Length == 0
             ? (double?)null
             : Math.Round(
@@ -238,12 +244,75 @@ public sealed class WarehouseOperationsDashboardService(
                     Math.Max(0, (flow.UpdatedAtUtc - flow.CreatedAtUtc).TotalMinutes)),
                 2);
 
+        if (movementSnapshot.IsAvailable)
+        {
+            var movementRows = movementSnapshot.Rows;
+            todayShipmentCount = flows.Count(flow =>
+                                     flow.SourceWarehouseNo == warehouseNo &&
+                                     flow.CreatedAtUtc >= startUtc &&
+                                     flow.CreatedAtUtc < endUtc &&
+                                     flow.DocumentType == DocumentFlowType.CompanyShipment &&
+                                     !IsFailedCreation(flow)) +
+                                 movementRows.Count(row =>
+                                     row.SourceWarehouseNo == warehouseNo &&
+                                     row.DocumentDate == selectedDate &&
+                                     !row.IsReturn);
+            todayReturnCount = flows.Count(flow =>
+                                   flow.SourceWarehouseNo == warehouseNo &&
+                                   flow.CreatedAtUtc >= startUtc &&
+                                   flow.CreatedAtUtc < endUtc &&
+                                   flow.DocumentType == DocumentFlowType.CompanyReturn &&
+                                   !IsFailedCreation(flow)) +
+                               movementRows.Count(row =>
+                                   row.SourceWarehouseNo == warehouseNo &&
+                                   row.DocumentDate == selectedDate &&
+                                   row.IsReturn);
+
+            var acceptedToday = movementRows
+                .Where(row =>
+                    row.TargetWarehouseNo == warehouseNo &&
+                    row.IsAccepted &&
+                    row.UpdatedAt.HasValue &&
+                    DateOnly.FromDateTime(row.UpdatedAt.Value) == selectedDate)
+                .ToArray();
+            todayReceivingCount = acceptedToday.Length;
+            averageReceivingMinutes = acceptedToday.Length == 0
+                ? null
+                : Math.Round(
+                    acceptedToday.Average(row =>
+                        Math.Max(0, (row.UpdatedAt!.Value - row.CreatedAt).TotalMinutes)),
+                    2);
+
+            pendingReceivingCount = movementRows.Count(row =>
+                row.TargetWarehouseNo == warehouseNo &&
+                !row.IsAccepted &&
+                row.IsEDespatchSent);
+            unacceptedOutgoingCount = movementRows.Count(row =>
+                row.SourceWarehouseNo == warehouseNo &&
+                !row.IsAccepted &&
+                row.IsEDespatchSent);
+
+            var pendingWarehouseEDespatchCount = movementRows.Count(row =>
+                row.SourceWarehouseNo == warehouseNo &&
+                !row.IsAccepted &&
+                !row.IsEDespatchSent);
+            var pendingCompanyEDespatchCount = operationalFlows.Count(flow =>
+                flow.SourceWarehouseNo == warehouseNo &&
+                flow.DocumentType is DocumentFlowType.CompanyShipment or DocumentFlowType.CompanyReturn &&
+                IsPendingOrFailedEDespatch(flow));
+            pendingEDespatchCount = pendingWarehouseEDespatchCount + pendingCompanyEDespatchCount;
+            incompleteOperationCount = pendingReceivingCount +
+                                       pendingEDespatchCount +
+                                       openOrderCount +
+                                       otherFailedOperationCount;
+        }
+
         return new WarehouseOperationsDashboardItemDto(
             warehouseNo,
             warehouseName,
             todayShipmentCount,
             todayReturnCount,
-            completedReceivings.Length,
+            todayReceivingCount,
             pendingReceivingCount,
             incompleteOperationCount,
             failedEDespatchCount,

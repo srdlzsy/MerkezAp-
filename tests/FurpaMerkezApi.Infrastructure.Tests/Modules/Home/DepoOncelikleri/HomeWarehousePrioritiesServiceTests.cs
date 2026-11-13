@@ -2,6 +2,7 @@ using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.Home.DepoOncelikleri;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Home.DepoOncelikleri;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,42 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.Home.DepoOncelikleri;
 
 public sealed class HomeWarehousePrioritiesServiceTests
 {
+    [Fact]
+    public async Task GetAsync_UsesMikroSnapshotForWarehouseMovementMetrics()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var mikroDbContext = CreateMikroDbContext();
+        var selectedDate = new DateOnly(2026, 11, 10);
+        var createdAt = new DateTime(2026, 11, 10, 8, 0, 0);
+        var snapshot = new WarehouseMovementMikroSnapshot(
+            true,
+            [
+                new("F53", 1, false, 53, 104, selectedDate, createdAt, null, false, true),
+                new("F50", 2, false, 50, 53, selectedDate.AddDays(-1), createdAt.AddDays(-1), null, false, true),
+                new("F50", 3, false, 50, 53, selectedDate, createdAt, createdAt.AddMinutes(20), true, true),
+                new("F53", 4, false, 53, 104, selectedDate, createdAt, null, false, false)
+            ]);
+        var service = new HomeWarehousePrioritiesService(
+            authDbContext,
+            mikroDbContext,
+            new StaticMikroSnapshotReader(snapshot),
+            new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)));
+
+        var result = await service.GetAsync(
+            new HomeWarehousePrioritiesRequest(
+                selectedDate,
+                WarehouseNo: 53,
+                WarehouseName: "DEPO 53",
+                UserId: Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Metrics.Single(metric => metric.Code == "todayShipment").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "todayReceiving").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "pendingReceiving").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "unacceptedOutgoing").Value);
+        Assert.Equal(1, result.Metrics.Single(metric => metric.Code == "failedEDespatch").Value);
+    }
+
     [Fact]
     public async Task GetAsync_CountsOperationalDataWithinLookbackWindowAndExcludesDeletedFlows()
     {
@@ -142,6 +179,7 @@ public sealed class HomeWarehousePrioritiesServiceTests
         var service = new HomeWarehousePrioritiesService(
             authDbContext,
             mikroDbContext,
+            new UnavailableMikroSnapshotReader(),
             new FixedClock(now));
 
         var result = await service.GetAsync(
@@ -266,5 +304,24 @@ public sealed class HomeWarehousePrioritiesServiceTests
     private sealed class FixedClock(DateTime utcNow) : IClock
     {
         public DateTime UtcNow { get; } = utcNow;
+    }
+
+    private sealed class UnavailableMikroSnapshotReader : IWarehouseMovementMikroSnapshotReader
+    {
+        public Task<WarehouseMovementMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(WarehouseMovementMikroSnapshot.Unavailable);
+    }
+
+    private sealed class StaticMikroSnapshotReader(WarehouseMovementMikroSnapshot snapshot)
+        : IWarehouseMovementMikroSnapshotReader
+    {
+        public Task<WarehouseMovementMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(snapshot);
     }
 }

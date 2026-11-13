@@ -2,6 +2,7 @@ using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.BelgeAkisTakibi;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -13,6 +14,49 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.OperasyonIslemleri.DepoOpe
 
 public sealed class WarehouseOperationsDashboardServiceTests
 {
+    [Fact]
+    public async Task GetAsync_UsesMikroSnapshotForMovementAndReceivingCounts()
+    {
+        await using var authDbContext = CreateAuthDbContext();
+        await using var mikroDbContext = CreateMikroDbContext();
+        mikroDbContext.DEPOLARs.AddRange(
+            new DEPOLAR { dep_no = 50, dep_adi = "MERKEZ DEPO", dep_iptal = false },
+            new DEPOLAR { dep_no = 104, dep_adi = "SUBE 104", dep_iptal = false });
+        await mikroDbContext.SaveChangesAsync();
+
+        var selectedDate = new DateOnly(2026, 11, 10);
+        var createdAt = new DateTime(2026, 11, 10, 8, 0, 0);
+        var snapshot = new WarehouseMovementMikroSnapshot(
+            true,
+            [
+                new("F50", 10, false, 50, 104, selectedDate, createdAt, null, false, true),
+                new("F50", 11, false, 50, 104, selectedDate, createdAt, createdAt.AddMinutes(12), true, true),
+                new("I104", 5, true, 104, 50, selectedDate, createdAt, null, false, false)
+            ]);
+        var service = new WarehouseOperationsDashboardService(
+            authDbContext,
+            mikroDbContext,
+            new StaticMikroSnapshotReader(snapshot),
+            new FixedClock(new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc)),
+            new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }));
+
+        var result = await service.GetAsync(selectedDate, CancellationToken.None);
+
+        var warehouse50 = Assert.Single(result.Warehouses, item => item.WarehouseNo == 50);
+        Assert.Equal(2, warehouse50.TodayShipmentCount);
+        Assert.Equal(0, warehouse50.TodayReturnCount);
+        Assert.Equal(0, warehouse50.TodayReceivingCount);
+        Assert.Equal(0, warehouse50.PendingEDespatchCount);
+
+        var warehouse104 = Assert.Single(result.Warehouses, item => item.WarehouseNo == 104);
+        Assert.Equal(1, warehouse104.TodayReturnCount);
+        Assert.Equal(1, warehouse104.TodayReceivingCount);
+        Assert.Equal(1, warehouse104.PendingReceivingCount);
+        Assert.Equal(0, warehouse104.UnacceptedOutgoingCount);
+        Assert.Equal(1, warehouse104.PendingEDespatchCount);
+        Assert.Equal(12d, warehouse104.AverageReceivingMinutes);
+    }
+
     [Fact]
     public async Task GetAsync_ExcludesDeletedFlowsAndCountsPendingReceivingAndEDespatch()
     {
@@ -116,6 +160,7 @@ public sealed class WarehouseOperationsDashboardServiceTests
         var service = new WarehouseOperationsDashboardService(
             authDbContext,
             mikroDbContext,
+            new UnavailableMikroSnapshotReader(),
             new FixedClock(todayUtc),
             new StaticOptionsMonitor<DocumentFlowTrackingOptions>(new DocumentFlowTrackingOptions { Enabled = true }));
 
@@ -159,6 +204,25 @@ public sealed class WarehouseOperationsDashboardServiceTests
     private sealed class FixedClock(DateTime utcNow) : IClock
     {
         public DateTime UtcNow { get; } = utcNow;
+    }
+
+    private sealed class UnavailableMikroSnapshotReader : IWarehouseMovementMikroSnapshotReader
+    {
+        public Task<WarehouseMovementMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(WarehouseMovementMikroSnapshot.Unavailable);
+    }
+
+    private sealed class StaticMikroSnapshotReader(WarehouseMovementMikroSnapshot snapshot)
+        : IWarehouseMovementMikroSnapshotReader
+    {
+        public Task<WarehouseMovementMikroSnapshot> ReadAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(snapshot);
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

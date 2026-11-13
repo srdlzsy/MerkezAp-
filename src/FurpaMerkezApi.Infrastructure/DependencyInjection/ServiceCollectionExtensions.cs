@@ -59,6 +59,7 @@ using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Lookups;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.Queries;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.BelgeAkisTakibi;
+using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPaneli;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.FirmaEvrakTakibi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimlari;
@@ -796,6 +797,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<InvoiceViewingAutomaticSynchronizationScheduler>();
         services.AddHostedService<DatabaseMonitoringWorker>();
         services.AddScoped<IOperationsService, OperationsService>();
+        services.AddScoped<IWarehouseMovementMikroSnapshotReader, WarehouseMovementMikroSnapshotReader>();
         services.AddScoped<IDocumentFlowService, DocumentFlowService>();
         services.AddScoped<IWarehouseOperationsDashboardService, WarehouseOperationsDashboardService>();
         services.AddScoped<ICompanyDocumentTrackingService, CompanyDocumentTrackingService>();
