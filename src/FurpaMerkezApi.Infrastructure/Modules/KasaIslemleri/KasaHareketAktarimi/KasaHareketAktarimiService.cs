@@ -882,7 +882,7 @@ public sealed class KasaHareketAktarimiService(
                   AND movement.cha_cinsi = 5
                   AND movement.cha_evrakno_seri = 'X'
                   AND NULLIF(LTRIM(RTRIM(ISNULL(movement.cha_special1, ''))), '') IS NULL
-                  AND TRY_CONVERT(int, movement.cha_kod) IS NOT NULL
+                  AND TRY_CONVERT(int, movement.cha_kod) BETWEEN 101 AND 999
                   AND (@branchNo IS NULL OR TRY_CONVERT(int, movement.cha_kod) = @branchNo)
                 GROUP BY TRY_CONVERT(int, movement.cha_kod)
             ),
@@ -902,10 +902,12 @@ public sealed class KasaHareketAktarimiService(
                 ISNULL(currentTotal.CurrentAccountAmount, 0) AS CurrentAccountAmount,
                 ISNULL(zReport.ZReportAmount, 0) AS ZReportAmount
             FROM Branches AS branch
+            INNER JOIN dbo.DEPOLAR AS warehouse WITH (READUNCOMMITTED)
+                ON warehouse.dep_no = branch.BranchNo
             LEFT JOIN StockTotals AS stock ON stock.BranchNo = branch.BranchNo
             LEFT JOIN CurrentTotals AS currentTotal ON currentTotal.BranchNo = branch.BranchNo
             LEFT JOIN ZReportTotals AS zReport ON zReport.BranchNo = branch.BranchNo
-            WHERE branch.BranchNo > 100
+            WHERE branch.BranchNo BETWEEN 101 AND 999
             ORDER BY branch.BranchNo
             OPTION (RECOMPILE);
             """;
@@ -929,33 +931,61 @@ public sealed class KasaHareketAktarimiService(
             cancellationToken);
 
         const string furpaSql = """
+            WITH MovementTotals AS (
+                SELECT
+                    TRY_CONVERT(int, line.Sube) AS BranchNo,
+                    SUM(CASE
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 1
+                            THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
+                        ELSE 0
+                    END) AS RetailTransferredAmount,
+                    SUM(CASE
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 3
+                            THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
+                        ELSE 0
+                    END) AS InvoiceTransferredAmount,
+                    SUM(CASE
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 4
+                            THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
+                        ELSE 0
+                    END) AS ExpenseSlipTransferredAmount
+                FROM dbo.PosFaturaSatirs AS line WITH (READUNCOMMITTED)
+                INNER JOIN dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
+                    ON invoice.FaturaGuid = line.FaturaGuid
+                WHERE line.Tarih >= @date
+                  AND line.Tarih < @nextDate
+                  AND TRY_CONVERT(int, line.Sube) BETWEEN 101 AND 999
+                  AND TRY_CONVERT(int, invoice.BelgeTuru) IN (1, 3, 4)
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, line.Sube) = @branchNo)
+                GROUP BY TRY_CONVERT(int, line.Sube)
+            ),
+            CheckTotals AS (
+                SELECT
+                    TRY_CONVERT(int, payment.Sube) AS BranchNo,
+                    SUM(ISNULL(payment.Tutar, 0)) AS CheckAmount
+                FROM dbo.PosFaturaOdemes AS payment WITH (READUNCOMMITTED)
+                WHERE payment.Tarih >= @date
+                  AND payment.Tarih < @nextDate
+                  AND TRY_CONVERT(int, payment.Sube) BETWEEN 101 AND 999
+                  AND TRY_CONVERT(int, payment.OdemeTipi) = 4
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, payment.Sube) = @branchNo)
+                GROUP BY TRY_CONVERT(int, payment.Sube)
+            ),
+            Branches AS (
+                SELECT BranchNo FROM MovementTotals
+                UNION
+                SELECT BranchNo FROM CheckTotals
+            )
             SELECT
-                TRY_CONVERT(int, line.Sube) AS BranchNo,
-                SUM(CASE
-                    WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 1
-                        THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
-                    ELSE 0
-                END) AS RetailTransferredAmount,
-                SUM(CASE
-                    WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 3
-                        THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
-                    ELSE 0
-                END) AS InvoiceTransferredAmount,
-                SUM(CASE
-                    WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 4
-                        THEN ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)
-                    ELSE 0
-                END) AS ExpenseSlipTransferredAmount
-            FROM dbo.PosFaturaSatirs AS line WITH (READUNCOMMITTED)
-            INNER JOIN dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
-                ON invoice.FaturaGuid = line.FaturaGuid
-            WHERE line.Tarih >= @date
-              AND line.Tarih < @nextDate
-              AND TRY_CONVERT(int, line.Sube) IS NOT NULL
-              AND TRY_CONVERT(int, invoice.BelgeTuru) IN (1, 3, 4)
-              AND (@branchNo IS NULL OR TRY_CONVERT(int, line.Sube) = @branchNo)
-            GROUP BY TRY_CONVERT(int, line.Sube)
-            ORDER BY BranchNo;
+                branch.BranchNo,
+                ISNULL(movement.RetailTransferredAmount, 0) AS RetailTransferredAmount,
+                ISNULL(movement.InvoiceTransferredAmount, 0) AS InvoiceTransferredAmount,
+                ISNULL(movement.ExpenseSlipTransferredAmount, 0) AS ExpenseSlipTransferredAmount,
+                ISNULL(checkTotal.CheckAmount, 0) AS CheckAmount
+            FROM Branches AS branch
+            LEFT JOIN MovementTotals AS movement ON movement.BranchNo = branch.BranchNo
+            LEFT JOIN CheckTotals AS checkTotal ON checkTotal.BranchNo = branch.BranchNo
+            ORDER BY branch.BranchNo;
             """;
 
         var furpaRows = await ExecuteReaderAsync(
@@ -971,18 +1001,22 @@ public sealed class KasaHareketAktarimiService(
                 ReadInt(reader, "BranchNo"),
                 ReadDecimal(reader, "RetailTransferredAmount"),
                 ReadDecimal(reader, "InvoiceTransferredAmount"),
-                ReadDecimal(reader, "ExpenseSlipTransferredAmount")),
+                ReadDecimal(reader, "ExpenseSlipTransferredAmount"),
+                ReadDecimal(reader, "CheckAmount")),
             cancellationToken);
 
         var mikroByBranch = mikroRows.ToDictionary(item => item.BranchNo);
         var furpaByBranch = furpaRows.ToDictionary(item => item.BranchNo);
-        var branchNos = mikroByBranch.Keys
+        var candidateBranchNos = mikroByBranch.Keys
             .Concat(furpaByBranch.Keys)
-            .Where(item => item > 100)
+            .Where(item => item is >= 101 and <= 999)
             .Distinct()
             .OrderBy(item => item)
             .ToArray();
-        var branchNames = await GetBranchNamesAsync(branchNos, cancellationToken);
+        var branchNames = await GetBranchNamesAsync(candidateBranchNos, cancellationToken);
+        var branchNos = candidateBranchNos
+            .Where(branchNames.ContainsKey)
+            .ToArray();
 
         var rows = branchNos.Select(branchNo =>
         {
@@ -1001,13 +1035,14 @@ public sealed class KasaHareketAktarimiService(
                 furpa?.RetailTransferredAmount ?? 0m,
                 furpa?.InvoiceTransferredAmount ?? 0m,
                 furpa?.ExpenseSlipTransferredAmount ?? 0m,
+                furpa?.CheckAmount ?? 0m,
                 mikro?.ZReportAmount ?? 0m,
                 tolerance);
         }).ToArray();
 
         var summary = new KasaHareketSalesComparisonSummaryDto(
             rows.Length,
-            rows.Count(item => item.HasDifference),
+            rows.Count(item => item.HasDifference || item.HasSourceDataWarning),
             Round(rows.Sum(item => item.StockMovementAmount)),
             Round(rows.Sum(item => item.CurrentAccountAmount)),
             Round(rows.Sum(item => item.TransferredAmount)),
@@ -1031,7 +1066,11 @@ public sealed class KasaHareketAktarimiService(
             Round(rows.Sum(item => item.ExpenseSlipDifference)),
             Round(rows.Sum(item => item.NetStockTurnover)),
             Round(rows.Sum(item => item.NetTransferredTurnover)),
-            Round(rows.Sum(item => item.NetDifference)));
+            Round(rows.Sum(item => item.NetDifference)),
+            Round(rows.Sum(item => item.CheckAmount)),
+            Round(rows.Sum(item => item.SourceZReportDifference)),
+            Round(rows.Sum(item => item.PendingInvoiceAmount)),
+            rows.Count(item => item.HasSourceDataWarning));
 
         return new KasaHareketSalesComparisonDto(
             businessDate,
@@ -5438,6 +5477,7 @@ public sealed class KasaHareketAktarimiService(
         decimal retailTransferredAmount,
         decimal invoiceTransferredAmount,
         decimal expenseSlipTransferredAmount,
+        decimal checkAmount,
         decimal zReportAmount,
         decimal tolerance)
     {
@@ -5449,6 +5489,7 @@ public sealed class KasaHareketAktarimiService(
         retailTransferredAmount = Round(retailTransferredAmount);
         invoiceTransferredAmount = Round(invoiceTransferredAmount);
         expenseSlipTransferredAmount = Round(expenseSlipTransferredAmount);
+        checkAmount = Round(checkAmount);
         zReportAmount = Round(zReportAmount);
 
         var stockMovementAmount = Round(retailStockAmount + invoiceStockAmount);
@@ -5460,12 +5501,16 @@ public sealed class KasaHareketAktarimiService(
         var netTransferredTurnover = Round(
             retailTransferredAmount + invoiceTransferredAmount - expenseSlipTransferredAmount);
         var netDifference = Round(netTransferredTurnover - netStockTurnover);
-        // These legacy totals intentionally follow the original Satis Karsilastirma/Form1 formulas.
+        var pendingInvoiceAmount = Math.Max(0m, invoiceDifference);
         var expenseExcludedAmount = Round(transferredAmount - expenseSlipTransferredAmount);
         var zReportTransferDifference = Round(
-            stockMovementAmount - (zReportAmount + expenseSlipTransferredAmount));
+            netStockTurnover - zReportAmount - checkAmount);
+        var sourceZReportDifference = Round(
+            netTransferredTurnover - zReportAmount - checkAmount);
         var transferredTurnoverDifference = Round(transferredAmount - stockMovementAmount);
         var currentStockDifference = Round(currentComparableStockAmount - currentAccountAmount);
+        var hasSourceDataWarning = Math.Abs(sourceZReportDifference) > tolerance
+                                   || Math.Abs(currentStockDifference) > tolerance;
         var hasDifference = Math.Abs(retailDifference) > tolerance
                             || Math.Abs(invoiceDifference) > tolerance
                             || Math.Abs(expenseSlipDifference) > tolerance;
@@ -5495,7 +5540,11 @@ public sealed class KasaHareketAktarimiService(
             expenseSlipDifference,
             netStockTurnover,
             netTransferredTurnover,
-            netDifference);
+            netDifference,
+            checkAmount,
+            sourceZReportDifference,
+            pendingInvoiceAmount,
+            hasSourceDataWarning);
     }
 
     private static IReadOnlyCollection<DateTime> EnumerateDates(DateTime startDate, DateTime endDate)
@@ -6166,7 +6215,8 @@ public sealed class KasaHareketAktarimiService(
         int BranchNo,
         decimal RetailTransferredAmount,
         decimal InvoiceTransferredAmount,
-        decimal ExpenseSlipTransferredAmount);
+        decimal ExpenseSlipTransferredAmount,
+        decimal CheckAmount);
 
     private sealed record SatisMutabakatMikroSqlRow(
         int BranchNo,

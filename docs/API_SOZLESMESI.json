@@ -120447,6 +120447,21 @@
           "netDifference": {
             "type": "number",
             "format": "double"
+          },
+          "checkAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "sourceZReportDifference": {
+            "type": "number",
+            "format": "double"
+          },
+          "pendingInvoiceAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "hasSourceDataWarning": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -120549,6 +120564,22 @@
           "totalNetDifference": {
             "type": "number",
             "format": "double"
+          },
+          "totalCheckAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalSourceZReportDifference": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalPendingInvoiceAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "sourceDataWarningCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

@@ -206,6 +206,7 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             retailTransferredAmount: 990m,
             invoiceTransferredAmount: 200m,
             expenseSlipTransferredAmount: 30m,
+            checkAmount: 0m,
             zReportAmount: 1_190m,
             tolerance: 0.01m);
 
@@ -239,6 +240,7 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             retailTransferredAmount: 965.50m,
             invoiceTransferredAmount: 34.50m,
             expenseSlipTransferredAmount: 30m,
+            checkAmount: 0m,
             zReportAmount: 1_000m,
             tolerance: 0.01m);
 
@@ -252,6 +254,60 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal(970m, row.NetTransferredTurnover);
         Assert.Equal(0m, row.NetDifference);
         Assert.False(row.HasDifference);
+    }
+
+    [Fact]
+    public void CreateSalesComparisonRowAddsChecksToZReportReconciliation()
+    {
+        var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
+            new DateTime(2026, 11, 14),
+            113,
+            "Test Sube",
+            retailStockAmount: 1_000m,
+            invoiceStockAmount: 200m,
+            expenseSlipStockAmount: 30m,
+            currentComparableStockAmount: 1_000m,
+            currentAccountAmount: 1_000m,
+            retailTransferredAmount: 1_000m,
+            invoiceTransferredAmount: 300m,
+            expenseSlipTransferredAmount: 30m,
+            checkAmount: 30m,
+            zReportAmount: 1_240m,
+            tolerance: 0.01m);
+
+        Assert.Equal(-100m, row.ZReportTransferDifference);
+        Assert.Equal(0m, row.SourceZReportDifference);
+        Assert.Equal(100m, row.PendingInvoiceAmount);
+        Assert.Equal(30m, row.CheckAmount);
+        Assert.False(row.HasSourceDataWarning);
+        Assert.True(row.HasDifference);
+    }
+
+    [Fact]
+    public void CreateSalesComparisonRowLeavesOnlySourceMismatchAfterCheckAmount()
+    {
+        var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
+            new DateTime(2026, 11, 14),
+            113,
+            "Basaran Premium",
+            retailStockAmount: 1_113_449.72m,
+            invoiceStockAmount: 249_760.50m,
+            expenseSlipStockAmount: 1_626.50m,
+            currentComparableStockAmount: 1_113_449.72m,
+            currentAccountAmount: 1_113_388.07m,
+            retailTransferredAmount: 1_113_449.72m,
+            invoiceTransferredAmount: 249_760.50m,
+            expenseSlipTransferredAmount: 1_626.50m,
+            checkAmount: 6_100m,
+            zReportAmount: 1_355_422.07m,
+            tolerance: 0.01m);
+
+        Assert.Equal(61.65m, row.ZReportTransferDifference);
+        Assert.Equal(61.65m, row.SourceZReportDifference);
+        Assert.Equal(61.65m, row.CurrentStockDifference);
+        Assert.Equal(0m, row.PendingInvoiceAmount);
+        Assert.False(row.HasDifference);
+        Assert.True(row.HasSourceDataWarning);
     }
 
     [Fact]
