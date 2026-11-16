@@ -141,6 +141,47 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
             cancellationToken));
     }
 
+    [HttpGet("kdv-uyumsuzluk-raporu")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(KasaHareketVatMismatchReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<KasaHareketVatMismatchReportDto>> VatMismatchReport(
+        [FromQuery] KasaHareketVatMismatchReportHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var branchNo = User.ResolveWarehouseScopeForPolicy(request.BranchNo, DetailPolicy);
+        return Ok(await service.GetVatMismatchReportAsync(
+            new KasaHareketVatMismatchReportRequest(
+                request.StartDate!.Value,
+                request.EndDate!.Value,
+                branchNo,
+                request.TransferredToMikro),
+            cancellationToken));
+    }
+
+    [HttpGet("kdv-uyumsuzluk-raporu/excel")]
+    [Authorize(Policy = DetailPolicy)]
+    [Produces("text/csv")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> VatMismatchReportExcel(
+        [FromQuery] KasaHareketVatMismatchReportHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var branchNo = User.ResolveWarehouseScopeForPolicy(request.BranchNo, DetailPolicy);
+        var report = await service.GetVatMismatchReportAsync(
+            new KasaHareketVatMismatchReportRequest(
+                request.StartDate!.Value,
+                request.EndDate!.Value,
+                branchNo,
+                request.TransferredToMikro),
+            cancellationToken);
+
+        return CsvFile(
+            BuildVatMismatchCsv(report.Rows),
+            $"kasa-kdv-uyumsuzluk-{request.StartDate!.Value:yyyyMMdd}-{request.EndDate!.Value:yyyyMMdd}.csv");
+    }
+
     [HttpGet("rapor")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<KasaHareketReportRowDto>), StatusCodes.Status200OK)]
@@ -613,6 +654,35 @@ public sealed class KasaHareketAktarimiController(IKasaHareketAktarimiService se
         return builder.ToString();
     }
 
+    private static string BuildVatMismatchCsv(IReadOnlyCollection<KasaHareketVatMismatchRowDto> rows)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Tarih;SubeNo;SubeAdi;KasaNo;FisNo;ZNo;CariKod;MikroDurumu;KDV8Satir;KDV18Satir;BrutTutar;MevcutKDV;OlmasiGerekenKDV;KDVFarki;FaturaGuid");
+
+        foreach (var row in rows)
+        {
+            builder
+                .Append(Csv(row.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(';')
+                .Append(row.BranchNo.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(Csv(row.BranchName)).Append(';')
+                .Append(row.CashRegisterNo.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(row.ReceiptNo.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(Csv(row.ZNo)).Append(';')
+                .Append(Csv(row.CustomerCurrentCode)).Append(';')
+                .Append(Csv(row.TransferredToMikro ? "Mikro'ya aktarildi" : "Mikro'ya aktarilmadi")).Append(';')
+                .Append(row.Vat8LineCount.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(row.Vat18LineCount.ToString(CultureInfo.InvariantCulture)).Append(';')
+                .Append(FormatDecimal(row.GrossAmount)).Append(';')
+                .Append(FormatDecimal(row.CurrentVatAmount)).Append(';')
+                .Append(FormatDecimal(row.ExpectedVatAmount)).Append(';')
+                .Append(FormatDecimal(row.VatDifference)).Append(';')
+                .Append(row.InvoiceId.ToString())
+                .AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
     private static string BuildCashSummaryComparisonCsv(
         IReadOnlyCollection<KasaHareketCashSummaryComparisonRowDto> rows)
     {
@@ -873,6 +943,20 @@ public sealed class KasaHareketTransferStatusHttpRequest
     public int? CashRegisterNo { get; init; }
 
     public IReadOnlyCollection<int>? CashRegisterNos { get; init; }
+}
+
+public sealed class KasaHareketVatMismatchReportHttpRequest
+{
+    [Required]
+    public DateTime? StartDate { get; init; }
+
+    [Required]
+    public DateTime? EndDate { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? BranchNo { get; init; }
+
+    public bool? TransferredToMikro { get; init; }
 }
 
 public sealed class KasaHareketReportHttpRequest

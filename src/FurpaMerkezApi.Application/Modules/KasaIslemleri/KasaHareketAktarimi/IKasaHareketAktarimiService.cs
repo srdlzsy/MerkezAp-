@@ -40,6 +40,10 @@ public interface IKasaHareketAktarimiService
         KasaHareketTransferStatusRequest request,
         CancellationToken cancellationToken);
 
+    Task<KasaHareketVatMismatchReportDto> GetVatMismatchReportAsync(
+        KasaHareketVatMismatchReportRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<KasaHareketReportRowDto>> GetReportAsync(
         KasaHareketReportRequest request,
         CancellationToken cancellationToken);

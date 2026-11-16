@@ -23,6 +23,7 @@ public static class OperationConflictErrorCodes
     public const string MikroDocumentContentMismatch = "MIKRO_DOCUMENT_CONTENT_MISMATCH";
     public const string MikroDocumentIdentityConflict = "MIKRO_DOCUMENT_IDENTITY_CONFLICT";
     public const string MikroPosDocumentSequenceConflict = "MIKRO_POS_DOCUMENT_SEQUENCE_CONFLICT";
+    public const string PosLegacyVatRateConflict = "POS_LEGACY_VAT_RATE_CONFLICT";
     public const string MikroOfficialDocumentAlreadyReceived = "MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED";
     public const string WarehouseOrderLineClosed = "WAREHOUSE_ORDER_LINE_CLOSED";
     public const string WarehouseReceivingEDespatchRequired = "WAREHOUSE_RECEIVING_EDESPATCH_REQUIRED";

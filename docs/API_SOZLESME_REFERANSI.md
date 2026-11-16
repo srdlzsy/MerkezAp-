@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 825. Model sayisi: 806.
+Endpoint sayisi (method + route): 827. Model sayisi: 809.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -484,6 +484,8 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/icmal-karsilastirma/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: CashRegisterNo / integer (int32)<br>query: Tolerance / number (double) | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/iptal-belgeleri/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketImportHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketImportResultDto<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/kasa-z-detay` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: Date / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketKasaZDetayReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/kdv-uyumsuzluk-raporu` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: TransferredToMikro / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketVatMismatchReportDto<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kasa-hareket-aktarimi/kdv-uyumsuzluk-raporu/excel` | JWT + kasa-islemleri.kasa-hareket-aktarimi.detail | query: StartDate / string (date-time) (zorunlu)<br>query: EndDate / string (date-time) (zorunlu)<br>query: BranchNo / integer (int32)<br>query: TransferredToMikro / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: FileContentResult<br>400: ProblemDetails |
 | DELETE | `/api/kasa-islemleri/kasa-hareket-aktarimi/mikro` | JWT + kasa-islemleri.kasa-hareket-aktarimi.update | body: request / KasaHareketMikroTransferHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketMikroTransferHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/kasa-hareket-aktarimi/mikro/aralik-aktar` | JWT + kasa-islemleri.kasa-hareket-aktarimi.create | body: request / KasaHareketMikroTransferRangeHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: KasaHareketProcedureResultDto<br>400: ProblemDetails |
@@ -6420,6 +6422,51 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `kasaNo` | integer (int32) | Hayir |  |
 | `tarih` | string (date-time) | Hayir |  |
 | `tutar` | number (double) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketVatMismatchReportDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchNo` | integer (int32) | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir |  |
+| `generatedAtUtc` | string (date-time) | Hayir |  |
+| `rows` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketVatMismatchRowDto[] | Hayir | nullable |
+| `startDate` | string (date-time) | Hayir |  |
+| `summary` | FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketVatMismatchSummaryDto | Hayir |  |
+| `transferredToMikro` | boolean | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketVatMismatchRowDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `branchName` | string | Hayir | nullable |
+| `branchNo` | integer (int32) | Hayir |  |
+| `cashRegisterNo` | integer (int32) | Hayir |  |
+| `currentVatAmount` | number (double) | Hayir |  |
+| `customerCurrentCode` | string | Hayir | nullable |
+| `date` | string (date-time) | Hayir |  |
+| `expectedVatAmount` | number (double) | Hayir |  |
+| `grossAmount` | number (double) | Hayir |  |
+| `invoiceId` | string (uuid) | Hayir |  |
+| `receiptNo` | integer (int32) | Hayir |  |
+| `transferredToMikro` | boolean | Hayir |  |
+| `vat18LineCount` | integer (int64) | Hayir |  |
+| `vat8LineCount` | integer (int64) | Hayir |  |
+| `vatDifference` | number (double) | Hayir |  |
+| `zNo` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketVatMismatchSummaryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `currentVatAmount` | number (double) | Hayir |  |
+| `documentCount` | integer (int32) | Hayir |  |
+| `expectedVatAmount` | number (double) | Hayir |  |
+| `grossAmount` | number (double) | Hayir |  |
+| `mismatchedLineCount` | integer (int64) | Hayir |  |
+| `pendingDocumentCount` | integer (int32) | Hayir |  |
+| `transferredDocumentCount` | integer (int32) | Hayir |  |
+| `vatDifference` | number (double) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaSayimlari.BanknoteMovementItemDto
 

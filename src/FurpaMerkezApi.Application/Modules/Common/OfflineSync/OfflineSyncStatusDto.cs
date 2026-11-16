@@ -42,6 +42,7 @@ public static class SafeWriteClientContract
             OperationConflictErrorCodes.MikroDocumentContentMismatch => ("Mismatch", "RecheckExisting"),
             OperationConflictErrorCodes.MikroDocumentIdentityConflict => ("NotStarted", "EditAndRetry"),
             OperationConflictErrorCodes.MikroPosDocumentSequenceConflict => ("SequenceMismatch", "NeedsReview"),
+            OperationConflictErrorCodes.PosLegacyVatRateConflict => ("InvalidSourceData", "ReviewVatReport"),
             OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived => ("ExistingDocument", "RefreshList"),
             OperationConflictErrorCodes.WarehouseOrderLineClosed => ("StaleReference", "RefreshList"),
             OperationConflictErrorCodes.CreateReferenceNotFound => ("NotStarted", "EditAndRetry"),

@@ -49,6 +49,12 @@ public sealed record KasaHareketTransferStatusRequest(
     int? CashRegisterNo,
     IReadOnlyCollection<int>? CashRegisterNos = null);
 
+public sealed record KasaHareketVatMismatchReportRequest(
+    DateTime StartDate,
+    DateTime EndDate,
+    int? BranchNo,
+    bool? TransferredToMikro);
+
 public sealed record KasaHareketReportRequest(
     DateTime Date,
     int? BranchNo,
@@ -108,6 +114,42 @@ public sealed record KasaHareketTransferStatusDto(
     int PendingReceiptCount,
     int CanceledReceiptCount,
     DateTime GeneratedAtUtc);
+
+public sealed record KasaHareketVatMismatchReportDto(
+    DateTime StartDate,
+    DateTime EndDate,
+    int? BranchNo,
+    bool? TransferredToMikro,
+    DateTime GeneratedAtUtc,
+    KasaHareketVatMismatchSummaryDto Summary,
+    IReadOnlyCollection<KasaHareketVatMismatchRowDto> Rows);
+
+public sealed record KasaHareketVatMismatchSummaryDto(
+    int DocumentCount,
+    int TransferredDocumentCount,
+    int PendingDocumentCount,
+    long MismatchedLineCount,
+    decimal GrossAmount,
+    decimal CurrentVatAmount,
+    decimal ExpectedVatAmount,
+    decimal VatDifference);
+
+public sealed record KasaHareketVatMismatchRowDto(
+    Guid InvoiceId,
+    DateTime Date,
+    int BranchNo,
+    string BranchName,
+    int CashRegisterNo,
+    int ReceiptNo,
+    string ZNo,
+    string CustomerCurrentCode,
+    bool TransferredToMikro,
+    long Vat8LineCount,
+    long Vat18LineCount,
+    decimal GrossAmount,
+    decimal CurrentVatAmount,
+    decimal ExpectedVatAmount,
+    decimal VatDifference);
 
 public sealed record KasaHareketReportRowDto(
     DateTime Date,

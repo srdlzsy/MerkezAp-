@@ -490,6 +490,164 @@ public sealed class KasaHareketAktarimiService(
             DateTime.UtcNow);
     }
 
+    public async Task<KasaHareketVatMismatchReportDto> GetVatMismatchReportAsync(
+        KasaHareketVatMismatchReportRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (startDate, endDate) = NormalizeDateRange(request.StartDate, request.EndDate);
+        if ((endDate - startDate).TotalDays > 31)
+        {
+            throw new ArgumentException("KDV uyumsuzluk raporu en fazla 32 gunluk tarih araliginda alinabilir.");
+        }
+
+        if (request.BranchNo is <= 0)
+        {
+            throw new ArgumentException("Sube numarasi sifirdan buyuk olmalidir.", nameof(request.BranchNo));
+        }
+
+        const string sql = """
+            WITH SelectedBranches AS
+            (
+                SELECT DISTINCT
+                    TRY_CONVERT(int, registry.BranchNo) AS BranchNo,
+                    CONVERT(nvarchar(50), registry.BranchNo) AS BranchCode
+                FROM dbo.CashRegistryDetails AS registry WITH (NOLOCK)
+                WHERE TRY_CONVERT(int, registry.BranchNo) IS NOT NULL
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, registry.BranchNo) = @branchNo)
+            )
+            SELECT
+                invoice.FaturaGuid AS InvoiceId,
+                CAST(invoice.Tarih AS date) AS BusinessDate,
+                selected.BranchNo,
+                TRY_CONVERT(int, invoice.KasaNo) AS CashRegisterNo,
+                TRY_CONVERT(int, invoice.FisNo) AS ReceiptNo,
+                CONVERT(nvarchar(50), ISNULL(invoice.ZNo, '')) AS ZNo,
+                CONVERT(nvarchar(100), ISNULL(invoice.MusteriCariKodu, '')) AS CustomerCurrentCode,
+                CONVERT(bit, CASE WHEN ISNULL(invoice.MikroAktarimDurumu, 0) = 1 THEN 1 ELSE 0 END)
+                    AS TransferredToMikro,
+                SUM(CASE WHEN line.KdvOrani = 8 THEN CONVERT(bigint, 1) ELSE CONVERT(bigint, 0) END)
+                    AS Vat8LineCount,
+                SUM(CASE WHEN line.KdvOrani = 18 THEN CONVERT(bigint, 1) ELSE CONVERT(bigint, 0) END)
+                    AS Vat18LineCount,
+                SUM(CONVERT(decimal(19, 4), ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0)))
+                    AS GrossAmount,
+                SUM(CONVERT(decimal(19, 4), ISNULL(line.KdvTutari, 0))) AS CurrentVatAmount,
+                SUM(CONVERT(decimal(19, 4),
+                    ROUND(
+                        (ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0))
+                        - ROUND(
+                            (ISNULL(line.NetTutar, 0) + ISNULL(line.KdvTutari, 0))
+                            / CASE WHEN line.KdvOrani = 18 THEN 1.20 ELSE 1.10 END,
+                            2),
+                        2))) AS ExpectedVatAmount
+            FROM SelectedBranches AS selected
+            INNER JOIN dbo.PosFaturas AS invoice WITH (NOLOCK, INDEX(IX1))
+                ON invoice.Sube = selected.BranchCode
+               AND invoice.Tarih >= @startDate
+               AND invoice.Tarih < @endDateExclusive
+               AND invoice.Tarih >= @vatRateChangeDate
+               AND invoice.BelgeTuru = '3'
+            INNER JOIN dbo.PosFaturaSatirs AS line WITH (NOLOCK)
+                ON line.FaturaGuid = invoice.FaturaGuid
+               AND line.KdvOrani IN (8, 18)
+            WHERE
+              (
+                  @transferredToMikro IS NULL
+                  OR CASE WHEN ISNULL(invoice.MikroAktarimDurumu, 0) = 1 THEN 1 ELSE 0 END = @transferredToMikro
+              )
+            GROUP BY
+                invoice.FaturaGuid,
+                CAST(invoice.Tarih AS date),
+                selected.BranchNo,
+                TRY_CONVERT(int, invoice.KasaNo),
+                TRY_CONVERT(int, invoice.FisNo),
+                CONVERT(nvarchar(50), ISNULL(invoice.ZNo, '')),
+                CONVERT(nvarchar(100), ISNULL(invoice.MusteriCariKodu, '')),
+                CASE WHEN ISNULL(invoice.MikroAktarimDurumu, 0) = 1 THEN 1 ELSE 0 END
+            ORDER BY BusinessDate, BranchNo, CashRegisterNo, ReceiptNo
+            OPTION (FORCE ORDER, LOOP JOIN, MAXDOP 4);
+            """;
+
+        var sqlRows = await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@startDate", startDate);
+                AddParameter(command, "@endDateExclusive", endDate.AddDays(1));
+                AddParameter(command, "@vatRateChangeDate", VatRateChangeDate);
+                AddParameter(command, "@branchNo", request.BranchNo);
+                AddParameter(
+                    command,
+                    "@transferredToMikro",
+                    request.TransferredToMikro.HasValue
+                        ? request.TransferredToMikro.Value ? 1 : 0
+                        : null);
+            },
+            reader => new VatMismatchSqlRow(
+                ReadGuid(reader, "InvoiceId"),
+                ReadDateTime(reader, "BusinessDate"),
+                ReadInt(reader, "BranchNo"),
+                ReadInt(reader, "CashRegisterNo"),
+                ReadInt(reader, "ReceiptNo"),
+                ReadString(reader, "ZNo"),
+                ReadString(reader, "CustomerCurrentCode"),
+                ReadInt(reader, "TransferredToMikro") == 1,
+                ReadInt64(reader, "Vat8LineCount"),
+                ReadInt64(reader, "Vat18LineCount"),
+                ReadDecimal(reader, "GrossAmount"),
+                ReadDecimal(reader, "CurrentVatAmount"),
+                ReadDecimal(reader, "ExpectedVatAmount")),
+            cancellationToken,
+            commandTimeoutSeconds: 120);
+
+        var branchNames = await GetBranchNamesAsync(
+            sqlRows.Select(row => row.BranchNo),
+            cancellationToken);
+        var rows = sqlRows
+            .Select(row =>
+            {
+                var currentVatAmount = Round(row.CurrentVatAmount);
+                var expectedVatAmount = Round(row.ExpectedVatAmount);
+                return new KasaHareketVatMismatchRowDto(
+                    row.InvoiceId,
+                    row.Date,
+                    row.BranchNo,
+                    branchNames.TryGetValue(row.BranchNo, out var branchName) ? branchName : string.Empty,
+                    row.CashRegisterNo,
+                    row.ReceiptNo,
+                    row.ZNo,
+                    row.CustomerCurrentCode,
+                    row.TransferredToMikro,
+                    row.Vat8LineCount,
+                    row.Vat18LineCount,
+                    Round(row.GrossAmount),
+                    currentVatAmount,
+                    expectedVatAmount,
+                    Round(expectedVatAmount - currentVatAmount));
+            })
+            .ToArray();
+
+        var summary = new KasaHareketVatMismatchSummaryDto(
+            rows.Length,
+            rows.Count(row => row.TransferredToMikro),
+            rows.Count(row => !row.TransferredToMikro),
+            rows.Sum(row => row.Vat8LineCount + row.Vat18LineCount),
+            Round(rows.Sum(row => row.GrossAmount)),
+            Round(rows.Sum(row => row.CurrentVatAmount)),
+            Round(rows.Sum(row => row.ExpectedVatAmount)),
+            Round(rows.Sum(row => row.VatDifference)));
+
+        return new KasaHareketVatMismatchReportDto(
+            startDate,
+            endDate,
+            request.BranchNo,
+            request.TransferredToMikro,
+            DateTime.UtcNow,
+            summary,
+            rows);
+    }
+
     public async Task<IReadOnlyCollection<KasaHareketReportRowDto>> GetReportAsync(
         KasaHareketReportRequest request,
         CancellationToken cancellationToken)
@@ -4277,8 +4435,95 @@ public sealed class KasaHareketAktarimiService(
             cancellationToken);
 
         EnsureExclusivePendingBranch(branchNo, requireExclusiveBranch, pendingBranchNos);
+        await ValidatePendingLegacyVatRatesAsync(
+            startDate,
+            endDate,
+            pendingBranchNos,
+            cancellationToken);
         await ValidateMikroPosDocumentSequencesAsync(pendingBranchNos, cancellationToken);
         return pendingBranchNos.ToArray();
+    }
+
+    private async Task ValidatePendingLegacyVatRatesAsync(
+        DateTime startDate,
+        DateTime endDate,
+        IReadOnlyCollection<int> pendingBranchNos,
+        CancellationToken cancellationToken)
+    {
+        if (pendingBranchNos.Count == 0 || endDate.Date < VatRateChangeDate)
+        {
+            return;
+        }
+
+        const string sql = """
+            WITH SelectedBranches AS
+            (
+                SELECT DISTINCT
+                    TRY_CONVERT(int, [value]) AS BranchNo,
+                    CONVERT(nvarchar(50), LTRIM(RTRIM([value]))) AS BranchCode
+                FROM STRING_SPLIT(@branchNos, ',')
+                WHERE TRY_CONVERT(int, [value]) IS NOT NULL
+            )
+            SELECT
+                selected.BranchNo,
+                COUNT(DISTINCT invoice.FaturaGuid) AS DocumentCount,
+                COUNT_BIG(1) AS LineCount
+            FROM SelectedBranches AS selected
+            INNER JOIN dbo.PosFaturas AS invoice WITH (READCOMMITTEDLOCK, INDEX(IX1))
+                ON invoice.Sube = selected.BranchCode
+               AND invoice.Tarih >= @startDate
+               AND invoice.Tarih < @endDateExclusive
+               AND invoice.Tarih >= @vatRateChangeDate
+               AND ISNULL(invoice.MikroAktarimDurumu, 0) <> 1
+            INNER JOIN dbo.PosFaturaSatirs AS line WITH (READCOMMITTEDLOCK)
+                ON line.FaturaGuid = invoice.FaturaGuid
+               AND line.KdvOrani IN (8, 18)
+            GROUP BY selected.BranchNo
+            ORDER BY BranchNo
+            OPTION (FORCE ORDER, LOOP JOIN, MAXDOP 2);
+            """;
+
+        var mismatches = await ExecuteReaderAsync(
+            furpaDbContext.Database.GetDbConnection(),
+            sql,
+            command =>
+            {
+                AddParameter(command, "@branchNos", string.Join(',', pendingBranchNos));
+                AddParameter(command, "@startDate", startDate.Date);
+                AddParameter(command, "@endDateExclusive", endDate.Date.AddDays(1));
+                AddParameter(command, "@vatRateChangeDate", VatRateChangeDate);
+            },
+            reader => new PosLegacyVatBranchMismatch(
+                ReadInt(reader, "BranchNo"),
+                ReadInt(reader, "DocumentCount"),
+                ReadInt64(reader, "LineCount")),
+            cancellationToken,
+            commandTimeoutSeconds: 60);
+
+        EnsureNoPendingLegacyVatRates(mismatches);
+    }
+
+    internal static void EnsureNoPendingLegacyVatRates(
+        IReadOnlyCollection<PosLegacyVatBranchMismatch> mismatches)
+    {
+        if (mismatches.Count == 0)
+        {
+            return;
+        }
+
+        var details = string.Join(
+            "; ",
+            mismatches
+                .OrderBy(item => item.BranchNo)
+                .Select(item => $"sube {item.BranchNo}: {item.DocumentCount} evrak/{item.LineCount} satir"));
+
+        throw new OperationConflictException(
+            OperationConflictErrorCodes.PosLegacyVatRateConflict,
+            "Mikro aktarimi baslatilmadi. 10.07.2023 sonrasi eski %8/%18 KDV oraniyla bekleyen " +
+            $"kasa hareketleri bulundu ({details}). KDV uyumsuzluk raporunda 'Mikro'ya aktarilmadi' " +
+            "filtresini acin ve kaynak hareketleri guncel parser ile yeniden olusturun. Mevcut kayitlar " +
+            "Mikro'ya gonderilmedi.",
+            retryable: false);
     }
 
     private async Task ValidateMikroPosDocumentSequencesAsync(
@@ -5893,6 +6138,21 @@ public sealed class KasaHareketAktarimiService(
         decimal CheckAmount,
         decimal Difference);
 
+    private sealed record VatMismatchSqlRow(
+        Guid InvoiceId,
+        DateTime Date,
+        int BranchNo,
+        int CashRegisterNo,
+        int ReceiptNo,
+        string ZNo,
+        string CustomerCurrentCode,
+        bool TransferredToMikro,
+        long Vat8LineCount,
+        long Vat18LineCount,
+        decimal GrossAmount,
+        decimal CurrentVatAmount,
+        decimal ExpectedVatAmount);
+
     private sealed record SalesComparisonMikroSqlRow(
         int BranchNo,
         decimal RetailStockAmount,
@@ -5942,6 +6202,11 @@ public sealed class KasaHareketAktarimiService(
         int LastCustomerDocumentNo,
         DateTime? LastStockDocumentDate = null,
         DateTime? LastCustomerDocumentDate = null);
+
+    internal sealed record PosLegacyVatBranchMismatch(
+        int BranchNo,
+        int DocumentCount,
+        long LineCount);
 
     private sealed record CashSummarySqlRow(
         DateTime Date,

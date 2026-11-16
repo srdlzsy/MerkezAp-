@@ -352,6 +352,29 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Fact]
+    public void EnsureNoPendingLegacyVatRatesAllowsCleanTransferSource()
+    {
+        KasaHareketAktarimiService.EnsureNoPendingLegacyVatRates([]);
+    }
+
+    [Fact]
+    public void EnsureNoPendingLegacyVatRatesRejectsOldRatesBeforeMikroWrite()
+    {
+        var exception = Assert.Throws<OperationConflictException>(() =>
+            KasaHareketAktarimiService.EnsureNoPendingLegacyVatRates(
+            [
+                new(161, 2, 7),
+                new(163, 1, 6)
+            ]));
+
+        Assert.Equal(OperationConflictErrorCodes.PosLegacyVatRateConflict, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+        Assert.Contains("sube 161: 2 evrak/7 satir", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("sube 163: 1 evrak/6 satir", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Mikro'ya gonderilmedi", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MergeImportResultsCombinesNormalAndCanceledMovements()
     {
         var warning = new KasaHareketImportIssueDto(159, 1, "HR301026.001", null, null, "Warning");
