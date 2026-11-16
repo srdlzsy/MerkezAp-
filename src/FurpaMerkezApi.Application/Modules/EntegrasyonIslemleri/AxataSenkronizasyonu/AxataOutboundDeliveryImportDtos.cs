@@ -76,7 +76,8 @@ public sealed record AxataOutboundDeliveryQueuePreviewRequest(
 
 public sealed record AxataOutboundDeliveryImportPreviewRequest(
     int? Take,
-    DateTime? MinimumAxataDate = null);
+    DateTime? MinimumAxataDate = null,
+    DateTime? AxataDate = null);
 
 public sealed record AxataOutboundDeliveryImportExecuteRequest(
     int? Take,
@@ -91,7 +92,8 @@ public sealed record AxataOutboundDeliveryImportExecuteRequest(
 public sealed record AxataOutboundDeliveryDocumentImportPreviewRequest(
     string DocumentSerie,
     int DocumentOrderNo,
-    string? Status);
+    string? Status,
+    long? AxataSequenceNo = null);
 
 public sealed record AxataOutboundDeliveryDocumentImportExecuteRequest(
     string DocumentSerie,
@@ -100,7 +102,8 @@ public sealed record AxataOutboundDeliveryDocumentImportExecuteRequest(
     bool Acknowledge,
     string? DateMode = null,
     DateTime? MovementDate = null,
-    DateTime? DocumentDate = null);
+    DateTime? DocumentDate = null,
+    long? AxataSequenceNo = null);
 
 public sealed record AxataOutboundDeliveryQueuePreviewDto(
     string MovementType,

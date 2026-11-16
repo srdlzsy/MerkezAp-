@@ -183,7 +183,7 @@ public sealed class KasaHareketAktarimiService(
     {
         ValidateDate(request.Date, nameof(request.Date));
 
-        await PreparePendingMikroTransferAsync(
+        var pendingBranchNos = await PreparePendingMikroTransferAsync(
             request.Date.Date,
             request.Date.Date,
             request.BranchNo,
@@ -196,11 +196,42 @@ public sealed class KasaHareketAktarimiService(
             request.BranchNo,
             cancellationToken);
 
-        var message = await ExecuteProcedureAsync(
-            "StokHareketYaz",
-            cancellationToken,
-            ("@Tarih", request.Date.Date),
-            ("@Sube", request.BranchNo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty));
+        var transferBranchNos = request.BranchNo is > 0
+            ? [request.BranchNo.Value]
+            : pendingBranchNos;
+        var procedureMessages = new List<string>(transferBranchNos.Count);
+        try
+        {
+            foreach (var branchNo in transferBranchNos)
+            {
+                var branchMessage = await ExecuteProcedureAsync(
+                    StockMovementWriteProcedureName,
+                    cancellationToken,
+                    ("@Tarih", request.Date.Date),
+                    ("@Sube", branchNo.ToString(CultureInfo.InvariantCulture)));
+                procedureMessages.Add($"Sube {branchNo}: {branchMessage}");
+            }
+        }
+        catch (SqlException exception) when (exception.Number == -2)
+        {
+            var afterTimeout = await GetMikroPosDocumentsAsync(
+                request.Date.Date,
+                request.Date.Date,
+                request.BranchNo,
+                CancellationToken.None);
+            var observedDocuments = FindDocumentDifference(afterTimeout, before);
+            await RecordMikroDocumentChangesAsync(
+                observedDocuments,
+                DocumentFlowStep.DocumentCreated,
+                "Kasa hareket aktarimi zaman asimina ugradi; Mikro read-back ile olusan POS evragi dogrulandi.",
+                CancellationToken.None);
+
+            throw CreateStockMovementWriteTimeoutConflict(observedDocuments.Count(), exception);
+        }
+
+        var message = procedureMessages.Count == 0
+            ? "Secili tarih ve kapsamda Mikro'ya aktarilacak bekleyen hareket bulunamadi."
+            : string.Join(" ", procedureMessages);
 
         var after = await GetMikroPosDocumentsAsync(
             request.Date.Date,
@@ -302,7 +333,7 @@ public sealed class KasaHareketAktarimiService(
     {
         var (startDate, endDate) = NormalizeDateRange(request.StartDate, request.EndDate);
 
-        await PreparePendingMikroTransferAsync(
+        var pendingBranchNos = await PreparePendingMikroTransferAsync(
             startDate,
             endDate,
             branchNo: null,
@@ -317,11 +348,37 @@ public sealed class KasaHareketAktarimiService(
 
         foreach (var date in EnumerateDates(startDate, endDate))
         {
-            await ExecuteProcedureAsync(
-                "StokHareketYaz",
-                cancellationToken,
-                ("@Tarih", date),
-                ("@Sube", string.Empty));
+            foreach (var branchNo in pendingBranchNos)
+            {
+                try
+                {
+                    await ExecuteProcedureAsync(
+                        StockMovementWriteProcedureName,
+                        cancellationToken,
+                        ("@Tarih", date),
+                        ("@Sube", branchNo.ToString(CultureInfo.InvariantCulture)));
+                }
+                catch (SqlException exception) when (exception.Number == -2)
+                {
+                    var afterTimeout = await GetMikroPosDocumentsAsync(
+                        startDate,
+                        endDate,
+                        null,
+                        CancellationToken.None);
+                    var observedDocuments = FindDocumentDifference(afterTimeout, before);
+                    await RecordMikroDocumentChangesAsync(
+                        observedDocuments,
+                        DocumentFlowStep.DocumentCreated,
+                        $"Tarih aralikli kasa hareket aktarimi Sube {branchNo} icin zaman asimina ugradi; Mikro read-back ile olusan POS evragi dogrulandi.",
+                        CancellationToken.None);
+
+                    throw CreateStockMovementWriteTimeoutConflict(
+                        observedDocuments.Count(),
+                        exception,
+                        branchNo,
+                        date);
+                }
+            }
         }
 
         var message = $"{startDate:dd.MM.yyyy} - {endDate:dd.MM.yyyy} tarih araligindaki " +
@@ -4182,7 +4239,7 @@ public sealed class KasaHareketAktarimiService(
             ("@CreateDate", promotion.CreateDate));
     }
 
-    private async Task PreparePendingMikroTransferAsync(
+    private async Task<IReadOnlyList<int>> PreparePendingMikroTransferAsync(
         DateTime startDate,
         DateTime endDate,
         int? branchNo,
@@ -4221,6 +4278,7 @@ public sealed class KasaHareketAktarimiService(
 
         EnsureExclusivePendingBranch(branchNo, requireExclusiveBranch, pendingBranchNos);
         await ValidateMikroPosDocumentSequencesAsync(pendingBranchNos, cancellationToken);
+        return pendingBranchNos.ToArray();
     }
 
     private async Task ValidateMikroPosDocumentSequencesAsync(
@@ -4629,6 +4687,28 @@ public sealed class KasaHareketAktarimiService(
         string.Equals(procedureName, StockMovementWriteProcedureName, StringComparison.OrdinalIgnoreCase)
             ? StockMovementWriteCommandTimeoutSeconds
             : DefaultProcedureCommandTimeoutSeconds;
+
+    internal static OperationConflictException CreateStockMovementWriteTimeoutConflict(
+        int observedDocumentCount,
+        Exception innerException,
+        int? branchNo = null,
+        DateTime? date = null)
+    {
+        var readbackMessage = observedDocumentCount > 0
+            ? $"Mikro read-back kontrolunde {observedDocumentCount} yeni stok/cari evraki goruldu ve belge akisina kaydedildi."
+            : "Mikro read-back kontrolunde yeni evrak kesin olarak dogrulanamadi.";
+
+        var scopeMessage = branchNo is > 0
+            ? $" Sorunlu kapsam: Sube {branchNo}, Tarih {(date ?? DateTime.Today):dd.MM.yyyy}."
+            : string.Empty;
+
+        return new OperationConflictException(
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            $"StokHareketYaz {StockMovementWriteCommandTimeoutSeconds} saniye icinde tamamlanmadi. {readbackMessage} " +
+            $"Ayni aktarimi yeniden baslatmadan once belge akisi ve satis karsilastirma raporunu kontrol edin.{scopeMessage}",
+            retryable: false,
+            innerException);
+    }
 
     private static async Task<int> ExecuteNonQueryAsync(
         DbConnection connection,

@@ -14,7 +14,8 @@ public sealed record CreateInterWarehouseShipmentRequest(
     bool UpdateLinkedOrderDeliveredQuantities = false,
     Guid? ClientRequestId = null,
     Guid? RequestedByUserId = null,
-    bool ForceCreateNew = false) : IExplicitNewCreateRequest;
+    bool ForceCreateNew = false,
+    bool AllowLinkedOrderOverDelivery = false) : IExplicitNewCreateRequest;
 
 public sealed record CreateInterWarehouseShipmentLineRequest(
     string StockCode,

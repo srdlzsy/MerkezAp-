@@ -20,6 +20,19 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
     }
 
     [Fact]
+    public void LinkedOrderOverDelivery_IsAllowedOnlyWhenExplicitlyRequested()
+    {
+        Assert.True(CreateInterWarehouseShipmentUseCase.IsLinkedOrderOverDeliveryBlocked(
+            allowLinkedOrderOverDelivery: false,
+            requestedQuantity: 384d,
+            remainingQuantity: 380d));
+        Assert.False(CreateInterWarehouseShipmentUseCase.IsLinkedOrderOverDeliveryBlocked(
+            allowLinkedOrderOverDelivery: true,
+            requestedQuantity: 384d,
+            remainingQuantity: 380d));
+    }
+
+    [Fact]
     public void Matches_ReturnsTrueWhenDocumentLinesAndClientTraceMatch()
     {
         var clientRequestId = Guid.Parse("a94669b8-b916-474a-9830-bbf87cc9f408");

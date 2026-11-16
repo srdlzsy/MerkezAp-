@@ -405,7 +405,10 @@ public sealed class AxataSenkronizasyonuController(
         [FromQuery] AxataOutboundDeliveryImportPreviewHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await outboundDeliveryImportService.PreviewC01Async(
-            new AxataOutboundDeliveryImportPreviewRequest(request.Take),
+            new AxataOutboundDeliveryImportPreviewRequest(
+                request.Take,
+                request.Date,
+                request.Date),
             cancellationToken));
 
     [HttpPost("live/axata/outbound-deliveries/c01/import")]
@@ -439,12 +442,14 @@ public sealed class AxataSenkronizasyonuController(
         string documentSerie,
         int documentOrderNo,
         [FromQuery] string? status,
+        [FromQuery] long? axataSequenceNo,
         CancellationToken cancellationToken) =>
         Ok(await outboundDeliveryImportService.PreviewC01DocumentAsync(
             new AxataOutboundDeliveryDocumentImportPreviewRequest(
                 documentSerie,
                 documentOrderNo,
-                status),
+                status,
+                axataSequenceNo),
             cancellationToken));
 
     [HttpPost("live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo:int}/import")]
@@ -467,7 +472,8 @@ public sealed class AxataSenkronizasyonuController(
                 request.Acknowledge,
                 request.DateMode,
                 request.MovementDate,
-                request.DocumentDate),
+                request.DocumentDate,
+                request.AxataSequenceNo),
             User.GetRequiredUserId(),
             cancellationToken));
 
@@ -2427,6 +2433,8 @@ public sealed class AxataOutboundDeliveryImportPreviewHttpRequest
 {
     [Range(1, 200)]
     public int? Take { get; init; }
+
+    public DateTime? Date { get; init; }
 }
 
 public sealed class AxataOutboundDeliveryImportExecuteHttpRequest
@@ -2459,6 +2467,9 @@ public sealed class AxataOutboundDeliveryDocumentImportExecuteHttpRequest
     public DateTime? MovementDate { get; init; }
 
     public DateTime? DocumentDate { get; init; }
+
+    [Range(1, long.MaxValue)]
+    public long? AxataSequenceNo { get; init; }
 }
 
 public class AxataSynchronizationManualDocumentHttpRequest

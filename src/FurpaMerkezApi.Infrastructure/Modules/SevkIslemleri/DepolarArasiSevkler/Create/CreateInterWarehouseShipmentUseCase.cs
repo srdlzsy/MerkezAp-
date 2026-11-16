@@ -774,6 +774,18 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         IReadOnlySet<int> excludedDocumentOrderNos,
         CancellationToken cancellationToken)
     {
+        if (lines.Count > 0 && lines.All(line => line.WarehouseOrderLineGuid.HasValue))
+        {
+            return await TryFindLinkedOrderDuplicateAsync(
+                request,
+                lines,
+                movementDate,
+                documentDate,
+                connectionStringName,
+                excludedDocumentOrderNos,
+                cancellationToken);
+        }
+
         var duplicateThreshold = now.AddMinutes(-RecentDuplicateLookupMinutes);
         var documentSerie = $"F{request.SourceWarehouseNo}";
         var excludedOrderNos = excludedDocumentOrderNos.ToArray();
@@ -906,6 +918,135 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         }
 
         return null;
+    }
+
+    private async Task<CreateInterWarehouseShipmentResponse?> TryFindLinkedOrderDuplicateAsync(
+        CreateInterWarehouseShipmentRequest request,
+        IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines,
+        DateTime movementDate,
+        DateTime documentDate,
+        string connectionStringName,
+        IReadOnlySet<int> excludedDocumentOrderNos,
+        CancellationToken cancellationToken)
+    {
+        var linkedOrderLineGuids = lines
+            .Select(line => line.WarehouseOrderLineGuid!.Value)
+            .Distinct()
+            .ToArray();
+        var movementGuids = await mikroWriteDbContext.STOK_HAREKETLERI_EKs
+            .AsNoTracking()
+            .Where(extra =>
+                extra.sth_subesip_uid.HasValue &&
+                linkedOrderLineGuids.Contains(extra.sth_subesip_uid.Value))
+            .Select(extra => extra.sthek_Guid)
+            .Distinct()
+            .ToMeasuredListAsync(
+                logger,
+                "Create:InterWarehouseShipment:LinkedDuplicateMovementGuids",
+                cancellationToken);
+
+        if (movementGuids.Count == 0)
+        {
+            return null;
+        }
+
+        var excludedOrderNos = excludedDocumentOrderNos.ToArray();
+        var candidateQuery = mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movementGuids.Contains(movement.sth_Guid) &&
+                movement.sth_iptal != true &&
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_tip == MovementType &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_cikis_depo_no == request.SourceWarehouseNo &&
+                movement.sth_nakliyedeposu == request.TargetWarehouseNo &&
+                movement.sth_giris_depo_no == request.TransitWarehouseNo &&
+                movement.sth_evrakno_sira.HasValue &&
+                movement.sth_satirno.HasValue);
+
+        if (excludedOrderNos.Length > 0)
+        {
+            candidateQuery = candidateQuery.Where(movement =>
+                !excludedOrderNos.Contains(movement.sth_evrakno_sira!.Value));
+        }
+
+        var candidateRows = await candidateQuery
+            .Select(movement => new ShipmentDuplicateRow(
+                movement.sth_evrakno_seri ?? string.Empty,
+                movement.sth_evrakno_sira,
+                movement.sth_tarih,
+                movement.sth_belge_tarih,
+                movement.sth_belge_no ?? string.Empty,
+                movement.sth_cikis_depo_no ?? 0,
+                movement.sth_nakliyedeposu ?? 0,
+                movement.sth_giris_depo_no ?? 0,
+                movement.sth_satirno,
+                movement.sth_stok_kod,
+                movement.sth_miktar ?? 0d,
+                movement.sth_birim_pntr ?? 0,
+                movement.sth_tutar ?? 0d,
+                movement.sth_aciklama,
+                movement.sth_parti_kodu,
+                movement.sth_lot_no ?? 0,
+                movement.sth_proje_kodu,
+                movement.sth_cari_srm_merkezi,
+                movement.sth_stok_srm_merkezi,
+                movement.sth_eticaret_kanal_kodu))
+            .ToMeasuredListAsync(
+                logger,
+                "Create:InterWarehouseShipment:LinkedDuplicateRows",
+                cancellationToken);
+
+        foreach (var candidate in candidateRows.GroupBy(row => new
+                 {
+                     row.DocumentSerie,
+                     row.DocumentOrderNo,
+                     row.SourceWarehouseNo,
+                     row.TargetWarehouseNo,
+                     row.TransitWarehouseNo
+                 }))
+        {
+            var rows = candidate.ToArray();
+            if (rows.Length != lines.Count ||
+                !InterWarehouseShipmentRecoveryMatcher.Matches(
+                    request,
+                    lines,
+                    rows.Select(row => row.ToRecoveryLine()).ToArray()))
+            {
+                continue;
+            }
+
+            var firstRow = rows[0];
+            logger.LogWarning(
+                "Linked warehouse order lines already have the exact Mikro shipment. Duplicate create was skipped. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, LineCount={LineCount}",
+                firstRow.DocumentSerie,
+                firstRow.DocumentOrderNo,
+                request.SourceWarehouseNo,
+                request.TargetWarehouseNo,
+                rows.Length);
+
+            return new CreateInterWarehouseShipmentResponse(
+                firstRow.DocumentSerie,
+                firstRow.DocumentOrderNo ?? FirstDocumentOrderNo,
+                firstRow.MovementDate?.Date ?? movementDate,
+                firstRow.DocumentDate?.Date ?? documentDate,
+                firstRow.DocumentNo,
+                firstRow.SourceWarehouseNo,
+                firstRow.TargetWarehouseNo,
+                firstRow.TransitWarehouseNo,
+                rows.Length,
+                linkedOrderLineGuids.Length,
+                rows.Sum(row => row.Quantity),
+                rows.Sum(row => row.Amount),
+                connectionStringName);
+        }
+
+        throw new OperationConflictException(
+            OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed,
+            "Siparis satirlari Mikro'da bir sevk hareketine bagli, ancak mevcut fis bu AXATA teslimatiyla birebir eslesmiyor. Yeni fis yazilmadi; mevcut sevk ve siparis baglantisi kontrol edilmelidir.",
+            retryable: false);
     }
 
     private async Task<IAsyncDisposable> AcquireShipmentCreateLockAsync(
@@ -1575,10 +1716,26 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     retryable: false);
             }
 
-            if (requestedQuantity > remainingQuantity)
+            if (IsLinkedOrderOverDeliveryBlocked(
+                    request.AllowLinkedOrderOverDelivery,
+                    requestedQuantity,
+                    remainingQuantity))
             {
                 throw new InvalidOperationException(
                     "Shipment quantity can not be greater than linked warehouse order remaining quantity.");
+            }
+
+            if (requestedQuantity > remainingQuantity)
+            {
+                logger.LogWarning(
+                    "Linked warehouse order over-delivery was explicitly allowed. OrderLineGuid={OrderLineGuid}, StockCode={StockCode}, RequestedQuantity={RequestedQuantity}, RemainingQuantity={RemainingQuantity}, ExcessQuantity={ExcessQuantity}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
+                    orderLine.ssip_Guid,
+                    orderLine.ssip_stok_kod,
+                    requestedQuantity,
+                    remainingQuantity,
+                    requestedQuantity - remainingQuantity,
+                    request.SourceWarehouseNo,
+                    request.TargetWarehouseNo);
             }
 
             foreach (var line in group)
@@ -1596,6 +1753,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
         return orderLines;
     }
+
+    internal static bool IsLinkedOrderOverDeliveryBlocked(
+        bool allowLinkedOrderOverDelivery,
+        double requestedQuantity,
+        double remainingQuantity) =>
+        !allowLinkedOrderOverDelivery && requestedQuantity > remainingQuantity;
 
     private async Task ValidateLinkedOrdersBeforeReservationAsync(
         CreateInterWarehouseShipmentRequest request,

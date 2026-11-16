@@ -10053,6 +10053,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -10162,6 +10170,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -10270,6 +10286,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -10742,6 +10766,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "axataSequenceNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
           }
         ],
         "responses": {
@@ -10885,6 +10917,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "axataSequenceNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
           }
         ],
         "responses": {
@@ -11027,6 +11067,14 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "axataSequenceNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
             }
           }
         ],
@@ -11622,6 +11670,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -11731,6 +11787,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -11839,6 +11903,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -12297,6 +12369,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -12406,6 +12486,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -12514,6 +12602,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -12972,6 +13068,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -13081,6 +13185,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -13189,6 +13301,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -13647,6 +13767,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -13756,6 +13884,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -13864,6 +14000,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -15216,6 +15360,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -15324,6 +15476,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -15666,6 +15826,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -15774,6 +15942,14 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "Date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -136727,6 +136903,12 @@
           "documentDate": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "axataSequenceNo": {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
             "nullable": true
           }
         },

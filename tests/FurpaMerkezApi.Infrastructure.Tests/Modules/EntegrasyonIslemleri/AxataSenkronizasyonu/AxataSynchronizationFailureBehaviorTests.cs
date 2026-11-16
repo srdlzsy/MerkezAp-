@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
@@ -68,6 +69,48 @@ public sealed class AxataSynchronizationFailureBehaviorTests
     }
 
     [Fact]
+    public void C01PreviewDateFilter_IsAppliedBeforeTakeSelection()
+    {
+        var selectedDate = new DateTime(2026, 11, 13);
+        var documents = new[]
+        {
+            CreateC01Document(264000, selectedDate.AddDays(-1)),
+            CreateC01Document(264001, selectedDate),
+            CreateC01Document(264002, selectedDate.AddDays(1))
+        };
+
+        var filtered = AxataOutboundDeliveryImportService.ApplyAxataDateFilter(
+            documents,
+            selectedDate);
+
+        var document = Assert.Single(filtered);
+        Assert.Equal(264001, document.AxataSequenceNo);
+    }
+
+    [Fact]
+    public void C01OverDelivery_ReportsOnlyQuantityAboveMikroRemaining()
+    {
+        var document = CreateC01Document(262929, new DateTime(2026, 10, 31));
+        var orderLine = new DEPOLAR_ARASI_SIPARISLER
+        {
+            ssip_Guid = Guid.NewGuid(),
+            ssip_miktar = 380d,
+            ssip_teslim_miktar = 0d
+        };
+        var matchedLines = new[]
+        {
+            new MatchedC01Line(
+                document,
+                new AxataOutboundDeliveryLine(3, "015550", 384d),
+                orderLine)
+        };
+
+        var excessQuantity = AxataOutboundDeliveryImportService.GetC01OverDeliveryQuantity(matchedLines);
+
+        Assert.Equal(4d, excessQuantity);
+    }
+
+    [Fact]
     public void ProductFailureMessage_ContainsProductAndServiceReason()
     {
         var results = new[]
@@ -100,4 +143,82 @@ public sealed class AxataSynchronizationFailureBehaviorTests
         Assert.Contains("An error occurred while saving the entity changes.", message);
         Assert.Contains("The INSERT statement conflicted with a constraint.", message);
     }
+
+    [Fact]
+    public void ExistingC02Shipment_IsReconciledOnlyWhenOrderCustomerWarehouseAndQuantityMatch()
+    {
+        var orderGuid = Guid.NewGuid();
+        var rows = new[]
+        {
+            new ExistingC02MovementRow(
+                orderGuid,
+                "A",
+                311313672,
+                0,
+                10d,
+                "3312384204",
+                50,
+                new DateTime(2026, 11, 14),
+                new DateTime(2026, 11, 13),
+                "A.1979")
+        };
+
+        var result = AxataOutboundDeliveryImportService.MatchExistingC02Shipment(
+            rows,
+            new Dictionary<Guid, double> { [orderGuid] = 10d },
+            "3312384204",
+            50);
+
+        Assert.Equal("A", result.DocumentSerie);
+        Assert.Equal(311313672, result.DocumentOrderNo);
+        Assert.Equal(10d, result.TotalQuantity);
+    }
+
+    [Theory]
+    [InlineData("4730004089", 50, 10d)]
+    [InlineData("3312384204", 51, 10d)]
+    [InlineData("3312384204", 50, 9d)]
+    public void ExistingC02Shipment_IsNotReconciledForDifferentBusinessIdentity(
+        string customerCode,
+        int warehouseNo,
+        double quantity)
+    {
+        var orderGuid = Guid.NewGuid();
+        var rows = new[]
+        {
+            new ExistingC02MovementRow(
+                orderGuid,
+                "A",
+                311313672,
+                0,
+                10d,
+                customerCode,
+                warehouseNo,
+                DateTime.Today,
+                DateTime.Today,
+                "A.1979")
+        };
+
+        Assert.ThrowsAny<InvalidOperationException>(() =>
+            AxataOutboundDeliveryImportService.MatchExistingC02Shipment(
+                rows,
+                new Dictionary<Guid, double> { [orderGuid] = quantity },
+                "3312384204",
+                50));
+    }
+
+    private static AxataOutboundDeliveryDocument CreateC01Document(long sequenceNo, DateTime date) =>
+        new(
+            sequenceNo,
+            "F120.42",
+            "F120",
+            42,
+            "C01",
+            "0",
+            string.Empty,
+            string.Empty,
+            50,
+            120,
+            date,
+            [new AxataOutboundDeliveryLine(0, "015681", 1d)]);
 }

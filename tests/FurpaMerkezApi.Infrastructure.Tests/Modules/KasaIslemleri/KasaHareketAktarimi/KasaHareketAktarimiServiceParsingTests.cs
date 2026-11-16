@@ -24,6 +24,23 @@ public sealed class KasaHareketAktarimiServiceParsingTests
     }
 
     [Theory]
+    [InlineData(0, "yeni evrak kesin olarak dogrulanamadi")]
+    [InlineData(3, "3 yeni stok/cari evraki goruldu")]
+    public void StockMovementWriteTimeoutRequiresReadbackBeforeRetry(
+        int observedDocumentCount,
+        string expectedMessage)
+    {
+        var exception = KasaHareketAktarimiService.CreateStockMovementWriteTimeoutConflict(
+            observedDocumentCount,
+            new TimeoutException("test"));
+
+        Assert.Equal(OperationConflictErrorCodes.MikroWriteOutcomeUnconfirmed, exception.ErrorCode);
+        Assert.False(exception.Retryable);
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("yeniden baslatmadan once", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("HareketSil")]
     [InlineData("StokHareketYaz")]
     [InlineData("StokHareketSil")]
