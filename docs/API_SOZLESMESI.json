@@ -105930,6 +105930,9 @@
           },
           "safeWrites": {
             "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto"
+          },
+          "liveDatabase": {
+            "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto"
           }
         },
         "additionalProperties": false

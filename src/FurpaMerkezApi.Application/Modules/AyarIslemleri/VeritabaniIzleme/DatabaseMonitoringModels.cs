@@ -95,7 +95,8 @@ public sealed record MonitoringOverviewDto(
     DatabaseMonitoringOverviewDto Database,
     WorkerMonitoringSnapshotDto Workers,
     DatabaseIncidentOverviewDto Incidents,
-    SafeWriteMonitoringOverviewDto SafeWrites);
+    SafeWriteMonitoringOverviewDto SafeWrites,
+    DatabaseMonitoringSnapshotDto LiveDatabase);
 
 public sealed record DatabaseMonitoringOverviewDto(
     string Status,

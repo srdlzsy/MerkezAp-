@@ -1741,6 +1741,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `generatedAtUtc` | string (date-time) | Hayir |  |
 | `headline` | string | Hayir | nullable |
 | `incidents` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseIncidentOverviewDto | Hayir |  |
+| `liveDatabase` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.DatabaseMonitoringSnapshotDto | Hayir |  |
 | `overallStatus` | string | Hayir | nullable |
 | `overallStatusName` | string | Hayir | nullable |
 | `safeWrites` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteMonitoringOverviewDto | Hayir |  |

@@ -6779,9 +6779,18 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Status", "CreatedAtUtc")
+                        .HasDatabaseName("ix_mobile_offline_sync_requests_status_created");
+
+                    b.HasIndex("Status", "UpdatedAtUtc")
+                        .HasDatabaseName("ix_mobile_offline_sync_requests_status_updated");
+
                     b.HasIndex("OperationCode", "RequestedByUserId", "ClientRequestId")
                         .IsUnique()
                         .HasDatabaseName("ux_mobile_offline_sync_requests_operation_user_request");
+
+                    b.HasIndex("OperationCode", "WarehouseNo", "UpdatedAtUtc")
+                        .HasDatabaseName("ix_mobile_offline_sync_requests_operation_warehouse_updated");
 
                     b.ToTable("mobile_offline_sync_requests", (string)null);
                 });

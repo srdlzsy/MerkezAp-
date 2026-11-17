@@ -83,5 +83,14 @@ public sealed class MobileOfflineSyncRequestConfiguration : IEntityTypeConfigura
                 })
             .IsUnique()
             .HasDatabaseName("ux_mobile_offline_sync_requests_operation_user_request");
+
+        builder.HasIndex(item => new { item.Status, item.UpdatedAtUtc })
+            .HasDatabaseName("ix_mobile_offline_sync_requests_status_updated");
+
+        builder.HasIndex(item => new { item.Status, item.CreatedAtUtc })
+            .HasDatabaseName("ix_mobile_offline_sync_requests_status_created");
+
+        builder.HasIndex(item => new { item.OperationCode, item.WarehouseNo, item.UpdatedAtUtc })
+            .HasDatabaseName("ix_mobile_offline_sync_requests_operation_warehouse_updated");
     }
 }

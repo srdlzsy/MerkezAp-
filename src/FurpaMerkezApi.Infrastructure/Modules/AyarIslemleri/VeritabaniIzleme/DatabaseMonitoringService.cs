@@ -38,6 +38,8 @@ public sealed partial class DatabaseMonitoringService(
     private const string SnapshotSql =
         """
         SET NOCOUNT ON;
+        SET DEADLOCK_PRIORITY LOW;
+        SET LOCK_TIMEOUT 1000;
 
         SELECT
             CONVERT(nvarchar(128), SERVERPROPERTY('ServerName')) AS server_name,
@@ -67,7 +69,17 @@ public sealed partial class DatabaseMonitoringService(
             s.host_name,
             s.program_name,
             c.client_net_address,
-            txt.text AS sql_text
+            CASE
+                WHEN txt.text IS NULL THEN NULL
+                WHEN r.statement_start_offset < 0 THEN txt.text
+                ELSE SUBSTRING(
+                    txt.text,
+                    (r.statement_start_offset / 2) + 1,
+                    CASE
+                        WHEN r.statement_end_offset < 0 THEN (DATALENGTH(txt.text) - r.statement_start_offset) / 2 + 1
+                        ELSE (r.statement_end_offset - r.statement_start_offset) / 2 + 1
+                    END)
+            END AS sql_text
         FROM sys.dm_exec_requests AS r
         INNER JOIN sys.dm_exec_sessions AS s ON s.session_id = r.session_id
         LEFT JOIN sys.dm_exec_connections AS c ON c.session_id = r.session_id
@@ -145,6 +157,10 @@ public sealed partial class DatabaseMonitoringService(
 
         var safeWriteCounts = await authDbContext.MobileOfflineSyncRequests
             .AsNoTracking()
+            .Where(item =>
+                item.Status == MobileOfflineSyncRequestStatus.Processing ||
+                item.UpdatedAtUtc >= windowStart ||
+                (item.UpdatedAtUtc == null && item.CreatedAtUtc >= windowStart))
             .GroupBy(_ => 1)
             .Select(group => new
             {
@@ -224,7 +240,8 @@ public sealed partial class DatabaseMonitoringService(
             databaseOverview,
             workers,
             incidents,
-            safeWrites);
+            safeWrites,
+            database);
     }
 
     public async Task<DatabaseMonitoringSnapshotDto> GetSnapshotAsync(CancellationToken cancellationToken)
