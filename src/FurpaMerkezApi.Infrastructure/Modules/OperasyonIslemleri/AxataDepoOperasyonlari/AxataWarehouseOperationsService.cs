@@ -1,6 +1,10 @@
 using System.Data;
+using System.Data.Common;
+using System.Text.RegularExpressions;
 using FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 
@@ -8,7 +12,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.AxataDepoOper
 
 public sealed class AxataWarehouseOperationsService(
     IConfiguration configuration,
-    IMemoryCache memoryCache)
+    IMemoryCache memoryCache,
+    MikroDbContext mikroDbContext)
     : IAxataWarehouseOperationsService
 {
     private const int CommandTimeoutSeconds = 30;
@@ -148,6 +153,101 @@ public sealed class AxataWarehouseOperationsService(
         return result;
     }
 
+    public async Task<AxataWarehouseDocumentListDto> GetDocumentsAsync(
+        DateOnly? startDate,
+        DateOnly? endDate,
+        string? documentType,
+        string? movementType,
+        string? status,
+        string? searchTerm,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var (start, end) = ResolveDateRange(startDate, endDate);
+        if (skip < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(skip), "Atlanacak kayit sayisi sifirdan kucuk olamaz.");
+        }
+
+        if (take is < 1 or > 500)
+        {
+            throw new ArgumentOutOfRangeException(nameof(take), "Bir istekte 1-500 evrak okunabilir.");
+        }
+
+        var normalizedType = NormalizeDocumentType(documentType);
+        var normalizedMovement = NormalizeOptionalFilter(movementType, 20);
+        var normalizedStatus = NormalizeOptionalFilter(status, 30)?.ToLowerInvariant();
+        var normalizedSearch = NormalizeOptionalFilter(searchTerm, 100);
+        var startValue = ToAxataDate(start);
+        var endValue = ToAxataDate(end);
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        var documents = new List<AxataWarehouseDocumentListItem>();
+        if (normalizedType is null or "Order")
+        {
+            documents.AddRange(await ReadOrderDocumentsAsync(connection, startValue, endValue, cancellationToken));
+        }
+
+        if (normalizedType is null or "Shipment")
+        {
+            documents.AddRange(await ReadShipmentDocumentsAsync(connection, startValue, endValue, cancellationToken));
+        }
+
+        if (normalizedType is null or "Receiving")
+        {
+            documents.AddRange(await ReadReceivingDocumentsAsync(connection, startValue, endValue, cancellationToken));
+        }
+
+        IEnumerable<AxataWarehouseDocumentListItem> filtered = documents;
+        if (normalizedMovement is not null)
+        {
+            filtered = filtered.Where(item => string.Equals(
+                item.MovementType,
+                normalizedMovement,
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (normalizedStatus is not null && normalizedStatus != "all")
+        {
+            filtered = filtered.Where(item => normalizedStatus switch
+            {
+                "pending" => item.FlowState == "Pending",
+                "processing" => item.FlowState == "Processing",
+                "completed" => item.FlowState == "Completed",
+                "in-transit" => item.IsInTransit,
+                "action-required" => item.FlowState == "ActionRequired",
+                _ => item.Status.ToString(System.Globalization.CultureInfo.InvariantCulture) == normalizedStatus
+            });
+        }
+
+        if (normalizedSearch is not null)
+        {
+            filtered = filtered.Where(item => ContainsInvariant(item.DocumentNo, normalizedSearch) ||
+                ContainsInvariant(item.DocumentKey, normalizedSearch) ||
+                ContainsInvariant(item.SourceCode, normalizedSearch) ||
+                ContainsInvariant(item.SourceName, normalizedSearch) ||
+                ContainsInvariant(item.TargetCode, normalizedSearch) ||
+                ContainsInvariant(item.TargetName, normalizedSearch) ||
+                ContainsInvariant(item.VehiclePlate, normalizedSearch));
+        }
+
+        var ordered = filtered
+            .OrderByDescending(item => item.DocumentDate)
+            .ThenByDescending(item => item.DocumentKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var items = ordered.Skip(skip).Take(take).ToArray();
+
+        return new AxataWarehouseDocumentListDto(
+            Metadata($"{start:dd.MM.yyyy} - {end:dd.MM.yyyy} AXATA evraklari", end),
+            start,
+            end,
+            ordered.Length,
+            skip,
+            take,
+            items);
+    }
+
     public async Task<AxataDocumentTraceDto> GetTraceAsync(string searchTerm, CancellationToken cancellationToken)
     {
         var term = searchTerm?.Trim();
@@ -167,10 +267,187 @@ public sealed class AxataWarehouseOperationsService(
         var logs = orderNo is null ? [] : await ReadPickingLogsAsync(connection, orderNo, cancellationToken);
         var queues = orderNo is null ? [] : await ReadQueuesAsync(connection, orderNo, cancellationToken);
         var inbounds = orderNo is null ? await ReadInboundsAsync(connection, term, cancellationToken) : [];
+        var mikroCrossCheck = await ReadMikroCrossCheckAsync(orderNo ?? term, cancellationToken);
         return new AxataDocumentTraceDto(Metadata("AXATA anlık evrak izi"), term,
             orderNo is not null ? "OutboundOrder" : inbounds.Count > 0 ? "InboundOrder" : "NotFound",
             orderNo, movement, targetCode, targetName, orderDate, orderStatus,
-            orderNo is null ? null : MapOrderStatus(orderStatus), shipments, logs, inbounds, queues);
+            orderNo is null ? null : MapOrderStatus(orderStatus), shipments, logs, inbounds, queues, mikroCrossCheck);
+    }
+
+    private static readonly Regex MikroOrderReferencePattern = new(
+        @"^\s*([A-Za-z]+[0-9]*)\s*[\.\-/ ]\s*([0-9]{1,9})\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    internal static bool TryParseMikroOrderReference(string? value, out string serie, out int orderNo)
+    {
+        serie = string.Empty;
+        orderNo = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var match = MikroOrderReferencePattern.Match(value);
+        if (!match.Success || !int.TryParse(match.Groups[2].Value, out orderNo) || orderNo <= 0)
+        {
+            return false;
+        }
+
+        serie = match.Groups[1].Value.ToUpperInvariant();
+        return true;
+    }
+
+    internal static (string Code, string Text) ResolveMikroDecision(
+        bool orderFound,
+        int lineCount,
+        int openLineCount,
+        int closedLineCount,
+        int shipmentCount)
+    {
+        if (!orderFound || lineCount == 0)
+        {
+            return ("OrderNotFound", "Mikro'da bu numarayla depolar arası sipariş bulunamadı; manuel inceleme gerekli.");
+        }
+
+        if (shipmentCount > 0 && openLineCount == 0)
+        {
+            return ("Completed", "Mikro sevk fişi oluşmuş ve sipariş satırlarının tamamı kapalı.");
+        }
+
+        if (shipmentCount > 0)
+        {
+            return ("ShipmentExistsOrderOpen", "Mikro sevk fişi oluşmuş; ancak bazı sipariş satırları hâlâ açık (kısmi sevk veya merkez kabulü bekleniyor olabilir).");
+        }
+
+        if (closedLineCount == lineCount)
+        {
+            return ("ClosedWithoutShipment", "Sipariş satırları kapatılmış fakat bağlı sevk fişi bulunamadı; manuel inceleme gerekli.");
+        }
+
+        return ("ShipmentPending", "Mikro'da henüz bu siparişe bağlı sevk fişi oluşmamış.");
+    }
+
+    private async Task<AxataTraceMikroCrossCheck?> ReadMikroCrossCheckAsync(
+        string reference,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseMikroOrderReference(reference, out var serie, out var orderNo))
+        {
+            return null;
+        }
+
+        const string orderSql = """
+            SELECT COUNT(1),
+                   COALESCE(SUM(CASE WHEN ISNULL(ssip_kapat_fl,0)=1 THEN 1 ELSE 0 END),0),
+                   COALESCE(SUM(CONVERT(decimal(18,4),ISNULL(ssip_miktar,0))),0),
+                   COALESCE(SUM(CONVERT(decimal(18,4),ISNULL(ssip_teslim_miktar,0))),0),
+                   MIN(ssip_tarih),
+                   MIN(ssip_cikdepo),
+                   MIN(ssip_girdepo)
+            FROM dbo.DEPOLAR_ARASI_SIPARISLER WITH (NOLOCK)
+            WHERE ssip_evrakno_seri=@serie AND ssip_evrakno_sira=@orderNo AND ISNULL(ssip_iptal,0)=0
+            """;
+        const string shipmentSql = """
+            SELECT b.sth_evrakno_seri, b.sth_evrakno_sira, MIN(b.sth_tarih), MIN(b.sth_belge_no),
+                   MIN(b.sth_cikis_depo_no), MIN(b.sth_giris_depo_no), COUNT(1),
+                   COALESCE(SUM(CONVERT(decimal(18,4),ISNULL(b.sth_miktar,0))),0)
+            FROM dbo.STOK_HAREKETLERI b WITH (NOLOCK)
+            INNER JOIN dbo.STOK_HAREKETLERI_EK ek WITH (NOLOCK) ON ek.sthek_related_uid=b.sth_Guid
+            WHERE ISNULL(b.sth_iptal,0)=0
+              AND ek.sth_subesip_uid IN (
+                  SELECT o.ssip_Guid FROM dbo.DEPOLAR_ARASI_SIPARISLER o WITH (NOLOCK)
+                  WHERE o.ssip_evrakno_seri=@serie AND o.ssip_evrakno_sira=@orderNo)
+            GROUP BY b.sth_evrakno_seri, b.sth_evrakno_sira
+            ORDER BY MIN(b.sth_tarih), b.sth_evrakno_seri, b.sth_evrakno_sira
+            """;
+
+        var connection = mikroDbContext.Database.GetDbConnection();
+        var closeConnection = connection.State == ConnectionState.Closed;
+        try
+        {
+            if (closeConnection)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            int lineCount = 0, closedLineCount = 0;
+            decimal orderedQuantity = 0, deliveredQuantity = 0;
+            DateOnly? orderDate = null;
+            int? sourceWarehouseNo = null, targetWarehouseNo = null;
+            await using (var command = CreateMikroCommand(connection, orderSql, serie, orderNo))
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+            {
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    lineCount = Convert.ToInt32(reader.GetValue(0));
+                    closedLineCount = Convert.ToInt32(reader.GetValue(1));
+                    orderedQuantity = Convert.ToDecimal(reader.GetValue(2));
+                    deliveredQuantity = Convert.ToDecimal(reader.GetValue(3));
+                    orderDate = reader.IsDBNull(4) ? null : DateOnly.FromDateTime(Convert.ToDateTime(reader.GetValue(4)));
+                    sourceWarehouseNo = reader.IsDBNull(5) ? null : Convert.ToInt32(reader.GetValue(5));
+                    targetWarehouseNo = reader.IsDBNull(6) ? null : Convert.ToInt32(reader.GetValue(6));
+                }
+            }
+
+            var shipments = new List<AxataTraceMikroShipmentItem>();
+            if (lineCount > 0)
+            {
+                await using var command = CreateMikroCommand(connection, shipmentSql, serie, orderNo);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    shipments.Add(new AxataTraceMikroShipmentItem(
+                        Convert.ToString(reader.GetValue(0))?.Trim() ?? string.Empty,
+                        Convert.ToInt32(reader.GetValue(1)),
+                        reader.IsDBNull(2) ? null : DateOnly.FromDateTime(Convert.ToDateTime(reader.GetValue(2))),
+                        reader.IsDBNull(3) ? null : Convert.ToString(reader.GetValue(3))?.Trim(),
+                        reader.IsDBNull(4) ? null : Convert.ToInt32(reader.GetValue(4)),
+                        reader.IsDBNull(5) ? null : Convert.ToInt32(reader.GetValue(5)),
+                        Convert.ToInt32(reader.GetValue(6)),
+                        Convert.ToDecimal(reader.GetValue(7))));
+                }
+            }
+
+            var openLineCount = Math.Max(0, lineCount - closedLineCount);
+            var decision = ResolveMikroDecision(lineCount > 0, lineCount, openLineCount, closedLineCount, shipments.Count);
+            return new AxataTraceMikroCrossCheck(
+                serie, orderNo, lineCount > 0, orderDate, sourceWarehouseNo, targetWarehouseNo,
+                lineCount, openLineCount, closedLineCount, orderedQuantity, deliveredQuantity,
+                shipments, decision.Code, decision.Text, null);
+        }
+        catch (Exception exception) when (exception is DbException or InvalidOperationException)
+        {
+            return new AxataTraceMikroCrossCheck(
+                serie, orderNo, false, null, null, null, 0, 0, 0, 0, 0, [],
+                "MikroUnavailable", "Mikro karşılığı okunamadı.", exception.Message);
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private static DbCommand CreateMikroCommand(DbConnection connection, string sql, string serie, int orderNo)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandType = CommandType.Text;
+        command.CommandTimeout = CommandTimeoutSeconds;
+        var serieParameter = command.CreateParameter();
+        serieParameter.ParameterName = "@serie";
+        serieParameter.DbType = DbType.String;
+        serieParameter.Size = 20;
+        serieParameter.Value = serie;
+        command.Parameters.Add(serieParameter);
+        var orderParameter = command.CreateParameter();
+        orderParameter.ParameterName = "@orderNo";
+        orderParameter.DbType = DbType.Int32;
+        orderParameter.Value = orderNo;
+        command.Parameters.Add(orderParameter);
+        return command;
     }
 
     private async Task<TraceOrder?> FindTraceOrderAsync(
@@ -486,6 +763,185 @@ public sealed class AxataWarehouseOperationsService(
         return groups.Values.Select(x => x.Header with { Details = x.Lines }).ToArray();
     }
 
+    private async Task<IReadOnlyList<AxataWarehouseDocumentListItem>> ReadOrderDocumentsAsync(
+        SqlConnection connection,
+        int startDate,
+        int endDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (5000)
+                sm.SMSIPN,sm.SMHARK,CONVERT(int,sm.SMCRDT),sm.SMDAGK,sm.SMBAYK,f.CMMUNV,
+                CONVERT(int,sm.SMSPST),COUNT(sd.SDKALN),COALESCE(SUM(sd.SDMIKI),0)
+            FROM dbo.SIPMASTER sm
+            LEFT JOIN dbo.SIPDETAIL sd ON sd.SDSIRK=sm.SMSIRK AND sd.SDSIPN=sm.SMSIPN
+            LEFT JOIN dbo.FIRMASTER f ON f.CMSKOD=sm.SMSIRK AND f.CMMKOD=sm.SMBAYK
+            WHERE sm.SMSIRK=@company AND sm.SMDAGK=@warehouse
+              AND sm.SMCRDT BETWEEN @startDate AND @endDate
+            GROUP BY sm.SMSIPN,sm.SMHARK,sm.SMCRDT,sm.SMDAGK,sm.SMBAYK,f.CMMUNV,sm.SMSPST
+            ORDER BY sm.SMCRDT DESC,sm.SMSIPN DESC
+            """;
+        var items = new List<AxataWarehouseDocumentListItem>();
+        await using var command = CreateCommand(connection, sql, 60);
+        AddDocumentListParameters(command, startDate, endDate);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var documentNo = reader.GetString(0).Trim();
+            var documentStatus = reader.GetInt32(6);
+            var flowState = documentStatus switch
+            {
+                4 or 9 => "Completed",
+                0 => "Pending",
+                _ => "Processing"
+            };
+            items.Add(new AxataWarehouseDocumentListItem(
+                "Order",
+                "Siparis",
+                $"Order:{documentNo}",
+                documentNo,
+                Text(reader, 1),
+                ParseAxataDate(reader.GetInt32(2)),
+                Text(reader, 3),
+                "Merkez depo",
+                Text(reader, 4),
+                Text(reader, 5),
+                documentStatus,
+                MapOrderStatus(documentStatus),
+                flowState,
+                reader.GetInt32(7),
+                Convert.ToDecimal(reader.GetValue(8), System.Globalization.CultureInfo.InvariantCulture),
+                false,
+                null));
+        }
+
+        return items;
+    }
+
+    private async Task<IReadOnlyList<AxataWarehouseDocumentListItem>> ReadShipmentDocumentsAsync(
+        SqlConnection connection,
+        int startDate,
+        int endDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (5000)
+                CONVERT(int,m.SMSYIL),CONVERT(int,m.SMSNO),m.SMHKOD,CONVERT(int,m.SMYSTR),
+                m.SMAKOD,src.CMMUNV,m.SMBKOD,dst.CMMUNV,CONVERT(int,m.SMSTAT),
+                COUNT(d.SDSRNO),COALESCE(SUM(d.SDGMIK),0),m.SMAPLK
+            FROM dbo.SEVK_MASTER m
+            LEFT JOIN dbo.SEVK_DETAIL d
+              ON d.SDSKOD=m.SMSKOD AND d.SDSYIL=m.SMSYIL AND d.SDSNO=m.SMSNO
+            LEFT JOIN dbo.FIRMASTER src ON src.CMSKOD=m.SMSKOD AND src.CMMKOD=m.SMAKOD
+            LEFT JOIN dbo.FIRMASTER dst ON dst.CMSKOD=m.SMSKOD AND dst.CMMKOD=m.SMBKOD
+            WHERE m.SMSKOD=@company AND (m.SMAKOD=@warehouse OR m.SMBKOD=@warehouse)
+              AND m.SMYSTR BETWEEN @startDate AND @endDate
+            GROUP BY m.SMSYIL,m.SMSNO,m.SMHKOD,m.SMYSTR,m.SMAKOD,src.CMMUNV,
+                     m.SMBKOD,dst.CMMUNV,m.SMSTAT,m.SMAPLK
+            ORDER BY m.SMYSTR DESC,m.SMSYIL DESC,m.SMSNO DESC
+            """;
+        var items = new List<AxataWarehouseDocumentListItem>();
+        await using var command = CreateCommand(connection, sql, 60);
+        AddDocumentListParameters(command, startDate, endDate);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var year = reader.GetInt32(0);
+            var shipmentNo = reader.GetInt32(1);
+            var documentStatus = reader.GetInt32(8);
+            var sourceCode = Text(reader, 4);
+            var targetCode = Text(reader, 6);
+            var isInboundToCenter = !string.Equals(sourceCode, AxataWarehouseCode, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(targetCode, AxataWarehouseCode, StringComparison.OrdinalIgnoreCase);
+            var flowState = documentStatus switch
+            {
+                6 => "Completed",
+                4 => "Processing",
+                _ => "Pending"
+            };
+            items.Add(new AxataWarehouseDocumentListItem(
+                "Shipment",
+                "Sevk",
+                $"Shipment:{year}/{shipmentNo}",
+                $"{year}/{shipmentNo}",
+                Text(reader, 2),
+                ParseAxataDate(reader.GetInt32(3)),
+                sourceCode,
+                Text(reader, 5),
+                targetCode,
+                Text(reader, 7),
+                documentStatus,
+                MapShipmentStatus(documentStatus),
+                flowState,
+                reader.GetInt32(9),
+                Convert.ToDecimal(reader.GetValue(10), System.Globalization.CultureInfo.InvariantCulture),
+                isInboundToCenter && documentStatus != 6,
+                Text(reader, 11)));
+        }
+
+        return items;
+    }
+
+    private async Task<IReadOnlyList<AxataWarehouseDocumentListItem>> ReadReceivingDocumentsAsync(
+        SqlConnection connection,
+        int startDate,
+        int endDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (5000)
+                m.id,m.CMSIPN,m.CMHKOD,
+                CONVERT(int,CASE WHEN m.CMIRST BETWEEN @startDate AND @endDate THEN m.CMIRST ELSE m.CMTEST END),
+                m.CMFIRM,f.CMMUNV,m.CMDEPO,CONVERT(int,m.CMSTAT),
+                COUNT(g.CSID),COALESCE(SUM(CASE WHEN g.CSAMIK>0 THEN g.CSAMIK ELSE g.CSSIPMIK END),0),m.CMIRSN
+            FROM dbo.GSIPMST m
+            LEFT JOIN dbo.GSIPMASTER g
+              ON g.CSSKOD=m.CMSIRK AND g.CSHARK=m.CMHKOD AND g.CSBNUM=m.CMSIPN
+            LEFT JOIN dbo.FIRMASTER f ON f.CMSKOD=m.CMSIRK AND f.CMMKOD=m.CMFIRM
+            WHERE m.CMSIRK=@company AND m.CMDEPO=@warehouse
+              AND (m.CMIRST BETWEEN @startDate AND @endDate OR m.CMTEST BETWEEN @startDate AND @endDate)
+            GROUP BY m.id,m.CMSIPN,m.CMHKOD,m.CMIRST,m.CMTEST,m.CMFIRM,f.CMMUNV,
+                     m.CMDEPO,m.CMSTAT,m.CMIRSN
+            ORDER BY CASE WHEN m.CMIRST BETWEEN @startDate AND @endDate THEN m.CMIRST ELSE m.CMTEST END DESC,m.id DESC
+            """;
+        var items = new List<AxataWarehouseDocumentListItem>();
+        await using var command = CreateCommand(connection, sql, 60);
+        AddDocumentListParameters(command, startDate, endDate);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var id = reader.GetInt64(0);
+            var documentNo = reader.GetString(1).Trim();
+            var documentStatus = reader.GetInt32(7);
+            var flowState = documentStatus switch
+            {
+                4 => "Completed",
+                0 => "Pending",
+                _ => "Processing"
+            };
+            items.Add(new AxataWarehouseDocumentListItem(
+                "Receiving",
+                "Mal kabul",
+                $"Receiving:{id}",
+                documentNo,
+                Text(reader, 2),
+                ParseAxataDate(reader.GetInt32(3)),
+                Text(reader, 4),
+                Text(reader, 5),
+                Text(reader, 6),
+                "Merkez depo",
+                documentStatus,
+                MapInboundStatus(documentStatus),
+                flowState,
+                reader.GetInt32(8),
+                Convert.ToDecimal(reader.GetValue(9), System.Globalization.CultureInfo.InvariantCulture),
+                false,
+                Text(reader, 10)));
+        }
+
+        return items;
+    }
+
     private async Task<IReadOnlyList<AxataTracePickingLogItem>> ReadPickingLogsAsync(SqlConnection connection, string orderNo, CancellationToken ct)
     {
         const string sql = """
@@ -521,7 +977,7 @@ public sealed class AxataWarehouseOperationsService(
         foreach (var h in headers)
         {
             const string lineSql = """
-                SELECT ROW_NUMBER() OVER(ORDER BY g.CSKALN,g.CSID),g.CSSKUK,sku.MAMADA,g.CSIPMIK,g.CSAMIK
+                SELECT ROW_NUMBER() OVER(ORDER BY g.CSKALN,g.CSID),g.CSSKUK,sku.MAMADA,g.CSSIPMIK,g.CSAMIK
                 FROM dbo.GSIPMASTER g LEFT JOIN dbo.SKUMASTER sku ON sku.MSIRKD=g.CSSKOD AND sku.MAMAUA=g.CSSKUK
                 WHERE g.CSSKOD=@company AND g.CSHARK=@type AND g.CSBNUM=@doc ORDER BY g.CSKALN,g.CSID
                 """;
@@ -550,6 +1006,12 @@ public sealed class AxataWarehouseOperationsService(
     }
 
     private void AddCommonParameters(SqlCommand c) { c.Parameters.Add(new("@company", SqlDbType.NVarChar, 4) { Value = CompanyCode }); c.Parameters.Add(new("@warehouse", SqlDbType.NVarChar, 4) { Value = AxataWarehouseCode }); }
+    private void AddDocumentListParameters(SqlCommand command, int startDate, int endDate)
+    {
+        AddCommonParameters(command);
+        command.Parameters.Add(new SqlParameter("@startDate", SqlDbType.Decimal) { Value = startDate });
+        command.Parameters.Add(new SqlParameter("@endDate", SqlDbType.Decimal) { Value = endDate });
+    }
     private void AddFillParameters(SqlCommand c, DateOnly start, DateOnly end, string? store) { AddCommonParameters(c); c.Parameters.Add(new("@startDate", SqlDbType.Decimal) { Value = ToAxataDate(start) }); c.Parameters.Add(new("@endDate", SqlDbType.Decimal) { Value = ToAxataDate(end) }); c.Parameters.Add(new("@store", SqlDbType.NVarChar, 100) { Value = (object?)store ?? DBNull.Value }); }
     private static void AddDateRange(SqlCommand c, DateOnly start, DateOnly end) { c.Parameters.Add(new("@start", SqlDbType.DateTime) { Value = start.ToDateTime(TimeOnly.MinValue) }); c.Parameters.Add(new("@end", SqlDbType.DateTime) { Value = end.ToDateTime(TimeOnly.MinValue) }); }
     private static SqlCommand CreateCommand(SqlConnection c, string sql, int timeout = CommandTimeoutSeconds) => new(sql, c) { CommandTimeout = timeout };
@@ -564,6 +1026,34 @@ public sealed class AxataWarehouseOperationsService(
     private static string? FormatTime(string? v) => v is { Length: 6 } ? $"{v[..2]}:{v.Substring(2, 2)}:{v[4..]}" : v;
     private static double Percentage(decimal n, decimal d) => d == 0 ? 0 : Math.Round((double)(n / d * 100), 2);
     private static double Percentage(int n, int d) => d == 0 ? 0 : Math.Round((double)n / d * 100, 2);
+    internal static string? NormalizeDocumentType(string? value)
+    {
+        var normalized = NormalizeOptionalFilter(value, 20);
+        if (normalized is null || normalized.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (normalized.Equals("order", StringComparison.OrdinalIgnoreCase)) return "Order";
+        if (normalized.Equals("shipment", StringComparison.OrdinalIgnoreCase)) return "Shipment";
+        if (normalized.Equals("receiving", StringComparison.OrdinalIgnoreCase)) return "Receiving";
+        throw new ArgumentException("Evrak tipi Order, Shipment veya Receiving olmalidir.", nameof(value));
+    }
+
+    private static string? NormalizeOptionalFilter(string? value, int maximumLength)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized)) return null;
+        if (normalized.Length > maximumLength)
+        {
+            throw new ArgumentException($"Filtre en fazla {maximumLength} karakter olabilir.", nameof(value));
+        }
+
+        return normalized;
+    }
+
+    private static bool ContainsInvariant(string? value, string search) =>
+        value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
     private static string MapOrderStatus(int? s) => s switch { 0 => "Açık / toplama bekliyor", 4 => "Sevk edildi / tamamlandı", 9 => "İptal edildi", _ => $"Durum {s}" };
     private static string MapShipmentStatus(int? s) => s switch { 4 => "Rampada / yükleniyor", 6 => "Yüklendi / sevk edildi", _ => $"Durum {s}" };
     private static string MapInboundStatus(int? s) => s switch { 0 => "Kabul bekliyor", 4 => "Kabul tamamlandı", _ => $"Durum {s}" };

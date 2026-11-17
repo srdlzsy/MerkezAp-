@@ -907,6 +907,28 @@ Canli AXATA dogrulamasi icin sahada kontrol edilmesi gerekenler:
 - C01 audit ile manual candidates'in ayni `ssip_cikdepo` evrenine bakmasi.
 - C01 importta ack'in Mikro yazim basarisindan sonra atilmasi.
 
+## AXATA Depo Kokpiti
+
+`GET /api/operasyon-islemleri/axata-depo-operasyonlari/documents` endpointi AXATA canli
+veritabanindaki siparis, sevk ve mal kabul evraklarini ortak bir salt okunur listede sunar.
+Tarih araligi en fazla 31 gun, sayfa boyutu en fazla 500 kayittir. Evrak tipi, hareket tipi,
+durum ve serbest arama filtreleri desteklenir. Merkez depoya yonelmis ve henuz tamamlanmamis
+sevkler `isInTransit=true` olarak isaretlenir.
+
+C01 onizleme cevabindaki `mikroCheckState` gercek Mikro eslesme sonucunu, `allowedAction` ise
+arayuzun gosterebilecegi guvenli islemi belirtir:
+
+- `ImportToMikro`: Mikro sevk fisi olusturulabilir.
+- `ReconcileAndAcknowledge`: Mikro sevk linki satir ve miktar bazinda vardir; duplicate fis
+  olusturulmadan AXATA kuyrugu kapatilabilir.
+- `InspectOnly`: Otomatik yazma veya ack yapilmaz; kullanici evraki inceler.
+- `NoAction`: AXATA ve Mikro zaten senkron durumdadir.
+
+Angular bu karari hata metninden tahmin etmez. Iptal, sifir miktar, kayip siparis veya satir
+uyusmazligi bulunan evraklarda tek tikla ack acilmaz. Canli rampa yuklemeleri, toplama loglari,
+ENT006 kuyruk kayitlari, inbound detaylari, eksik SKU listesi, bolge performansi ve stok yeri
+tipleri de mevcut API cevaplarindan ekranda gosterilir.
+
 ## Sonraki Faz Onerisi
 
 1. Kalici job/audit/retry tablolari.

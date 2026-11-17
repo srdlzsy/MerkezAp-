@@ -31,6 +31,33 @@ public sealed class AxataDepoOperasyonlariController(
         return Ok(await service.GetOverviewAsync(warehouseNo, date, cancellationToken));
     }
 
+    [HttpGet("documents")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(AxataWarehouseDocumentListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AxataWarehouseDocumentListDto>> GetDocuments(
+        [FromQuery] DateOnly? startDate,
+        [FromQuery] DateOnly? endDate,
+        [FromQuery] string? documentType,
+        [FromQuery] string? movementType,
+        [FromQuery] string? status,
+        [FromQuery] string? searchTerm,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        return Ok(await service.GetDocumentsAsync(
+            startDate,
+            endDate,
+            documentType,
+            movementType,
+            status,
+            searchTerm,
+            skip,
+            take,
+            cancellationToken));
+    }
+
     [HttpGet("trace")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(AxataDocumentTraceDto), StatusCodes.Status200OK)]

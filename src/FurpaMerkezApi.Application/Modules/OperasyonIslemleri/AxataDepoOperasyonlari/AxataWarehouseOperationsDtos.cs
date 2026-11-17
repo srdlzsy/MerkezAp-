@@ -50,6 +50,34 @@ public sealed record AxataPendingOrderItem(
     int LineCount,
     decimal TotalOrderQty);
 
+public sealed record AxataWarehouseDocumentListDto(
+    AxataOperationsMetadata Metadata,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    int TotalCount,
+    int Skip,
+    int Take,
+    IReadOnlyList<AxataWarehouseDocumentListItem> Items);
+
+public sealed record AxataWarehouseDocumentListItem(
+    string DocumentType,
+    string DocumentTypeDescription,
+    string DocumentKey,
+    string DocumentNo,
+    string? MovementType,
+    DateOnly? DocumentDate,
+    string? SourceCode,
+    string? SourceName,
+    string? TargetCode,
+    string? TargetName,
+    int Status,
+    string StatusDescription,
+    string FlowState,
+    int LineCount,
+    decimal Quantity,
+    bool IsInTransit,
+    string? VehiclePlate);
+
 public sealed record AxataDocumentTraceDto(
     AxataOperationsMetadata Metadata,
     string SearchTerm,
@@ -64,7 +92,35 @@ public sealed record AxataDocumentTraceDto(
     IReadOnlyList<AxataTraceShipmentItem> Shipments,
     IReadOnlyList<AxataTracePickingLogItem> PickingLogs,
     IReadOnlyList<AxataTraceInboundItem> Inbounds,
-    IReadOnlyList<AxataTraceQueueItem> IntegrationQueues);
+    IReadOnlyList<AxataTraceQueueItem> IntegrationQueues,
+    AxataTraceMikroCrossCheck? MikroCrossCheck = null);
+
+public sealed record AxataTraceMikroCrossCheck(
+    string? OrderSerie,
+    int? OrderNo,
+    bool OrderFound,
+    DateOnly? OrderDate,
+    int? SourceWarehouseNo,
+    int? TargetWarehouseNo,
+    int LineCount,
+    int OpenLineCount,
+    int ClosedLineCount,
+    decimal OrderedQuantity,
+    decimal DeliveredQuantity,
+    IReadOnlyList<AxataTraceMikroShipmentItem> Shipments,
+    string DecisionCode,
+    string Decision,
+    string? Warning);
+
+public sealed record AxataTraceMikroShipmentItem(
+    string DocumentSerie,
+    int DocumentOrderNo,
+    DateOnly? DocumentDate,
+    string? OfficialDocumentNo,
+    int? SourceWarehouseNo,
+    int? TargetWarehouseNo,
+    int LineCount,
+    decimal Quantity);
 
 public sealed record AxataTraceShipmentItem(
     int ShipmentYear,

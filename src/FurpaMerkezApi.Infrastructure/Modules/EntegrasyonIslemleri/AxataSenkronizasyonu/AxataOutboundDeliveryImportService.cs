@@ -4602,6 +4602,12 @@ internal sealed class AxataOutboundDeliveryImportService(
                     matchedLines,
                     existingLinkedMovementLineCount,
                     canImport);
+                var allowedAction = ResolveC01AllowedAction(
+                    document,
+                    positiveLines,
+                    matchedLines,
+                    existingLinkedMovementLineCount,
+                    canImport);
 
                 return new C01DeliveryAnalysis(
                     document,
@@ -4622,7 +4628,9 @@ internal sealed class AxataOutboundDeliveryImportService(
                         documentOrderLines.Sum(order => order.ssip_teslim_miktar ?? 0d),
                         existingLinkedMovementLineCount,
                         canImport,
-                        warning),
+                        warning,
+                        mikroCheckState,
+                        allowedAction),
                     matchedLines,
                     mikroCheckState);
             })
@@ -4891,6 +4899,36 @@ internal sealed class AxataOutboundDeliveryImportService(
         }
 
         return "Blocked";
+    }
+
+    private static string ResolveC01AllowedAction(
+        AxataOutboundDeliveryDocument document,
+        IReadOnlyCollection<AxataOutboundDeliveryLine> positiveLines,
+        IReadOnlyCollection<MatchedC01Line> matchedLines,
+        int existingLinkedMovementLineCount,
+        bool canImport)
+    {
+        if (canImport)
+        {
+            return "ImportToMikro";
+        }
+
+        if (IsCompletedStatus(document.Status) && existingLinkedMovementLineCount > 0)
+        {
+            return "NoAction";
+        }
+
+        var canReconcile =
+            !IsCancelledOutboundDelivery(document) &&
+            HasPositiveAxataQuantity(document) &&
+            IsPendingStatus(document.Status) &&
+            existingLinkedMovementLineCount > 0 &&
+            matchedLines.Count > 0 &&
+            matchedLines.Count == positiveLines.Count;
+
+        return canReconcile
+            ? "ReconcileAndAcknowledge"
+            : "InspectOnly";
     }
 
     private static AxataPendingOutboundDeliveryDto ToPendingOutboundDeliveryDto(C01DeliveryAnalysis analysis) =>

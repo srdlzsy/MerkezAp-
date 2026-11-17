@@ -26278,6 +26278,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | POST | `/api/mobile-sync/guvenli-yazmalar/{clientRequestId}/yeniden-dogrula` | JWT | path: clientRequestId / string (uuid) (zorunlu)<br>body: request / RecheckMobileSafeWriteHttpRequest (zorunlu) | 401: ProblemDetails<br>200: SafeWriteReviewResultDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/mobile-sync/urun-fiyat-katalogu` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Since / string (date-time)<br>query: Cursor / string<br>query: PageSize / integer (int32) | 401: ProblemDetails<br>200: MobileProductPriceCatalogResponse<br>400: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/capacity` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataCapacityDto |
+| GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/documents` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: startDate / string (date)<br>query: endDate / string (date)<br>query: documentType / string<br>query: movementType / string<br>query: status / string<br>query: searchTerm / string<br>query: skip / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataWarehouseDocumentListDto<br>400: ProblemDetails |
 | GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/fill-rate` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: startDate / string (date)<br>query: endDate / string (date)<br>query: targetStoreCode / string<br>query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataFillRateDto |
 | GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/overview` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: warehouseNo / integer (int32)<br>query: date / string (date) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataWarehouseOverviewDto |
 | GET | `/api/operasyon-islemleri/axata-depo-operasyonlari/picking-performance` | JWT + operasyon-islemleri.axata-depo-kokpiti.list | query: startDate / string (date)<br>query: endDate / string (date)<br>query: warehouseNo / integer (int32)<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: AxataPickingPerformanceDto |
@@ -29028,6 +29029,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `allowedAction` | string | Hayir | nullable |
 | `axataDate` | string (date-time) | Hayir | nullable |
 | `axataDeliveryNo` | string | Hayir | nullable |
 | `axataLineCount` | integer (int32) | Hayir |  |
@@ -29037,6 +29039,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentOrderNo` | integer (int32) | Hayir |  |
 | `documentSerie` | string | Hayir | nullable |
 | `existingLinkedMovementLineCount` | integer (int32) | Hayir |  |
+| `mikroCheckState` | string | Hayir | nullable |
 | `mikroDeliveredQuantity` | number (double) | Hayir |  |
 | `mikroOrderLineCount` | integer (int32) | Hayir |  |
 | `mikroOrderQuantity` | number (double) | Hayir |  |
@@ -33256,6 +33259,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `inbounds` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceInboundItem[] | Hayir | nullable |
 | `integrationQueues` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceQueueItem[] | Hayir | nullable |
 | `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `mikroCrossCheck` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceMikroCrossCheck | Hayir |  |
 | `movementType` | string | Hayir | nullable |
 | `orderDate` | string (date) | Hayir | nullable |
 | `orderNo` | string | Hayir | nullable |
@@ -33406,6 +33410,39 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `supplierCode` | string | Hayir | nullable |
 | `supplierName` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceMikroCrossCheck
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `closedLineCount` | integer (int32) | Hayir |  |
+| `decision` | string | Hayir | nullable |
+| `decisionCode` | string | Hayir | nullable |
+| `deliveredQuantity` | number (double) | Hayir |  |
+| `lineCount` | integer (int32) | Hayir |  |
+| `openLineCount` | integer (int32) | Hayir |  |
+| `orderDate` | string (date) | Hayir | nullable |
+| `orderFound` | boolean | Hayir |  |
+| `orderNo` | integer (int32) | Hayir | nullable |
+| `orderSerie` | string | Hayir | nullable |
+| `orderedQuantity` | number (double) | Hayir |  |
+| `shipments` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceMikroShipmentItem[] | Hayir | nullable |
+| `sourceWarehouseNo` | integer (int32) | Hayir | nullable |
+| `targetWarehouseNo` | integer (int32) | Hayir | nullable |
+| `warning` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTraceMikroShipmentItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentDate` | string (date) | Hayir | nullable |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `lineCount` | integer (int32) | Hayir |  |
+| `officialDocumentNo` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `sourceWarehouseNo` | integer (int32) | Hayir | nullable |
+| `targetWarehouseNo` | integer (int32) | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataTracePickingLogItem
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -33458,6 +33495,40 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `shipmentYear` | integer (int32) | Hayir |  |
 | `status` | integer (int32) | Hayir | nullable |
 | `statusDescription` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseDocumentListDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `endDate` | string (date) | Hayir |  |
+| `items` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseDocumentListItem[] | Hayir | nullable |
+| `metadata` | FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataOperationsMetadata | Hayir |  |
+| `skip` | integer (int32) | Hayir |  |
+| `startDate` | string (date) | Hayir |  |
+| `take` | integer (int32) | Hayir |  |
+| `totalCount` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseDocumentListItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentDate` | string (date) | Hayir | nullable |
+| `documentKey` | string | Hayir | nullable |
+| `documentNo` | string | Hayir | nullable |
+| `documentType` | string | Hayir | nullable |
+| `documentTypeDescription` | string | Hayir | nullable |
+| `flowState` | string | Hayir | nullable |
+| `isInTransit` | boolean | Hayir |  |
+| `lineCount` | integer (int32) | Hayir |  |
+| `movementType` | string | Hayir | nullable |
+| `quantity` | number (double) | Hayir |  |
+| `sourceCode` | string | Hayir | nullable |
+| `sourceName` | string | Hayir | nullable |
+| `status` | integer (int32) | Hayir |  |
+| `statusDescription` | string | Hayir | nullable |
+| `targetCode` | string | Hayir | nullable |
+| `targetName` | string | Hayir | nullable |
+| `vehiclePlate` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.OperasyonIslemleri.AxataDepoOperasyonlari.AxataWarehouseOverviewDto
 

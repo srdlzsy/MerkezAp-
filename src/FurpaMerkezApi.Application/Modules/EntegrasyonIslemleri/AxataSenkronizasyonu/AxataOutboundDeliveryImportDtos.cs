@@ -174,7 +174,9 @@ public sealed record AxataOutboundDeliveryImportDocumentDto(
     double MikroDeliveredQuantity,
     int ExistingLinkedMovementLineCount,
     bool CanImport,
-    string? Warning);
+    string? Warning,
+    string MikroCheckState = "Unknown",
+    string AllowedAction = "InspectOnly");
 
 public sealed record AxataOutboundDeliveryImportResultDto(
     long AxataSequenceNo,

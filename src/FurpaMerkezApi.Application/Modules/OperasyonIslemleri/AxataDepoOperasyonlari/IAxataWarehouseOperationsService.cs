@@ -7,6 +7,17 @@ public interface IAxataWarehouseOperationsService
         DateOnly? date,
         CancellationToken cancellationToken);
 
+    Task<AxataWarehouseDocumentListDto> GetDocumentsAsync(
+        DateOnly? startDate,
+        DateOnly? endDate,
+        string? documentType,
+        string? movementType,
+        string? status,
+        string? searchTerm,
+        int skip,
+        int take,
+        CancellationToken cancellationToken);
+
     Task<AxataDocumentTraceDto> GetTraceAsync(
         string searchTerm,
         CancellationToken cancellationToken);
