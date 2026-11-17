@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 827. Model sayisi: 809.
+Endpoint sayisi (method + route): 828. Model sayisi: 810.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -111,6 +111,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list | query: SearchText / string<br>query: IncludePassive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseCardListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: warehouseNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseCardDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | path: warehouseNo / integer (int32) (zorunlu)<br>body: request / WarehouseCardPatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseCardUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/evrak-eslesmeleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;MikroDocumentCandidateDto&gt;<br>400: ProblemDetails |
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: OrderType / integer (int32)<br>query: OrderKind / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: OrderType / integer (int32)<br>query: OrderKind / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateCompanyOrderDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -2516,6 +2517,40 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `document` | FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.InventoryCountDocumentDto | Hayir |  |
 | `summary` | FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.MikroDocumentUpdateSummary | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.MikroDocumentCandidateDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `documentDate` | string (date-time) | Hayir | nullable |
+| `documentFamily` | string | Hayir | nullable |
+| `documentFamilyName` | string | Hayir | nullable |
+| `documentOrderNo` | integer (int32) | Hayir |  |
+| `documentSerie` | string | Hayir | nullable |
+| `documentType` | integer (int32) | Hayir | nullable |
+| `documentTypeName` | string | Hayir | nullable |
+| `inputWarehouseName` | string | Hayir | nullable |
+| `inputWarehouseNo` | integer (int32) | Hayir | nullable |
+| `lineCount` | integer (int32) | Hayir |  |
+| `mikroTable` | string | Hayir | nullable |
+| `movementKind` | integer (int32) | Hayir | nullable |
+| `movementKindName` | string | Hayir | nullable |
+| `movementTypeNames` | string[] | Hayir | nullable |
+| `movementTypes` | integer (int32)[] | Hayir | nullable |
+| `normalReturn` | integer (int32) | Hayir | nullable |
+| `normalReturnName` | string | Hayir | nullable |
+| `orderKind` | integer (int32) | Hayir | nullable |
+| `orderKindName` | string | Hayir | nullable |
+| `orderType` | integer (int32) | Hayir | nullable |
+| `orderTypeName` | string | Hayir | nullable |
+| `outputWarehouseName` | string | Hayir | nullable |
+| `outputWarehouseNo` | integer (int32) | Hayir | nullable |
+| `referenceCode` | string | Hayir | nullable |
+| `referenceName` | string | Hayir | nullable |
+| `totalAmount` | number (double) | Hayir |  |
+| `totalQuantity` | number (double) | Hayir |  |
+| `warehouseName` | string | Hayir | nullable |
+| `warehouseNo` | integer (int32) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.MikroDocumentDeleteResponse
 

@@ -974,6 +974,50 @@ public sealed partial class MikroDocumentEditingService(
         });
     }
 
+    public async Task<IReadOnlyCollection<MikroDocumentCandidateDto>> FindDocumentsAsync(
+        MikroDocumentSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.DocumentSerie))
+        {
+            throw new ArgumentException("Document serie is required.", nameof(request));
+        }
+
+        if (request.DocumentOrderNo < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "Document order number cannot be negative.");
+        }
+
+        var serie = request.DocumentSerie.Trim();
+        var stockDocuments = await FindStockMovementDocumentsAsync(
+            new StockMovementDocumentLookupRequest(serie, request.DocumentOrderNo, null, null, null, null, null),
+            cancellationToken);
+        var customerDocuments = await FindCustomerMovementDocumentsAsync(
+            new CustomerMovementDocumentLookupRequest(serie, request.DocumentOrderNo, null, null, null, null, null),
+            cancellationToken);
+        var companyOrders = await FindCompanyOrderDocumentsAsync(
+            new CompanyOrderDocumentLookupRequest(serie, request.DocumentOrderNo, null, null, null, null),
+            cancellationToken);
+        var warehouseOrders = await FindWarehouseOrderDocumentsAsync(
+            new WarehouseOrderDocumentLookupRequest(serie, request.DocumentOrderNo, null, null, null),
+            cancellationToken);
+
+        var candidates = new List<MikroDocumentCandidateDto>();
+        candidates.AddRange(stockDocuments.Select(MapStockMovementCandidate));
+        candidates.AddRange(customerDocuments.Select(MapCustomerMovementCandidate));
+        candidates.AddRange(companyOrders.Select(MapCompanyOrderCandidate));
+        candidates.AddRange(warehouseOrders.Select(MapWarehouseOrderCandidate));
+
+        return candidates
+            .OrderByDescending(candidate => candidate.DocumentDate)
+            .ThenBy(candidate => candidate.DocumentFamilyName)
+            .ThenBy(candidate => candidate.DocumentType)
+            .ThenBy(candidate => candidate.MovementKind)
+            .ThenBy(candidate => candidate.InputWarehouseNo)
+            .ThenBy(candidate => candidate.OutputWarehouseNo)
+            .ToArray();
+    }
+
     public async Task<StockMovementDocumentDto> GetStockMovementDocumentAsync(
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken)
@@ -1225,6 +1269,29 @@ public sealed partial class MikroDocumentEditingService(
         return await MapCustomerMovementDocumentAsync(mikroDbContext, rows, cancellationToken);
     }
 
+    private async Task<IReadOnlyCollection<CustomerMovementDocumentDto>> FindCustomerMovementDocumentsAsync(
+        CustomerMovementDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateCustomerMovementLookup(request);
+
+        var rows = await CreateCustomerMovementQuery(
+                mikroDbContext.CARI_HESAP_HAREKETLERIs.AsNoTracking(),
+                request)
+            .OrderBy(movement => movement.cha_create_date)
+            .ThenBy(movement => movement.cha_satir_no)
+            .ThenBy(movement => movement.cha_kod)
+            .ToArrayAsync(cancellationToken);
+
+        var documents = new List<CustomerMovementDocumentDto>();
+        foreach (var documentRows in GroupCustomerMovementDocuments(rows))
+        {
+            documents.Add(await MapCustomerMovementDocumentAsync(mikroDbContext, documentRows, cancellationToken));
+        }
+
+        return documents;
+    }
+
     public async Task<CustomerMovementDocumentUpdateResponse> UpdateCustomerMovementDocumentAsync(
         UpdateCustomerMovementDocumentRequest request,
         CancellationToken cancellationToken)
@@ -1410,6 +1477,27 @@ public sealed partial class MikroDocumentEditingService(
         EnsureSingleCompanyOrderDocument(rows);
 
         return await MapCompanyOrderDocumentAsync(mikroDbContext, rows, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<CompanyOrderDocumentDto>> FindCompanyOrderDocumentsAsync(
+        CompanyOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateCompanyOrderLookup(request);
+
+        var rows = await CreateCompanyOrderQuery(mikroDbContext.SIPARISLERs.AsNoTracking(), request)
+            .OrderBy(order => order.sip_create_date)
+            .ThenBy(order => order.sip_satirno)
+            .ThenBy(order => order.sip_stok_kod)
+            .ToArrayAsync(cancellationToken);
+
+        var documents = new List<CompanyOrderDocumentDto>();
+        foreach (var documentRows in GroupCompanyOrderDocuments(rows))
+        {
+            documents.Add(await MapCompanyOrderDocumentAsync(mikroDbContext, documentRows, cancellationToken));
+        }
+
+        return documents;
     }
 
     public async Task<CompanyOrderDocumentUpdateResponse> UpdateCompanyOrderDocumentAsync(
@@ -1601,6 +1689,29 @@ public sealed partial class MikroDocumentEditingService(
         EnsureSingleWarehouseOrderDocument(rows);
 
         return await MapWarehouseOrderDocumentAsync(mikroDbContext, rows, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<WarehouseOrderDocumentDto>> FindWarehouseOrderDocumentsAsync(
+        WarehouseOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateWarehouseOrderLookup(request);
+
+        var rows = await CreateWarehouseOrderQuery(
+                mikroDbContext.DEPOLAR_ARASI_SIPARISLERs.AsNoTracking(),
+                request)
+            .OrderBy(order => order.ssip_create_date)
+            .ThenBy(order => order.ssip_satirno)
+            .ThenBy(order => order.ssip_stok_kod)
+            .ToArrayAsync(cancellationToken);
+
+        var documents = new List<WarehouseOrderDocumentDto>();
+        foreach (var documentRows in GroupWarehouseOrderDocuments(rows))
+        {
+            documents.Add(await MapWarehouseOrderDocumentAsync(mikroDbContext, documentRows, cancellationToken));
+        }
+
+        return documents;
     }
 
     public async Task<WarehouseOrderDocumentUpdateResponse> UpdateWarehouseOrderDocumentAsync(
@@ -3854,6 +3965,24 @@ public sealed partial class MikroDocumentEditingService(
         }
     }
 
+    internal static IReadOnlyCollection<IReadOnlyCollection<CARI_HESAP_HAREKETLERI>> GroupCustomerMovementDocuments(
+        IEnumerable<CARI_HESAP_HAREKETLERI> rows) =>
+        rows
+            .GroupBy(row => new
+            {
+                row.cha_evrakno_seri,
+                row.cha_evrakno_sira,
+                row.cha_evrak_tip,
+                row.cha_cinsi,
+                row.cha_normal_Iade
+            })
+            .Select(group => (IReadOnlyCollection<CARI_HESAP_HAREKETLERI>)group
+                .OrderBy(row => row.cha_satir_no)
+                .ThenBy(row => row.cha_kod)
+                .ThenBy(row => row.cha_Guid)
+                .ToArray())
+            .ToArray();
+
     private static void EnsureSingleCompanyOrderDocument(IReadOnlyCollection<SIPARISLER> rows)
     {
         var documentCount = rows
@@ -3874,13 +4003,32 @@ public sealed partial class MikroDocumentEditingService(
         }
     }
 
+    internal static IReadOnlyCollection<IReadOnlyCollection<SIPARISLER>> GroupCompanyOrderDocuments(
+        IEnumerable<SIPARISLER> rows) =>
+        rows
+            .GroupBy(row => new
+            {
+                row.sip_tip,
+                row.sip_cins,
+                row.sip_evrakno_seri,
+                row.sip_evrakno_sira
+            })
+            .Select(group => (IReadOnlyCollection<SIPARISLER>)group
+                .OrderBy(row => row.sip_satirno)
+                .ThenBy(row => row.sip_stok_kod)
+                .ThenBy(row => row.sip_Guid)
+                .ToArray())
+            .ToArray();
+
     private static void EnsureSingleWarehouseOrderDocument(IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> rows)
     {
         var documentCount = rows
             .Select(row => new
             {
                 row.ssip_evrakno_seri,
-                row.ssip_evrakno_sira
+                row.ssip_evrakno_sira,
+                row.ssip_girdepo,
+                row.ssip_cikdepo
             })
             .Distinct()
             .Count();
@@ -3891,6 +4039,216 @@ public sealed partial class MikroDocumentEditingService(
                 "More than one warehouse order document matched. Add warehouse filters.");
         }
     }
+
+    internal static IReadOnlyCollection<IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER>> GroupWarehouseOrderDocuments(
+        IEnumerable<DEPOLAR_ARASI_SIPARISLER> rows) =>
+        rows
+            .GroupBy(row => new
+            {
+                row.ssip_evrakno_seri,
+                row.ssip_evrakno_sira,
+                row.ssip_girdepo,
+                row.ssip_cikdepo
+            })
+            .Select(group => (IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER>)group
+                .OrderBy(row => row.ssip_satirno)
+                .ThenBy(row => row.ssip_stok_kod)
+                .ThenBy(row => row.ssip_Guid)
+                .ToArray())
+            .ToArray();
+
+    private static MikroDocumentCandidateDto MapStockMovementCandidate(StockMovementDocumentDto document)
+    {
+        var header = document.Header;
+        return new MikroDocumentCandidateDto(
+            "stock-movement",
+            "Stok Hareket Evraki",
+            "STOK_HAREKETLERI",
+            header.DocumentSerie,
+            header.DocumentOrderNo,
+            header.DocumentType,
+            ResolveStockDocumentTypeName(header.DocumentType, header.NormalReturn),
+            header.MovementTypes,
+            header.MovementTypes.Select(ResolveStockMovementTypeName).ToArray(),
+            header.MovementKind,
+            ResolveMovementKindName(header.MovementKind),
+            header.NormalReturn,
+            ResolveNormalReturnName(header.NormalReturn),
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            header.MovementDate ?? header.DocumentDate,
+            header.CustomerCode,
+            header.CustomerTitle,
+            null,
+            string.Empty,
+            header.InputWarehouseNo,
+            header.InputWarehouseName,
+            header.OutputWarehouseNo,
+            header.OutputWarehouseName,
+            header.LineCount,
+            header.TotalQuantity,
+            header.TotalAmount);
+    }
+
+    private static MikroDocumentCandidateDto MapCustomerMovementCandidate(CustomerMovementDocumentDto document)
+    {
+        var header = document.Header;
+        return new MikroDocumentCandidateDto(
+            "customer-movement",
+            "Cari Hareket Evraki",
+            "CARI_HESAP_HAREKETLERI",
+            header.DocumentSerie,
+            header.DocumentOrderNo,
+            header.DocumentType,
+            ResolveCustomerDocumentTypeName(header.DocumentType),
+            header.MovementTypes,
+            header.MovementTypes.Select(ResolveCustomerMovementTypeName).ToArray(),
+            header.MovementKind,
+            ResolveMovementKindName(header.MovementKind),
+            header.NormalReturn,
+            ResolveNormalReturnName(header.NormalReturn),
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            header.MovementDate ?? header.DocumentDate,
+            header.CustomerCode,
+            header.CustomerTitle,
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            header.LineCount,
+            header.TotalQuantity,
+            header.TotalAmount);
+    }
+
+    private static MikroDocumentCandidateDto MapCompanyOrderCandidate(CompanyOrderDocumentDto document)
+    {
+        var header = document.Header;
+        return new MikroDocumentCandidateDto(
+            "company-order",
+            "Firma Siparis Evraki",
+            "SIPARISLER",
+            header.DocumentSerie,
+            header.DocumentOrderNo,
+            null,
+            string.Empty,
+            Array.Empty<byte>(),
+            Array.Empty<string>(),
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            header.OrderType,
+            ResolveOrderTypeName(header.OrderType),
+            header.OrderKind,
+            ResolveOrderKindName(header.OrderKind),
+            header.OrderDate ?? header.DocumentDate,
+            header.CustomerCode,
+            header.CustomerTitle,
+            header.WarehouseNo,
+            header.WarehouseName,
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            header.LineCount,
+            header.TotalQuantity,
+            header.TotalAmount);
+    }
+
+    private static MikroDocumentCandidateDto MapWarehouseOrderCandidate(WarehouseOrderDocumentDto document)
+    {
+        var header = document.Header;
+        return new MikroDocumentCandidateDto(
+            "warehouse-order",
+            "Depo Siparis Evraki",
+            "DEPOLAR_ARASI_SIPARISLER",
+            header.DocumentSerie,
+            header.DocumentOrderNo,
+            null,
+            string.Empty,
+            Array.Empty<byte>(),
+            Array.Empty<string>(),
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            header.OrderDate ?? header.DocumentDate,
+            string.Empty,
+            string.Empty,
+            null,
+            string.Empty,
+            header.InWarehouseNo,
+            header.InWarehouseName,
+            header.OutWarehouseNo,
+            header.OutWarehouseName,
+            header.LineCount,
+            header.TotalQuantity,
+            header.TotalAmount);
+    }
+
+    private static string ResolveStockDocumentTypeName(byte documentType, byte normalReturn) =>
+        documentType switch
+        {
+            1 => normalReturn == 1 ? "Firma Iade Irsaliyesi" : "Firma Irsaliyesi",
+            4 => normalReturn == 1 ? "Iade Faturasi" : "Fatura",
+            6 => "Depo Virman Evraki",
+            13 => "Mal Kabul Evraki",
+            17 => normalReturn == 1 ? "Depo Iade Evraki" : "Depolar Arasi Sevk Evraki",
+            _ => $"Mikro Stok Evrak Tipi {documentType}"
+        };
+
+    private static string ResolveCustomerDocumentTypeName(byte documentType) =>
+        documentType switch
+        {
+            60 => "OKC Z Raporu Cari Hareketi",
+            63 => "Perakende Satis Cari Hareketi",
+            _ => $"Mikro Cari Evrak Tipi {documentType}"
+        };
+
+    private static string ResolveStockMovementTypeName(byte movementType) =>
+        movementType switch
+        {
+            0 => "Giris",
+            1 => "Cikis",
+            2 => "Depolar Arasi",
+            _ => $"Mikro Hareket Tipi {movementType}"
+        };
+
+    private static string ResolveCustomerMovementTypeName(byte movementType) =>
+        movementType switch
+        {
+            0 => "Borc",
+            1 => "Alacak",
+            _ => $"Mikro Hareket Tipi {movementType}"
+        };
+
+    private static string ResolveMovementKindName(byte movementKind) =>
+        $"Mikro Cins {movementKind}";
+
+    private static string ResolveNormalReturnName(byte normalReturn) =>
+        normalReturn == 1 ? "Iade" : normalReturn == 0 ? "Normal" : $"Mikro Iade Kodu {normalReturn}";
+
+    private static string ResolveOrderTypeName(byte orderType) =>
+        orderType switch
+        {
+            0 => "Alinan Firma Siparisi",
+            1 => "Verilen Firma Siparisi",
+            _ => $"Mikro Siparis Tipi {orderType}"
+        };
+
+    private static string ResolveOrderKindName(byte orderKind) =>
+        orderKind == 0 ? "Normal Siparis" : $"Mikro Siparis Cinsi {orderKind}";
 
     private static void EnsureSingleInventoryCountDocument(IReadOnlyCollection<SAYIM_SONUCLARI> rows)
     {

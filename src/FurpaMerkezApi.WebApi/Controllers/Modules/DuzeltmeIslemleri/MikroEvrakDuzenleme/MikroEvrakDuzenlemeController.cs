@@ -412,6 +412,15 @@ public sealed class MikroEvrakDuzenlemeController(
         return Ok(response);
     }
 
+    [HttpGet("evrak-eslesmeleri")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<MikroDocumentCandidateDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<MikroDocumentCandidateDto>>> FindDocuments(
+        [FromQuery] MikroDocumentSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.FindDocumentsAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpGet("stok-hareketleri")]
     [Authorize(Policy = DetailPolicy)]
     [ProducesResponseType(typeof(StockMovementDocumentDto), StatusCodes.Status200OK)]
@@ -1671,6 +1680,19 @@ public sealed class StockMovementDocumentLookupHttpRequest
             MovementKind,
             NormalReturn,
             WarehouseNo);
+}
+
+public sealed class MikroDocumentSearchHttpRequest
+{
+    [Required]
+    [StringLength(20)]
+    public string DocumentSerie { get; init; } = string.Empty;
+
+    [Range(0, int.MaxValue)]
+    public int DocumentOrderNo { get; init; }
+
+    public MikroDocumentSearchRequest ToApplicationRequest() =>
+        new(DocumentSerie, DocumentOrderNo);
 }
 
 public sealed class UpdateStockMovementDocumentHttpRequest

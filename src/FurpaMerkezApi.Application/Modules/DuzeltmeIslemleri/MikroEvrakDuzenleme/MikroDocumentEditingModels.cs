@@ -500,6 +500,41 @@ public sealed record StockMovementDocumentLookupRequest(
     byte? NormalReturn,
     int? WarehouseNo);
 
+public sealed record MikroDocumentSearchRequest(
+    string DocumentSerie,
+    int DocumentOrderNo);
+
+public sealed record MikroDocumentCandidateDto(
+    string DocumentFamily,
+    string DocumentFamilyName,
+    string MikroTable,
+    string DocumentSerie,
+    int DocumentOrderNo,
+    byte? DocumentType,
+    string DocumentTypeName,
+    IReadOnlyCollection<byte> MovementTypes,
+    IReadOnlyCollection<string> MovementTypeNames,
+    byte? MovementKind,
+    string MovementKindName,
+    byte? NormalReturn,
+    string NormalReturnName,
+    byte? OrderType,
+    string OrderTypeName,
+    byte? OrderKind,
+    string OrderKindName,
+    DateTime? DocumentDate,
+    string ReferenceCode,
+    string ReferenceName,
+    int? WarehouseNo,
+    string WarehouseName,
+    int? InputWarehouseNo,
+    string InputWarehouseName,
+    int? OutputWarehouseNo,
+    string OutputWarehouseName,
+    int LineCount,
+    double TotalQuantity,
+    double TotalAmount);
+
 public sealed record StockMovementDocumentDto(
     StockMovementDocumentHeaderDto Header,
     IReadOnlyCollection<StockMovementDocumentLineDto> Lines);

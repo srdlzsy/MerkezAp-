@@ -76,6 +76,10 @@ public interface IMikroDocumentEditingService
         DeleteStockSalesPriceRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<MikroDocumentCandidateDto>> FindDocumentsAsync(
+        MikroDocumentSearchRequest request,
+        CancellationToken cancellationToken);
+
     Task<StockMovementDocumentDto> GetStockMovementDocumentAsync(
         StockMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);
