@@ -19,6 +19,7 @@ public sealed class VirmanWriteService(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<VirmanWriteService> logger)
@@ -102,7 +103,7 @@ public sealed class VirmanWriteService(
             {
                 return await ExecuteDatabaseOnceAsync(request, cancellationToken);
             }
-            catch (DbUpdateException exception) when (
+            catch (Exception exception) when (
                 attempt < StockSummaryDuplicateRetryAttemptCount &&
                 IsStockSummaryDuplicateKeyException(exception))
             {
@@ -169,8 +170,20 @@ public sealed class VirmanWriteService(
 
                 var movementRows = movements.ToArray();
 
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
-                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                if (batchingOptions.VirmanEnabled)
+                {
+                    await MikroStockMovementBulkWriter.WriteAsync(
+                        mikroWriteDbContext,
+                        movementRows,
+                        batchingOptions.BulkCopyTimeoutSeconds,
+                        cancellationToken);
+                }
+                else
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
+                    await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                }
                 await transaction.CommitAsync(cancellationToken);
 
                 return new CreateVirmanResponse(
@@ -729,9 +742,9 @@ public sealed class VirmanWriteService(
     private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
         clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
-    private static bool IsStockSummaryDuplicateKeyException(DbUpdateException exception)
+    private static bool IsStockSummaryDuplicateKeyException(Exception exception)
     {
-        var sqlException = exception.GetBaseException() as SqlException;
+        var sqlException = exception as SqlException ?? exception.GetBaseException() as SqlException;
         if (sqlException is null || sqlException.Number is not (2601 or 2627))
         {
             return false;

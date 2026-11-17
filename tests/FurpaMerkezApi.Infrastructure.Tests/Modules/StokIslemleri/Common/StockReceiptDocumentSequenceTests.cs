@@ -30,6 +30,7 @@ public sealed class StockReceiptDocumentSequenceTests
             null!,
             null!,
             null!,
+            null!,
             NullLogger<StockReceiptWriteService>.Instance);
 
         var result = await service.GetNextDocumentOrderNoAsync("F167", CancellationToken.None);

@@ -156,31 +156,13 @@ public sealed class AxataWarehouseOperationsService(
             throw new ArgumentException("Sipariş, irsaliye veya sevk numarası 1-100 karakter olmalıdır.", nameof(searchTerm));
         }
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        const string orderSql = """
-            SELECT TOP (1) sm.SMSIPN,sm.SMHARK,sm.SMBAYK,f.CMMUNV,CONVERT(int,sm.SMCRDT),CONVERT(int,sm.SMSPST)
-            FROM dbo.SIPMASTER sm
-            LEFT JOIN dbo.FIRMASTER f ON f.CMSKOD=sm.SMSIRK AND f.CMMKOD=sm.SMBAYK
-            WHERE sm.SMSIRK=@company AND sm.SMDAGK=@warehouse AND (
-                sm.SMSIPN=@term OR CONVERT(varchar(30),sm.SMEXIRSNO)=@term OR EXISTS (
-                    SELECT 1 FROM dbo.SEVK_LINK l WHERE l.SDLSKOD=sm.SMSIRK AND l.SDLSIPN=sm.SMSIPN
-                    AND (CONVERT(varchar(20),CONVERT(int,l.SDLSNO))=@term
-                         OR CONCAT(CONVERT(int,l.SDLSYIL),'/',CONVERT(int,l.SDLSNO))=@term)))
-            ORDER BY sm.id DESC
-            """;
-        string? orderNo = null, movement = null, targetCode = null, targetName = null;
-        DateOnly? orderDate = null;
-        int? orderStatus = null;
-        await using (var command = CreateCommand(connection, orderSql))
-        {
-            AddCommonParameters(command);
-            command.Parameters.Add(new SqlParameter("@term", SqlDbType.NVarChar, 100) { Value = term });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-            {
-                orderNo = reader.GetString(0).Trim(); movement = Text(reader, 1); targetCode = Text(reader, 2); targetName = Text(reader, 3);
-                orderDate = ParseAxataDate(reader.GetInt32(4)); orderStatus = reader.GetInt32(5);
-            }
-        }
+        var order = await FindTraceOrderAsync(connection, term, cancellationToken);
+        var orderNo = order?.OrderNo;
+        var movement = order?.Movement;
+        var targetCode = order?.TargetCode;
+        var targetName = order?.TargetName;
+        var orderDate = order?.OrderDate;
+        var orderStatus = order?.OrderStatus;
         var shipments = orderNo is null ? [] : await ReadShipmentsAsync(connection, orderNo, cancellationToken);
         var logs = orderNo is null ? [] : await ReadPickingLogsAsync(connection, orderNo, cancellationToken);
         var queues = orderNo is null ? [] : await ReadQueuesAsync(connection, orderNo, cancellationToken);
@@ -190,6 +172,167 @@ public sealed class AxataWarehouseOperationsService(
             orderNo, movement, targetCode, targetName, orderDate, orderStatus,
             orderNo is null ? null : MapOrderStatus(orderStatus), shipments, logs, inbounds, queues);
     }
+
+    private async Task<TraceOrder?> FindTraceOrderAsync(
+        SqlConnection connection,
+        string term,
+        CancellationToken cancellationToken)
+    {
+        var normalizedOrderNo = NormalizeOrderSearchTerm(term);
+        var order = await ReadTraceOrderAsync(
+            connection,
+            "sm.SMSIPN=@orderNo",
+            command => command.Parameters.Add(new SqlParameter("@orderNo", SqlDbType.NVarChar, 50)
+            {
+                Value = normalizedOrderNo
+            }),
+            cancellationToken);
+        if (order is not null)
+        {
+            return order;
+        }
+
+        if (long.TryParse(term, out var externalDocumentNo))
+        {
+            order = await ReadTraceOrderAsync(
+                connection,
+                "sm.SMEXIRSNO=@externalDocumentNo",
+                command => command.Parameters.Add(new SqlParameter("@externalDocumentNo", SqlDbType.BigInt)
+                {
+                    Value = externalDocumentNo
+                }),
+                cancellationToken);
+            if (order is not null)
+            {
+                return order;
+            }
+        }
+
+        if (!TryParseShipmentReference(term, out var shipmentYear, out var shipmentNo))
+        {
+            return null;
+        }
+
+        const string shipmentOrderByNumberSql = """
+            SELECT TOP (1) l.SDLSIPN
+            FROM dbo.SEVK_LINK l
+            WHERE l.SDLSKOD=@company
+              AND l.SDLSNO=@shipmentNo
+            ORDER BY l.SDLSYIL DESC,l.SDLSIRA
+            """;
+        const string shipmentOrderByYearAndNumberSql = """
+            SELECT TOP (1) l.SDLSIPN
+            FROM dbo.SEVK_LINK l
+            WHERE l.SDLSKOD=@company
+              AND l.SDLSYIL=@shipmentYear
+              AND l.SDLSNO=@shipmentNo
+            ORDER BY l.SDLSIRA
+            """;
+        string? shipmentOrderNo = null;
+        await using (var command = CreateCommand(
+                         connection,
+                         shipmentYear.HasValue ? shipmentOrderByYearAndNumberSql : shipmentOrderByNumberSql))
+        {
+            command.Parameters.Add(new SqlParameter("@company", SqlDbType.NVarChar, 4) { Value = CompanyCode });
+            command.Parameters.Add(new SqlParameter("@shipmentNo", SqlDbType.Decimal)
+            {
+                Precision = 7,
+                Scale = 0,
+                Value = shipmentNo
+            });
+            if (shipmentYear.HasValue)
+            {
+                command.Parameters.Add(new SqlParameter("@shipmentYear", SqlDbType.Decimal)
+                {
+                    Precision = 4,
+                    Scale = 0,
+                    Value = shipmentYear.Value
+                });
+            }
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                shipmentOrderNo = reader.GetString(0).Trim();
+            }
+        }
+
+        return shipmentOrderNo is null
+            ? null
+            : await ReadTraceOrderAsync(
+                connection,
+                "sm.SMSIPN=@orderNo",
+                command => command.Parameters.Add(new SqlParameter("@orderNo", SqlDbType.NVarChar, 50)
+                {
+                    Value = shipmentOrderNo
+                }),
+                cancellationToken);
+    }
+
+    private async Task<TraceOrder?> ReadTraceOrderAsync(
+        SqlConnection connection,
+        string predicate,
+        Action<SqlCommand> addSearchParameter,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT TOP (1) sm.SMSIPN,sm.SMHARK,sm.SMBAYK,f.CMMUNV,
+                CONVERT(int,sm.SMCRDT),CONVERT(int,sm.SMSPST)
+            FROM dbo.SIPMASTER sm
+            LEFT JOIN dbo.FIRMASTER f ON f.CMSKOD=sm.SMSIRK AND f.CMMKOD=sm.SMBAYK
+            WHERE sm.SMSIRK=@company AND sm.SMDAGK=@warehouse AND {predicate}
+            ORDER BY sm.id DESC
+            """;
+        await using var command = CreateCommand(connection, sql);
+        AddCommonParameters(command);
+        addSearchParameter(command);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new TraceOrder(
+            reader.GetString(0).Trim(),
+            Text(reader, 1),
+            Text(reader, 2),
+            Text(reader, 3),
+            ParseAxataDate(reader.GetInt32(4)),
+            reader.GetInt32(5));
+    }
+
+    internal static string NormalizeOrderSearchTerm(string term) =>
+        !string.IsNullOrWhiteSpace(term) && char.IsLetter(term.TrimStart()[0])
+            ? term.Trim().Replace('/', '.')
+            : term.Trim();
+
+    internal static bool TryParseShipmentReference(string term, out int? year, out int shipmentNo)
+    {
+        year = null;
+        shipmentNo = 0;
+        var parts = term.Trim().Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+        {
+            return int.TryParse(parts[0], out shipmentNo) && shipmentNo > 0;
+        }
+
+        if (parts.Length != 2 ||
+            !int.TryParse(parts[0], out var parsedYear) || parsedYear <= 0 ||
+            !int.TryParse(parts[1], out shipmentNo) || shipmentNo <= 0)
+        {
+            return false;
+        }
+
+        year = parsedYear;
+        return true;
+    }
+
+    private sealed record TraceOrder(
+        string OrderNo,
+        string? Movement,
+        string? TargetCode,
+        string? TargetName,
+        DateOnly? OrderDate,
+        int OrderStatus);
 
     public async Task<AxataPickingPerformanceDto> GetPickingPerformanceAsync(
         DateOnly? startDate, DateOnly? endDate, int? warehouseNo, int take, CancellationToken cancellationToken)

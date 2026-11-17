@@ -73,7 +73,14 @@ public sealed class StockMovementReadbackTests
             rows[1].sth_stok_kod = "A"; rows[1].sth_miktar = 2; rows[1].sth_tip = 0;
             foreach (var row in rows) { row.sth_evraktip = 6; row.sth_cins = 3; row.sth_cari_kodu = ""; row.sth_giris_depo_no = 56; }
             await Reserve(sync, "stok-islemleri.virmanlar.create", user, id, request);
-            var service = new VirmanWriteService(mikro, writeOptions, null!, null!, sync, NullLogger<VirmanWriteService>.Instance);
+            var service = new VirmanWriteService(
+                mikro,
+                writeOptions,
+                null!,
+                new StaticOptionsMonitor<MikroWriteBatchingOptions>(new MikroWriteBatchingOptions()),
+                null!,
+                sync,
+                NullLogger<VirmanWriteService>.Instance);
             run = async () => { await service.ExecuteAsync(request, CancellationToken.None); };
         }
         else
@@ -83,7 +90,14 @@ public sealed class StockMovementReadbackTests
             var isExpense = operation == "expense";
             foreach (var row in rows) { row.sth_evraktip = 0; row.sth_cins = isExpense ? (byte)5 : (byte)4; row.sth_cari_kodu = ""; }
             await Reserve(sync, isExpense ? "stok-islemleri.masraf-fisleri.create" : "stok-islemleri.zayiat-fisleri.create", user, id, request);
-            var service = new StockReceiptWriteService(mikro, writeOptions, null!, null!, sync, NullLogger<StockReceiptWriteService>.Instance);
+            var service = new StockReceiptWriteService(
+                mikro,
+                writeOptions,
+                null!,
+                new StaticOptionsMonitor<MikroWriteBatchingOptions>(new MikroWriteBatchingOptions()),
+                null!,
+                sync,
+                NullLogger<StockReceiptWriteService>.Instance);
             run = async () => { await service.ExecuteAsync(request, isExpense ? StockReceiptKind.ExpenseReceipt : StockReceiptKind.OutageReceipt, CancellationToken.None); };
         }
 

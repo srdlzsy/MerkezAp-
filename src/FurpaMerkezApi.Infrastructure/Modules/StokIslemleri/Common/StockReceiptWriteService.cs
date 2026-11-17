@@ -18,6 +18,7 @@ public sealed class StockReceiptWriteService(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<StockReceiptWriteService> logger)
@@ -159,8 +160,20 @@ public sealed class StockReceiptWriteService(
                                 offlineTraceKey))
                             .ToArray();
 
-                        await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
-                        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                        var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                        if (batchingOptions.StockReceiptEnabled)
+                        {
+                            await MikroStockMovementBulkWriter.WriteAsync(
+                                mikroWriteDbContext,
+                                movements,
+                                batchingOptions.BulkCopyTimeoutSeconds,
+                                cancellationToken);
+                        }
+                        else
+                        {
+                            await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                            await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                        }
                         await transaction.CommitAsync(cancellationToken);
 
                         return new CreateStockReceiptResponse(
@@ -199,7 +212,7 @@ public sealed class StockReceiptWriteService(
                     CancellationToken.None)
                     ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
             }
-            catch (DbUpdateException exception) when (
+            catch (Exception exception) when (
                 attempt < DatabaseDocumentSequenceRetryAttemptCount &&
                 IsStockMovementDuplicateDocumentLineException(exception))
             {
@@ -820,9 +833,9 @@ public sealed class StockReceiptWriteService(
     private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
         clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
 
-    internal static bool IsStockMovementDuplicateDocumentLineException(DbUpdateException exception)
+    internal static bool IsStockMovementDuplicateDocumentLineException(Exception exception)
     {
-        var sqlException = exception.GetBaseException() as SqlException;
+        var sqlException = exception as SqlException ?? exception.GetBaseException() as SqlException;
         if (sqlException is null)
         {
             return false;
