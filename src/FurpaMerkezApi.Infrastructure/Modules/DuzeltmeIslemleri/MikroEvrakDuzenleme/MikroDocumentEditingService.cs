@@ -1269,7 +1269,7 @@ public sealed partial class MikroDocumentEditingService(
         return await MapCustomerMovementDocumentAsync(mikroDbContext, rows, cancellationToken);
     }
 
-    private async Task<IReadOnlyCollection<CustomerMovementDocumentDto>> FindCustomerMovementDocumentsAsync(
+    public async Task<IReadOnlyCollection<CustomerMovementDocumentDto>> FindCustomerMovementDocumentsAsync(
         CustomerMovementDocumentLookupRequest request,
         CancellationToken cancellationToken)
     {
@@ -1479,7 +1479,7 @@ public sealed partial class MikroDocumentEditingService(
         return await MapCompanyOrderDocumentAsync(mikroDbContext, rows, cancellationToken);
     }
 
-    private async Task<IReadOnlyCollection<CompanyOrderDocumentDto>> FindCompanyOrderDocumentsAsync(
+    public async Task<IReadOnlyCollection<CompanyOrderDocumentDto>> FindCompanyOrderDocumentsAsync(
         CompanyOrderDocumentLookupRequest request,
         CancellationToken cancellationToken)
     {
@@ -1691,7 +1691,7 @@ public sealed partial class MikroDocumentEditingService(
         return await MapWarehouseOrderDocumentAsync(mikroDbContext, rows, cancellationToken);
     }
 
-    private async Task<IReadOnlyCollection<WarehouseOrderDocumentDto>> FindWarehouseOrderDocumentsAsync(
+    public async Task<IReadOnlyCollection<WarehouseOrderDocumentDto>> FindWarehouseOrderDocumentsAsync(
         WarehouseOrderDocumentLookupRequest request,
         CancellationToken cancellationToken)
     {
@@ -1903,6 +1903,36 @@ public sealed partial class MikroDocumentEditingService(
         EnsureSingleInventoryCountDocument(rows);
 
         return await MapInventoryCountDocumentAsync(mikroDbContext, rows, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<InventoryCountDocumentDto>> FindInventoryCountDocumentsAsync(
+        InventoryCountDocumentSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateInventoryCountSearch(request);
+
+        var rows = await CreateInventoryCountSearchQuery(
+                mikroDbContext.SAYIM_SONUCLARIs.AsNoTracking(),
+                request)
+            .OrderBy(result => result.sym_tarihi)
+            .ThenBy(result => result.sym_depono)
+            .ThenBy(result => result.sym_satirno)
+            .ThenBy(result => result.sym_Stokkodu)
+            .ToArrayAsync(cancellationToken);
+
+        var documents = new List<InventoryCountDocumentDto>();
+        foreach (var documentRows in GroupInventoryCountDocuments(rows))
+        {
+            documents.Add(await MapInventoryCountDocumentAsync(
+                mikroDbContext,
+                documentRows,
+                cancellationToken));
+        }
+
+        return documents
+            .OrderByDescending(document => document.Header.DocumentDate)
+            .ThenBy(document => document.Header.WarehouseNo)
+            .ToArray();
     }
 
     public async Task<InventoryCountDocumentUpdateResponse> UpdateInventoryCountDocumentAsync(
@@ -2227,6 +2257,41 @@ public sealed partial class MikroDocumentEditingService(
             result.sym_tarihi.Value < documentDateExclusive);
     }
 
+    private static IQueryable<SAYIM_SONUCLARI> CreateInventoryCountSearchQuery(
+        IQueryable<SAYIM_SONUCLARI> source,
+        InventoryCountDocumentSearchRequest request)
+    {
+        var query = source.Where(result =>
+            result.sym_iptal != true &&
+            result.sym_evrakno == request.DocumentNo);
+
+        if (request.WarehouseNo.HasValue)
+        {
+            query = query.Where(result => result.sym_depono == request.WarehouseNo.Value);
+        }
+
+        if (request.DocumentDate.HasValue)
+        {
+            var documentDate = request.DocumentDate.Value.Date;
+            var documentDateExclusive = documentDate.AddDays(1);
+            query = query.Where(result =>
+                result.sym_tarihi.HasValue &&
+                result.sym_tarihi.Value >= documentDate &&
+                result.sym_tarihi.Value < documentDateExclusive);
+        }
+
+        return query;
+    }
+
+    private static IEnumerable<IReadOnlyCollection<SAYIM_SONUCLARI>> GroupInventoryCountDocuments(
+        IReadOnlyCollection<SAYIM_SONUCLARI> rows) =>
+        rows
+            .GroupBy(row => (
+                WarehouseNo: row.sym_depono ?? 0,
+                DocumentNo: row.sym_evrakno ?? 0,
+                Date: row.sym_tarihi?.Date ?? DateTime.MinValue))
+            .Select(group => (IReadOnlyCollection<SAYIM_SONUCLARI>)group.ToArray());
+
     private IQueryable<SIPARISLER> CreateCompanyOrderQuery(
         IQueryable<SIPARISLER> source,
         CompanyOrderDocumentLookupRequest request)
@@ -2414,7 +2479,11 @@ public sealed partial class MikroDocumentEditingService(
             lines.Sum(line => line.Quantity),
             lines.Sum(line => line.Amount),
             rows.Min(row => row.sth_create_date),
-            rows.Max(row => row.sth_lastup_date));
+            rows.Max(row => row.sth_lastup_date),
+            ResolveStockDocumentTypeName(first.sth_evraktip ?? 0, first.sth_normal_iade ?? 0),
+            rows.Select(row => row.sth_tip ?? 0).Distinct().OrderBy(value => value).Select(ResolveStockMovementTypeName).ToArray(),
+            ResolveMovementKindName(first.sth_cins ?? 0),
+            ResolveNormalReturnName(first.sth_normal_iade ?? 0));
 
         return new StockMovementDocumentDto(header, lines);
     }
@@ -2545,7 +2614,10 @@ public sealed partial class MikroDocumentEditingService(
                     row.cha_satici_kodu ?? string.Empty,
                     row.cha_projekodu ?? string.Empty,
                     row.cha_srmrkkodu ?? string.Empty,
-                    row.cha_lastup_date);
+                    row.cha_lastup_date,
+                    ResolveCustomerMovementTypeName(row.cha_tip ?? 0),
+                    ResolveMovementKindName(row.cha_cinsi ?? 0),
+                    ResolveNormalReturnName(row.cha_normal_Iade ?? 0));
             })
             .ToArray();
 
@@ -2572,7 +2644,11 @@ public sealed partial class MikroDocumentEditingService(
             lines.Sum(line => line.Amount),
             lines.Sum(line => line.SubAmount),
             rows.Min(row => row.cha_create_date),
-            rows.Max(row => row.cha_lastup_date));
+            rows.Max(row => row.cha_lastup_date),
+            ResolveCustomerDocumentTypeName(first.cha_evrak_tip ?? 0),
+            rows.Select(row => row.cha_tip ?? 0).Distinct().OrderBy(value => value).Select(ResolveCustomerMovementTypeName).ToArray(),
+            ResolveMovementKindName(first.cha_cinsi ?? 0),
+            ResolveNormalReturnName(first.cha_normal_Iade ?? 0));
 
         return new CustomerMovementDocumentDto(header, lines);
     }
@@ -2699,7 +2775,9 @@ public sealed partial class MikroDocumentEditingService(
             lines.Sum(line => line.RemainingQuantity),
             lines.Sum(line => line.Amount),
             rows.Min(row => row.sip_create_date),
-            rows.Max(row => row.sip_lastup_date));
+            rows.Max(row => row.sip_lastup_date),
+            ResolveOrderTypeName(first.sip_tip ?? 0),
+            ResolveOrderKindName(first.sip_cins ?? 0));
 
         return new CompanyOrderDocumentDto(header, lines);
     }
@@ -2771,6 +2849,9 @@ public sealed partial class MikroDocumentEditingService(
             })
             .ToArray();
 
+        var openLines = lines.Count(line => !line.IsClosed && line.RemainingQuantity > 0);
+        var closedLines = lines.Length - openLines;
+
         var header = new WarehouseOrderDocumentHeaderDto(
             first.ssip_evrakno_seri ?? string.Empty,
             first.ssip_evrakno_sira ?? 0,
@@ -2793,7 +2874,9 @@ public sealed partial class MikroDocumentEditingService(
             lines.Sum(line => line.RemainingQuantity),
             lines.Sum(line => line.Amount),
             rows.Min(row => row.ssip_create_date),
-            rows.Max(row => row.ssip_lastup_date));
+            rows.Max(row => row.ssip_lastup_date),
+            openLines,
+            closedLines);
 
         return new WarehouseOrderDocumentDto(header, lines);
     }
@@ -4200,55 +4283,105 @@ public sealed partial class MikroDocumentEditingService(
     private static string ResolveStockDocumentTypeName(byte documentType, byte normalReturn) =>
         documentType switch
         {
-            1 => normalReturn == 1 ? "Firma Iade Irsaliyesi" : "Firma Irsaliyesi",
-            4 => normalReturn == 1 ? "Iade Faturasi" : "Fatura",
-            6 => "Depo Virman Evraki",
-            13 => "Mal Kabul Evraki",
-            17 => normalReturn == 1 ? "Depo Iade Evraki" : "Depolar Arasi Sevk Evraki",
+            0 => "Stok Fişi",
+            1 => normalReturn == 1 ? "Firma İade İrsaliyesi" : "Firma İrsaliyesi",
+            2 => "Fason İrsaliyesi",
+            3 => "Konsinye İrsaliyesi",
+            4 => normalReturn == 1 ? "İade Faturası" : "Fatura",
+            5 => "Proforma Fatura",
+            6 => "Depo Virman / Transfer Evrakı",
+            7 => "Üretim Tüketim Fişi",
+            8 => "Üretim Giriş Fişi",
+            9 => "Sayım Fazlası Fişi",
+            10 => "Sayım Eksiği Fişi",
+            11 => "Fire Fişi",
+            12 => "Sarf Fişi",
+            13 => "Mal Kabul Evrakı",
+            14 => "Dağıtım Emri",
+            15 => "Değer Artış Fişi",
+            16 => "Değer Azalış Fişi",
+            17 => normalReturn == 1 ? "Depo İade Evrakı" : "Depolar Arası Sevk Evrakı",
+            18 => "Şubeler Arası Sevk Fişi",
             _ => $"Mikro Stok Evrak Tipi {documentType}"
         };
 
     private static string ResolveCustomerDocumentTypeName(byte documentType) =>
         documentType switch
         {
+            1 => "Tahsilat Makbuzu",
+            2 => "Tediye Makbuzu",
+            3 => "Borç Dekontu",
+            4 => "Alacak Dekontu",
+            5 => "Virman Dekontu",
+            6 => "Açılış Fişi",
+            7 => "Kur Farkı Fişi",
+            8 => "Vade Farkı Fişi",
+            9 => "Serbest Meslek Makbuzu",
+            10 => "Fatura Cari Hareketi",
+            11 => "İade Fatura Cari Hareketi",
             60 => "OKC Z Raporu Cari Hareketi",
-            63 => "Perakende Satis Cari Hareketi",
+            63 => "Perakende Satış Cari Hareketi",
             _ => $"Mikro Cari Evrak Tipi {documentType}"
         };
 
     private static string ResolveStockMovementTypeName(byte movementType) =>
         movementType switch
         {
-            0 => "Giris",
-            1 => "Cikis",
-            2 => "Depolar Arasi",
-            _ => $"Mikro Hareket Tipi {movementType}"
+            0 => "Giriş",
+            1 => "Çıkış",
+            2 => "Depolar Arası",
+            _ => $"Hareket Tipi {movementType}"
         };
 
     private static string ResolveCustomerMovementTypeName(byte movementType) =>
         movementType switch
         {
-            0 => "Borc",
+            0 => "Borç",
             1 => "Alacak",
-            _ => $"Mikro Hareket Tipi {movementType}"
+            _ => $"Hareket Tipi {movementType}"
         };
 
     private static string ResolveMovementKindName(byte movementKind) =>
-        $"Mikro Cins {movementKind}";
+        movementKind switch
+        {
+            0 => "Toptan",
+            1 => "Perakende",
+            2 => "Dış Ticaret",
+            3 => "Fason",
+            4 => "Dahili",
+            5 => "Konsinye",
+            6 => "Emanet",
+            7 => "Değer Artırma/Azaltma",
+            8 => "Özel",
+            _ => $"Cins {movementKind}"
+        };
 
     private static string ResolveNormalReturnName(byte normalReturn) =>
-        normalReturn == 1 ? "Iade" : normalReturn == 0 ? "Normal" : $"Mikro Iade Kodu {normalReturn}";
+        normalReturn switch
+        {
+            0 => "Normal",
+            1 => "İade",
+            _ => $"İade Kodu {normalReturn}"
+        };
 
     private static string ResolveOrderTypeName(byte orderType) =>
         orderType switch
         {
-            0 => "Alinan Firma Siparisi",
-            1 => "Verilen Firma Siparisi",
-            _ => $"Mikro Siparis Tipi {orderType}"
+            0 => "Alınan Firma Siparişi (Müşteri)",
+            1 => "Verilen Firma Siparişi (Satıcı)",
+            _ => $"Sipariş Tipi {orderType}"
         };
 
     private static string ResolveOrderKindName(byte orderKind) =>
-        orderKind == 0 ? "Normal Siparis" : $"Mikro Siparis Cinsi {orderKind}";
+        orderKind switch
+        {
+            0 => "Normal Sipariş",
+            1 => "Konsinye Sipariş",
+            2 => "Proforma Sipariş",
+            3 => "Fason Sipariş",
+            4 => "İhracat / İthalat Siparişi",
+            _ => $"Sipariş Cinsi {orderKind}"
+        };
 
     private static void EnsureSingleInventoryCountDocument(IReadOnlyCollection<SAYIM_SONUCLARI> rows)
     {
@@ -4307,6 +4440,19 @@ public sealed partial class MikroDocumentEditingService(
         if (request.DocumentDate == default)
         {
             throw new ArgumentException("Document date is required.", nameof(request.DocumentDate));
+        }
+    }
+
+    private static void ValidateInventoryCountSearch(InventoryCountDocumentSearchRequest request)
+    {
+        if (request.WarehouseNo is <= 0)
+        {
+            throw new ArgumentException("Warehouse no must be greater than zero.", nameof(request.WarehouseNo));
+        }
+
+        if (request.DocumentNo < 0)
+        {
+            throw new ArgumentException("Document no can not be negative.", nameof(request.DocumentNo));
         }
     }
 

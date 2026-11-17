@@ -569,7 +569,11 @@ public sealed record StockMovementDocumentHeaderDto(
     double TotalQuantity,
     double TotalAmount,
     DateTime CreatedAt,
-    DateTime? LastUpdatedAt);
+    DateTime? LastUpdatedAt,
+    string DocumentTypeName = "",
+    IReadOnlyCollection<string>? MovementTypeNames = null,
+    string MovementKindName = "",
+    string NormalReturnName = "");
 
 public sealed record StockMovementDocumentLineDto(
     Guid MovementGuid,
@@ -682,6 +686,11 @@ public sealed record InventoryCountDocumentLookupRequest(
     int DocumentNo,
     DateTime DocumentDate);
 
+public sealed record InventoryCountDocumentSearchRequest(
+    int? WarehouseNo,
+    int DocumentNo,
+    DateTime? DocumentDate);
+
 public sealed record InventoryCountDocumentDto(
     InventoryCountDocumentHeaderDto Header,
     IReadOnlyCollection<InventoryCountDocumentLineDto> Lines);
@@ -788,7 +797,11 @@ public sealed record CustomerMovementDocumentHeaderDto(
     double TotalAmount,
     double TotalSubAmount,
     DateTime CreatedAt,
-    DateTime? LastUpdatedAt);
+    DateTime? LastUpdatedAt,
+    string DocumentTypeName = "",
+    IReadOnlyCollection<string>? MovementTypeNames = null,
+    string MovementKindName = "",
+    string NormalReturnName = "");
 
 public sealed record CustomerMovementDocumentLineDto(
     Guid MovementGuid,
@@ -825,7 +838,10 @@ public sealed record CustomerMovementDocumentLineDto(
     string SellerCode,
     string ProjectCode,
     string ResponsibilityCenter,
-    DateTime? LastUpdatedAt);
+    DateTime? LastUpdatedAt,
+    string MovementTypeName = "",
+    string MovementKindName = "",
+    string NormalReturnName = "");
 
 public sealed record CustomerMovementHeaderPatchDto(
     DateTime? MovementDate,
@@ -926,7 +942,9 @@ public sealed record CompanyOrderDocumentHeaderDto(
     double TotalRemainingQuantity,
     double TotalAmount,
     DateTime CreatedAt,
-    DateTime? LastUpdatedAt);
+    DateTime? LastUpdatedAt,
+    string OrderTypeName = "",
+    string OrderKindName = "");
 
 public sealed record CompanyOrderDocumentLineDto(
     Guid OrderGuid,
@@ -1080,7 +1098,9 @@ public sealed record WarehouseOrderDocumentHeaderDto(
     double TotalRemainingQuantity,
     double TotalAmount,
     DateTime CreatedAt,
-    DateTime? LastUpdatedAt);
+    DateTime? LastUpdatedAt,
+    int OpenLineCount = 0,
+    int ClosedLineCount = 0);
 
 public sealed record WarehouseOrderDocumentLineDto(
     Guid OrderGuid,

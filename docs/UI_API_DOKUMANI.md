@@ -25766,6 +25766,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerMovementDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateCustomerMovementDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerMovementDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cari-hareketleri/eslesmeler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CustomerMovementDocumentDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list | query: SearchText / string<br>query: IncludePassive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CustomerCardListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: customerCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerCardDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/cariler/{customerCode}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | path: customerCode / string (zorunlu)<br>body: request / CustomerCardPatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CustomerCardUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -25774,6 +25775,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: InWarehouseNo / integer (int32)<br>query: OutWarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: InWarehouseNo / integer (int32)<br>query: OutWarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateWarehouseOrderDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseOrderDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depo-siparisleri/eslesmeler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: InWarehouseNo / integer (int32)<br>query: OutWarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseOrderDocumentDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list | query: SearchText / string<br>query: IncludePassive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseCardListItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: warehouseNo / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseCardDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/depolar/{warehouseNo}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | path: warehouseNo / integer (int32) (zorunlu)<br>body: request / WarehouseCardPatchHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: WarehouseCardUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -25781,8 +25783,10 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: OrderType / integer (int32)<br>query: OrderKind / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: OrderType / integer (int32)<br>query: OrderKind / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateCompanyOrderDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CompanyOrderDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/firma-siparisleri/eslesmeler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: OrderType / integer (int32)<br>query: OrderKind / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: CustomerCode / string<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;CompanyOrderDocumentDto&gt;<br>400: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: WarehouseNo / integer (int32)<br>query: DocumentNo / integer (int32)<br>query: DocumentDate / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: InventoryCountDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateInventoryCountDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: InventoryCountDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/sayim-sonuclari/eslesmeler` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: WarehouseNo / integer (int32)<br>query: DocumentNo / integer (int32) (zorunlu)<br>query: DocumentDate / string (date-time) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;InventoryCountDocumentDto&gt;<br>400: ProblemDetails |
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | query: DocumentSerie / string (zorunlu)<br>query: DocumentOrderNo / integer (int32)<br>query: DocumentType / integer (int32)<br>query: MovementType / integer (int32)<br>query: MovementKind / integer (int32)<br>query: NormalReturn / integer (int32)<br>query: WarehouseNo / integer (int32)<br>query: HardDelete / boolean | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockMovementDocumentDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | PUT | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/stok-hareketleri` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.update | body: request / UpdateStockMovementDocumentHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: StockMovementDocumentUpdateResponse<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
@@ -27862,7 +27866,9 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `lineCount` | integer (int32) | Hayir |  |
 | `orderDate` | string (date-time) | Hayir | nullable |
 | `orderKind` | integer (int32) | Hayir |  |
+| `orderKindName` | string | Hayir | nullable |
 | `orderType` | integer (int32) | Hayir |  |
+| `orderTypeName` | string | Hayir | nullable |
 | `projectCode` | string | Hayir | nullable |
 | `sellerCode` | string | Hayir | nullable |
 | `stockResponsibilityCenter` | string | Hayir | nullable |
@@ -28070,12 +28076,16 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentOrderNo` | integer (int32) | Hayir |  |
 | `documentSerie` | string | Hayir | nullable |
 | `documentType` | integer (int32) | Hayir |  |
+| `documentTypeName` | string | Hayir | nullable |
 | `lastUpdatedAt` | string (date-time) | Hayir | nullable |
 | `lineCount` | integer (int32) | Hayir |  |
 | `movementDate` | string (date-time) | Hayir | nullable |
 | `movementKind` | integer (int32) | Hayir |  |
+| `movementKindName` | string | Hayir | nullable |
+| `movementTypeNames` | string[] | Hayir | nullable |
 | `movementTypes` | integer (int32)[] | Hayir | nullable |
 | `normalReturn` | integer (int32) | Hayir |  |
+| `normalReturnName` | string | Hayir | nullable |
 | `projectCode` | string | Hayir | nullable |
 | `responsibilityCenter` | string | Hayir | nullable |
 | `sellerCode` | string | Hayir | nullable |
@@ -28106,8 +28116,11 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `lastUpdatedAt` | string (date-time) | Hayir | nullable |
 | `movementGuid` | string (uuid) | Hayir |  |
 | `movementKind` | integer (int32) | Hayir |  |
+| `movementKindName` | string | Hayir | nullable |
 | `movementType` | integer (int32) | Hayir |  |
+| `movementTypeName` | string | Hayir | nullable |
 | `normalReturn` | integer (int32) | Hayir |  |
+| `normalReturnName` | string | Hayir | nullable |
 | `projectCode` | string | Hayir | nullable |
 | `quantity` | number (double) | Hayir |  |
 | `responsibilityCenter` | string | Hayir | nullable |
@@ -28377,6 +28390,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentOrderNo` | integer (int32) | Hayir |  |
 | `documentSerie` | string | Hayir | nullable |
 | `documentType` | integer (int32) | Hayir |  |
+| `documentTypeName` | string | Hayir | nullable |
 | `goodsAcceptanceDate` | string (date-time) | Hayir | nullable |
 | `inputWarehouseName` | string | Hayir | nullable |
 | `inputWarehouseNo` | integer (int32) | Hayir |  |
@@ -28387,8 +28401,11 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `movementGroupCode2` | string | Hayir | nullable |
 | `movementGroupCode3` | string | Hayir | nullable |
 | `movementKind` | integer (int32) | Hayir |  |
+| `movementKindName` | string | Hayir | nullable |
+| `movementTypeNames` | string[] | Hayir | nullable |
 | `movementTypes` | integer (int32)[] | Hayir | nullable |
 | `normalReturn` | integer (int32) | Hayir |  |
+| `normalReturnName` | string | Hayir | nullable |
 | `outputWarehouseName` | string | Hayir | nullable |
 | `outputWarehouseNo` | integer (int32) | Hayir |  |
 | `projectCode` | string | Hayir | nullable |
@@ -28560,6 +28577,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
 | `closeReasonCode` | string | Hayir | nullable |
+| `closedLineCount` | integer (int32) | Hayir |  |
 | `createdAt` | string (date-time) | Hayir |  |
 | `deliveryDate` | string (date-time) | Hayir | nullable |
 | `description` | string | Hayir | nullable |
@@ -28572,6 +28590,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `isClosed` | boolean | Hayir |  |
 | `lastUpdatedAt` | string (date-time) | Hayir | nullable |
 | `lineCount` | integer (int32) | Hayir |  |
+| `openLineCount` | integer (int32) | Hayir |  |
 | `orderDate` | string (date-time) | Hayir | nullable |
 | `outWarehouseName` | string | Hayir | nullable |
 | `outWarehouseNo` | integer (int32) | Hayir |  |

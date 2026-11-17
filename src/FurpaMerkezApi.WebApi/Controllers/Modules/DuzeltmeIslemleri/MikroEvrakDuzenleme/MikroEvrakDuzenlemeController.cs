@@ -505,6 +505,15 @@ public sealed class MikroEvrakDuzenlemeController(
         CancellationToken cancellationToken) =>
         Ok(await service.GetInventoryCountDocumentAsync(request.ToApplicationRequest(), cancellationToken));
 
+    [HttpGet("sayim-sonuclari/eslesmeler")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<InventoryCountDocumentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<InventoryCountDocumentDto>>> FindInventoryCountDocuments(
+        [FromQuery] InventoryCountDocumentSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.FindInventoryCountDocumentsAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpPut("sayim-sonuclari")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(InventoryCountDocumentUpdateResponse), StatusCodes.Status200OK)]
@@ -591,6 +600,15 @@ public sealed class MikroEvrakDuzenlemeController(
         CancellationToken cancellationToken) =>
         Ok(await service.GetCustomerMovementDocumentAsync(request.ToApplicationRequest(), cancellationToken));
 
+    [HttpGet("cari-hareketleri/eslesmeler")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CustomerMovementDocumentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CustomerMovementDocumentDto>>> FindCustomerMovementDocuments(
+        [FromQuery] CustomerMovementDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.FindCustomerMovementDocumentsAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpPut("cari-hareketleri")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(CustomerMovementDocumentUpdateResponse), StatusCodes.Status200OK)]
@@ -655,6 +673,15 @@ public sealed class MikroEvrakDuzenlemeController(
         CancellationToken cancellationToken) =>
         Ok(await service.GetCompanyOrderDocumentAsync(request.ToApplicationRequest(), cancellationToken));
 
+    [HttpGet("firma-siparisleri/eslesmeler")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CompanyOrderDocumentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<CompanyOrderDocumentDto>>> FindCompanyOrderDocuments(
+        [FromQuery] CompanyOrderDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.FindCompanyOrderDocumentsAsync(request.ToApplicationRequest(), cancellationToken));
+
     [HttpPut("firma-siparisleri")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(CompanyOrderDocumentUpdateResponse), StatusCodes.Status200OK)]
@@ -718,6 +745,15 @@ public sealed class MikroEvrakDuzenlemeController(
         [FromQuery] WarehouseOrderDocumentLookupHttpRequest request,
         CancellationToken cancellationToken) =>
         Ok(await service.GetWarehouseOrderDocumentAsync(request.ToApplicationRequest(), cancellationToken));
+
+    [HttpGet("depo-siparisleri/eslesmeler")]
+    [Authorize(Policy = DetailPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<WarehouseOrderDocumentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyCollection<WarehouseOrderDocumentDto>>> FindWarehouseOrderDocuments(
+        [FromQuery] WarehouseOrderDocumentLookupHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await service.FindWarehouseOrderDocumentsAsync(request.ToApplicationRequest(), cancellationToken));
 
     [HttpPut("depo-siparisleri")]
     [Authorize(Policy = UpdatePolicy)]
@@ -1936,6 +1972,21 @@ public sealed class InventoryCountDocumentLookupHttpRequest
             WarehouseNo,
             DocumentNo,
             DocumentDate.GetValueOrDefault());
+}
+
+public sealed class InventoryCountDocumentSearchHttpRequest
+{
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
+
+    [Required]
+    [Range(0, int.MaxValue)]
+    public int DocumentNo { get; init; }
+
+    public DateTime? DocumentDate { get; init; }
+
+    public InventoryCountDocumentSearchRequest ToApplicationRequest() =>
+        new(WarehouseNo, DocumentNo, DocumentDate);
 }
 
 public sealed class UpdateInventoryCountDocumentHttpRequest

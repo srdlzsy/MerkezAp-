@@ -100,11 +100,19 @@ public interface IMikroDocumentEditingService
         InventoryCountDocumentLookupRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<InventoryCountDocumentDto>> FindInventoryCountDocumentsAsync(
+        InventoryCountDocumentSearchRequest request,
+        CancellationToken cancellationToken);
+
     Task<InventoryCountDocumentUpdateResponse> UpdateInventoryCountDocumentAsync(
         UpdateInventoryCountDocumentRequest request,
         CancellationToken cancellationToken);
 
     Task<CustomerMovementDocumentDto> GetCustomerMovementDocumentAsync(
+        CustomerMovementDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CustomerMovementDocumentDto>> FindCustomerMovementDocumentsAsync(
         CustomerMovementDocumentLookupRequest request,
         CancellationToken cancellationToken);
 
@@ -120,6 +128,10 @@ public interface IMikroDocumentEditingService
         CompanyOrderDocumentLookupRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<CompanyOrderDocumentDto>> FindCompanyOrderDocumentsAsync(
+        CompanyOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
     Task<CompanyOrderDocumentUpdateResponse> UpdateCompanyOrderDocumentAsync(
         UpdateCompanyOrderDocumentRequest request,
         CancellationToken cancellationToken);
@@ -129,6 +141,10 @@ public interface IMikroDocumentEditingService
         CancellationToken cancellationToken);
 
     Task<WarehouseOrderDocumentDto> GetWarehouseOrderDocumentAsync(
+        WarehouseOrderDocumentLookupRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<WarehouseOrderDocumentDto>> FindWarehouseOrderDocumentsAsync(
         WarehouseOrderDocumentLookupRequest request,
         CancellationToken cancellationToken);
 
