@@ -51,6 +51,38 @@ Bu kurallar, e-arsiv faturalarinin veya `BelgeTuru=3` bilgi fislerinin sahte "ek
 
 `BelgeTuru=3` stoku gunluk PS cariye yazilmadigi icin cari/stok farkina dahil edilmez; aksi halde gercekte olmayan bir fark uretilir.
 
+### Ana rapor kolonlari
+
+Ana rapor, aktarim eksigi ile kaynak kasa fisi tutarsizligini birbirinden ayirir:
+
+1. `Kaynak Satir Toplami`: Furpa `PosFaturaSatirs` net + KDV toplami.
+2. `Kaynak Baslik Toplami`: Furpa `PosFaturas` baslik net + KDV toplami.
+3. `Fis Ici Fark`: kaynak satir toplami eksi kaynak baslik toplami.
+4. `Mikro Stok`: Mikro stok hareketlerinin rapor kapsamina giren toplami.
+5. `Aktarim Net Farki`: Furpa ve Mikro arasindaki perakende, fatura ve gider pusulasi net farki.
+6. `Bekleyen Fatura`: Furpa'da bulunup Mikro stok hareketine ulasmamis pozitif fatura farki.
+7. `GPS`: Furpa gider pusulasi satir toplami.
+8. `Cek`: Furpa cek odemeleri toplami.
+9. `Z Raporu`: Mikro Z raporu cari hareketleri toplami.
+10. `Z Mutabakat Farki`: kaynak baslik toplami eksi kaynak gider pusulasi basligi, cek ve Z raporu.
+
+`Fis Ici Fark`, Mikro aktarim farki degildir. Kaynak baslik ile urun satirlari
+uyusmadiginda sari uyari olarak gosterilir. `Aktarim Net Farki` veya
+`Bekleyen Fatura` bulunmasi ise kirmizi aktarim sorunudur. Baslik esasli Z
+mutabakati ayrica hesaplandigi icin kaynak fis farki artik Z raporu farki gibi
+gosterilmez.
+
+Durum onceligi:
+
+- `Fatura bekliyor`
+- `Aktarim eksik/fazla`
+- `Kaynak fisi kontrol`
+- `Z raporu kontrol`
+- `Aktarim tam`
+
+Mikro cari, PS stok/cari farki ve belge turu bazli eski denetim tutarlari API
+sozlesmesinde korunur ve arayuzde ayrinti bolumunde gosterilir.
+
 ## Operasyonel Riskler
 
 - Gecmis bir gunun kasa aktarimi donem kapandiktan sonra calistirilirsa stok Mikro'ya sonradan gelebilir; FUR26/POSTHS kapatma islemi muhasebe tarafinda ayrica kontrol edilmelidir.

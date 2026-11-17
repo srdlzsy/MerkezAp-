@@ -31956,7 +31956,9 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `expenseSlipStockAmount` | number (double) | Hayir |  |
 | `expenseSlipTransferredAmount` | number (double) | Hayir |  |
 | `hasDifference` | boolean | Hayir |  |
+| `hasReceiptTotalMismatch` | boolean | Hayir |  |
 | `hasSourceDataWarning` | boolean | Hayir |  |
+| `hasZReportMismatch` | boolean | Hayir |  |
 | `invoiceDifference` | number (double) | Hayir |  |
 | `invoiceStockAmount` | number (double) | Hayir |  |
 | `invoiceTransferredAmount` | number (double) | Hayir |  |
@@ -31964,9 +31966,12 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `netStockTurnover` | number (double) | Hayir |  |
 | `netTransferredTurnover` | number (double) | Hayir |  |
 | `pendingInvoiceAmount` | number (double) | Hayir |  |
+| `receiptLineHeaderDifference` | number (double) | Hayir |  |
 | `retailDifference` | number (double) | Hayir |  |
 | `retailStockAmount` | number (double) | Hayir |  |
 | `retailTransferredAmount` | number (double) | Hayir |  |
+| `sourceHeaderAmount` | number (double) | Hayir |  |
+| `sourceHeaderZReportDifference` | number (double) | Hayir |  |
 | `sourceZReportDifference` | number (double) | Hayir |  |
 | `stockMovementAmount` | number (double) | Hayir |  |
 | `transferredAmount` | number (double) | Hayir |  |
@@ -31978,7 +31983,10 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `balancedCount` | integer (int32) | Hayir |  |
 | `differenceCount` | integer (int32) | Hayir |  |
+| `pendingInvoiceCount` | integer (int32) | Hayir |  |
+| `receiptMismatchCount` | integer (int32) | Hayir |  |
 | `rowCount` | integer (int32) | Hayir |  |
 | `sourceDataWarningCount` | integer (int32) | Hayir |  |
 | `totalCheckAmount` | number (double) | Hayir |  |
@@ -31996,16 +32004,21 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `totalNetStockTurnover` | number (double) | Hayir |  |
 | `totalNetTransferredTurnover` | number (double) | Hayir |  |
 | `totalPendingInvoiceAmount` | number (double) | Hayir |  |
+| `totalReceiptLineHeaderDifference` | number (double) | Hayir |  |
 | `totalRetailDifference` | number (double) | Hayir |  |
 | `totalRetailStockAmount` | number (double) | Hayir |  |
 | `totalRetailTransferredAmount` | number (double) | Hayir |  |
 | `totalShortage` | number (double) | Hayir |  |
+| `totalSourceHeaderAmount` | number (double) | Hayir |  |
+| `totalSourceHeaderZReportDifference` | number (double) | Hayir |  |
 | `totalSourceZReportDifference` | number (double) | Hayir |  |
 | `totalStockMovementAmount` | number (double) | Hayir |  |
 | `totalTransferredAmount` | number (double) | Hayir |  |
 | `totalTransferredTurnoverDifference` | number (double) | Hayir |  |
 | `totalZReportAmount` | number (double) | Hayir |  |
 | `totalZReportTransferDifference` | number (double) | Hayir |  |
+| `transferDifferenceCount` | integer (int32) | Hayir |  |
+| `zReportMismatchCount` | integer (int32) | Hayir |  |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaHareketAktarimi.KasaHareketSatisMutabakatReportDto
 

@@ -959,6 +959,32 @@ public sealed class KasaHareketAktarimiService(
                   AND (@branchNo IS NULL OR TRY_CONVERT(int, line.Sube) = @branchNo)
                 GROUP BY TRY_CONVERT(int, line.Sube)
             ),
+            HeaderTotals AS (
+                SELECT
+                    TRY_CONVERT(int, invoice.Sube) AS BranchNo,
+                    SUM(CASE
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 1
+                            THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                        ELSE 0
+                    END) AS RetailHeaderAmount,
+                    SUM(CASE
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 3
+                            THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                        ELSE 0
+                    END) AS InvoiceHeaderAmount,
+                    SUM(CASE
+                        WHEN TRY_CONVERT(int, invoice.BelgeTuru) = 4
+                            THEN ISNULL(invoice.Toplam, 0) + ISNULL(invoice.ToplamKdv, 0)
+                        ELSE 0
+                    END) AS ExpenseSlipHeaderAmount
+                FROM dbo.PosFaturas AS invoice WITH (READUNCOMMITTED)
+                WHERE invoice.Tarih >= @date
+                  AND invoice.Tarih < @nextDate
+                  AND TRY_CONVERT(int, invoice.Sube) BETWEEN 101 AND 999
+                  AND TRY_CONVERT(int, invoice.BelgeTuru) IN (1, 3, 4)
+                  AND (@branchNo IS NULL OR TRY_CONVERT(int, invoice.Sube) = @branchNo)
+                GROUP BY TRY_CONVERT(int, invoice.Sube)
+            ),
             CheckTotals AS (
                 SELECT
                     TRY_CONVERT(int, payment.Sube) AS BranchNo,
@@ -974,6 +1000,8 @@ public sealed class KasaHareketAktarimiService(
             Branches AS (
                 SELECT BranchNo FROM MovementTotals
                 UNION
+                SELECT BranchNo FROM HeaderTotals
+                UNION
                 SELECT BranchNo FROM CheckTotals
             )
             SELECT
@@ -981,9 +1009,13 @@ public sealed class KasaHareketAktarimiService(
                 ISNULL(movement.RetailTransferredAmount, 0) AS RetailTransferredAmount,
                 ISNULL(movement.InvoiceTransferredAmount, 0) AS InvoiceTransferredAmount,
                 ISNULL(movement.ExpenseSlipTransferredAmount, 0) AS ExpenseSlipTransferredAmount,
+                ISNULL(headerTotal.RetailHeaderAmount, 0) AS RetailHeaderAmount,
+                ISNULL(headerTotal.InvoiceHeaderAmount, 0) AS InvoiceHeaderAmount,
+                ISNULL(headerTotal.ExpenseSlipHeaderAmount, 0) AS ExpenseSlipHeaderAmount,
                 ISNULL(checkTotal.CheckAmount, 0) AS CheckAmount
             FROM Branches AS branch
             LEFT JOIN MovementTotals AS movement ON movement.BranchNo = branch.BranchNo
+            LEFT JOIN HeaderTotals AS headerTotal ON headerTotal.BranchNo = branch.BranchNo
             LEFT JOIN CheckTotals AS checkTotal ON checkTotal.BranchNo = branch.BranchNo
             ORDER BY branch.BranchNo;
             """;
@@ -1002,6 +1034,9 @@ public sealed class KasaHareketAktarimiService(
                 ReadDecimal(reader, "RetailTransferredAmount"),
                 ReadDecimal(reader, "InvoiceTransferredAmount"),
                 ReadDecimal(reader, "ExpenseSlipTransferredAmount"),
+                ReadDecimal(reader, "RetailHeaderAmount"),
+                ReadDecimal(reader, "InvoiceHeaderAmount"),
+                ReadDecimal(reader, "ExpenseSlipHeaderAmount"),
                 ReadDecimal(reader, "CheckAmount")),
             cancellationToken);
 
@@ -1035,6 +1070,9 @@ public sealed class KasaHareketAktarimiService(
                 furpa?.RetailTransferredAmount ?? 0m,
                 furpa?.InvoiceTransferredAmount ?? 0m,
                 furpa?.ExpenseSlipTransferredAmount ?? 0m,
+                furpa?.RetailHeaderAmount ?? 0m,
+                furpa?.InvoiceHeaderAmount ?? 0m,
+                furpa?.ExpenseSlipHeaderAmount ?? 0m,
                 furpa?.CheckAmount ?? 0m,
                 mikro?.ZReportAmount ?? 0m,
                 tolerance);
@@ -1070,7 +1108,17 @@ public sealed class KasaHareketAktarimiService(
             Round(rows.Sum(item => item.CheckAmount)),
             Round(rows.Sum(item => item.SourceZReportDifference)),
             Round(rows.Sum(item => item.PendingInvoiceAmount)),
-            rows.Count(item => item.HasSourceDataWarning));
+            rows.Count(item => item.HasSourceDataWarning),
+            Round(rows.Sum(item => item.SourceHeaderAmount)),
+            Round(rows.Sum(item => item.ReceiptLineHeaderDifference)),
+            Round(rows.Sum(item => item.SourceHeaderZReportDifference)),
+            rows.Count(item => item.HasDifference),
+            rows.Count(item => item.HasReceiptTotalMismatch),
+            rows.Count(item => item.HasZReportMismatch),
+            rows.Count(item => item.PendingInvoiceAmount > tolerance),
+            rows.Count(item => !item.HasDifference
+                               && !item.HasReceiptTotalMismatch
+                               && !item.HasZReportMismatch));
 
         return new KasaHareketSalesComparisonDto(
             businessDate,
@@ -5477,6 +5525,9 @@ public sealed class KasaHareketAktarimiService(
         decimal retailTransferredAmount,
         decimal invoiceTransferredAmount,
         decimal expenseSlipTransferredAmount,
+        decimal retailHeaderAmount,
+        decimal invoiceHeaderAmount,
+        decimal expenseSlipHeaderAmount,
         decimal checkAmount,
         decimal zReportAmount,
         decimal tolerance)
@@ -5489,6 +5540,9 @@ public sealed class KasaHareketAktarimiService(
         retailTransferredAmount = Round(retailTransferredAmount);
         invoiceTransferredAmount = Round(invoiceTransferredAmount);
         expenseSlipTransferredAmount = Round(expenseSlipTransferredAmount);
+        retailHeaderAmount = Round(retailHeaderAmount);
+        invoiceHeaderAmount = Round(invoiceHeaderAmount);
+        expenseSlipHeaderAmount = Round(expenseSlipHeaderAmount);
         checkAmount = Round(checkAmount);
         zReportAmount = Round(zReportAmount);
 
@@ -5507,9 +5561,16 @@ public sealed class KasaHareketAktarimiService(
             netStockTurnover - zReportAmount - checkAmount);
         var sourceZReportDifference = Round(
             netTransferredTurnover - zReportAmount - checkAmount);
+        var sourceHeaderAmount = Round(retailHeaderAmount + invoiceHeaderAmount);
+        var receiptLineHeaderDifference = Round(transferredAmount - sourceHeaderAmount);
+        var sourceHeaderZReportDifference = Round(
+            sourceHeaderAmount - expenseSlipHeaderAmount - zReportAmount - checkAmount);
         var transferredTurnoverDifference = Round(transferredAmount - stockMovementAmount);
         var currentStockDifference = Round(currentComparableStockAmount - currentAccountAmount);
-        var hasSourceDataWarning = Math.Abs(sourceZReportDifference) > tolerance
+        var hasReceiptTotalMismatch = Math.Abs(receiptLineHeaderDifference) > tolerance;
+        var hasZReportMismatch = Math.Abs(sourceHeaderZReportDifference) > tolerance;
+        var hasSourceDataWarning = hasReceiptTotalMismatch
+                                   || hasZReportMismatch
                                    || Math.Abs(currentStockDifference) > tolerance;
         var hasDifference = Math.Abs(retailDifference) > tolerance
                             || Math.Abs(invoiceDifference) > tolerance
@@ -5544,7 +5605,12 @@ public sealed class KasaHareketAktarimiService(
             checkAmount,
             sourceZReportDifference,
             pendingInvoiceAmount,
-            hasSourceDataWarning);
+            hasSourceDataWarning,
+            sourceHeaderAmount,
+            receiptLineHeaderDifference,
+            sourceHeaderZReportDifference,
+            hasReceiptTotalMismatch,
+            hasZReportMismatch);
     }
 
     private static IReadOnlyCollection<DateTime> EnumerateDates(DateTime startDate, DateTime endDate)
@@ -6216,6 +6282,9 @@ public sealed class KasaHareketAktarimiService(
         decimal RetailTransferredAmount,
         decimal InvoiceTransferredAmount,
         decimal ExpenseSlipTransferredAmount,
+        decimal RetailHeaderAmount,
+        decimal InvoiceHeaderAmount,
+        decimal ExpenseSlipHeaderAmount,
         decimal CheckAmount);
 
     private sealed record SatisMutabakatMikroSqlRow(

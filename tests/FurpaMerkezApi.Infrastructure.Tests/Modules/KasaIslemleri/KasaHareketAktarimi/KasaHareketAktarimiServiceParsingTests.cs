@@ -206,6 +206,9 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             retailTransferredAmount: 990m,
             invoiceTransferredAmount: 200m,
             expenseSlipTransferredAmount: 30m,
+            retailHeaderAmount: 990m,
+            invoiceHeaderAmount: 200m,
+            expenseSlipHeaderAmount: 30m,
             checkAmount: 0m,
             zReportAmount: 1_190m,
             tolerance: 0.01m);
@@ -240,6 +243,9 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             retailTransferredAmount: 965.50m,
             invoiceTransferredAmount: 34.50m,
             expenseSlipTransferredAmount: 30m,
+            retailHeaderAmount: 965.50m,
+            invoiceHeaderAmount: 34.50m,
+            expenseSlipHeaderAmount: 30m,
             checkAmount: 0m,
             zReportAmount: 1_000m,
             tolerance: 0.01m);
@@ -271,6 +277,9 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             retailTransferredAmount: 1_000m,
             invoiceTransferredAmount: 300m,
             expenseSlipTransferredAmount: 30m,
+            retailHeaderAmount: 1_000m,
+            invoiceHeaderAmount: 300m,
+            expenseSlipHeaderAmount: 30m,
             checkAmount: 30m,
             zReportAmount: 1_240m,
             tolerance: 0.01m);
@@ -298,6 +307,9 @@ public sealed class KasaHareketAktarimiServiceParsingTests
             retailTransferredAmount: 1_113_449.72m,
             invoiceTransferredAmount: 249_760.50m,
             expenseSlipTransferredAmount: 1_626.50m,
+            retailHeaderAmount: 1_113_388.07m,
+            invoiceHeaderAmount: 249_760.50m,
+            expenseSlipHeaderAmount: 1_626.50m,
             checkAmount: 6_100m,
             zReportAmount: 1_355_422.07m,
             tolerance: 0.01m);
@@ -305,8 +317,43 @@ public sealed class KasaHareketAktarimiServiceParsingTests
         Assert.Equal(61.65m, row.ZReportTransferDifference);
         Assert.Equal(61.65m, row.SourceZReportDifference);
         Assert.Equal(61.65m, row.CurrentStockDifference);
+        Assert.Equal(1_363_148.57m, row.SourceHeaderAmount);
+        Assert.Equal(61.65m, row.ReceiptLineHeaderDifference);
+        Assert.Equal(0m, row.SourceHeaderZReportDifference);
         Assert.Equal(0m, row.PendingInvoiceAmount);
         Assert.False(row.HasDifference);
+        Assert.True(row.HasReceiptTotalMismatch);
+        Assert.False(row.HasZReportMismatch);
+        Assert.True(row.HasSourceDataWarning);
+    }
+
+    [Fact]
+    public void CreateSalesComparisonRowReportsZMismatchWithoutReceiptMismatch()
+    {
+        var row = KasaHareketAktarimiService.CreateSalesComparisonRow(
+            new DateTime(2026, 11, 14),
+            115,
+            "Doburca",
+            retailStockAmount: 500m,
+            invoiceStockAmount: 100m,
+            expenseSlipStockAmount: 20m,
+            currentComparableStockAmount: 500m,
+            currentAccountAmount: 500m,
+            retailTransferredAmount: 500m,
+            invoiceTransferredAmount: 100m,
+            expenseSlipTransferredAmount: 20m,
+            retailHeaderAmount: 500m,
+            invoiceHeaderAmount: 100m,
+            expenseSlipHeaderAmount: 20m,
+            checkAmount: 30m,
+            zReportAmount: 545m,
+            tolerance: 0.01m);
+
+        Assert.Equal(0m, row.ReceiptLineHeaderDifference);
+        Assert.Equal(5m, row.SourceHeaderZReportDifference);
+        Assert.False(row.HasDifference);
+        Assert.False(row.HasReceiptTotalMismatch);
+        Assert.True(row.HasZReportMismatch);
         Assert.True(row.HasSourceDataWarning);
     }
 

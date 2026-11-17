@@ -120462,6 +120462,24 @@
           },
           "hasSourceDataWarning": {
             "type": "boolean"
+          },
+          "sourceHeaderAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "receiptLineHeaderDifference": {
+            "type": "number",
+            "format": "double"
+          },
+          "sourceHeaderZReportDifference": {
+            "type": "number",
+            "format": "double"
+          },
+          "hasReceiptTotalMismatch": {
+            "type": "boolean"
+          },
+          "hasZReportMismatch": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -120578,6 +120596,38 @@
             "format": "double"
           },
           "sourceDataWarningCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalSourceHeaderAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalReceiptLineHeaderDifference": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalSourceHeaderZReportDifference": {
+            "type": "number",
+            "format": "double"
+          },
+          "transferDifferenceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "receiptMismatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "zReportMismatchCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingInvoiceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "balancedCount": {
             "type": "integer",
             "format": "int32"
           }

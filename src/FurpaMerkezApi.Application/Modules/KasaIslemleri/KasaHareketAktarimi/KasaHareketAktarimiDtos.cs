@@ -206,7 +206,15 @@ public sealed record KasaHareketSalesComparisonSummaryDto(
     decimal TotalCheckAmount,
     decimal TotalSourceZReportDifference,
     decimal TotalPendingInvoiceAmount,
-    int SourceDataWarningCount);
+    int SourceDataWarningCount,
+    decimal TotalSourceHeaderAmount,
+    decimal TotalReceiptLineHeaderDifference,
+    decimal TotalSourceHeaderZReportDifference,
+    int TransferDifferenceCount,
+    int ReceiptMismatchCount,
+    int ZReportMismatchCount,
+    int PendingInvoiceCount,
+    int BalancedCount);
 
 public sealed record KasaHareketSalesComparisonRowDto(
     DateTime Date,
@@ -237,7 +245,12 @@ public sealed record KasaHareketSalesComparisonRowDto(
     decimal CheckAmount,
     decimal SourceZReportDifference,
     decimal PendingInvoiceAmount,
-    bool HasSourceDataWarning);
+    bool HasSourceDataWarning,
+    decimal SourceHeaderAmount,
+    decimal ReceiptLineHeaderDifference,
+    decimal SourceHeaderZReportDifference,
+    bool HasReceiptTotalMismatch,
+    bool HasZReportMismatch);
 
 public sealed record KasaHareketCashSummaryComparisonDto(
     DateTime Date,
