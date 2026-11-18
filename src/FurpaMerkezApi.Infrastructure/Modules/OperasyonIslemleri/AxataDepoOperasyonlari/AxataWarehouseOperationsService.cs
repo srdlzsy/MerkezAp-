@@ -345,18 +345,18 @@ public sealed class AxataWarehouseOperationsService(
                    MIN(ssip_tarih),
                    MIN(ssip_cikdepo),
                    MIN(ssip_girdepo)
-            FROM dbo.DEPOLAR_ARASI_SIPARISLER WITH (NOLOCK)
+            FROM dbo.DEPOLAR_ARASI_SIPARISLER
             WHERE ssip_evrakno_seri=@serie AND ssip_evrakno_sira=@orderNo AND ISNULL(ssip_iptal,0)=0
             """;
         const string shipmentSql = """
             SELECT b.sth_evrakno_seri, b.sth_evrakno_sira, MIN(b.sth_tarih), MIN(b.sth_belge_no),
                    MIN(b.sth_cikis_depo_no), MIN(b.sth_giris_depo_no), COUNT(1),
                    COALESCE(SUM(CONVERT(decimal(18,4),ISNULL(b.sth_miktar,0))),0)
-            FROM dbo.STOK_HAREKETLERI b WITH (NOLOCK)
-            INNER JOIN dbo.STOK_HAREKETLERI_EK ek WITH (NOLOCK) ON ek.sthek_related_uid=b.sth_Guid
+            FROM dbo.STOK_HAREKETLERI b
+            INNER JOIN dbo.STOK_HAREKETLERI_EK ek ON ek.sthek_related_uid=b.sth_Guid
             WHERE ISNULL(b.sth_iptal,0)=0
               AND ek.sth_subesip_uid IN (
-                  SELECT o.ssip_Guid FROM dbo.DEPOLAR_ARASI_SIPARISLER o WITH (NOLOCK)
+                   SELECT o.ssip_Guid FROM dbo.DEPOLAR_ARASI_SIPARISLER o
                   WHERE o.ssip_evrakno_seri=@serie AND o.ssip_evrakno_sira=@orderNo)
             GROUP BY b.sth_evrakno_seri, b.sth_evrakno_sira
             ORDER BY MIN(b.sth_tarih), b.sth_evrakno_seri, b.sth_evrakno_sira
