@@ -65206,6 +65206,26 @@
             }
           },
           {
+            "name": "InputWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "OutputWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "HardDelete",
             "in": "query",
             "schema": {
@@ -65574,6 +65594,26 @@
             }
           },
           {
+            "name": "InputWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "OutputWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "HardDelete",
             "in": "query",
             "schema": {
@@ -65781,6 +65821,26 @@
           },
           {
             "name": "WarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "InputWarehouseNo",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "OutputWarehouseNo",
             "in": "query",
             "schema": {
               "maximum": 2147483647,
@@ -137311,6 +137371,20 @@
             "nullable": true
           },
           "warehouseNo": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "inputWarehouseNo": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "outputWarehouseNo": {
             "maximum": 2147483647,
             "minimum": 1,
             "type": "integer",

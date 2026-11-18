@@ -1705,6 +1705,12 @@ public sealed class StockMovementDocumentLookupHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
+    [Range(1, int.MaxValue)]
+    public int? InputWarehouseNo { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? OutputWarehouseNo { get; init; }
+
     public bool HardDelete { get; init; }
 
     public StockMovementDocumentLookupRequest ToApplicationRequest() =>
@@ -1715,7 +1721,9 @@ public sealed class StockMovementDocumentLookupHttpRequest
             MovementType,
             MovementKind,
             NormalReturn,
-            WarehouseNo);
+            WarehouseNo,
+            InputWarehouseNo,
+            OutputWarehouseNo);
 }
 
 public sealed class MikroDocumentSearchHttpRequest

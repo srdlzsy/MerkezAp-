@@ -42,6 +42,26 @@ public sealed class MikroDocumentEditingStockMovementGroupingTests
         Assert.Equal(2, group.Count);
     }
 
+    [Fact]
+    public void GroupStockMovementDocuments_SeparatesSameIdentityByWarehouseRoute()
+    {
+        var first = Movement(Guid.NewGuid(), documentType: 17, movementKind: 3, normalReturn: 0, lineNo: 0);
+        var second = Movement(Guid.NewGuid(), documentType: 17, movementKind: 3, normalReturn: 0, lineNo: 1);
+        var third = Movement(Guid.NewGuid(), documentType: 17, movementKind: 3, normalReturn: 0, lineNo: 2);
+        first.sth_cikis_depo_no = 50;
+        first.sth_giris_depo_no = 120;
+        second.sth_cikis_depo_no = 50;
+        second.sth_giris_depo_no = 120;
+        third.sth_cikis_depo_no = 53;
+        third.sth_giris_depo_no = 120;
+
+        var groups = MikroDocumentEditingService.GroupStockMovementDocuments([first, second, third]);
+
+        Assert.Equal(2, groups.Count);
+        Assert.Contains(groups, group => group.Count == 2 && group.First().sth_cikis_depo_no == 50);
+        Assert.Contains(groups, group => group.Count == 1 && group.First().sth_cikis_depo_no == 53);
+    }
+
     private static STOK_HAREKETLERI Movement(
         Guid movementGuid,
         byte documentType,

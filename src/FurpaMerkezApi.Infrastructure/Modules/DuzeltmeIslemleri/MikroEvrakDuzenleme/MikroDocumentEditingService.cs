@@ -990,7 +990,16 @@ public sealed partial class MikroDocumentEditingService(
 
         var serie = request.DocumentSerie.Trim();
         var stockDocuments = await FindStockMovementDocumentsAsync(
-            new StockMovementDocumentLookupRequest(serie, request.DocumentOrderNo, null, null, null, null, null),
+            new StockMovementDocumentLookupRequest(
+                serie,
+                request.DocumentOrderNo,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null),
             cancellationToken);
         var customerDocuments = await FindCustomerMovementDocumentsAsync(
             new CustomerMovementDocumentLookupRequest(serie, request.DocumentOrderNo, null, null, null, null, null),
@@ -2190,6 +2199,16 @@ public sealed partial class MikroDocumentEditingService(
                 movement.sth_cikis_depo_no == warehouseNo);
         }
 
+        if (request.InputWarehouseNo.HasValue)
+        {
+            query = query.Where(movement => movement.sth_giris_depo_no == request.InputWarehouseNo.Value);
+        }
+
+        if (request.OutputWarehouseNo.HasValue)
+        {
+            query = query.Where(movement => movement.sth_cikis_depo_no == request.OutputWarehouseNo.Value);
+        }
+
         return query;
     }
 
@@ -2283,7 +2302,7 @@ public sealed partial class MikroDocumentEditingService(
         return query;
     }
 
-    private static IEnumerable<IReadOnlyCollection<SAYIM_SONUCLARI>> GroupInventoryCountDocuments(
+    internal static IEnumerable<IReadOnlyCollection<SAYIM_SONUCLARI>> GroupInventoryCountDocuments(
         IReadOnlyCollection<SAYIM_SONUCLARI> rows) =>
         rows
             .GroupBy(row => (
@@ -3997,7 +4016,9 @@ public sealed partial class MikroDocumentEditingService(
                 row.sth_evrakno_sira,
                 row.sth_evraktip,
                 row.sth_cins,
-                row.sth_normal_iade
+                row.sth_normal_iade,
+                row.sth_giris_depo_no,
+                row.sth_cikis_depo_no
             })
             .Distinct()
             .Count();
@@ -4018,7 +4039,9 @@ public sealed partial class MikroDocumentEditingService(
                 row.sth_evrakno_sira,
                 row.sth_evraktip,
                 row.sth_cins,
-                row.sth_normal_iade
+                row.sth_normal_iade,
+                row.sth_giris_depo_no,
+                row.sth_cikis_depo_no
             })
             .Select(group => (IReadOnlyCollection<STOK_HAREKETLERI>)group
                 .OrderBy(row => row.sth_satirno)
@@ -4074,7 +4097,9 @@ public sealed partial class MikroDocumentEditingService(
                 row.sip_tip,
                 row.sip_cins,
                 row.sip_evrakno_seri,
-                row.sip_evrakno_sira
+                row.sip_evrakno_sira,
+                row.sip_depono,
+                row.sip_musteri_kod
             })
             .Distinct()
             .Count();
@@ -4094,7 +4119,9 @@ public sealed partial class MikroDocumentEditingService(
                 row.sip_tip,
                 row.sip_cins,
                 row.sip_evrakno_seri,
-                row.sip_evrakno_sira
+                row.sip_evrakno_sira,
+                row.sip_depono,
+                row.sip_musteri_kod
             })
             .Select(group => (IReadOnlyCollection<SIPARISLER>)group
                 .OrderBy(row => row.sip_satirno)
@@ -4390,8 +4417,7 @@ public sealed partial class MikroDocumentEditingService(
             {
                 row.sym_tarihi,
                 row.sym_depono,
-                row.sym_evrakno,
-                row.sym_parti_kodu
+                row.sym_evrakno
             })
             .Distinct()
             .Count();

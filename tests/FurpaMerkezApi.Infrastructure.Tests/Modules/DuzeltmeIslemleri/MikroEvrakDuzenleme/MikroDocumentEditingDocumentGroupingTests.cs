@@ -42,6 +42,37 @@ public sealed class MikroDocumentEditingDocumentGroupingTests
     }
 
     [Fact]
+    public void GroupCompanyOrderDocuments_SeparatesSameTypeByWarehouseAndCustomer()
+    {
+        var first = CompanyOrder(0, 0, 0);
+        var second = CompanyOrder(0, 0, 1);
+        var third = CompanyOrder(0, 0, 2);
+        first.sip_depono = 50;
+        first.sip_musteri_kod = "CARI-1";
+        second.sip_depono = 50;
+        second.sip_musteri_kod = "CARI-1";
+        third.sip_depono = 53;
+        third.sip_musteri_kod = "CARI-2";
+
+        var groups = MikroDocumentEditingService.GroupCompanyOrderDocuments([first, second, third]);
+
+        Assert.Equal(2, groups.Count);
+        Assert.Contains(groups, group => group.Count == 2 && group.First().sip_depono == 50);
+        Assert.Contains(groups, group => group.Count == 1 && group.First().sip_depono == 53);
+    }
+
+    [Fact]
+    public void GroupInventoryCountDocuments_KeepsDifferentPartiesInSameDocument()
+    {
+        var first = InventoryCount("PARTI-1", 0);
+        var second = InventoryCount("PARTI-2", 1);
+
+        var group = Assert.Single(MikroDocumentEditingService.GroupInventoryCountDocuments([first, second]));
+
+        Assert.Equal(2, group.Count);
+    }
+
+    [Fact]
     public void GroupWarehouseOrderDocuments_SeparatesSameSerieAndOrderByRoute()
     {
         var rows = new[]
@@ -103,5 +134,17 @@ public sealed class MikroDocumentEditingDocumentGroupingTests
             ssip_girdepo = inputWarehouseNo,
             ssip_satirno = lineNo,
             ssip_stok_kod = $"STOK-{lineNo}"
+        };
+
+    private static SAYIM_SONUCLARI InventoryCount(string partyCode, int lineNo) =>
+        new()
+        {
+            sym_Guid = Guid.NewGuid(),
+            sym_tarihi = new DateTime(2026, 11, 18),
+            sym_depono = 50,
+            sym_evrakno = 123,
+            sym_parti_kodu = partyCode,
+            sym_satirno = lineNo,
+            sym_Stokkodu = $"STOK-{lineNo}"
         };
 }

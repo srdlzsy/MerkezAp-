@@ -498,7 +498,9 @@ public sealed record StockMovementDocumentLookupRequest(
     byte? MovementType,
     byte? MovementKind,
     byte? NormalReturn,
-    int? WarehouseNo);
+    int? WarehouseNo,
+    int? InputWarehouseNo,
+    int? OutputWarehouseNo);
 
 public sealed record MikroDocumentSearchRequest(
     string DocumentSerie,
