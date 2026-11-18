@@ -929,6 +929,28 @@ uyusmazligi bulunan evraklarda tek tikla ack acilmaz. Canli rampa yuklemeleri, t
 ENT006 kuyruk kayitlari, inbound detaylari, eksik SKU listesi, bolge performansi ve stok yeri
 tipleri de mevcut API cevaplarindan ekranda gosterilir.
 
+### Kokpit Veri Tutarliligi
+
+- Mikro'ya yazma veya AXATA kuyrugunu kapatma karari veren sorgular kirli okuma ile
+  calistirilmaz. Henuz commit edilmemis, yarim veya iki kez gorunebilen evraklara gore aksiyon
+  acilmamasi temel kuraldir.
+- Kokpit sorgulari AXATA ve Mikro kaynaklarina salt okunur baglanir; liste ve rapor ekranlari
+  hicbir evrak durumunu kendiliginden degistirmez.
+- Evrak ekranindaki `Bugun` ve `Dun` secimleri tek gun, `Son 7 Gun` secimi bugun dahil yedi
+  takvim gunu getirir. API en fazla 31 gunluk araligi kabul eder.
+- Yuzde gostergeleri ekranda `0-100` araliginda sinirlanir. Ham oran metni degistirilmez; kaynak
+  veride 100 ustu veya negatif bir deger varsa tablo degeri inceleme icin aynen korunur.
+- Toplu C01 aktarimi ayni seri/sira ile gelen farkli AXATA kayitlarini `axataSequenceNo` ile
+  ayirir ve Mikro yazimlarini sirali calistirir.
+
+Kokpit Angular ekraninda iki farkli amac ayni sayfada fakat ayri sekmelerde tutulur:
+
+1. `Kolay Islem Masasi`: Guvenli yazma ve kurtarma aksiyonlari.
+2. `AXATA Evraklari`, `Canli Operasyon`, `Evrak Izleme` ve rapor sekmeleri: Salt okunur izleme.
+
+Bu ayrim sayesinde kullanici bir rapor satirini incelemeyi, Mikro'ya evrak yazma veya AXATA
+kuyrugunu kapatma islemiyle karistirmaz.
+
 ## Sonraki Faz Onerisi
 
 1. Kalici job/audit/retry tablolari.

@@ -16,6 +16,7 @@ public sealed class AxataWarehouseOperationsService(
     MikroDbContext mikroDbContext)
     : IAxataWarehouseOperationsService
 {
+    // Sonuclar kullaniciya yazma/ack aksiyonu actigi icin operasyon sorgulari committed read kullanir.
     private const int CommandTimeoutSeconds = 30;
     private const int MaximumReportDayCount = 31;
 
