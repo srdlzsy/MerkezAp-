@@ -234,7 +234,11 @@ public sealed class SafeWriteReviewServiceTests
         Assert.Equal("Cancelled", result.Outcome);
         Assert.Equal("Cancelled", result.SafeWrite.Status);
         Assert.Equal(OperationConflictErrorCodes.SafeWriteCancelled, result.SafeWrite.ErrorCode);
-        Assert.Single(await service.GetHistoryAsync(record.Id, CancellationToken.None));
+        var history = await service.GetHistoryAsync(record.Id, CancellationToken.None);
+        Assert.Equal(3, history.Count);
+        Assert.Contains(history, item => item.Action == "Created" && item.Source == "System");
+        Assert.Contains(history, item => item.Action == "CurrentState" && item.ResultStatus == "Cancelled");
+        Assert.Contains(history, item => item.Action == "Cancel" && item.Source == "Review");
 
         var recoveryWasCalled = false;
         var offlineSyncService = new MobileOfflineSyncService(db, new FixedClock(Now));
@@ -253,6 +257,28 @@ public sealed class SafeWriteReviewServiceTests
         Assert.Equal(OperationConflictErrorCodes.SafeWriteCancelled, terminalStatus.ErrorCode);
         Assert.False(terminalStatus.Retryable);
         Assert.False(recoveryWasCalled);
+    }
+
+    [Fact]
+    public async Task GetHistory_ReturnsSystemTimelineWithoutManualReview()
+    {
+        await using var db = CreateDb();
+        var record = CreateReviewRecord();
+        db.MobileOfflineSyncRequests.Add(record);
+        await db.SaveChangesAsync();
+        var service = new SafeWriteReviewService(
+            db,
+            new FixedClock(Now),
+            new FakeDispatcher((_, _, _, _, _) => throw new InvalidOperationException("Should not run.")));
+
+        var history = await service.GetHistoryAsync(record.Id, CancellationToken.None);
+
+        Assert.Equal(2, history.Count);
+        Assert.Contains(history, item => item.Action == "Created" && item.ResultStatus == "Processing");
+        Assert.Contains(history, item =>
+            item.Action == "CurrentState" &&
+            item.ResultStatus == "Failed" &&
+            item.ResultErrorCode == OperationConflictErrorCodes.MikroDocumentContentMismatch);
     }
 
     [Fact]

@@ -166,6 +166,27 @@ public sealed class DatabaseMonitoringSafetyTests
         var failedOnly = await service.GetSafeWritesAsync(
             new SafeWriteMonitoringRequest("Failed", null, null, null, IncludeCompleted: false, Take: 100),
             CancellationToken.None);
+        var exactSearch = await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest(
+                null,
+                null,
+                null,
+                null,
+                IncludeCompleted: false,
+                Take: 100,
+                SearchText: clientResolved.Id.ToString()),
+            CancellationToken.None);
+        var historicOpen = await service.GetSafeWritesAsync(
+            new SafeWriteMonitoringRequest(
+                null,
+                null,
+                null,
+                null,
+                IncludeCompleted: false,
+                Take: 100,
+                CreatedFromUtc: now.AddMinutes(-10),
+                CreatedToUtc: now),
+            CancellationToken.None);
 
         Assert.Equal(2, active.Count);
         Assert.Equal("Processing", active.First().Status);
@@ -179,6 +200,9 @@ public sealed class DatabaseMonitoringSafetyTests
         Assert.Equal(2, failedOnly.Count);
         Assert.Contains(failedOnly, item =>
             item.ErrorCode == OperationConflictErrorCodes.MikroDocumentIdentityConflict);
+        Assert.Equal(clientResolved.Id, Assert.Single(exactSearch).Id);
+        Assert.Equal(3, historicOpen.Count);
+        Assert.DoesNotContain(historicOpen, item => item.Status is "Completed" or "Cancelled");
     }
 
     private static DatabaseMonitoringService.IncidentCandidate Candidate(

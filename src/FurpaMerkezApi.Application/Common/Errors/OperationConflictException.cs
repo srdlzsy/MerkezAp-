@@ -29,6 +29,7 @@ public static class OperationConflictErrorCodes
     public const string WarehouseReceivingEDespatchRequired = "WAREHOUSE_RECEIVING_EDESPATCH_REQUIRED";
     public const string CreateReferenceNotFound = "CREATE_REFERENCE_NOT_FOUND";
     public const string MikroBusinessRuleRejected = "MIKRO_BUSINESS_RULE_REJECTED";
+    public const string SafeWriteValidationRejected = "SAFE_WRITE_VALIDATION_REJECTED";
     public const string ClientRequestPayloadMismatch = "CLIENT_REQUEST_PAYLOAD_MISMATCH";
     public const string SafeWriteRetryAllowed = "SAFE_WRITE_RETRY_ALLOWED";
     public const string SafeWriteCancelled = "SAFE_WRITE_CANCELLED";

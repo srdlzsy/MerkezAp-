@@ -169,15 +169,14 @@ public sealed class SafeWriteReviewService(
         Guid safeWriteId,
         CancellationToken cancellationToken)
     {
-        var exists = await authDbContext.MobileOfflineSyncRequests
+        var record = await authDbContext.MobileOfflineSyncRequests
             .AsNoTracking()
-            .AnyAsync(item => item.Id == safeWriteId, cancellationToken);
-        if (!exists) throw new KeyNotFoundException("Safe write record was not found.");
+            .SingleOrDefaultAsync(item => item.Id == safeWriteId, cancellationToken)
+            ?? throw new KeyNotFoundException("Safe write record was not found.");
 
-        return await authDbContext.SafeWriteReviewAudits
+        var reviews = await authDbContext.SafeWriteReviewAudits
             .AsNoTracking()
             .Where(item => item.SafeWriteId == safeWriteId)
-            .OrderByDescending(item => item.ReviewedAtUtc)
             .Select(item => new SafeWriteReviewAuditDto(
                 item.Id,
                 item.SafeWriteId,
@@ -190,8 +189,53 @@ public sealed class SafeWriteReviewService(
                 item.PreviousErrorCode,
                 item.ResultStatus,
                 item.ResultErrorCode,
-                item.Message))
+                item.Message,
+                "Review"))
             .ToArrayAsync(cancellationToken);
+
+        var timeline = new List<SafeWriteReviewAuditDto>(reviews.Length + 2)
+        {
+            new(
+                record.Id,
+                record.Id,
+                "Created",
+                "Registered",
+                "Guvenli yazma istegi sisteme kaydedildi.",
+                record.RequestedByUserId,
+                record.CreatedAtUtc,
+                "-",
+                null,
+                MobileOfflineSyncRequestStatus.Processing.ToString(),
+                null,
+                $"Operasyon={record.OperationCode}; Depo={record.WarehouseNo}; Takip={record.ClientRequestId}",
+                "System")
+        };
+
+        timeline.AddRange(reviews);
+
+        var lastUpdate = record.UpdatedAtUtc ?? record.CreatedAtUtc;
+        if (lastUpdate > record.CreatedAtUtc || record.Status != MobileOfflineSyncRequestStatus.Processing)
+        {
+            timeline.Add(new SafeWriteReviewAuditDto(
+                record.Revision,
+                record.Id,
+                "CurrentState",
+                "Snapshot",
+                "Guvenli yazma kaydinin son durumu.",
+                record.RequestedByUserId,
+                lastUpdate,
+                MobileOfflineSyncRequestStatus.Processing.ToString(),
+                null,
+                record.Status.ToString(),
+                record.ErrorCode,
+                OperationConflictMessages.Resolve(record.ErrorCode, record.ErrorMessage),
+                "System"));
+        }
+
+        return timeline
+            .OrderByDescending(item => item.ReviewedAtUtc)
+            .ThenByDescending(item => item.Source == "Review")
+            .ToArray();
     }
 
     private async Task<SafeWriteReviewResultDto> ReviewWithReadbackAsync(

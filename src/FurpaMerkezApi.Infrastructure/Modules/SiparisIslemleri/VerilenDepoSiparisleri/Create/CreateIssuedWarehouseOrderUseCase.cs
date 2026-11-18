@@ -67,7 +67,12 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             innerCancellationToken => ExecuteRoutedAsync(request, innerCancellationToken),
             cancellationToken,
             preventReexecutionAfterUncertainOutcome: true,
-            verifyCompletedWithRecovery: true);
+            verifyCompletedWithRecovery: true,
+            validateBeforeReservation: async innerCancellationToken =>
+            {
+                await ValidateSourceWarehouseProductsAsync(request, innerCancellationToken);
+                await ValidateCentralWarehousePackageQuantitiesAsync(request, innerCancellationToken);
+            });
     }
 
     public Task<OfflineSyncStatusDto<CreateIssuedWarehouseOrderResponse>> GetOfflineSyncStatusAsync(
@@ -88,9 +93,6 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         CreateIssuedWarehouseOrderRequest request,
         CancellationToken cancellationToken)
     {
-        await ValidateSourceWarehouseProductsAsync(request, cancellationToken);
-        await ValidateCentralWarehousePackageQuantitiesAsync(request, cancellationToken);
-
         return await (mikroWriteRoutingOptions.CurrentValue.IssuedWarehouseOrder switch
         {
             MikroWriteMode.Database => ExecuteDatabaseAsync(request, cancellationToken),

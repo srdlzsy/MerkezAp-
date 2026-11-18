@@ -42,6 +42,14 @@ internal static class OfflineWriteFailureClassifier
                 Retryable: false);
         }
 
+        if (exception is ArgumentException)
+        {
+            return new OfflineWriteFailure(
+                exception.Message,
+                OperationConflictErrorCodes.SafeWriteValidationRejected,
+                Retryable: false);
+        }
+
         if (ContainsMikroBusinessRuleMarker(exception.Message))
         {
             return new OfflineWriteFailure(

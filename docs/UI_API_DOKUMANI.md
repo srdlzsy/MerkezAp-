@@ -2890,11 +2890,14 @@ Yetki: `ayar-islemleri.veritabani-izleme.detail`
 Query:
 
 ```text
+searchText        opsiyonel; kayit/takip GUID'i, operasyon veya hata metni
 status            opsiyonel; Processing, Completed, Failed veya Cancelled
 operationCode     opsiyonel; tam operasyon kodu
 warehouseNo       opsiyonel; depo filtresi
 retryable         opsiyonel; true/false
 includeCompleted  opsiyonel; default false
+createdFromUtc    opsiyonel; olusturma zamani alt siniri, dahil
+createdToUtc      opsiyonel; olusturma zamani ust siniri, haric
 take              opsiyonel; default 100, max 500
 ```
 
@@ -2941,12 +2944,16 @@ Siniflandirilmis `errorCode` degerleri:
 | `CLIENT_REQUEST_PAYLOAD_MISMATCH` | `false` | Ayni `clientRequestId` farkli body ile kullanildi. |
 | `SAFE_WRITE_RETRY_ALLOWED` | `true` | Salt-okuma kontrolu belgenin hic olusmadigini kesinlestirdi; ayni snapshot/id ile POST'a izin verildi. |
 | `SAFE_WRITE_CANCELLED` | `false` | Kayit yetkili incelemesiyle iptal edildi; terminal pending kaydi temizleyebilir. |
+| `SAFE_WRITE_VALIDATION_REJECTED` | `false` | Istek Mikro yazimi baslamadan urun, miktar veya kaynak katalog dogrulamasinda reddedildi. Evrak uzlastirmasi gerekmez; veri duzeltilerek yeni islem baslatilir. |
 
 Alan ve filtre kurallari:
 
 - `status` filtresi yalniz `Processing`, `Completed`, `Failed` veya `Cancelled` kabul eder; baska deger `400 Bad Request` doner.
 - `status` acikca verilmisse bu filtre onceliklidir. Ornek `status=Completed&includeCompleted=false` yine yalniz tamamlanan kayitlari dondurur.
-- `status` verilmez ve `includeCompleted=false` ise sorgu yalniz dikkat bekleyen `Processing` ve `Failed` kayitlari dondurur; `Completed` ve `Cancelled` listeyi doldurmaz. Bu secenek "yalniz su anda aktif istekler" anlamina gelmez.
+- `status`, tarih ve arama verilmez, `includeCompleted=false` ise sorgu son 24 saatte dikkat bekleyen `Processing` ve sonuc gerektiren `Failed` kayitlarini dondurur; kullanicinin duzelterek yeniden baslatacagi dogrulama hatalari operasyon kuyrugunu doldurmaz.
+- Acik tarih araligi verildiginde 24 saatlik varsayilan pencere uygulanmaz. `includeCompleted=false` ise secilen araliktaki `Completed` ve `Cancelled` kayitlar yine gizlenir.
+- `searchText` gecerli bir GUID ise hem Auth DB kayit kimliginde hem terminal/web `clientRequestId` alaninda tam eslesme yapar ve kayit tamamlanmis olsa da bulunur. Metin aramasi operasyon kodu, hata kodu ve hata mesajinda calisir.
+- UI tarih alanlarini Istanbul gun sinirlari olarak UTC'ye cevirir. `createdToUtc` ust siniri haric oldugu icin tek gun filtresi yerel gunun ertesi gece yarisi ile gonderilir.
 - `retryable=true/false` yalniz typed degeri bu secimle eslesen kayitlari getirir; `retryable=null` olan eski/siniflandirilmamis kayitlar bu iki filtreye de girmez.
 - `ageSeconds`, response uretilirken `updatedAtUtc ?? createdAtUtc` ile su an arasindaki suredir. Islem calisma suresi degildir; tamamlanmis veya basarisiz kayitlarda son guncellemeden beri gecen sureyi gosterir.
 - Siralama once `Processing`, sonra son guncelleme tarihi azalan bicimdedir. Bu nedenle cok eski bir `Processing` kaydi yeni `Failed` kayitlardan once gorunebilir.
@@ -2975,6 +2982,8 @@ GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Failed&retryab
 GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Failed&retryable=false&take=100
 GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Completed&take=100
 GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?status=Cancelled&take=100
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?searchText=ff2ede2d-4ccb-4443-93f9-16f3e4a59446&take=100
+GET /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar?createdFromUtc=2026-11-17T21:00:00Z&createdToUtc=2026-11-18T21:00:00Z&take=100
 ```
 
 #### Guvenli Yazma Inceleme ve Sonuclandirma
@@ -2991,6 +3000,10 @@ GET  /api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/inceleme-gecmis
 ```
 
 `inceleme-gecmisi` endpointi `ayar-islemleri.veritabani-izleme.detail`, uc POST endpointi ayri `resolve-safe-write` yetkisini ister. Migration `AddSafeWriteReviewWorkflow`, audit tablosunu ve Administrator rolundeki bu yetkiyi olusturur.
+
+Bu GET yalniz manuel `safe_write_review_audits` satirlarini donmez. Kayit varsa her zaman en az sistem tarafindan uretilen `Created` olayini; kayit sonuclandiysa `CurrentState` olayini ve varsa yetkili inceleme olaylarini tek zaman cizelgesinde dondurur. `source=System` kaydin yasam dongusunu, `source=Review` yetkili kullanici kararini belirtir. Bu nedenle hic manuel inceleme yapilmamis bir kaydin zaman cizelgesi bos gelmez.
+
+`ClassifySafeWriteValidationFailures` migration'i, daha once verilen depo siparisi kaynak katalog dogrulamasinda kalip hata kodu bos birakilan eski kayitlari `SAFE_WRITE_VALIDATION_REJECTED + retryable=false` olarak siniflandirir. Yeni isteklerde ayni katalog ve koli dogrulamalari guvenli yazma rezervasyonundan once calisir; gecersiz istek `mobile_offline_sync_requests` tablosunda sahte bekleyen kayit biriktirmez.
 
 Ortak POST body:
 
@@ -25755,7 +25768,7 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/ayar-islemleri/terminal-cihazlari/{id}` | JWT + ayar-islemleri.terminal-cihazlari.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationDto<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
 | GET | `/api/ayar-islemleri/veritabani-izleme/genel-bakis` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MonitoringOverviewDto |
-| GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: SearchText / string<br>query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: CreatedFromUtc / string (date-time)<br>query: CreatedToUtc / string (date-time)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/inceleme-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteReviewAuditDto&gt;<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/iptal` | JWT + ayar-islemleri.veritabani-izleme.resolve-safe-write | path: id / string (uuid) (zorunlu)<br>body: request / SafeWriteReviewHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/tekrar-ac` | JWT + ayar-islemleri.veritabani-izleme.resolve-safe-write | path: id / string (uuid) (zorunlu)<br>body: request / SafeWriteReviewHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails |
@@ -27470,6 +27483,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `reviewedAtUtc` | string (date-time) | Hayir |  |
 | `reviewedByUserId` | string (uuid) | Hayir |  |
 | `safeWriteId` | string (uuid) | Hayir |  |
+| `source` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteReviewResultDto
 

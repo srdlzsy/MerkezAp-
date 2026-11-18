@@ -99674,6 +99674,15 @@
         ],
         "parameters": [
           {
+            "name": "SearchText",
+            "in": "query",
+            "schema": {
+              "maxLength": 150,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          {
             "name": "Status",
             "in": "query",
             "schema": {
@@ -99713,6 +99722,22 @@
             "in": "query",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "CreatedFromUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "CreatedToUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           },
           {
@@ -106960,6 +106985,10 @@
             "nullable": true
           },
           "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
             "type": "string",
             "nullable": true
           }

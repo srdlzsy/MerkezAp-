@@ -89,6 +89,17 @@ public sealed class WriteTimeoutClassifierTests
     }
 
     [Fact]
+    public void OfflineFailureClassifier_MapsValidationFailureWithoutManualReview()
+    {
+        var failure = OfflineWriteFailureClassifier.Classify(
+            new ArgumentException("Quantity must be a package multiple.", "Lines"));
+
+        Assert.Equal(OperationConflictErrorCodes.SafeWriteValidationRejected, failure.ErrorCode);
+        Assert.False(failure.Retryable);
+        Assert.Contains("package multiple", failure.Message);
+    }
+
+    [Fact]
     public void OfflineFailureClassifier_MapsMikroBusinessRuleWithoutManualReview()
     {
         var failure = OfflineWriteFailureClassifier.Classify(

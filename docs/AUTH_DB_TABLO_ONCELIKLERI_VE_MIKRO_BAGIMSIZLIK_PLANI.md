@@ -61,6 +61,13 @@ varsayimla yetki vermek yerine kapali davranmalidir.
 Bu iki tablo destek tablolari icinde en kritik olanlardir. Bunlari sorgudan
 cikarmak veya hatayi genel bir `catch` ile yutmak dogru cozum degildir.
 
+`mobile_offline_sync_requests` kayitlari Ayarlar > Veritabani Izleme > Guvenli
+Yazmalar ekranindan takip edilir. Ekran kayit/takip GUID'i, operasyon, durum,
+depo, tekrar edilebilirlik ve tarih araligi ile arama yapar; secilen kaydin
+sistem yasam dongusunu ve varsa yetkili inceleme gecmisini birlikte gosterir.
+Bu ekran Mikro'da yeni evrak olusturmaz ve kaydi listelemek uzlastirma islemi
+baslatmaz.
+
 P1 icin hedef yedek yazma sirasi:
 
 1. Istek ve evrak icin deterministik kimlik uretilir.

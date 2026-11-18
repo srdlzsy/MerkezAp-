@@ -32,6 +32,7 @@ public sealed partial class DatabaseMonitoringService(
         OperationConflictErrorCodes.WarehouseOrderLineClosed,
         OperationConflictErrorCodes.CreateReferenceNotFound,
         OperationConflictErrorCodes.MikroBusinessRuleRejected,
+        OperationConflictErrorCodes.SafeWriteValidationRejected,
         OperationConflictErrorCodes.SafeWriteRetryAllowed
     ];
 
@@ -413,6 +414,15 @@ public sealed partial class DatabaseMonitoringService(
         SafeWriteMonitoringRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.CreatedFromUtc.HasValue &&
+            request.CreatedToUtc.HasValue &&
+            request.CreatedFromUtc.Value >= request.CreatedToUtc.Value)
+        {
+            throw new ArgumentException(
+                "CreatedFromUtc must be earlier than CreatedToUtc.",
+                nameof(request));
+        }
+
         var query = authDbContext.MobileOfflineSyncRequests.AsNoTracking();
         MobileOfflineSyncRequestStatus? requestedStatus = null;
 
@@ -428,11 +438,21 @@ public sealed partial class DatabaseMonitoringService(
             requestedStatus = status;
         }
 
+        var searchText = request.SearchText?.Trim();
+        var hasSearchText = !string.IsNullOrWhiteSpace(searchText);
+        var hasDateRange = request.CreatedFromUtc.HasValue || request.CreatedToUtc.HasValue;
+
         if (requestedStatus.HasValue)
         {
             query = query.Where(item => item.Status == requestedStatus.Value);
         }
-        else if (!request.IncludeCompleted)
+        else if (!request.IncludeCompleted && hasDateRange && !hasSearchText)
+        {
+            query = query.Where(item =>
+                item.Status != MobileOfflineSyncRequestStatus.Completed &&
+                item.Status != MobileOfflineSyncRequestStatus.Cancelled);
+        }
+        else if (!request.IncludeCompleted && !hasSearchText)
         {
             var operationalWindowStart = clock.UtcNow.AddHours(-OverviewWindowHours);
             query = query.Where(item =>
@@ -446,6 +466,35 @@ public sealed partial class DatabaseMonitoringService(
         {
             var operationCode = request.OperationCode.Trim();
             query = query.Where(item => item.OperationCode == operationCode);
+        }
+
+        if (hasSearchText)
+        {
+            var hasGuid = Guid.TryParse(searchText, out var searchedGuid);
+            if (hasGuid)
+            {
+                var normalizedGuid = searchedGuid.ToString("D");
+                query = query.Where(item =>
+                    item.Id == searchedGuid || item.ClientRequestId == normalizedGuid);
+            }
+            else
+            {
+                var normalizedSearch = searchText!.ToLower();
+                query = query.Where(item =>
+                    item.OperationCode.ToLower().Contains(normalizedSearch) ||
+                    (item.ErrorCode != null && item.ErrorCode.ToLower().Contains(normalizedSearch)) ||
+                    (item.ErrorMessage != null && item.ErrorMessage.ToLower().Contains(normalizedSearch)));
+            }
+        }
+
+        if (request.CreatedFromUtc.HasValue)
+        {
+            query = query.Where(item => item.CreatedAtUtc >= request.CreatedFromUtc.Value);
+        }
+
+        if (request.CreatedToUtc.HasValue)
+        {
+            query = query.Where(item => item.CreatedAtUtc < request.CreatedToUtc.Value);
         }
 
         if (request.WarehouseNo.HasValue)

@@ -66,7 +66,10 @@ public sealed class VeritabaniIzlemeController(
                 request.WarehouseNo,
                 request.Retryable,
                 request.IncludeCompleted,
-                request.Take),
+                request.Take,
+                request.SearchText,
+                request.CreatedFromUtc,
+                request.CreatedToUtc),
             cancellationToken));
 
     [HttpGet("guvenli-yazmalar/{id:guid}/inceleme-gecmisi")]
@@ -174,6 +177,9 @@ public sealed class TerminateDatabaseSessionHttpRequest
 
 public sealed class SafeWriteMonitoringHttpRequest
 {
+    [StringLength(150)]
+    public string? SearchText { get; init; }
+
     [StringLength(20)]
     public string? Status { get; init; }
 
@@ -186,6 +192,10 @@ public sealed class SafeWriteMonitoringHttpRequest
     public bool? Retryable { get; init; }
 
     public bool IncludeCompleted { get; init; }
+
+    public DateTime? CreatedFromUtc { get; init; }
+
+    public DateTime? CreatedToUtc { get; init; }
 
     [Range(1, 500)]
     public int Take { get; init; } = 100;

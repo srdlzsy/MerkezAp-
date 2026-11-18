@@ -232,7 +232,10 @@ public sealed record SafeWriteMonitoringRequest(
     int? WarehouseNo,
     bool? Retryable,
     bool IncludeCompleted,
-    int Take);
+    int Take,
+    string? SearchText = null,
+    DateTime? CreatedFromUtc = null,
+    DateTime? CreatedToUtc = null);
 
 public sealed record SafeWriteMonitoringItemDto(
     Guid Id,
@@ -272,7 +275,8 @@ public sealed record SafeWriteReviewAuditDto(
     string? PreviousErrorCode,
     string ResultStatus,
     string? ResultErrorCode,
-    string? Message);
+    string? Message,
+    string Source);
 
 public sealed record TerminateDatabaseSessionRequest(
     DateTime ExpectedLoginTime,

@@ -35,6 +35,9 @@ public static class OperationConflictMessages
     public const string MikroBusinessRuleRejected =
         "Mikro kaydi bir is kurali nedeniyle reddetti. Kalici evrak olusmadi; hata verilen alani duzeltip ayni taslagi yeniden kaydedin.";
 
+    public const string SafeWriteValidationRejected =
+        "Kayit, Mikro yazimi baslamadan once veri dogrulamasinda reddedildi. Hata verilen alanlari duzeltip yeni bir kayit istegi gonderin.";
+
     public const string ClientRequestPayloadMismatch =
         "Ayni istek kimligi farkli bir kayit icerigiyle kullanilmis. Bekleyen kaydi degistirmeyin; yalniz gercekten yeni bir islem baslatacaksaniz yeni kayit olusturun.";
 
@@ -58,6 +61,7 @@ public static class OperationConflictMessages
             OperationConflictErrorCodes.WarehouseReceivingEDespatchRequired => WarehouseReceivingEDespatchRequired,
             OperationConflictErrorCodes.CreateReferenceNotFound => CreateReferenceNotFound,
             OperationConflictErrorCodes.MikroBusinessRuleRejected => MikroBusinessRuleRejected,
+            OperationConflictErrorCodes.SafeWriteValidationRejected => SafeWriteValidationRejected,
             OperationConflictErrorCodes.ClientRequestPayloadMismatch => ClientRequestPayloadMismatch,
             OperationConflictErrorCodes.SafeWriteRetryAllowed => SafeWriteRetryAllowed,
             OperationConflictErrorCodes.SafeWriteCancelled => SafeWriteCancelled,

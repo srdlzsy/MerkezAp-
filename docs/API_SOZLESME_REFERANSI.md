@@ -83,7 +83,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/terminal-cihazlari/{id}` | JWT + ayar-islemleri.terminal-cihazlari.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TerminalInstallationDto<br>404: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/anlik` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseMonitoringSnapshotDto |
 | GET | `/api/ayar-islemleri/veritabani-izleme/genel-bakis` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MonitoringOverviewDto |
-| GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar` | JWT + ayar-islemleri.veritabani-izleme.detail | query: SearchText / string<br>query: Status / string<br>query: OperationCode / string<br>query: WarehouseNo / integer (int32)<br>query: Retryable / boolean<br>query: IncludeCompleted / boolean<br>query: CreatedFromUtc / string (date-time)<br>query: CreatedToUtc / string (date-time)<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteMonitoringItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/inceleme-gecmisi` | JWT + ayar-islemleri.veritabani-izleme.detail | path: id / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;SafeWriteReviewAuditDto&gt;<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/iptal` | JWT + ayar-islemleri.veritabani-izleme.resolve-safe-write | path: id / string (uuid) (zorunlu)<br>body: request / SafeWriteReviewHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails |
 | POST | `/api/ayar-islemleri/veritabani-izleme/guvenli-yazmalar/{id}/tekrar-ac` | JWT + ayar-islemleri.veritabani-izleme.resolve-safe-write | path: id / string (uuid) (zorunlu)<br>body: request / SafeWriteReviewHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: SafeWriteReviewResultDto<br>404: ProblemDetails |
@@ -1798,6 +1798,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `reviewedAtUtc` | string (date-time) | Hayir |  |
 | `reviewedByUserId` | string (uuid) | Hayir |  |
 | `safeWriteId` | string (uuid) | Hayir |  |
+| `source` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.SafeWriteReviewResultDto
 
