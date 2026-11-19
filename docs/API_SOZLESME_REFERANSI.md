@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 833. Model sayisi: 814.
+Endpoint sayisi (method + route): 834. Model sayisi: 815.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -540,6 +540,7 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/z-rapor-toplam` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashSummaryZReportTotalDto<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kunye-etiket-yazdirma` | JWT + kasa-islemleri.kunye-etiket-yazdirma.list | query: DateToGet / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelTagDto&gt;<br>400: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler` | Anonim | query: WarehouseNo / integer (int32) (zorunlu)<br>query: DateToGet / string (date-time) | 200: IReadOnlyCollection&lt;KunyeLabelTagDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/kod-listesi` | JWT + kasa-islemleri.manav-kunye-etiket-yazdirma.list |  | 200: IReadOnlyCollection&lt;ManavCodeListItemDto&gt;<br>401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records` | JWT + kasa-islemleri.manav-mal-kabul-etiket.list | query: Date / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ManavMalKabulVeEtiketAcceptanceRecordDto&gt;<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records` | JWT + kasa-islemleri.manav-mal-kabul-etiket.create | body: request / SaveManavMalKabulVeEtiketAcceptanceRecordHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: ManavMalKabulVeEtiketAcceptanceRecordDto<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records/calculate` | JWT + kasa-islemleri.manav-mal-kabul-etiket.create | body: request / ManavMalKabulVeEtiketCalculationHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: ManavMalKabulVeEtiketCalculationDto<br>400: ProblemDetails |
@@ -6812,6 +6813,19 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `stockCode` | string | Hayir | nullable |
 | `stockName` | string | Hayir | nullable |
 | `takenTag` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.KasaIslemleri.KunyeEtiketYazdirma.ManavCodeListItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `categoryCode` | string | Hayir | nullable |
+| `code` | integer (int32) | Hayir |  |
+| `mnvsfCode` | integer (int32) | Hayir | nullable |
+| `mnvsfMatchCount` | integer (int32) | Hayir |  |
+| `mnvsfStockCode` | string | Hayir | nullable |
+| `productGroup` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket.ManavMalKabulVeEtiketAcceptanceRecordDto
 

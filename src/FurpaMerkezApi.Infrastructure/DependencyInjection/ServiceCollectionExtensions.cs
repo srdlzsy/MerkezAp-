@@ -739,6 +739,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IListLabelActivePromotionProductsUseCase, ListLabelActivePromotionProductsUseCase>();
         services.AddScoped<IListLabelTagsUseCase, ListLabelTagsUseCase>();
         services.AddScoped<IListKunyeLabelTagsUseCase, ListKunyeLabelTagsUseCase>();
+        services.AddScoped<IListManavCodeListUseCase, ListManavCodeListUseCase>();
         services.AddScoped<IListVirmansUseCase, ListVirmansUseCase>();
         services.AddScoped<IGetVirmanDetailUseCase, GetVirmanDetailUseCase>();
         services.AddScoped<IVirmanConversionSuggestionUseCase, VirmanConversionSuggestionUseCase>();

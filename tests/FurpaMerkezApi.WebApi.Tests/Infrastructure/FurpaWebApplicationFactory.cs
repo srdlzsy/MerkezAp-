@@ -65,9 +65,11 @@ public sealed class FurpaWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IHostedService>();
             services.RemoveAll<IAuthService>();
             services.RemoveAll<IListKunyeLabelTagsUseCase>();
+            services.RemoveAll<IListManavCodeListUseCase>();
 
             services.AddSingleton<IAuthService, FakeAuthService>();
             services.AddSingleton<IListKunyeLabelTagsUseCase, FakeKunyeLabelTagsUseCase>();
+            services.AddSingleton<IListManavCodeListUseCase, FakeManavCodeListUseCase>();
             services.AddControllers()
                 .PartManager.ApplicationParts.Add(new AssemblyPart(typeof(FallbackTestController).Assembly));
         });
@@ -141,6 +143,33 @@ internal sealed class FakeKunyeLabelTagsUseCase : IListKunyeLabelTagsUseCase
                 new DateTime(2026, 1, 2),
                 "Producer",
                 "KG")
+        ]);
+}
+
+internal sealed class FakeManavCodeListUseCase : IListManavCodeListUseCase
+{
+    public Task<IReadOnlyCollection<ManavCodeListItemDto>> ExecuteAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyCollection<ManavCodeListItemDto>>(
+        [
+            new ManavCodeListItemDto(
+                "MEYVE ÇEŞİTLERİ",
+                "MNV ANANAS ADET",
+                741,
+                500,
+                "MNV-741",
+                "MNVSF-500",
+                "03.02.01.01",
+                1),
+            new ManavCodeListItemDto(
+                "SEBZE ÇEŞİTLERİ",
+                "MNV BİBER ÇARLİSTON KG",
+                124,
+                540,
+                "MNV-124",
+                "MNVSF-540",
+                "03.02.01.02",
+                1)
         ]);
 }
 

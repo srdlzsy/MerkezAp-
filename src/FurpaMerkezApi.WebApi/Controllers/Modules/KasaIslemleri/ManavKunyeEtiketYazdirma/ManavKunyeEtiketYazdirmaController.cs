@@ -8,13 +8,16 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.ManavKunyeEtik
 
 [ApiController]
 [Route("api/kasa-islemleri/manav-kunye-etiket-yazdirma")]
-public sealed class ManavKunyeEtiketYazdirmaController(IListKunyeLabelTagsUseCase listKunyeLabelTagsUseCase)
+public sealed class ManavKunyeEtiketYazdirmaController(
+    IListKunyeLabelTagsUseCase listKunyeLabelTagsUseCase,
+    IListManavCodeListUseCase listManavCodeListUseCase)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "kasa-islemleri";
     private const string ModuleName = "KasaIslemleri";
     private const string MenuCode = "manav-kunye-etiket-yazdirma";
     private const string MenuName = "ManavKunyeEtiketYazdirma";
+    private const string ListPolicy = "kasa-islemleri.manav-kunye-etiket-yazdirma.list";
 
     [HttpGet("detayli-etiketler")]
     [AllowAnonymous]
@@ -30,6 +33,18 @@ public sealed class ManavKunyeEtiketYazdirmaController(IListKunyeLabelTagsUseCas
                 request.DateToGet),
             cancellationToken);
 
+        return Ok(response);
+    }
+
+    [HttpGet("kod-listesi")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ManavCodeListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyCollection<ManavCodeListItemDto>>> ListCodeList(
+        CancellationToken cancellationToken)
+    {
+        var response = await listManavCodeListUseCase.ExecuteAsync(cancellationToken);
         return Ok(response);
     }
 }
