@@ -38,4 +38,17 @@ internal static class AxataImportFailureClassifier
 
         return false;
     }
+
+    public static bool IsDocumentDataFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is KeyNotFoundException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

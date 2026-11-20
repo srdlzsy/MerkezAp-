@@ -145,6 +145,17 @@ public sealed class AxataSynchronizationFailureBehaviorTests
     }
 
     [Fact]
+    public void IsDocumentDataFailure_RecognizesMissingDetailInExceptionChain()
+    {
+        var exception = new InvalidOperationException(
+            "Document could not be prepared.",
+            new KeyNotFoundException("Company order detail was not found."));
+
+        Assert.True(AxataImportFailureClassifier.IsDocumentDataFailure(exception));
+        Assert.False(AxataImportFailureClassifier.IsInfrastructureFailure(exception));
+    }
+
+    [Fact]
     public void ExistingC02Shipment_IsReconciledOnlyWhenOrderCustomerWarehouseAndQuantityMatch()
     {
         var orderGuid = Guid.NewGuid();

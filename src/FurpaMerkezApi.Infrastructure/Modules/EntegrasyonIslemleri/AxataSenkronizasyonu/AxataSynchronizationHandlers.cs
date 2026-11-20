@@ -738,6 +738,16 @@ internal sealed class ReceivedCompanyOrderSyncTaskHandler(
                     "AXATA C02 company order {DocumentReference} has invalid business data. Remaining documents will continue.",
                     documentReference);
             }
+            catch (Exception exception) when (AxataImportFailureClassifier.IsDocumentDataFailure(exception))
+            {
+                businessFailures.Add(new AxataSynchronizationDocumentFailure(
+                    documentReference,
+                    AxataImportFailureClassifier.FormatExceptionMessage(exception)));
+                logger.LogWarning(
+                    exception,
+                    "AXATA C02 company order {DocumentReference} changed between list and detail queries. The document will be retried in a controlled manner.",
+                    documentReference);
+            }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
@@ -963,6 +973,16 @@ internal sealed class WarehouseInboundOrderSyncTaskHandler(
                 logger.LogWarning(
                     exception,
                     "AXATA G02 warehouse order {DocumentReference} has invalid business data. Remaining documents will continue.",
+                    documentReference);
+            }
+            catch (Exception exception) when (AxataImportFailureClassifier.IsDocumentDataFailure(exception))
+            {
+                businessFailures.Add(new AxataSynchronizationDocumentFailure(
+                    documentReference,
+                    AxataImportFailureClassifier.FormatExceptionMessage(exception)));
+                logger.LogWarning(
+                    exception,
+                    "AXATA G02 warehouse order {DocumentReference} changed between list and detail queries. The document will be retried in a controlled manner.",
                     documentReference);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1192,6 +1212,16 @@ internal sealed class CompanyReceivingSyncTaskHandler(
                 logger.LogWarning(
                     exception,
                     "AXATA G01 company order {DocumentReference} has invalid business data. Remaining documents will continue.",
+                    documentReference);
+            }
+            catch (Exception exception) when (AxataImportFailureClassifier.IsDocumentDataFailure(exception))
+            {
+                businessFailures.Add(new AxataSynchronizationDocumentFailure(
+                    documentReference,
+                    AxataImportFailureClassifier.FormatExceptionMessage(exception)));
+                logger.LogWarning(
+                    exception,
+                    "AXATA G01 company order {DocumentReference} changed between list and detail queries. The document will be retried in a controlled manner.",
                     documentReference);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

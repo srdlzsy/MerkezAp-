@@ -34,6 +34,48 @@ IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
     WHERE object_id = OBJECT_ID(N'dbo.STOK_HAREKETLERI')
+      AND name = N'IX_FR_STH_DepoIade_Trace'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_FR_STH_DepoIade_Trace
+    ON dbo.STOK_HAREKETLERI
+    (
+        sth_eticaret_kanal_kodu,
+        sth_cikis_depo_no,
+        sth_tarih,
+        sth_satirno
+    )
+    INCLUDE
+    (
+        sth_belge_tarih,
+        sth_belge_no,
+        sth_evrakno_seri,
+        sth_evrakno_sira,
+        sth_nakliyedeposu,
+        sth_giris_depo_no,
+        sth_miktar,
+        sth_tutar
+    )
+    WHERE
+        sth_evraktip = 17
+        AND sth_tip = 2
+        AND sth_cins = 6
+        AND sth_normal_iade = 1
+        AND sth_eticaret_kanal_kodu IS NOT NULL
+        AND sth_tarih IS NOT NULL
+    WITH
+    (
+        ONLINE = ON,
+        MAXDOP = 2,
+        SORT_IN_TEMPDB = OFF
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.STOK_HAREKETLERI')
       AND name = N'IX_FR_STH_DepoSevk_Trace'
 )
 BEGIN
@@ -142,7 +184,8 @@ WHERE i.object_id = OBJECT_ID(N'dbo.STOK_HAREKETLERI')
   AND i.name IN
   (
       N'IX_FR_STH_DepoSevk_Trace',
-      N'IX_FR_STH_DepoSevk_Duplicate'
+      N'IX_FR_STH_DepoSevk_Duplicate',
+      N'IX_FR_STH_DepoIade_Trace'
   )
 ORDER BY i.name;
 GO

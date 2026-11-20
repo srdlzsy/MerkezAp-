@@ -69,7 +69,7 @@ anlarindan gelmesi mumkundur.
 |---|---|---|---|
 | Firma mal kabul | `sth_eticaret_kanal_kodu` trace | seri/sira ile tum satir icerigi | `IX_FR_STH_FirmaMalKabul_Trace`, `NDX_STOK_HAREKETLERI_05` |
 | Firma sevk / iade | trace ve belge kimligi | stok, miktar, depo, cari, satir sayisi | standart evrak indexi + liste indexi |
-| Depo sevk / iade | trace anahtari | seri/sira ve tam satir eslesmesi | `IX_FR_STH_DepoSevk_Trace`, `IX_FR_STH_DepoSevk_Duplicate` |
+| Depo sevk / iade | trace anahtari | seri/sira ve tam satir eslesmesi | `IX_FR_STH_DepoSevk_Trace`, `IX_FR_STH_DepoIade_Trace`, `IX_FR_STH_DepoSevk_Duplicate` |
 | Zayiat / masraf | trace anahtari | seri/sira ve kalem eslesmesi | `IX_FR_STH_StokFisi_Trace`, `NDX_STOK_HAREKETLERI_05` |
 | Virman | trace anahtari | giris/cikis ciftleri ve kalem eslesmesi | stok hareket trace/standart evrak erisim yolu |
 | Depo siparisi | `ssip_special1/2/3` trace | seri/sira ve satir eslesmesi | `IX_Furpa_SafeCreateTrace_WarehouseOrder`, `NDX_DEPOLAR_ARASI_SIPARISLER_05` |
@@ -196,9 +196,12 @@ kullanilir:
    hata vererek biter ve sakin bir zamanda yeniden calistirilir.
 3. Uygulama sonrasinda iki indexte `sth_satirno` kolonunun include olarak
    bulundugu, indexlerin etkin ve filtered oldugu dogrulandi.
-4. Firma mal kabul, firma sevk/iade ve virman liste endpointlerinin sureleri;
+4. `IX_FR_STH_DepoIade_Trace`, depo iadesi recovery sorgusundaki 180 saniyelik
+   taramayi kaldirmak icin 20.11.2026 tarihinde canli Mikro veritabaninda
+   uygulandi ve etkin oldugu dogrulandi.
+5. Firma mal kabul, firma sevk/iade ve virman liste endpointlerinin sureleri;
    SQL logical read ve timeout loglari en az bir is gunu izlenir.
-5. Yeni index ancak gercek execution plan, tekrar eden seek ve olculmus logical
+6. Yeni index ancak gercek execution plan, tekrar eden seek ve olculmus logical
    read kaniti varsa eklenir. Missing-index DMV tek basina yeterli degildir.
 
 Not: Microsoft dokumani yeni surumlerde `CREATE INDEX ... WAIT_AT_LOW_PRIORITY`
